@@ -10,7 +10,11 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
@@ -18,6 +22,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 
@@ -60,6 +65,7 @@ fun EulaScreen(
     val bgBrush = screenBackgroundBrush()
     Box(
         modifier = modifier
+            .testTag(TestTags.SCREEN_EULA)
             .fillMaxSize()
             .background(bgBrush),
     ) {
@@ -95,7 +101,11 @@ fun EulaScreen(
                     modifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(scrollState)
-                        .padding(16.dp),
+                        .padding(16.dp)
+                        .testTag(TestTags.EULA_SCROLL_CONTAINER)
+                        .semantics {
+                            contentDescription = "End User License Agreement content"
+                        },
                 ) {
                     EulaContent()
 
@@ -138,7 +148,11 @@ fun EulaScreen(
                         onValueChange = { ageConfirmed = it },
                     )
                     .heightIn(min = 48.dp)
-                    .padding(horizontal = 8.dp),
+                    .padding(horizontal = 8.dp)
+                    .semantics(mergeDescendants = true) {
+                        contentDescription = "I certify that I am at least 18 years of age."
+                    }
+                    .testTag(TestTags.EULA_AGE_CONFIRMATION),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Checkbox(
@@ -167,7 +181,12 @@ fun EulaScreen(
                 enabled = canAccept,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(56.dp),
+                    .height(56.dp)
+                    .testTag(TestTags.EULA_ACCEPT)
+                    .semantics {
+                        contentDescription = "Accept End User License Agreement"
+                        role = Role.Button
+                    },
                 shape = MaterialTheme.shapes.small,
             ) {
                 Text(

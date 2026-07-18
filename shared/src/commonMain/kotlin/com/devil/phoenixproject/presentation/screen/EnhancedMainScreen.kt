@@ -72,6 +72,7 @@ import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -96,6 +97,7 @@ import com.devil.phoenixproject.presentation.theme.phoenixBottomNavigationContai
 import com.devil.phoenixproject.presentation.theme.phoenixTopAppBarContainerColor
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
@@ -281,7 +283,11 @@ fun EnhancedMainScreen(
         currentRoute != NavigationRoutes.Home.route
     }
 
-    BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
+    BoxWithConstraints(
+        modifier = Modifier
+            .fillMaxSize()
+            .testTag(TestTags.APP_MAIN_SHELL),
+    ) {
         val windowSizeClass = calculateWindowSizeClass(maxWidth, maxHeight)
         val platformAccessibilitySettings = rememberPlatformAccessibilitySettings()
 
@@ -503,7 +509,7 @@ fun EnhancedMainScreen(
                         onDynamicColorEnabledChange = onDynamicColorEnabledChange,
                         onOpenProfileSwitcher = profileSwitcherViewModel::openSwitcher,
                         onProfileRecoveryRequired = profileSwitcherViewModel::requireRecovery,
-                        modifier = Modifier.padding(padding),
+                        modifier = Modifier.padding(padding).testTag(TestTags.APP_NAV_HOST),
                     )
                 }
             }
@@ -877,6 +883,12 @@ private fun ConnectionStatusIndicator(
     val isConnecting = connectionState is ConnectionState.Connecting ||
         connectionState is ConnectionState.Scanning
     val isError = connectionState is ConnectionState.Error
+    val connectionStatusTag = when {
+        isConnected -> TestTags.CONNECTION_STATUS_CONNECTED
+        isConnecting -> TestTags.CONNECTION_STATUS_CONNECTING
+        isError -> TestTags.CONNECTION_STATUS_ERROR
+        else -> TestTags.CONNECTION_STATUS_DISCONNECTED
+    }
 
     // Animated gradient offset for connecting state
     val infiniteTransition = rememberInfiniteTransition(label = "connecting")
@@ -928,7 +940,12 @@ private fun ConnectionStatusIndicator(
             .clickable(
                 onClick = onToggleConnection,
                 role = Role.Button,
-            ),
+            )
+            .semantics {
+                this.contentDescription = contentDescription
+                role = Role.Button
+            }
+            .testTag(connectionStatusTag),
         contentAlignment = Alignment.Center,
     ) {
         // Visual pill: restored to pre-Phase-1 32dp height.

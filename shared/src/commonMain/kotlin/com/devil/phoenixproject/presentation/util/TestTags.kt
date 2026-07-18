@@ -4,6 +4,9 @@ object TestTags {
     const val APP_ROOT = "app-root"
     const val APP_SPLASH = "app-splash"
     const val SCREEN_EULA = "screen-eula"
+    const val EULA_SCROLL_CONTAINER = "eula-scroll-container"
+    const val EULA_AGE_CONFIRMATION = "eula-age-confirmation"
+    const val EULA_ACCEPT = "eula-accept"
     const val APP_MAIN_SHELL = "app-main-shell"
     const val APP_NAV_HOST = "app-nav-host"
 

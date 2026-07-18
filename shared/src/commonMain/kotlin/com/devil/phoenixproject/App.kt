@@ -24,6 +24,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
@@ -39,6 +40,7 @@ import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.presentation.screen.EnhancedMainScreen
 import com.devil.phoenixproject.presentation.screen.EulaScreen
 import com.devil.phoenixproject.presentation.screen.SplashScreen
+import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
@@ -205,7 +207,7 @@ fun AppContent(
     AppLifecycleObserver(syncTriggerManager, migrationManager)
 
     VitruvianTheme(themeMode = themeMode, dynamicColorEnabled = dynamicColorEnabled) {
-        Box(modifier = Modifier.fillMaxSize()) {
+        Box(modifier = Modifier.fillMaxSize().testTag(TestTags.APP_ROOT)) {
             when (startupSurface(eulaAccepted, launchSplashCompleted, migrationState)) {
                 StartupSurface.EULA -> EulaScreen(onAccept = eulaViewModel::acceptEula)
                 StartupSurface.SPLASH -> SplashScreen(visible = true)

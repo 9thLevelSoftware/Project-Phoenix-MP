@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +63,7 @@ import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
+import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -171,7 +173,8 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(MaterialTheme.colorScheme.background)
+            .testTag(TestTags.SCREEN_HOME),
     ) {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -365,6 +368,7 @@ private fun HomeLaunchPad(
             label = "Just Lift",
             icon = Icons.Default.LocalFireDepartment,
             onClick = onJustLift,
+            modifier = Modifier.testTag(TestTags.ACTION_JUST_LIFT),
             isPrimary = true,
             isFireButton = true,
             iconAnimation = IconAnimation.FIRE,

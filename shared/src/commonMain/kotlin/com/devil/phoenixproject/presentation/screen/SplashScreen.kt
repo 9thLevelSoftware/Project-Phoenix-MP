@@ -22,12 +22,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.sin
 import kotlin.random.Random
 import kotlinx.coroutines.delay
+import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.util.rememberPlatformAccessibilitySettings
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import org.jetbrains.compose.resources.painterResource
@@ -158,7 +160,8 @@ fun SplashScreen(visible: Boolean, modifier: Modifier = Modifier) {
                             DarkSlate,
                         ),
                     ),
-                ),
+                )
+                .testTag(TestTags.APP_SPLASH),
             contentAlignment = Alignment.Center,
         ) {
             // Ember particles layer (behind logo)
