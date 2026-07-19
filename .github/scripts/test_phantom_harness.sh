@@ -1,0 +1,305 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+RUNNER="$SCRIPT_DIR/phantom-harness.sh"
+TMP_DIR="$(python3 - <<'PY'
+import tempfile
+print(tempfile.mkdtemp(prefix="phantom-harness-test-"))
+PY
+)"
+CONFIG="$SCRIPT_DIR/../../iosApp/VitruvianPhoenix/Config/Supabase.xcconfig"
+CONFIG_BACKUP="$TMP_DIR/Supabase.xcconfig.saved"
+CONFIG_MOVED=0
+restore_config() {
+    if [[ "$CONFIG_MOVED" -eq 1 ]]; then
+        python3 - "$CONFIG" "$CONFIG_BACKUP" <<'PY'
+import shutil
+import sys
+from pathlib import Path
+source = Path(sys.argv[2])
+destination = Path(sys.argv[1])
+if source.exists() and not destination.exists():
+    shutil.move(str(source), str(destination))
+PY
+        CONFIG_MOVED=0
+    fi
+}
+cleanup_all() {
+    restore_config
+    python3 - "$TMP_DIR" <<'PY'
+import shutil
+import sys
+shutil.rmtree(sys.argv[1], ignore_errors=True)
+PY
+}
+trap cleanup_all EXIT
+
+FAKE_BIN="$TMP_DIR/bin"
+mkdir "$FAKE_BIN"
+LOG="$TMP_DIR/fake-commands.log"
+: > "$LOG"
+chmod 600 "$LOG"
+
+cat > "$FAKE_BIN/xcrun" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'xcrun %s\n' "$*" >> "${PHANTOM_FAKE_LOG:?}"
+if [[ "${1-}" == "--sdk" ]]; then
+    if [[ "${3-}" == "--show-sdk-version" ]]; then
+        printf '26.5\n'
+        exit 0
+    fi
+    if [[ "${3-}" == "--show-sdk-path" ]]; then
+        printf '/Applications/Xcode.app/SDKs/iPhoneSimulator.sdk\n'
+        exit 0
+    fi
+fi
+if [[ "${1-}" == "--version" ]]; then
+    printf 'xcrun version 72.\n'
+    exit 0
+fi
+if [[ "${1-}" != "simctl" ]]; then
+    exec /usr/bin/xcrun "$@"
+fi
+shift
+subcommand="${1-}"
+shift || true
+case "$subcommand" in
+    list)
+        if [[ "${1-}" == "devices" ]]; then
+            printf '{"devices":{"com.apple.CoreSimulator.SimRuntime.iOS-26-5":[{"state":"Shutdown","isAvailable":true,"name":"iPhone 17 Pro","udid":"11111111-2222-3333-4444-555555555555"}]}}\n'
+            exit 0
+        fi
+        ;;
+    boot)
+        : > "$PHANTOM_FAKE_BOOTED"
+        exit 0
+        ;;
+    bootstatus)
+        [[ -f "$PHANTOM_FAKE_BOOTED" ]]
+        exit $?
+        ;;
+    terminate)
+        printf 'No such process\n' >&2
+        exit 149
+        ;;
+    uninstall)
+        printf 'Application is not installed\n' >&2
+        exit 149
+        ;;
+    get_app_container)
+        printf '/tmp/fake-app-container\n'
+        exit 0
+        ;;
+    spawn)
+        printf 'VitruvianPhoenix phantom connected semantic checkpoint\n'
+        exit 0
+        ;;
+    io)
+        output="${@: -1}"
+        python3 - "$output" <<'PY'
+import struct
+import sys
+import zlib
+path = sys.argv[1]
+def chunk(kind, payload):
+    return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
+ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
+with open(path, "wb") as stream:
+    stream.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"") + chunk(b"IEND", b""))
+PY
+        exit 0
+        ;;
+esac
+printf 'unexpected fake xcrun invocation\n' >&2
+exit 2
+SH
+chmod 700 "$FAKE_BIN/xcrun"
+
+cat > "$FAKE_BIN/xcodebuild" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+printf 'xcodebuild %s\n' "$*" >> "${PHANTOM_FAKE_LOG:?}"
+if [[ "${1-}" == "-version" ]]; then
+    printf 'Xcode 26.5\nBuild version 17F42\n'
+    exit 0
+fi
+if [[ "${1-}" == "test" ]]; then
+    result=""
+    previous=""
+    for arg in "$@"; do
+        if [[ "$previous" == "-resultBundlePath" ]]; then result="$arg"; fi
+        previous="$arg"
+    done
+    mkdir -p "$result/Attachments"
+    python3 - "$result/Attachments/test-attachment.png" <<'PY'
+import struct
+import sys
+import zlib
+path = sys.argv[1]
+def chunk(kind, payload):
+    return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
+ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
+with open(path, "wb") as stream:
+    stream.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"") + chunk(b"IEND", b""))
+PY
+    printf 'Test Case -[PhantomJustLiftFlowUITests testHomeToJustLiftToPhantomConnected] passed\n'
+    exit 0
+fi
+if [[ "$*" == *"build"* ]]; then
+    printf 'Build Succeeded\n'
+    exit 0
+fi
+printf 'unexpected fake xcodebuild invocation\n' >&2
+exit 2
+SH
+chmod 700 "$FAKE_BIN/xcodebuild"
+
+run() {
+    env -i \
+        PATH="$FAKE_BIN:/usr/bin:/bin" \
+        HOME="$TMP_DIR" \
+        TMPDIR="$TMP_DIR" \
+        PHANTOM_FAKE_LOG="$LOG" \
+        PHANTOM_FAKE_BOOTED="$TMP_DIR/booted" \
+        "$@"
+}
+
+fail() {
+    printf 'test failure: %s\n' "$1" >&2
+    exit 1
+}
+
+# Strict argument and fixture validation must happen before any simulator call.
+if run "$RUNNER" preflight '' >/dev/null 2>&1; then fail 'missing UDID accepted'; fi
+if run "$RUNNER" preflight not-a-udid >/dev/null 2>&1; then fail 'malformed UDID accepted'; fi
+if run "$RUNNER" case "$TMP_DIR/unsafe" unknown >/dev/null 2>&1; then fail 'unknown fixture accepted'; fi
+if [[ -s "$LOG" ]]; then fail 'validation invoked fake tools'; fi
+
+# A local case must not reset/uninstall anything without the explicit gate.
+GATED_ARTIFACT="$TMP_DIR/gated-artifact"
+if run env PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 "$RUNNER" case "$GATED_ARTIFACT" just-lift-connected >/dev/null 2>&1; then
+    fail 'destructive gate did not refuse local case'
+fi
+if grep -E 'terminate|uninstall|erase' "$LOG" >/dev/null 2>&1; then fail 'destructive command ran without gate'; fi
+
+# Unsafe path and clean refusal checks do not reach fake tools.
+if run "$RUNNER" verify "$TMP_DIR/../artifact" >/dev/null 2>&1; then fail 'path traversal accepted'; fi
+if run env GITHUB_TOKEN=ghp_1234567890123456789012345678901234567890 "$RUNNER" preflight 11111111-2222-3333-4444-555555555555 >/dev/null 2>&1; then fail 'credential-bearing environment accepted'; fi
+UNSAFE="$TMP_DIR/clean-refusal"
+mkdir "$UNSAFE"
+chmod 700 "$UNSAFE"
+if run "$RUNNER" clean "$UNSAFE" >/dev/null 2>&1; then fail 'clean removed unvalidated root'; fi
+[[ -d "$UNSAFE" ]] || fail 'clean refusal changed root'
+
+# Exercise the complete synthetic seam without treating it as real-app evidence.
+# The real case gate remains separate: this only proves secure command wiring and
+# manifest assembly against fake Apple tools.
+ARTIFACT="$TMP_DIR/artifact"
+python3 - "$CONFIG" "$CONFIG_BACKUP" <<'PY'
+import shutil
+import sys
+from pathlib import Path
+config = Path(sys.argv[1])
+backup = Path(sys.argv[2])
+if config.exists():
+    shutil.move(str(config), str(backup))
+PY
+CONFIG_MOVED=1
+if ! run env \
+    PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
+    PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
+    "$RUNNER" case "$ARTIFACT" just-lift-connected >"$TMP_DIR/case.out" 2>&1; then
+    python3 - "$TMP_DIR/case.out" "$LOG" "$ARTIFACT/build.log" <<'PY'
+from pathlib import Path
+import sys
+for path in sys.argv[1:]:
+    print("---", path)
+    try:
+        print(Path(path).read_text(), end="")
+    except OSError as error:
+        print(error)
+PY
+    fail 'synthetic case failed'
+fi
+[[ ! -e "$CONFIG" ]] || fail 'temporary Supabase config was not removed'
+python3 - "$ARTIFACT" <<'PY'
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+assert stat.S_IMODE(os.lstat(root).st_mode) == 0o700
+manifest_path = root / "run.json"
+assert stat.S_IMODE(os.lstat(manifest_path).st_mode) == 0o600
+manifest = json.loads(manifest_path.read_text())
+assert manifest["schemaVersion"] == 1
+assert manifest["provenance"]["fixture"]["id"] == "just-lift-connected"
+assert manifest["commands"] and all(item["exitCode"] == 0 for item in manifest["commands"])
+assert any(item.get("resultBundlePath") == "test.xcresult" for item in manifest["commands"])
+assert manifest["captures"]
+assert "phantom.connected" in manifest["semanticMarkers"]["observed"]
+PY
+run "$RUNNER" verify "$ARTIFACT" >/dev/null
+
+BEFORE="$TMP_DIR/before"
+AFTER="$TMP_DIR/after"
+OUTPUT="$TMP_DIR/compare"
+mkdir "$BEFORE" "$AFTER"
+chmod 700 "$BEFORE" "$AFTER"
+python3 - "$BEFORE/before.png" "$AFTER/after.png" <<'PY'
+import struct
+import sys
+import zlib
+
+def chunk(kind, payload):
+    return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
+for path, color in zip(sys.argv[1:], (bytes((255, 255, 255, 255)), bytes((255, 255, 255, 255)))):
+    width = height = 2
+    rows = b"".join(b"\x00" + color * width for _ in range(height))
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    with open(path, "wb") as stream:
+        stream.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+PY
+chmod 600 "$BEFORE/before.png" "$AFTER/after.png"
+run "$RUNNER" compare "$BEFORE" "$AFTER" "$OUTPUT" >/dev/null
+python3 - "$OUTPUT/diff.json" <<'PY'
+import json
+import os
+import stat
+import sys
+from pathlib import Path
+root = Path(sys.argv[1]).parent
+result = json.loads(Path(sys.argv[1]).read_text())
+assert result["passed"] is True, result
+for name in ("diff.png", "diff.json"):
+    assert stat.S_IMODE(os.lstat(root / name).st_mode) == 0o600
+PY
+
+SYMLINK_OUTPUT="$TMP_DIR/symlink-output"
+mkdir "$SYMLINK_OUTPUT"
+chmod 700 "$SYMLINK_OUTPUT"
+python3 - "$SYMLINK_OUTPUT/diff.png" "$TMP_DIR/outside.png" <<'PY'
+import os
+import sys
+from pathlib import Path
+outside = Path(sys.argv[2])
+outside.write_bytes(b"outside")
+os.chmod(outside, 0o600)
+Path(sys.argv[1]).symlink_to(outside)
+PY
+if run "$RUNNER" compare "$BEFORE" "$AFTER" "$SYMLINK_OUTPUT" >/dev/null 2>&1; then
+    fail 'symlinked compare output accepted'
+fi
+python3 - "$TMP_DIR/outside.png" <<'PY'
+from pathlib import Path
+import sys
+assert Path(sys.argv[1]).read_bytes() == b"outside"
+PY
+
+run "$RUNNER" clean "$ARTIFACT"
+[[ ! -e "$ARTIFACT" ]] || fail 'validated clean did not remove only artifact root'
+
+printf 'phantom harness shell tests passed\n'
