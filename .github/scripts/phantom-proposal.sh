@@ -40,6 +40,20 @@ MAX_PRIVATE_TOTAL_BYTES=$((MAX_GRADLE_CACHE_TOTAL_BYTES + MAX_PRIVATE_NON_CACHE_
 # Artifact/output limits remain independent of the private Gradle allowance.
 MAX_ARTIFACT_TOTAL_BYTES=$((2 * 1024 * 1024 * 1024))
 MAX_PRIVATE_FILES=20000
+# Only post-compile/run ignored build output may use this separate worktree
+# allowance.  The roots are explicit rather than a general ignored-file
+# exemption, and the recursive validator below applies all three bounds.
+MAX_GENERATED_OUTPUT_FILE_BYTES=$((512 * 1024 * 1024))
+MAX_GENERATED_OUTPUT_TOTAL_BYTES=$((2 * 1024 * 1024 * 1024))
+MAX_GENERATED_OUTPUT_FILES=20000
+ALLOWED_GENERATED_ROOTS=(
+    ".gradle"
+    "build"
+    "shared/build"
+    "androidApp/build"
+    "iosApp/VitruvianPhoenix/build"
+    "iosApp/VitruvianPhoenix/DerivedData"
+)
 CHILD_TIMEOUT_SECONDS=1800
 VERIFY_TIMEOUT_SECONDS=300
 
@@ -560,11 +574,18 @@ status_paths_and_validate() {
     local expected_json="$2"
     local status_file="$3"
     local actual_json="$4"
+    local policy="${5-strict}"
+    case "$policy" in
+        strict|post-build) ;;
+        *) return 2 ;;
+    esac
     if ! git -C "$root" status --porcelain=v1 --untracked-files=all --ignored=matching >"$status_file" 2>&1; then
         return 1
     fi
     chmod 600 "$status_file"
-    python3 - "$root" "$expected_json" "$status_file" "$actual_json" <<'PY'
+    local allowed_generated_roots
+    allowed_generated_roots="$(printf '%s\n' "${ALLOWED_GENERATED_ROOTS[@]}")"
+    python3 - "$root" "$expected_json" "$status_file" "$actual_json" "$policy" "$allowed_generated_roots" "$MAX_GENERATED_OUTPUT_FILE_BYTES" "$MAX_GENERATED_OUTPUT_TOTAL_BYTES" "$MAX_GENERATED_OUTPUT_FILES" <<'PY'
 import json
 import os
 import stat
@@ -573,18 +594,113 @@ from pathlib import Path
 root = Path(sys.argv[1])
 expected = set(json.load(open(sys.argv[2], encoding="utf-8"))["paths"])
 lines = Path(sys.argv[3]).read_text(encoding="utf-8").splitlines()
+policy = sys.argv[5]
+allowed_generated_roots = tuple(
+    item for item in sys.argv[6].splitlines() if item
+)
+max_generated_file = int(sys.argv[7])
+max_generated_total = int(sys.argv[8])
+max_generated_files = int(sys.argv[9])
 actual = set()
-for line in lines:
-    if not line.strip() or line.startswith("!!"):
+generated_roots = set()
+
+def safe_status_path(value):
+    value = value.strip()
+    if value.endswith("/"):
+        value = value.rstrip("/")
+    if (
+        not value
+        or value.startswith("/")
+        or "\\" in value
+        or any(part in ("", ".", "..") for part in value.split("/"))
+        or any(character in value for character in ('"', "\t", "\r", "\n"))
+    ):
         raise SystemExit(1)
+    return value
+
+def matching_generated_root(value):
+    for candidate in sorted(allowed_generated_roots, key=len, reverse=True):
+        if value == candidate or value.startswith(candidate + "/"):
+            return candidate
+    return None
+
+def validate_generated_tree(relative_root):
+    current_root = root
+    for component in relative_root.split("/"):
+        current_root = current_root / component
+        try:
+            info = os.lstat(current_root)
+        except OSError:
+            raise SystemExit(1)
+        if (
+            stat.S_ISLNK(info.st_mode)
+            or not stat.S_ISDIR(info.st_mode)
+            or info.st_uid != os.getuid()
+        ):
+            raise SystemExit(1)
+
+    total = 0
+    files = 0
+    def onerror(_error):
+        raise SystemExit(1)
+    for current, dirs, names in os.walk(current_root, topdown=True, followlinks=False, onerror=onerror):
+        current_path = Path(current)
+        safe_dirs = []
+        for name in dirs:
+            if not name or name in (".", "..") or "/" in name or "\\" in name:
+                raise SystemExit(1)
+            path = current_path / name
+            try:
+                info = os.lstat(path)
+            except OSError:
+                raise SystemExit(1)
+            if (
+                stat.S_ISLNK(info.st_mode)
+                or not stat.S_ISDIR(info.st_mode)
+                or info.st_uid != os.getuid()
+            ):
+                raise SystemExit(1)
+            safe_dirs.append(name)
+        dirs[:] = safe_dirs
+        for name in names:
+            if not name or name in (".", "..") or "/" in name or "\\" in name:
+                raise SystemExit(1)
+            path = current_path / name
+            try:
+                info = os.lstat(path)
+            except OSError:
+                raise SystemExit(1)
+            if (
+                stat.S_ISLNK(info.st_mode)
+                or not stat.S_ISREG(info.st_mode)
+                or info.st_uid != os.getuid()
+            ):
+                raise SystemExit(1)
+            files += 1
+            if files > max_generated_files or info.st_size > max_generated_file:
+                raise SystemExit(1)
+            total += info.st_size
+            if total > max_generated_total:
+                raise SystemExit(1)
+
+for line in lines:
+    if not line.strip():
+        raise SystemExit(1)
+    if line.startswith("!!"):
+        if policy != "post-build":
+            raise SystemExit(1)
+        ignored_path = safe_status_path(line[3:])
+        generated_root = matching_generated_root(ignored_path)
+        if generated_root is None:
+            raise SystemExit(1)
+        generated_roots.add(generated_root)
+        continue
     if len(line) < 3:
         raise SystemExit(1)
     code = line[:2]
     values = line[3:].split(" -> ", 1) if " -> " in line[3:] else [line[3:]]
     for path in values:
-        path = path.strip()
-        if not path or path.startswith("/") or "\\" in path or any(part in ("", ".", "..") for part in path.split("/")):
-            raise SystemExit(1)
+        path = safe_status_path(path)
         if path not in expected:
             raise SystemExit(1)
         actual.add(path)
@@ -602,6 +718,8 @@ for path in actual:
             raise SystemExit(1)
         if index == len(parts) - 1 and not (stat.S_ISREG(info.st_mode) or stat.S_ISDIR(info.st_mode)):
             raise SystemExit(1)
+for generated_root in generated_roots:
+    validate_generated_tree(generated_root)
 Path(sys.argv[4]).write_text(json.dumps(sorted(actual), separators=(",", ":")) + "\n", encoding="utf-8")
 os.chmod(sys.argv[4], 0o600)
 PY
@@ -1554,7 +1672,7 @@ path.write_text(json.dumps(items, separators=(",", ":")) + "\n", encoding="utf-8
 os.chmod(path, 0o600)
 PY
     fi
-    status_paths_and_validate "$WORKTREE" "$patch_metadata" "$status_after_patch" "$actual_files" || fail 'candidate compile created an unsafe worktree artifact'
+    status_paths_and_validate "$WORKTREE" "$patch_metadata" "$status_after_patch" "$actual_files" post-build || fail 'candidate compile created an unsafe worktree artifact'
 
     STAGE="capture candidate"
     create_empty_dir "$ARTIFACT_DIR/after" || fail 'candidate artifact destination is unsafe'
@@ -1562,7 +1680,7 @@ PY
     validate_regular_file "$candidate_runner" 0 || fail 'candidate harness runner is unavailable'
     if ! run_harness "$WORKTREE" "$ARTIFACT_DIR/after" candidate; then fail 'candidate harness case failed or exceeded its bounds'; fi
     if ! run_verify "$ARTIFACT_DIR/after" candidate; then fail 'candidate canonical harness verification failed'; fi
-    status_paths_and_validate "$WORKTREE" "$patch_metadata" "$status_after_patch" "$actual_files" || fail 'candidate run created an unsafe or unexpected worktree artifact'
+    status_paths_and_validate "$WORKTREE" "$patch_metadata" "$status_after_patch" "$actual_files" post-build || fail 'candidate run created an unsafe or unexpected worktree artifact'
     assert_original_unchanged "after-candidate"
 
     STAGE="compare screenshots"
@@ -1576,7 +1694,7 @@ PY
 
     STAGE="write proposal evidence"
     local worktree_status="$PRIVATE_DIR/final-worktree-status"
-    status_paths_and_validate "$WORKTREE" "$patch_metadata" "$status_after_patch" "$actual_files" || fail 'final candidate worktree changed unexpectedly'
+    status_paths_and_validate "$WORKTREE" "$patch_metadata" "$status_after_patch" "$actual_files" post-build || fail 'final candidate worktree changed unexpectedly'
     printf '%s\n' "$(git -C "$WORKTREE" status --porcelain=v1 --untracked-files=all)" >"$worktree_status"
     chmod 600 "$worktree_status"
     write_success_outputs "$patch_metadata" "$focused_checks" "$identities" "$actual_files" "$worktree_status" "$worktree_head" "$applied_diff_sha" "$PRIVATE_DIR/comparison-meta.json" || fail 'proposal evidence could not be written'
