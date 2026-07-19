@@ -255,6 +255,74 @@ class PhantomBleRepositoryTest {
     }
 
     @Test
+    fun `timeout cleanup propagates caller cancellation without stale events or producer resurrection`() = runTest {
+        val dispatcher = StandardTestDispatcher(testScheduler)
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo = logRepo, dispatcher = dispatcher)
+        var callerJob: Job? = null
+        var operationResult: Result<Unit>? = null
+        var cancellation: CancellationException? = null
+        var reconnectionObserved = false
+        var reconnectionCount = 0
+        var staleTimeoutLogObserved = false
+        val reconnectionObserver = launch(UnconfinedTestDispatcher(testScheduler)) {
+            repository.reconnectionRequested.collect {
+                reconnectionObserved = true
+                reconnectionCount += 1
+                callerJob?.cancel(CancellationException("timeout cleanup cancelled by caller"))
+            }
+        }
+        val timeoutLogObserver = launch(UnconfinedTestDispatcher(testScheduler)) {
+            logRepo.logs.collect { logs ->
+                if (logs.any { it.eventType == LogEventType.ERROR && it.message.contains("timed out") }) {
+                    staleTimeoutLogObserved = true
+                }
+            }
+        }
+        val operation = async(dispatcher, start = CoroutineStart.LAZY) {
+            callerJob = currentCoroutineContext()[Job]
+            try {
+                operationResult = repository.scanAndConnect(timeoutMs = 100L)
+            } catch (error: CancellationException) {
+                cancellation = error
+                throw error
+            }
+        }
+        operation.start()
+        try {
+            advanceTimeBy(100L)
+            runCurrent()
+            operation.join()
+            advanceUntilIdle()
+
+            assertTrue(reconnectionObserved)
+            assertTrue(cancellation != null)
+            assertEquals("timeout cleanup cancelled by caller", cancellation.message)
+            assertEquals(1, reconnectionCount)
+            assertEquals(null, operationResult)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+            assertFalse(staleTimeoutLogObserved)
+            assertTrue(logRepo.logs.value.none { it.eventType == LogEventType.ERROR })
+            assertTrue(logRepo.logs.value.none { it.eventType == LogEventType.DISCONNECT })
+
+            advanceTimeBy(2_000L)
+            runCurrent()
+            assertTrue(logRepo.logs.value.none { it.eventType == LogEventType.HEARTBEAT })
+            assertTrue(repository.startScanning().isSuccess)
+            advanceTimeBy(150L)
+            runCurrent()
+            assertEquals(ConnectionState.Scanning, repository.connectionState.value)
+            assertEquals(1, repository.scannedDevices.value.size)
+        } finally {
+            operation.cancelAndJoin()
+            timeoutLogObserver.cancelAndJoin()
+            reconnectionObserver.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
     fun `disconnect log reentry is serialized by the cleanup owner`() = runTest {
         val dispatcher = UnconfinedTestDispatcher(testScheduler)
         val logRepo = ConnectionLogRepository()

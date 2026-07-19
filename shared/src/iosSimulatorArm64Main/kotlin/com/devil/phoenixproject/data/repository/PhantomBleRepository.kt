@@ -13,6 +13,7 @@ import kotlinx.atomicfu.locks.reentrantLock
 import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.InternalCoroutinesApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -231,6 +232,7 @@ class PhantomBleRepository(
             if (result != null) return result
 
             lifecycleLock.withLock {
+                ensureCallerActiveLocked(owner, callerJob)
                 if (!ownsOperationLocked(owner)) {
                     lifecycleFailureLocked()
                 } else {
@@ -243,10 +245,12 @@ class PhantomBleRepository(
                             reason = "connection_timeout",
                             reconnectionReason = "connection_timeout",
                             timeoutMs = timeoutMs,
+                            callerJob = callerJob,
                         )
                         if (cleanupResult.isFailure) {
                             cleanupResult
                         } else {
+                            throwIfCallerCancelled(callerJob)
                             Result.failure(IllegalStateException("Phantom scan and connect timed out after ${timeoutMs}ms"))
                         }
                     }
@@ -295,40 +299,40 @@ class PhantomBleRepository(
     override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
         val callerJob = currentCoroutineContext()[Job]
         return lifecycleLock.withLock {
-        val owner = connectedOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-        if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _discoModeActive.value = false }) {
-            return@withLock lifecycleFailureLocked()
-        }
-        workoutParams = params
-        currentProgram = currentProgram ?: PhantomWorkoutProgram(
-            warmupReps = params.warmupReps,
-            workingReps = params.reps.takeUnless { params.isAMRAP },
-            weightPerCableKg = params.weightPerCableKg,
-        )
-        repCount = 0
-        topCounter = 0
-        completeCounter = 0
-        fixedSetCompleted = false
-        if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _handleState.value = HandleState.Grabbed }) {
-            return@withLock lifecycleFailureLocked()
-        }
-        if (!startMetricsLocked(activeWorkout = true, owner)) return@withLock lifecycleFailureLocked()
-        ensureCallerActiveLocked(owner, callerJob)
-        if (!startHeuristicLocked(activeWorkout = true, owner, callerJob)) return@withLock lifecycleFailureLocked()
-        ensureCallerActiveLocked(owner, callerJob)
-        if (!startRepSimulationLocked(owner)) return@withLock lifecycleFailureLocked()
-        ensureCallerActiveLocked(owner, callerJob)
-        if (!logIfOwnedLocked(owner, callerJob = callerJob) {
-                logRepo.info(
-                    LogEventType.COMMAND_SENT,
-                    "Phantom workout started",
-                    PHANTOM_DEVICE_NAME,
-                    PHANTOM_DEVICE_ADDRESS,
-                    "mode=${params.programMode}; reps=${params.reps}; weightPerCableKg=${params.weightPerCableKg}",
-                )
+            val owner = connectedOwnerLocked() ?: return@withLock lifecycleFailureLocked()
+            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _discoModeActive.value = false }) {
+                return@withLock lifecycleFailureLocked()
             }
-        ) return@withLock lifecycleFailureLocked()
-        Result.success(Unit)
+            workoutParams = params
+            currentProgram = currentProgram ?: PhantomWorkoutProgram(
+                warmupReps = params.warmupReps,
+                workingReps = params.reps.takeUnless { params.isAMRAP },
+                weightPerCableKg = params.weightPerCableKg,
+            )
+            repCount = 0
+            topCounter = 0
+            completeCounter = 0
+            fixedSetCompleted = false
+            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _handleState.value = HandleState.Grabbed }) {
+                return@withLock lifecycleFailureLocked()
+            }
+            if (!startMetricsLocked(activeWorkout = true, owner)) return@withLock lifecycleFailureLocked()
+            ensureCallerActiveLocked(owner, callerJob)
+            if (!startHeuristicLocked(activeWorkout = true, owner, callerJob)) return@withLock lifecycleFailureLocked()
+            ensureCallerActiveLocked(owner, callerJob)
+            if (!startRepSimulationLocked(owner)) return@withLock lifecycleFailureLocked()
+            ensureCallerActiveLocked(owner, callerJob)
+            if (!logIfOwnedLocked(owner, callerJob = callerJob) {
+                    logRepo.info(
+                        LogEventType.COMMAND_SENT,
+                        "Phantom workout started",
+                        PHANTOM_DEVICE_NAME,
+                        PHANTOM_DEVICE_ADDRESS,
+                        "mode=${params.programMode}; reps=${params.reps}; weightPerCableKg=${params.weightPerCableKg}",
+                    )
+                }
+            ) return@withLock lifecycleFailureLocked()
+            Result.success(Unit)
         }
     }
 
@@ -606,28 +610,29 @@ class PhantomBleRepository(
         terminal: Boolean = false,
         reconnectionReason: String? = null,
         timeoutMs: Long? = null,
+        callerJob: Job? = null,
     ): Result<Unit> {
         val phase = if (terminal) LifecyclePhase.TERMINAL else LifecyclePhase.CLEANING
         if (!ownsLocked(owner, phase)) return lifecycleFailureLocked()
-        if (!publishIfOwnedLocked(owner, phase) { _handleDetection.value = HandleDetection() }) {
+        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _handleDetection.value = HandleDetection() }) {
             return lifecycleFailureLocked()
         }
-        if (!publishIfOwnedLocked(owner, phase) { _handleState.value = HandleState.WaitingForRest }) {
+        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _handleState.value = HandleState.WaitingForRest }) {
             return lifecycleFailureLocked()
         }
-        if (!publishIfOwnedLocked(owner, phase) { _heuristicData.value = null }) {
+        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _heuristicData.value = null }) {
             return lifecycleFailureLocked()
         }
-        if (!publishIfOwnedLocked(owner, phase) { _diagnostics.value = null }) {
+        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _diagnostics.value = null }) {
             return lifecycleFailureLocked()
         }
-        if (!publishIfOwnedLocked(owner, phase) { _scannedDevices.value = emptyList() }) {
+        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _scannedDevices.value = emptyList() }) {
             return lifecycleFailureLocked()
         }
-        if (!publishIfOwnedLocked(owner, phase) { _discoModeActive.value = false }) {
+        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _discoModeActive.value = false }) {
             return lifecycleFailureLocked()
         }
-        if (!publishIfOwnedLocked(owner, phase) { _connectionState.value = ConnectionState.Disconnected }) {
+        if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _connectionState.value = ConnectionState.Disconnected }) {
             return lifecycleFailureLocked()
         }
         if (reconnectionReason != null) {
@@ -637,10 +642,10 @@ class PhantomBleRepository(
                 reason = reconnectionReason,
                 timestamp = Clock.System.now().toEpochMilliseconds(),
             )
-            if (!publishIfOwnedLocked(owner, phase) { _reconnectionRequested.tryEmit(request) }) {
+            if (!publishIfOwnedLocked(owner, phase, callerJob = callerJob) { _reconnectionRequested.tryEmit(request) }) {
                 return lifecycleFailureLocked()
             }
-            if (!logIfOwnedLocked(owner, phase) {
+            if (!logIfOwnedLocked(owner, phase, callerJob = callerJob) {
                     logRepo.error(
                         LogEventType.ERROR,
                         "Phantom scan and connect timed out",
@@ -651,7 +656,7 @@ class PhantomBleRepository(
                 }
             ) return lifecycleFailureLocked()
         }
-        if (!logIfOwnedLocked(owner, phase) {
+        if (!logIfOwnedLocked(owner, phase, callerJob = callerJob) {
                 logRepo.info(
                     LogEventType.DISCONNECT,
                     if (terminal) "Shutting down phantom Vitruvian" else "Disconnected phantom Vitruvian",
@@ -1010,9 +1015,9 @@ class PhantomBleRepository(
         callback: () -> Unit,
     ): Boolean {
         if (!ownsLocked(owner, phase)) return false
-        if (callerJob?.isActive == false) abortCallerCancellationLocked(owner)
+        if (callerJob?.isActive == false) abortCallerCancellationLocked(owner, callerJob)
         callback()
-        if (callerJob?.isActive == false) abortCallerCancellationLocked(owner)
+        if (callerJob?.isActive == false) abortCallerCancellationLocked(owner, callerJob)
         return ownsLocked(owner, phase)
     }
 
@@ -1024,7 +1029,11 @@ class PhantomBleRepository(
     ): Boolean = publishIfOwnedLocked(owner, phase, callerJob, log)
 
     private fun ensureCallerActiveLocked(owner: LifecycleToken, callerJob: Job?) {
-        if (callerJob?.isActive == false) abortCallerCancellationLocked(owner)
+        if (callerJob?.isActive == false) abortCallerCancellationLocked(owner, callerJob)
+    }
+
+    private fun throwIfCallerCancelled(callerJob: Job?) {
+        if (callerJob?.isActive == false) throw callerCancellationException(callerJob)
     }
 
     /**
@@ -1032,13 +1041,44 @@ class PhantomBleRepository(
      * The callback has already run, so clean up only while this exact active owner still owns the
      * repository, then propagate cancellation instead of returning a successful Result.
      */
-    private fun abortCallerCancellationLocked(owner: LifecycleToken): Nothing {
-        if (ownsOperationLocked(owner)) {
-            val cleanup = claimNormalCleanupLocked()
-            if (cleanup != null) finishCleanupLocked(cleanup, reason = "caller_cancelled")
+    private fun abortCallerCancellationLocked(owner: LifecycleToken, callerJob: Job?): Nothing {
+        when {
+            ownsOperationLocked(owner) -> {
+                val cleanup = claimNormalCleanupLocked()
+                if (cleanup != null) forceCleanupAfterCallerCancellationLocked(cleanup)
+            }
+            ownsCleanupLocked(owner) -> forceCleanupAfterCallerCancellationLocked(owner)
         }
-        throw CancellationException("Phantom caller operation cancelled")
+        throw callerCancellationException(callerJob)
     }
+
+    /** Restore the disconnected invariant without publishing timeout/reconnection events. */
+    private fun forceCleanupAfterCallerCancellationLocked(owner: LifecycleToken) {
+        if (!ownsCleanupLocked(owner)) return
+        cancelPollingLocked()
+        workoutParams = null
+        currentProgram = null
+        repCount = 0
+        topCounter = 0
+        completeCounter = 0
+        fixedSetCompleted = false
+        _handleDetection.value = HandleDetection()
+        _handleState.value = HandleState.WaitingForRest
+        _heuristicData.value = null
+        _diagnostics.value = null
+        _scannedDevices.value = emptyList()
+        _discoModeActive.value = false
+        _connectionState.value = ConnectionState.Disconnected
+        if (ownsCleanupLocked(owner)) {
+            lifecyclePhase = LifecyclePhase.ACTIVE
+            lifecycleOwner = null
+        }
+    }
+
+    @OptIn(InternalCoroutinesApi::class)
+    private fun callerCancellationException(callerJob: Job?): CancellationException =
+        callerJob?.getCancellationException()
+            ?: CancellationException("Phantom caller operation cancelled")
 
     private fun isConnectedLocked(owner: LifecycleToken): Boolean =
         ownsOperationLocked(owner) && _connectionState.value is ConnectionState.Connected
