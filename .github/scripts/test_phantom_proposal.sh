@@ -98,10 +98,16 @@ record_child_environment() {
     python3 - "$PROPOSAL_ENV_LOG" "$action" "$PWD" <<'PY_ENV'
 import json
 import os
+import resource
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
-record = {"action": sys.argv[2], "cwd": sys.argv[3], "env": dict(sorted(os.environ.items()))}
+record = {
+    "action": sys.argv[2],
+    "cwd": sys.argv[3],
+    "env": dict(sorted(os.environ.items())),
+    "rlimitFsize": resource.getrlimit(resource.RLIMIT_FSIZE)[0],
+}
 with path.open("a", encoding="utf-8") as stream:
     stream.write(json.dumps(record, sort_keys=True) + "\n")
 PY_ENV
@@ -157,6 +163,18 @@ import sys
 from pathlib import Path
 path = Path(sys.argv[1])
 path.write_bytes(b"x" * (160 * 1024 * 1024))
+path.chmod(0o600)
+PY2
+    fi
+    if [[ "$PWD" != "$REPO_ROOT" && "$source_text" == *GRADLE_CACHE* ]]; then
+        python3 - "$GRADLE_USER_HOME/legitimate-cache.bin" <<'PY2'
+import os
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+with path.open("wb") as stream:
+    stream.truncate(259 * 1024 * 1024)
 path.chmod(0o600)
 PY2
     fi
@@ -460,6 +478,7 @@ assert env.get("JAVA_HOME") == sys.argv[2], env
 assert env["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin", env
 assert "PARENT_AUTH_HINT" not in env, env
 assert all("credential-value-that-must-not-leak" not in value for value in env.values()), env
+assert case["rlimitFsize"] == 512 * 1024 * 1024, case
 PY
 
 # An explicitly configured usable JAVA_HOME is propagated exactly, while an
@@ -767,9 +786,25 @@ assert list(Path(sys.argv[1]).parent.iterdir()) == [Path(sys.argv[1]).parent / "
 PY
 done
 
-# Exercise the private-tree bounds directly with sparse files so the regression
-# does not consume real disk space. Every large fixture stays below the 128 MiB
-# per-file cap; only the intended total-bound cases fail.
+# A restricted child must be able to create a measured-size legitimate cache
+# file under the named Gradle directory; the post-run private-tree check still
+# rejects the same size outside that directory.
+GRADLE_CACHE_PATCH="$TMP_DIR/gradle-cache.patch"
+make_patch "$GRADLE_CACHE_PATCH" '// baseline' '// GRADLE_CACHE'
+GRADLE_CACHE_ARTIFACT="$TMP_DIR/gradle-cache-artifact"
+run_renderer "$REPO" "$GRADLE_CACHE_ARTIFACT" "$GRADLE_CACHE_PATCH" >"$TMP_DIR/gradle-cache.out"
+python3 - "$GRADLE_CACHE_ARTIFACT/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+manifest = json.loads(Path(sys.argv[1]).read_text())
+assert manifest["status"] == "passed"
+PY
+
+# Exercise the context-aware private-tree bounds directly with sparse files so
+# the regression does not consume real disk space. The named Gradle cache gets
+# its measured 1.4 GiB cold-cache allowance, while candidate-controlled files
+# and artifacts retain the strict 128 MiB individual-file ceiling.
 BOUNDS_RENDERER="$TMP_DIR/check-tree-bounds.sh"
 python3 - "$RENDERER" "$BOUNDS_RENDERER" <<'PY'
 import os
@@ -814,30 +849,46 @@ if sum(path.stat().st_blocks for path in root.iterdir()) * 512 >= sum(sizes):
     raise SystemExit("resource fixture is not sparse")
 PY
 }
+create_private_tree() {
+    local root="$1"
+    shift
+    mkdir -m 700 "$root"
+    create_sparse_tree "$root/gradle-user-home" "$@"
+}
 BOUNDS_ROOT="$TMP_DIR/bounds"
 mkdir -m 700 "$BOUNDS_ROOT"
 MEGABYTE=$((1024 * 1024))
-create_sparse_tree "$BOUNDS_ROOT/within-total" $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((25 * MEGABYTE))
-create_sparse_tree "$BOUNDS_ROOT/over-total" $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) 1
-create_sparse_tree "$BOUNDS_ROOT/over-file" $((129 * MEGABYTE))
+create_private_tree "$BOUNDS_ROOT/within-cache" $((259 * MEGABYTE)) $((190 * MEGABYTE)) $((200 * MEGABYTE)) $((200 * MEGABYTE)) $((200 * MEGABYTE)) $((200 * MEGABYTE)) $((184 * MEGABYTE))
+create_private_tree "$BOUNDS_ROOT/over-cache-file" $((513 * MEGABYTE))
+create_private_tree "$BOUNDS_ROOT/over-cache-total" $((512 * MEGABYTE)) $((512 * MEGABYTE)) $((512 * MEGABYTE)) $((512 * MEGABYTE)) 1
+mkdir -m 700 "$BOUNDS_ROOT/over-candidate-file"
+create_sparse_tree "$BOUNDS_ROOT/over-candidate-file/home" $((129 * MEGABYTE))
 mkdir -m 700 "$BOUNDS_ROOT/symlink"
 printf 'target\n' > "$BOUNDS_ROOT/symlink/target"
 chmod 600 "$BOUNDS_ROOT/symlink/target"
 ln -s target "$BOUNDS_ROOT/symlink/link"
+mkdir -m 700 "$BOUNDS_ROOT/nonregular"
+mkfifo "$BOUNDS_ROOT/nonregular/fifo"
 mkdir -m 700 "$BOUNDS_ROOT/excluded-worktree"
 create_sparse_tree "$BOUNDS_ROOT/excluded-worktree/candidate" $((129 * MEGABYTE))
 printf 'outside\n' > "$BOUNDS_ROOT/excluded-worktree/outside"
 chmod 600 "$BOUNDS_ROOT/excluded-worktree/outside"
 
-run_bounds_check "$BOUNDS_ROOT/within-total" || fail '1.4 GiB sparse private tree was rejected'
-if run_bounds_check "$BOUNDS_ROOT/over-total"; then
-    fail 'private tree above the 2 GiB total ceiling was accepted'
+run_bounds_check "$BOUNDS_ROOT/within-cache" || fail '1.4 GiB sparse Gradle cache was rejected'
+if run_bounds_check "$BOUNDS_ROOT/over-cache-file"; then
+    fail '513 MiB Gradle cache file was accepted'
 fi
-if run_bounds_check "$BOUNDS_ROOT/over-file"; then
-    fail 'private file above the 128 MiB cap was accepted'
+if run_bounds_check "$BOUNDS_ROOT/over-cache-total"; then
+    fail 'Gradle cache above the 2 GiB total ceiling was accepted'
+fi
+if run_bounds_check "$BOUNDS_ROOT/over-candidate-file"; then
+    fail '129 MiB candidate-controlled private file was accepted'
 fi
 if run_bounds_check "$BOUNDS_ROOT/symlink"; then
     fail 'private symlink was accepted'
+fi
+if run_bounds_check "$BOUNDS_ROOT/nonregular"; then
+    fail 'private nonregular file was accepted'
 fi
 run_bounds_check "$BOUNDS_ROOT/excluded-worktree" "$BOUNDS_ROOT/excluded-worktree/candidate" || fail 'excluded candidate worktree was not ignored'
 

@@ -22,10 +22,20 @@ SENTINEL_CONTENT=$'phantom-proposal-artifact-v1\n'
 SYSTEM_PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 MAX_PATCH_BYTES=$((128 * 1024 * 1024))
 MAX_CHILD_OUTPUT_BYTES=$((16 * 1024 * 1024))
+# Candidate-controlled private HOME/TMP/log files and retained artifact files
+# remain capped at 128 MiB each.  Only the named private Gradle cache gets the
+# larger build-tool allowance below.
 MAX_PRIVATE_FILE_BYTES=$((128 * 1024 * 1024))
-# A fresh isolated Gradle/Kotlin Native cache measured about 1.4 GiB; a 2 GiB
-# private ceiling accommodates that cold build while still bounding disk use.
-MAX_PRIVATE_TOTAL_BYTES=$((2 * 1024 * 1024 * 1024))
+# A fresh isolated Gradle/Kotlin Native cache measured about 1.4 GiB total, with
+# approximately 190 MiB and 259 MiB individual artifacts.
+MAX_GRADLE_CACHE_FILE_BYTES=$((512 * 1024 * 1024))
+MAX_GRADLE_CACHE_TOTAL_BYTES=$((2 * 1024 * 1024 * 1024))
+# The global private ceiling includes the named cache plus an explicit bounded
+# allowance for non-cache HOME/TMP/log state; it is not an unbounded exemption.
+MAX_PRIVATE_NON_CACHE_TOTAL_BYTES=$((256 * 1024 * 1024))
+MAX_PRIVATE_TOTAL_BYTES=$((MAX_GRADLE_CACHE_TOTAL_BYTES + MAX_PRIVATE_NON_CACHE_TOTAL_BYTES))
+# Artifact/output limits remain independent of the private Gradle allowance.
+MAX_ARTIFACT_TOTAL_BYTES=$((2 * 1024 * 1024 * 1024))
 MAX_PRIVATE_FILES=20000
 CHILD_TIMEOUT_SECONDS=1800
 VERIFY_TIMEOUT_SECONDS=300
@@ -597,20 +607,57 @@ PY
 check_tree_bounds() {
     local root="$1"
     local excluded="${2-}"
-    python3 - "$root" "$excluded" "$MAX_PRIVATE_FILE_BYTES" "$MAX_PRIVATE_TOTAL_BYTES" "$MAX_PRIVATE_FILES" <<'PY'
+    local context="${3-private}"
+    case "$context" in
+        private|artifact) ;;
+        *) return 2 ;;
+    esac
+    local max_file="$MAX_PRIVATE_FILE_BYTES"
+    local max_total="$MAX_PRIVATE_TOTAL_BYTES"
+    local max_non_cache_total="$MAX_PRIVATE_NON_CACHE_TOTAL_BYTES"
+    local max_cache_file="$MAX_GRADLE_CACHE_FILE_BYTES"
+    local max_cache_total="$MAX_GRADLE_CACHE_TOTAL_BYTES"
+    if [[ "$context" == artifact ]]; then
+        max_total="$MAX_ARTIFACT_TOTAL_BYTES"
+        max_non_cache_total="$MAX_ARTIFACT_TOTAL_BYTES"
+        max_cache_file="$MAX_PRIVATE_FILE_BYTES"
+        max_cache_total=0
+    fi
+    python3 - "$root" "$excluded" "$max_file" "$max_total" "$max_non_cache_total" "$max_cache_file" "$max_cache_total" "$MAX_PRIVATE_FILES" "$context" <<'PY'
 import os
 import stat
 import sys
 from pathlib import Path
-root = Path(sys.argv[1]).resolve()
+root_arg = Path(sys.argv[1])
+try:
+    root_info = os.lstat(root_arg)
+except OSError:
+    raise SystemExit(1)
+if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
+    raise SystemExit(1)
+root = root_arg.resolve()
 excluded = Path(sys.argv[2]).resolve() if sys.argv[2] else None
+if excluded is not None:
+    try:
+        excluded.relative_to(root)
+    except ValueError:
+        raise SystemExit(1)
+    if excluded == root:
+        raise SystemExit(1)
 max_file = int(sys.argv[3])
 max_total = int(sys.argv[4])
-max_files = int(sys.argv[5])
+max_non_cache_total = int(sys.argv[5])
+max_cache_file = int(sys.argv[6])
+max_cache_total = int(sys.argv[7])
+max_files = int(sys.argv[8])
+private = sys.argv[9] == "private"
+gradle_root = root / "gradle-user-home" if private else None
 total = 0
+non_cache_total = 0
+cache_total = 0
 files = 0
 for current, dirs, names in os.walk(root, topdown=True, followlinks=False):
-    current_path = Path(current).resolve()
+    current_path = Path(current)
     if excluded and (current_path == excluded or excluded in current_path.parents):
         dirs[:] = []
         continue
@@ -628,8 +675,21 @@ for current, dirs, names in os.walk(root, topdown=True, followlinks=False):
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
             raise SystemExit(1)
         files += 1
-        if files > max_files or info.st_size > max_file:
+        if files > max_files:
             raise SystemExit(1)
+        in_gradle_cache = bool(gradle_root and (path == gradle_root or gradle_root in path.parents))
+        if in_gradle_cache:
+            if info.st_size > max_cache_file:
+                raise SystemExit(1)
+            cache_total += info.st_size
+            if cache_total > max_cache_total:
+                raise SystemExit(1)
+        else:
+            if info.st_size > max_file:
+                raise SystemExit(1)
+            non_cache_total += info.st_size
+            if non_cache_total > max_non_cache_total:
+                raise SystemExit(1)
         total += info.st_size
         if total > max_total:
             raise SystemExit(1)
@@ -641,7 +701,11 @@ bounded_command() {
     local timeout="$2"
     local cwd="$3"
     shift 3
-    python3 - "$log" "$timeout" "$cwd" "$MAX_CHILD_OUTPUT_BYTES" -- "$@" <<'PY'
+    # Gradle may write a legitimate cache file larger than the strict
+    # candidate/non-cache limit.  Keep RLIMIT_FSIZE bounded at the named cache
+    # ceiling; post-execution validation applies the stricter 128 MiB limit to
+    # every non-cache private/output file.
+    python3 - "$log" "$timeout" "$cwd" "$MAX_CHILD_OUTPUT_BYTES" "$MAX_GRADLE_CACHE_FILE_BYTES" -- "$@" <<'PY'
 import os
 import resource
 import selectors
@@ -654,13 +718,14 @@ log = Path(sys.argv[1])
 timeout = int(sys.argv[2])
 cwd = sys.argv[3]
 max_output = int(sys.argv[4])
+max_fsize = int(sys.argv[5])
 separator = sys.argv.index("--")
 command = sys.argv[separator + 1:]
 if not command:
     raise SystemExit(125)
 
 def limit_resources():
-    for name, value in (("RLIMIT_CORE", 0), ("RLIMIT_FSIZE", max_output * 8), ("RLIMIT_NOFILE", 256)):
+    for name, value in (("RLIMIT_CORE", 0), ("RLIMIT_FSIZE", max_fsize), ("RLIMIT_NOFILE", 256)):
         limit = getattr(resource, name, None)
         if limit is None:
             continue
@@ -842,8 +907,8 @@ run_harness() {
     if ! run_child "$PRIVATE_DIR/$label-run.log" "$CHILD_TIMEOUT_SECONDS" "$root" "${CHILD_ENV[@]}" "$RUNNER" case "$artifact" just-lift-connected; then
         return 1
     fi
-    check_tree_bounds "$PRIVATE_DIR" "$WORKTREE"
-    check_tree_bounds "$ARTIFACT_DIR"
+    check_tree_bounds "$PRIVATE_DIR" "$WORKTREE" private || return 1
+    check_tree_bounds "$ARTIFACT_DIR" "" artifact || return 1
 }
 
 run_verify() {
@@ -886,8 +951,8 @@ PY
 )"
     [[ "$requires" == "1" ]] || return 0
     validate_regular_file "$WORKTREE/gradlew" 0 || return 1
-    run_child "$PRIVATE_DIR/kotlin-compile.log" "$CHILD_TIMEOUT_SECONDS" "$WORKTREE" "${CHILD_ENV[@]}" bash "$WORKTREE/gradlew" :shared:compileKotlinIosSimulatorArm64 --no-daemon --console=plain
-    check_tree_bounds "$PRIVATE_DIR" "$WORKTREE"
+    run_child "$PRIVATE_DIR/kotlin-compile.log" "$CHILD_TIMEOUT_SECONDS" "$WORKTREE" "${CHILD_ENV[@]}" bash "$WORKTREE/gradlew" :shared:compileKotlinIosSimulatorArm64 --no-daemon --console=plain || return 1
+    check_tree_bounds "$PRIVATE_DIR" "$WORKTREE" private || return 1
 }
 
 validate_identity_pair() {
@@ -1441,7 +1506,7 @@ PY
     STAGE="compare screenshots"
     create_empty_dir "$ARTIFACT_DIR/comparison" || fail 'comparison destination is unsafe'
     if ! run_child "$PRIVATE_DIR/compare.log" "$CHILD_TIMEOUT_SECONDS" "$REPO_ROOT" "${CHILD_ENV[@]}" "$RUNNER" compare "$ARTIFACT_DIR/before" "$ARTIFACT_DIR/after" "$ARTIFACT_DIR/comparison"; then fail 'committed screenshot comparison failed or exceeded its bounds'; fi
-    check_tree_bounds "$ARTIFACT_DIR"
+    check_tree_bounds "$ARTIFACT_DIR" "" artifact
     local identities="$PRIVATE_DIR/identities.json"
     validate_identity_pair "$ARTIFACT_DIR/before" "$ARTIFACT_DIR/after" "$identities" || fail 'before and after evidence identities do not match the canonical contract'
     validate_comparison "$ARTIFACT_DIR/before" "$ARTIFACT_DIR/after" "$ARTIFACT_DIR/comparison" "$identities" || fail 'screenshot comparison outputs are invalid or not bound to captures'
