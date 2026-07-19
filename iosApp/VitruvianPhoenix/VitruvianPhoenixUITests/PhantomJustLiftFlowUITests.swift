@@ -36,14 +36,21 @@ final class PhantomJustLiftFlowUITests: XCTestCase {
             return
         }
 
-        let connectionControl = app.buttons["Tap to connect to machine"]
+        let connectionControl = semanticElement(
+            "connection-status-disconnected",
+            in: app,
+        )
         guard waitForSemanticElement(
             connectionControl,
-            description: "connection control for the Phantom fixture",
+            description: "disconnected connection control for the Phantom fixture",
             requireHittable: true,
         ) else {
             return
         }
+        assertMeaningfulAccessibleLabel(
+            connectionControl,
+            description: "disconnected connection control for \(phantomDeviceName)",
+        )
         connectionControl.tap()
 
         let connectedCheckpoint = semanticElement("connection-status-connected", in: app)
@@ -61,7 +68,13 @@ final class PhantomJustLiftFlowUITests: XCTestCase {
         add(attachment)
 
         let connectedControl = app.buttons["Connected to machine. Tap to disconnect"]
-        _ = waitForSemanticElement(
+        guard waitForSemanticElement(
+            connectedControl,
+            description: "connected semantic control for \(phantomDeviceName)",
+        ) else {
+            return
+        }
+        assertMeaningfulAccessibleLabel(
             connectedControl,
             description: "connected semantic control for \(phantomDeviceName)",
         )
@@ -69,6 +82,18 @@ final class PhantomJustLiftFlowUITests: XCTestCase {
 
     private func semanticElement(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
         app.descendants(matching: .any)[identifier]
+    }
+
+    private func assertMeaningfulAccessibleLabel(
+        _ element: XCUIElement,
+        description: String,
+    ) {
+        let label = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertFalse(
+            label.isEmpty,
+            "\(description) must expose meaningful accessible label/content. "
+                + "Identifier=\(element.identifier), Fixture=\(fixtureID), Phantom=\(phantomDeviceName).",
+        )
     }
 
     @discardableResult
