@@ -152,6 +152,67 @@ class PhantomHarnessVerifyTests(unittest.TestCase):
             },
         )
 
+    def test_valid_nested_before_after_packet_passes(self):
+        before_dir = self.root / "before"
+        after_dir = self.root / "after"
+        before_dir.mkdir(mode=0o700)
+        after_dir.mkdir(mode=0o700)
+        os.chmod(before_dir, 0o700)
+        os.chmod(after_dir, 0o700)
+        (self.root / "before.png").rename(before_dir / "capture.png")
+        (self.root / "after.png").rename(after_dir / "capture.png")
+        self.manifest["captures"][0]["path"] = "before/capture.png"
+        self.manifest["captures"][1]["path"] = "after/capture.png"
+        self._write_manifest()
+
+        completed, result = self._run()
+
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertTrue(result["passed"], result)
+
+    def test_nested_symlink_is_rejected(self):
+        nested = self.root / "nested"
+        nested.mkdir(mode=0o700)
+        os.chmod(nested, 0o700)
+        outside = Path(self.temp.name) / "outside.txt"
+        write_bytes(outside, b"not an artifact")
+        (nested / "escaped.txt").symlink_to(outside)
+        self._write_manifest()
+
+        completed, result = self._run()
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertTrue(any("symlink" in failure.lower() for failure in result["failures"]))
+
+    def test_nested_secret_like_text_is_rejected_without_echoing_secret(self):
+        secret = "Bearer abcdefghijklmnopqrstuvwx"
+        nested = self.root / "nested"
+        nested.mkdir(mode=0o700)
+        os.chmod(nested, 0o700)
+        write_bytes(nested / "commands.log", ("Authorization: " + secret).encode("utf-8"))
+        self.manifest["textualArtifacts"].append({"path": "nested/commands.log"})
+        self._write_manifest()
+
+        completed, result = self._run()
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertFalse(result["passed"])
+        self.assertNotIn(secret, completed.stdout)
+        self.assertTrue(any("secret" in failure.lower() for failure in result["failures"]))
+
+    def test_nested_non_regular_file_is_rejected(self):
+        nested = self.root / "nested"
+        nested.mkdir(mode=0o700)
+        os.chmod(nested, 0o700)
+        os.mkfifo(nested / "unexpected.fifo", 0o600)
+        self._write_manifest()
+
+        completed, result = self._run()
+
+        self.assertEqual(completed.returncode, 1)
+        self.assertFalse(result["passed"])
+        self.assertTrue(any("regular" in failure.lower() for failure in result["failures"]))
+
     def test_missing_capture_hash_fails(self):
         del self.manifest["captures"][0]["sha256"]
         self._write_manifest()

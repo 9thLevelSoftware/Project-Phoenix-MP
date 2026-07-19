@@ -27,10 +27,12 @@ for callers that cannot nest them)::
       }]
     }
 
-Capture paths are deliberately direct children of the artifact root.  This
-prevents an otherwise valid hash from turning the manifest into a file-read
-primitive.  All files in the packet are required to be regular 0600 files and
-the root is required to be an exact 0700 directory.
+Capture paths are relative files inside the artifact root.  Their parent tree
+must be made only of caller-owned 0700 directories, and only manifest-parent
+directories or documented generated subtrees may be nested.  This prevents an
+otherwise valid hash from turning the manifest into a file-read primitive.  All
+files in the packet are required to be regular 0600 files and the root is
+required to be an exact 0700 directory.
 """
 
 import hashlib
@@ -172,17 +174,52 @@ def _capture_fixture_fields(capture: Dict[str, Any], fallback_id: Any, fallback_
     )
 
 
+def _relative_path_parts(raw_path: Any) -> Optional[List[str]]:
+    if not _nonempty_string(raw_path):
+        return None
+    value = raw_path.strip()
+    if "\x00" in value or "\\" in value or value.startswith("/"):
+        return None
+    # Reject Windows drive and UNC forms even when the verifier runs on POSIX.
+    if re.match(r"^[A-Za-z]:", value) or value.startswith("//"):
+        return None
+    parts = value.split("/")
+    if not parts or any(not part or part in (".", "..") for part in parts):
+        return None
+    return parts
+
+
 def _safe_child(root: Path, raw_path: Any, label: str, failures: List[Failure]) -> Optional[Path]:
     if not _nonempty_string(raw_path):
         failures.append("%s path is missing" % label)
         return None
-    value = raw_path.strip()
-    # Reject both POSIX and Windows separators.  A capture is intentionally a
-    # direct child, not an arbitrary relative path.
-    if value in (".", "..") or "/" in value or "\\" in value or "\x00" in value:
-        failures.append("%s path must be a direct file inside artifact root" % label)
+    parts = _relative_path_parts(raw_path)
+    if parts is None:
+        failures.append("%s path must be a relative file inside artifact root" % label)
         return None
-    path = root / value
+
+    path = root.joinpath(*parts)
+    current = root
+    for part in parts[:-1]:
+        current = current / part
+        try:
+            info = os.lstat(current)
+        except OSError:
+            failures.append("%s parent directory is missing" % label)
+            return None
+        if stat.S_ISLNK(info.st_mode):
+            failures.append("%s path contains a symlink" % label)
+            return None
+        if not stat.S_ISDIR(info.st_mode):
+            failures.append("%s path parent is not a directory" % label)
+            return None
+        if info.st_uid != os.getuid():
+            failures.append("%s path parent has incorrect owner" % label)
+            return None
+        if stat.S_IMODE(info.st_mode) != ROOT_MODE:
+            failures.append("%s path parent has incorrect permissions" % label)
+            return None
+
     try:
         info = os.lstat(path)
     except OSError:
@@ -193,6 +230,9 @@ def _safe_child(root: Path, raw_path: Any, label: str, failures: List[Failure]) 
         return None
     if not stat.S_ISREG(info.st_mode):
         failures.append("%s file is not a regular file" % label)
+        return None
+    if info.st_uid != os.getuid():
+        failures.append("%s file has incorrect owner" % label)
         return None
     if stat.S_IMODE(info.st_mode) != FILE_MODE:
         failures.append("%s file has incorrect permissions" % label)
@@ -401,20 +441,89 @@ def _textual_path(path: Path) -> bool:
     return path.suffix.lower() in TEXT_SUFFIXES
 
 
+def _manifest_reference_paths(manifest: Dict[str, Any]) -> List[Any]:
+    references: List[Any] = []
+    captures = manifest.get("captures")
+    if isinstance(captures, list):
+        for capture in captures:
+            if isinstance(capture, dict):
+                references.append(_first(capture, "path", "relativePath", "relative_path", "file", "filename"))
+    listed = _first(manifest, "textualArtifacts", "textArtifacts", "textual_artifacts")
+    if isinstance(listed, list):
+        for item in listed:
+            references.append(item.get("path") if isinstance(item, dict) else item)
+    return references
+
+
+def _allowed_directory_paths(root: Path, manifest: Dict[str, Any]) -> Set[Path]:
+    # These are the generated subtrees documented by the harness contract.  A
+    # manifest reference may also intentionally introduce a nested capture or
+    # textual-artifact directory (for example, before/capture.png).
+    generated_subtrees = {root / "derived-data", root / "test.xcresult"}
+    allowed = set(generated_subtrees)
+    for raw_path in _manifest_reference_paths(manifest):
+        parts = _relative_path_parts(raw_path)
+        if not parts:
+            continue
+        current = root
+        for part in parts[:-1]:
+            current = current / part
+            allowed.add(current)
+    return allowed
+
+
+def _walk_artifact_tree(root: Path, failures: List[Failure]):
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        try:
+            children = sorted(directory.iterdir(), key=lambda path: path.name)
+        except OSError:
+            failures.append("artifact directory could not be inspected")
+            continue
+        for path in children:
+            try:
+                info = os.lstat(path)
+            except OSError:
+                failures.append("artifact entry could not be inspected")
+                continue
+            yield path, info
+            if stat.S_ISDIR(info.st_mode):
+                pending.append(path)
+
+
+def _validate_artifact_tree(root: Path, manifest: Dict[str, Any], failures: List[Failure]) -> None:
+    allowed_directories = _allowed_directory_paths(root, manifest)
+    generated_subtrees = (root / "derived-data", root / "test.xcresult")
+    uid = os.getuid()
+    for path, info in _walk_artifact_tree(root, failures):
+        if stat.S_ISLNK(info.st_mode):
+            failures.append("artifact tree contains a symlink")
+            continue
+        if stat.S_ISDIR(info.st_mode):
+            if info.st_uid != uid:
+                failures.append("artifact directory has incorrect owner")
+            if stat.S_IMODE(info.st_mode) != ROOT_MODE:
+                failures.append("artifact directory has incorrect permissions")
+            if path not in allowed_directories and not any(
+                base == path or base in path.parents for base in generated_subtrees
+            ):
+                failures.append("unexpected nested artifact path topology")
+            continue
+        if not stat.S_ISREG(info.st_mode):
+            failures.append("artifact entry is not a regular file or directory")
+            continue
+        if info.st_uid != uid:
+            failures.append("artifact file has incorrect owner")
+        if stat.S_IMODE(info.st_mode) != FILE_MODE:
+            failures.append("artifact file has incorrect permissions")
+
+
 def _scan_secrets(root: Path, failures: List[Failure], manifest: Optional[Dict[str, Any]] = None) -> None:
     candidates: Set[Path] = set()
-    try:
-        children = list(root.iterdir())
-    except OSError:
-        return
-    for path in children:
-        try:
-            info = os.lstat(path)
-        except OSError:
-            continue
-        if not stat.S_ISREG(info.st_mode) or not _textual_path(path):
-            continue
-        candidates.add(path)
+    for path, info in _walk_artifact_tree(root, failures):
+        if stat.S_ISREG(info.st_mode) and _textual_path(path):
+            candidates.add(path)
     if isinstance(manifest, dict):
         listed = _first(manifest, "textualArtifacts", "textArtifacts", "textual_artifacts")
         if isinstance(listed, list):
@@ -448,17 +557,10 @@ def _check_root(root: Path, failures: List[Failure]) -> bool:
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
         failures.append("artifact root is not a directory")
         return False
+    if info.st_uid != os.getuid():
+        failures.append("artifact root has incorrect owner")
     if stat.S_IMODE(info.st_mode) != ROOT_MODE:
         failures.append("artifact root has incorrect permissions")
-    try:
-        for path in root.iterdir():
-            child = os.lstat(path)
-            if stat.S_ISLNK(child.st_mode):
-                failures.append("artifact root contains a symlink")
-            elif stat.S_ISREG(child.st_mode) and stat.S_IMODE(child.st_mode) != FILE_MODE:
-                failures.append("ordinary output file has incorrect permissions")
-    except OSError:
-        failures.append("artifact root could not be inspected")
     return True
 
 
@@ -479,10 +581,12 @@ def verify(artifact_dir: str) -> Dict[str, Any]:
             manifest = json.loads(raw_manifest.decode("utf-8"))
         except (OSError, UnicodeDecodeError, json.JSONDecodeError):
             failures.append("run.json is not valid UTF-8 JSON")
-    _scan_secrets(root, failures, manifest)
     if not isinstance(manifest, dict):
         failures.append("run.json root must be an object")
         manifest = {}
+    if root_ok:
+        _validate_artifact_tree(root, manifest, failures)
+    _scan_secrets(root, failures, manifest)
 
     schema_version = _first(manifest, "schemaVersion", "schema_version")
     if schema_version != SCHEMA_VERSION:
