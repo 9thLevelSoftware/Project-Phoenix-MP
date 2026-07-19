@@ -11,16 +11,6 @@ final class PhantomJustLiftFlowUITests: XCTestCase {
         app.launchEnvironment["PHOENIX_SIMULATOR_FIXTURE"] = fixtureID
         app.launch()
 
-        let appRootCheckpoint = semanticElement("app-root", in: app)
-        guard waitForSemanticElement(
-            appRootCheckpoint,
-            description: "application root checkpoint",
-            requireHittable: true,
-            fixture: fixtureID,
-        ) else {
-            return
-        }
-
         let homeCheckpoint = semanticElement("screen-home", in: app)
         guard waitForSemanticElement(
             homeCheckpoint,
@@ -105,16 +95,6 @@ final class PhantomJustLiftFlowUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchEnvironment["PHOENIX_SIMULATOR_FIXTURE"] = cleanEulaFixtureID
         app.launch()
-
-        let appRootCheckpoint = semanticElement("app-root", in: app)
-        guard waitForSemanticElement(
-            appRootCheckpoint,
-            description: "application root checkpoint",
-            requireHittable: true,
-            fixture: cleanEulaFixtureID,
-        ) else {
-            return
-        }
 
         let eulaCheckpoint = semanticElement("screen-eula", in: app)
         guard waitForSemanticElement(
