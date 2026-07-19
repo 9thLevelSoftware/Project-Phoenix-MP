@@ -3,6 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RUNNER="$SCRIPT_DIR/phantom-harness.sh"
+SOURCE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+REAL_GIT="$(command -v git)"
+OVERRIDE_WORKTREE=""
 TMP_DIR="$(python3 - <<'PY'
 import tempfile
 print(tempfile.mkdtemp(prefix="phantom-harness-test-"))
@@ -27,6 +30,9 @@ PY
 }
 cleanup_all() {
     restore_config
+    if [[ -n "$OVERRIDE_WORKTREE" ]]; then
+        "$REAL_GIT" -C "$SOURCE_ROOT" worktree remove --force "$OVERRIDE_WORKTREE" >/dev/null 2>&1 || true
+    fi
     python3 - "$TMP_DIR" <<'PY'
 import shutil
 import sys
@@ -302,6 +308,55 @@ if run "$RUNNER" preflight '' >/dev/null 2>&1; then fail 'missing UDID accepted'
 if run "$RUNNER" preflight not-a-udid >/dev/null 2>&1; then fail 'malformed UDID accepted'; fi
 if run "$RUNNER" case "$TMP_DIR/unsafe" unknown >/dev/null 2>&1; then fail 'unknown fixture accepted'; fi
 if [[ -s "$LOG" ]]; then fail 'validation invoked fake tools'; fi
+
+# An explicit repository root is accepted only when it is the canonical current
+# git worktree. Every invalid-root case must fail before the fake simulator is
+# reached, while a valid disposable worktree must record the override exactly.
+VALID_UDID=11111111-2222-3333-4444-555555555555
+: > "$LOG"
+MISMATCH_ROOT="$TMP_DIR/mismatched-root"
+mkdir "$MISMATCH_ROOT"
+if (cd "$SOURCE_ROOT" && run env PHOENIX_HARNESS_REPO_ROOT="$MISMATCH_ROOT" "$RUNNER" preflight "$VALID_UDID" >/dev/null 2>&1); then
+    fail 'mismatched CWD/root override was accepted'
+fi
+PARENT_ROOT="$TMP_DIR/parent-root"
+mkdir -p "$PARENT_ROOT/nested"
+if (cd "$PARENT_ROOT/nested" && run env PHOENIX_HARNESS_REPO_ROOT="$PARENT_ROOT" "$RUNNER" preflight "$VALID_UDID" >/dev/null 2>&1); then
+    fail 'parent repository-root override was accepted'
+fi
+NON_GIT_ROOT="$TMP_DIR/non-git-root"
+mkdir "$NON_GIT_ROOT"
+if (cd "$NON_GIT_ROOT" && run env PHOENIX_HARNESS_REPO_ROOT="$NON_GIT_ROOT" "$RUNNER" preflight "$VALID_UDID" >/dev/null 2>&1); then
+    fail 'non-git repository-root override was accepted'
+fi
+SYMLINK_ROOT="$TMP_DIR/symlink-root"
+ln -s "$SOURCE_ROOT" "$SYMLINK_ROOT"
+if (cd "$SOURCE_ROOT" && run env PHOENIX_HARNESS_REPO_ROOT="$SYMLINK_ROOT" "$RUNNER" preflight "$VALID_UDID" >/dev/null 2>&1); then
+    fail 'symlink repository-root override was accepted'
+fi
+FOREIGN_ROOT="$TMP_DIR/foreign-root"
+mkdir "$FOREIGN_ROOT"
+if (cd "$SOURCE_ROOT" && run env PHOENIX_HARNESS_REPO_ROOT="$FOREIGN_ROOT" "$RUNNER" preflight "$VALID_UDID" >/dev/null 2>&1); then
+    fail 'foreign/outside repository-root override was accepted'
+fi
+[[ ! -s "$LOG" ]] || fail 'invalid repository-root override reached fake simulator commands'
+
+OVERRIDE_WORKTREE="$TMP_DIR/override-worktree"
+"$REAL_GIT" -C "$SOURCE_ROOT" worktree add --detach "$OVERRIDE_WORKTREE" HEAD >/dev/null
+OVERRIDE_WORKTREE="$(cd "$OVERRIDE_WORKTREE" && pwd -P)"
+if ! (cd "$OVERRIDE_WORKTREE" && run env PHOENIX_HARNESS_REPO_ROOT="$OVERRIDE_WORKTREE" "$RUNNER" preflight "$VALID_UDID" >/dev/null); then
+    fail 'canonical current git worktree override was rejected'
+fi
+grep -F 'xcrun simctl list devices' "$LOG" >/dev/null || fail 'valid repository-root override did not reach preflight simulator inventory'
+"$REAL_GIT" -C "$SOURCE_ROOT" worktree remove --force "$OVERRIDE_WORKTREE" >/dev/null
+OVERRIDE_WORKTREE=""
+
+# No override preserves script-derived original-root behavior.
+: > "$LOG"
+if ! (cd "$SOURCE_ROOT" && run "$RUNNER" preflight "$VALID_UDID" >/dev/null); then
+    fail 'no-override preflight failed'
+fi
+grep -F 'xcrun simctl list devices' "$LOG" >/dev/null || fail 'no-override behavior did not use the original root'
 
 # A local case must not reset/uninstall anything without the explicit gate.
 GATED_ARTIFACT="$TMP_DIR/gated-artifact"

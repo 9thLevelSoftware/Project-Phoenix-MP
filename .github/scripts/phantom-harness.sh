@@ -10,7 +10,91 @@ SCRIPT_DIR="${BASH_SOURCE[0]%/*}"
 if [[ "$SCRIPT_DIR" == "${BASH_SOURCE[0]}" ]]; then SCRIPT_DIR="."; fi
 if [[ "$SCRIPT_DIR" != /* ]]; then SCRIPT_DIR="$PWD/$SCRIPT_DIR"; fi
 SCRIPT_DIR="$(cd "$SCRIPT_DIR" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SCRIPT_DERIVED_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+fail() {
+    printf '%s\n' "phantom-harness: $1" >&2
+    exit 1
+}
+
+validate_repo_root_override() {
+    local requested_root="$1"
+    python3 - "$requested_root" <<'PY'
+import os
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
+raw = sys.argv[1]
+if not raw or "\x00" in raw or "\n" in raw or "\r" in raw or "\\" in raw:
+    raise SystemExit(1)
+if not os.path.isabs(raw) or os.path.normpath(raw) != raw:
+    raise SystemExit(1)
+try:
+    root_info = os.lstat(raw)
+except OSError:
+    raise SystemExit(1)
+if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode) or root_info.st_uid != os.getuid():
+    raise SystemExit(1)
+try:
+    root = Path(raw)
+    if str(root.resolve(strict=True)) != raw or str(Path.cwd().resolve(strict=True)) != raw:
+        raise SystemExit(1)
+except (OSError, RuntimeError, ValueError):
+    raise SystemExit(1)
+
+safe_env = {
+    "PATH": "/usr/bin:/bin:/usr/sbin:/sbin",
+    "HOME": raw,
+    "LC_ALL": "C",
+    "GIT_CONFIG_NOSYSTEM": "1",
+    "GIT_CONFIG_GLOBAL": "/dev/null",
+}
+try:
+    result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        cwd=raw,
+        env=safe_env,
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+    )
+except (OSError, subprocess.SubprocessError):
+    raise SystemExit(1)
+if result.stdout.strip() != raw:
+    raise SystemExit(1)
+
+expected_regular_files = (
+    root / ".github/scripts/phantom-harness.sh",
+    root / "iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj",
+    root / "shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixproject/fixture/SimulatorLaunchFixture.kt",
+)
+for path in expected_regular_files:
+    try:
+        info = os.lstat(path)
+    except OSError:
+        raise SystemExit(1)
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+        raise SystemExit(1)
+project_dir = root / "iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj"
+try:
+    project_info = os.lstat(project_dir)
+except OSError:
+    raise SystemExit(1)
+if stat.S_ISLNK(project_info.st_mode) or not stat.S_ISDIR(project_info.st_mode) or project_info.st_uid != os.getuid():
+    raise SystemExit(1)
+print(raw)
+PY
+}
+
+REPO_ROOT="$SCRIPT_DERIVED_ROOT"
+if [[ -n "${PHOENIX_HARNESS_REPO_ROOT-}" ]]; then
+    if ! REPO_ROOT="$(validate_repo_root_override "$PHOENIX_HARNESS_REPO_ROOT")"; then
+        fail 'PHOENIX_HARNESS_REPO_ROOT must be the canonical current git worktree with trusted runner, project, and fixture files'
+    fi
+fi
 PROJECT_DIR="$REPO_ROOT/iosApp/VitruvianPhoenix"
 PROJECT="$PROJECT_DIR/VitruvianPhoenix.xcodeproj"
 SCHEME="VitruvianPhoenix"
@@ -20,8 +104,8 @@ TEST_METHOD="testHomeToJustLiftToPhantomConnected"
 UITEST_TARGET="VitruvianPhoenixUITests"
 FIXTURE_SOURCE="$REPO_ROOT/shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixproject/fixture/SimulatorLaunchFixture.kt"
 EXPECTED_FIXTURE_SHA256="e180679548a2d96dbc59c51449edb3b99c19d3e3be82eca98c0707a21a64e78e"
-VERIFY_SCRIPT="$SCRIPT_DIR/phantom-harness-verify.py"
-DIFF_SOURCE="$SCRIPT_DIR/phantom-image-diff.swift"
+VERIFY_SCRIPT="$REPO_ROOT/.github/scripts/phantom-harness-verify.py"
+DIFF_SOURCE="$REPO_ROOT/.github/scripts/phantom-image-diff.swift"
 CONFIG_PATH="$PROJECT_DIR/Config/Supabase.xcconfig"
 SENTINEL_NAME=".phantom-harness"
 COMMANDS_NAME=".commands.jsonl"
@@ -31,11 +115,6 @@ CONFIG_CREATED=0
 LAST_RC=0
 COMMANDS_PATH=""
 PRIVATE_DIR=""
-
-fail() {
-    printf '%s\n' "phantom-harness: $1" >&2
-    exit 1
-}
 
 bootstrap_java_runtime() {
     local configured_home="${JAVA_HOME-}"
@@ -138,6 +217,7 @@ allowed_env = {
     "LOGNAME",
     "PATH",
     "PHOENIX_HARNESS_ALLOW_DESTRUCTIVE",
+    "PHOENIX_HARNESS_REPO_ROOT",
     "PHOENIX_HARNESS_UDID",
     "PWD",
     "SHELL",

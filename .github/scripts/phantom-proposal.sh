@@ -954,12 +954,19 @@ build_tool_command() {
     local command=()
     case "$kind" in
         harness)
-            [[ "$#" -eq 1 ]] || return 125
-            command=("${CHILD_ENV[@]}" "$RUNNER" case "$1" just-lift-connected)
+            [[ "$#" -ge 3 ]] || return 125
+            local harness_root="$1"
+            local artifact="$2"
+            shift 2
+            [[ "$cwd" == "$harness_root" ]] || return 125
+            command=("$@" "$RUNNER" case "$artifact" just-lift-connected)
             ;;
         kotlin-compile)
-            [[ "$#" -eq 0 && "$cwd" == "$WORKTREE" ]] || return 125
-            command=("${CHILD_ENV[@]}" bash "$WORKTREE/gradlew" :shared:compileKotlinIosSimulatorArm64 -Pskip.supabase.check=true --no-daemon --console=plain)
+            [[ "$#" -ge 1 && "$cwd" == "$WORKTREE" ]] || return 125
+            local compile_root="$1"
+            shift
+            [[ "$compile_root" == "$WORKTREE" ]] || return 125
+            command=("$@" bash "$WORKTREE/gradlew" :shared:compileKotlinIosSimulatorArm64 -Pskip.supabase.check=true --no-daemon --console=plain)
             ;;
         *)
             return 125
@@ -1084,7 +1091,11 @@ run_harness() {
     local root="$1"
     local artifact="$2"
     local label="$3"
-    if ! run_build_child harness "$PRIVATE_DIR/$label-run.log" "$CHILD_TIMEOUT_SECONDS" "$root" "$artifact"; then
+    if ! root="$(cd "$root" && pwd -P)"; then
+        return 1
+    fi
+    local -a harness_env=("${CHILD_ENV[@]}" "PHOENIX_HARNESS_REPO_ROOT=$root")
+    if ! run_build_child harness "$PRIVATE_DIR/$label-run.log" "$CHILD_TIMEOUT_SECONDS" "$root" "$root" "$artifact" "${harness_env[@]}"; then
         return 1
     fi
     check_tree_bounds "$PRIVATE_DIR" "$WORKTREE" private || return 1
@@ -1131,7 +1142,8 @@ PY
 )"
     [[ "$requires" == "1" ]] || return 0
     validate_regular_file "$WORKTREE/gradlew" 0 || return 1
-    run_build_child kotlin-compile "$PRIVATE_DIR/kotlin-compile.log" "$CHILD_TIMEOUT_SECONDS" "$WORKTREE" || return 1
+    local -a compile_env=("${CHILD_ENV[@]}" "PHOENIX_HARNESS_REPO_ROOT=$WORKTREE")
+    run_build_child kotlin-compile "$PRIVATE_DIR/kotlin-compile.log" "$CHILD_TIMEOUT_SECONDS" "$WORKTREE" "$WORKTREE" "${compile_env[@]}" || return 1
     check_tree_bounds "$PRIVATE_DIR" "$WORKTREE" private || return 1
 }
 
@@ -1629,6 +1641,7 @@ PY
         fail 'disposable worktree could not be created; partial metadata was cleaned'
     fi
     chmod 600 "$PRIVATE_DIR/worktree-create.log"
+    if ! WORKTREE="$(cd "$WORKTREE" && pwd -P)"; then fail 'disposable worktree path could not be canonicalized'; fi
     local worktree_head
     if ! worktree_head="$(git -C "$WORKTREE" rev-parse --verify HEAD 2>"$PRIVATE_DIR/worktree-head.log")"; then fail 'disposable worktree head could not be verified'; fi
     [[ "$worktree_head" == "$BASE_SHA" ]] || fail 'disposable worktree base does not match verified SHA'
