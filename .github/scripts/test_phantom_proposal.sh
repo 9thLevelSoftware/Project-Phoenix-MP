@@ -2,13 +2,19 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REAL_GIT="$(command -v git)"
+SOURCE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 RENDERER="$SCRIPT_DIR/phantom-proposal.sh"
-VERIFY="$SCRIPT_DIR/phantom-harness-verify.py"
+VERIFY_SOURCE="$SCRIPT_DIR/phantom-harness-verify.py"
+FIXTURE_SOURCE="$SOURCE_ROOT/shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixproject/fixture/SimulatorLaunchFixture.kt"
 TMP_DIR="$(python3 - <<'PY'
 import tempfile
 print(tempfile.mkdtemp(prefix="phantom-proposal-test-"))
 PY
 )"
+FAKE_BIN="$TMP_DIR/bin"
+mkdir -p "$FAKE_BIN" "$TMP_DIR/home" "$TMP_DIR/os-tmp"
+chmod 700 "$TMP_DIR/home" "$TMP_DIR/os-tmp"
 cleanup() {
     python3 - "$TMP_DIR" <<'PY'
 import shutil
@@ -25,38 +31,112 @@ fail() {
 
 [[ -x "$RENDERER" ]] || fail 'proposal renderer is missing or not executable'
 
-REAL_GIT="$(command -v git)"
-FAKE_REPO="$TMP_DIR/fake-repo"
-FAKE_BIN="$TMP_DIR/bin"
-LOG="$TMP_DIR/fake-git.log"
-mkdir -p "$FAKE_REPO/.github/scripts" "$FAKE_REPO/iosApp/Sources" "$FAKE_BIN"
-: > "$LOG"
-chmod 600 "$LOG"
-
-python3 - "$FAKE_REPO/.github/scripts/phantom-harness.sh" "$VERIFY" <<'PY'
-import json
+make_fake_repo() {
+    local repo="$1"
+    local baseline="${2-// baseline}"
+    mkdir -p "$repo/.github/scripts" "$repo/shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixproject/fixture" "$repo/iosApp/VitruvianPhoenix/VitruvianPhoenix"
+    cp "$VERIFY_SOURCE" "$repo/.github/scripts/phantom-harness-verify.py"
+    cp "$FIXTURE_SOURCE" "$repo/shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixproject/fixture/SimulatorLaunchFixture.kt"
+    cp "$RENDERER" "$repo/.github/scripts/phantom-proposal.sh"
+    chmod 600 "$repo/.github/scripts/phantom-harness-verify.py"
+    chmod 700 "$repo/.github/scripts/phantom-proposal.sh"
+    python3 - "$repo/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift" "$baseline" <<'PY'
 import os
-import stat
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+path.write_text(sys.argv[2] + "\n", encoding="utf-8")
+os.chmod(path, 0o600)
+PY
+    python3 - "$repo/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Proposal.kt" <<'PY'
+import os
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+path.write_text('// baseline kotlin\n', encoding='utf-8')
+os.chmod(path, 0o600)
+PY
+    python3 - "$repo/.github/scripts/phantom-harness.sh" <<'PY'
+import os
+import sys
+from pathlib import Path
+runner = Path(sys.argv[1])
+runner.write_text(r'''#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_ROOT/../.." && pwd)"
+FIXTURE="$REPO_ROOT/shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixproject/fixture/SimulatorLaunchFixture.kt"
+VERIFY="$SCRIPT_ROOT/phantom-harness-verify.py"
+
+write_png() {
+    python3 - "$1" <<'PY2'
 import struct
 import sys
 import zlib
 from pathlib import Path
+path = Path(sys.argv[1])
+def chunk(kind, payload):
+    return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
+ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
+path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"") + chunk(b"IEND", b""))
+path.chmod(0o600)
+PY2
+}
 
-runner = Path(sys.argv[1])
-verifier = Path(sys.argv[2])
-runner.write_text(r'''#!/usr/bin/env bash
-set -euo pipefail
-
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 case "${1-}" in
-    case)
-        artifact="$2"
-        fixture="$3"
-        [[ "$fixture" == "just-lift-connected" ]] || exit 1
-        [[ "${FAKE_HARNESS_FAIL_BASELINE-0}" != 1 || "$PWD" != "${FAKE_ORIGINAL_ROOT:?}" ]] || exit 1
-        mkdir -p "$artifact"
-        chmod 700 "$artifact"
-        python3 - "$artifact" <<'PY2'
+case)
+    artifact="$2"
+    fixture="$3"
+    [[ "$fixture" == just-lift-connected ]] || exit 1
+    source_text="$(cat "$PWD/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift")"
+    if [[ "$(pwd -P)" == "$(cd "$REPO_ROOT" && pwd -P)" && "$source_text" == *FORGE_BEFORE* ]]; then
+        source_text="$source_text FORGE_BASE"
+    fi
+    if [[ "$(pwd -P)" == "$(cd "$REPO_ROOT" && pwd -P)" && "$source_text" == *MUTATE_BASELINE* ]]; then
+        printf 'mutated by baseline\n' > "$REPO_ROOT/iosApp/VitruvianPhoenix/VitruvianPhoenix/Original.swift"
+        chmod 600 "$REPO_ROOT/iosApp/VitruvianPhoenix/VitruvianPhoenix/Original.swift"
+    fi
+    mkdir -p "$artifact"
+    chmod 700 "$artifact"
+    if [[ "$PWD" != "$REPO_ROOT" && "$source_text" == *SIGNAL* ]]; then
+        : > "$artifact/.signal-ready"
+        chmod 600 "$artifact/.signal-ready"
+        while :; do sleep 1; done
+    fi
+    if [[ "$PWD" != "$REPO_ROOT" && "$source_text" == *TIMEOUT* ]]; then
+        while :; do sleep 1; done
+    fi
+    if [[ "$PWD" != "$REPO_ROOT" && "$source_text" == *BLOAT* ]]; then
+        python3 - "$TMPDIR/proposal-bloat" <<'PY2'
+import os
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+path.write_bytes(b"x" * (160 * 1024 * 1024))
+path.chmod(0o600)
+PY2
+    fi
+    if [[ "$PWD" != "$REPO_ROOT" && "$source_text" == *MUTATE_FINAL* ]]; then
+        original=""
+        while IFS= read -r line; do
+            case "$line" in
+                worktree\ * ) candidate="${line#worktree }"; [[ "$candidate" != "$PWD" ]] && original="$candidate"; ;;
+            esac
+        done < <(git -C "$REPO_ROOT" worktree list --porcelain)
+        [[ -n "$original" ]] && printf 'mutated after baseline\n' > "$original/iosApp/VitruvianPhoenix/VitruvianPhoenix/Original.swift"
+    fi
+    base="$(git -C "$PWD" rev-parse HEAD)"
+    fixture_sha="$(python3 - "$FIXTURE" <<'PY2'
+import hashlib
+import sys
+from pathlib import Path
+print(hashlib.sha256(Path(sys.argv[1]).read_bytes()).hexdigest())
+PY2
+)"
+    udid="${PHOENIX_HARNESS_UDID:?}"
+    python3 - "$artifact" "$base" "$fixture_sha" "$udid" "$source_text" <<'PY2'
 import hashlib
 import json
 import os
@@ -65,249 +145,446 @@ import sys
 import zlib
 from pathlib import Path
 root = Path(sys.argv[1])
-source = (Path.cwd() / "iosApp/Sources/Proposal.swift").read_text(encoding="utf-8")
-color = bytes((255, 255, 255, 255)) if "candidate" not in source else bytes((255, 0, 0, 255))
+base = sys.argv[2]
+fixture_sha = sys.argv[3]
+udid = sys.argv[4]
+source = sys.argv[5]
+simulator = {"udid": udid, "name": "Fake iPhone", "runtime": "iOS-26-5", "state": "Booted"}
+commands = [
+    ("xcodebuild.version", "toolchain.log"),
+    ("simulator.boot", "boot.log"),
+    ("simulator.bootstatus", "bootstatus.log"),
+    ("simulator.terminate", "terminate.log"),
+    ("simulator.uninstall", "uninstall.log"),
+    ("build", "build.log"),
+    ("run-tests", "test.log"),
+    ("simulator.app-state", "app-state.log"),
+    ("simulator.logs", "simulator.log"),
+    ("simulator.screenshot", "screenshot.log"),
+]
+for name, output in commands:
+    text = "ok\n"
+    if output == "build.log": text = "Build Succeeded\n"
+    if output == "test.log": text = "Test Case -[PhantomJustLiftFlowUITests testHomeToJustLiftToPhantomConnected] passed\n"
+    if output == "simulator.log": text = "phantom connected semantic checkpoint\n"
+    (root / output).write_text(text, encoding="utf-8")
+    (root / output).chmod(0o600)
+records = []
+for name, output in commands:
+    record = {"name": name, "exitCode": 0, "output": output}
+    if name == "run-tests": record["resultBundle"] = {"basename": "test.xcresult", "status": "private-not-retained"}
+    records.append(record)
+(root / ".commands.jsonl").write_text("".join(json.dumps(record, separators=(",", ":")) + "\n" for record in records), encoding="utf-8")
+(root / ".commands.jsonl").chmod(0o600)
+(root / ".phantom-harness").write_text("phantom-harness-artifact-v1\n", encoding="utf-8")
+(root / ".phantom-harness").chmod(0o600)
 def chunk(kind, payload):
     return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
-rows = b"".join(b"\x00" + color for _ in range(2))
-png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 2, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b"")
-(root / "after.png").write_bytes(png)
-os.chmod(root / "after.png", 0o600)
-fixture_sha = "0" * 64
-simulator = {"udid": "11111111-2222-3333-4444-555555555555", "name": "Fake iPhone", "runtime": "iOS-26-5", "state": "Booted"}
+ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
+png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"") + chunk(b"IEND", b"")
+for name in ("after.png", "xctest-attachment.png"):
+    (root / name).write_bytes(png)
+    (root / name).chmod(0o600)
 manifest = {
     "schemaVersion": 1,
     "runId": "fake-run",
-    "provenance": {"baseSha": "0" * 40, "fixture": {"id": "just-lift-connected", "sha256": fixture_sha}, "xcode": "Fake Xcode", "sdk": "Fake SDK", "simulator": simulator, "bundleId": "com.devil.phoenixproject.projectphoenix"},
-    "commands": [{"name": "fake-case", "exitCode": 0}],
+    "provenance": {
+        "baseSha": base,
+        "fixture": {"id": "just-lift-connected", "sha256": fixture_sha},
+        "xcode": "Fake Xcode",
+        "sdk": "Fake SDK",
+        "simulator": simulator,
+        "bundleId": "com.devil.phoenixproject.projectphoenix",
+    },
+    "commands": records,
     "semanticMarkers": {"required": ["xctest.passed", "phantom.connected", "simulator.screenshot"], "observed": ["xctest.passed", "phantom.connected", "simulator.screenshot"]},
-    "captures": [{"slug": "simulator-after", "path": "after.png", "sha256": hashlib.sha256(png).hexdigest(), "phase": "after", "pair": "simulator", "checkpoint": "phantom-connected", "fixtureId": "just-lift-connected", "fixtureSha256": fixture_sha, "simulator": simulator}],
+    "captures": [
+        {"slug": "simulator-after", "path": "after.png", "sha256": hashlib.sha256(png).hexdigest(), "phase": "after", "pair": "simulator", "checkpoint": "phantom-connected", "fixtureId": "just-lift-connected", "fixtureSha256": fixture_sha, "simulator": simulator},
+        {"slug": "xctest-after", "path": "xctest-attachment.png", "sha256": hashlib.sha256(png).hexdigest(), "phase": "after", "pair": "xctest", "checkpoint": "phantom-connected", "fixtureId": "just-lift-connected", "fixtureSha256": fixture_sha, "simulator": simulator},
+    ],
 }
+if "FORGE_BASE" in source: manifest["provenance"]["baseSha"] = "f" * 40
+if "FORGE_FIXTURE" in source: manifest["provenance"]["fixture"] = {"id": "forged-fixture", "sha256": "0" * 64}
+if "FORGE_BUNDLE" in source: manifest["provenance"]["bundleId"] = "com.example.forged"
+if "FORGE_COMMANDS" in source: manifest["commands"] = [{"name": "fake-success", "exitCode": 0, "output": "fake.log"}]
+if "FORGE_MARKERS" in source: manifest["semanticMarkers"] = {"required": ["fake.marker"], "observed": ["fake.marker"]}
 (root / "run.json").write_text(json.dumps(manifest, sort_keys=True) + "\n", encoding="utf-8")
-os.chmod(root / "run.json", 0o600)
-(root / ".phantom-harness").write_text("phantom-harness-artifact-v1\n", encoding="utf-8")
-os.chmod(root / ".phantom-harness", 0o600)
+(root / "run.json").chmod(0o600)
 PY2
-        ;;
-    verify)
-        exec python3 "$ROOT/phantom-harness-verify.py" "$2"
-        ;;
-    compare)
-        output="$4"
-        mkdir -p "$output"
-        chmod 700 "$output"
-        python3 - "$output" <<'PY2'
+    ;;
+verify)
+    exec python3 "$VERIFY" "$2"
+    ;;
+compare)
+    output="$4"
+    mkdir -p "$output"
+    chmod 700 "$output"
+    write_png "$output/diff.png"
+    python3 - "$output/diff.json" <<'PY2'
 import json
-import os
-import struct
 import sys
-import zlib
 from pathlib import Path
-root = Path(sys.argv[1])
-def chunk(kind, payload):
-    return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
-png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 1, 1, 8, 6, 0, 0, 0)) + chunk(b"IDAT", zlib.compress(b"\x00\xff\x00\x00\xff")) + chunk(b"IEND", b"")
-(root / "diff.png").write_bytes(png)
-os.chmod(root / "diff.png", 0o600)
-(root / "diff.json").write_text(json.dumps({"passed": True, "thresholdPassed": True, "changedPixels": 1, "changedPixelRatio": 0.5, "dimensions": {"width": 1, "height": 1}}) + "\n", encoding="utf-8")
-os.chmod(root / "diff.json", 0o600)
+path = Path(sys.argv[1])
+path.write_text(json.dumps({"passed": True, "thresholdPassed": True, "dimensions": {"width": 2, "height": 2}, "changedPixels": 0, "changedPixelRatio": 0.0, "meanChannelDelta": 0.0, "maxChannelDelta": 0, "threshold": 0.0}) + "\n", encoding="utf-8")
+path.chmod(0o600)
 PY2
-        ;;
-    *) exit 2 ;;
+    ;;
+*) exit 2 ;;
 esac
-''')
+''', encoding='utf-8')
 os.chmod(runner, 0o700)
-# The candidate worktree needs the committed verifier beside the fake runner.
-destination = runner.parent / verifier.name
-destination.write_bytes(verifier.read_bytes())
-os.chmod(destination, 0o600)
 PY
-python3 - "$FAKE_REPO/iosApp/Sources/Proposal.swift" <<'PY'
-from pathlib import Path
-import sys
-path = Path(sys.argv[1])
-path.write_text("// baseline\n", encoding="utf-8")
-PY
-
-FAKE_RENDERER="$FAKE_REPO/.github/scripts/phantom-proposal.sh"
-cp "$RENDERER" "$FAKE_RENDERER"
-chmod 700 "$FAKE_RENDERER"
-
-# A wrapper counts every git invocation while delegating to the real git binary.
-python3 - "$FAKE_BIN/git" "$REAL_GIT" "$LOG" <<'PY'
+    python3 - "$repo/gradlew" <<'PY'
 import os
-import stat
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
-real_git = sys.argv[2]
-log = sys.argv[3]
-path.write_text(f'''#!/usr/bin/env bash
-set -euo pipefail
-printf '%s\\n' "$PWD|$*" >> {log!r}
-exec {real_git!r} "$@"
-''', encoding="utf-8")
+path.write_text('#!/usr/bin/env bash\nset -euo pipefail\ncase " $* " in *" :shared:compileKotlinIosSimulatorArm64 "*) : > "$TMPDIR/compile-ran" ;; *) exit 2 ;; esac\n', encoding='utf-8')
 os.chmod(path, 0o700)
 PY
-
-PATH="$FAKE_BIN:/usr/bin:/bin" "$REAL_GIT" -C "$FAKE_REPO" init -q
-PATH="$FAKE_BIN:/usr/bin:/bin" "$REAL_GIT" -C "$FAKE_REPO" config user.email test@example.invalid
-PATH="$FAKE_BIN:/usr/bin:/bin" "$REAL_GIT" -C "$FAKE_REPO" config user.name "Phantom Test"
-PATH="$FAKE_BIN:/usr/bin:/bin" "$REAL_GIT" -C "$FAKE_REPO" add .
-PATH="$FAKE_BIN:/usr/bin:/bin" "$REAL_GIT" -C "$FAKE_REPO" commit -q -m base
-BASE_STATUS="$TMP_DIR/base-status"
-PATH="$FAKE_BIN:/usr/bin:/bin" "$REAL_GIT" -C "$FAKE_REPO" status --porcelain > "$BASE_STATUS"
-
-PATCH="$TMP_DIR/candidate.patch"
-python3 - "$PATCH" <<'PY'
-import os
-import sys
-from pathlib import Path
-patch = Path(sys.argv[1])
-patch.write_bytes(b'''diff --git a/iosApp/Sources/Proposal.swift b/iosApp/Sources/Proposal.swift
-index 66b7c5a..d6fb2ab 100644
---- a/iosApp/Sources/Proposal.swift
-+++ b/iosApp/Sources/Proposal.swift
-@@ -1 +1 @@
--// baseline
-+// candidate
-''')
-os.chmod(patch, 0o600)
-PY
-
-run_renderer() {
-    env -i PATH="$FAKE_BIN:/usr/bin:/bin" HOME="$TMP_DIR" TMPDIR="$TMP_DIR" FAKE_ORIGINAL_ROOT="$FAKE_REPO" "$@"
+    "$REAL_GIT" -C "$repo" init -q
+    "$REAL_GIT" -C "$repo" config user.email test@example.invalid
+    "$REAL_GIT" -C "$repo" config user.name "Phantom Test"
+    "$REAL_GIT" -C "$repo" add .
+    "$REAL_GIT" -C "$repo" commit -q -m base
 }
 
-# Invalid paths are refused before the baseline runner or worktree creation.
-INVALID_PATCH="$TMP_DIR/invalid.patch"
-python3 - "$INVALID_PATCH" <<'PY'
+make_patch() {
+    local destination="$1"
+    local old="$2"
+    local new="$3"
+    python3 - "$destination" "$old" "$new" <<'PY'
 import os
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
-path.write_bytes(b'''diff --git a/iosApp/Config/Supabase.xcconfig b/iosApp/Config/Supabase.xcconfig
---- a/iosApp/Config/Supabase.xcconfig
-+++ b/iosApp/Config/Supabase.xcconfig
-@@ -1 +1 @@
--a
-+b
-''')
+old = sys.argv[2]
+new = sys.argv[3]
+path.write_text(f"diff --git a/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift b/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift\n--- a/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift\n+++ b/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift\n@@ -1 +1 @@\n-{old}\n+{new}\n", encoding="utf-8")
 os.chmod(path, 0o600)
 PY
-INVALID_ARTIFACT="$TMP_DIR/invalid-artifact"
-if run_renderer "$FAKE_RENDERER" render "$INVALID_ARTIFACT" just-lift-connected "$INVALID_PATCH" >"$TMP_DIR/invalid.out" 2>"$TMP_DIR/invalid.err"; then
-    fail 'protected config patch was accepted'
+}
+
+make_kotlin_patch() {
+    local destination="$1"
+    local old="$2"
+    local new="$3"
+    python3 - "$destination" "$old" "$new" <<'PY'
+import os
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+old = sys.argv[2]
+new = sys.argv[3]
+name = 'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Proposal.kt'
+path.write_text(f"diff --git a/{name} b/{name}\n--- a/{name}\n+++ b/{name}\n@@ -1 +1 @@\n-{old}\n+{new}\n", encoding='utf-8')
+os.chmod(path, 0o600)
+PY
+}
+
+make_path_patch() {
+    local destination="$1"
+    local path="$2"
+    python3 - "$destination" "$path" <<'PY'
+import os
+import sys
+from pathlib import Path
+out = Path(sys.argv[1])
+path = sys.argv[2]
+out.write_text(f"diff --git a/{path} b/{path}\n--- a/{path}\n+++ b/{path}\n@@ -0,0 +1 @@\n+candidate\n", encoding="utf-8")
+os.chmod(out, 0o600)
+PY
+}
+
+run_renderer() {
+    local repo="$1"
+    local artifact="$2"
+    local patch="$3"
+    local timeout="${4-}"
+    env -i \
+        PATH="$FAKE_BIN:/usr/bin:/bin" \
+        HOME="$TMP_DIR/home" \
+        TMPDIR="$TMP_DIR/os-tmp" \
+        PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
+        PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
+        PHOENIX_PROPOSAL_TRUSTED_INPUT=1 \
+        ${timeout:+PHOENIX_PROPOSAL_TIMEOUT_SECONDS="$timeout"} \
+        "$repo/.github/scripts/phantom-proposal.sh" render "$artifact" just-lift-connected "$patch"
+}
+
+REPO="$TMP_DIR/repo"
+make_fake_repo "$REPO"
+PATCH="$TMP_DIR/candidate.patch"
+make_patch "$PATCH" '// baseline' '// candidate'
+
+# The renderer is trusted-input only and must fail before touching the artifact
+# root when the explicit operator gate is absent.
+NO_TRUST="$TMP_DIR/no-trust"
+if env -i PATH="$FAKE_BIN:/usr/bin:/bin" HOME="$TMP_DIR/home" TMPDIR="$TMP_DIR/os-tmp" PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 "$REPO/.github/scripts/phantom-proposal.sh" render "$NO_TRUST" just-lift-connected "$PATCH" >"$TMP_DIR/no-trust.out" 2>&1; then
+    fail 'missing trusted-input gate was accepted'
 fi
-python3 - "$INVALID_ARTIFACT" <<'PY'
+grep -F 'PHOENIX_PROPOSAL_TRUSTED_INPUT=1' "$TMP_DIR/no-trust.out" >/dev/null || fail 'trusted-input error was not actionable'
+[[ ! -e "$NO_TRUST" ]] || fail 'missing trusted-input gate touched artifact root'
+
+# Artifact roots below the repository are never valid evidence destinations.
+NESTED="$REPO/nested-artifact"
+if run_renderer "$REPO" "$NESTED" "$PATCH" >"$TMP_DIR/nested.out" 2>&1; then
+    fail 'artifact root nested under repository was accepted'
+fi
+[[ ! -e "$NESTED" ]] || fail 'nested artifact root was created'
+
+# Only the three render-relevant source/resource prefixes are accepted.
+for forbidden in \
+    '.github/scripts/other.sh' \
+    'docs/testing/notes.md' \
+    'androidApp/src/main/kotlin/Unsafe.kt' \
+    'shared/build.gradle.kts' \
+    'shared/src/commonMain/kotlin/com/devil/phoenixproject/Config.kt' \
+    'iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj' \
+    'iosApp/VitruvianPhoenix/Config/Supabase.xcconfig' \
+    'iosApp/VitruvianPhoenix/VitruvianPhoenix/Generated.html'; do
+    candidate="$TMP_DIR/forbidden-${forbidden//\//_}.patch"
+    make_path_patch "$candidate" "$forbidden"
+    artifact="$TMP_DIR/artifact-${forbidden//\//_}"
+    if run_renderer "$REPO" "$artifact" "$candidate" >"$TMP_DIR/forbidden.out" 2>&1; then
+        fail "forbidden path accepted: $forbidden"
+    fi
+done
+
+UNSUPPORTED="$TMP_DIR/unsupported.patch"
+make_path_patch "$UNSUPPORTED" 'iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.exe'
+if run_renderer "$REPO" "$TMP_DIR/unsupported" "$UNSUPPORTED" >"$TMP_DIR/unsupported.out" 2>&1; then
+    fail 'unsupported candidate extension was accepted'
+fi
+
+# Secret assignments are rejected without placing their values in diagnostics.
+SECRET_PATCH="$TMP_DIR/secret.patch"
+python3 - "$SECRET_PATCH" <<'PY'
+import os
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+path.write_text('diff --git a/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift b/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift\n--- a/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift\n+++ b/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift\n@@ -1 +1 @@\n-// baseline\n+SUPABASE_ANON_KEY=super-secret-anon-value API_TOKEN=super-secret-api-value\n', encoding='utf-8')
+os.chmod(path, 0o600)
+PY
+if run_renderer "$REPO" "$TMP_DIR/secret" "$SECRET_PATCH" >"$TMP_DIR/secret.out" 2>&1; then
+    fail 'credential assignment patch was accepted'
+fi
+if grep -E 'super-secret-anon-value|super-secret-api-value' "$TMP_DIR/secret.out" >/dev/null 2>&1; then
+    fail 'credential assignment value leaked in diagnostics'
+fi
+
+# A changed original HEAD/status is rejected before rendering.
+DIRTY_REPO="$TMP_DIR/dirty-repo"
+make_fake_repo "$DIRTY_REPO"
+printf '// dirty\n' > "$DIRTY_REPO/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift"
+if run_renderer "$DIRTY_REPO" "$TMP_DIR/dirty" "$PATCH" >"$TMP_DIR/dirty.out" 2>&1; then
+    fail 'dirty original worktree was accepted'
+fi
+grep -F 'original harness worktree' "$TMP_DIR/dirty.out" >/dev/null || fail 'dirty worktree failure was not reported safely'
+
+# Baseline/finalization worktree mutations must be detected and leave a failure manifest.
+MUTATE_BASE="$TMP_DIR/mutate-base-repo"
+make_fake_repo "$MUTATE_BASE" '// MUTATE_BASELINE'
+MUTATE_PATCH="$TMP_DIR/mutate.patch"
+make_patch "$MUTATE_PATCH" '// MUTATE_BASELINE' '// candidate'
+if run_renderer "$MUTATE_BASE" "$TMP_DIR/mutate-base" "$MUTATE_PATCH" >"$TMP_DIR/mutate-base.out" 2>&1; then
+    fail 'original mutation after baseline was accepted'
+fi
+python3 - "$TMP_DIR/mutate-base/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+manifest = json.loads(Path(sys.argv[1]).read_text())
+assert manifest["status"] == "failed"
+PY
+
+MUTATE_FINAL="$TMP_DIR/mutate-final-repo"
+make_fake_repo "$MUTATE_FINAL"
+FINAL_PATCH="$TMP_DIR/final.patch"
+make_patch "$FINAL_PATCH" '// baseline' '// MUTATE_FINAL'
+if run_renderer "$MUTATE_FINAL" "$TMP_DIR/mutate-final" "$FINAL_PATCH" >"$TMP_DIR/mutate-final.out" 2>&1; then
+    fail 'original mutation before finalization was accepted'
+fi
+python3 - "$TMP_DIR/mutate-final/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+manifest = json.loads(Path(sys.argv[1]).read_text())
+assert manifest["status"] == "failed"
+PY
+
+# Forged provenance, bundle, fixture, canonical command, and marker contracts
+# are rejected for the candidate after the real verifier is invoked.
+for token in FORGE_BASE FORGE_FIXTURE FORGE_BUNDLE FORGE_COMMANDS FORGE_MARKERS; do
+    forged="$TMP_DIR/forged-${token}.patch"
+    make_patch "$forged" '// baseline' "// $token"
+    artifact="$TMP_DIR/forged-${token}"
+    if run_renderer "$REPO" "$artifact" "$forged" >"$TMP_DIR/forged-${token}.out" 2>&1; then
+        fail "forged candidate contract accepted: $token"
+    fi
+    python3 - "$artifact/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+manifest = json.loads(Path(sys.argv[1]).read_text())
+assert manifest["status"] == "failed"
+PY
+done
+
+FORGED_BEFORE_REPO="$TMP_DIR/forged-before-repo"
+make_fake_repo "$FORGED_BEFORE_REPO" '// FORGE_BEFORE'
+FORGED_BEFORE_PATCH="$TMP_DIR/forged-before.patch"
+make_patch "$FORGED_BEFORE_PATCH" '// FORGE_BEFORE' '// candidate'
+if run_renderer "$FORGED_BEFORE_REPO" "$TMP_DIR/forged-before" "$FORGED_BEFORE_PATCH" >"$TMP_DIR/forged-before.out" 2>&1; then
+    fail 'forged baseline SHA contract was accepted'
+fi
+python3 - "$TMP_DIR/forged-before/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+manifest = json.loads(Path(sys.argv[1]).read_text())
+assert manifest["status"] == "failed"
+PY
+
+# A partially successful worktree add must still be removed and pruned.
+PARTIAL_REPO="$TMP_DIR/partial-repo"
+make_fake_repo "$PARTIAL_REPO"
+PARTIAL_TRIGGER="$TMP_DIR/partial.trigger"
+: > "$PARTIAL_TRIGGER"
+cat > "$FAKE_BIN/git" <<SH
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "\$*" == *" worktree add "* ]] && [[ -e "$PARTIAL_TRIGGER" ]]; then
+    "$REAL_GIT" "\$@" || exit \$?
+    exit 91
+fi
+exec "$REAL_GIT" "\$@"
+SH
+chmod 700 "$FAKE_BIN/git"
+if run_renderer "$PARTIAL_REPO" "$TMP_DIR/partial" "$PATCH" >"$TMP_DIR/partial.out" 2>&1; then
+    fail 'partial worktree add was accepted'
+fi
+[[ -z "$("$REAL_GIT" -C "$PARTIAL_REPO" worktree list --porcelain | grep -F 'worktree ' | tail -n +2)" ]] || fail 'partial worktree metadata leaked'
+rm -f "$FAKE_BIN/git" "$PARTIAL_TRIGGER"
+
+# HUP, INT, and TERM are required to produce safe failure manifests and clean
+# the worktree.
+for signal_name in TERM HUP INT; do
+    SIGNAL_REPO="$TMP_DIR/signal-$signal_name-repo"
+    make_fake_repo "$SIGNAL_REPO"
+    SIGNAL_PATCH="$TMP_DIR/signal-$signal_name.patch"
+    make_patch "$SIGNAL_PATCH" '// baseline' '// SIGNAL'
+    SIGNAL_ARTIFACT="$TMP_DIR/signal-$signal_name-artifact"
+    python3 - "$SIGNAL_REPO" "$SIGNAL_ARTIFACT" "$SIGNAL_PATCH" "$signal_name" "$FAKE_BIN" "$TMP_DIR/home" "$TMP_DIR/os-tmp" <<'PY'
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+repo, artifact, patch, signal_name, fake_bin, home, tmp = sys.argv[1:]
+env = {
+    "PATH": f"{fake_bin}:/usr/bin:/bin",
+    "HOME": home,
+    "TMPDIR": tmp,
+    "PHOENIX_HARNESS_UDID": "11111111-2222-3333-4444-555555555555",
+    "PHOENIX_HARNESS_ALLOW_DESTRUCTIVE": "1",
+    "PHOENIX_PROPOSAL_TRUSTED_INPUT": "1",
+}
+command = [str(Path(repo) / ".github/scripts/phantom-proposal.sh"), "render", artifact, "just-lift-connected", patch]
+with open(Path(artifact).parent / f"signal-{signal_name}.out", "w", encoding="utf-8") as output:
+    process = subprocess.Popen(command, env=env, stdout=output, stderr=subprocess.STDOUT, start_new_session=True)
+    marker = Path(artifact) / "after/.signal-ready"
+    deadline = time.monotonic() + 20
+    while time.monotonic() < deadline and not marker.exists():
+        time.sleep(0.05)
+    if not marker.exists():
+        process.kill()
+        process.wait()
+        raise SystemExit(f"{signal_name} fixture did not reach candidate execution")
+    os.kill(process.pid, getattr(signal, "SIG" + signal_name))
+    try:
+        result = process.wait(timeout=20)
+    except subprocess.TimeoutExpired:
+        os.killpg(process.pid, signal.SIGKILL)
+        process.wait()
+        raise SystemExit(f"{signal_name} renderer did not exit after signal")
+    if result == 0:
+        raise SystemExit(f"{signal_name} was accepted")
+PY
+    python3 - "$SIGNAL_ARTIFACT/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+manifest = json.loads(Path(sys.argv[1]).read_text())
+assert manifest["status"] == "failed"
+PY
+done
+
+# Timeout and bounded private-output failures must clean their worktrees and
+# write only a safe failure manifest.
+for token in TIMEOUT BLOAT; do
+    lower_token="$(printf '%s' "$token" | tr '[:upper:]' '[:lower:]')"
+    bounded="$TMP_DIR/$lower_token.patch"
+    make_patch "$bounded" '// baseline' "// $token"
+    artifact="$TMP_DIR/$lower_token-artifact"
+    if [[ "$token" == TIMEOUT ]]; then
+        if run_renderer "$REPO" "$artifact" "$bounded" 2 >"$TMP_DIR/$lower_token.out" 2>&1; then
+            fail "bounded child failure was accepted: $token"
+        fi
+    elif run_renderer "$REPO" "$artifact" "$bounded" >"$TMP_DIR/$lower_token.out" 2>&1; then
+        fail "bounded child failure was accepted: $token"
+    fi
+    python3 - "$artifact/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+manifest = json.loads(Path(sys.argv[1]).read_text())
+assert manifest["status"] == "failed"
+assert list(Path(sys.argv[1]).parent.iterdir()) == [Path(sys.argv[1]).parent / ".phantom-proposal", Path(sys.argv[1])]
+PY
+done
+
+# A normal Swift candidate is accepted only after both canonical harness cases,
+# compile-free real-app execution, comparison validation, and cleanup.
+SUCCESS_ARTIFACT="$TMP_DIR/success"
+run_renderer "$REPO" "$SUCCESS_ARTIFACT" "$PATCH" >"$TMP_DIR/success.out"
+python3 - "$SUCCESS_ARTIFACT" "$REPO" <<'PY'
 import json
 import os
 import stat
 import sys
 from pathlib import Path
 root = Path(sys.argv[1])
+repo = Path(sys.argv[2])
 manifest = json.loads((root / "proposal-manifest.json").read_text())
-assert manifest["status"] == "failed"
+assert manifest["status"] == "passed"
+assert manifest["baseSha"] == manifest["worktree"]["baseSha"] == manifest["worktree"]["headSha"]
+assert manifest["comparison"]["before"]["dimensions"] == {"width": 2, "height": 2}
+assert manifest["comparison"]["after"]["dimensions"] == {"width": 2, "height": 2}
+assert json.loads((root / "comparison/diff.json").read_text())["dimensions"] == {"width": 2, "height": 2}
+assert (repo / "iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift").read_text() == "// baseline\n"
+for path in (root / "proposal.patch", root / "proposal-manifest.json", root / "proposal.md", root / "evidence-summary.json", root / "comparison/diff.json", root / "comparison/diff.png"):
+    assert stat.S_IMODE(os.lstat(path).st_mode) == 0o600
 assert stat.S_IMODE(os.lstat(root).st_mode) == 0o700
-assert stat.S_IMODE(os.lstat(root / ".phantom-proposal").st_mode) == 0o600
-assert not (root / "proposal.patch").exists()
 PY
-if grep -E 'Supabase|secret|password|Bearer' "$TMP_DIR/invalid.err" >/dev/null 2>&1; then
-    fail 'invalid patch failure leaked path or secret-like text'
-fi
-if grep -E 'worktree add|case ' "$LOG" >/dev/null 2>&1; then
-    fail 'invalid patch reached baseline or worktree'
-fi
+[[ -z "$("$REAL_GIT" -C "$REPO" status --porcelain --untracked-files=all)" ]] || fail 'successful render changed original worktree'
+[[ -z "$("$REAL_GIT" -C "$REPO" worktree list --porcelain | grep -F 'worktree ' | tail -n +2)" ]] || fail 'successful render leaked worktree'
 
-# A baseline failure stops before a disposable worktree is created.
-BASELINE_ARTIFACT="$TMP_DIR/baseline-failure"
-if run_renderer env FAKE_HARNESS_FAIL_BASELINE=1 "$FAKE_RENDERER" render "$BASELINE_ARTIFACT" just-lift-connected "$PATCH" >"$TMP_DIR/baseline.out" 2>"$TMP_DIR/baseline.err"; then
-    fail 'baseline failure was accepted'
-fi
-python3 - "$BASELINE_ARTIFACT" <<'PY'
+KOTLIN_REPO="$TMP_DIR/kotlin-repo"
+make_fake_repo "$KOTLIN_REPO"
+KOTLIN_PATCH="$TMP_DIR/kotlin.patch"
+make_kotlin_patch "$KOTLIN_PATCH" '// baseline kotlin' '// candidate kotlin'
+KOTLIN_ARTIFACT="$TMP_DIR/kotlin-artifact"
+run_renderer "$KOTLIN_REPO" "$KOTLIN_ARTIFACT" "$KOTLIN_PATCH" >"$TMP_DIR/kotlin.out"
+python3 - "$KOTLIN_ARTIFACT" <<'PY'
 import json
 import sys
 from pathlib import Path
 manifest = json.loads((Path(sys.argv[1]) / "proposal-manifest.json").read_text())
-assert manifest["status"] == "failed"
-assert manifest["failure"]["stage"] == "capture baseline"
-PY
-if grep -E 'worktree add' "$LOG" >/dev/null 2>&1; then
-    # The only worktree operation should not have happened during this run.
-    fail 'baseline failure created a worktree'
-fi
-
-# Successful candidate: the patch is visible to the disposable case only, the
-# packet carries exact patch/hash evidence, and the temporary worktree is gone.
-SUCCESS_ARTIFACT="$TMP_DIR/success"
-run_renderer "$FAKE_RENDERER" render "$SUCCESS_ARTIFACT" just-lift-connected "$PATCH" >"$TMP_DIR/success.out"
-python3 - "$SUCCESS_ARTIFACT" "$PATCH" "$FAKE_REPO" <<'PY'
-import hashlib
-import json
-import os
-import stat
-import sys
-from pathlib import Path
-root = Path(sys.argv[1])
-patch = Path(sys.argv[2])
-repo = Path(sys.argv[3])
-manifest = json.loads((root / "proposal-manifest.json").read_text())
-assert manifest["status"] == "passed", "status"
-assert manifest["baseSha"] == manifest["worktree"]["baseSha"] == manifest["worktree"]["headSha"], "sha"
-assert manifest["worktree"]["detached"] is True, "detached"
-assert manifest["patch"]["sha256"] == hashlib.sha256(patch.read_bytes()).hexdigest(), "patch hash"
-assert (root / "proposal.patch").read_bytes() == patch.read_bytes(), "patch bytes"
-assert manifest["actualChangedFiles"] == ["iosApp/Sources/Proposal.swift"], "files"
-assert manifest["before"]["identity"] == manifest["after"]["identity"], "identity"
-assert json.loads((root / "comparison/diff.json").read_text())["passed"] is True, "diff"
-assert (root / "comparison/diff.png").is_file(), "diff image"
-for path in (root / ".phantom-proposal", root / "proposal.patch", root / "proposal.md", root / "proposal-manifest.json", root / "evidence-summary.json", root / "comparison/diff.json", root / "comparison/diff.png"):
-    assert stat.S_IMODE(os.lstat(path).st_mode) == 0o600, path
-assert stat.S_IMODE(os.lstat(root).st_mode) == 0o700
-assert (repo / "iosApp/Sources/Proposal.swift").read_text() == "// baseline\n"
-PY
-if [[ -n "$(PATH="$FAKE_BIN:/usr/bin:/bin" "$REAL_GIT" -C "$FAKE_REPO" status --porcelain)" ]]; then
-    fail 'original repository status changed'
-fi
-for leaked in "$TMP_DIR"/phantom-proposal-*; do
-    [[ -e "$leaked" ]] || continue
-    fail 'temporary proposal worktree leaked'
-done
-if ! grep -E 'worktree add --detach' "$LOG" >/dev/null 2>&1 || ! grep -E 'worktree remove --force' "$LOG" >/dev/null 2>&1; then
-    fail 'worktree lifecycle was not recorded'
-fi
-
-# An apply failure also cleans the disposable worktree and leaves only a safe
-# failure manifest; no candidate source reaches the original checkout.
-BAD_APPLY="$TMP_DIR/bad-apply.patch"
-python3 - "$BAD_APPLY" <<'PY'
-import os
-import sys
-from pathlib import Path
-path = Path(sys.argv[1])
-path.write_bytes(b'''diff --git a/iosApp/Sources/Proposal.swift b/iosApp/Sources/Proposal.swift
---- a/iosApp/Sources/Proposal.swift
-+++ b/iosApp/Sources/Proposal.swift
-@@ -1 +1 @@
--not-the-base
-+candidate
-''')
-os.chmod(path, 0o600)
-PY
-BAD_ARTIFACT="$TMP_DIR/bad-apply"
-if run_renderer "$FAKE_RENDERER" render "$BAD_ARTIFACT" just-lift-connected "$BAD_APPLY" >"$TMP_DIR/bad.out" 2>"$TMP_DIR/bad.err"; then
-    fail 'bad patch application was accepted'
-fi
-python3 - "$BAD_ARTIFACT" "$FAKE_REPO" <<'PY'
-import json
-import sys
-from pathlib import Path
-root = Path(sys.argv[1])
-manifest = json.loads((root / "proposal-manifest.json").read_text())
-assert manifest["status"] == "failed"
-assert manifest["failure"]["stage"] == "apply disposable patch"
-assert list(root.iterdir()) == [root / ".phantom-proposal", root / "proposal-manifest.json"]
-assert (Path(sys.argv[2]) / "iosApp/Sources/Proposal.swift").read_text() == "// baseline\n"
+assert manifest["candidateKinds"] == ["kotlin"]
+assert any(item["name"] == "shared.compileKotlinIosSimulatorArm64" for item in manifest["focusedChecks"])
 PY
 
 printf 'phantom proposal shell tests passed\n'

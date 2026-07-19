@@ -70,19 +70,63 @@ environment and must never contain a token, key, password, or other secret.
 
 ## Proposal/worktree contract
 
-The `.github/scripts/phantom-proposal.sh` wrapper, once committed, must run
-from a temporary worktree and must forward the runner's exact contract above.
-The proposal wrapper is orchestration, not a second fixture API: it must not
-edit the original checkout, broaden the fixture allowlist, bypass the local
-destructive gate, or write evidence into tracked source directories.  The
-artifact root is caller owned and should be outside the checkout.
+`.github/scripts/phantom-proposal.sh` is a trusted-input-only renderer.  It is
+not an OS or container sandbox: the candidate patch and the commands it causes
+to run must be reviewed and explicitly approved by the operator.  A render
+must therefore opt in with the exact gate below; without it the wrapper exits
+before creating an artifact root:
 
-Its `EXIT trap` (registered together with `HUP`, `INT`, and `TERM`) is the
-cleanup guarantee for every render outcome.  The trap records a bounded failure
-manifest when needed, removes the disposable worktree with `git worktree
-remove --force`, prunes its metadata, and removes
-the private temporary directory.  The caller-owned artifact root is retained
-for review; only that root's validated evidence should be preserved.
+```bash
+PHOENIX_PROPOSAL_TRUSTED_INPUT=1 \
+  PHOENIX_HARNESS_UDID="<SIMULATOR_UDID>" \
+  PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
+  ./.github/scripts/phantom-proposal.sh render \
+  "<ARTIFACT_ROOT_OUTSIDE_CHECKOUT>" just-lift-connected "<PATCH_FILE>"
+```
+
+The artifact root must be outside the original repository and caller owned.
+The patch is accepted only when every changed path is under one of these
+render-relevant app UI/resource prefixes:
+
+```text
+shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/**
+shared/src/commonMain/composeResources/**
+iosApp/VitruvianPhoenix/VitruvianPhoenix/**
+```
+
+Kotlin files and supported resources are compiled in the candidate worktree
+with `:shared:compileKotlinIosSimulatorArm64` before the real harness runs.
+Swift/resource candidates then go through the real harness build and focused
+XCTest.  Unsupported extensions, harness/runner/verifier paths, Android,
+Gradle/Xcode/CI/configuration paths, documentation, HTML, and credential-like
+patch content are rejected; the wrapper never substitutes source, HTML, or
+coordinate automation for the real app flow.  `SUPABASE_ANON_KEY=...`,
+`API_TOKEN=...`, and other credential-like values are rejected without being
+printed.
+
+The wrapper records the original `HEAD` and an exact clean status snapshot
+(including untracked and ignored files) before baseline capture.  It rechecks
+that `HEAD` and status after baseline, after candidate execution, before final
+output, and after final output.  Both baseline and candidate artifacts must
+pass the committed canonical `phantom-harness.sh verify` contract and are
+bound to the same verified base SHA, fixture hash, bundle ID, simulator,
+canonical command list, markers, and capture identities.
+
+Candidate commands receive a minimal environment and a proposal-private
+`TMPDIR`, `HOME`, and Gradle cache.  Each bounded child has timeout, output,
+file-size, descriptor, and core limits, and private/output trees are checked
+for bounded file count and size after execution.  The optional
+`PHOENIX_PROPOSAL_TIMEOUT_SECONDS` override is limited to 1--1800 seconds;
+the default is 1800 seconds.  There is no inherited secret-bearing candidate
+environment and no sandbox claim.
+
+The `EXIT` trap is registered together with `HUP`, `INT`, and `TERM`.  Every
+non-zero outcome, including interruption, writes a bounded safe failure
+manifest when the artifact root exists.  Cleanup is registered before
+`git worktree add`, so a partial add is removed and pruned as well as a normal
+completed worktree.  The detached worktree and all private temporary storage
+are removed on every exit; the caller-owned artifact root is retained only for
+review of the validated success or failure manifest.
 
 For a manual proposal reproduction, the worktree lifecycle is:
 
