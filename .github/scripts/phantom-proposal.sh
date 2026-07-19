@@ -841,7 +841,7 @@ build_tool_command() {
             ;;
         kotlin-compile)
             [[ "$#" -eq 0 && "$cwd" == "$WORKTREE" ]] || return 125
-            command=("${CHILD_ENV[@]}" bash "$WORKTREE/gradlew" :shared:compileKotlinIosSimulatorArm64 --no-daemon --console=plain)
+            command=("${CHILD_ENV[@]}" bash "$WORKTREE/gradlew" :shared:compileKotlinIosSimulatorArm64 -Pskip.supabase.check=true --no-daemon --console=plain)
             ;;
         *)
             return 125

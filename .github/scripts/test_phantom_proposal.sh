@@ -307,6 +307,10 @@ case " $* " in
     *" :shared:compileKotlinIosSimulatorArm64 "*) ;;
     *) exit 2 ;;
 esac
+case " $* " in
+    *" -Pskip.supabase.check=true "*) ;;
+    *) exit 2 ;;
+esac
 python3 - "__PROPOSAL_ENV_LOG__" <<'PY_ENV'
 import json
 import os
