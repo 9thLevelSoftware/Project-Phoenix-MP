@@ -369,7 +369,10 @@ record_original_state() {
     [[ "$BASE_SHA" =~ ^[0-9a-fA-F]{40}$ ]] || fail 'base commit is malformed'
     ORIGINAL_HEAD="$BASE_SHA"
     ORIGINAL_STATUS_FILE="$PRIVATE_DIR/original-status"
-    if ! git -C "$REPO_ROOT" status --porcelain=v2 --untracked-files=all --ignored=matching >"$ORIGINAL_STATUS_FILE" 2>&1; then
+    # The original integrity boundary covers tracked and unignored source
+    # changes.  Ignore ordinary local build/simulator/config artifacts; they
+    # are not source mutations and are expected in a developer checkout.
+    if ! git -C "$REPO_ROOT" status --porcelain=v2 --untracked-files=all --ignored=no >"$ORIGINAL_STATUS_FILE" 2>&1; then
         fail 'original harness status could not be verified'
     fi
     chmod 600 "$ORIGINAL_STATUS_FILE"
@@ -389,7 +392,7 @@ assert_original_unchanged() {
     if [[ "$current_head" != "$ORIGINAL_HEAD" ]]; then
         fail "original HEAD changed $label"
     fi
-    if ! git -C "$REPO_ROOT" status --porcelain=v2 --untracked-files=all --ignored=matching >"$status_file" 2>&1; then
+    if ! git -C "$REPO_ROOT" status --porcelain=v2 --untracked-files=all --ignored=no >"$status_file" 2>&1; then
         fail "original worktree status could not be verified $label"
     fi
     chmod 600 "$status_file"

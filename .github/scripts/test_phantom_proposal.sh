@@ -265,6 +265,50 @@ os.chmod(path, 0o600)
 PY
 }
 
+add_harmless_ignored_artifacts() {
+    local repo="$1"
+    python3 - "$repo" <<'PY'
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+(repo / ".gitignore").write_text(
+    ".gradle/\n"
+    ".hermes/\n"
+    "build/\n"
+    "**/build/\n"
+    "**/*.xcworkspace/\n"
+    "**/xcuserdata/\n"
+    "**/*.xcuserdatad/\n"
+    "**/DerivedData/\n"
+    "iosApp/VitruvianPhoenix/Config/Supabase.xcconfig\n",
+    encoding="utf-8",
+)
+os.chmod(repo / ".gitignore", 0o600)
+subprocess.run(["git", "-C", str(repo), "add", ".gitignore"], check=True)
+subprocess.run(["git", "-C", str(repo), "commit", "-q", "-m", "ignore local artifacts"], check=True)
+
+paths = (
+    ".gradle/cache.bin",
+    ".hermes/state.json",
+    "build/output.bin",
+    "shared/build/output.bin",
+    "iosApp/VitruvianPhoenix/build/output.bin",
+    "iosApp/VitruvianPhoenix/VitruvianPhoenix.xcworkspace/contents.xcworkspacedata",
+    "iosApp/VitruvianPhoenix/VitruvianPhoenix/VitruvianPhoenix.xcuserdatad/UserInterfaceState.xcuserstate",
+    "iosApp/VitruvianPhoenix/DerivedData/Build/Products/app",
+    "iosApp/VitruvianPhoenix/Config/Supabase.xcconfig",
+)
+for relative in paths:
+    path = repo / relative
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    path.write_text("ignored local artifact\n", encoding="utf-8")
+    os.chmod(path, 0o600)
+PY
+}
+
 make_kotlin_patch() {
     local destination="$1"
     local old="$2"
@@ -316,6 +360,30 @@ REPO="$TMP_DIR/repo"
 make_fake_repo "$REPO"
 PATCH="$TMP_DIR/candidate.patch"
 make_patch "$PATCH" '// baseline' '// candidate'
+
+# A clean tracked repository may contain ordinary ignored simulator/build
+# outputs and local Supabase configuration.  Those artifacts are outside the
+# source-integrity boundary and must not block the disposable render.
+IGNORED_REPO="$TMP_DIR/ignored-repo"
+make_fake_repo "$IGNORED_REPO"
+add_harmless_ignored_artifacts "$IGNORED_REPO"
+IGNORED_ARTIFACT="$TMP_DIR/ignored-artifact"
+run_renderer "$IGNORED_REPO" "$IGNORED_ARTIFACT" "$PATCH" >"$TMP_DIR/ignored.out"
+python3 - "$IGNORED_ARTIFACT/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+assert json.loads(Path(sys.argv[1]).read_text())["status"] == "passed"
+PY
+
+IGNORED_DIRTY_REPO="$TMP_DIR/ignored-dirty-repo"
+make_fake_repo "$IGNORED_DIRTY_REPO"
+add_harmless_ignored_artifacts "$IGNORED_DIRTY_REPO"
+printf '// dirty source\n' > "$IGNORED_DIRTY_REPO/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift"
+if run_renderer "$IGNORED_DIRTY_REPO" "$TMP_DIR/ignored-dirty" "$PATCH" >"$TMP_DIR/ignored-dirty.out" 2>&1; then
+    fail 'tracked source edit alongside ignored artifacts was accepted'
+fi
+grep -F 'original harness worktree' "$TMP_DIR/ignored-dirty.out" >/dev/null || fail 'tracked source edit was not rejected safely'
 
 # The renderer is trusted-input only and must fail before touching the artifact
 # root when the explicit operator gate is absent.
