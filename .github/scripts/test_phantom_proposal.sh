@@ -767,6 +767,80 @@ assert list(Path(sys.argv[1]).parent.iterdir()) == [Path(sys.argv[1]).parent / "
 PY
 done
 
+# Exercise the private-tree bounds directly with sparse files so the regression
+# does not consume real disk space. Every large fixture stays below the 128 MiB
+# per-file cap; only the intended total-bound cases fail.
+BOUNDS_RENDERER="$TMP_DIR/check-tree-bounds.sh"
+python3 - "$RENDERER" "$BOUNDS_RENDERER" <<'PY'
+import os
+import sys
+from pathlib import Path
+source = Path(sys.argv[1]).read_text(encoding="utf-8")
+marker = '\nmain "$@"\n'
+assert source.endswith(marker)
+source = source[:-len(marker)] + "\n"
+for line in (
+    "trap on_exit EXIT",
+    "trap 'on_signal HUP 129' HUP",
+    "trap 'on_signal INT 130' INT",
+    "trap 'on_signal TERM 143' TERM",
+):
+    source = source.replace(f"{line}\n", "")
+destination = Path(sys.argv[2])
+destination.write_text(source, encoding="utf-8")
+os.chmod(destination, 0o700)
+PY
+run_bounds_check() {
+    local root="$1"
+    local excluded="${2-}"
+    bash -c 'source "$1"; check_tree_bounds "$2" "$3"' _ "$BOUNDS_RENDERER" "$root" "$excluded"
+}
+create_sparse_tree() {
+    local root="$1"
+    shift
+    python3 - "$root" "$@" <<'PY'
+import os
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+sizes = [int(value) for value in sys.argv[2:]]
+root.mkdir(mode=0o700, parents=False)
+for index, size in enumerate(sizes):
+    path = root / f"cache-{index:02d}.bin"
+    with path.open("wb") as stream:
+        stream.truncate(size)
+    path.chmod(0o600)
+if sum(path.stat().st_blocks for path in root.iterdir()) * 512 >= sum(sizes):
+    raise SystemExit("resource fixture is not sparse")
+PY
+}
+BOUNDS_ROOT="$TMP_DIR/bounds"
+mkdir -m 700 "$BOUNDS_ROOT"
+MEGABYTE=$((1024 * 1024))
+create_sparse_tree "$BOUNDS_ROOT/within-total" $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((25 * MEGABYTE))
+create_sparse_tree "$BOUNDS_ROOT/over-total" $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) $((128 * MEGABYTE)) 1
+create_sparse_tree "$BOUNDS_ROOT/over-file" $((129 * MEGABYTE))
+mkdir -m 700 "$BOUNDS_ROOT/symlink"
+printf 'target\n' > "$BOUNDS_ROOT/symlink/target"
+chmod 600 "$BOUNDS_ROOT/symlink/target"
+ln -s target "$BOUNDS_ROOT/symlink/link"
+mkdir -m 700 "$BOUNDS_ROOT/excluded-worktree"
+create_sparse_tree "$BOUNDS_ROOT/excluded-worktree/candidate" $((129 * MEGABYTE))
+printf 'outside\n' > "$BOUNDS_ROOT/excluded-worktree/outside"
+chmod 600 "$BOUNDS_ROOT/excluded-worktree/outside"
+
+run_bounds_check "$BOUNDS_ROOT/within-total" || fail '1.4 GiB sparse private tree was rejected'
+if run_bounds_check "$BOUNDS_ROOT/over-total"; then
+    fail 'private tree above the 2 GiB total ceiling was accepted'
+fi
+if run_bounds_check "$BOUNDS_ROOT/over-file"; then
+    fail 'private file above the 128 MiB cap was accepted'
+fi
+if run_bounds_check "$BOUNDS_ROOT/symlink"; then
+    fail 'private symlink was accepted'
+fi
+run_bounds_check "$BOUNDS_ROOT/excluded-worktree" "$BOUNDS_ROOT/excluded-worktree/candidate" || fail 'excluded candidate worktree was not ignored'
+
 # A normal Swift candidate is accepted only after both canonical harness cases,
 # compile-free real-app execution, comparison validation, and cleanup.
 SUCCESS_ARTIFACT="$TMP_DIR/success"

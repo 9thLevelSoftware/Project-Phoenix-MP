@@ -23,7 +23,9 @@ SYSTEM_PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 MAX_PATCH_BYTES=$((128 * 1024 * 1024))
 MAX_CHILD_OUTPUT_BYTES=$((16 * 1024 * 1024))
 MAX_PRIVATE_FILE_BYTES=$((128 * 1024 * 1024))
-MAX_PRIVATE_TOTAL_BYTES=$((1024 * 1024 * 1024))
+# A fresh isolated Gradle/Kotlin Native cache measured about 1.4 GiB; a 2 GiB
+# private ceiling accommodates that cold build while still bounding disk use.
+MAX_PRIVATE_TOTAL_BYTES=$((2 * 1024 * 1024 * 1024))
 MAX_PRIVATE_FILES=20000
 CHILD_TIMEOUT_SECONDS=1800
 VERIFY_TIMEOUT_SECONDS=300
