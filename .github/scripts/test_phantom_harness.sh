@@ -121,6 +121,13 @@ cat > "$FAKE_BIN/xcodebuild" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 printf 'xcodebuild %s\n' "$*" >> "${PHANTOM_FAKE_LOG:?}"
+if [[ -n "${PHANTOM_EXPECTED_JAVA_HOME-}" ]] && {
+    [[ "${JAVA_HOME-}" != "$PHANTOM_EXPECTED_JAVA_HOME" ]] ||
+    [[ ! -x "${JAVA_HOME-}/bin/java" ]]
+}; then
+    printf 'fake xcodebuild: expected exported JAVA_HOME was not usable\n' >&2
+    exit 1
+fi
 if [[ "${1-}" == "-version" ]]; then
     printf 'Xcode 26.5\nBuild version 17F42\n'
     exit 0
@@ -156,9 +163,51 @@ exit 2
 SH
 chmod 700 "$FAKE_BIN/xcodebuild"
 
+JAVA_HOME_VALID="$TMP_DIR/fake-jdk"
+mkdir -p "$JAVA_HOME_VALID/bin"
+cat > "$JAVA_HOME_VALID/bin/java" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1-}" == "-version" ]]; then
+    printf 'openjdk version "21.0.8" 2026-01-20\n' >&2
+    exit 0
+fi
+printf 'unexpected fake java invocation\n' >&2
+exit 2
+SH
+chmod 700 "$JAVA_HOME_VALID/bin/java"
+ln -s "$JAVA_HOME_VALID/bin/java" "$FAKE_BIN/java"
+JAVA_HOME_VALID="$(python3 - "$JAVA_HOME_VALID" <<'PY'
+from pathlib import Path
+import sys
+print(Path(sys.argv[1]).resolve())
+PY
+)"
+
+NO_JAVA_BIN="$TMP_DIR/no-java-bin"
+mkdir "$NO_JAVA_BIN"
+python3 - "$NO_JAVA_BIN" "$FAKE_BIN/xcrun" "$FAKE_BIN/xcodebuild" "$(command -v python3)" "$(command -v bash)" <<'PY'
+import os
+import sys
+from pathlib import Path
+root = Path(sys.argv[1])
+for source in sys.argv[2:]:
+    Path(root / Path(source).name).symlink_to(source)
+PY
+
 run() {
     env -i \
         PATH="$FAKE_BIN:/usr/bin:/bin" \
+        HOME="$TMP_DIR" \
+        TMPDIR="$TMP_DIR" \
+        PHANTOM_FAKE_LOG="$LOG" \
+        PHANTOM_FAKE_BOOTED="$TMP_DIR/booted" \
+        "$@"
+}
+
+run_no_java() {
+    env -i \
+        PATH="$NO_JAVA_BIN" \
         HOME="$TMP_DIR" \
         TMPDIR="$TMP_DIR" \
         PHANTOM_FAKE_LOG="$LOG" \
@@ -207,7 +256,8 @@ if config.exists():
     shutil.move(str(config), str(backup))
 PY
 CONFIG_MOVED=1
-if ! run env \
+if ! run env -u JAVA_HOME \
+    PHANTOM_EXPECTED_JAVA_HOME="$JAVA_HOME_VALID" \
     PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
     PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
     "$RUNNER" case "$ARTIFACT" just-lift-connected >"$TMP_DIR/case.out" 2>&1; then
@@ -222,6 +272,11 @@ for path in sys.argv[1:]:
         print(error)
 PY
     fail 'synthetic case failed'
+fi
+grep -Fx 'phantom-harness: Java runtime available (major 21)' "$TMP_DIR/case.out" >/dev/null \
+    || fail 'missing JAVA_HOME did not report Java availability'
+if grep -F "$JAVA_HOME_VALID" "$TMP_DIR/case.out" >/dev/null 2>&1; then
+    fail 'Java status leaked the runtime path'
 fi
 [[ ! -e "$CONFIG" ]] || fail 'temporary Supabase config was not removed'
 python3 - "$ARTIFACT" <<'PY'
@@ -243,6 +298,47 @@ assert manifest["captures"]
 assert "phantom.connected" in manifest["semanticMarkers"]["observed"]
 PY
 run "$RUNNER" verify "$ARTIFACT" >/dev/null
+
+# An invalid JAVA_HOME must fall back to the real java executable on PATH.
+INVALID_JAVA_HOME="$TMP_DIR/invalid-jdk"
+mkdir "$INVALID_JAVA_HOME"
+FALLBACK_ARTIFACT="$TMP_DIR/fallback-artifact"
+if ! run env \
+    JAVA_HOME="$INVALID_JAVA_HOME" \
+    PHANTOM_EXPECTED_JAVA_HOME="$JAVA_HOME_VALID" \
+    PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
+    PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
+    "$RUNNER" case "$FALLBACK_ARTIFACT" just-lift-connected >"$TMP_DIR/fallback.out" 2>&1; then
+    python3 - "$TMP_DIR/fallback.out" "$FALLBACK_ARTIFACT/build.log" <<'PY'
+from pathlib import Path
+import sys
+for path in sys.argv[1:]:
+    print("---", path)
+    try:
+        print(Path(path).read_text(), end="")
+    except OSError as error:
+        print(error)
+PY
+    fail 'invalid JAVA_HOME did not fall back to PATH java'
+fi
+grep -Fx 'phantom-harness: Java runtime available (major 21)' "$TMP_DIR/fallback.out" >/dev/null \
+    || fail 'invalid JAVA_HOME fallback did not report Java availability'
+run "$RUNNER" clean "$FALLBACK_ARTIFACT"
+
+# Neither JAVA_HOME nor PATH java may reach an Apple tool, and the failure must
+# explain how to repair the missing runtime.
+NO_JAVA_ARTIFACT="$TMP_DIR/no-java-artifact"
+: > "$LOG"
+if run_no_java /usr/bin/env \
+    JAVA_HOME="$INVALID_JAVA_HOME" \
+    PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
+    PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
+    "$RUNNER" case "$NO_JAVA_ARTIFACT" just-lift-connected >"$TMP_DIR/no-java.out" 2>&1; then
+    fail 'missing Java runtime was accepted'
+fi
+grep -Fx 'phantom-harness: unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH' "$TMP_DIR/no-java.out" >/dev/null \
+    || fail 'missing Java runtime failure was not actionable'
+[[ ! -s "$LOG" ]] || fail 'Apple tools ran without a Java runtime'
 
 BEFORE="$TMP_DIR/before"
 AFTER="$TMP_DIR/after"

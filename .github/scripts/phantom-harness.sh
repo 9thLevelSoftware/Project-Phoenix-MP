@@ -36,6 +36,74 @@ fail() {
     exit 1
 }
 
+bootstrap_java_runtime() {
+    local java_executable=""
+    local configured_home="${JAVA_HOME-}"
+    if [[ -n "$configured_home" && -x "$configured_home/bin/java" ]]; then
+        java_executable="$configured_home/bin/java"
+    else
+        java_executable="$(command -v java 2>/dev/null || true)"
+        if [[ -n "$java_executable" ]]; then
+            local discovered_home=""
+            if discovered_home="$(python3 - "$java_executable" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+candidate = Path(sys.argv[1])
+try:
+    resolved = candidate.resolve(strict=True)
+    if not resolved.is_file() or not os.access(resolved, os.X_OK) or resolved.parent.name != "bin":
+        raise OSError
+    home = resolved.parent.parent
+    home_java = home / "bin" / "java"
+    home_java_resolved = home_java.resolve(strict=True)
+    if not home_java_resolved.is_file() or not os.access(home_java_resolved, os.X_OK):
+        raise OSError
+except (OSError, RuntimeError, ValueError):
+    raise SystemExit(1)
+print(home)
+PY
+)"; then
+                export JAVA_HOME="$discovered_home"
+                java_executable="$JAVA_HOME/bin/java"
+            else
+                java_executable=""
+            fi
+        fi
+    fi
+
+    if [[ -z "$java_executable" ]]; then
+        fail 'unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH'
+    fi
+
+    local version_output=""
+    local version_rc=0
+    set +e
+    version_output="$("$java_executable" -version 2>&1)"
+    version_rc=$?
+    set -e
+    if [[ "$version_rc" -ne 0 ]]; then
+        fail 'unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH'
+    fi
+
+    local java_major=""
+    if ! java_major="$(printf '%s\n' "$version_output" | python3 -c 'import re, sys
+text = sys.stdin.read()
+match = re.search(r"version\s+\"([^\"]+)\"", text)
+if not match:
+    raise SystemExit(1)
+version = match.group(1)
+parts = version.split(".")
+major = parts[1] if parts[0] == "1" and len(parts) > 1 else parts[0]
+if not re.fullmatch(r"[0-9]+", major):
+    raise SystemExit(1)
+print(major)')"; then
+        fail 'unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH'
+    fi
+    printf 'phantom-harness: Java runtime available (major %s)\n' "$java_major" >&2
+}
+
 usage() {
     printf '%s\n' \
         'usage: phantom-harness.sh preflight UDID' \
@@ -925,6 +993,8 @@ case_run() {
     local destructive=0
     if [[ "${PHOENIX_HARNESS_ALLOW_DESTRUCTIVE-}" == "1" || "${CI-}" == "true" ]]; then destructive=1; fi
     if [[ "$destructive" -ne 1 ]]; then fail 'destructive simulator reset requires explicit local gate or CI=true'; fi
+
+    bootstrap_java_runtime
 
     local devices
     devices="$(list_devices_json)"
