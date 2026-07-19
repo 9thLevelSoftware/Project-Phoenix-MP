@@ -3,7 +3,49 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/phantom-image-diff.XXXXXX")"
+
+select_tmp_root() {
+    if [[ -n "${TMPDIR:-}" && -d "$TMPDIR" && -w "$TMPDIR" ]]; then
+        printf '%s\n' "$TMPDIR"
+    else
+        printf '%s\n' /tmp
+    fi
+}
+
+test_tmp_root_selection() {
+    local test_tmpdir selected
+    test_tmpdir="$(mktemp -d /tmp/phantom-image-diff-root-test.XXXXXX)"
+
+    selected="$(TMPDIR="$test_tmpdir" select_tmp_root)"
+    [[ "$selected" == "$test_tmpdir" ]] || {
+        printf 'expected writable TMPDIR to be selected, got %s\n' "$selected" >&2
+        return 1
+    }
+
+    rm -rf "$test_tmpdir"
+    selected="$(TMPDIR="$test_tmpdir" select_tmp_root)"
+    [[ "$selected" == "/tmp" ]] || {
+        printf 'expected missing TMPDIR to fall back to /tmp, got %s\n' "$selected" >&2
+        return 1
+    }
+
+    unset TMPDIR
+    selected="$(select_tmp_root)"
+    [[ "$selected" == "/tmp" ]] || {
+        printf 'expected unset TMPDIR to fall back to /tmp, got %s\n' "$selected" >&2
+        return 1
+    }
+}
+
+if [[ "${1:-}" == "--test-tmp-root" ]]; then
+    test_tmp_root_selection
+    echo "phantom image diff temp-root selection tests passed"
+    exit 0
+fi
+
+TMP_ROOT="$(select_tmp_root)"
+export TMPDIR="$TMP_ROOT"
+TMP_DIR="$(mktemp -d "$TMP_ROOT/phantom-image-diff.XXXXXX")"
 trap 'rm -rf "$TMP_DIR"' EXIT
 
 GENERATOR="$TMP_DIR/generate.swift"
