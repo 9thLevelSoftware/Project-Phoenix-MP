@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** Configuration for deterministic simulator telemetry. */
@@ -135,10 +136,11 @@ class PhantomBleRepository(
     private var repOverflowLosses = 0L
 
     override suspend fun startScanning(): Result<Unit> {
+        val callerJob = currentCoroutineContext()[Job]
         val owner = lifecycleLock.withLock { reserveOperationLocked() }
             ?: return lifecycleFailure()
         return try {
-            scanPhase(owner)
+            scanPhase(owner, callerJob)
         } catch (cancellation: CancellationException) {
             cleanupOperationIfOwner(owner, reason = "scan_cancelled")
             throw cancellation
@@ -162,10 +164,11 @@ class PhantomBleRepository(
     }
 
     override suspend fun connect(device: ScannedDevice): Result<Unit> {
+        val callerJob = currentCoroutineContext()[Job]
         val owner = lifecycleLock.withLock { reserveOperationLocked() }
             ?: return lifecycleFailure()
         return try {
-            connectPhase(owner, device)
+            connectPhase(owner, device, callerJob)
         } catch (cancellation: CancellationException) {
             cleanupOperationIfOwner(owner, reason = "connect_cancelled")
             throw cancellation
@@ -202,11 +205,12 @@ class PhantomBleRepository(
 
     override suspend fun scanAndConnect(timeoutMs: Long): Result<Unit> {
         if (timeoutMs <= 0L) return Result.failure(IllegalArgumentException("timeoutMs must be > 0"))
+        val callerJob = currentCoroutineContext()[Job]
         val owner = lifecycleLock.withLock { reserveOperationLocked() }
             ?: return lifecycleFailure()
         return try {
             val result = withTimeoutOrNull(timeoutMs) {
-                val scanResult = scanPhase(owner)
+                val scanResult = scanPhase(owner, callerJob)
                 if (scanResult.isFailure) {
                     scanResult
                 } else {
@@ -220,7 +224,7 @@ class PhantomBleRepository(
                     if (scannedDevice == null) {
                         lifecycleFailure()
                     } else {
-                        connectPhase(owner, scannedDevice)
+                        connectPhase(owner, scannedDevice, callerJob)
                     }
                 }
             }
@@ -254,33 +258,45 @@ class PhantomBleRepository(
         }
     }
 
-    override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> = lifecycleLock.withLock {
-        val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-        lastColorSchemeIndex = schemeIndex
-        acceptCommandLocked(owner, "Phantom color scheme set", "scheme=$schemeIndex")
-    }
-
-    override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> = lifecycleLock.withLock {
-        val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-        if (_connectionState.value !is ConnectionState.Connected) {
-            return@withLock Result.failure(IllegalStateException("Phantom workout command requires an active connection"))
+    override suspend fun setColorScheme(schemeIndex: Int): Result<Unit> {
+        val callerJob = currentCoroutineContext()[Job]
+        return lifecycleLock.withLock {
+            val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
+            lastColorSchemeIndex = schemeIndex
+            acceptCommandLocked(owner, "Phantom color scheme set", "scheme=$schemeIndex", callerJob)
         }
-        decodeProgram(command)?.let { currentProgram = it }
-        acceptCommandLocked(
-            owner,
-            "Phantom received raw workout command",
-            command.joinToString(" ") { it.toUByte().toString(16).padStart(2, '0') },
-        )
     }
 
-    override suspend fun sendInitSequence(): Result<Unit> = lifecycleLock.withLock {
-        val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-        acceptCommandLocked(owner, "Phantom init sequence accepted")
+    override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
+        val callerJob = currentCoroutineContext()[Job]
+        return lifecycleLock.withLock {
+            val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
+            if (_connectionState.value !is ConnectionState.Connected) {
+                return@withLock Result.failure(IllegalStateException("Phantom workout command requires an active connection"))
+            }
+            decodeProgram(command)?.let { currentProgram = it }
+            acceptCommandLocked(
+                owner,
+                "Phantom received raw workout command",
+                command.joinToString(" ") { it.toUByte().toString(16).padStart(2, '0') },
+                callerJob,
+            )
+        }
     }
 
-    override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> = lifecycleLock.withLock {
+    override suspend fun sendInitSequence(): Result<Unit> {
+        val callerJob = currentCoroutineContext()[Job]
+        return lifecycleLock.withLock {
+            val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
+            acceptCommandLocked(owner, "Phantom init sequence accepted", callerJob = callerJob)
+        }
+    }
+
+    override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
+        val callerJob = currentCoroutineContext()[Job]
+        return lifecycleLock.withLock {
         val owner = connectedOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-        if (!publishIfOwnedLocked(owner) { _discoModeActive.value = false }) {
+        if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _discoModeActive.value = false }) {
             return@withLock lifecycleFailureLocked()
         }
         workoutParams = params
@@ -293,13 +309,16 @@ class PhantomBleRepository(
         topCounter = 0
         completeCounter = 0
         fixedSetCompleted = false
-        if (!publishIfOwnedLocked(owner) { _handleState.value = HandleState.Grabbed }) {
+        if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _handleState.value = HandleState.Grabbed }) {
             return@withLock lifecycleFailureLocked()
         }
         if (!startMetricsLocked(activeWorkout = true, owner)) return@withLock lifecycleFailureLocked()
-        if (!startHeuristicLocked(activeWorkout = true, owner)) return@withLock lifecycleFailureLocked()
+        ensureCallerActiveLocked(owner, callerJob)
+        if (!startHeuristicLocked(activeWorkout = true, owner, callerJob)) return@withLock lifecycleFailureLocked()
+        ensureCallerActiveLocked(owner, callerJob)
         if (!startRepSimulationLocked(owner)) return@withLock lifecycleFailureLocked()
-        if (!logIfOwnedLocked(owner) {
+        ensureCallerActiveLocked(owner, callerJob)
+        if (!logIfOwnedLocked(owner, callerJob = callerJob) {
                 logRepo.info(
                     LogEventType.COMMAND_SENT,
                     "Phantom workout started",
@@ -310,27 +329,34 @@ class PhantomBleRepository(
             }
         ) return@withLock lifecycleFailureLocked()
         Result.success(Unit)
-    }
-
-    override suspend fun stopWorkout(): Result<Unit> = lifecycleLock.withLock {
-        val owner = connectedOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-        cancelPollingLocked()
-        workoutParams = null
-        currentProgram = null
-        fixedSetCompleted = false
-        if (!publishIfOwnedLocked(owner) { _handleState.value = HandleState.Released }) {
-            return@withLock lifecycleFailureLocked()
         }
-        if (!logIfOwnedLocked(owner) {
-                logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
-            }
-        ) return@withLock lifecycleFailureLocked()
-        Result.success(Unit)
     }
 
-    override suspend fun sendStopCommand(): Result<Unit> = lifecycleLock.withLock {
-        val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
-        acceptCommandLocked(owner, "Phantom stop command accepted")
+    override suspend fun stopWorkout(): Result<Unit> {
+        val callerJob = currentCoroutineContext()[Job]
+        return lifecycleLock.withLock {
+            val owner = connectedOwnerLocked() ?: return@withLock lifecycleFailureLocked()
+            cancelPollingLocked()
+            workoutParams = null
+            currentProgram = null
+            fixedSetCompleted = false
+            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _handleState.value = HandleState.Released }) {
+                return@withLock lifecycleFailureLocked()
+            }
+            if (!logIfOwnedLocked(owner, callerJob = callerJob) {
+                    logRepo.info(LogEventType.COMMAND_SENT, "Phantom workout stopped", PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS)
+                }
+            ) return@withLock lifecycleFailureLocked()
+            Result.success(Unit)
+        }
+    }
+
+    override suspend fun sendStopCommand(): Result<Unit> {
+        val callerJob = currentCoroutineContext()[Job]
+        return lifecycleLock.withLock {
+            val owner = activeOwnerLocked() ?: return@withLock lifecycleFailureLocked()
+            acceptCommandLocked(owner, "Phantom stop command accepted", callerJob = callerJob)
+        }
     }
 
     override fun enableHandleDetection(enabled: Boolean) {
@@ -440,12 +466,12 @@ class PhantomBleRepository(
         }
     }
 
-    private suspend fun scanPhase(owner: LifecycleToken): Result<Unit> {
+    private suspend fun scanPhase(owner: LifecycleToken, callerJob: Job?): Result<Unit> {
         val prepared = lifecycleLock.withLock {
             if (!ownsOperationLocked(owner)) return@withLock false
-            if (!publishIfOwnedLocked(owner) { _connectionState.value = ConnectionState.Scanning }) return@withLock false
-            if (!publishIfOwnedLocked(owner) { _scannedDevices.value = emptyList() }) return@withLock false
-            logIfOwnedLocked(owner) {
+            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _connectionState.value = ConnectionState.Scanning }) return@withLock false
+            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _scannedDevices.value = emptyList() }) return@withLock false
+            logIfOwnedLocked(owner, callerJob = callerJob) {
                 logRepo.info(LogEventType.SCAN_START, "Starting phantom Vitruvian scan")
             }
         }
@@ -456,10 +482,10 @@ class PhantomBleRepository(
             if (!ownsOperationLocked(owner) || _connectionState.value != ConnectionState.Scanning) {
                 return@withLock lifecycleFailureLocked()
             }
-            if (!publishIfOwnedLocked(owner) { _scannedDevices.value = listOf(device) }) {
+            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _scannedDevices.value = listOf(device) }) {
                 return@withLock lifecycleFailureLocked()
             }
-            if (!logIfOwnedLocked(owner) {
+            if (!logIfOwnedLocked(owner, callerJob = callerJob) {
                     logRepo.info(
                         LogEventType.DEVICE_FOUND,
                         "Found phantom Vitruvian device",
@@ -473,12 +499,12 @@ class PhantomBleRepository(
         }
     }
 
-    private suspend fun connectPhase(owner: LifecycleToken, device: ScannedDevice): Result<Unit> {
+    private suspend fun connectPhase(owner: LifecycleToken, device: ScannedDevice, callerJob: Job?): Result<Unit> {
         val prepared = lifecycleLock.withLock {
             if (!ownsOperationLocked(owner)) return@withLock false
             cancelPollingLocked()
-            if (!publishIfOwnedLocked(owner) { _connectionState.value = ConnectionState.Connecting }) return@withLock false
-            logIfOwnedLocked(owner) {
+            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _connectionState.value = ConnectionState.Connecting }) return@withLock false
+            logIfOwnedLocked(owner, callerJob = callerJob) {
                 logRepo.info(LogEventType.CONNECT_START, "Connecting to phantom Vitruvian", device.name, device.address)
             }
         }
@@ -489,24 +515,28 @@ class PhantomBleRepository(
             if (!ownsOperationLocked(owner) || _connectionState.value != ConnectionState.Connecting) {
                 return@withLock lifecycleFailureLocked()
             }
-            if (!publishIfOwnedLocked(owner) { _connectionState.value = ConnectionState.Connected(device.name, device.address) }) {
+            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _connectionState.value = ConnectionState.Connected(device.name, device.address) }) {
                 return@withLock lifecycleFailureLocked()
             }
-            if (!publishIfOwnedLocked(owner) { _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true) }) {
+            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _handleDetection.value = HandleDetection(leftDetected = true, rightDetected = true) }) {
                 return@withLock lifecycleFailureLocked()
             }
-            if (!publishIfOwnedLocked(owner) { _handleState.value = HandleState.Released }) {
+            if (!publishIfOwnedLocked(owner, callerJob = callerJob) { _handleState.value = HandleState.Released }) {
                 return@withLock lifecycleFailureLocked()
             }
-            if (!publishDiagnosticsLocked(owner)) return@withLock lifecycleFailureLocked()
+            if (!publishDiagnosticsLocked(owner, callerJob)) return@withLock lifecycleFailureLocked()
+            ensureCallerActiveLocked(owner, callerJob)
             if (!startMetricsLocked(activeWorkout = false, owner)) return@withLock lifecycleFailureLocked()
-            if (!startHeuristicLocked(activeWorkout = false, owner)) return@withLock lifecycleFailureLocked()
+            ensureCallerActiveLocked(owner, callerJob)
+            if (!startHeuristicLocked(activeWorkout = false, owner, callerJob)) return@withLock lifecycleFailureLocked()
+            ensureCallerActiveLocked(owner, callerJob)
             if (!startHeartbeatLocked(owner)) return@withLock lifecycleFailureLocked()
-            if (!logIfOwnedLocked(owner) {
+            ensureCallerActiveLocked(owner, callerJob)
+            if (!logIfOwnedLocked(owner, callerJob = callerJob) {
                     logRepo.info(LogEventType.SERVICE_DISCOVERED, "Phantom service map ready", device.name, device.address)
                 }
             ) return@withLock lifecycleFailureLocked()
-            if (!logIfOwnedLocked(owner) {
+            if (!logIfOwnedLocked(owner, callerJob = callerJob) {
                     logRepo.info(LogEventType.CONNECT_SUCCESS, "Connected to phantom Vitruvian", device.name, device.address)
                 }
             ) return@withLock lifecycleFailureLocked()
@@ -649,8 +679,13 @@ class PhantomBleRepository(
         true
     }
 
-    private fun acceptCommandLocked(owner: LifecycleToken, message: String, details: String? = null): Result<Unit> {
-        if (!logIfOwnedLocked(owner) {
+    private fun acceptCommandLocked(
+        owner: LifecycleToken,
+        message: String,
+        details: String? = null,
+        callerJob: Job? = null,
+    ): Result<Unit> {
+        if (!logIfOwnedLocked(owner, callerJob = callerJob) {
                 logRepo.info(LogEventType.COMMAND_SENT, message, PHANTOM_DEVICE_NAME, PHANTOM_DEVICE_ADDRESS, details)
             }
         ) return lifecycleFailureLocked()
@@ -724,12 +759,13 @@ class PhantomBleRepository(
         return true
     }
 
-    private fun startHeuristicLocked(activeWorkout: Boolean, owner: LifecycleToken): Boolean {
+    private fun startHeuristicLocked(activeWorkout: Boolean, owner: LifecycleToken, callerJob: Job? = null): Boolean {
         if (!isConnectedLocked(owner)) return false
         heuristicGeneration += 1
         val expectedGeneration = heuristicGeneration
         heuristicJob?.cancel()
-        if (!publishHeuristicLocked(activeWorkout, owner)) return false
+        if (!publishHeuristicLocked(activeWorkout, owner, callerJob)) return false
+        ensureCallerActiveLocked(owner, callerJob)
         if (!isConnectedLocked(owner) || heuristicGeneration != expectedGeneration) return false
         val job = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             while (isActive) {
@@ -753,11 +789,11 @@ class PhantomBleRepository(
         return true
     }
 
-    private fun publishHeuristicLocked(activeWorkout: Boolean, owner: LifecycleToken): Boolean {
+    private fun publishHeuristicLocked(activeWorkout: Boolean, owner: LifecycleToken, callerJob: Job? = null): Boolean {
         val load = (if (activeWorkout) {
             (workoutParams?.weightPerCableKg ?: currentProgram?.weightPerCableKg ?: 7.5f).coerceAtLeast(2f)
         } else 1.5f) * config.loadScale
-        return publishIfOwnedLocked(owner) {
+        return publishIfOwnedLocked(owner, callerJob = callerJob) {
             _heuristicData.value = HeuristicStatistics(
                 concentric = HeuristicPhaseStatistics(load, load + 1.5f, 0.42f, 0.70f, 85f, 130f),
                 eccentric = HeuristicPhaseStatistics(load * 0.9f, load + 1f, 0.38f, 0.62f, 72f, 110f),
@@ -864,9 +900,9 @@ class PhantomBleRepository(
         }
     }
 
-    private fun publishDiagnosticsLocked(owner: LifecycleToken): Boolean {
+    private fun publishDiagnosticsLocked(owner: LifecycleToken, callerJob: Job? = null): Boolean {
         if (!isConnectedLocked(owner)) return false
-        if (!publishIfOwnedLocked(owner) {
+        if (!publishIfOwnedLocked(owner, callerJob = callerJob) {
                 _diagnostics.value = DiagnosticPacket(
                     runtimeSeconds = 0,
                     faultWords = listOf(0, 0, 0, 0),
@@ -876,6 +912,7 @@ class PhantomBleRepository(
                 )
             }
         ) return false
+        ensureCallerActiveLocked(owner, callerJob)
         return startDiagnosticsLocked(owner)
     }
 
@@ -969,18 +1006,39 @@ class PhantomBleRepository(
     private inline fun publishIfOwnedLocked(
         owner: LifecycleToken,
         phase: LifecyclePhase = LifecyclePhase.ACTIVE,
+        callerJob: Job? = null,
         callback: () -> Unit,
     ): Boolean {
         if (!ownsLocked(owner, phase)) return false
+        if (callerJob?.isActive == false) abortCallerCancellationLocked(owner)
         callback()
+        if (callerJob?.isActive == false) abortCallerCancellationLocked(owner)
         return ownsLocked(owner, phase)
     }
 
     private inline fun logIfOwnedLocked(
         owner: LifecycleToken,
         phase: LifecyclePhase = LifecyclePhase.ACTIVE,
+        callerJob: Job? = null,
         log: () -> Unit,
-    ): Boolean = publishIfOwnedLocked(owner, phase, log)
+    ): Boolean = publishIfOwnedLocked(owner, phase, callerJob, log)
+
+    private fun ensureCallerActiveLocked(owner: LifecycleToken, callerJob: Job?) {
+        if (callerJob?.isActive == false) abortCallerCancellationLocked(owner)
+    }
+
+    /**
+     * A synchronous collector can cancel the suspend caller from inside a publication callback.
+     * The callback has already run, so clean up only while this exact active owner still owns the
+     * repository, then propagate cancellation instead of returning a successful Result.
+     */
+    private fun abortCallerCancellationLocked(owner: LifecycleToken): Nothing {
+        if (ownsOperationLocked(owner)) {
+            val cleanup = claimNormalCleanupLocked()
+            if (cleanup != null) finishCleanupLocked(cleanup, reason = "caller_cancelled")
+        }
+        throw CancellationException("Phantom caller operation cancelled")
+    }
 
     private fun isConnectedLocked(owner: LifecycleToken): Boolean =
         ownsOperationLocked(owner) && _connectionState.value is ConnectionState.Connected

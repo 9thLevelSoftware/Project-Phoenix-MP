@@ -12,8 +12,11 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.take
@@ -28,6 +31,153 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 class PhantomBleRepositoryTest {
+    @Test
+    fun `caller cancellation from final scanned device publication aborts scan before final log`() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo = logRepo, dispatcher = dispatcher)
+        var operation: Job? = null
+        var operationResult: Result<Unit>? = null
+        var cancellation: CancellationException? = null
+        val observer = launch(dispatcher) {
+            repository.scannedDevices.collect { devices ->
+                if (devices.isNotEmpty()) operation?.cancel()
+            }
+        }
+        operation = launch(dispatcher) {
+            try {
+                operationResult = repository.startScanning()
+            } catch (error: CancellationException) {
+                cancellation = error
+                throw error
+            }
+        }
+        try {
+            advanceTimeBy(150L)
+            runCurrent()
+            operation?.join()
+            advanceUntilIdle()
+
+            assertTrue(cancellation != null)
+            assertEquals(null, operationResult)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(repository.scannedDevices.value.isEmpty())
+            assertTrue(logRepo.logs.value.none { it.eventType == LogEventType.DEVICE_FOUND })
+
+            assertTrue(repository.startScanning().isSuccess)
+        } finally {
+            operation?.cancelAndJoin()
+            observer.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `caller cancellation from final connected publication aborts connect before producers and logs`() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo = logRepo, dispatcher = dispatcher)
+        var operation: Job? = null
+        var operationResult: Result<Unit>? = null
+        var cancellation: CancellationException? = null
+        assertTrue(repository.startScanning().isSuccess)
+        val device = repository.scannedDevices.value.single()
+        logRepo.clearAll()
+        val observer = launch(dispatcher) {
+            repository.connectionState.collect { state ->
+                if (state is ConnectionState.Connected) operation?.cancel()
+            }
+        }
+        operation = launch(dispatcher) {
+            try {
+                operationResult = repository.connect(device)
+            } catch (error: CancellationException) {
+                cancellation = error
+                throw error
+            }
+        }
+        try {
+            advanceTimeBy(250L)
+            runCurrent()
+            operation?.join()
+            advanceUntilIdle()
+
+            assertTrue(cancellation != null)
+            assertEquals(null, operationResult)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertTrue(logRepo.logs.value.none { it.eventType == LogEventType.SERVICE_DISCOVERED })
+            assertTrue(logRepo.logs.value.none { it.eventType == LogEventType.CONNECT_SUCCESS })
+            assertTrue(logRepo.logs.value.none { it.eventType == LogEventType.HEARTBEAT })
+
+            assertTrue(repository.startScanning().isSuccess)
+        } finally {
+            operation?.cancelAndJoin()
+            observer.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
+    @Test
+    fun `caller cancellation from final command log aborts command and cleans connection`() = runTest {
+        val dispatcher = UnconfinedTestDispatcher(testScheduler)
+        val logRepo = ConnectionLogRepository()
+        val repository = PhantomBleRepository(logRepo = logRepo, dispatcher = dispatcher)
+        var operation: Job? = null
+        var callerJob: Job? = null
+        var operationResult: Result<Unit>? = null
+        var cancellation: CancellationException? = null
+        var cancellationRequested = false
+        val scan = async(dispatcher) { repository.startScanning() }
+        advanceTimeBy(150L)
+        runCurrent()
+        assertTrue(scan.await().isSuccess)
+        val device = repository.scannedDevices.value.single()
+        val connect = async(dispatcher) { repository.connect(device) }
+        advanceTimeBy(250L)
+        runCurrent()
+        assertTrue(connect.await().isSuccess)
+        logRepo.clearAll()
+        val observer = launch(dispatcher) {
+            logRepo.logs.collect { logs ->
+                if (logs.firstOrNull()?.eventType == LogEventType.COMMAND_SENT) {
+                    cancellationRequested = true
+                    callerJob?.cancel()
+                }
+            }
+        }
+        operation = launch(StandardTestDispatcher(testScheduler), start = CoroutineStart.LAZY) {
+            callerJob = currentCoroutineContext()[Job]
+            try {
+                operationResult = repository.sendInitSequence()
+            } catch (error: CancellationException) {
+                cancellation = error
+                throw error
+            }
+        }
+        operation?.start()
+        try {
+            runCurrent()
+            operation?.join()
+            advanceTimeBy(2_000L)
+            runCurrent()
+
+            assertTrue(cancellationRequested)
+            assertTrue(cancellation != null)
+            assertEquals(null, operationResult)
+            assertEquals(ConnectionState.Disconnected, repository.connectionState.value)
+            assertEquals(1, logRepo.logs.value.count { it.eventType == LogEventType.COMMAND_SENT })
+            assertTrue(logRepo.logs.value.none { it.eventType == LogEventType.SERVICE_DISCOVERED })
+            assertTrue(logRepo.logs.value.none { it.eventType == LogEventType.CONNECT_SUCCESS })
+            assertTrue(logRepo.logs.value.none { it.eventType == LogEventType.HEARTBEAT })
+
+            assertTrue(repository.startScanning().isSuccess)
+        } finally {
+            operation?.cancelAndJoin()
+            observer.cancelAndJoin()
+            repository.shutdown()
+        }
+    }
+
     @Test
     fun `disconnect reentered by disconnected state cannot republish or leave cleanup open`() = runTest {
         val dispatcher = UnconfinedTestDispatcher(testScheduler)
