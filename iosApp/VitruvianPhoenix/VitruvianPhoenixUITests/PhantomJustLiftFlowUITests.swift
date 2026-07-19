@@ -61,23 +61,20 @@ final class PhantomJustLiftFlowUITests: XCTestCase {
             return
         }
 
+        assertMeaningfulAccessibleLabel(
+            connectedCheckpoint,
+            description: "connected-state checkpoint for \(phantomDeviceName)",
+        )
+        assertConnectedAccessibleLabel(
+            connectedCheckpoint,
+            description: "connected-state checkpoint for \(phantomDeviceName)",
+        )
+
         let screenshot = XCUIScreen.main.screenshot()
         let attachment = XCTAttachment(screenshot: screenshot)
         attachment.name = "Phantom Just Lift connected - \(phantomDeviceName)"
         attachment.lifetime = .keepAlways
         add(attachment)
-
-        let connectedControl = app.buttons["Connected to machine. Tap to disconnect"]
-        guard waitForSemanticElement(
-            connectedControl,
-            description: "connected semantic control for \(phantomDeviceName)",
-        ) else {
-            return
-        }
-        assertMeaningfulAccessibleLabel(
-            connectedControl,
-            description: "connected semantic control for \(phantomDeviceName)",
-        )
     }
 
     private func semanticElement(_ identifier: String, in app: XCUIApplication) -> XCUIElement {
@@ -93,6 +90,19 @@ final class PhantomJustLiftFlowUITests: XCTestCase {
             label.isEmpty,
             "\(description) must expose meaningful accessible label/content. "
                 + "Identifier=\(element.identifier), Fixture=\(fixtureID), Phantom=\(phantomDeviceName).",
+        )
+    }
+
+    private func assertConnectedAccessibleLabel(
+        _ element: XCUIElement,
+        description: String,
+    ) {
+        let label = element.label.trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertTrue(
+            label.localizedCaseInsensitiveContains("connected"),
+            "\(description) must expose user-facing connected meaning. "
+                + "Accessible label=\(label), Identifier=\(element.identifier), "
+                + "Fixture=\(fixtureID), Phantom=\(phantomDeviceName).",
         )
     }
 
