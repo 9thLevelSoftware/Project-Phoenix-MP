@@ -147,8 +147,9 @@ if [[ "${1-}" == "test" ]]; then
     if [[ -n "${PHANTOM_FAKE_PATH_LOG-}" ]]; then
         printf 'derived=%s\nresult=%s\n' "$derived" "$result" >> "$PHANTOM_FAKE_PATH_LOG"
     fi
-    mkdir -p "$result/Attachments"
-    python3 - "$result/Attachments/test-attachment.png" <<'PY'
+    if [[ "${PHANTOM_FAKE_NO_ATTACHMENT-}" != "1" ]]; then
+        mkdir -p "$result/Attachments"
+        python3 - "$result/Attachments/test-attachment.png" <<'PY'
 import struct
 import sys
 import zlib
@@ -159,7 +160,8 @@ ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
 with open(path, "wb") as stream:
     stream.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"") + chunk(b"IEND", b""))
 PY
-    ln -s "$result/Attachments/test-attachment.png" "$result/Attachments/nested-link"
+        ln -s "$result/Attachments/test-attachment.png" "$result/Attachments/nested-link"
+    fi
     printf 'Test Case -[PhantomJustLiftFlowUITests testHomeToJustLiftToPhantomConnected] passed\n'
     if [[ "${PHANTOM_FAKE_FAIL_TEST-}" == "1" ]]; then exit 17; fi
     exit 0
@@ -256,7 +258,11 @@ if grep -E 'terminate|uninstall|erase' "$LOG" >/dev/null 2>&1; then fail 'destru
 
 # Unsafe path and clean refusal checks do not reach fake tools.
 if run "$RUNNER" verify "$TMP_DIR/../artifact" >/dev/null 2>&1; then fail 'path traversal accepted'; fi
-if run env GITHUB_TOKEN=ghp_1234567890123456789012345678901234567890 "$RUNNER" preflight 11111111-2222-3333-4444-555555555555 >/dev/null 2>&1; then fail 'credential-bearing environment accepted'; fi
+if run env GITHUB_TOKEN=«redacted:ghp_…» "$RUNNER" preflight 11111111-2222-3333-4444-555555555555 >"$TMP_DIR/credential.out" 2>&1; then
+    fail 'credential-bearing environment accepted'
+fi
+grep -F 'credential-like argument or environment value refused; remove the value and retry' "$TMP_DIR/credential.out" >/dev/null \
+    || fail 'credential rejection did not emit a safe actionable error'
 UNSAFE="$TMP_DIR/clean-refusal"
 mkdir "$UNSAFE"
 chmod 700 "$UNSAFE"
@@ -347,7 +353,12 @@ run "$RUNNER" verify "$ARTIFACT" >/dev/null
 
 # An invalid JAVA_HOME must fall back to the real java executable on PATH.
 INVALID_JAVA_HOME="$TMP_DIR/invalid-jdk"
-mkdir "$INVALID_JAVA_HOME"
+mkdir -p "$INVALID_JAVA_HOME/bin"
+cat > "$INVALID_JAVA_HOME/bin/java" <<'SH'
+#!/usr/bin/env bash
+exit 97
+SH
+chmod 700 "$INVALID_JAVA_HOME/bin/java"
 FALLBACK_ARTIFACT="$TMP_DIR/fallback-artifact"
 if ! run env \
     JAVA_HOME="$INVALID_JAVA_HOME" \
@@ -405,6 +416,21 @@ for path in paths["derived"] + paths["result"]:
 for private_root in private_roots:
     assert not private_root.exists(), private_root
 PY
+
+# A successful XCTest command without a copied attachment must fail closed and
+# must not leave a passing manifest behind.
+NO_ATTACHMENT_ARTIFACT="$TMP_DIR/no-attachment-artifact"
+if run env \
+    PHANTOM_EXPECTED_JAVA_HOME="$JAVA_HOME_VALID" \
+    PHANTOM_FAKE_NO_ATTACHMENT=1 \
+    PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
+    PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
+    "$RUNNER" case "$NO_ATTACHMENT_ARTIFACT" just-lift-connected >"$TMP_DIR/no-attachment.out" 2>&1; then
+    fail 'missing XCTest attachment was accepted'
+fi
+grep -F 'XCTest attachment capture failed; passing evidence cannot be produced' "$TMP_DIR/no-attachment.out" >/dev/null \
+    || fail 'missing XCTest attachment failure was not actionable'
+[[ ! -e "$NO_ATTACHMENT_ARTIFACT/run.json" ]] || fail 'missing XCTest attachment left a manifest'
 
 # Neither JAVA_HOME nor PATH java may reach an Apple tool, and the failure must
 # explain how to repair the missing runtime.
@@ -475,6 +501,16 @@ from pathlib import Path
 import sys
 assert Path(sys.argv[1]).read_bytes() == b"outside"
 PY
+
+NESTED_INPUT="$TMP_DIR/nested-input"
+mkdir "$NESTED_INPUT"
+chmod 700 "$NESTED_INPUT"
+mkdir "$BEFORE/nested"
+chmod 700 "$BEFORE/nested"
+ln -s "$TMP_DIR/outside.png" "$BEFORE/nested/escaped.png"
+if run "$RUNNER" compare "$BEFORE" "$AFTER" "$NESTED_INPUT" >/dev/null 2>&1; then
+    fail 'nested symlink in compare input accepted'
+fi
 
 run "$RUNNER" clean "$ARTIFACT"
 [[ ! -e "$ARTIFACT" ]] || fail 'validated clean did not remove only artifact root'

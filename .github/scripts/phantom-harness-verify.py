@@ -48,42 +48,68 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 SCHEMA_VERSION = 1
 ROOT_MODE = 0o700
 FILE_MODE = 0o600
-MAX_TEXT_BYTES = 1024 * 1024
+MAX_FILE_BYTES = 8 * 1024 * 1024
+MAX_TOTAL_BYTES = 64 * 1024 * 1024
+SECRET_SCAN_CHUNK = 64 * 1024
+SECRET_SCAN_OVERLAP = 8192
 MAX_PNG_DIMENSION = 100000
 PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 HEX_SHA1 = re.compile(r"^[0-9a-fA-F]{40}$")
 HEX_SHA256 = re.compile(r"^[0-9a-fA-F]{64}$")
 BUNDLE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.-]*(?:\.[A-Za-z0-9][A-Za-z0-9.-]*)+$")
 SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+SIMULATOR_UDID = re.compile(r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$")
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+FIXTURE_ID = "just-lift-connected"
+FIXTURE_SOURCE = REPO_ROOT / "shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixproject/fixture/SimulatorLaunchFixture.kt"
+EXPECTED_BUNDLE_ID = "com.devil.phoenixproject.projectphoenix"
+EXPECTED_FIXTURE_SHA256 = "e180679548a2d96dbc59c51449edb3b99c19d3e3be82eca98c0707a21a64e78e"
+CANONICAL_COMMANDS = (
+    "xcodebuild.version",
+    "simulator.boot",
+    "simulator.bootstatus",
+    "simulator.terminate",
+    "simulator.uninstall",
+    "build",
+    "run-tests",
+    "simulator.app-state",
+    "simulator.logs",
+    "simulator.screenshot",
+)
+CANONICAL_MARKERS = ("xctest.passed", "phantom.connected", "simulator.screenshot")
+CANONICAL_OUTPUTS = {
+    "xcodebuild.version": "toolchain.log",
+    "simulator.boot": "boot.log",
+    "simulator.bootstatus": "bootstatus.log",
+    "simulator.terminate": "terminate.log",
+    "simulator.uninstall": "uninstall.log",
+    "build": "build.log",
+    "run-tests": "test.log",
+    "simulator.app-state": "app-state.log",
+    "simulator.logs": "simulator.log",
+    "simulator.screenshot": "screenshot.log",
+}
 
 # These patterns are intentionally conservative and bounded.  They identify
 # common credential *shapes*, not arbitrary words such as "token" in logs.
 SECRET_PATTERNS = (
-    re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
-    re.compile(r"\b(?:gh[pousr]|github_pat|glpat|xox[baprs]|sk|rk)[_-][A-Za-z0-9_./=-]{20,}\b", re.I),
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-    re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{20,}", re.I),
-    re.compile(r"\b(?:api[_-]?key|access[_-]?key|secret|password|passwd|auth[_-]?token)\s*[:=]\s*['\"]?[A-Za-z0-9._~+/=-]{16,}", re.I),
+    re.compile(rb"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
+    re.compile(rb"\b(?:gh[pousr]|github_pat|glpat|xox[baprs]|sk|rk)[_-][A-Za-z0-9_./=-]{20,4096}\b", re.I),
+    re.compile(rb"\bAKIA[0-9A-Z]{16}\b"),
+    re.compile(rb"\bBearer\s+[A-Za-z0-9._~+/=-]{20,4096}", re.I),
+    re.compile(rb"\b(?:api[_-]?key|access[_-]?key|secret|password|passwd|auth[_-]?token|anon[_-]?key)\s*[:=]\s*['\"]?[A-Za-z0-9._~+/=-]{16,4096}", re.I),
 )
-TEXT_SUFFIXES = {
-    ".cfg",
-    ".conf",
-    ".csv",
-    ".err",
-    ".html",
-    ".json",
-    ".jsonl",
-    ".log",
-    ".md",
-    ".out",
-    ".plist",
-    ".txt",
-    ".xml",
-    ".yaml",
-    ".yml",
-}
 
 Failure = str
+
+
+def fixture_sha256() -> str:
+    digest = hashlib.sha256()
+    with FIXTURE_SOURCE.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _nonempty_string(value: Any) -> bool:
@@ -292,30 +318,148 @@ def _marker_names(value: Any) -> Set[str]:
     return set()
 
 
-def _validate_commands(manifest: Dict[str, Any], failures: List[Failure]) -> None:
-    commands = _first(manifest, "commandResults", "commands", "command_results")
-    if isinstance(commands, dict):
-        commands = [
+def _command_list(value: Any) -> Optional[List[Any]]:
+    if isinstance(value, dict):
+        value = [
             (dict(result, name=name) if isinstance(result, dict) else {"name": name, "exitCode": result})
-            for name, result in commands.items()
+            for name, result in value.items()
         ]
-    if not isinstance(commands, list) or not commands:
+    if not isinstance(value, list):
+        return None
+    return value
+
+
+def _command_signature(result: Dict[str, Any]) -> Optional[Tuple[Any, ...]]:
+    name = _first(result, "name", "id", "command")
+    exit_code = _first(result, "exitCode", "exit_code", "statusCode", "status_code")
+    output = result.get("output")
+    if not _nonempty_string(name) or not isinstance(exit_code, int) or isinstance(exit_code, bool):
+        return None
+    if output is not None and not _nonempty_string(output):
+        return None
+    bundle = result.get("resultBundle")
+    if bundle is not None and not isinstance(bundle, dict):
+        return None
+    bundle_signature = tuple(sorted(bundle.items())) if isinstance(bundle, dict) else None
+    return (name.strip(), exit_code, output.strip() if isinstance(output, str) else None, bundle_signature)
+
+
+def _read_command_journal(root: Path, failures: List[Failure]) -> List[Dict[str, Any]]:
+    journal = _safe_child(root, ".commands.jsonl", "command journal", failures)
+    if journal is None:
+        return []
+    try:
+        if os.lstat(journal).st_size > MAX_FILE_BYTES:
+            failures.append("command journal exceeds the bounded scan limit")
+            return []
+    except OSError:
+        failures.append("command journal could not be inspected")
+        return []
+    records: List[Dict[str, Any]] = []
+    try:
+        lines = journal.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        failures.append("command journal is not valid UTF-8")
+        return []
+    for index, line in enumerate(lines):
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            failures.append("command journal record is malformed")
+            continue
+        if not isinstance(record, dict) or _command_signature(record) is None:
+            failures.append("command journal record is malformed")
+            continue
+        records.append(record)
+    if not records:
+        failures.append("command journal is empty")
+    return records
+
+
+def _validate_commands(manifest: Dict[str, Any], root: Path, failures: List[Failure]) -> Dict[str, Dict[str, Any]]:
+    commands_value = _first(manifest, "commandResults", "commands", "command_results")
+    commands = _command_list(commands_value)
+    if not commands:
         failures.append("command results are missing")
-        return
+        return {}
+    manifest_by_name: Dict[str, Dict[str, Any]] = {}
     for index, result in enumerate(commands):
         if not isinstance(result, dict):
             failures.append("command result %d is malformed" % (index + 1))
             continue
-        name = _first(result, "name", "id", "command")
-        if not _nonempty_string(name):
-            failures.append("command result %d has no name" % (index + 1))
-        exit_code = _first(result, "exitCode", "exit_code", "statusCode", "status_code")
-        passed = result.get("passed")
-        if not isinstance(exit_code, int) or isinstance(exit_code, bool):
-            if passed is not True:
-                failures.append("command result %d has no successful exit code" % (index + 1))
-        elif exit_code != 0 or passed is False:
-            failures.append("command result %d failed" % (index + 1))
+        signature = _command_signature(result)
+        if signature is None:
+            failures.append("command result %d is malformed" % (index + 1))
+            continue
+        name = signature[0]
+        if name in manifest_by_name:
+            failures.append("duplicate command result name")
+        manifest_by_name[name] = result
+        if signature[1] != 0:
+            failures.append("command result failed")
+        output = result.get("output")
+        if output is not None:
+            _safe_child(root, output, "command output", failures)
+
+    journal = _read_command_journal(root, failures)
+    journal_by_name: Dict[str, Dict[str, Any]] = {}
+    for record in journal:
+        signature = _command_signature(record)
+        if signature is None:
+            continue
+        name = signature[0]
+        if name in journal_by_name:
+            failures.append("duplicate command journal name")
+        journal_by_name[name] = record
+
+    for name, result in manifest_by_name.items():
+        journal_record = journal_by_name.get(name)
+        if journal_record is None or _command_signature(result) != _command_signature(journal_record):
+            failures.append("manifest command does not match command journal")
+
+    for name in CANONICAL_COMMANDS:
+        manifest_record = manifest_by_name.get(name)
+        journal_record = journal_by_name.get(name)
+        if manifest_record is None or journal_record is None:
+            failures.append("canonical command is missing")
+            continue
+        if _command_signature(manifest_record)[1] != 0 or _command_signature(journal_record)[1] != 0:
+            failures.append("canonical command failed")
+        expected_output = CANONICAL_OUTPUTS[name]
+        if manifest_record.get("output") != expected_output or journal_record.get("output") != expected_output:
+            failures.append("canonical command output topology is invalid")
+
+    run_tests = manifest_by_name.get("run-tests")
+    if run_tests is not None:
+        bundle = run_tests.get("resultBundle")
+        if not isinstance(bundle, dict) or bundle.get("basename") != "test.xcresult" or not _nonempty_string(bundle.get("status")):
+            failures.append("XCTest result bundle topology is missing")
+    return manifest_by_name
+
+
+def _validate_command_evidence(root: Path, failures: List[Failure]) -> None:
+    required_outputs = set(CANONICAL_OUTPUTS.values())
+    for output in sorted(required_outputs):
+        path = _safe_child(root, output, "command output", failures)
+        if path is None:
+            continue
+        try:
+            data = path.read_bytes()
+        except OSError:
+            failures.append("command output could not be read")
+            continue
+        if len(data) > MAX_FILE_BYTES:
+            failures.append("command output exceeds the bounded scan limit")
+            continue
+        if output == "build.log" and not re.search(rb"build\s+succeeded", data, re.I):
+            failures.append("build evidence is missing")
+        if output == "test.log":
+            if not re.search(rb"PhantomJustLiftFlowUITests\s+testHomeToJustLiftToPhantomConnected.*passed", data, re.I):
+                failures.append("XCTest pass evidence is missing")
+        if output == "simulator.log" and not re.search(rb"phantom.*connected|connected.*phantom", data, re.I | re.S):
+            failures.append("Phantom connected evidence is missing")
 
 
 def _validate_markers(manifest: Dict[str, Any], failures: List[Failure]) -> None:
@@ -328,14 +472,11 @@ def _validate_markers(manifest: Dict[str, Any], failures: List[Failure]) -> None
         observed_value = _first(manifest, "observedSemanticMarkers", "observed_markers")
     required = _marker_names(required_value)
     observed = _marker_names(observed_value)
-    if not required:
-        failures.append("required semantic markers are missing")
-    if not observed:
-        failures.append("observed semantic markers are missing")
-    for _marker in sorted(required - observed):
-        # Do not echo marker values: a malformed producer could put a
-        # credential-shaped value in a marker label.
-        failures.append("required semantic marker was not observed")
+    canonical = set(CANONICAL_MARKERS)
+    if required != canonical:
+        failures.append("required semantic markers do not match canonical contract")
+    if observed != canonical:
+        failures.append("observed semantic markers do not match canonical contract")
 
 
 def _capture_phase(capture: Dict[str, Any]) -> Optional[str]:
@@ -387,7 +528,11 @@ def _validate_capture_identity(
         _validate_png(path, label, failures)
         if isinstance(expected_hash, str) and HEX_SHA256.fullmatch(expected_hash):
             try:
-                actual = _sha256(path)
+                if os.lstat(path).st_size > MAX_FILE_BYTES:
+                    actual = None
+                    failures.append("%s exceeds the bounded scan limit" % label)
+                else:
+                    actual = _sha256(path)
             except OSError:
                 actual = None
             if actual is not None and actual.lower() != expected_hash.lower():
@@ -435,10 +580,6 @@ def _validate_capture_pairs(captures: Sequence[Dict[str, Any]], failures: List[F
             failures.append("before/after checkpoint identity mismatch")
         if _simulator_key(_capture_simulator(before)) != _simulator_key(_capture_simulator(after)):
             failures.append("before/after simulator identity mismatch")
-
-
-def _textual_path(path: Path) -> bool:
-    return path.suffix.lower() in TEXT_SUFFIXES
 
 
 def _manifest_reference_paths(manifest: Dict[str, Any]) -> List[Any]:
@@ -519,32 +660,48 @@ def _validate_artifact_tree(root: Path, manifest: Dict[str, Any], failures: List
             failures.append("artifact file has incorrect permissions")
 
 
+def _is_env_artifact(path: Path) -> bool:
+    return path.name == ".env" or path.name.startswith(".env.")
+
+
+def _scan_file_for_secret(path: Path) -> Optional[bool]:
+    overlap = b""
+    try:
+        with path.open("rb") as stream:
+            while True:
+                block = stream.read(SECRET_SCAN_CHUNK)
+                if not block:
+                    return False
+                window = overlap + block
+                if any(pattern.search(window) for pattern in SECRET_PATTERNS):
+                    return True
+                overlap = window[-SECRET_SCAN_OVERLAP:]
+    except OSError:
+        return None
+
+
 def _scan_secrets(root: Path, failures: List[Failure], manifest: Optional[Dict[str, Any]] = None) -> None:
-    candidates: Set[Path] = set()
+    del manifest  # Every regular artifact is scanned; manifest listings are not an allowlist.
+    total_size = 0
     for path, info in _walk_artifact_tree(root, failures):
-        if stat.S_ISREG(info.st_mode) and _textual_path(path):
-            candidates.add(path)
-    if isinstance(manifest, dict):
-        listed = _first(manifest, "textualArtifacts", "textArtifacts", "textual_artifacts")
-        if isinstance(listed, list):
-            for item in listed:
-                raw_path = item.get("path") if isinstance(item, dict) else item
-                listed_path = _safe_child(root, raw_path, "textual artifact", failures)
-                if listed_path is not None:
-                    candidates.add(listed_path)
-    for path in candidates:
-        try:
-            content = path.read_bytes()[:MAX_TEXT_BYTES]
-        except OSError:
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
             continue
-        if b"\x00" in content:
+        if _is_env_artifact(path):
+            failures.append(".env artifacts are not accepted")
             continue
-        try:
-            text = content.decode("utf-8")
-        except UnicodeDecodeError:
+        if info.st_size > MAX_FILE_BYTES:
+            failures.append("artifact file exceeds the bounded scan limit")
             continue
-        if any(pattern.search(text) for pattern in SECRET_PATTERNS):
-            failures.append("secret-like content detected in textual artifact")
+        total_size += info.st_size
+        if total_size > MAX_TOTAL_BYTES:
+            failures.append("artifact packet exceeds the bounded scan limit")
+            return
+        found = _scan_file_for_secret(path)
+        if found is None:
+            failures.append("artifact file could not be scanned")
+            continue
+        if found:
+            failures.append("secret-like content detected in artifact")
             return
 
 
@@ -564,6 +721,44 @@ def _check_root(root: Path, failures: List[Failure]) -> bool:
     return True
 
 
+def _validate_recursive_tree(root: Path, failures: List[Failure]) -> None:
+    if not _check_root(root, failures):
+        return
+    uid = os.getuid()
+    for path, info in _walk_artifact_tree(root, failures):
+        if stat.S_ISLNK(info.st_mode):
+            failures.append("artifact tree contains a symlink")
+            continue
+        if stat.S_ISDIR(info.st_mode):
+            if info.st_uid != uid or stat.S_IMODE(info.st_mode) != ROOT_MODE:
+                failures.append("artifact directory ownership or permissions are invalid")
+            continue
+        if not stat.S_ISREG(info.st_mode):
+            failures.append("artifact entry is not a regular file or directory")
+            continue
+        if info.st_uid != uid or stat.S_IMODE(info.st_mode) != FILE_MODE:
+            failures.append("artifact file ownership or permissions are invalid")
+    _scan_secrets(root, failures)
+
+
+def verify_recursive_tree(artifact_dir: str) -> Dict[str, Any]:
+    failures: List[Failure] = []
+    _validate_recursive_tree(Path(artifact_dir), failures)
+    unique_failures: List[Failure] = []
+    seen: Set[str] = set()
+    for failure in failures:
+        if failure not in seen:
+            unique_failures.append(failure)
+            seen.add(failure)
+    return {
+        "passed": not unique_failures,
+        "schemaVersion": None,
+        "runId": None,
+        "captureCount": 0,
+        "failures": unique_failures,
+    }
+
+
 def verify(artifact_dir: str) -> Dict[str, Any]:
     root = Path(artifact_dir)
     failures: List[Failure] = []
@@ -577,9 +772,11 @@ def verify(artifact_dir: str) -> Dict[str, Any]:
         manifest_path = _safe_child(root, "run.json", "manifest", failures)
     if manifest_path is not None:
         try:
+            if os.lstat(manifest_path).st_size > MAX_FILE_BYTES:
+                raise ValueError("manifest exceeds the bounded scan limit")
             raw_manifest = manifest_path.read_bytes()
             manifest = json.loads(raw_manifest.decode("utf-8"))
-        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError, ValueError):
             failures.append("run.json is not valid UTF-8 JSON")
     if not isinstance(manifest, dict):
         failures.append("run.json root must be an object")
@@ -587,6 +784,16 @@ def verify(artifact_dir: str) -> Dict[str, Any]:
     if root_ok:
         _validate_artifact_tree(root, manifest, failures)
     _scan_secrets(root, failures, manifest)
+
+    sentinel = _safe_child(root, ".phantom-harness", "harness sentinel", failures) if root_ok else None
+    if sentinel is not None:
+        try:
+            if sentinel.read_bytes() != b"phantom-harness-artifact-v1\n":
+                failures.append("harness sentinel is invalid")
+        except OSError:
+            failures.append("harness sentinel could not be read")
+    elif root_ok:
+        failures.append("harness sentinel is missing")
 
     schema_version = _first(manifest, "schemaVersion", "schema_version")
     if schema_version != SCHEMA_VERSION:
@@ -599,13 +806,20 @@ def verify(artifact_dir: str) -> Dict[str, Any]:
         run_id = run_id.strip()
 
     base_sha = _field(manifest, "baseSha", "baseSHA", "base_sha", "commitSha")
-    if not isinstance(base_sha, str) or not HEX_SHA1.fullmatch(base_sha):
+    if not isinstance(base_sha, str) or not HEX_SHA1.fullmatch(base_sha) or base_sha.lower() == "0" * 40:
         failures.append("base SHA is missing or malformed")
     fixture_id, fixture_hash = _fixture_fields(manifest)
-    if not _nonempty_string(fixture_id):
-        failures.append("fixture ID is missing")
+    if fixture_id != FIXTURE_ID:
+        failures.append("fixture ID does not match canonical contract")
+    expected_fixture_hash: Optional[str]
+    try:
+        expected_fixture_hash = fixture_sha256()
+    except OSError:
+        expected_fixture_hash = None
     if not isinstance(fixture_hash, str) or not HEX_SHA256.fullmatch(fixture_hash):
         failures.append("fixture SHA-256 is missing or malformed")
+    elif expected_fixture_hash != EXPECTED_FIXTURE_SHA256 or fixture_hash.lower() != EXPECTED_FIXTURE_SHA256:
+        failures.append("fixture SHA-256 does not match canonical source")
     xcode = _version_text(_field(manifest, "xcode", "xcodeVersion", "xcode_version"))
     sdk = _version_text(_field(manifest, "sdk", "sdkVersion", "sdk_version"))
     if not _nonempty_string(xcode):
@@ -614,13 +828,22 @@ def verify(artifact_dir: str) -> Dict[str, Any]:
         failures.append("SDK provenance is missing")
     simulator = _simulator_value(manifest)
     simulator_key = _simulator_key(simulator)
-    if simulator_key is None:
+    if (
+        not isinstance(simulator, dict)
+        or not SIMULATOR_UDID.fullmatch(str(simulator.get("udid", "")))
+        or not _nonempty_string(simulator.get("name"))
+        or not _nonempty_string(simulator.get("runtime"))
+        or simulator.get("state") not in ("Shutdown", "Booted")
+        or simulator_key is None
+    ):
         failures.append("simulator identity is missing or malformed")
     bundle_id = _field(manifest, "bundleId", "bundleID", "bundle_id")
-    if not isinstance(bundle_id, str) or not BUNDLE_ID.fullmatch(bundle_id):
-        failures.append("bundle ID is missing or malformed")
+    if bundle_id != EXPECTED_BUNDLE_ID or not isinstance(bundle_id, str) or not BUNDLE_ID.fullmatch(bundle_id):
+        failures.append("bundle ID does not match canonical app")
 
-    _validate_commands(manifest, failures)
+    command_results = _validate_commands(manifest, root, failures) if root_ok else {}
+    if root_ok and command_results:
+        _validate_command_evidence(root, failures)
     _validate_markers(manifest, failures)
 
     captures = manifest.get("captures")
@@ -645,6 +868,21 @@ def verify(artifact_dir: str) -> Dict[str, Any]:
         _validate_capture_identity(capture, fixture_id, fixture_hash, simulator, index, failures)
     _validate_capture_pairs(valid_capture_objects, failures)
 
+    capture_by_slug = {
+        _first(capture, "slug", "captureSlug", "capture_slug"): capture
+        for capture in valid_capture_objects
+        if isinstance(_first(capture, "slug", "captureSlug", "capture_slug"), str)
+    }
+    for slug, expected_path in (("simulator-after", None), ("xctest-after", "xctest-attachment.png")):
+        capture = capture_by_slug.get(slug)
+        if capture is None:
+            failures.append("required screenshot or XCTest attachment capture is missing")
+            continue
+        if expected_path is not None and _first(capture, "path", "relativePath", "relative_path", "file", "filename") != expected_path:
+            failures.append("required screenshot or XCTest attachment topology is invalid")
+        if _capture_phase(capture) != "after" or _first(capture, "checkpoint", "checkpointId", "checkpoint_id") != "phantom-connected":
+            failures.append("required screenshot or XCTest attachment semantics are invalid")
+
     # Keep output deterministic and bounded.  Never append raw file contents or
     # secret matches to a failure; marker labels are the only manifest values
     # intentionally echoed for diagnosis.
@@ -665,7 +903,9 @@ def verify(artifact_dir: str) -> Dict[str, Any]:
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
-    if len(args) != 1:
+    if len(args) == 2 and args[0] == "--recursive-tree":
+        result = verify_recursive_tree(args[1])
+    elif len(args) != 1:
         result = {
             "passed": False,
             "schemaVersion": None,

@@ -19,6 +19,7 @@ TEST_CLASS="PhantomJustLiftFlowUITests"
 TEST_METHOD="testHomeToJustLiftToPhantomConnected"
 UITEST_TARGET="VitruvianPhoenixUITests"
 FIXTURE_SOURCE="$REPO_ROOT/shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixproject/fixture/SimulatorLaunchFixture.kt"
+EXPECTED_FIXTURE_SHA256="e180679548a2d96dbc59c51449edb3b99c19d3e3be82eca98c0707a21a64e78e"
 VERIFY_SCRIPT="$SCRIPT_DIR/phantom-harness-verify.py"
 DIFF_SOURCE="$SCRIPT_DIR/phantom-image-diff.swift"
 CONFIG_PATH="$PROJECT_DIR/Config/Supabase.xcconfig"
@@ -37,58 +38,21 @@ fail() {
 }
 
 bootstrap_java_runtime() {
-    local java_executable=""
     local configured_home="${JAVA_HOME-}"
-    if [[ -n "$configured_home" && -x "$configured_home/bin/java" ]]; then
-        java_executable="$configured_home/bin/java"
-    else
-        java_executable="$(command -v java 2>/dev/null || true)"
-        if [[ -n "$java_executable" ]]; then
-            local discovered_home=""
-            if discovered_home="$(python3 - "$java_executable" <<'PY'
-import os
-import sys
-from pathlib import Path
-
-candidate = Path(sys.argv[1])
-try:
-    resolved = candidate.resolve(strict=True)
-    if not resolved.is_file() or not os.access(resolved, os.X_OK) or resolved.parent.name != "bin":
-        raise OSError
-    home = resolved.parent.parent
-    home_java = home / "bin" / "java"
-    home_java_resolved = home_java.resolve(strict=True)
-    if not home_java_resolved.is_file() or not os.access(home_java_resolved, os.X_OK):
-        raise OSError
-except (OSError, RuntimeError, ValueError):
-    raise SystemExit(1)
-print(home)
-PY
-)"; then
-                export JAVA_HOME="$discovered_home"
-                java_executable="$JAVA_HOME/bin/java"
-            else
-                java_executable=""
-            fi
-        fi
-    fi
-
-    if [[ -z "$java_executable" ]]; then
-        fail 'unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH'
-    fi
-
-    local version_output=""
-    local version_rc=0
-    set +e
-    version_output="$("$java_executable" -version 2>&1)"
-    version_rc=$?
-    set -e
-    if [[ "$version_rc" -ne 0 ]]; then
-        fail 'unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH'
-    fi
-
+    local java_executable=""
     local java_major=""
-    if ! java_major="$(printf '%s\n' "$version_output" | python3 -c 'import re, sys
+
+    java_version_major() {
+        local executable="$1"
+        local version_output=""
+        local version_rc=0
+        [[ -x "$executable" ]] || return 1
+        set +e
+        version_output="$("$executable" -version 2>&1)"
+        version_rc=$?
+        set -e
+        [[ "$version_rc" -eq 0 ]] || return 1
+        printf '%s\n' "$version_output" | python3 -c 'import re, sys
 text = sys.stdin.read()
 match = re.search(r"version\s+\"([^\"]+)\"", text)
 if not match:
@@ -98,8 +62,39 @@ parts = version.split(".")
 major = parts[1] if parts[0] == "1" and len(parts) > 1 else parts[0]
 if not re.fullmatch(r"[0-9]+", major):
     raise SystemExit(1)
-print(major)')"; then
-        fail 'unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH'
+print(major)'
+    }
+
+    if [[ -n "$configured_home" ]] && java_major="$(java_version_major "$configured_home/bin/java" 2>/dev/null)"; then
+        java_executable="$configured_home/bin/java"
+    else
+        java_executable="$(command -v java 2>/dev/null || true)"
+        if [[ -z "$java_executable" ]] || ! java_major="$(java_version_major "$java_executable" 2>/dev/null)"; then
+            fail 'unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH'
+        fi
+        local discovered_home=""
+        if discovered_home="$(python3 - "$java_executable" <<'PY'
+import os
+import sys
+from pathlib import Path
+candidate = Path(sys.argv[1])
+try:
+    resolved = candidate.resolve(strict=True)
+    if not resolved.is_file() or not os.access(resolved, os.X_OK) or resolved.parent.name != "bin":
+        raise OSError
+    home = resolved.parent.parent
+    home_java_resolved = (home / "bin" / "java").resolve(strict=True)
+    if not home_java_resolved.is_file() or not os.access(home_java_resolved, os.X_OK):
+        raise OSError
+except (OSError, RuntimeError, ValueError):
+    raise SystemExit(1)
+print(home)
+PY
+)"; then
+            export JAVA_HOME="$discovered_home"
+        else
+            fail 'unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH'
+        fi
     fi
     printf 'phantom-harness: Java runtime available (major %s)\n' "$java_major" >&2
 }
@@ -115,7 +110,7 @@ usage() {
 }
 
 reject_credentials() {
-    python3 - "$@" <<'PY'
+    if ! python3 - "$@" <<'PY'
 import os
 import re
 import sys
@@ -161,7 +156,9 @@ for key, value in os.environ.items():
     if key not in {"PATH", "PWD", "OLDPWD", "SHLVL"} and any(pattern.search(value) for pattern in value_patterns):
         raise SystemExit(1)
 PY
-    if [[ $? -ne 0 ]]; then fail 'credential-like argument or environment value refused'; fi
+    then
+        fail 'credential-like argument or environment value refused; remove the value and retry'
+    fi
 }
 
 # Print a normalized path only after checking every existing component with
@@ -271,27 +268,9 @@ PY
 
 validate_existing_root() {
     local path="$1"
-    python3 - "$path" <<'PY'
-import os
-import stat
-import sys
-from pathlib import Path
-path = Path(sys.argv[1])
-try:
-    info = os.lstat(path)
-except OSError:
-    raise SystemExit(1)
-if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
-    raise SystemExit(1)
-for child in path.iterdir():
-    try:
-        child_info = os.lstat(child)
-    except OSError:
-        raise SystemExit(1)
-    if stat.S_ISLNK(child_info.st_mode):
-        raise SystemExit(1)
-PY
-    if [[ $? -ne 0 ]]; then fail 'artifact path is not a caller-owned directory'; fi
+    if ! "$VERIFY_SCRIPT" --recursive-tree "$path" >/dev/null; then
+        fail 'artifact path is not a caller-owned recursively safe directory'
+    fi
 }
 
 new_temp_file() {
@@ -684,8 +663,7 @@ PY
 }
 
 base_sha() {
-    python3 - "$REPO_ROOT" <<'PY'
-import os
+    if ! python3 - "$REPO_ROOT" <<'PY'
 import re
 import sys
 from pathlib import Path
@@ -693,26 +671,33 @@ root = Path(sys.argv[1])
 git = root / ".git"
 try:
     content = git.read_text(encoding="utf-8").strip() if git.is_file() else None
-    git_root = Path(content[5:]).resolve() if content and content.startswith("gitdir:") else git
+    git_root = Path(content.split(":", 1)[1].strip()).resolve() if content and content.startswith("gitdir:") else git
+    common_root = git_root
+    commondir = git_root / "commondir"
+    if commondir.is_file():
+        common_root = (git_root / commondir.read_text(encoding="utf-8").strip()).resolve()
     head = (git_root / "HEAD").read_text(encoding="utf-8").strip()
     if head.startswith("ref: "):
         ref = head[5:]
-        ref_path = git_root / ref
+        ref_path = common_root / ref
         if ref_path.is_file():
             head = ref_path.read_text(encoding="utf-8").strip()
         else:
-            packed = git_root / "packed-refs"
+            packed = common_root / "packed-refs"
             for line in packed.read_text(encoding="utf-8").splitlines():
                 parts = line.split(" ", 1)
                 if len(parts) == 2 and parts[1].strip() == ref:
                     head = parts[0]
                     break
-    if not re.fullmatch(r"[0-9a-fA-F]{40}", head):
+    if not re.fullmatch(r"[0-9a-fA-F]{40}", head) or head.lower() == "0" * 40:
         raise ValueError
     print(head.lower())
 except Exception:
-    print("0" * 40)
+    raise SystemExit(1)
 PY
+    then
+        return 1
+    fi
 }
 
 run_id() {
@@ -1038,8 +1023,11 @@ PY
 )"; then fail 'requested simulator UDID is unavailable'; fi
 
     local base fixture_sha run
-    base="$(base_sha)"
-    fixture_sha="$(fixture_hash)"
+    if ! base="$(base_sha)"; then fail 'base git SHA unavailable; evidence cannot be produced'; fi
+    if [[ "$base" == "$(printf '0%.0s' {1..40})" ]]; then fail 'base git SHA unavailable; evidence cannot be produced'; fi
+    if ! fixture_sha="$(fixture_hash)" || [[ "$fixture_sha" != "$EXPECTED_FIXTURE_SHA256" ]]; then
+        fail 'fixture source hash is not the canonical just-lift-connected fixture'
+    fi
     run="$(run_id)"
     local required_json='["xctest.passed","phantom.connected","simulator.screenshot"]'
     local observed_json='[]'
@@ -1092,9 +1080,6 @@ PY
 
     ensure_direct_destination "$ARTIFACT_DIR" "app-state.log"
     run_recorded "simulator.app-state" "$ARTIFACT_DIR/app-state.log" xcrun simctl get_app_container "$udid" "$BUNDLE_ID" app
-    if [[ "$LAST_RC" -eq 0 ]]; then
-        if [[ "$observed_json" == '[]' ]]; then observed_json='["app.installed"]'; else observed_json='["xctest.passed","phantom.connected","app.installed"]'; fi
-    fi
 
     ensure_direct_destination "$ARTIFACT_DIR" "simulator.log"
     run_recorded "simulator.logs" "$ARTIFACT_DIR/simulator.log" xcrun simctl spawn "$udid" log show --style compact --last 2m --predicate 'process == "VitruvianPhoenix"'
@@ -1160,15 +1145,8 @@ except OSError:
 if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
     raise SystemExit(1)
 PY
-    if copy_xctest_attachment "$result_bundle" "$ARTIFACT_DIR/xctest-attachment.png"; then :; else
-        python3 - "$ARTIFACT_DIR/xctest-attachment.png" <<'PY'
-import os
-import sys
-try:
-    os.unlink(sys.argv[1])
-except OSError:
-    pass
-PY
+    if ! copy_xctest_attachment "$result_bundle" "$ARTIFACT_DIR/xctest-attachment.png"; then
+        fail 'XCTest attachment capture failed; passing evidence cannot be produced'
     fi
 
     normalize_tree_modes "$ARTIFACT_DIR"

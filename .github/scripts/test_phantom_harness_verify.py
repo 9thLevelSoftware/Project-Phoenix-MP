@@ -63,7 +63,29 @@ class PhantomHarnessVerifyTests(unittest.TestCase):
         self.after = png_bytes()
         write_bytes(self.root / "before.png", self.before)
         write_bytes(self.root / "after.png", self.after)
+        write_bytes(self.root / "xctest-attachment.png", self.after)
+        write_bytes(self.root / ".phantom-harness", b"phantom-harness-artifact-v1\n")
         write_bytes(self.root / "commands.log", b"build: exit=0\ntest: exit=0\n")
+        for name in (
+            "toolchain.log",
+            "boot.log",
+            "bootstatus.log",
+            "terminate.log",
+            "uninstall.log",
+            "build.log",
+            "test.log",
+            "app-state.log",
+            "simulator.log",
+            "screenshot.log",
+        ):
+            content = b"ok\n"
+            if name == "build.log":
+                content = b"Build Succeeded\n"
+            if name == "test.log":
+                content = b"Test Case -[VitruvianPhoenixUITests.PhantomJustLiftFlowUITests testHomeToJustLiftToPhantomConnected] passed\n"
+            elif name == "simulator.log":
+                content = b"phantom connected semantic checkpoint\n"
+            write_bytes(self.root / name, content)
         self.manifest = self._manifest()
         self._write_manifest()
 
@@ -71,30 +93,70 @@ class PhantomHarnessVerifyTests(unittest.TestCase):
         self.temp.cleanup()
 
     def _manifest(self):
-        fixture_hash = "b" * 64
+        fixture_hash = self.verifier.fixture_sha256()
         simulator = {
             "udid": "11111111-2222-3333-4444-555555555555",
             "name": "iPhone 17 Pro",
             "runtime": "iOS 26.0",
+            "state": "Shutdown",
         }
+        command_names = (
+            "xcodebuild.version",
+            "simulator.boot",
+            "simulator.bootstatus",
+            "simulator.terminate",
+            "simulator.uninstall",
+            "build",
+            "run-tests",
+            "simulator.app-state",
+            "simulator.logs",
+            "simulator.screenshot",
+        )
+        command_outputs = {
+            "xcodebuild.version": "toolchain.log",
+            "simulator.boot": "boot.log",
+            "simulator.bootstatus": "bootstatus.log",
+            "simulator.terminate": "terminate.log",
+            "simulator.uninstall": "uninstall.log",
+            "build": "build.log",
+            "run-tests": "test.log",
+            "simulator.app-state": "app-state.log",
+            "simulator.logs": "simulator.log",
+            "simulator.screenshot": "screenshot.log",
+        }
+        commands = [
+            {
+                "name": name,
+                "exitCode": 0,
+                "output": command_outputs[name],
+                **(
+                    {
+                        "resultBundle": {
+                            "basename": "test.xcresult",
+                            "status": "private-not-retained",
+                        }
+                    }
+                    if name == "run-tests"
+                    else {}
+                ),
+            }
+            for name in command_names
+        ]
         return {
             "schemaVersion": 1,
             "runId": "run-20260718-001",
             "provenance": {
                 "baseSha": "a" * 40,
-                "fixture": {"id": "fixture-phantom-v1", "sha256": fixture_hash},
+                "fixture": {"id": "just-lift-connected", "sha256": fixture_hash},
                 "xcode": "Xcode 26.0",
                 "sdk": "iPhoneSimulator26.0.sdk",
                 "simulator": simulator,
-                "bundleId": "com.example.phoenix.phantom",
+                "bundleId": "com.devil.phoenixproject.projectphoenix",
             },
-            "commands": [
-                {"name": "build", "exitCode": 0},
-                {"name": "run-tests", "exitCode": 0},
-            ],
+            "commands": commands,
             "semanticMarkers": {
-                "required": ["app.ready", "phantom.connected"],
-                "observed": ["app.ready", "phantom.connected", "capture.after"],
+                "required": ["xctest.passed", "phantom.connected", "simulator.screenshot"],
+                "observed": ["xctest.passed", "phantom.connected", "simulator.screenshot"],
             },
             "captures": [
                 {
@@ -103,17 +165,28 @@ class PhantomHarnessVerifyTests(unittest.TestCase):
                     "sha256": sha256(self.before),
                     "phase": "before",
                     "checkpoint": "phantom-connected",
-                    "fixtureId": "fixture-phantom-v1",
+                    "fixtureId": "just-lift-connected",
                     "fixtureSha256": fixture_hash,
                     "simulator": simulator,
                 },
                 {
-                    "slug": "after",
+                    "slug": "simulator-after",
                     "path": "after.png",
                     "sha256": sha256(self.after),
                     "phase": "after",
                     "checkpoint": "phantom-connected",
-                    "fixtureId": "fixture-phantom-v1",
+                    "fixtureId": "just-lift-connected",
+                    "fixtureSha256": fixture_hash,
+                    "simulator": simulator,
+                },
+                {
+                    "slug": "xctest-after",
+                    "path": "xctest-attachment.png",
+                    "sha256": sha256(self.after),
+                    "phase": "after",
+                    "pair": "xctest",
+                    "checkpoint": "phantom-connected",
+                    "fixtureId": "just-lift-connected",
                     "fixtureSha256": fixture_hash,
                     "simulator": simulator,
                 },
@@ -126,6 +199,10 @@ class PhantomHarnessVerifyTests(unittest.TestCase):
             self.root / "run.json",
             json.dumps(self.manifest, sort_keys=True, indent=2).encode("utf-8"),
         )
+        records = []
+        for command in self.manifest["commands"]:
+            records.append(json.dumps(command, separators=(",", ":")))
+        write_bytes(self.root / ".commands.jsonl", ("\n".join(records) + "\n").encode("utf-8"))
 
     def _run(self):
         completed = subprocess.run(
@@ -147,7 +224,7 @@ class PhantomHarnessVerifyTests(unittest.TestCase):
                 "passed": True,
                 "schemaVersion": 1,
                 "runId": "run-20260718-001",
-                "captureCount": 2,
+                "captureCount": 3,
                 "failures": [],
             },
         )
@@ -298,6 +375,63 @@ class PhantomHarnessVerifyTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 1)
         self.assertTrue(any("command" in failure.lower() for failure in result["failures"]))
         self.assertTrue(any("marker" in failure.lower() for failure in result["failures"]))
+
+    def test_forged_command_and_marker_contract_is_rejected(self):
+        self.manifest["commands"][0]["name"] = "fake-success"
+        self.manifest["semanticMarkers"] = {
+            "required": ["producer.claim"],
+            "observed": ["producer.claim"],
+        }
+        self._write_manifest()
+        completed, result = self._run()
+        self.assertEqual(completed.returncode, 1)
+        self.assertTrue(any("canonical" in failure.lower() or "command" in failure.lower() for failure in result["failures"]))
+        self.assertTrue(any("marker" in failure.lower() for failure in result["failures"]))
+
+    def test_journal_mismatch_is_rejected(self):
+        self._write_manifest()
+        records = self.manifest["commands"]
+        records[0] = dict(records[0], exitCode=17)
+        write_bytes(
+            self.root / ".commands.jsonl",
+            ("\n".join(json.dumps(record, separators=(",", ":")) for record in records) + "\n").encode("utf-8"),
+        )
+        completed, result = self._run()
+        self.assertEqual(completed.returncode, 1)
+        self.assertTrue(any("journal" in failure.lower() for failure in result["failures"]))
+
+    def test_zero_base_sha_is_rejected(self):
+        self.manifest["provenance"]["baseSha"] = "0" * 40
+        self._write_manifest()
+        completed, result = self._run()
+        self.assertEqual(completed.returncode, 1)
+        self.assertTrue(any("base sha" in failure.lower() for failure in result["failures"]))
+
+    def test_missing_xctest_attachment_is_rejected(self):
+        (self.root / "xctest-attachment.png").unlink()
+        self.manifest["captures"] = [capture for capture in self.manifest["captures"] if capture["slug"] != "xctest-after"]
+        self._write_manifest()
+        completed, result = self._run()
+        self.assertEqual(completed.returncode, 1)
+        self.assertTrue(any("XCTest" in failure or "attachment" in failure.lower() for failure in result["failures"]))
+
+    def test_nested_late_unlisted_binary_secret_is_rejected(self):
+        nested = self.root / "nested"
+        nested.mkdir(mode=0o700)
+        os.chmod(nested, 0o700)
+        prefix = b"A" * (1024 * 1024 - 7)
+        write_bytes(nested / "leak.bin", prefix + b" ghp_abcdefghijklmnopqrstuvwxyz1234567890")
+        self._write_manifest()
+        completed, result = self._run()
+        self.assertEqual(completed.returncode, 1)
+        self.assertTrue(any("secret" in failure.lower() for failure in result["failures"]))
+
+    def test_env_artifact_is_rejected(self):
+        write_bytes(self.root / ".env", b"SAFE_PLACEHOLDER=1\n")
+        self._write_manifest()
+        completed, result = self._run()
+        self.assertEqual(completed.returncode, 1)
+        self.assertTrue(any(".env" in failure for failure in result["failures"]))
 
 
 if __name__ == "__main__":
