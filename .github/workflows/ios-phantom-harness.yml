@@ -1,0 +1,300 @@
+name: iOS Phantom Harness
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      # Shared framework and simulator Phantom implementation/tests.
+      - 'shared/src/commonMain/**'
+      - 'shared/src/commonTest/**'
+      - 'shared/src/iosMain/**'
+      - 'shared/src/iosSimulatorArm64Main/**'
+      - 'shared/src/iosSimulatorArm64Test/**'
+      - 'shared/build.gradle.kts'
+      - 'gradle/**'
+      - 'gradle.properties'
+      - 'gradlew'
+      # The real app, Xcode project/scheme, and XCTest UI harness.
+      - 'iosApp/VitruvianPhoenix/**'
+      - 'iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/**'
+      - 'iosApp/VitruvianPhoenix/VitruvianPhoenixUITests/**'
+      # Runner, evidence verifier, image diff, and this workflow.
+      - '.github/scripts/phantom-harness.sh'
+      - '.github/scripts/phantom-harness-verify.py'
+      - '.github/scripts/phantom-image-diff.swift'
+      - '.github/scripts/test_phantom_harness.sh'
+      - '.github/scripts/test_phantom_harness_verify.py'
+      - '.github/scripts/test_phantom_image_diff.sh'
+      - '.github/workflows/ios-phantom-harness.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-phantom-harness-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  phantom-harness:
+    name: iOS Phantom simulator harness
+    runs-on: macos-26
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout current ref
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.ref }}
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Cache Gradle and Kotlin/Native packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ~/.konan
+          key: ${{ runner.os }}-ios-phantom-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-ios-phantom-
+            ${{ runner.os }}-gradle-
+
+      - name: Select and validate the installed Xcode
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          xcode_app="$(
+            for candidate in /Applications/Xcode*.app; do
+              if [[ -d "$candidate" ]]; then
+                printf '%s\n' "$candidate"
+              fi
+            done | sort | tail -n 1
+          )"
+          if [[ -z "$xcode_app" ]]; then
+            echo 'No installed Xcode.app was found under /Applications.' >&2
+            echo 'Install an Xcode image supported by macos-26, then retry.' >&2
+            exit 1
+          fi
+
+          developer_dir="$xcode_app/Contents/Developer"
+          if [[ ! -x "$developer_dir/usr/bin/xcodebuild" ]]; then
+            echo "Selected Xcode has no executable xcodebuild: $developer_dir" >&2
+            echo 'Check the Xcode installation on the macos-26 runner.' >&2
+            exit 1
+          fi
+
+          sudo xcode-select --switch "$developer_dir"
+          xcode-select -p
+          xcodebuild -version
+          sdk_list="$(xcodebuild -showsdks 2>&1)"
+          if [[ "$sdk_list" != *iphonesimulator* ]]; then
+            echo 'The selected Xcode does not expose an iPhone Simulator SDK.' >&2
+            echo 'Check the Xcode installation and runner image.' >&2
+            exit 1
+          fi
+
+      - name: Preflight runner and existing tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          missing=0
+
+          for tool in bash java python3 swift xcode-select xcodebuild xcrun; do
+            if ! command -v "$tool" >/dev/null 2>&1; then
+              echo "ERROR: required tool '$tool' is unavailable." >&2
+              missing=1
+            fi
+          done
+
+          for executable in \
+            ./gradlew \
+            .github/scripts/phantom-harness.sh \
+            .github/scripts/phantom-harness-verify.py \
+            .github/scripts/phantom-image-diff.swift; do
+            if [[ ! -e "$executable" ]]; then
+              echo "ERROR: required runner file is missing: $executable" >&2
+              missing=1
+            elif [[ ! -x "$executable" ]]; then
+              echo "ERROR: required runner file is not executable: $executable" >&2
+              echo "Fix its mode with: chmod +x $executable" >&2
+              missing=1
+            fi
+          done
+
+          if ! xcrun simctl help >/dev/null 2>&1; then
+            echo 'ERROR: CoreSimulator simctl is unavailable.' >&2
+            echo 'Confirm Xcode is selected with xcode-select and the runner image has CoreSimulator.' >&2
+            missing=1
+          fi
+
+          if (( missing != 0 )); then
+            echo 'Preflight failed. Required tools/files are missing or not executable.' >&2
+            echo 'Runner diagnostics:' >&2
+            xcode-select -p >&2 || true
+            xcodebuild -version >&2 || true
+            xcrun simctl list runtimes >&2 || true
+            exit 1
+          fi
+
+      - name: Provision one disposable iPhone simulator
+        id: simulator
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          runtime_id="$(
+            xcrun simctl list runtimes available |
+              sed -nE 's/.*(com\.apple\.CoreSimulator\.SimRuntime\.iOS[^ ]*).*/\1/p' |
+              tail -n 1
+          )"
+          device_type_candidates="$(
+            xcrun simctl list devicetypes |
+              sed -nE 's/.*(com\.apple\.CoreSimulator\.SimDeviceType\.iPhone[^)]*).*/\1/p'
+          )"
+          device_type_id="${device_type_candidates%%$'\n'*}"
+
+          if [[ -z "$runtime_id" ]]; then
+            echo 'No available iOS simulator runtime was found.' >&2
+            xcrun simctl list runtimes >&2 || true
+            exit 1
+          fi
+          if [[ -z "$device_type_id" ]]; then
+            echo 'No iPhone simulator device type was found.' >&2
+            xcrun simctl list devicetypes >&2 || true
+            exit 1
+          fi
+
+          simulator_name="Project Phoenix Phantom CI ${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          simulator_udid="$(xcrun simctl create "$simulator_name" "$device_type_id" "$runtime_id")"
+          if [[ ! "$simulator_udid" =~ ^[0-9A-Fa-f-]{36}$ ]]; then
+            echo 'CoreSimulator returned an invalid simulator UDID.' >&2
+            exit 1
+          fi
+
+          xcrun simctl boot "$simulator_udid"
+          xcrun simctl bootstatus "$simulator_udid" -b
+          printf 'udid=%s\n' "$simulator_udid" >> "$GITHUB_OUTPUT"
+
+          mkdir -p "$RUNNER_TEMP/phantom-evidence"
+          chmod 700 "$RUNNER_TEMP/phantom-evidence"
+
+      - name: Validate the harness against the dedicated simulator
+        env:
+          PHOENIX_HARNESS_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          .github/scripts/phantom-harness.sh preflight "$PHOENIX_HARNESS_UDID"
+
+      - name: Configure the focused Kotlin/Native test device
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          cat > "$RUNNER_TEMP/phantom-device.init.gradle" <<'EOF'
+          def simulatorId = gradle.startParameter.projectProperties['phantomSimulatorUdid']
+          if (!simulatorId) {
+              throw new GradleException('phantomSimulatorUdid must be supplied to bind the focused iOS simulator tests')
+          }
+
+          allprojects {
+              tasks.configureEach { task ->
+                  if (task.name == 'iosSimulatorArm64Test') {
+                      task.device.set(simulatorId)
+                  }
+              }
+          }
+          EOF
+          chmod 600 "$RUNNER_TEMP/phantom-device.init.gradle"
+
+      - name: Run focused simulator binding and Phantom Kotlin tests
+        env:
+          PHOENIX_HARNESS_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          ./gradlew :shared:iosSimulatorArm64Test \
+            --init-script "$RUNNER_TEMP/phantom-device.init.gradle" \
+            -PphantomSimulatorUdid="$PHOENIX_HARNESS_UDID" \
+            --tests 'com.devil.phoenixproject.data.repository.PhantomBleRepositoryTest' \
+            --tests 'com.devil.phoenixproject.di.IosRuntimeBindingsTest' \
+            --tests 'com.devil.phoenixproject.presentation.SimulatorSemanticSelectorsTest' \
+            -Pskip.supabase.check=true
+
+          python3 - <<'PY'
+          from pathlib import Path
+          import xml.etree.ElementTree as ET
+
+          expected = {
+              'PhantomBleRepositoryTest',
+              'IosRuntimeBindingsTest',
+              'SimulatorSemanticSelectorsTest',
+          }
+          reports = sorted(Path('shared/build/test-results/iosSimulatorArm64Test').glob('TEST-*.xml'))
+          observed = set()
+          failures = []
+          for report in reports:
+              suite = ET.parse(report).getroot()
+              suite_name = suite.attrib.get('name', '')
+              matched = next((name for name in expected if name in suite_name), None)
+              if matched is None:
+                  continue
+              observed.add(matched)
+              tests = int(suite.attrib.get('tests', '0'))
+              skipped = int(suite.attrib.get('skipped', '0'))
+              failed = int(suite.attrib.get('failures', '0')) + int(suite.attrib.get('errors', '0'))
+              if tests < 1:
+                  failures.append(f'{matched}: no tests executed')
+              if skipped:
+                  failures.append(f'{matched}: skipped tests reported')
+              if failed:
+                  failures.append(f'{matched}: failed tests reported')
+
+          missing = expected - observed
+          if missing:
+              failures.append(f'missing focused test reports: {sorted(missing)}')
+          if failures:
+              raise SystemExit('focused simulator test assertion failed: ' + '; '.join(failures))
+          print('focused simulator test reports: PASS (all requested classes executed, none skipped)')
+          PY
+
+      - name: Run the real Project Phoenix Phantom harness
+        env:
+          CI: 'true'
+          PHOENIX_HARNESS_ALLOW_DESTRUCTIVE: '1'
+          PHOENIX_HARNESS_UDID: ${{ steps.simulator.outputs.udid }}
+        run: |
+          set -euo pipefail
+          CI=true PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
+            .github/scripts/phantom-harness.sh case "$RUNNER_TEMP/phantom-evidence" just-lift-connected
+
+      - name: Verify the immutable Phantom evidence packet
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/phantom-harness-verify.py "$RUNNER_TEMP/phantom-evidence"
+
+      - name: Upload Phantom evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-phantom-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/phantom-evidence/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Delete disposable simulator
+        if: always() && steps.simulator.outputs.udid != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          simulator_udid='${{ steps.simulator.outputs.udid }}'
+          xcrun simctl shutdown "$simulator_udid" >/dev/null 2>&1 || true
+          xcrun simctl delete "$simulator_udid" >/dev/null 2>&1 || true
