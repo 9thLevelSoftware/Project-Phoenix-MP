@@ -15,6 +15,27 @@ PY
 FAKE_BIN="$TMP_DIR/bin"
 mkdir -p "$FAKE_BIN" "$TMP_DIR/home" "$TMP_DIR/os-tmp"
 chmod 700 "$TMP_DIR/home" "$TMP_DIR/os-tmp"
+JAVA_HOME_VALID="$TMP_DIR/fake-jdk"
+mkdir -p "$JAVA_HOME_VALID/bin"
+cat > "$JAVA_HOME_VALID/bin/java" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1-}" == "-version" ]]; then
+    printf 'openjdk version "21.0.8" 2026-01-20\n' >&2
+    exit 0
+fi
+printf 'unexpected fake java invocation\n' >&2
+exit 2
+SH
+chmod 700 "$JAVA_HOME_VALID/bin/java"
+ln -s "$JAVA_HOME_VALID/bin/java" "$FAKE_BIN/java"
+JAVA_HOME_VALID="$(python3 - "$JAVA_HOME_VALID" <<'PY'
+from pathlib import Path
+import sys
+print(Path(sys.argv[1]).resolve())
+PY
+)"
+PARENT_AUTH_HINT='credential-value-that-must-not-leak'
 cleanup() {
     python3 - "$TMP_DIR" <<'PY'
 import shutil
@@ -57,11 +78,12 @@ path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 path.write_text('// baseline kotlin\n', encoding='utf-8')
 os.chmod(path, 0o600)
 PY
-    python3 - "$repo/.github/scripts/phantom-harness.sh" <<'PY'
+    python3 - "$repo/.github/scripts/phantom-harness.sh" "$TMP_DIR/proposal-child-env.jsonl" <<'PY'
 import os
 import sys
 from pathlib import Path
 runner = Path(sys.argv[1])
+environment_log = sys.argv[2]
 runner.write_text(r'''#!/usr/bin/env bash
 set -euo pipefail
 
@@ -69,6 +91,21 @@ SCRIPT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_ROOT/../.." && pwd)"
 FIXTURE="$REPO_ROOT/shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixproject/fixture/SimulatorLaunchFixture.kt"
 VERIFY="$SCRIPT_ROOT/phantom-harness-verify.py"
+PROPOSAL_ENV_LOG="__PROPOSAL_ENV_LOG__"
+
+record_child_environment() {
+    local action="${1-}"
+    python3 - "$PROPOSAL_ENV_LOG" "$action" "$PWD" <<'PY_ENV'
+import json
+import os
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+record = {"action": sys.argv[2], "cwd": sys.argv[3], "env": dict(sorted(os.environ.items()))}
+with path.open("a", encoding="utf-8") as stream:
+    stream.write(json.dumps(record, sort_keys=True) + "\n")
+PY_ENV
+}
 
 write_png() {
     python3 - "$1" <<'PY2'
@@ -90,6 +127,11 @@ case)
     artifact="$2"
     fixture="$3"
     [[ "$fixture" == just-lift-connected ]] || exit 1
+    record_child_environment case
+    if [[ -z "${JAVA_HOME-}" || ! -x "${JAVA_HOME-}/bin/java" ]] || ! "${JAVA_HOME-}/bin/java" -version >/dev/null 2>&1; then
+        printf 'fake harness: child environment has no usable JAVA_HOME\n' >&2
+        exit 1
+    fi
     source_text="$(cat "$PWD/iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift")"
     if [[ "$(pwd -P)" == "$(cd "$REPO_ROOT" && pwd -P)" && "$source_text" == *FORGE_BEFORE* ]]; then
         source_text="$source_text FORGE_BASE"
@@ -231,7 +273,7 @@ PY2
     ;;
 *) exit 2 ;;
 esac
-''', encoding='utf-8')
+'''.replace("__PROPOSAL_ENV_LOG__", environment_log), encoding='utf-8')
 os.chmod(runner, 0o700)
 PY
     python3 - "$repo/gradlew" <<'PY'
@@ -349,10 +391,50 @@ run_renderer() {
         PATH="$FAKE_BIN:/usr/bin:/bin" \
         HOME="$TMP_DIR/home" \
         TMPDIR="$TMP_DIR/os-tmp" \
+        PARENT_AUTH_HINT="$PARENT_AUTH_HINT" \
         PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
         PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
         PHOENIX_PROPOSAL_TRUSTED_INPUT=1 \
         ${timeout:+PHOENIX_PROPOSAL_TIMEOUT_SECONDS="$timeout"} \
+        "$repo/.github/scripts/phantom-proposal.sh" render "$artifact" just-lift-connected "$patch"
+}
+
+run_renderer_with_java_home() {
+    local java_home="$1"
+    local repo="$2"
+    local artifact="$3"
+    local patch="$4"
+    env -i \
+        PATH="$FAKE_BIN:/usr/bin:/bin" \
+        HOME="$TMP_DIR/home" \
+        TMPDIR="$TMP_DIR/os-tmp" \
+        JAVA_HOME="$java_home" \
+        PARENT_AUTH_HINT="$PARENT_AUTH_HINT" \
+        PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
+        PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
+        PHOENIX_PROPOSAL_TRUSTED_INPUT=1 \
+        "$repo/.github/scripts/phantom-proposal.sh" render "$artifact" just-lift-connected "$patch"
+}
+
+NO_JAVA_BIN="$TMP_DIR/no-java-bin"
+mkdir "$NO_JAVA_BIN"
+for tool in bash chmod git mkdir python3; do
+    ln -s "$(command -v "$tool")" "$NO_JAVA_BIN/$tool"
+done
+
+run_renderer_without_java() {
+    local repo="$1"
+    local artifact="$2"
+    local patch="$3"
+    env -i \
+        PATH="$NO_JAVA_BIN" \
+        HOME="$TMP_DIR/home" \
+        TMPDIR="$TMP_DIR/os-tmp" \
+        JAVA_HOME="$TMP_DIR/invalid-jdk" \
+        PARENT_AUTH_HINT="$PARENT_AUTH_HINT" \
+        PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
+        PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
+        PHOENIX_PROPOSAL_TRUSTED_INPUT=1 \
         "$repo/.github/scripts/phantom-proposal.sh" render "$artifact" just-lift-connected "$patch"
 }
 
@@ -361,9 +443,80 @@ make_fake_repo "$REPO"
 PATCH="$TMP_DIR/candidate.patch"
 make_patch "$PATCH" '// baseline' '// candidate'
 
-# A clean tracked repository may contain ordinary ignored simulator/build
-# outputs and local Supabase configuration.  Those artifacts are outside the
-# source-integrity boundary and must not block the disposable render.
+# The fake harness records the exact child environment and requires a usable
+# Java runtime.  This is the proposal baseline integration check: the renderer
+# must resolve the parent's fake java shim and wire only its JAVA_HOME into the
+# restricted child.
+CHILD_ENV_ARTIFACT="$TMP_DIR/child-env-baseline"
+run_renderer "$REPO" "$CHILD_ENV_ARTIFACT" "$PATCH" >"$TMP_DIR/child-env-baseline.out"
+python3 - "$TMP_DIR/proposal-child-env.jsonl" "$JAVA_HOME_VALID" <<'PY'
+import json
+import sys
+from pathlib import Path
+records = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+case = [record for record in records if record["action"] == "case"][-1]
+env = case["env"]
+assert env.get("JAVA_HOME") == sys.argv[2], env
+assert env["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin", env
+assert "PARENT_AUTH_HINT" not in env, env
+assert all("credential-value-that-must-not-leak" not in value for value in env.values()), env
+PY
+
+# An explicitly configured usable JAVA_HOME is propagated exactly, while an
+# unusable configured home falls back to the validated java executable on the
+# proposal process PATH.
+EXPLICIT_ARTIFACT="$TMP_DIR/explicit-java-home"
+run_renderer_with_java_home "$JAVA_HOME_VALID" "$REPO" "$EXPLICIT_ARTIFACT" "$PATCH" >"$TMP_DIR/explicit-java-home.out"
+python3 - "$TMP_DIR/proposal-child-env.jsonl" "$JAVA_HOME_VALID" <<'PY'
+import json
+import sys
+from pathlib import Path
+records = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+case = [record for record in records if record["action"] == "case"][-1]
+assert case["env"].get("JAVA_HOME") == sys.argv[2], case
+PY
+
+INVALID_JAVA_HOME="$TMP_DIR/invalid-jdk"
+mkdir -p "$INVALID_JAVA_HOME/bin"
+cat > "$INVALID_JAVA_HOME/bin/java" <<'SH'
+#!/usr/bin/env bash
+exit 97
+SH
+chmod 700 "$INVALID_JAVA_HOME/bin/java"
+FALLBACK_ARTIFACT="$TMP_DIR/fallback-java-home"
+run_renderer_with_java_home "$INVALID_JAVA_HOME" "$REPO" "$FALLBACK_ARTIFACT" "$PATCH" >"$TMP_DIR/fallback-java-home.out"
+python3 - "$TMP_DIR/proposal-child-env.jsonl" "$JAVA_HOME_VALID" <<'PY'
+import json
+import sys
+from pathlib import Path
+records = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+case = [record for record in records if record["action"] == "case"][-1]
+assert case["env"].get("JAVA_HOME") == sys.argv[2], case
+PY
+
+# With both the configured home and the proposal PATH unusable, resolution
+# fails before the fake harness baseline is invoked and emits no secret/path
+# diagnostics.
+NO_RUNTIME_ARTIFACT="$TMP_DIR/no-runtime"
+case_count_before="$(python3 - "$TMP_DIR/proposal-child-env.jsonl" <<'PY'
+import sys
+from pathlib import Path
+print(sum(1 for line in Path(sys.argv[1]).read_text().splitlines() if '"action": "case"' in line))
+PY
+)"
+if run_renderer_without_java "$REPO" "$NO_RUNTIME_ARTIFACT" "$PATCH" >"$TMP_DIR/no-runtime.out" 2>&1; then
+    fail 'proposal accepted a missing Java runtime'
+fi
+grep -Fx 'phantom-proposal: unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH' "$TMP_DIR/no-runtime.out" >/dev/null \
+    || fail 'missing proposal Java runtime failure was not actionable'
+case_count_after="$(python3 - "$TMP_DIR/proposal-child-env.jsonl" <<'PY'
+import sys
+from pathlib import Path
+print(sum(1 for line in Path(sys.argv[1]).read_text().splitlines() if '"action": "case"' in line))
+PY
+)"
+[[ "$case_count_before" == "$case_count_after" ]] || fail 'proposal baseline ran without a usable Java runtime'
+
 IGNORED_REPO="$TMP_DIR/ignored-repo"
 make_fake_repo "$IGNORED_REPO"
 add_harmless_ignored_artifacts "$IGNORED_REPO"

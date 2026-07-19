@@ -761,8 +761,73 @@ run_child() {
     return "$rc"
 }
 
+bootstrap_java_runtime() {
+    local configured_home="${JAVA_HOME-}"
+    local java_executable=""
+    local java_major=""
+
+    java_version_major() {
+        local executable="$1"
+        local version_output=""
+        local version_rc=0
+        [[ -x "$executable" ]] || return 1
+        set +e
+        version_output="$("$executable" -version 2>&1)"
+        version_rc=$?
+        set -e
+        [[ "$version_rc" -eq 0 ]] || return 1
+        printf '%s\n' "$version_output" | python3 -c 'import re, sys
+text = sys.stdin.read()
+match = re.search(r"version\s+\"([^\"]+)\"", text)
+if not match:
+    raise SystemExit(1)
+version = match.group(1)
+parts = version.split(".")
+major = parts[1] if parts[0] == "1" and len(parts) > 1 else parts[0]
+if not re.fullmatch(r"[0-9]+", major):
+    raise SystemExit(1)
+print(major)'
+    }
+
+    if [[ -n "$configured_home" ]] && java_major="$(java_version_major "$configured_home/bin/java" 2>/dev/null)"; then
+        export JAVA_HOME="$configured_home"
+        return 0
+    fi
+
+    java_executable="$(command -v java 2>/dev/null || true)"
+    if [[ -z "$java_executable" ]] || ! java_major="$(java_version_major "$java_executable" 2>/dev/null)"; then
+        fail 'unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH'
+    fi
+
+    local discovered_home=""
+    if discovered_home="$(python3 - "$java_executable" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+candidate = Path(sys.argv[1])
+try:
+    resolved = candidate.resolve(strict=True)
+    if not resolved.is_file() or not os.access(resolved, os.X_OK) or resolved.parent.name != "bin":
+        raise OSError
+    home = resolved.parent.parent
+    home_java_resolved = (home / "bin" / "java").resolve(strict=True)
+    if not home_java_resolved.is_file() or not os.access(home_java_resolved, os.X_OK):
+        raise OSError
+except (OSError, RuntimeError, ValueError):
+    raise SystemExit(1)
+print(home)
+PY
+)"; then
+        export JAVA_HOME="$discovered_home"
+    else
+        fail 'unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH'
+    fi
+}
+
 build_child_env() {
-    CHILD_ENV=(env -i "PATH=$SYSTEM_PATH" "HOME=$PRIVATE_DIR/home" "TMPDIR=$PRIVATE_DIR/tmp" "GRADLE_USER_HOME=$PRIVATE_DIR/gradle-user-home" LANG=C LC_ALL=C "PHOENIX_HARNESS_UDID=$EXPECTED_UDID" "PHOENIX_SIMULATOR_FIXTURE=just-lift-connected")
+    [[ -n "${JAVA_HOME-}" ]] || fail 'unable to locate a usable Java runtime; set JAVA_HOME to a JDK home or ensure java is on PATH'
+    CHILD_ENV=(env -i "PATH=$SYSTEM_PATH" "JAVA_HOME=$JAVA_HOME" "HOME=$PRIVATE_DIR/home" "TMPDIR=$PRIVATE_DIR/tmp" "GRADLE_USER_HOME=$PRIVATE_DIR/gradle-user-home" LANG=C LC_ALL=C "PHOENIX_HARNESS_UDID=$EXPECTED_UDID" "PHOENIX_SIMULATOR_FIXTURE=just-lift-connected")
     if [[ "${PHOENIX_HARNESS_ALLOW_DESTRUCTIVE-}" == "1" ]]; then CHILD_ENV+=(PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1); fi
     if [[ "${CI-}" == "true" ]]; then CHILD_ENV+=(CI=true); fi
     if [[ -n "${DEVELOPER_DIR-}" ]]; then CHILD_ENV+=("DEVELOPER_DIR=$DEVELOPER_DIR"); fi
@@ -1286,6 +1351,8 @@ PY
     record_original_state
     if ! FIXTURE_SHA256="$(sha256_file "$FIXTURE_SOURCE")"; then fail 'canonical fixture hash could not be calculated'; fi
     [[ "$FIXTURE_SHA256" == "$EXPECTED_FIXTURE_SHA256" ]] || fail 'canonical fixture source hash is not allowlisted'
+    STAGE="resolve Java runtime"
+    bootstrap_java_runtime
     build_child_env
 
     STAGE="validate patch"
