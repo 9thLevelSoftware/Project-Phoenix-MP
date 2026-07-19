@@ -40,6 +40,9 @@ mkdir "$FAKE_BIN"
 LOG="$TMP_DIR/fake-commands.log"
 : > "$LOG"
 chmod 600 "$LOG"
+PATH_LOG="$TMP_DIR/xcode-private-paths.log"
+: > "$PATH_LOG"
+chmod 600 "$PATH_LOG"
 
 cat > "$FAKE_BIN/xcrun" <<'SH'
 #!/usr/bin/env bash
@@ -134,11 +137,16 @@ if [[ "${1-}" == "-version" ]]; then
 fi
 if [[ "${1-}" == "test" ]]; then
     result=""
+    derived=""
     previous=""
     for arg in "$@"; do
         if [[ "$previous" == "-resultBundlePath" ]]; then result="$arg"; fi
+        if [[ "$previous" == "-derivedDataPath" ]]; then derived="$arg"; fi
         previous="$arg"
     done
+    if [[ -n "${PHANTOM_FAKE_PATH_LOG-}" ]]; then
+        printf 'derived=%s\nresult=%s\n' "$derived" "$result" >> "$PHANTOM_FAKE_PATH_LOG"
+    fi
     mkdir -p "$result/Attachments"
     python3 - "$result/Attachments/test-attachment.png" <<'PY'
 import struct
@@ -151,10 +159,23 @@ ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
 with open(path, "wb") as stream:
     stream.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"") + chunk(b"IEND", b""))
 PY
+    ln -s "$result/Attachments/test-attachment.png" "$result/Attachments/nested-link"
     printf 'Test Case -[PhantomJustLiftFlowUITests testHomeToJustLiftToPhantomConnected] passed\n'
+    if [[ "${PHANTOM_FAKE_FAIL_TEST-}" == "1" ]]; then exit 17; fi
     exit 0
 fi
 if [[ "$*" == *"build"* ]]; then
+    derived=""
+    previous=""
+    for arg in "$@"; do
+        if [[ "$previous" == "-derivedDataPath" ]]; then derived="$arg"; fi
+        previous="$arg"
+    done
+    if [[ -n "${PHANTOM_FAKE_PATH_LOG-}" ]]; then
+        printf 'derived=%s\n' "$derived" >> "$PHANTOM_FAKE_PATH_LOG"
+    fi
+    mkdir -p "$derived/Products"
+    ln -s "$derived/Products" "$derived/nested-link"
     printf 'Build Succeeded\n'
     exit 0
 fi
@@ -258,6 +279,7 @@ PY
 CONFIG_MOVED=1
 if ! run env -u JAVA_HOME \
     PHANTOM_EXPECTED_JAVA_HOME="$JAVA_HOME_VALID" \
+    PHANTOM_FAKE_PATH_LOG="$PATH_LOG" \
     PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
     PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
     "$RUNNER" case "$ARTIFACT" just-lift-connected >"$TMP_DIR/case.out" 2>&1; then
@@ -293,9 +315,33 @@ manifest = json.loads(manifest_path.read_text())
 assert manifest["schemaVersion"] == 1
 assert manifest["provenance"]["fixture"]["id"] == "just-lift-connected"
 assert manifest["commands"] and all(item["exitCode"] == 0 for item in manifest["commands"])
-assert any(item.get("resultBundlePath") == "test.xcresult" for item in manifest["commands"])
+result_commands = [item for item in manifest["commands"] if item["name"] == "run-tests"]
+assert result_commands[0]["resultBundle"] == {"basename": "test.xcresult", "status": "private-not-retained"}
+assert all("resultBundlePath" not in item for item in manifest["commands"])
 assert manifest["captures"]
 assert "phantom.connected" in manifest["semanticMarkers"]["observed"]
+assert not (root / "derived-data").exists()
+assert not (root / "test.xcresult").exists()
+PY
+python3 - "$PATH_LOG" "$ARTIFACT" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+paths = {}
+for line in Path(sys.argv[1]).read_text().splitlines():
+    key, value = line.split("=", 1)
+    paths.setdefault(key, []).append(Path(value))
+root = Path(sys.argv[2]).resolve()
+assert paths["derived"] and paths["result"]
+private_roots = set()
+for path in paths["derived"] + paths["result"]:
+    resolved = path.resolve()
+    assert os.path.commonpath((str(root), str(resolved))) != str(root), (root, path)
+    assert not path.exists(), path
+    private_roots.add(path.parent)
+for private_root in private_roots:
+    assert not private_root.exists(), private_root
 PY
 run "$RUNNER" verify "$ARTIFACT" >/dev/null
 
@@ -324,6 +370,41 @@ fi
 grep -Fx 'phantom-harness: Java runtime available (major 21)' "$TMP_DIR/fallback.out" >/dev/null \
     || fail 'invalid JAVA_HOME fallback did not report Java availability'
 run "$RUNNER" clean "$FALLBACK_ARTIFACT"
+
+# A failed test still creates private Xcode trees in this seam.  The combined
+# EXIT trap must remove both those trees and the temporary fixture config.
+FAIL_ARTIFACT="$TMP_DIR/failure-artifact"
+: > "$PATH_LOG"
+if run env \
+    PHANTOM_EXPECTED_JAVA_HOME="$JAVA_HOME_VALID" \
+    PHANTOM_FAKE_PATH_LOG="$PATH_LOG" \
+    PHANTOM_FAKE_FAIL_TEST=1 \
+    PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
+    PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
+    "$RUNNER" case "$FAIL_ARTIFACT" just-lift-connected >"$TMP_DIR/failure.out" 2>&1; then
+    fail 'failed synthetic test was accepted'
+fi
+[[ ! -e "$CONFIG" ]] || fail 'temporary Supabase config survived failed case'
+python3 - "$PATH_LOG" "$FAIL_ARTIFACT" <<'PY'
+import os
+import sys
+from pathlib import Path
+
+paths = {}
+for line in Path(sys.argv[1]).read_text().splitlines():
+    key, value = line.split("=", 1)
+    paths.setdefault(key, []).append(Path(value))
+root = Path(sys.argv[2]).resolve()
+assert paths["derived"] and paths["result"]
+private_roots = set()
+for path in paths["derived"] + paths["result"]:
+    resolved = path.resolve()
+    assert os.path.commonpath((str(root), str(resolved))) != str(root), (root, path)
+    assert not path.exists(), path
+    private_roots.add(path.parent)
+for private_root in private_roots:
+    assert not private_root.exists(), private_root
+PY
 
 # Neither JAVA_HOME nor PATH java may reach an Apple tool, and the failure must
 # explain how to repair the missing runtime.

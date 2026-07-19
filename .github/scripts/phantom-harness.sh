@@ -309,9 +309,14 @@ PY
 new_private_dir() {
     python3 - <<'PY'
 import os
-tmp_name = __import__("tempfile").mkdtemp(prefix="phantom-harness-", dir=os.environ.get("TMPDIR") or None)
-os.chmod(tmp_name, 0o700)
-print(tmp_name)
+import stat
+import tempfile
+path = tempfile.mkdtemp(prefix="phantom-harness-", dir=os.environ.get("TMPDIR") or None)
+os.chmod(path, 0o700)
+info = os.lstat(path)
+if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
+    raise SystemExit(1)
+print(path)
 PY
 }
 
@@ -500,8 +505,9 @@ record_command() {
     local name="$1"
     local code="$2"
     local output="$3"
-    local result_bundle="${4-}"
-    python3 - "$COMMANDS_PATH" "$name" "$code" "$output" "$result_bundle" <<'PY'
+    local result_bundle_basename="${4-}"
+    local result_bundle_status="${5-}"
+    python3 - "$COMMANDS_PATH" "$name" "$code" "$output" "$result_bundle_basename" "$result_bundle_status" <<'PY'
 import json
 import os
 import stat
@@ -514,7 +520,10 @@ if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or stat.S_IMODE(
 with path.open("a", encoding="utf-8") as stream:
     result = {"name": sys.argv[2], "exitCode": int(sys.argv[3]), "output": sys.argv[4]}
     if sys.argv[5]:
-        result["resultBundlePath"] = sys.argv[5]
+        result["resultBundle"] = {
+            "basename": sys.argv[5],
+            "status": sys.argv[6] or "private-not-retained",
+        }
     stream.write(json.dumps(result, separators=(",", ":")) + "\n")
 PY
     if [[ $? -ne 0 ]]; then fail 'command result could not be recorded'; fi
@@ -531,10 +540,10 @@ run_recorded() {
 run_recorded_result() {
     local name="$1"
     local output="$2"
-    local result_bundle="$3"
+    local result_bundle_basename="$3"
     shift 3
     execute_capture "$output" "$@"
-    record_command "$name" "$LAST_RC" "${output##*/}" "$result_bundle"
+    record_command "$name" "$LAST_RC" "${output##*/}" "$result_bundle_basename" "private-not-retained"
 }
 
 benign_simctl_failure() {
@@ -651,6 +660,13 @@ if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_uid !
     raise SystemExit(1)
 path.unlink()
 PY
+}
+
+cleanup_on_exit() {
+    local exit_code=$?
+    cleanup_placeholder_config || true
+    cleanup_private_dir || true
+    return "$exit_code"
 }
 
 fixture_hash() {
@@ -988,13 +1004,18 @@ case_run() {
     ARTIFACT_DIR="$normalized"
     prepare_artifact_root "$ARTIFACT_DIR"
     COMMANDS_PATH="$ARTIFACT_DIR/$COMMANDS_NAME"
-    trap cleanup_placeholder_config EXIT
+    trap cleanup_on_exit EXIT
 
     local destructive=0
     if [[ "${PHOENIX_HARNESS_ALLOW_DESTRUCTIVE-}" == "1" || "${CI-}" == "true" ]]; then destructive=1; fi
     if [[ "$destructive" -ne 1 ]]; then fail 'destructive simulator reset requires explicit local gate or CI=true'; fi
 
     bootstrap_java_runtime
+
+    PRIVATE_DIR="$(new_private_dir)"
+    export TMPDIR="$PRIVATE_DIR"
+    local derived_data_path="$PRIVATE_DIR/derived-data"
+    local result_bundle="$PRIVATE_DIR/test.xcresult"
 
     local devices
     devices="$(list_devices_json)"
@@ -1058,27 +1079,10 @@ PY
 
     ensure_direct_destination "$ARTIFACT_DIR" "build.log"
     ensure_direct_destination "$ARTIFACT_DIR" "build-result.log"
-    run_recorded "build" "$ARTIFACT_DIR/build.log" xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug -sdk iphonesimulator -destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$ARTIFACT_DIR/derived-data" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO -hideShellScriptEnvironment build
+    run_recorded "build" "$ARTIFACT_DIR/build.log" xcodebuild -project "$PROJECT" -scheme "$SCHEME" -configuration Debug -sdk iphonesimulator -destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$derived_data_path" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO -hideShellScriptEnvironment build
 
-    local result_bundle="$ARTIFACT_DIR/test.xcresult"
-    python3 - "$result_bundle" <<'PY'
-import os
-import stat
-import sys
-from pathlib import Path
-path = Path(sys.argv[1])
-try:
-    info = os.lstat(path)
-except FileNotFoundError:
-    raise SystemExit(0)
-except OSError:
-    raise SystemExit(1)
-if stat.S_ISLNK(info.st_mode) or stat.S_ISREG(info.st_mode) or not stat.S_ISDIR(info.st_mode):
-    raise SystemExit(1)
-PY
-    if [[ $? -ne 0 ]]; then fail 'result bundle destination is unsafe'; fi
     ensure_direct_destination "$ARTIFACT_DIR" "test.log"
-    run_recorded_result "run-tests" "$ARTIFACT_DIR/test.log" "test.xcresult" xcodebuild test -project "$PROJECT" -scheme "$SCHEME" -configuration Debug -sdk iphonesimulator -destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$ARTIFACT_DIR/derived-data" -resultBundlePath "$result_bundle" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO -hideShellScriptEnvironment -only-testing:"$UITEST_TARGET"/"$TEST_CLASS"/"$TEST_METHOD"
+    run_recorded_result "run-tests" "$ARTIFACT_DIR/test.log" "test.xcresult" xcodebuild test -project "$PROJECT" -scheme "$SCHEME" -configuration Debug -sdk iphonesimulator -destination "platform=iOS Simulator,id=$udid" -derivedDataPath "$derived_data_path" -resultBundlePath "$result_bundle" CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO -hideShellScriptEnvironment -only-testing:"$UITEST_TARGET"/"$TEST_CLASS"/"$TEST_METHOD"
 
     # The semantic XCTest is the source of the connected marker; no coordinate
     # automation or blind delay is used here.
@@ -1235,7 +1239,7 @@ PY
     local private
     private="$(new_private_dir)"
     PRIVATE_DIR="$private"
-    trap cleanup_private_dir EXIT
+    trap cleanup_on_exit EXIT
     local executable="$private/phantom-image-diff"
     local compile_log="$private/compile.log"
     python3 - "$compile_log" <<'PY'
