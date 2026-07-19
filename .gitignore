@@ -114,3 +114,30 @@ bugreport-*.zip
 .codeboarding/cache/
 .almanac/runs/
 .almanac/index.db
+
+# iOS Phantom real-app harness outputs.  Keep generated evidence and local
+# proposal state out of git without ignoring the tracked .github scripts or
+# repository documentation.
+/phantom-evidence/
+/phantom-artifacts/
+**/phantom-evidence/
+**/phantom-artifacts/
+/.phantom-evidence/
+/.phantom-artifacts/
+/.proposal-worktree/
+/.proposal-worktrees/
+/.phantom-proposal-worktree/
+/.phantom-proposal-worktrees/
+/phantom-proposal-worktree/
+/phantom-proposal-worktrees/
+/proposal-worktree/
+/proposal-worktrees/
+**/derived-data/
+*.xcresult/
+*.xcresult/**
+**/.commands.jsonl
+
+# Local-only simulator configuration.  Keep the tracked base xcconfig and
+# example files visible; only harness-specific overrides are ignored.
+**/Simulator.local.xcconfig
+**/PhantomSimulator.local.xcconfig
