@@ -814,44 +814,93 @@ copy_xctest_attachment() {
     python3 - "$result_bundle" "$destination" <<'PY'
 import os
 import stat
+import struct
 import sys
+import tempfile
+import zlib
 from pathlib import Path
 bundle = Path(sys.argv[1])
 destination = Path(sys.argv[2])
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PNG_HEADER_SIZE = 33
 try:
     info = os.lstat(bundle)
 except OSError:
     raise SystemExit(1)
 if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
     raise SystemExit(1)
-found = []
-for current, dirs, files in os.walk(bundle, topdown=True, followlinks=False):
-    dirs[:] = sorted(dirs)
-    for name in sorted(files):
-        path = Path(current) / name
-        try:
-            child = os.lstat(path)
-        except OSError:
-            continue
-        if stat.S_ISREG(child.st_mode) and path.suffix.lower() == ".png":
-            found.append(path)
-if not found:
-    raise SystemExit(1)
-source = found[0]
-tmp_fd, tmp_name = __import__("tempfile").mkstemp(prefix=".tmp-attachment-", dir=str(destination.parent))
-os.close(tmp_fd)
-os.chmod(tmp_name, 0o600)
-try:
-    with source.open("rb") as src, open(tmp_name, "wb") as dst:
-        for block in iter(lambda: src.read(1024 * 1024), b""):
-            dst.write(block)
-    os.replace(tmp_name, destination)
-    os.chmod(destination, 0o600)
-finally:
+
+def valid_png_header(header):
+    if len(header) < PNG_HEADER_SIZE or header[:8] != PNG_SIGNATURE:
+        return False
+    if header[8:12] != b"\x00\x00\x00\x0d" or header[12:16] != b"IHDR":
+        return False
+    if zlib.crc32(header[12:29]) & 0xFFFFFFFF != int.from_bytes(header[29:33], "big"):
+        return False
+    width, height = struct.unpack(">II", header[16:24])
+    return width > 0 and height > 0
+
+def candidates():
+    for current, dirs, files in os.walk(bundle, topdown=True, followlinks=False):
+        dirs[:] = sorted(dirs)
+        for name in sorted(files):
+            path = Path(current) / name
+            try:
+                child = os.lstat(path)
+            except OSError:
+                continue
+            if stat.S_ISREG(child.st_mode) and path.suffix.lower() == ".png":
+                yield path
+
+for source in candidates():
+    source_fd = None
+    tmp_fd = None
+    tmp_name = None
     try:
-        os.unlink(tmp_name)
-    except FileNotFoundError:
+        source_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        source_fd = os.open(source, source_flags)
+        source_info = os.fstat(source_fd)
+        if not stat.S_ISREG(source_info.st_mode):
+            continue
+        with os.fdopen(source_fd, "rb") as stream:
+            source_fd = None
+            header = stream.read(PNG_HEADER_SIZE)
+            if not valid_png_header(header):
+                continue
+            stream.seek(0)
+            tmp_fd, tmp_name = tempfile.mkstemp(prefix=".tmp-attachment-", dir=str(destination.parent))
+            os.chmod(tmp_name, 0o600)
+            with os.fdopen(tmp_fd, "wb") as output:
+                tmp_fd = None
+                for block in iter(lambda: stream.read(1024 * 1024), b""):
+                    output.write(block)
+                output.flush()
+                os.fsync(output.fileno())
+            with open(tmp_name, "rb") as copied:
+                if not valid_png_header(copied.read(PNG_HEADER_SIZE)):
+                    raise OSError("copied attachment header changed")
+            os.replace(tmp_name, destination)
+            tmp_name = None
+            raise SystemExit(0)
+    except (OSError, ValueError):
         pass
+    finally:
+        if source_fd is not None:
+            try:
+                os.close(source_fd)
+            except OSError:
+                pass
+        if tmp_fd is not None:
+            try:
+                os.close(tmp_fd)
+            except OSError:
+                pass
+        if tmp_name is not None:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+raise SystemExit(1)
 PY
 }
 

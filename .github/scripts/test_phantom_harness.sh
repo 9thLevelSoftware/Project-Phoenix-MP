@@ -149,6 +149,19 @@ if [[ "${1-}" == "test" ]]; then
     fi
     if [[ "${PHANTOM_FAKE_NO_ATTACHMENT-}" != "1" ]]; then
         mkdir -p "$result/Attachments"
+        : > "$result/Attachments/001-empty.png"
+        printf 'not a PNG\n' > "$result/Attachments/002-invalid-header.png"
+        python3 - "$result/Attachments/003-zero-dimensions.png" <<'PY'
+import struct
+import sys
+import zlib
+path = sys.argv[1]
+def chunk(kind, payload):
+    return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
+ihdr = struct.pack(">IIBBBBB", 0, 2, 8, 6, 0, 0, 0)
+with open(path, "wb") as stream:
+    stream.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr))
+PY
         python3 - "$result/Attachments/test-attachment.png" <<'PY'
 import struct
 import sys
@@ -160,7 +173,13 @@ ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
 with open(path, "wb") as stream:
     stream.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"") + chunk(b"IEND", b""))
 PY
+        outside="$result/../valid-symlink-target.png"
+        cp "$result/Attachments/test-attachment.png" "$outside"
+        ln -s "$outside" "$result/Attachments/000-symlink.png"
         ln -s "$result/Attachments/test-attachment.png" "$result/Attachments/nested-link"
+        if [[ "${PHANTOM_FAKE_ONLY_INVALID_ATTACHMENTS-}" == "1" ]]; then
+            rm "$result/Attachments/test-attachment.png"
+        fi
     fi
     printf 'Test Case -[PhantomJustLiftFlowUITests testHomeToJustLiftToPhantomConnected] passed\n'
     if [[ "${PHANTOM_FAKE_FAIL_TEST-}" == "1" ]]; then exit 17; fi
@@ -312,6 +331,7 @@ import json
 import os
 import stat
 import sys
+import zlib
 from pathlib import Path
 root = Path(sys.argv[1])
 assert stat.S_IMODE(os.lstat(root).st_mode) == 0o700
@@ -328,6 +348,15 @@ assert manifest["captures"]
 assert "phantom.connected" in manifest["semanticMarkers"]["observed"]
 assert not (root / "derived-data").exists()
 assert not (root / "test.xcresult").exists()
+xctest_attachment = root / "xctest-attachment.png"
+assert stat.S_IMODE(os.lstat(xctest_attachment).st_mode) == 0o600
+data = xctest_attachment.read_bytes()
+assert data[:8] == b"\x89PNG\r\n\x1a\n"
+assert data[8:12] == b"\x00\x00\x00\x0d"
+assert data[12:16] == b"IHDR"
+assert zlib.crc32(data[12:29]) & 0xffffffff == int.from_bytes(data[29:33], "big")
+assert int.from_bytes(data[16:20], "big") > 0
+assert int.from_bytes(data[20:24], "big") > 0
 PY
 python3 - "$PATH_LOG" "$ARTIFACT" <<'PY'
 import os
@@ -431,6 +460,21 @@ fi
 grep -F 'XCTest attachment capture failed; passing evidence cannot be produced' "$TMP_DIR/no-attachment.out" >/dev/null \
     || fail 'missing XCTest attachment failure was not actionable'
 [[ ! -e "$NO_ATTACHMENT_ARTIFACT/run.json" ]] || fail 'missing XCTest attachment left a manifest'
+
+# Invalid regular candidates and a symlink to a valid PNG must not produce
+# passing evidence when no valid regular candidate remains.
+ONLY_INVALID_ARTIFACT="$TMP_DIR/only-invalid-artifact"
+if run env \
+    PHANTOM_EXPECTED_JAVA_HOME="$JAVA_HOME_VALID" \
+    PHANTOM_FAKE_ONLY_INVALID_ATTACHMENTS=1 \
+    PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
+    PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
+    "$RUNNER" case "$ONLY_INVALID_ARTIFACT" just-lift-connected >"$TMP_DIR/only-invalid.out" 2>&1; then
+    fail 'only invalid XCTest attachment candidates were accepted'
+fi
+grep -F 'XCTest attachment capture failed; passing evidence cannot be produced' "$TMP_DIR/only-invalid.out" >/dev/null \
+    || fail 'only invalid XCTest attachment failure was not actionable'
+[[ ! -e "$ONLY_INVALID_ARTIFACT/run.json" ]] || fail 'only invalid XCTest attachment left a manifest'
 
 # Neither JAVA_HOME nor PATH java may reach an Apple tool, and the failure must
 # explain how to repair the missing runtime.
