@@ -813,8 +813,10 @@ copy_xctest_attachment() {
     local destination="$2"
     python3 - "$result_bundle" "$destination" <<'PY'
 import os
+import shutil
 import stat
 import struct
+import subprocess
 import sys
 import tempfile
 import zlib
@@ -829,6 +831,15 @@ except OSError:
     raise SystemExit(1)
 if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
     raise SystemExit(1)
+try:
+    destination_info = os.lstat(destination)
+except FileNotFoundError:
+    destination_info = None
+except OSError:
+    raise SystemExit(1)
+if destination_info is not None and (stat.S_ISLNK(destination_info.st_mode) or not stat.S_ISREG(destination_info.st_mode)):
+    raise SystemExit(1)
+
 
 def valid_png_header(header):
     if len(header) < PNG_HEADER_SIZE or header[:8] != PNG_SIGNATURE:
@@ -840,67 +851,108 @@ def valid_png_header(header):
     width, height = struct.unpack(">II", header[16:24])
     return width > 0 and height > 0
 
-def candidates():
-    for current, dirs, files in os.walk(bundle, topdown=True, followlinks=False):
-        dirs[:] = sorted(dirs)
-        for name in sorted(files):
+
+def candidates(root):
+    for current, dirs, files in os.walk(root, topdown=True, followlinks=False):
+        safe_dirs = []
+        for name in sorted(dirs):
             path = Path(current) / name
             try:
                 child = os.lstat(path)
             except OSError:
                 continue
-            if stat.S_ISREG(child.st_mode) and path.suffix.lower() == ".png":
+            if stat.S_ISDIR(child.st_mode) and not stat.S_ISLNK(child.st_mode):
+                safe_dirs.append(name)
+        dirs[:] = safe_dirs
+        for name in sorted(files):
+            path = Path(current) / name
+            if path.suffix.lower() != ".png":
+                continue
+            try:
+                child = os.lstat(path)
+            except OSError:
+                continue
+            if stat.S_ISREG(child.st_mode) and not stat.S_ISLNK(child.st_mode):
                 yield path
 
-for source in candidates():
-    source_fd = None
-    tmp_fd = None
-    tmp_name = None
-    try:
-        source_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
-        source_fd = os.open(source, source_flags)
-        source_info = os.fstat(source_fd)
-        if not stat.S_ISREG(source_info.st_mode):
-            continue
-        with os.fdopen(source_fd, "rb") as stream:
-            source_fd = None
-            header = stream.read(PNG_HEADER_SIZE)
-            if not valid_png_header(header):
+export_dir = None
+try:
+    export_dir = Path(tempfile.mkdtemp(prefix="phantom-harness-xcresult-export-"))
+    os.chmod(export_dir, 0o700)
+    completed = subprocess.run(
+        [
+            "xcrun",
+            "xcresulttool",
+            "export",
+            "attachments",
+            "--path",
+            str(bundle),
+            "--output-path",
+            str(export_dir),
+        ],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if completed.returncode != 0:
+        raise SystemExit(1)
+
+    for source in candidates(export_dir):
+        source_fd = None
+        tmp_fd = None
+        tmp_name = None
+        try:
+            source_flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+            source_fd = os.open(source, source_flags)
+            source_info = os.fstat(source_fd)
+            if stat.S_ISLNK(source_info.st_mode) or not stat.S_ISREG(source_info.st_mode):
                 continue
-            stream.seek(0)
-            tmp_fd, tmp_name = tempfile.mkstemp(prefix=".tmp-attachment-", dir=str(destination.parent))
-            os.chmod(tmp_name, 0o600)
-            with os.fdopen(tmp_fd, "wb") as output:
-                tmp_fd = None
-                for block in iter(lambda: stream.read(1024 * 1024), b""):
-                    output.write(block)
-                output.flush()
-                os.fsync(output.fileno())
-            with open(tmp_name, "rb") as copied:
-                if not valid_png_header(copied.read(PNG_HEADER_SIZE)):
-                    raise OSError("copied attachment header changed")
-            os.replace(tmp_name, destination)
-            tmp_name = None
-            raise SystemExit(0)
-    except (OSError, ValueError):
-        pass
-    finally:
-        if source_fd is not None:
-            try:
-                os.close(source_fd)
-            except OSError:
-                pass
-        if tmp_fd is not None:
-            try:
-                os.close(tmp_fd)
-            except OSError:
-                pass
-        if tmp_name is not None:
-            try:
-                os.unlink(tmp_name)
-            except OSError:
-                pass
-raise SystemExit(1)
+            with os.fdopen(source_fd, "rb") as stream:
+                source_fd = None
+                header = stream.read(PNG_HEADER_SIZE)
+                if not valid_png_header(header):
+                    continue
+                stream.seek(0)
+                tmp_fd, tmp_name = tempfile.mkstemp(prefix=".tmp-attachment-", dir=str(destination.parent))
+                os.fchmod(tmp_fd, 0o600)
+                with os.fdopen(tmp_fd, "wb") as output:
+                    tmp_fd = None
+                    for block in iter(lambda: stream.read(1024 * 1024), b""):
+                        output.write(block)
+                    output.flush()
+                    os.fsync(output.fileno())
+                with open(tmp_name, "rb") as copied:
+                    if not valid_png_header(copied.read(PNG_HEADER_SIZE)):
+                        raise OSError("copied attachment header changed")
+                os.replace(tmp_name, destination)
+                tmp_name = None
+                os.chmod(destination, 0o600)
+                raise SystemExit(0)
+        except (OSError, ValueError):
+            pass
+        finally:
+            if source_fd is not None:
+                try:
+                    os.close(source_fd)
+                except OSError:
+                    pass
+            if tmp_fd is not None:
+                try:
+                    os.close(tmp_fd)
+                except OSError:
+                    pass
+            if tmp_name is not None:
+                try:
+                    os.unlink(tmp_name)
+                except OSError:
+                    pass
+    raise SystemExit(1)
+finally:
+    if export_dir is not None:
+        try:
+            shutil.rmtree(export_dir)
+        except OSError:
+            raise SystemExit(1)
 PY
 }
 

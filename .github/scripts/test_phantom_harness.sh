@@ -43,6 +43,9 @@ chmod 600 "$LOG"
 PATH_LOG="$TMP_DIR/xcode-private-paths.log"
 : > "$PATH_LOG"
 chmod 600 "$PATH_LOG"
+EXPORT_LOG="$TMP_DIR/xcresult-export-paths.log"
+: > "$EXPORT_LOG"
+chmod 600 "$EXPORT_LOG"
 
 cat > "$FAKE_BIN/xcrun" <<'SH'
 #!/usr/bin/env bash
@@ -60,6 +63,67 @@ if [[ "${1-}" == "--sdk" ]]; then
 fi
 if [[ "${1-}" == "--version" ]]; then
     printf 'xcrun version 72.\n'
+    exit 0
+fi
+if [[ "${1-}" == "xcresulttool" ]]; then
+    shift
+    if [[ "${1-}" != "export" || "${2-}" != "attachments" ]]; then
+        printf 'unexpected fake xcresulttool invocation\n' >&2
+        exit 2
+    fi
+    shift 2
+    result=""
+    output=""
+    previous=""
+    for arg in "$@"; do
+        if [[ "$previous" == "--path" ]]; then result="$arg"; fi
+        if [[ "$previous" == "--output-path" ]]; then output="$arg"; fi
+        previous="$arg"
+    done
+    [[ -n "$result" && -n "$output" ]] || {
+        printf 'missing fake xcresulttool paths\n' >&2
+        exit 2
+    }
+    if [[ -n "${PHANTOM_FAKE_EXPORT_LOG-}" ]]; then
+        printf 'export=%s\nresult=%s\n' "$output" "$result" >> "$PHANTOM_FAKE_EXPORT_LOG"
+    fi
+    if [[ "${PHANTOM_FAKE_XCRESULT_EXPORT_FAIL-}" == "1" ]]; then
+        printf 'fake xcresulttool: export failed\n' >&2
+        exit 23
+    fi
+    mkdir -p "$output"
+    printf '{"attachments":[]}' > "$output/manifest.json"
+    printf 'not a PNG\n' > "$output/000-invalid.png"
+    if [[ "${PHANTOM_FAKE_NO_ATTACHMENT-}" == "1" ]]; then
+        exit 0
+    fi
+    if [[ "${PHANTOM_FAKE_ONLY_INVALID_ATTACHMENTS-}" == "1" ]]; then
+        python3 - "$output/../symlink-target.png" <<'PY'
+import struct
+import sys
+import zlib
+path = sys.argv[1]
+def chunk(kind, payload):
+    return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
+ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
+with open(path, "wb") as stream:
+    stream.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"") + chunk(b"IEND", b""))
+PY
+        ln -s "$output/../symlink-target.png" "$output/001-symlink.png"
+        exit 0
+    fi
+    python3 - "$output/001-valid.png" <<'PY'
+import struct
+import sys
+import zlib
+path = sys.argv[1]
+def chunk(kind, payload):
+    return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
+ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
+with open(path, "wb") as stream:
+    stream.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"") + chunk(b"IEND", b""))
+PY
+    ln -s "$output/001-valid.png" "$output/002-symlink.png"
     exit 0
 fi
 if [[ "${1-}" != "simctl" ]]; then
@@ -147,40 +211,9 @@ if [[ "${1-}" == "test" ]]; then
     if [[ -n "${PHANTOM_FAKE_PATH_LOG-}" ]]; then
         printf 'derived=%s\nresult=%s\n' "$derived" "$result" >> "$PHANTOM_FAKE_PATH_LOG"
     fi
-    if [[ "${PHANTOM_FAKE_NO_ATTACHMENT-}" != "1" ]]; then
-        mkdir -p "$result/Attachments"
-        : > "$result/Attachments/001-empty.png"
-        printf 'not a PNG\n' > "$result/Attachments/002-invalid-header.png"
-        python3 - "$result/Attachments/003-zero-dimensions.png" <<'PY'
-import struct
-import sys
-import zlib
-path = sys.argv[1]
-def chunk(kind, payload):
-    return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
-ihdr = struct.pack(">IIBBBBB", 0, 2, 8, 6, 0, 0, 0)
-with open(path, "wb") as stream:
-    stream.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr))
-PY
-        python3 - "$result/Attachments/test-attachment.png" <<'PY'
-import struct
-import sys
-import zlib
-path = sys.argv[1]
-def chunk(kind, payload):
-    return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
-ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
-with open(path, "wb") as stream:
-    stream.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"") + chunk(b"IEND", b""))
-PY
-        outside="$result/../valid-symlink-target.png"
-        cp "$result/Attachments/test-attachment.png" "$outside"
-        ln -s "$outside" "$result/Attachments/000-symlink.png"
-        ln -s "$result/Attachments/test-attachment.png" "$result/Attachments/nested-link"
-        if [[ "${PHANTOM_FAKE_ONLY_INVALID_ATTACHMENTS-}" == "1" ]]; then
-            rm "$result/Attachments/test-attachment.png"
-        fi
-    fi
+    mkdir -p "$result/Data"
+    printf 'hashed XCTest attachment payload\n' > "$result/Data/data.0"
+    printf '{"attachments":[{"name":"Phantom Just Lift connected - Vee_PhantomSimulator"}]}' > "$result/manifest.json"
     printf 'Test Case -[PhantomJustLiftFlowUITests testHomeToJustLiftToPhantomConnected] passed\n'
     if [[ "${PHANTOM_FAKE_FAIL_TEST-}" == "1" ]]; then exit 17; fi
     exit 0
@@ -244,6 +277,7 @@ run() {
         TMPDIR="$TMP_DIR" \
         PHANTOM_FAKE_LOG="$LOG" \
         PHANTOM_FAKE_BOOTED="$TMP_DIR/booted" \
+        PHANTOM_FAKE_EXPORT_LOG="$EXPORT_LOG" \
         "$@"
 }
 
@@ -254,6 +288,7 @@ run_no_java() {
         TMPDIR="$TMP_DIR" \
         PHANTOM_FAKE_LOG="$LOG" \
         PHANTOM_FAKE_BOOTED="$TMP_DIR/booted" \
+        PHANTOM_FAKE_EXPORT_LOG="$EXPORT_LOG" \
         "$@"
 }
 
@@ -378,6 +413,20 @@ for path in paths["derived"] + paths["result"]:
 for private_root in private_roots:
     assert not private_root.exists(), private_root
 PY
+python3 - "$EXPORT_LOG" "$ARTIFACT" <<'PY'
+import os
+import sys
+from pathlib import Path
+exports = []
+for line in Path(sys.argv[1]).read_text().splitlines():
+    if line.startswith("export="):
+        exports.append(Path(line.split("=", 1)[1]))
+assert len(exports) == 1, exports
+assert not exports[0].exists(), exports[0]
+assert os.path.commonpath((str(Path(sys.argv[2]).resolve()), str(exports[0].resolve()))) != str(Path(sys.argv[2]).resolve())
+PY
+grep -F 'xcrun xcresulttool export attachments --path ' "$LOG" >/dev/null \
+    || fail 'XCTest attachment export command was not invoked'
 run "$RUNNER" verify "$ARTIFACT" >/dev/null
 
 # An invalid JAVA_HOME must fall back to the real java executable on PATH.
@@ -444,6 +493,29 @@ for path in paths["derived"] + paths["result"]:
     private_roots.add(path.parent)
 for private_root in private_roots:
     assert not private_root.exists(), private_root
+PY
+
+# A failed xcresulttool export must fail closed and remove its private export
+# directory without leaving a passing manifest behind.
+EXPORT_FAILURE_ARTIFACT="$TMP_DIR/export-failure-artifact"
+: > "$EXPORT_LOG"
+if run env \
+    PHANTOM_EXPECTED_JAVA_HOME="$JAVA_HOME_VALID" \
+    PHANTOM_FAKE_XCRESULT_EXPORT_FAIL=1 \
+    PHOENIX_HARNESS_UDID=11111111-2222-3333-4444-555555555555 \
+    PHOENIX_HARNESS_ALLOW_DESTRUCTIVE=1 \
+    "$RUNNER" case "$EXPORT_FAILURE_ARTIFACT" just-lift-connected >"$TMP_DIR/export-failure.out" 2>&1; then
+    fail 'failed xcresulttool export was accepted'
+fi
+grep -F 'XCTest attachment capture failed; passing evidence cannot be produced' "$TMP_DIR/export-failure.out" >/dev/null \
+    || fail 'failed xcresulttool export failure was not actionable'
+[[ ! -e "$EXPORT_FAILURE_ARTIFACT/run.json" ]] || fail 'failed xcresulttool export left a manifest'
+python3 - "$EXPORT_LOG" <<'PY'
+import sys
+from pathlib import Path
+exports = [Path(line.split("=", 1)[1]) for line in Path(sys.argv[1]).read_text().splitlines() if line.startswith("export=")]
+assert len(exports) == 1, exports
+assert not exports[0].exists(), exports[0]
 PY
 
 # A successful XCTest command without a copied attachment must fail closed and
