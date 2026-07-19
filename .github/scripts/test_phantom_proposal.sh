@@ -107,6 +107,7 @@ record = {
     "cwd": sys.argv[3],
     "env": dict(sorted(os.environ.items())),
     "rlimitFsize": resource.getrlimit(resource.RLIMIT_FSIZE)[0],
+    "rlimitNoFile": resource.getrlimit(resource.RLIMIT_NOFILE)[0],
 }
 with path.open("a", encoding="utf-8") as stream:
     stream.write(json.dumps(record, sort_keys=True) + "\n")
@@ -294,12 +295,36 @@ esac
 '''.replace("__PROPOSAL_ENV_LOG__", environment_log), encoding='utf-8')
 os.chmod(runner, 0o700)
 PY
-    python3 - "$repo/gradlew" <<'PY'
+    python3 - "$repo/gradlew" "$TMP_DIR/proposal-child-env.jsonl" <<'PY'
 import os
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
-path.write_text('#!/usr/bin/env bash\nset -euo pipefail\ncase " $* " in *" :shared:compileKotlinIosSimulatorArm64 "*) : > "$TMPDIR/compile-ran" ;; *) exit 2 ;; esac\n', encoding='utf-8')
+environment_log = sys.argv[2]
+path.write_text(r'''#!/usr/bin/env bash
+set -euo pipefail
+case " $* " in
+    *" :shared:compileKotlinIosSimulatorArm64 "*) ;;
+    *) exit 2 ;;
+esac
+python3 - "__PROPOSAL_ENV_LOG__" <<'PY_ENV'
+import json
+import os
+import resource
+import sys
+from pathlib import Path
+record = {
+    "action": "gradle-compile",
+    "cwd": os.getcwd(),
+    "env": dict(sorted(os.environ.items())),
+    "rlimitFsize": resource.getrlimit(resource.RLIMIT_FSIZE)[0],
+    "rlimitNoFile": resource.getrlimit(resource.RLIMIT_NOFILE)[0],
+}
+with Path(sys.argv[1]).open("a", encoding="utf-8") as stream:
+    stream.write(json.dumps(record, sort_keys=True) + "\n")
+PY_ENV
+: > "$TMPDIR/compile-ran"
+'''.replace('__PROPOSAL_ENV_LOG__', environment_log), encoding='utf-8')
 os.chmod(path, 0o700)
 PY
     "$REAL_GIT" -C "$repo" init -q
@@ -469,6 +494,7 @@ CHILD_ENV_ARTIFACT="$TMP_DIR/child-env-baseline"
 run_renderer "$REPO" "$CHILD_ENV_ARTIFACT" "$PATCH" >"$TMP_DIR/child-env-baseline.out"
 python3 - "$TMP_DIR/proposal-child-env.jsonl" "$JAVA_HOME_VALID" <<'PY'
 import json
+import resource
 import sys
 from pathlib import Path
 records = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
@@ -478,7 +504,8 @@ assert env.get("JAVA_HOME") == sys.argv[2], env
 assert env["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin", env
 assert "PARENT_AUTH_HINT" not in env, env
 assert all("credential-value-that-must-not-leak" not in value for value in env.values()), env
-assert case["rlimitFsize"] == 512 * 1024 * 1024, case
+assert case["rlimitFsize"] == resource.RLIM_INFINITY, case
+assert case["rlimitNoFile"] == resource.getrlimit(resource.RLIMIT_NOFILE)[0], case
 PY
 
 # An explicitly configured usable JAVA_HOME is propagated exactly, while an
@@ -825,6 +852,25 @@ destination = Path(sys.argv[2])
 destination.write_text(source, encoding="utf-8")
 os.chmod(destination, 0o700)
 PY
+
+# The default profile remains the strict profile for non-build children.
+DEFAULT_PROFILE_LOG="$TMP_DIR/default-profile.log"
+bash -c 'source "$1"; bounded_command "$2" 5 "$PWD" python3 -c "import resource; print(resource.getrlimit(resource.RLIMIT_FSIZE)[0], resource.getrlimit(resource.RLIMIT_NOFILE)[0])"' _ "$BOUNDS_RENDERER" "$DEFAULT_PROFILE_LOG"
+python3 - "$DEFAULT_PROFILE_LOG" <<'PY'
+import resource
+import sys
+from pathlib import Path
+values = Path(sys.argv[1]).read_text(encoding="utf-8").split()
+assert values == [str(512 * 1024 * 1024), "256"], values
+assert values[0] != str(resource.RLIM_INFINITY), values
+PY
+
+# The build helper has no generic command escape hatch: only its two explicit
+# build roles can select the no-FSIZE profile.
+if bash -c 'source "$1"; build_tool_command compare "$2" 5 "$PWD"' _ "$BOUNDS_RENDERER" "$TMP_DIR/rejected-build.log"; then
+    fail 'build helper accepted a non-build command role'
+fi
+
 run_bounds_check() {
     local root="$1"
     local excluded="${2-}"
@@ -931,6 +977,16 @@ from pathlib import Path
 manifest = json.loads((Path(sys.argv[1]) / "proposal-manifest.json").read_text())
 assert manifest["candidateKinds"] == ["kotlin"]
 assert any(item["name"] == "shared.compileKotlinIosSimulatorArm64" for item in manifest["focusedChecks"])
+PY
+python3 - "$TMP_DIR/proposal-child-env.jsonl" <<'PY'
+import json
+import resource
+import sys
+from pathlib import Path
+records = [json.loads(line) for line in Path(sys.argv[1]).read_text().splitlines() if line.strip()]
+compile_record = [record for record in records if record["action"] == "gradle-compile"][-1]
+assert compile_record["rlimitFsize"] == resource.RLIM_INFINITY, compile_record
+assert compile_record["rlimitNoFile"] == resource.getrlimit(resource.RLIMIT_NOFILE)[0], compile_record
 PY
 
 printf 'phantom proposal shell tests passed\n'

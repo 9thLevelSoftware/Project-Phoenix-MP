@@ -22,6 +22,9 @@ SENTINEL_CONTENT=$'phantom-proposal-artifact-v1\n'
 SYSTEM_PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 MAX_PATCH_BYTES=$((128 * 1024 * 1024))
 MAX_CHILD_OUTPUT_BYTES=$((16 * 1024 * 1024))
+# Default proposal children keep both file-size and descriptor limits.  Real
+# Xcode/Gradle build children use the separate build-tool profile below.
+MAX_CHILD_FSIZE_BYTES=$((512 * 1024 * 1024))
 # Candidate-controlled private HOME/TMP/log files and retained artifact files
 # remain capped at 128 MiB each.  Only the named private Gradle cache gets the
 # larger build-tool allowance below.
@@ -696,16 +699,14 @@ for current, dirs, names in os.walk(root, topdown=True, followlinks=False):
 PY
 }
 
-bounded_command() {
+run_limited_command() {
     local log="$1"
     local timeout="$2"
     local cwd="$3"
-    shift 3
-    # Gradle may write a legitimate cache file larger than the strict
-    # candidate/non-cache limit.  Keep RLIMIT_FSIZE bounded at the named cache
-    # ceiling; post-execution validation applies the stricter 128 MiB limit to
-    # every non-cache private/output file.
-    python3 - "$log" "$timeout" "$cwd" "$MAX_CHILD_OUTPUT_BYTES" "$MAX_GRADLE_CACHE_FILE_BYTES" -- "$@" <<'PY'
+    local max_fsize="$4"
+    local max_nofile="$5"
+    shift 5
+    python3 - "$log" "$timeout" "$cwd" "$MAX_CHILD_OUTPUT_BYTES" "$max_fsize" "$max_nofile" -- "$@" <<'PY'
 import os
 import resource
 import selectors
@@ -718,14 +719,20 @@ log = Path(sys.argv[1])
 timeout = int(sys.argv[2])
 cwd = sys.argv[3]
 max_output = int(sys.argv[4])
-max_fsize = int(sys.argv[5])
+max_fsize = None if sys.argv[5] == "none" else int(sys.argv[5])
+max_nofile = None if sys.argv[6] == "none" else int(sys.argv[6])
 separator = sys.argv.index("--")
 command = sys.argv[separator + 1:]
 if not command:
     raise SystemExit(125)
 
 def limit_resources():
-    for name, value in (("RLIMIT_CORE", 0), ("RLIMIT_FSIZE", max_fsize), ("RLIMIT_NOFILE", 256)):
+    limits = [("RLIMIT_CORE", 0)]
+    if max_fsize is not None:
+        limits.append(("RLIMIT_FSIZE", max_fsize))
+    if max_nofile is not None:
+        limits.append(("RLIMIT_NOFILE", max_nofile))
+    for name, value in limits:
         limit = getattr(resource, name, None)
         if limit is None:
             continue
@@ -811,6 +818,43 @@ raise SystemExit(result)
 PY
 }
 
+bounded_command() {
+    local log="$1"
+    local timeout="$2"
+    local cwd="$3"
+    shift 3
+    # Non-build commands retain the strict default resource profile.
+    run_limited_command "$log" "$timeout" "$cwd" "$MAX_CHILD_FSIZE_BYTES" 256 "$@"
+}
+
+build_tool_command() {
+    local kind="$1"
+    local log="$2"
+    local timeout="$3"
+    local cwd="$4"
+    shift 4
+    local command=()
+    case "$kind" in
+        harness)
+            [[ "$#" -eq 1 ]] || return 125
+            command=("${CHILD_ENV[@]}" "$RUNNER" case "$1" just-lift-connected)
+            ;;
+        kotlin-compile)
+            [[ "$#" -eq 0 && "$cwd" == "$WORKTREE" ]] || return 125
+            command=("${CHILD_ENV[@]}" bash "$WORKTREE/gradlew" :shared:compileKotlinIosSimulatorArm64 --no-daemon --console=plain)
+            ;;
+        *)
+            return 125
+            ;;
+    esac
+    # Xcode's build service/Gradle daemons crash when inherited RLIMIT_FSIZE is
+    # set, so this narrowly allowlisted build profile omits both file-size and
+    # artificial NOFILE limits.  Timeout, output cap, process-group cleanup,
+    # core=0, isolated env/worktree, and post-execution private/artifact tree
+    # validation remain the resource guard for real build children.
+    run_limited_command "$log" "$timeout" "$cwd" none none "${command[@]}"
+}
+
 run_child() {
     local log="$1"
     local timeout="$2"
@@ -819,6 +863,24 @@ run_child() {
     set +e
     ACTIVE_CHILD_GROUP_FILE="$log.child-pid"
     bounded_command "$log" "$timeout" "$cwd" "$@" &
+    ACTIVE_CHILD_PID=$!
+    wait "$ACTIVE_CHILD_PID"
+    local rc=$?
+    ACTIVE_CHILD_PID=""
+    ACTIVE_CHILD_GROUP_FILE=""
+    set -e
+    return "$rc"
+}
+
+run_build_child() {
+    local kind="$1"
+    local log="$2"
+    local timeout="$3"
+    local cwd="$4"
+    shift 4
+    set +e
+    ACTIVE_CHILD_GROUP_FILE="$log.child-pid"
+    build_tool_command "$kind" "$log" "$timeout" "$cwd" "$@" &
     ACTIVE_CHILD_PID=$!
     wait "$ACTIVE_CHILD_PID"
     local rc=$?
@@ -904,7 +966,7 @@ run_harness() {
     local root="$1"
     local artifact="$2"
     local label="$3"
-    if ! run_child "$PRIVATE_DIR/$label-run.log" "$CHILD_TIMEOUT_SECONDS" "$root" "${CHILD_ENV[@]}" "$RUNNER" case "$artifact" just-lift-connected; then
+    if ! run_build_child harness "$PRIVATE_DIR/$label-run.log" "$CHILD_TIMEOUT_SECONDS" "$root" "$artifact"; then
         return 1
     fi
     check_tree_bounds "$PRIVATE_DIR" "$WORKTREE" private || return 1
@@ -951,7 +1013,7 @@ PY
 )"
     [[ "$requires" == "1" ]] || return 0
     validate_regular_file "$WORKTREE/gradlew" 0 || return 1
-    run_child "$PRIVATE_DIR/kotlin-compile.log" "$CHILD_TIMEOUT_SECONDS" "$WORKTREE" "${CHILD_ENV[@]}" bash "$WORKTREE/gradlew" :shared:compileKotlinIosSimulatorArm64 --no-daemon --console=plain || return 1
+    run_build_child kotlin-compile "$PRIVATE_DIR/kotlin-compile.log" "$CHILD_TIMEOUT_SECONDS" "$WORKTREE" || return 1
     check_tree_bounds "$PRIVATE_DIR" "$WORKTREE" private || return 1
 }
 
