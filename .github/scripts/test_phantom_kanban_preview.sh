@@ -9,10 +9,12 @@ import json
 import os
 import re
 import shutil
+import signal
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 script_dir = Path(os.environ["SCRIPT_DIR"])
@@ -79,7 +81,7 @@ def make_fake_repo(root):
     renderer_impl = scripts / "fake-renderer.py"
     renderer_impl.write_text(
         "#!/usr/bin/env python3\n"
-        "import hashlib, json, os, stat, sys\n"
+        "import hashlib, json, os, stat, subprocess, sys, time\n"
         "from pathlib import Path\n"
         "def private(path, data, binary=False):\n"
         "    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)\n"
@@ -96,9 +98,26 @@ def make_fake_repo(root):
         "    raise SystemExit(2)\n"
         "artifact, patch = Path(sys.argv[2]), Path(sys.argv[4])\n"
         "if os.environ.get('PHOENIX_PROPOSAL_TRUSTED_INPUT') != '1': raise SystemExit(3)\n"
+        "patch_text = patch.read_bytes().decode('utf-8', 'replace')\n"
+        "def marker(prefix):\n"
+        "    for line in patch_text.splitlines():\n"
+        "        if line.startswith(prefix): return line[len(prefix):]\n"
+        "    return ''\n"
+        "mode = os.environ.get('PREVIEW_TEST_RENDERER_MODE', '') or marker('TEST_MODE:') or 'ok'\n"
+        "if mode == 'replace-patch':\n"
+        "    original, replacement, observed = marker('REPLACE_PATCH:').split('|', 2)\n"
+        "    os.replace(replacement, original)\n"
+        "    Path(observed).write_bytes(patch.read_bytes())\n"
+        "if mode == 'replace-result':\n"
+        "    result_root, original, outside = marker('REPLACE_RESULT:').split('|', 2)\n"
+        "    os.rename(result_root, original)\n"
+        "    os.symlink(outside, result_root)\n"
+        "if mode == 'sleep':\n"
+        "    Path(marker('SLEEP_CHILD:')).write_text(str(os.getpid()) + '\\n', encoding='ascii')\n"
+        "    time.sleep(60)\n"
         "if b'FAIL_RENDERER' in patch.read_bytes(): raise SystemExit(17)\n"
         "artifact.mkdir(mode=0o700, parents=True, exist_ok=True)\n"
-        "base = __import__('subprocess').check_output(['git', '-C', str(Path(__file__).resolve().parents[2]), 'rev-parse', 'HEAD'], text=True).strip()\n"
+        "base = subprocess.check_output(['git', '-C', str(Path(__file__).resolve().parents[2]), 'rev-parse', 'HEAD'], text=True).strip()\n"
         "for name in ('before/run.json', 'after/run.json'):\n"
         "    private(artifact / name, '{\\\"schemaVersion\\\":1}\\n')\n"
         "private(artifact / 'proposal.md', '# Phantom proposal evidence\\nStatus: **passed**\\n')\n"
@@ -106,7 +125,17 @@ def make_fake_repo(root):
         "private(artifact / 'proposal-manifest.json', json.dumps({'schemaVersion': 1, 'status': 'passed', 'fixture': 'just-lift-connected', 'baseSha': base}) + '\\n')\n"
         "private(artifact / 'comparison/diff.json', json.dumps({'passed': True}) + '\\n')\n"
         "private(artifact / 'comparison/diff.png', png(), binary=True)\n"
-        "private(artifact / 'host-leak.txt', '/Users/host/private/candidate.patch\\n')\n"
+        "leak = os.environ.get('PREVIEW_TEST_LEAK_KIND', '') or marker('LEAK_KIND:')\n"
+        "if leak == 'proposal.md': private(artifact / leak, 'absolute=/Users/host/private/candidate.patch\\nAPI_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa\\n')\n"
+        "elif leak == 'evidence-summary.json': private(artifact / leak, json.dumps({'schemaVersion': 1, 'status': 'passed', 'leak': '/private/host/API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa'}) + '\\n')\n"
+        "elif leak == 'proposal-manifest.json': private(artifact / leak, json.dumps({'schemaVersion': 1, 'status': 'passed', 'fixture': 'just-lift-connected', 'baseSha': base, 'patch': {'path': '/Users/host/private/candidate.patch', 'sha256': '0' * 64, 'size': 1, 'binary': False, 'format': 'exact-input'}}) + '\\n')\n"
+        "elif leak in ('before/run.json', 'after/run.json', 'comparison/diff.json'): private(artifact / leak, json.dumps({'schemaVersion': 1, 'leak': 'Bearer aaaaaaaaaaaaaaaaaaaaaaaa /Users/host/private'}) + '\\n')\n"
+        "elif leak == 'comparison/diff.png': private(artifact / leak, png() + b' /Users/host/private API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa', binary=True)\n"
+        "if mode == 'missing': (artifact / 'after/run.json').unlink()\n"
+        "if mode == 'malformed': private(artifact / 'comparison/diff.json', '{not-json\\n')\n"
+        "if mode == 'duplicate-manifest': private(artifact / 'proposal-manifest.json', '{\\\"schemaVersion\\\":1,\\\"schemaVersion\\\":1,\\\"status\\\":\\\"passed\\\",\\\"fixture\\\":\\\"just-lift-connected\\\",\\\"baseSha\\\":' + json.dumps(base) + '}\\n')\n"
+        "if mode == 'bad-manifest-types': private(artifact / 'proposal-manifest.json', json.dumps({'schemaVersion': True, 'status': 'passed', 'fixture': 'just-lift-connected', 'baseSha': base}) + '\\n')\n"
+        "if marker('VERIFY_FAIL:'): private(artifact / '.verify-fail', marker('VERIFY_FAIL:'))\n"
         "raise SystemExit(0)\n",
         encoding="utf-8",
     )
@@ -125,11 +154,13 @@ def make_fake_repo(root):
     harness.write_text(
         "#!/usr/bin/env python3\n"
         "import json, os, sys\n"
+        "from pathlib import Path\n"
         f"LOG = {str(verifier_log)!r}\n"
         "if len(sys.argv) != 3 or sys.argv[1] != 'verify': raise SystemExit(2)\n"
         "with open(LOG, 'a', encoding='utf-8') as stream:\n"
         "    stream.write(json.dumps({'args': sys.argv[1:], 'env': dict(sorted(os.environ.items()))}) + '\\n')\n"
         "if not sys.argv[2].endswith('/before') and not sys.argv[2].endswith('/after'): raise SystemExit(4)\n"
+        "if os.environ.get('PREVIEW_TEST_VERIFY_FAIL') == '1' or (Path(sys.argv[2]).parent / '.verify-fail').exists(): raise SystemExit(17)\n"
         "print('{\"passed\":true}')\n",
         encoding="utf-8",
     )
@@ -177,18 +208,39 @@ def assert_failure(completed, result, stage):
     if files != ["preview-result.json"]:
         fail(f"failure leaked artifacts at {stage}: {files}")
     payload = json.loads((result / "preview-result.json").read_text(encoding="utf-8"))
+    expected_reason = {
+        "validate-request": "request validation failed",
+        "renderer": "renderer failed",
+        "interrupted": "preview interrupted",
+        "publish": "result publication failed",
+    }.get(stage, "canonical verification failed" if stage.startswith("verify-") else "artifact validation failed")
     if payload != {
         "schema_version": 1,
         "status": "failed",
         "stage": stage,
-        "reason": {
-            "validate-request": "request validation failed",
-            "renderer": "renderer failed",
-        }.get(stage, "canonical verification failed" if stage.startswith("verify-") else "artifact validation failed"),
+        "reason": expected_reason,
     }:
         fail(f"unexpected failure payload at {stage}: {payload!r}")
     if "/" in json.dumps(payload):
         fail(f"failure payload contains unsafe path at {stage}")
+    if "Traceback" in completed.stderr or str(result) in completed.stderr or str(result) in completed.stdout:
+        fail(f"failure output was not sanitized at {stage}: stdout={completed.stdout!r} stderr={completed.stderr!r}")
+
+
+def assert_no_traceback(completed, label):
+    if "Traceback" in completed.stdout or "Traceback" in completed.stderr:
+        fail(f"traceback leaked for {label}: stdout={completed.stdout!r} stderr={completed.stderr!r}")
+    if "/Users/" in completed.stdout or "/Users/" in completed.stderr or "/private/" in completed.stdout or "/private/" in completed.stderr:
+        fail(f"host path leaked for {label}: stdout={completed.stdout!r} stderr={completed.stderr!r}")
+
+
+def assert_result_only(result, stage, reason):
+    files = sorted(path.relative_to(result).as_posix() for path in result.rglob("*"))
+    if files != ["preview-result.json"]:
+        fail(f"expected result-only publication for {stage}: {files}")
+    payload = json.loads((result / "preview-result.json").read_text(encoding="utf-8"))
+    if payload != {"schema_version": 1, "status": "failed", "stage": stage, "reason": reason}:
+        fail(f"unexpected result-only payload for {stage}: {payload!r}")
 
 
 def main():
@@ -322,6 +374,164 @@ def main():
         write_json(failure_request, request("KANBAN-49", failure_patch))
         result = fresh_result(temp, "renderer-failure-result")
         assert_failure(run_wrapper(repo, failure_request, result), result, "renderer")
+
+        duplicate = temp / "duplicate.json"
+        duplicate_raw = json.dumps(request("KANBAN-50", patch))
+        write_private(duplicate, duplicate_raw[:-1] + ',"schema_version":1}\n')
+        result = fresh_result(temp, "duplicate-result")
+        assert_failure(run_wrapper(repo, duplicate, result), result, "validate-request")
+
+        bool_schema = temp / "bool-schema.json"
+        write_json(bool_schema, request("KANBAN-51", patch, schema_version=True))
+        result = fresh_result(temp, "bool-schema-result")
+        assert_failure(run_wrapper(repo, bool_schema, result), result, "validate-request")
+
+        duplicate_manifest_patch = temp / "duplicate-manifest.patch"
+        make_patch(duplicate_manifest_patch, marker="ok\nTEST_MODE:duplicate-manifest")
+        duplicate_manifest_request = temp / "duplicate-manifest.json"
+        write_json(duplicate_manifest_request, request("KANBAN-61", duplicate_manifest_patch))
+        duplicate_manifest_result = fresh_result(temp, "duplicate-manifest-result")
+        assert_failure(run_wrapper(repo, duplicate_manifest_request, duplicate_manifest_result), duplicate_manifest_result, "validate-artifacts")
+
+        bad_manifest_types_patch = temp / "bad-manifest-types.patch"
+        make_patch(bad_manifest_types_patch, marker="ok\nTEST_MODE:bad-manifest-types")
+        bad_manifest_types_request = temp / "bad-manifest-types.json"
+        write_json(bad_manifest_types_request, request("KANBAN-62", bad_manifest_types_patch))
+        bad_manifest_types_result = fresh_result(temp, "bad-manifest-types-result")
+        assert_failure(run_wrapper(repo, bad_manifest_types_request, bad_manifest_types_result), bad_manifest_types_result, "validate-artifacts")
+
+        request_link = temp / "request-link.json"
+        request_link.symlink_to(request_path)
+        result = fresh_result(temp, "request-link-result")
+        assert_failure(run_wrapper(repo, request_link, result), result, "validate-request")
+
+        patch_link = temp / "patch-link.patch"
+        patch_link.symlink_to(patch)
+        patch_link_request = temp / "patch-link.json"
+        write_json(patch_link_request, request("KANBAN-52", patch_link))
+        result = fresh_result(temp, "patch-link-result")
+        assert_failure(run_wrapper(repo, patch_link_request, result), result, "validate-request")
+
+        outside_result = temp / "outside-result"
+        outside_result.mkdir(mode=0o700)
+        result_link = temp / "result-link"
+        result_link.symlink_to(outside_result, target_is_directory=True)
+        link_request = temp / "result-link-request.json"
+        write_json(link_request, request("KANBAN-53", patch))
+        completed = run_wrapper(repo, link_request, result_link)
+        assert_no_traceback(completed, "result symlink")
+        if completed.returncode == 0 or list(outside_result.iterdir()):
+            fail("result symlink was accepted or modified")
+
+        replacement = temp / "replacement.patch"
+        make_patch(replacement, marker="replacement")
+        observed_patch = temp / "observed-patch.bin"
+        replacement_patch = temp / "replacement-race.patch"
+        make_patch(replacement_patch, marker=f"ok\nTEST_MODE:replace-patch\nREPLACE_PATCH:{replacement_patch}|{replacement}|{observed_patch}")
+        replacement_request = temp / "replacement-race.json"
+        write_json(replacement_request, request("KANBAN-54", replacement_patch))
+        replacement_snapshot = replacement_patch.read_bytes()
+        replacement_result = fresh_result(temp, "replacement-race-result")
+        completed = run_wrapper(repo, replacement_request, replacement_result)
+        if completed.returncode != 0:
+            fail(f"patch replacement race failed unexpectedly: rc={completed.returncode} stdout={completed.stdout!r} stderr={completed.stderr!r}")
+        if observed_patch.read_bytes() != replacement_snapshot:
+            fail("renderer observed replaced patch instead of immutable snapshot")
+        published = json.loads((replacement_result / "preview-result.json").read_text(encoding="utf-8"))
+        if published["patch_sha256"] != hashlib.sha256(replacement_snapshot).hexdigest():
+            fail("published patch hash was not derived from the snapshot")
+
+        outside_result = temp / "replacement-outside"
+        outside_result.mkdir(mode=0o700)
+        raced_result = fresh_result(temp, "replacement-result")
+        original_result = temp / "replacement-result-original"
+        race_patch = temp / "result-race.patch"
+        make_patch(race_patch, marker=f"ok\nTEST_MODE:replace-result\nREPLACE_RESULT:{raced_result}|{original_result}|{outside_result}")
+        race_request = temp / "result-race.json"
+        write_json(race_request, request("KANBAN-55", race_patch))
+        completed = run_wrapper(repo, race_request, raced_result)
+        assert_no_traceback(completed, "result replacement")
+        if completed.returncode == 0:
+            fail("result replacement race unexpectedly succeeded")
+        if list(outside_result.iterdir()):
+            fail("result replacement race published outside the held result directory")
+        assert_result_only(original_result, "publish", "result publication failed")
+        raced_result.unlink()
+
+        for leak_kind in (
+            "proposal.md",
+            "evidence-summary.json",
+            "proposal-manifest.json",
+            "before/run.json",
+            "after/run.json",
+            "comparison/diff.json",
+            "comparison/diff.png",
+        ):
+            leak_patch = temp / ("leak-" + leak_kind.replace("/", "-") + ".patch")
+            make_patch(leak_patch, marker=f"ok\nLEAK_KIND:{leak_kind}")
+            leak_request = temp / (leak_patch.stem + ".json")
+            write_json(leak_request, request("KANBAN-56", leak_patch))
+            leak_result = fresh_result(temp, leak_patch.stem + "-result")
+            assert_failure(run_wrapper(repo, leak_request, leak_result), leak_result, "validate-artifacts")
+
+        missing_patch = temp / "missing-artifact.patch"
+        make_patch(missing_patch, marker="ok\nTEST_MODE:missing")
+        missing_request = temp / "missing-artifact.json"
+        write_json(missing_request, request("KANBAN-57", missing_patch))
+        missing_result = fresh_result(temp, "missing-artifact-result")
+        assert_failure(run_wrapper(repo, missing_request, missing_result), missing_result, "validate-artifacts")
+
+        malformed_patch = temp / "malformed-artifact.patch"
+        make_patch(malformed_patch, marker="ok\nTEST_MODE:malformed")
+        malformed_artifact_request = temp / "malformed-artifact.json"
+        write_json(malformed_artifact_request, request("KANBAN-58", malformed_patch))
+        malformed_artifact_result = fresh_result(temp, "malformed-artifact-result")
+        assert_failure(run_wrapper(repo, malformed_artifact_request, malformed_artifact_result), malformed_artifact_result, "validate-artifacts")
+
+        verify_fail_patch = temp / "verify-failure.patch"
+        make_patch(verify_fail_patch, marker="ok\nVERIFY_FAIL:failure")
+        verify_fail_request = temp / "verify-failure.json"
+        write_json(verify_fail_request, request("KANBAN-59", verify_fail_patch))
+        verify_fail_result = fresh_result(temp, "verify-failure-result")
+        assert_failure(run_wrapper(repo, verify_fail_request, verify_fail_result), verify_fail_result, "verify-before")
+
+        child_pid_file = temp / "renderer-child.pid"
+        signal_patch = temp / "signal.patch"
+        make_patch(signal_patch, marker=f"ok\nTEST_MODE:sleep\nSLEEP_CHILD:{child_pid_file}")
+        signal_request = temp / "signal.json"
+        write_json(signal_request, request("KANBAN-60", signal_patch))
+        signal_result = fresh_result(temp, "signal-result")
+        env = os.environ.copy()
+        env.update({"PHOENIX_HARNESS_UDID": "11111111-2222-3333-4444-555555555555"})
+        process = subprocess.Popen(
+            [str(repo / ".github/scripts/phantom-kanban-preview.sh"), str(signal_request), str(signal_result)],
+            cwd=repo,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        deadline = time.monotonic() + 10
+        while not child_pid_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        if not child_pid_file.exists():
+            process.kill()
+            process.communicate(timeout=5)
+            fail("renderer child did not start for SIGTERM test")
+        child_pid = int(child_pid_file.read_text(encoding="ascii").strip())
+        process.send_signal(signal.SIGTERM)
+        stdout, stderr = process.communicate(timeout=10)
+        if process.returncode == 0:
+            fail("SIGTERM unexpectedly returned success")
+        if "Traceback" in stdout or "Traceback" in stderr or "/private/" in stdout or "/private/" in stderr:
+            fail(f"SIGTERM output was not sanitized: stdout={stdout!r} stderr={stderr!r}")
+        assert_result_only(signal_result, "interrupted", "preview interrupted")
+        try:
+            os.kill(child_pid, 0)
+        except ProcessLookupError:
+            pass
+        else:
+            fail("SIGTERM left renderer child alive")
 
     print("PASS: constrained Phoenix Kanban preview wrapper contract tests")
 
