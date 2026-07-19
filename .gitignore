@@ -132,12 +132,8 @@ bugreport-*.zip
 /phantom-proposal-worktrees/
 /proposal-worktree/
 /proposal-worktrees/
-**/derived-data/
-*.xcresult/
-*.xcresult/**
-**/.commands.jsonl
 
 # Local-only simulator configuration.  Keep the tracked base xcconfig and
 # example files visible; only harness-specific overrides are ignored.
-**/Simulator.local.xcconfig
-**/PhantomSimulator.local.xcconfig
+iosApp/VitruvianPhoenix/Config/Simulator.local.xcconfig
+iosApp/VitruvianPhoenix/Config/PhantomSimulator.local.xcconfig

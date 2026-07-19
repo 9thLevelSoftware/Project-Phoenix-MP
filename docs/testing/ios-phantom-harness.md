@@ -61,20 +61,28 @@ fixed app bundle, but never erases the simulator and never targets another
 UDID or bundle.
 
 The runner records the build/test command results, creates a temporary local
-Supabase fixture config only when the ignored config is absent, and removes
-that temporary file on exit.  If a local config already exists, it is left
-untouched.  The temporary config contains only fixed non-secret placeholder
-values; it is not a way to supply a real environment.
+Supabase fixture config inside the checkout at
+`iosApp/VitruvianPhoenix/Config/Supabase.xcconfig` only when that ignored config
+is absent, and removes that temporary file with its exit trap.  If a local
+config already exists, it is left untouched.  The temporary config contains
+only fixed non-secret placeholder values; it is not a way to supply a real
+environment and must never contain a token, key, password, or other secret.
 
 ## Proposal/worktree contract
 
-A proposal invocation (the optional `.github/scripts/phantom-proposal.sh`
-wrapper when present) must run from a temporary worktree and must forward the
-runner's exact contract above.  The proposal wrapper is orchestration, not a
-second fixture API: it must not edit the original checkout, broaden the fixture
-allowlist, bypass the local destructive gate, or write evidence into tracked
-source directories.  The artifact root is caller owned and should be outside
-the checkout.
+The `.github/scripts/phantom-proposal.sh` wrapper, once committed, must run
+from a temporary worktree and must forward the runner's exact contract above.
+The proposal wrapper is orchestration, not a second fixture API: it must not
+edit the original checkout, broaden the fixture allowlist, bypass the local
+destructive gate, or write evidence into tracked source directories.  The
+artifact root is caller owned and should be outside the checkout.
+
+Its `EXIT trap` (registered together with `HUP`, `INT`, and `TERM`) is the
+cleanup guarantee for every render outcome.  The trap records a bounded failure
+manifest when needed, removes the disposable worktree with `git worktree
+remove --force`, prunes its metadata, and removes
+the private temporary directory.  The caller-owned artifact root is retained
+for review; only that root's validated evidence should be preserved.
 
 For a manual proposal reproduction, the worktree lifecycle is:
 
@@ -196,9 +204,11 @@ hashes, enforces before/after identity when a pair is supplied, and scans
 textual artifacts for secret-like content without echoing matches.
 
 The repository policy ignores only generated harness state: named evidence
-roots, the runner's lower-case `derived-data/`, `*.xcresult` bundles and
-their attachments, command journals, simulator-local override xcconfigs, and
-ephemeral Phantom proposal worktrees.  Existing ignores remain in place.
+roots (which contain the runner's lower-case `derived-data/`, `*.xcresult`
+bundles, and command journals), the two simulator-local override xcconfigs,
+and ephemeral Phantom proposal worktrees.  It does not ignore an unrelated
+`derived-data/` directory, result bundle, or `.commands.jsonl` file merely
+because it has that name.  Existing non-harness ignores remain in place.
 The tracked `.github/scripts/` runner/verifier/diff tools and this
 `docs/testing/` runbook are not ignored.  Prefer an artifact root outside the
 checkout; if a local run places it under the checkout, use one of the ignored
@@ -251,19 +261,46 @@ product requirement.
 
 `.github/workflows/ios-phantom-harness.yml` runs on `workflow_dispatch` and on
 pull requests that touch the shared Phantom sources/tests, the real app/Xcode
-project, harness scripts, or this workflow.  It uses a `macos-26` runner,
+project, high-risk Gradle/build or ignore policy files, harness scripts, or
+this runbook/workflow.  Before provisioning the disposable simulator it runs
+the shell harness tests, verifier unit tests, native image-diff tests, and
+runner/proposal Bash syntax checks.  It uses a `macos-26` runner,
 selects and validates an installed Xcode, sets up Java 17 and Gradle, creates
 one disposable iPhone simulator, runs the focused simulator tests, runs the
 real-app case with the CI destructive gate, verifies the evidence packet, and
 deletes the simulator in an `always()` cleanup step.
 
-The workflow uploads the evidence directory on every outcome when files exist
-(`if: always()`) as
-`ios-phantom-evidence-<run-id>-<run-attempt>` with a 14-day GitHub artifact
-retention period.  Concurrency is scoped per ref and cancels an in-progress
-run.  CI-created init/config files live under the runner's temporary directory
-with restrictive permissions; they are not repository files.  A CI artifact
-is not a release artifact and must not be treated as permanent retention.
+The workflow packages the complete evidence root, including the hidden
+`.phantom-harness` sentinel and `.commands.jsonl` journal, into
+`phantom-evidence.tar` from inside the root so tar preserves dotfiles and file
+modes.  It creates and uploads that archive on every outcome (`if: always()`)
+as `ios-phantom-evidence-<run-id>-<run-attempt>` with a 14-day GitHub artifact
+retention period; a missing archive is an upload error.  Concurrency is scoped
+per ref and cancels an in-progress run.  The Gradle init script lives under
+the runner's temporary directory with mode `0600`.  The harness's temporary
+`Supabase.xcconfig`, when needed, is instead created inside the checkout at
+the ignored path documented above, contains no secrets, and is removed by the
+harness exit trap.  Neither temporary file is evidence or a secret channel.
+A CI artifact is not a release artifact and must not be treated as permanent
+retention.
+
+To inspect a downloaded archive and re-run the verifier, preserve modes while
+extracting it into a new private directory:
+
+```bash
+ARCHIVE="ios-phantom-evidence-<run-id>-<run-attempt>/phantom-evidence.tar"
+EXTRACTED="<PRIVATE_EMPTY_DIRECTORY>"
+mkdir -m 700 "$EXTRACTED"
+tar -tvf "$ARCHIVE"
+tar -xpf "$ARCHIVE" -C "$EXTRACTED"
+python3 ./.github/scripts/phantom-harness-verify.py "$EXTRACTED"
+```
+
+The extracted root must still contain `.phantom-harness` and
+`.commands.jsonl` when the producer reached those steps; do not verify a
+manually copied subset of the packet.  Treat any tar path, mode, symlink, or
+verifier failure as invalid evidence and discard the packet rather than
+relaxing the verifier.
 
 ## Physical-device boundary
 
