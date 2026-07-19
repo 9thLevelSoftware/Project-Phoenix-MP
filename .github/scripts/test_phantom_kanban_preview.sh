@@ -81,7 +81,7 @@ def make_fake_repo(root):
     renderer_impl = scripts / "fake-renderer.py"
     renderer_impl.write_text(
         "#!/usr/bin/env python3\n"
-        "import hashlib, json, os, stat, subprocess, sys, time\n"
+        "import hashlib, json, os, signal, stat, subprocess, sys, time\n"
         "from pathlib import Path\n"
         "def private(path, data, binary=False):\n"
         "    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)\n"
@@ -118,13 +118,51 @@ def make_fake_repo(root):
         "if b'FAIL_RENDERER' in patch.read_bytes(): raise SystemExit(17)\n"
         "artifact.mkdir(mode=0o700, parents=True, exist_ok=True)\n"
         "base = subprocess.check_output(['git', '-C', str(Path(__file__).resolve().parents[2]), 'rev-parse', 'HEAD'], text=True).strip()\n"
+        "patch_bytes = patch.read_bytes()\n"
+        "patch_sha = hashlib.sha256(patch_bytes).hexdigest()\n"
+        "changed_file = 'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt'\n"
+        "fixture_sha = 'e180679548a2d96dbc59c51449edb3b99c19d3e3be82eca98c0707a21a64e78e'\n"
+        "simulator = {'udid': '11111111-2222-3333-4444-555555555555', 'name': 'iPhone 16', 'runtime': 'iOS-18-0', 'state': 'Booted'}\n"
+        "command_specs = [('xcodebuild.version', 'toolchain.log'), ('simulator.boot', 'boot.log'), ('simulator.bootstatus', 'bootstatus.log'), ('simulator.terminate', 'terminate.log'), ('simulator.uninstall', 'uninstall.log'), ('build', 'build.log'), ('run-tests', 'test.log'), ('simulator.app-state', 'app-state.log'), ('simulator.logs', 'simulator.log'), ('simulator.screenshot', 'screenshot.log')]\n"
+        "commands = [{'name': name, 'exitCode': 0, 'output': output, **({'resultBundle': {'basename': 'test.xcresult', 'status': 'private-not-retained'}} if name == 'run-tests' else {})} for name, output in command_specs]\n"
+        "markers = ['xctest.passed', 'phantom.connected', 'simulator.screenshot']\n"
+        "captures = [{'slug': 'simulator-after', 'path': 'after.png', 'sha256': 'a' * 64, 'dimensions': {'width': 2, 'height': 2}, 'phase': 'after', 'pair': 'simulator-after', 'checkpoint': 'phantom-connected', 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'simulator': simulator}, {'slug': 'xctest-after', 'path': 'xctest-attachment.png', 'sha256': 'b' * 64, 'dimensions': {'width': 2, 'height': 2}, 'phase': 'after', 'pair': 'xctest-after', 'checkpoint': 'phantom-connected', 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'simulator': simulator}]\n"
+        "run = {'schemaVersion': 1, 'runId': 'run-fake-1', 'provenance': {'baseSha': base, 'fixture': {'id': 'just-lift-connected', 'sha256': fixture_sha}, 'xcode': 'Xcode 16.0', 'sdk': '18.0', 'simulator': simulator, 'bundleId': 'com.devil.phoenixproject.projectphoenix'}, 'commands': commands, 'semanticMarkers': {'required': markers, 'observed': markers}, 'captures': captures, 'textualArtifacts': [{'path': name} for name in ('toolchain.log', 'build.log', 'test.log', 'app-state.log', 'simulator.log', 'screenshot.log', '.commands.jsonl')]}\n"
+        "run_bytes = (json.dumps(run, sort_keys=True, indent=2) + '\\n').encode()\n"
+        "run_sha = hashlib.sha256(run_bytes).hexdigest()\n"
+        "diff_png = png()\n"
+        "diff_sha = hashlib.sha256(diff_png).hexdigest()\n"
+        "diff = {'passed': True, 'thresholdPassed': True, 'dimensions': {'width': 2, 'height': 2}, 'width': 2, 'height': 2, 'changedPixels': 0, 'changedPixelRatio': 0.0, 'changedRatio': 0.0, 'meanChannelDelta': 0.0, 'maxChannelDelta': 0, 'maskTopPixels': 0, 'threshold': 0.0, 'inputs': {'before': 'run.json', 'after': 'run.json'}}\n"
+        "diff_bytes = (json.dumps(diff, sort_keys=True) + '\\n').encode()\n"
+        "diff_sha_json = hashlib.sha256(diff_bytes).hexdigest()\n"
+        "identity = {'baseSha': base, 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'bundleId': 'com.devil.phoenixproject.projectphoenix', 'simulator': simulator, 'commands': [name for name, _ in command_specs], 'markers': sorted(markers)}\n"
+        "comparison = {'identity': identity, 'beforeManifestSha256': run_sha, 'afterManifestSha256': run_sha, 'beforeCapture': captures[0], 'afterCapture': captures[0], 'diffJson': {'path': 'comparison/diff.json', 'sha256': diff_sha_json}, 'diffImage': {'path': 'comparison/diff.png', 'sha256': diff_sha, 'dimensions': {'width': 2, 'height': 2}}, 'summary': diff}\n"
+        "manifest = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patch': {'path': 'proposal.patch', 'sha256': patch_sha, 'size': len(patch_bytes), 'binary': False, 'format': 'exact-input'}, 'candidateKinds': ['kotlin'], 'allowedChangedFiles': [changed_file], 'actualChangedFiles': [changed_file], 'worktree': {'baseSha': base, 'headSha': base, 'detached': True, 'uncommitted': True, 'statusEntryCount': 1, 'appliedDiffSha256': patch_sha}, 'focusedChecks': [{'name': 'git.diff.check', 'passed': True}], 'before': {'artifact': 'before', 'manifestSha256': run_sha, 'identity': identity}, 'after': {'artifact': 'after', 'manifestSha256': run_sha, 'identity': identity}, 'comparison': comparison, 'evidence': {'proposalMarkdown': 'proposal.md', 'summaryJson': 'evidence-summary.json'}}\n"
+        "summary = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patchSha256': patch_sha, 'changedFiles': [changed_file], 'beforeAfterIdentity': identity, 'comparison': comparison, 'artifacts': ['before', 'after', 'proposal.patch', 'proposal-manifest.json', 'proposal.md', 'comparison/diff.json', 'comparison/diff.png']}\n"
+        "proposal = '# Phantom proposal evidence\\n\\nStatus: **passed**\\n\\nThis proposal was rendered from the real Phoenix app in a disposable detached worktree using trusted candidate input.\\n\\n- Fixture: `just-lift-connected`\\n- Verified base SHA: `' + base + '`\\n- Proposal patch SHA-256: `' + patch_sha + '`\\n\\n## Allowed changed files\\n\\n- `' + changed_file + '`\\n\\n## Verification\\n\\n- Baseline canonical harness case: verified\\n- Candidate canonical harness case: verified\\n- Kotlin/resource compile gate when required: verified\\n- Bound comparison metadata: verified\\n- Temporary worktree: cleaned after rendering\\n'\n"
+        "if mode in ('sleep-verify-before', 'sleep-verify-after'):\n"
+        "    private(artifact / ('.sleep-verify-' + ('before' if mode.endswith('before') else 'after')), b'1\\n', binary=True)\n"
         "for name in ('before/run.json', 'after/run.json'):\n"
-        "    private(artifact / name, '{\\\"schemaVersion\\\":1}\\n')\n"
-        "private(artifact / 'proposal.md', '# Phantom proposal evidence\\nStatus: **passed**\\n')\n"
-        "private(artifact / 'evidence-summary.json', json.dumps({'schemaVersion': 1, 'status': 'passed'}) + '\\n')\n"
-        "private(artifact / 'proposal-manifest.json', json.dumps({'schemaVersion': 1, 'status': 'passed', 'fixture': 'just-lift-connected', 'baseSha': base}) + '\\n')\n"
-        "private(artifact / 'comparison/diff.json', json.dumps({'passed': True}) + '\\n')\n"
-        "private(artifact / 'comparison/diff.png', png(), binary=True)\n"
+        "    private(artifact / name, run_bytes, binary=True)\n"
+        "private(artifact / 'proposal.md', proposal)\n"
+        "private(artifact / 'evidence-summary.json', json.dumps(summary, sort_keys=True, indent=2) + '\\n')\n"
+        "private(artifact / 'proposal-manifest.json', json.dumps(manifest, sort_keys=True, indent=2) + '\\n')\n"
+        "private(artifact / 'comparison/diff.json', diff_bytes, binary=True)\n"
+        "private(artifact / 'comparison/diff.png', diff_png, binary=True)\n"
+        "if mode == 'minimal-evidence': private(artifact / 'evidence-summary.json', json.dumps({'schemaVersion': 1, 'status': 'passed'}) + '\\n')\n"
+        "if mode == 'unknown-run': run['unknown'] = True; private(artifact / 'before/run.json', json.dumps(run) + '\\n')\n"
+        "if mode == 'bad-run-types': run['schemaVersion'] = True; private(artifact / 'after/run.json', json.dumps(run) + '\\n')\n"
+        "if mode == 'unknown-diff': diff['unknown'] = True; private(artifact / 'comparison/diff.json', json.dumps(diff) + '\\n')\n"
+        "if mode == 'bad-markdown': private(artifact / 'proposal.md', '# Phantom proposal evidence\\nStatus: **passed**\\n')\n"
+        "if mode == 'bad-markdown-ref': private(artifact / 'proposal.md', proposal + '\\n- `comparison/unknown.json`\\n')\n"
+        "if mode.startswith('patch-mismatch-'):\n"
+        "    mismatch = dict(manifest)\n"
+        "    mismatch['patch'] = dict(manifest['patch'])\n"
+        "    if mode == 'patch-mismatch-sha': mismatch['patch']['sha256'] = '0' * 64\n"
+        "    if mode == 'patch-mismatch-size': mismatch['patch']['size'] += 1\n"
+        "    if mode == 'patch-mismatch-path': mismatch['patch']['path'] = 'safe.patch'\n"
+        "    if mode == 'patch-mismatch-format': mismatch['patch']['format'] = 'unified-diff'\n"
+        "    private(artifact / 'proposal-manifest.json', json.dumps(mismatch) + '\\n')\n"
         "leak = os.environ.get('PREVIEW_TEST_LEAK_KIND', '') or marker('LEAK_KIND:')\n"
         "if leak == 'proposal.md': private(artifact / leak, 'absolute=/Users/host/private/candidate.patch\\nAPI_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa\\n')\n"
         "elif leak == 'evidence-summary.json': private(artifact / leak, json.dumps({'schemaVersion': 1, 'status': 'passed', 'leak': '/private/host/API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa'}) + '\\n')\n"
@@ -153,13 +191,19 @@ def make_fake_repo(root):
     harness = scripts / "phantom-harness.sh"
     harness.write_text(
         "#!/usr/bin/env python3\n"
-        "import json, os, sys\n"
+        "import json, os, sys, time\n"
         "from pathlib import Path\n"
         f"LOG = {str(verifier_log)!r}\n"
         "if len(sys.argv) != 3 or sys.argv[1] != 'verify': raise SystemExit(2)\n"
         "with open(LOG, 'a', encoding='utf-8') as stream:\n"
         "    stream.write(json.dumps({'args': sys.argv[1:], 'env': dict(sorted(os.environ.items()))}) + '\\n')\n"
         "if not sys.argv[2].endswith('/before') and not sys.argv[2].endswith('/after'): raise SystemExit(4)\n"
+        "phase = Path(sys.argv[2]).name\n"
+        "sleep_marker = Path(sys.argv[2]).parent / ('.sleep-verify-' + phase)\n"
+        "if sleep_marker.exists():\n"
+        "    pid_file = Path(str(sleep_marker) + '.pid')\n"
+        "    pid_file.write_text(str(os.getpid()) + '\\n', encoding='ascii')\n"
+        "    time.sleep(60)\n"
         "if os.environ.get('PREVIEW_TEST_VERIFY_FAIL') == '1' or (Path(sys.argv[2]).parent / '.verify-fail').exists(): raise SystemExit(17)\n"
         "print('{\"passed\":true}')\n",
         encoding="utf-8",
@@ -400,6 +444,78 @@ def main():
         bad_manifest_types_result = fresh_result(temp, "bad-manifest-types-result")
         assert_failure(run_wrapper(repo, bad_manifest_types_request, bad_manifest_types_result), bad_manifest_types_result, "validate-artifacts")
 
+        for mode, label in (
+            ("minimal-evidence", "minimal-evidence"),
+            ("unknown-run", "unknown-run"),
+            ("bad-run-types", "bad-run-types"),
+            ("unknown-diff", "unknown-diff"),
+            ("bad-markdown", "bad-markdown"),
+            ("bad-markdown-ref", "bad-markdown-ref"),
+        ):
+            mode_patch = temp / (label + ".patch")
+            make_patch(mode_patch, marker="ok\nTEST_MODE:" + mode)
+            mode_request = temp / (label + ".json")
+            write_json(mode_request, request("KANBAN-63", mode_patch))
+            mode_result = fresh_result(temp, label + "-result")
+            completed = run_wrapper(repo, mode_request, mode_result)
+            if completed.returncode == 0:
+                fail(f"strict mode unexpectedly accepted: {mode}")
+            assert_failure(completed, mode_result, "validate-artifacts")
+
+        for mode in ("patch-mismatch-sha", "patch-mismatch-size", "patch-mismatch-path", "patch-mismatch-format"):
+            mode_patch = temp / (mode + ".patch")
+            make_patch(mode_patch, marker="ok\nTEST_MODE:" + mode)
+            mode_request = temp / (mode + ".json")
+            write_json(mode_request, request("KANBAN-64", mode_patch))
+            mode_result = fresh_result(temp, mode + "-result")
+            assert_failure(run_wrapper(repo, mode_request, mode_result), mode_result, "validate-artifacts")
+
+        request_in_worktree = repo / "request-in-registered-worktree.json"
+        write_json(request_in_worktree, request("KANBAN-65", patch))
+        request_in_worktree_result = fresh_result(temp, "request-in-registered-worktree-result")
+        assert_failure(run_wrapper(repo, request_in_worktree, request_in_worktree_result), request_in_worktree_result, "validate-request")
+
+        task_worktree = temp / "registered-task-worktree"
+        subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "-b", "task-worktree", str(task_worktree)], check=True)
+        request_in_task_worktree = task_worktree / "task-worktree-request.json"
+        write_json(request_in_task_worktree, request("KANBAN-66", patch))
+        request_in_task_worktree_result = fresh_result(temp, "task-worktree-request-result")
+        assert_failure(run_wrapper(repo, request_in_task_worktree, request_in_task_worktree_result), request_in_task_worktree_result, "validate-request")
+        subprocess.run(["git", "-C", str(repo), "worktree", "remove", "--force", str(task_worktree)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        for phase, signal_name in (("sleep-verify-before", "SIGINT"), ("sleep-verify-after", "SIGHUP")):
+            phase_patch = temp / (phase + ".patch")
+            make_patch(phase_patch, marker="ok\nTEST_MODE:" + phase)
+            phase_request = temp / (phase + ".json")
+            write_json(phase_request, request("KANBAN-67", phase_patch))
+            phase_result = fresh_result(temp, phase + "-result")
+            verifier_log.write_text("", encoding="utf-8")
+            process = subprocess.Popen(
+                [str(repo / ".github/scripts/phantom-kanban-preview.sh"), str(phase_request), str(phase_result)],
+                cwd=repo,
+                env={**os.environ, "PHOENIX_HARNESS_UDID": "11111111-2222-3333-4444-555555555555"},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            deadline = time.monotonic() + 10
+            expected_records = 1 if phase.endswith("before") else 2
+            while time.monotonic() < deadline:
+                if verifier_log.exists() and len(verifier_log.read_text(encoding="utf-8").splitlines()) >= expected_records:
+                    break
+                time.sleep(0.02)
+            else:
+                process.kill()
+                process.communicate(timeout=5)
+                fail("verification child did not start for " + phase)
+            process.send_signal(getattr(signal, signal_name))
+            stdout, stderr = process.communicate(timeout=10)
+            if not list(phase_result.rglob("*")):
+                fail(f"phase signal left empty result: phase={phase} rc={process.returncode} stdout={stdout!r} stderr={stderr!r}")
+            assert_result_only(phase_result, "interrupted", "preview interrupted")
+            if process.returncode == 0:
+                fail("signal unexpectedly returned success for " + phase)
+
         request_link = temp / "request-link.json"
         request_link.symlink_to(request_path)
         result = fresh_result(temp, "request-link-result")
@@ -458,6 +574,35 @@ def main():
         assert_result_only(original_result, "publish", "result publication failed")
         raced_result.unlink()
 
+        for signal_name in ("SIGINT", "SIGHUP", "SIGTERM"):
+            publication_patch = temp / ("publication-" + signal_name + ".patch")
+            make_patch(publication_patch)
+            publication_request = temp / ("publication-" + signal_name + ".json")
+            write_json(publication_request, request("KANBAN-68", publication_patch))
+            publication_result = fresh_result(temp, "publication-" + signal_name + "-result")
+            process = subprocess.Popen(
+                [str(repo / ".github/scripts/phantom-kanban-preview.sh"), str(publication_request), str(publication_result)],
+                cwd=repo,
+                env={**os.environ, "PHOENIX_HARNESS_UDID": "11111111-2222-3333-4444-555555555555"},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            marker = publication_result / ".publication-staging" / ".publication-precheck"
+            deadline = time.monotonic() + 10
+            while not marker.exists() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            if not marker.exists():
+                process.kill()
+                process.communicate(timeout=5)
+                fail("publication precheck marker did not appear for " + signal_name)
+            process.send_signal(getattr(signal, signal_name))
+            stdout, stderr = process.communicate(timeout=10)
+            if process.returncode == 0:
+                fail("publication race unexpectedly returned success for " + signal_name)
+            assert_no_traceback(type("Completed", (), {"stdout": stdout, "stderr": stderr})(), "publication " + signal_name)
+            assert_result_only(publication_result, "interrupted", "preview interrupted")
+
         for leak_kind in (
             "proposal.md",
             "evidence-summary.json",
@@ -495,43 +640,42 @@ def main():
         verify_fail_result = fresh_result(temp, "verify-failure-result")
         assert_failure(run_wrapper(repo, verify_fail_request, verify_fail_result), verify_fail_result, "verify-before")
 
-        child_pid_file = temp / "renderer-child.pid"
-        signal_patch = temp / "signal.patch"
-        make_patch(signal_patch, marker=f"ok\nTEST_MODE:sleep\nSLEEP_CHILD:{child_pid_file}")
-        signal_request = temp / "signal.json"
-        write_json(signal_request, request("KANBAN-60", signal_patch))
-        signal_result = fresh_result(temp, "signal-result")
-        env = os.environ.copy()
-        env.update({"PHOENIX_HARNESS_UDID": "11111111-2222-3333-4444-555555555555"})
-        process = subprocess.Popen(
-            [str(repo / ".github/scripts/phantom-kanban-preview.sh"), str(signal_request), str(signal_result)],
-            cwd=repo,
-            env=env,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-        )
-        deadline = time.monotonic() + 10
-        while not child_pid_file.exists() and time.monotonic() < deadline:
-            time.sleep(0.02)
-        if not child_pid_file.exists():
-            process.kill()
-            process.communicate(timeout=5)
-            fail("renderer child did not start for SIGTERM test")
-        child_pid = int(child_pid_file.read_text(encoding="ascii").strip())
-        process.send_signal(signal.SIGTERM)
-        stdout, stderr = process.communicate(timeout=10)
-        if process.returncode == 0:
-            fail("SIGTERM unexpectedly returned success")
-        if "Traceback" in stdout or "Traceback" in stderr or "/private/" in stdout or "/private/" in stderr:
-            fail(f"SIGTERM output was not sanitized: stdout={stdout!r} stderr={stderr!r}")
-        assert_result_only(signal_result, "interrupted", "preview interrupted")
-        try:
-            os.kill(child_pid, 0)
-        except ProcessLookupError:
-            pass
-        else:
-            fail("SIGTERM left renderer child alive")
+        for signal_name in ("SIGINT", "SIGHUP", "SIGTERM"):
+            child_pid_file = temp / ("renderer-child-" + signal_name + ".pid")
+            signal_patch = temp / ("signal-" + signal_name + ".patch")
+            make_patch(signal_patch, marker=f"ok\nTEST_MODE:sleep\nSLEEP_CHILD:{child_pid_file}")
+            signal_request = temp / ("signal-" + signal_name + ".json")
+            write_json(signal_request, request("KANBAN-60", signal_patch))
+            signal_result = fresh_result(temp, "signal-" + signal_name + "-result")
+            process = subprocess.Popen(
+                [str(repo / ".github/scripts/phantom-kanban-preview.sh"), str(signal_request), str(signal_result)],
+                cwd=repo,
+                env={**os.environ, "PHOENIX_HARNESS_UDID": "11111111-2222-3333-4444-555555555555"},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+            )
+            deadline = time.monotonic() + 10
+            while not child_pid_file.exists() and time.monotonic() < deadline:
+                time.sleep(0.02)
+            if not child_pid_file.exists():
+                process.kill()
+                process.communicate(timeout=5)
+                fail("renderer child did not start for " + signal_name)
+            child_pid = int(child_pid_file.read_text(encoding="ascii").strip())
+            process.send_signal(getattr(signal, signal_name))
+            stdout, stderr = process.communicate(timeout=10)
+            if process.returncode == 0:
+                fail(signal_name + " unexpectedly returned success")
+            if "Traceback" in stdout or "Traceback" in stderr or "/private/" in stdout or "/private/" in stderr:
+                fail(f"{signal_name} output was not sanitized: stdout={stdout!r} stderr={stderr!r}")
+            assert_result_only(signal_result, "interrupted", "preview interrupted")
+            try:
+                os.kill(child_pid, 0)
+            except ProcessLookupError:
+                pass
+            else:
+                fail(signal_name + " left renderer child alive")
 
     print("PASS: constrained Phoenix Kanban preview wrapper contract tests")
 

@@ -45,6 +45,26 @@ ALLOWED_ARTIFACTS = (
     "after/run.json",
 )
 ALLOWED_ARTIFACT_SET = set(ALLOWED_ARTIFACTS)
+EXPECTED_COMMANDS = (
+    ("xcodebuild.version", "toolchain.log"),
+    ("simulator.boot", "boot.log"),
+    ("simulator.bootstatus", "bootstatus.log"),
+    ("simulator.terminate", "terminate.log"),
+    ("simulator.uninstall", "uninstall.log"),
+    ("build", "build.log"),
+    ("run-tests", "test.log"),
+    ("simulator.app-state", "app-state.log"),
+    ("simulator.logs", "simulator.log"),
+    ("simulator.screenshot", "screenshot.log"),
+)
+EXPECTED_MARKERS = ("xctest.passed", "phantom.connected", "simulator.screenshot")
+EXPECTED_FIXTURE_SHA256 = "e180679548a2d96dbc59c51449edb3b99c19d3e3be82eca98c0707a21a64e78e"
+EXPECTED_TEXTUAL_ARTIFACTS = (
+    "toolchain.log", "build.log", "test.log", "app-state.log", "simulator.log", "screenshot.log", ".commands.jsonl",
+)
+KNOWN_ARTIFACT_REFERENCES = ALLOWED_ARTIFACT_SET | {"before", "after", "proposal.patch"}
+PUBLICATION_STAGING_NAME = ".publication-staging"
+PUBLICATION_PRECHECK_NAME = ".publication-precheck"
 REASONS = {
     "validate-request": "request validation failed",
     "startup": "preview failed",
@@ -78,6 +98,8 @@ class State:
         self.interrupted = None
         self.failure_written = False
         self.published = False
+        self.patch_sha = None
+        self.patch_size = None
 
 
 STATE = State()
@@ -277,6 +299,21 @@ def worktree_paths(repo):
     return roots
 
 
+def path_inside_any_worktree(raw, roots):
+    try:
+        target = Path(raw).resolve(strict=True)
+    except (OSError, RuntimeError, ValueError):
+        raise ValueError
+    return any(target == root or root in target.parents for root in roots)
+
+
+def validate_external_path(raw, roots):
+    normalized = normalize_absolute(raw)
+    if path_inside_any_worktree(normalized, roots):
+        raise ValueError
+    return normalized
+
+
 def make_private_dir():
     path = Path(tempfile.mkdtemp(prefix="phantom-kanban-preview-", dir="/tmp"))
     os.chmod(path, 0o700)
@@ -318,7 +355,7 @@ def make_private_file(path, data, mode=0o600):
 def validate_result_root(raw):
     try:
         normalized = normalize_absolute(raw)
-        if path_inside_worktree(normalized, REPO_ROOT):
+        if path_inside_any_worktree(normalized, worktree_paths(REPO_ROOT)):
             raise ValueError
         fd = open_directory_path(normalized)
         info = os.fstat(fd)
@@ -358,7 +395,9 @@ class ResultDirectory:
 
 def parse_request(request_raw):
     try:
-        data = read_private_path(request_raw, MAX_REQUEST_BYTES)
+        roots = worktree_paths(REPO_ROOT)
+        request_path = validate_external_path(request_raw, roots)
+        data = read_private_path(request_path, MAX_REQUEST_BYTES)
         payload = parse_json_bytes(data)
         if not isinstance(payload, dict) or set(payload) != {"schema_version", "ticket_id", "fixture", "patch_file", "trusted_input", "expected"}:
             raise ValueError
@@ -374,13 +413,11 @@ def parse_request(request_raw):
         if expected["screen"] != "just-lift" or expected["markers"] != ["xctest.passed", "phantom.connected"]:
             raise ValueError
         patch_raw = payload["patch_file"]
-        normalize_absolute(patch_raw)
-        if path_inside_worktree(patch_raw, REPO_ROOT):
-            raise ValueError
-        patch_data = read_private_path(patch_raw, MAX_PATCH_BYTES - 1)
+        patch_path = validate_external_path(patch_raw, roots)
+        patch_data = read_private_path(patch_path, MAX_PATCH_BYTES - 1)
         if not patch_data:
             raise ValueError
-        return payload["ticket_id"], patch_raw, patch_data
+        return payload["ticket_id"], patch_path, patch_data
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError, RuntimeError):
         fail("validate-request")
 
@@ -405,7 +442,10 @@ def current_head():
 def snapshot_patch(data):
     path = STATE.private_dir / "patch.snapshot"
     make_private_file(path, data, 0o400)
-    return path, hashlib.sha256(data).hexdigest()
+    digest = hashlib.sha256(data).hexdigest()
+    STATE.patch_sha = digest
+    STATE.patch_size = len(data)
+    return path, digest
 
 
 def valid_optional_env(value):
@@ -511,6 +551,11 @@ def run_child(command, log_name, env):
         raise PreviewInterrupted
     if rc != 0:
         raise PreviewFailure(STATE.stage)
+
+
+def check_interrupted():
+    if STATE.interrupted is not None:
+        raise PreviewInterrupted
 
 
 def artifact_child_environment():
@@ -632,168 +677,301 @@ def validate_hash(value, length):
         raise ValueError
 
 
+def exact_keys(value, required):
+    if not isinstance(value, dict) or set(value) != set(required):
+        raise ValueError
+
+
+def strict_string(value, maximum=512):
+    if not isinstance(value, str) or not value or len(value) > maximum or any(ord(char) < 0x20 or ord(char) == 0x7F for char in value):
+        raise ValueError
+    return value
+
+
+def strict_relative(value):
+    strict_string(value)
+    if value.startswith("/") or "\\" in value or any(part in ("", ".", "..") for part in value.split("/")):
+        raise ValueError
+    return value
+
+
+def validate_dimensions(value):
+    exact_keys(value, {"width", "height"})
+    if any(not exact_int(value[key]) or not 1 <= value[key] <= 100000 for key in ("width", "height")):
+        raise ValueError
+    return value
+
+
+def validate_simulator(value):
+    exact_keys(value, {"udid", "name", "runtime", "state"})
+    if not isinstance(value["udid"], str) or not EXPECTED_UDID_RE.fullmatch(value["udid"]):
+        raise ValueError
+    for key in ("name", "runtime"):
+        strict_string(value[key])
+    if value["state"] not in ("Booted", "Shutdown"):
+        raise ValueError
+    return value
+
+
+def validate_capture(value, expected_slug=None, expected_path=None):
+    exact_keys(value, {"slug", "path", "sha256", "dimensions", "phase", "pair", "checkpoint", "fixtureId", "fixtureSha256", "simulator"})
+    strict_string(value["slug"])
+    strict_relative(value["path"])
+    validate_hash(value["sha256"], 64)
+    validate_dimensions(value["dimensions"])
+    if value["phase"] != "after" or value["checkpoint"] != "phantom-connected" or value["pair"] != value["slug"]:
+        raise ValueError
+    if value["fixtureId"] != "just-lift-connected":
+        raise ValueError
+    validate_hash(value["fixtureSha256"], 64)
+    validate_simulator(value["simulator"])
+    if expected_slug is not None and value["slug"] != expected_slug:
+        raise ValueError
+    if expected_path is not None and value["path"] != expected_path:
+        raise ValueError
+    return value
+
+
 def validate_identity(identity):
-    allowed = {"baseSha", "fixtureId", "fixtureSha256", "bundleId", "simulator", "commands", "markers"}
-    if not isinstance(identity, dict) or set(identity) - allowed:
+    exact_keys(identity, {"baseSha", "fixtureId", "fixtureSha256", "bundleId", "simulator", "commands", "markers"})
+    validate_hash(identity["baseSha"], 40)
+    if identity["fixtureId"] != "just-lift-connected" or identity["fixtureSha256"] != EXPECTED_FIXTURE_SHA256:
         raise ValueError
-    if "baseSha" in identity:
-        validate_hash(identity["baseSha"], 40)
-    if "fixtureSha256" in identity:
-        validate_hash(identity["fixtureSha256"], 64)
-    for key in ("fixtureId", "bundleId"):
-        if key in identity:
-            if not isinstance(identity[key], str):
-                raise ValueError
-            safe_relative(identity[key])
-    if "simulator" in identity:
-        simulator = identity["simulator"]
-        if not isinstance(simulator, dict) or set(simulator) - {"udid", "name", "runtime", "state"}:
-            raise ValueError
-        if "udid" in simulator and (not isinstance(simulator["udid"], str) or not EXPECTED_UDID_RE.fullmatch(simulator["udid"])):
-            raise ValueError
-        for key in ("name", "runtime", "state"):
-            if key in simulator and not isinstance(simulator[key], str):
-                raise ValueError
-    for key in ("commands", "markers"):
-        if key in identity:
-            value = identity[key]
-            if not isinstance(value, list) or len(value) > 64 or any(not isinstance(item, str) for item in value):
-                raise ValueError
-
-
-def validate_capture(value):
-    if not isinstance(value, dict) or set(value) - {"path", "sha256", "dimensions"}:
+    validate_hash(identity["fixtureSha256"], 64)
+    if identity["bundleId"] != "com.devil.phoenixproject.projectphoenix":
         raise ValueError
-    if "path" in value:
-        validate_ref_field(value["path"])
-    if "sha256" in value:
-        validate_hash(value["sha256"], 64)
-    if "dimensions" in value:
-        dimensions = value["dimensions"]
-        if not isinstance(dimensions, dict) or set(dimensions) - {"width", "height"}:
-            raise ValueError
-        for key in ("width", "height"):
-            if key in dimensions and (not exact_int(dimensions[key]) or not 1 <= dimensions[key] <= 100000):
-                raise ValueError
+    validate_simulator(identity["simulator"])
+    if identity["commands"] != [name for name, _ in EXPECTED_COMMANDS] or identity["markers"] != sorted(EXPECTED_MARKERS):
+        raise ValueError
 
 
-def validate_manifest(manifest, base_sha):
-    known = {
-        "schemaVersion", "status", "trustedInput", "fixture", "baseSha", "patch", "candidateKinds",
-        "allowedChangedFiles", "actualChangedFiles", "worktree", "focusedChecks", "before", "after",
-        "comparison", "evidence",
+def run_identity(run):
+    provenance = run["provenance"]
+    return {
+        "baseSha": provenance["baseSha"],
+        "fixtureId": provenance["fixture"]["id"],
+        "fixtureSha256": provenance["fixture"]["sha256"],
+        "bundleId": provenance["bundleId"],
+        "simulator": provenance["simulator"],
+        "commands": [item["name"] for item in run["commands"]],
+        "markers": sorted(run["semanticMarkers"]["observed"]),
     }
-    if not isinstance(manifest, dict) or set(manifest) - known:
+
+
+def validate_run_manifest(run, base_sha):
+    exact_keys(run, {"schemaVersion", "runId", "provenance", "commands", "semanticMarkers", "captures", "textualArtifacts"})
+    if not exact_int(run["schemaVersion"]) or run["schemaVersion"] != 1:
         raise ValueError
-    if not exact_int(manifest.get("schemaVersion")) or manifest["schemaVersion"] != 1:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", run["runId"]):
         raise ValueError
-    if manifest.get("status") != "passed" or manifest.get("fixture") != "just-lift-connected":
+    provenance = run["provenance"]
+    exact_keys(provenance, {"baseSha", "fixture", "xcode", "sdk", "simulator", "bundleId"})
+    validate_hash(provenance["baseSha"], 40)
+    if provenance["baseSha"].lower() != base_sha.lower():
         raise ValueError
-    if "trustedInput" in manifest and manifest["trustedInput"] is not True:
+    fixture = provenance["fixture"]
+    exact_keys(fixture, {"id", "sha256"})
+    if fixture["id"] != "just-lift-connected" or fixture["sha256"] != EXPECTED_FIXTURE_SHA256:
         raise ValueError
-    if "baseSha" not in manifest:
+    validate_hash(fixture["sha256"], 64)
+    strict_string(provenance["xcode"])
+    strict_string(provenance["sdk"])
+    validate_simulator(provenance["simulator"])
+    if provenance["bundleId"] != "com.devil.phoenixproject.projectphoenix":
+        raise ValueError
+    commands = run["commands"]
+    if not isinstance(commands, list) or len(commands) != len(EXPECTED_COMMANDS):
+        raise ValueError
+    for item, (name, output) in zip(commands, EXPECTED_COMMANDS):
+        required = {"name", "exitCode", "output"} | ({"resultBundle"} if name == "run-tests" else set())
+        exact_keys(item, required)
+        if item["name"] != name or item["output"] != output or not exact_int(item["exitCode"]) or item["exitCode"] != 0:
+            raise ValueError
+        if name == "run-tests":
+            exact_keys(item["resultBundle"], {"basename", "status"})
+            if item["resultBundle"] != {"basename": "test.xcresult", "status": "private-not-retained"}:
+                raise ValueError
+    markers = run["semanticMarkers"]
+    exact_keys(markers, {"required", "observed"})
+    if markers["required"] != list(EXPECTED_MARKERS) or markers["observed"] != list(EXPECTED_MARKERS):
+        raise ValueError
+    captures = run["captures"]
+    if not isinstance(captures, list) or len(captures) != 2:
+        raise ValueError
+    validate_capture(captures[0], "simulator-after", "after.png")
+    validate_capture(captures[1], "xctest-after", "xctest-attachment.png")
+    if captures[0]["fixtureSha256"] != fixture["sha256"] or captures[1]["fixtureSha256"] != fixture["sha256"]:
+        raise ValueError
+    if captures[0]["simulator"] != provenance["simulator"] or captures[1]["simulator"] != provenance["simulator"]:
+        raise ValueError
+    textual = run["textualArtifacts"]
+    if not isinstance(textual, list) or [item.get("path") if isinstance(item, dict) else None for item in textual] != list(EXPECTED_TEXTUAL_ARTIFACTS):
+        raise ValueError
+    for item in textual:
+        exact_keys(item, {"path"})
+        strict_relative(item["path"])
+    return run_identity(run)
+
+
+def validate_diff_summary(value):
+    exact_keys(value, {"passed", "thresholdPassed", "dimensions", "width", "height", "changedPixels", "changedPixelRatio", "changedRatio", "meanChannelDelta", "maxChannelDelta", "maskTopPixels", "threshold", "inputs"})
+    validate_dimensions(value["dimensions"])
+    if value["width"] != value["dimensions"]["width"] or value["height"] != value["dimensions"]["height"]:
+        raise ValueError
+    for key in ("passed", "thresholdPassed"):
+        if type(value[key]) is not bool:
+            raise ValueError
+    if value["passed"] != value["thresholdPassed"]:
+        raise ValueError
+    pixels = value["width"] * value["height"]
+    if not exact_int(value["changedPixels"]) or not 0 <= value["changedPixels"] <= pixels:
+        raise ValueError
+    for key in ("changedPixelRatio", "changedRatio"):
+        if type(value[key]) not in (int, float) or isinstance(value[key], bool) or not math.isfinite(float(value[key])) or not 0 <= float(value[key]) <= 1:
+            raise ValueError
+    if type(value["meanChannelDelta"]) not in (int, float) or isinstance(value["meanChannelDelta"], bool) or not math.isfinite(float(value["meanChannelDelta"])) or not 0 <= float(value["meanChannelDelta"]) <= 255:
+        raise ValueError
+    if not exact_int(value["maxChannelDelta"]) or not 0 <= value["maxChannelDelta"] <= 255:
+        raise ValueError
+    if not exact_int(value["maskTopPixels"]) or not 0 <= value["maskTopPixels"] <= value["height"]:
+        raise ValueError
+    if type(value["threshold"]) not in (int, float) or isinstance(value["threshold"], bool) or not math.isfinite(float(value["threshold"])) or not 0 <= float(value["threshold"]) <= 255:
+        raise ValueError
+    exact_keys(value["inputs"], {"before", "after"})
+    if value["inputs"] != {"before": "run.json", "after": "run.json"}:
+        raise ValueError
+
+
+def validate_comparison(value):
+    exact_keys(value, {"identity", "beforeManifestSha256", "afterManifestSha256", "beforeCapture", "afterCapture", "diffJson", "diffImage", "summary"})
+    validate_identity(value["identity"])
+    validate_hash(value["beforeManifestSha256"], 64)
+    validate_hash(value["afterManifestSha256"], 64)
+    validate_capture(value["beforeCapture"], "simulator-after", "after.png")
+    validate_capture(value["afterCapture"], "simulator-after", "after.png")
+    for key, path in (("diffJson", "comparison/diff.json"), ("diffImage", "comparison/diff.png")):
+        descriptor = value[key]
+        required = {"path", "sha256"} | ({"dimensions"} if key == "diffImage" else set())
+        exact_keys(descriptor, required)
+        if descriptor["path"] != path:
+            raise ValueError
+        validate_hash(descriptor["sha256"], 64)
+        if key == "diffImage":
+            validate_dimensions(descriptor["dimensions"])
+    validate_diff_summary(value["summary"])
+
+
+def validate_manifest(manifest, base_sha, patch_sha, patch_size):
+    exact_keys(manifest, {"schemaVersion", "status", "trustedInput", "fixture", "baseSha", "patch", "candidateKinds", "allowedChangedFiles", "actualChangedFiles", "worktree", "focusedChecks", "before", "after", "comparison", "evidence"})
+    if not exact_int(manifest["schemaVersion"]) or manifest["schemaVersion"] != 1 or manifest["status"] != "passed" or manifest["trustedInput"] is not True or manifest["fixture"] != "just-lift-connected":
         raise ValueError
     validate_hash(manifest["baseSha"], 40)
     if manifest["baseSha"].lower() != base_sha.lower():
         raise ValueError
-    if "patch" in manifest:
-        patch = manifest["patch"]
-        if not isinstance(patch, dict) or set(patch) - {"path", "sha256", "size", "binary", "format"}:
-            raise ValueError
-        for key in ("path", "sha256", "size", "binary", "format"):
-            if key not in patch:
-                raise ValueError
-        if patch["path"] != "proposal.patch":
-            validate_ref_field(patch["path"])
-        validate_hash(patch["sha256"], 64)
-        if not exact_int(patch["size"]) or patch["size"] < 0 or patch["size"] > MAX_PATCH_BYTES:
-            raise ValueError
-        if patch["binary"] is not True and patch["binary"] is not False:
-            raise ValueError
-        if patch["format"] != "exact-input":
-            raise ValueError
+    patch = manifest["patch"]
+    exact_keys(patch, {"path", "sha256", "size", "binary", "format"})
+    validate_hash(patch["sha256"], 64)
+    if patch["path"] != "proposal.patch" or patch["sha256"].lower() != patch_sha.lower() or patch["format"] != "exact-input" or type(patch["binary"]) is not bool:
+        raise ValueError
+    if not exact_int(patch["size"]) or not 0 <= patch["size"] <= MAX_PATCH_BYTES or patch["size"] != patch_size:
+        raise ValueError
     for key in ("candidateKinds", "allowedChangedFiles", "actualChangedFiles"):
-        if key in manifest:
-            value = manifest[key]
-            if not isinstance(value, list) or len(value) > 512:
-                raise ValueError
-            for item in value:
-                safe_relative(item)
-    if "worktree" in manifest:
-        worktree = manifest["worktree"]
-        if not isinstance(worktree, dict) or set(worktree) - {"baseSha", "headSha", "detached", "uncommitted", "statusEntryCount", "appliedDiffSha256"}:
+        value = manifest[key]
+        if not isinstance(value, list) or not value or len(value) > 512 or any(not isinstance(item, str) for item in value):
             raise ValueError
-        if "baseSha" in worktree:
-            validate_hash(worktree["baseSha"], 40)
-        if "headSha" in worktree:
-            validate_hash(worktree["headSha"], 40)
-        for key in ("detached", "uncommitted"):
-            if key in worktree and type(worktree[key]) is not bool:
-                raise ValueError
-        if "statusEntryCount" in worktree and (not exact_int(worktree["statusEntryCount"]) or worktree["statusEntryCount"] < 0):
+        for item in value:
+            strict_relative(item)
+    if manifest["candidateKinds"] != sorted(manifest["candidateKinds"]):
+        raise ValueError
+    if manifest["allowedChangedFiles"] != manifest["actualChangedFiles"]:
+        raise ValueError
+    worktree = manifest["worktree"]
+    exact_keys(worktree, {"baseSha", "headSha", "detached", "uncommitted", "statusEntryCount", "appliedDiffSha256"})
+    validate_hash(worktree["baseSha"], 40)
+    validate_hash(worktree["headSha"], 40)
+    if worktree["baseSha"].lower() != base_sha.lower() or type(worktree["detached"]) is not bool or type(worktree["uncommitted"]) is not bool or not worktree["detached"]:
+        raise ValueError
+    if not exact_int(worktree["statusEntryCount"]) or worktree["statusEntryCount"] < 0:
+        raise ValueError
+    validate_hash(worktree["appliedDiffSha256"], 64)
+    checks = manifest["focusedChecks"]
+    if not isinstance(checks, list) or not checks:
+        raise ValueError
+    for check in checks:
+        exact_keys(check, {"name", "passed"})
+        strict_string(check["name"])
+        if type(check["passed"]) is not bool or not check["passed"]:
             raise ValueError
-        if "appliedDiffSha256" in worktree:
-            validate_hash(worktree["appliedDiffSha256"], 64)
-    if "focusedChecks" in manifest:
-        checks = manifest["focusedChecks"]
-        if not isinstance(checks, list) or len(checks) > 64:
+    for key, ref in (("before", "before"), ("after", "after")):
+        value = manifest[key]
+        exact_keys(value, {"artifact", "manifestSha256", "identity"})
+        if value["artifact"] != ref:
             raise ValueError
-        for check in checks:
-            if not isinstance(check, dict) or set(check) - {"name", "passed"} or not isinstance(check.get("name"), str) or type(check.get("passed")) is not bool:
-                raise ValueError
-    for key in ("before", "after"):
-        if key in manifest:
-            value = manifest[key]
-            if not isinstance(value, dict) or set(value) - {"artifact", "manifestSha256", "identity"}:
-                raise ValueError
-            if "artifact" in value:
-                validate_ref_field(value["artifact"])
-            if "manifestSha256" in value:
-                validate_hash(value["manifestSha256"], 64)
-            if "identity" in value:
-                validate_identity(value["identity"])
-    if "evidence" in manifest:
-        evidence = manifest["evidence"]
-        if not isinstance(evidence, dict) or set(evidence) - {"proposalMarkdown", "summaryJson"}:
+        validate_hash(value["manifestSha256"], 64)
+        validate_identity(value["identity"])
+    validate_comparison(manifest["comparison"])
+    evidence = manifest["evidence"]
+    exact_keys(evidence, {"proposalMarkdown", "summaryJson"})
+    if evidence != {"proposalMarkdown": "proposal.md", "summaryJson": "evidence-summary.json"}:
+        raise ValueError
+    return manifest
+
+
+def validate_evidence_summary(summary, base_sha, patch_sha):
+    exact_keys(summary, {"schemaVersion", "status", "trustedInput", "fixture", "baseSha", "patchSha256", "changedFiles", "beforeAfterIdentity", "comparison", "artifacts"})
+    if not exact_int(summary["schemaVersion"]) or summary["schemaVersion"] != 1 or summary["status"] != "passed" or summary["trustedInput"] is not True or summary["fixture"] != "just-lift-connected":
+        raise ValueError
+    validate_hash(summary["baseSha"], 40)
+    if summary["baseSha"].lower() != base_sha.lower():
+        raise ValueError
+    validate_hash(summary["patchSha256"], 64)
+    if summary["patchSha256"].lower() != patch_sha.lower():
+        raise ValueError
+    if not isinstance(summary["changedFiles"], list) or not summary["changedFiles"] or any(not isinstance(item, str) for item in summary["changedFiles"]):
+        raise ValueError
+    for item in summary["changedFiles"]:
+        strict_relative(item)
+    validate_identity(summary["beforeAfterIdentity"])
+    validate_comparison(summary["comparison"])
+    if summary["artifacts"] != ["before", "after", "proposal.patch", "proposal-manifest.json", "proposal.md", "comparison/diff.json", "comparison/diff.png"]:
+        raise ValueError
+    return summary
+
+
+def validate_proposal_markdown(data, manifest):
+    text = data.decode("utf-8", "strict")
+    if credential_or_host_path(data) or "\\" in text:
+        raise ValueError
+    if not text.startswith("# Phantom proposal evidence\n") or "\n## Allowed changed files\n" not in text or "\n## Verification\n" not in text or "\nStatus: **passed**\n" not in text:
+        raise ValueError
+    lines = text.splitlines()
+    try:
+        start = lines.index("## Allowed changed files") + 1
+        end = lines.index("## Verification")
+    except ValueError:
+        raise ValueError
+    changed = []
+    for line in lines[start:end]:
+        if not line:
+            continue
+        match = re.fullmatch(r"- `([^`]+)`", line)
+        if not match:
             raise ValueError
-        for value in evidence.values():
-            validate_ref_field(value)
-    if "comparison" in manifest:
-        comparison = manifest["comparison"]
-        if not isinstance(comparison, dict) or set(comparison) - {"before", "after", "diffJson", "diffImage", "summary"}:
+        changed.append(match.group(1))
+    if changed != manifest["actualChangedFiles"]:
+        raise ValueError
+    allowed = KNOWN_ARTIFACT_REFERENCES | set(manifest["actualChangedFiles"])
+    for token in re.findall(r"`([^`]+)`", text):
+        if "/" in token or token in KNOWN_ARTIFACT_REFERENCES:
+            if token not in allowed:
+                raise ValueError
+            strict_relative(token)
+    for token in re.findall(r"(?<![A-Za-z0-9_.-])(?:comparison|before|after)/[A-Za-z0-9_.-]+", text):
+        if token not in allowed:
             raise ValueError
-        for key in ("diffJson", "diffImage"):
-            if key in comparison:
-                value = comparison[key]
-                if not isinstance(value, dict) or set(value) - {"path", "sha256", "dimensions"}:
-                    raise ValueError
-                if "path" in value:
-                    validate_ref_field(value["path"])
-                if "sha256" in value:
-                    validate_hash(value["sha256"], 64)
-        for key in ("before", "after"):
-            if key in comparison:
-                validate_capture(comparison[key])
-        if "summary" in comparison:
-            summary = comparison["summary"]
-            if not isinstance(summary, dict) or set(summary) - {"dimensions", "width", "height", "passed", "thresholdPassed", "changedPixels", "changedPixelRatio", "changedRatio", "meanChannelDelta", "maxChannelDelta", "maskTopPixels", "threshold"}:
-                raise ValueError
-            if "dimensions" in summary:
-                validate_capture({"dimensions": summary["dimensions"]})
-            for key in ("width", "height"):
-                if key in summary and (not exact_int(summary[key]) or not 1 <= summary[key] <= 100000):
-                    raise ValueError
-            for key in ("passed", "thresholdPassed"):
-                if key in summary and type(summary[key]) is not bool:
-                    raise ValueError
-            for key in ("changedPixelRatio", "changedRatio", "meanChannelDelta", "maxChannelDelta", "threshold"):
-                if key in summary and (type(summary[key]) not in (int, float) or isinstance(summary[key], bool) or not math.isfinite(float(summary[key]))):
-                    raise ValueError
-            if "changedPixels" in summary and (not exact_int(summary["changedPixels"]) or summary["changedPixels"] < 0):
-                raise ValueError
-            if "maskTopPixels" in summary and (not exact_int(summary["maskTopPixels"]) or summary["maskTopPixels"] < 0):
-                raise ValueError
-    bounded_walk(manifest)
+        strict_relative(token)
+    if re.search(r"(?:^|\s)(?:/|\.\.?/)", text):
+        raise ValueError
 
 
 def validate_png(data):
@@ -828,6 +1006,7 @@ def validate_png(data):
         cursor += 12 + length
     if not seen_end:
         raise ValueError
+    return width, height
 
 
 def zlib_crc(data):
@@ -847,19 +1026,51 @@ def validate_artifacts():
             os.close(root_fd)
         if set(artifacts) != ALLOWED_ARTIFACT_SET:
             raise ValueError
+        png_dimensions = None
+        json_values = {}
         for name, data in artifacts.items():
             if name == "comparison/diff.png":
                 if credential_or_host_path(data):
                     raise ValueError
-                validate_png(data)
+                png_dimensions = validate_png(data)
             elif name == "proposal.md":
                 data.decode("utf-8", "strict")
                 if credential_or_host_path(data):
                     raise ValueError
             else:
-                value = validate_json_artifact(data)
-                if name == "proposal-manifest.json":
-                    validate_manifest(value, STATE.base_sha)
+                json_values[name] = validate_json_artifact(data)
+        before = json_values["before/run.json"]
+        after = json_values["after/run.json"]
+        before_identity = validate_run_manifest(before, STATE.base_sha)
+        after_identity = validate_run_manifest(after, STATE.base_sha)
+        if before_identity != after_identity:
+            raise ValueError
+        manifest = json_values["proposal-manifest.json"]
+        validate_manifest(manifest, STATE.base_sha, STATE.patch_sha, STATE.patch_size)
+        diff = json_values["comparison/diff.json"]
+        validate_diff_summary(diff)
+        summary = json_values["evidence-summary.json"]
+        validate_evidence_summary(summary, STATE.base_sha, STATE.patch_sha)
+        if hashlib.sha256(artifacts["before/run.json"]).hexdigest() != manifest["before"]["manifestSha256"] or hashlib.sha256(artifacts["after/run.json"]).hexdigest() != manifest["after"]["manifestSha256"]:
+            raise ValueError
+        if manifest["before"]["identity"] != before_identity or manifest["after"]["identity"] != after_identity:
+            raise ValueError
+        comparison = manifest["comparison"]
+        if comparison["identity"] != before_identity or summary["beforeAfterIdentity"] != before_identity or summary["comparison"] != comparison:
+            raise ValueError
+        if comparison["beforeManifestSha256"] != manifest["before"]["manifestSha256"] or comparison["afterManifestSha256"] != manifest["after"]["manifestSha256"]:
+            raise ValueError
+        if comparison["beforeCapture"] != before["captures"][0] or comparison["afterCapture"] != after["captures"][0]:
+            raise ValueError
+        if comparison["summary"] != diff:
+            raise ValueError
+        if comparison["diffJson"]["sha256"] != hashlib.sha256(artifacts["comparison/diff.json"]).hexdigest() or comparison["diffImage"]["sha256"] != hashlib.sha256(artifacts["comparison/diff.png"]).hexdigest():
+            raise ValueError
+        if comparison["summary"]["dimensions"] != comparison["diffImage"]["dimensions"] or tuple(comparison["diffImage"]["dimensions"][key] for key in ("width", "height")) != png_dimensions:
+            raise ValueError
+        if summary["changedFiles"] != manifest["actualChangedFiles"]:
+            raise ValueError
+        validate_proposal_markdown(artifacts["proposal.md"], manifest)
         return artifacts
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError, RuntimeError):
         fail("validate-artifacts")
@@ -937,25 +1148,25 @@ def write_failure_result(stage):
 
 
 def publish_success(artifacts, ticket, fixture, base_sha, patch_sha):
-    if STATE.interrupted is not None:
-        raise PreviewInterrupted
+    check_interrupted()
     destination = None
+    staging = None
     dirs = {}
     try:
         destination = STATE.result.current()
         if os.listdir(destination):
             raise ValueError
+        staging = mkdir_result_dir(destination, PUBLICATION_STAGING_NAME)
         for directory in ("comparison", "before", "after"):
-            dirs[directory] = mkdir_result_dir(destination, directory)
+            dirs[directory] = mkdir_result_dir(staging, directory)
         entries = []
         for name in ALLOWED_ARTIFACTS:
-            if STATE.interrupted is not None:
-                raise PreviewInterrupted
+            check_interrupted()
             if "/" in name:
                 directory, leaf = name.split("/", 1)
                 parent = dirs[directory]
             else:
-                parent, leaf = destination, name
+                parent, leaf = staging, name
             create_result_file(parent, leaf, artifacts[name])
             entries.append({"path": name, "sha256": hashlib.sha256(artifacts[name]).hexdigest()})
         result = {
@@ -967,9 +1178,27 @@ def publish_success(artifacts, ticket, fixture, base_sha, patch_sha):
             "patch_sha256": patch_sha,
             "artifacts": entries,
         }
-        create_result_file(destination, "preview-result.json", json_result(result))
-        if STATE.interrupted is not None:
-            raise PreviewInterrupted
+        create_result_file(staging, "preview-result.json", json_result(result))
+        create_result_file(staging, PUBLICATION_PRECHECK_NAME, b"ready\n")
+        time.sleep(0.05)
+        check_interrupted()
+        if set(os.listdir(staging)) != {"preview-result.json", PUBLICATION_PRECHECK_NAME, "proposal.md", "evidence-summary.json", "proposal-manifest.json", "comparison", "before", "after"}:
+            raise ValueError
+        current = STATE.result.current()
+        try:
+            if set(os.listdir(current)) != {PUBLICATION_STAGING_NAME}:
+                raise ValueError
+        finally:
+            os.close(current)
+        check_interrupted()
+        os.unlink(PUBLICATION_PRECHECK_NAME, dir_fd=staging)
+        check_interrupted()
+        for name in ("comparison", "before", "after", "proposal.md", "evidence-summary.json", "proposal-manifest.json"):
+            check_interrupted()
+            os.rename(name, name, src_dir_fd=staging, dst_dir_fd=destination)
+        check_interrupted()
+        os.rename("preview-result.json", "preview-result.json", src_dir_fd=staging, dst_dir_fd=destination)
+        os.rmdir(PUBLICATION_STAGING_NAME, dir_fd=destination)
         current = STATE.result.current()  # Detect a result-root replacement during publication.
         os.close(current)
     except PreviewInterrupted:
@@ -982,13 +1211,17 @@ def publish_success(artifacts, ticket, fixture, base_sha, patch_sha):
                 os.close(fd)
             except OSError:
                 pass
+        if staging is not None:
+            try:
+                os.close(staging)
+            except OSError:
+                pass
         if destination is not None:
             try:
                 os.close(destination)
             except OSError:
                 pass
-    if STATE.interrupted is not None:
-        raise PreviewInterrupted
+    check_interrupted()
     STATE.published = True
 
 
@@ -998,25 +1231,31 @@ def main_work(request_raw, result_raw):
     STATE.private_dir = make_private_dir()
     STATE.stage = "validate-request"
     ticket, patch_raw, patch_data = parse_request(request_raw)
+    check_interrupted()
     STATE.base_sha = current_head()
     patch_snapshot, patch_sha = snapshot_patch(patch_data)
+    check_interrupted()
     if not EXPECTED_UDID_RE.fullmatch(os.environ.get("PHOENIX_HARNESS_UDID", "")):
         fail("renderer")
     env = child_environment()
     STATE.stage = "renderer"
     run_child([RENDERER, "render", STATE.private_dir / "proposal", "just-lift-connected", patch_snapshot], "renderer.log", env)
-    if STATE.interrupted is not None:
-        raise PreviewInterrupted
+    check_interrupted()
     STATE.stage = "verify-before"
     run_child([RUNNER, "verify", STATE.private_dir / "proposal" / "before"], "before-verify.log", env)
+    check_interrupted()
     STATE.stage = "verify-after"
     run_child([RUNNER, "verify", STATE.private_dir / "proposal" / "after"], "after-verify.log", env)
+    check_interrupted()
     STATE.stage = "validate-artifacts"
     artifacts = validate_artifacts()
+    check_interrupted()
     if current_head() != STATE.base_sha:
         fail("validate-artifacts")
+    check_interrupted()
     STATE.stage = "publish"
     publish_success(artifacts, ticket, "just-lift-connected", STATE.base_sha, patch_sha)
+    check_interrupted()
 
 
 def main():
@@ -1029,6 +1268,8 @@ def main():
     failure_stage = None
     try:
         main_work(sys.argv[1], sys.argv[2])
+        if STATE.interrupted is not None:
+            raise PreviewInterrupted
     except PreviewInterrupted:
         failure_stage = "interrupted"
         exit_code = 1
@@ -1039,7 +1280,10 @@ def main():
         failure_stage = STATE.stage if STATE.stage in REASONS else "startup"
         exit_code = 1
     finally:
-        if failure_stage is not None and not STATE.published:
+        if failure_stage is None and STATE.interrupted is not None:
+            failure_stage = "interrupted"
+            exit_code = 1
+        if failure_stage is not None:
             write_failure_result(failure_stage)
         if STATE.active is not None:
             kill_active(signal.SIGKILL)
