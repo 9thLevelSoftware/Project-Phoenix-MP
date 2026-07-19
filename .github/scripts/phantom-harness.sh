@@ -1270,9 +1270,29 @@ select_png() {
     python3 - "$root" "$@" <<'PY'
 import os
 import stat
+import struct
 import sys
+import zlib
 from pathlib import Path
 root = Path(sys.argv[1])
+PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+PNG_HEADER_SIZE = 33
+
+def valid_png_header(path):
+    try:
+        with path.open("rb") as stream:
+            header = stream.read(PNG_HEADER_SIZE)
+    except OSError:
+        return False
+    if len(header) < PNG_HEADER_SIZE or header[:8] != PNG_SIGNATURE:
+        return False
+    if header[8:12] != b"\x00\x00\x00\x0d" or header[12:16] != b"IHDR":
+        return False
+    if zlib.crc32(header[12:29]) & 0xffffffff != int.from_bytes(header[29:33], "big"):
+        return False
+    width, height = struct.unpack(">II", header[16:24])
+    return width > 0 and height > 0
+
 for name in sys.argv[2:]:
     if "/" in name or "\\" in name or name in (".", ".."):
         raise SystemExit(1)
@@ -1283,6 +1303,8 @@ for name in sys.argv[2:]:
         continue
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or stat.S_IMODE(info.st_mode) != 0o600:
         raise SystemExit(1)
+    if not valid_png_header(path):
+        continue
     print(str(path))
     raise SystemExit(0)
 raise SystemExit(1)
@@ -1311,8 +1333,8 @@ PY
         validate_existing_root "$output"
     fi
     local before_png after_png
-    if ! before_png="$(select_png "$before" before.png screenshot.png capture.png after.png xctest-attachment.png)"; then fail 'before screenshot is missing or unsafe'; fi
-    if ! after_png="$(select_png "$after" after.png screenshot.png capture.png xctest-attachment.png before.png)"; then fail 'after screenshot is missing or unsafe'; fi
+    if ! before_png="$(select_png "$before" xctest-attachment.png after.png screenshot.png capture.png before.png)"; then fail 'before screenshot is missing or unsafe'; fi
+    if ! after_png="$(select_png "$after" xctest-attachment.png after.png screenshot.png capture.png before.png)"; then fail 'after screenshot is missing or unsafe'; fi
     ensure_direct_destination "$output" "diff.png"
     ensure_direct_destination "$output" "diff.json"
     local private
@@ -1341,6 +1363,44 @@ PY
     local diff_rc=$?
     set -e
     if [[ "$diff_rc" -ne 0 ]]; then fail 'screenshot comparison failed'; fi
+    python3 - "$json_path" "$before_png" "$after_png" <<'PY'
+import json
+import os
+import stat
+import sys
+import tempfile
+from pathlib import Path
+
+json_path = Path(sys.argv[1])
+before_path = Path(sys.argv[2])
+after_path = Path(sys.argv[3])
+try:
+    info = os.lstat(json_path)
+except OSError:
+    raise SystemExit(1)
+if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+    raise SystemExit(1)
+try:
+    result = json.loads(json_path.read_text(encoding="utf-8"))
+except (OSError, ValueError):
+    raise SystemExit(1)
+if not isinstance(result, dict):
+    raise SystemExit(1)
+result["inputs"] = {"before": before_path.name, "after": after_path.name}
+fd, temporary = tempfile.mkstemp(prefix=".tmp-inputs-", dir=str(json_path.parent))
+os.close(fd)
+os.chmod(temporary, 0o600)
+try:
+    Path(temporary).write_text(json.dumps(result, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(temporary, json_path)
+    os.chmod(json_path, 0o600)
+finally:
+    try:
+        os.unlink(temporary)
+    except FileNotFoundError:
+        pass
+PY
+    if [[ $? -ne 0 ]]; then fail 'screenshot comparison metadata failed'; fi
     # Create validated destination placeholders and atomically replace them.
     python3 - "$output/diff.png" "$output/diff.json" <<'PY'
 import os

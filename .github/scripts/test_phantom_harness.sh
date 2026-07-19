@@ -568,21 +568,40 @@ AFTER="$TMP_DIR/after"
 OUTPUT="$TMP_DIR/compare"
 mkdir "$BEFORE" "$AFTER"
 chmod 700 "$BEFORE" "$AFTER"
-python3 - "$BEFORE/before.png" "$AFTER/after.png" <<'PY'
+python3 - "$BEFORE/after.png" "$BEFORE/xctest-attachment.png" "$AFTER/after.png" "$AFTER/xctest-attachment.png" <<'PY'
 import struct
 import sys
 import zlib
 
 def chunk(kind, payload):
     return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
-for path, color in zip(sys.argv[1:], (bytes((255, 255, 255, 255)), bytes((255, 255, 255, 255)))):
-    width = height = 2
-    rows = b"".join(b"\x00" + color * width for _ in range(height))
+
+def write_png(path, pixels):
+    width = height = 4
+    rows = b"".join(b"\x00" + b"".join(pixels[row]) for row in range(height))
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
     with open(path, "wb") as stream:
         stream.write(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
+
+home_screen = [
+    [bytes((28, 28, 30, 255)), bytes((242, 242, 247, 255)), bytes((28, 28, 30, 255)), bytes((242, 242, 247, 255))],
+    [bytes((28, 28, 30, 255)), bytes((242, 242, 247, 255)), bytes((28, 28, 30, 255)), bytes((242, 242, 247, 255))],
+    [bytes((242, 242, 247, 255)), bytes((28, 28, 30, 255)), bytes((242, 242, 247, 255)), bytes((28, 28, 30, 255))],
+    [bytes((242, 242, 247, 255)), bytes((28, 28, 30, 255)), bytes((242, 242, 247, 255)), bytes((28, 28, 30, 255))],
+]
+before_app = [[bytes((17, 71, 105, 255)) for _ in range(4)] for _ in range(4)]
+after_app = [
+    [bytes((12, 105, 76, 255)), bytes((245, 255, 245, 255)), bytes((12, 105, 76, 255)), bytes((245, 255, 245, 255))],
+    [bytes((12, 105, 76, 255)), bytes((245, 255, 245, 255)), bytes((12, 105, 76, 255)), bytes((245, 255, 245, 255))],
+    [bytes((245, 255, 245, 255)), bytes((12, 105, 76, 255)), bytes((245, 255, 245, 255)), bytes((12, 105, 76, 255))],
+    [bytes((245, 255, 245, 255)), bytes((12, 105, 76, 255)), bytes((245, 255, 245, 255)), bytes((12, 105, 76, 255))],
+]
+write_png(sys.argv[1], home_screen)
+write_png(sys.argv[2], before_app)
+write_png(sys.argv[3], home_screen)
+write_png(sys.argv[4], after_app)
 PY
-chmod 600 "$BEFORE/before.png" "$AFTER/after.png"
+chmod 600 "$BEFORE/after.png" "$BEFORE/xctest-attachment.png" "$AFTER/after.png" "$AFTER/xctest-attachment.png"
 run "$RUNNER" compare "$BEFORE" "$AFTER" "$OUTPUT" >/dev/null
 python3 - "$OUTPUT/diff.json" <<'PY'
 import json
@@ -592,10 +611,60 @@ import sys
 from pathlib import Path
 root = Path(sys.argv[1]).parent
 result = json.loads(Path(sys.argv[1]).read_text())
-assert result["passed"] is True, result
+assert result["changedPixels"] == 16, f"verified XCTest capture was not selected: {result}"
+assert result["inputs"] == {"before": "xctest-attachment.png", "after": "xctest-attachment.png"}, result
+assert result["passed"] is False, result
 for name in ("diff.png", "diff.json"):
     assert stat.S_IMODE(os.lstat(root / name).st_mode) == 0o600
 PY
+
+# An absent XCTest attachment must fall back to the simulator capture without
+# allowing the decoy to become a priority when a verified attachment exists.
+FALLBACK_AFTER="$TMP_DIR/fallback-after"
+mkdir "$FALLBACK_AFTER"
+chmod 700 "$FALLBACK_AFTER"
+cp "$AFTER/after.png" "$FALLBACK_AFTER/after.png"
+chmod 600 "$FALLBACK_AFTER/after.png"
+FALLBACK_OUTPUT="$TMP_DIR/fallback-compare"
+run "$RUNNER" compare "$BEFORE" "$FALLBACK_AFTER" "$FALLBACK_OUTPUT" >/dev/null
+python3 - "$FALLBACK_OUTPUT/diff.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+result = json.loads(Path(sys.argv[1]).read_text())
+assert result["inputs"] == {"before": "xctest-attachment.png", "after": "after.png"}, result
+assert result["passed"] is False, result
+assert result["changedPixels"] == 16, result
+PY
+
+# A malformed regular attachment is ignored in favour of a valid fallback, but
+# a symlink candidate remains a hard failure under the existing input contract.
+INVALID_AFTER="$TMP_DIR/invalid-after"
+mkdir "$INVALID_AFTER"
+chmod 700 "$INVALID_AFTER"
+cp "$AFTER/after.png" "$INVALID_AFTER/after.png"
+: > "$INVALID_AFTER/xctest-attachment.png"
+chmod 600 "$INVALID_AFTER/after.png" "$INVALID_AFTER/xctest-attachment.png"
+INVALID_OUTPUT="$TMP_DIR/invalid-compare"
+run "$RUNNER" compare "$BEFORE" "$INVALID_AFTER" "$INVALID_OUTPUT" >/dev/null
+python3 - "$INVALID_OUTPUT/diff.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+result = json.loads(Path(sys.argv[1]).read_text())
+assert result["inputs"] == {"before": "xctest-attachment.png", "after": "after.png"}, result
+assert result["changedPixels"] == 16, result
+PY
+
+SYMLINK_AFTER="$TMP_DIR/symlink-after"
+mkdir "$SYMLINK_AFTER"
+chmod 700 "$SYMLINK_AFTER"
+cp "$AFTER/after.png" "$SYMLINK_AFTER/after.png"
+ln -s "$AFTER/xctest-attachment.png" "$SYMLINK_AFTER/xctest-attachment.png"
+chmod 600 "$SYMLINK_AFTER/after.png"
+if run "$RUNNER" compare "$BEFORE" "$SYMLINK_AFTER" "$TMP_DIR/symlink-compare" >/dev/null 2>&1; then
+    fail 'symlink XCTest attachment accepted by compare'
+fi
 
 SYMLINK_OUTPUT="$TMP_DIR/symlink-output"
 mkdir "$SYMLINK_OUTPUT"
