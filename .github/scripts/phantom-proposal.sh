@@ -53,6 +53,7 @@ ALLOWED_GENERATED_ROOTS=(
     "androidApp/build"
     "iosApp/VitruvianPhoenix/build"
     "iosApp/VitruvianPhoenix/DerivedData"
+    "iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.xcworkspace"
 )
 CHILD_TIMEOUT_SECONDS=1800
 VERIFY_TIMEOUT_SECONDS=300
