@@ -535,10 +535,18 @@
     <string name="cd_connection_error">Connection error</string>
     <string name="cd_connection_lost">Connection lost</string>
     <string name="cd_connection_logs">Connection logs</string>
+    <string name="cd_connection_connected">Connected to machine. Tap to disconnect</string>
+    <string name="cd_connection_connecting">Connecting to machine</string>
+    <string name="cd_connection_error_action">Connection error. Tap to reconnect</string>
+    <string name="cd_connection_disconnected">Tap to connect to machine</string>
     <string name="cd_machine_diagnostics">Machine diagnostics</string>
     <string name="cd_scan_devices">Scan for devices</string>
     <string name="cd_sync_error">Sync Error</string>
     <string name="cd_link_portal">Link Portal Account</string>
+    <string name="cd_just_lift">Open Just Lift</string>
+    <string name="cd_eula_content">End User License Agreement content</string>
+    <string name="cd_eula_age_confirmation">I certify that I am at least 18 years of age.</string>
+    <string name="cd_eula_accept">Accept End User License Agreement</string>
 
     <!-- Navigation / Actions -->
     <string name="cd_back">Back</string>

@@ -71,5 +71,13 @@
     <string name="set_type_calibration">Calibration Reps</string>
     <string name="set_type_warmup">Warm-up Set %1$d</string>
     <string name="set_type_working">Working Set</string>
+    <string name="cd_connection_connected">Connesso alla macchina. Tocca per disconnetterti</string>
+    <string name="cd_connection_connecting">Connessione alla macchina in corso</string>
+    <string name="cd_connection_error_action">Errore di connessione. Tocca per riconnetterti</string>
+    <string name="cd_connection_disconnected">Tocca per connetterti alla macchina</string>
+    <string name="cd_just_lift">Apri Just Lift</string>
+    <string name="cd_eula_content">Contenuto del contratto di licenza con l'utente finale</string>
+    <string name="cd_eula_age_confirmation">Certifico di avere almeno 18 anni.</string>
+    <string name="cd_eula_accept">Accetta il contratto di licenza con l'utente finale</string>
 
 </resources>

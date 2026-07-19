@@ -451,9 +451,17 @@
     <string name="cd_connection_error">Verbindingsfout</string>
     <string name="cd_connection_lost">Verbinding verloren</string>
     <string name="cd_connection_logs">Verbindingslogs</string>
+    <string name="cd_connection_connected">Verbonden met het apparaat. Tik om de verbinding te verbreken</string>
+    <string name="cd_connection_connecting">Verbinden met het apparaat</string>
+    <string name="cd_connection_error_action">Verbindingsfout. Tik om opnieuw te verbinden</string>
+    <string name="cd_connection_disconnected">Tik om verbinding te maken met het apparaat</string>
     <string name="cd_scan_devices">Scannen naar apparaten</string>
     <string name="cd_sync_error">Synchronisatiefout</string>
     <string name="cd_link_portal">Portal-account koppelen</string>
+    <string name="cd_just_lift">Just Lift openen</string>
+    <string name="cd_eula_content">Inhoud van de licentieovereenkomst voor eindgebruikers</string>
+    <string name="cd_eula_age_confirmation">Ik verklaar dat ik minstens 18 jaar oud ben.</string>
+    <string name="cd_eula_accept">Licentieovereenkomst voor eindgebruikers accepteren</string>
     <string name="cd_back">Terug</string>
     <string name="cd_close">Sluiten</string>
     <string name="cd_close_menu">Menu sluiten</string>

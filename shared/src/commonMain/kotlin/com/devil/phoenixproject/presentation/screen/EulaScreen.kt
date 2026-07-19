@@ -23,8 +23,14 @@ import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.presentation.util.TestTags
+import com.devil.phoenixproject.presentation.util.eulaCanAccept
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import org.jetbrains.compose.resources.stringResource
+import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.cd_eula_accept
+import vitruvianprojectphoenix.shared.generated.resources.cd_eula_age_confirmation
+import vitruvianprojectphoenix.shared.generated.resources.cd_eula_content
 
 /**
  * Full-screen EULA acceptance screen.
@@ -60,7 +66,10 @@ fun EulaScreen(
         }
     }
 
-    val canAccept = ageConfirmed && hasScrolledToBottom
+    val canAccept = eulaCanAccept(ageConfirmed, hasScrolledToBottom)
+    val eulaContentDescription = stringResource(Res.string.cd_eula_content)
+    val ageConfirmationDescription = stringResource(Res.string.cd_eula_age_confirmation)
+    val acceptDescription = stringResource(Res.string.cd_eula_accept)
 
     val bgBrush = screenBackgroundBrush()
     Box(
@@ -104,7 +113,7 @@ fun EulaScreen(
                         .padding(16.dp)
                         .testTag(TestTags.EULA_SCROLL_CONTAINER)
                         .semantics {
-                            contentDescription = "End User License Agreement content"
+                            contentDescription = eulaContentDescription
                         },
                 ) {
                     EulaContent()
@@ -150,7 +159,7 @@ fun EulaScreen(
                     .heightIn(min = 48.dp)
                     .padding(horizontal = 8.dp)
                     .semantics(mergeDescendants = true) {
-                        contentDescription = "I certify that I am at least 18 years of age."
+                        contentDescription = ageConfirmationDescription
                     }
                     .testTag(TestTags.EULA_AGE_CONFIRMATION),
                 verticalAlignment = Alignment.CenterVertically,
@@ -184,7 +193,7 @@ fun EulaScreen(
                     .height(56.dp)
                     .testTag(TestTags.EULA_ACCEPT)
                     .semantics {
-                        contentDescription = "Accept End User License Agreement"
+                        contentDescription = acceptDescription
                         role = Role.Button
                     },
                 shape = MaterialTheme.shapes.small,

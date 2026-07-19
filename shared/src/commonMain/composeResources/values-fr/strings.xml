@@ -450,9 +450,17 @@
     <string name="cd_connection_error">Connection error</string>
     <string name="cd_connection_lost">Connection lost</string>
     <string name="cd_connection_logs">Connection logs</string>
+    <string name="cd_connection_connected">Connecté à la machine. Touchez pour vous déconnecter</string>
+    <string name="cd_connection_connecting">Connexion à la machine</string>
+    <string name="cd_connection_error_action">Erreur de connexion. Touchez pour vous reconnecter</string>
+    <string name="cd_connection_disconnected">Touchez pour vous connecter à la machine</string>
     <string name="cd_scan_devices">Scan for devices</string>
     <string name="cd_sync_error">Sync Error</string>
     <string name="cd_link_portal">Link Portal Account</string>
+    <string name="cd_just_lift">Ouvrir Just Lift</string>
+    <string name="cd_eula_content">Contenu du contrat de licence utilisateur final</string>
+    <string name="cd_eula_age_confirmation">Je certifie avoir au moins 18 ans.</string>
+    <string name="cd_eula_accept">Accepter le contrat de licence utilisateur final</string>
 
     <!-- Navigation / Actions -->
     <string name="cd_back">Back</string>

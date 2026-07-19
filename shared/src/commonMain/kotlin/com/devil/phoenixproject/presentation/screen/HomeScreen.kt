@@ -76,6 +76,7 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
+import vitruvianprojectphoenix.shared.generated.resources.cd_just_lift
 import vitruvianprojectphoenix.shared.generated.resources.cd_start_workout
 import vitruvianprojectphoenix.shared.generated.resources.cd_streak
 import vitruvianprojectphoenix.shared.generated.resources.start_workout
@@ -331,6 +332,7 @@ private fun HomeLaunchPad(
     val launchSpacing = if (compactVerticalSpace) 6.dp else 10.dp
     val startWorkoutLabel = stringResource(Res.string.start_workout)
     val startWorkoutContentDescription = stringResource(Res.string.cd_start_workout)
+    val justLiftContentDescription = stringResource(Res.string.cd_just_lift)
 
     Column(
         modifier = modifier,
@@ -372,7 +374,7 @@ private fun HomeLaunchPad(
             isPrimary = true,
             isFireButton = true,
             iconAnimation = IconAnimation.FIRE,
-            contentDescription = "Open Just Lift",
+            contentDescription = justLiftContentDescription,
             heightOverride = primaryHeight,
             allowTwoLineLabel = true,
         )

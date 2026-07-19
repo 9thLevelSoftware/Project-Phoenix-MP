@@ -95,11 +95,13 @@ import com.devil.phoenixproject.presentation.navigation.NavGraph
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.theme.phoenixBottomNavigationContainerColor
 import com.devil.phoenixproject.presentation.theme.phoenixTopAppBarContainerColor
+import com.devil.phoenixproject.presentation.util.ConnectionAccessibilityDescription
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.TestTags
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.util.calculateWindowSizeClass
+import com.devil.phoenixproject.presentation.util.connectionSemanticStateFor
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.presentation.util.rememberPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -115,6 +117,10 @@ import org.koin.compose.viewmodel.koinViewModel
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.cd_analytics
 import vitruvianprojectphoenix.shared.generated.resources.cd_back
+import vitruvianprojectphoenix.shared.generated.resources.cd_connection_connected
+import vitruvianprojectphoenix.shared.generated.resources.cd_connection_connecting
+import vitruvianprojectphoenix.shared.generated.resources.cd_connection_disconnected
+import vitruvianprojectphoenix.shared.generated.resources.cd_connection_error_action
 import vitruvianprojectphoenix.shared.generated.resources.cd_home
 import vitruvianprojectphoenix.shared.generated.resources.cd_open_profile_switcher
 import vitruvianprojectphoenix.shared.generated.resources.cd_profile
@@ -883,12 +889,8 @@ private fun ConnectionStatusIndicator(
     val isConnecting = connectionState is ConnectionState.Connecting ||
         connectionState is ConnectionState.Scanning
     val isError = connectionState is ConnectionState.Error
-    val connectionStatusTag = when {
-        isConnected -> TestTags.CONNECTION_STATUS_CONNECTED
-        isConnecting -> TestTags.CONNECTION_STATUS_CONNECTING
-        isError -> TestTags.CONNECTION_STATUS_ERROR
-        else -> TestTags.CONNECTION_STATUS_DISCONNECTED
-    }
+    val connectionSemanticState = connectionSemanticStateFor(connectionState)
+    val connectionStatusTag = connectionSemanticState.testTag
 
     // Animated gradient offset for connecting state
     val infiniteTransition = rememberInfiniteTransition(label = "connecting")
@@ -918,11 +920,15 @@ private fun ConnectionStatusIndicator(
         }
     }
 
-    val contentDescription = when {
-        isConnected -> "Connected to machine. Tap to disconnect"
-        isConnecting -> "Connecting to machine"
-        isError -> "Connection error. Tap to reconnect"
-        else -> "Tap to connect to machine"
+    val contentDescription = when (connectionSemanticState.accessibilityDescription) {
+        ConnectionAccessibilityDescription.CONNECTED ->
+            stringResource(Res.string.cd_connection_connected)
+        ConnectionAccessibilityDescription.CONNECTING ->
+            stringResource(Res.string.cd_connection_connecting)
+        ConnectionAccessibilityDescription.ERROR ->
+            stringResource(Res.string.cd_connection_error_action)
+        ConnectionAccessibilityDescription.DISCONNECTED ->
+            stringResource(Res.string.cd_connection_disconnected)
     }
 
     // Connection status colors from AccessibilityTheme

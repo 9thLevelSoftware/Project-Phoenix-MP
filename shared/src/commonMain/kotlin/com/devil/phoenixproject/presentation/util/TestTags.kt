@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.presentation.util
 
+import com.devil.phoenixproject.domain.model.ConnectionState
+
 object TestTags {
     const val APP_ROOT = "app-root"
     const val APP_SPLASH = "app-splash"
@@ -62,3 +64,39 @@ object TestTags {
 
     const val PROFILE_SWITCHER_SHEET = "profile-switcher-sheet"
 }
+
+internal enum class ConnectionAccessibilityDescription {
+    DISCONNECTED,
+    CONNECTING,
+    CONNECTED,
+    ERROR,
+}
+
+internal data class ConnectionSemanticState(
+    val testTag: String,
+    val accessibilityDescription: ConnectionAccessibilityDescription,
+)
+
+internal fun connectionSemanticStateFor(connectionState: ConnectionState): ConnectionSemanticState = when (connectionState) {
+    is ConnectionState.Connected -> ConnectionSemanticState(
+        testTag = TestTags.CONNECTION_STATUS_CONNECTED,
+        accessibilityDescription = ConnectionAccessibilityDescription.CONNECTED,
+    )
+    is ConnectionState.Connecting,
+    is ConnectionState.Scanning,
+    -> ConnectionSemanticState(
+        testTag = TestTags.CONNECTION_STATUS_CONNECTING,
+        accessibilityDescription = ConnectionAccessibilityDescription.CONNECTING,
+    )
+    is ConnectionState.Error -> ConnectionSemanticState(
+        testTag = TestTags.CONNECTION_STATUS_ERROR,
+        accessibilityDescription = ConnectionAccessibilityDescription.ERROR,
+    )
+    is ConnectionState.Disconnected -> ConnectionSemanticState(
+        testTag = TestTags.CONNECTION_STATUS_DISCONNECTED,
+        accessibilityDescription = ConnectionAccessibilityDescription.DISCONNECTED,
+    )
+}
+
+internal fun eulaCanAccept(ageConfirmed: Boolean, hasScrolledToBottom: Boolean): Boolean =
+    ageConfirmed && hasScrolledToBottom

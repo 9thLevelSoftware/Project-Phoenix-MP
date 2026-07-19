@@ -450,9 +450,17 @@
     <string name="cd_connection_error">Connection error</string>
     <string name="cd_connection_lost">Connection lost</string>
     <string name="cd_connection_logs">Connection logs</string>
+    <string name="cd_connection_connected">Mit dem Gerät verbunden. Tippen, um die Verbindung zu trennen</string>
+    <string name="cd_connection_connecting">Verbindung mit dem Gerät wird hergestellt</string>
+    <string name="cd_connection_error_action">Verbindungsfehler. Tippen, um die Verbindung wiederherzustellen</string>
+    <string name="cd_connection_disconnected">Tippen, um eine Verbindung mit dem Gerät herzustellen</string>
     <string name="cd_scan_devices">Scan for devices</string>
     <string name="cd_sync_error">Sync Error</string>
     <string name="cd_link_portal">Link Portal Account</string>
+    <string name="cd_just_lift">Just Lift öffnen</string>
+    <string name="cd_eula_content">Inhalt der Endbenutzer-Lizenzvereinbarung</string>
+    <string name="cd_eula_age_confirmation">Ich bestätige, dass ich mindestens 18 Jahre alt bin.</string>
+    <string name="cd_eula_accept">Endbenutzer-Lizenzvereinbarung akzeptieren</string>
 
     <!-- Navigation / Actions -->
     <string name="cd_back">Back</string>
