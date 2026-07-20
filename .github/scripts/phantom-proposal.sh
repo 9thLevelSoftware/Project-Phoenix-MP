@@ -814,7 +814,7 @@ def scan_json(value):
     elif isinstance(value, str) and assignment.search(value):
         raise SystemExit(1)
 
-def scan_xml(element, inherited_credential_context=False):
+def scan_xml_element(element, inherited_credential_context=False):
     local = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
     credential_context = inherited_credential_context or bool(name.search(local))
     for key, value in element.attrib.items():
@@ -828,8 +828,36 @@ def scan_xml(element, inherited_credential_context=False):
         raise SystemExit(1)
     if credential_context and text and text.casefold() not in {"false", "true", "0", "1"} and structured_credential_payload(text):
         raise SystemExit(1)
+    tail = (element.tail or "").strip()
+    if (
+        STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(tail)
+        or STRUCTURED_CREDENTIAL_BEARER_RE.search(tail)
+        or STRUCTURED_CREDENTIAL_AUTHORIZATION_RE.search(tail)
+    ):
+        raise SystemExit(1)
     for child in element:
-        scan_xml(child, credential_context)
+        scan_xml_element(child, credential_context)
+
+def scan_xml_lexical(data):
+    """Scan XML text that ElementTree does not expose as element.text.
+
+    Element tails and comments are lexical XML content rather than structural
+    element values.  Scan only explicit credential assignments and bearer/auth
+    forms here so explanatory labels such as "session tokens" stay benign.
+    """
+    text = data.decode("utf-8", "strict") if isinstance(data, bytes) else data
+    if (
+        STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(text)
+        or STRUCTURED_CREDENTIAL_BEARER_RE.search(text)
+        or STRUCTURED_CREDENTIAL_AUTHORIZATION_RE.search(text)
+    ):
+        raise SystemExit(1)
+
+def scan_xml(data):
+    text = data.decode("utf-8", "strict")
+    scan_xml_lexical(text)
+    parser = element_tree.XMLParser(target=element_tree.TreeBuilder(insert_comments=True))
+    scan_xml_element(element_tree.fromstring(text, parser=parser))
 
 def scan_text(data):
     if b"\x00" in data:
@@ -842,7 +870,7 @@ def scan_text(data):
         scan_json(json.loads(text, object_pairs_hook=no_duplicate_keys))
     elif stripped.startswith("<"):
         try:
-            scan_xml(element_tree.fromstring(text))
+            scan_xml(data)
         except element_tree.ParseError:
             raise SystemExit(1)
 
@@ -857,7 +885,7 @@ def scan_structured_text(data):
         scan_json(json.loads(text, object_pairs_hook=no_duplicate_keys))
     elif stripped.startswith("<"):
         try:
-            scan_xml(element_tree.fromstring(text))
+            scan_xml(data)
         except element_tree.ParseError:
             raise ValueError
 
@@ -1003,7 +1031,9 @@ def scan_path(relative, data):
         scan_text(data)
     elif suffix == ".xml":
         try:
-            scan_xml(element_tree.fromstring(data.decode("utf-8")))
+            scan_xml(data)
+            if credential_detected(data):
+                raise SystemExit(1)
         except (UnicodeError, element_tree.ParseError):
             raise SystemExit(1)
     elif suffix in {".kt", ".swift", ".strings", ".stringsdict", ".properties", ".svg"}:
@@ -1019,10 +1049,10 @@ for relative in paths:
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
             raise SystemExit(1)
         scan_path(relative, path.read_bytes())
-    if metadata.get("binary"):
+    if Path(relative).suffix.lower() == ".xml" or metadata.get("binary"):
         old = baseline_blob(relative)
         if old is not None:
-            if Path(relative).suffix.lower() != ".png":
+            if metadata.get("binary") and Path(relative).suffix.lower() != ".png":
                 raise SystemExit(1)
             scan_path(relative, old)
 PY

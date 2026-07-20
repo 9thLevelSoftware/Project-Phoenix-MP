@@ -852,15 +852,41 @@ def scan_structured_xml_element(element, inherited_credential_context=False):
         raise ValueError
     if credential_context and text and text.casefold() not in {"false", "true", "0", "1"} and structured_credential_payload(text):
         raise ValueError
+    tail = (element.tail or "").strip()
+    if (
+        STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(tail)
+        or STRUCTURED_CREDENTIAL_BEARER_RE.search(tail)
+        or STRUCTURED_CREDENTIAL_AUTHORIZATION_RE.search(tail)
+    ):
+        raise ValueError
     for child in element:
         scan_structured_xml_element(child, credential_context)
+
+
+def scan_structured_xml_lexical(data):
+    """Scan XML text that ElementTree does not expose as element.text.
+
+    Element tails and comments are lexical XML content rather than structural
+    element values.  Scan only explicit credential assignments and bearer/auth
+    forms here so explanatory labels such as "session tokens" stay benign.
+    """
+    text = data.decode("utf-8", "strict") if isinstance(data, bytes) else data
+    if (
+        STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(text)
+        or STRUCTURED_CREDENTIAL_BEARER_RE.search(text)
+        or STRUCTURED_CREDENTIAL_AUTHORIZATION_RE.search(text)
+    ):
+        raise ValueError
 
 
 def scan_structured_xml(data):
     import xml.etree.ElementTree as element_tree
 
+    text = data.decode("utf-8", "strict")
+    scan_structured_xml_lexical(text)
     try:
-        root = element_tree.fromstring(data.decode("utf-8", "strict"))
+        parser = element_tree.XMLParser(target=element_tree.TreeBuilder(insert_comments=True))
+        root = element_tree.fromstring(text, parser=parser)
     except (UnicodeError, element_tree.ParseError):
         raise StructuredParseError
     scan_structured_xml_element(root)
@@ -913,6 +939,8 @@ def scan_applied_patch_bytes(data, suffix):
         return
     if suffix == ".xml":
         scan_structured_xml(data)
+        if credential_detected(data):
+            raise ValueError
         return
     if suffix == ".kt":
         if b"\x00" in data:
@@ -961,12 +989,12 @@ def scan_applied_patch_files(repo, paths):
         # replacements also carry the old payload in Git's transport, so scan
         # the immutable base blob after git has authoritatively decoded/applied
         # the patch.  Non-PNG binary resources are rejected by the patch parser.
-        if STATE.patch_binary:
+        if Path(relative).suffix.lower() == ".xml" or STATE.patch_binary:
             old = baseline_blob(repo, relative)
             if old is not None:
-                if Path(relative).suffix.lower() != ".png":
+                if STATE.patch_binary and Path(relative).suffix.lower() != ".png":
                     raise ValueError
-                scan_applied_patch_bytes(old, ".png")
+                scan_applied_patch_bytes(old, Path(relative).suffix.lower())
 
 
 def verify_snapshot_application(snapshot):

@@ -173,6 +173,30 @@ def make_patch(path, marker="ok"):
     )
 
 
+def make_resource_patch(path, resource, payload):
+    write_private(
+        path,
+        f"diff --git a/{resource} b/{resource}\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        f"+++ b/{resource}\n"
+        "@@ -0,0 +1 @@\n"
+        f"+{payload}\n",
+    )
+
+
+def make_deleted_resource_patch(path, repo, resource, payload):
+    target = repo / resource
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target.write_text(payload, encoding="utf-8")
+    subprocess.run(["git", "-C", str(repo), "add", resource], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "XML credential baseline"], check=True)
+    target.unlink()
+    diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--full-index", "HEAD", "--", resource])
+    subprocess.run(["git", "-C", str(repo), "restore", "--", resource], check=True)
+    write_private(path, diff)
+
+
 def make_nul_swift_patch(path):
     name = "iosApp/VitruvianPhoenix/VitruvianPhoenix/Opaque.swift"
     write_private(path, (
@@ -499,7 +523,7 @@ def make_add_delete_patch(path, changed_path, operation):
         old_header = f"a/{changed_path}"
         new_header = "/dev/null"
         mode = "deleted file mode 100644\n"
-        hunk = "@@ -1 +0,0 @@\n-candidate\n"
+        hunk = "@@ -1 +0,0 @@\n-<resources><string name=\"candidate\">candidate</string></resources>\n" if changed_path.endswith(".xml") else "@@ -1 +0,0 @@\n-candidate\n"
     else:
         raise ValueError(operation)
     write_private(
@@ -846,7 +870,7 @@ def make_fake_repo(root):
     write_private(repo / "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt", "ok\n")
     write_private(repo / "shared/src/commonMain/composeResources/values/strings.xml", "<string name=\"autostart_ready\">AUTO-START READY</string>\n")
     write_private(repo / "shared/src/commonMain/composeResources/values/config.json", '{"title":"safe"}\n')
-    write_private(repo / "shared/src/commonMain/composeResources/values/deleted.xml", "candidate\n")
+    write_private(repo / "shared/src/commonMain/composeResources/values/deleted.xml", "<resources><string name=\"candidate\">candidate</string></resources>\n")
     write_private(repo / "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Deleted.kt", "candidate\n")
     write_private(repo / "shared/src/commonMain/composeResources/values/icon.png", valid_png(b"base"))
     write_private(repo / LARGE_BINARY_RESOURCE, large_valid_png(b"phoenix-preview-base"))
@@ -1300,6 +1324,32 @@ def main():
         write_json(generic_xml_request, request("KANBAN-GENERIC-XML-CREDENTIAL", generic_xml_patch))
         generic_xml_result = fresh_result(temp, "generic-xml-credential-result")
         assert_failure(run_wrapper(repo, generic_xml_request, generic_xml_result), generic_xml_result, "validate-request")
+
+        for fixture, payload in (
+            ("xml-tail-credential", '<resources><string name="title">SAFE</string>API_TOKEN=aaaaaaaaaaaaaaaa</resources>'),
+            ("xml-comment-credential", '<resources><string name="title">SAFE</string><!-- API_TOKEN=aaaaaaaaaaaaaaaa --></resources>'),
+        ):
+            xml_patch = temp / f"{fixture}.patch"
+            xml_resource = f"shared/src/commonMain/composeResources/values/{fixture}.xml"
+            make_resource_patch(xml_patch, xml_resource, payload)
+            xml_request = temp / f"{fixture}.json"
+            write_json(xml_request, request(f"KANBAN-{fixture.upper()}", xml_patch))
+            xml_result = fresh_result(temp, f"{fixture}-result")
+            assert_failure(run_wrapper(repo, xml_request, xml_result), xml_result, "validate-request")
+
+        for fixture, payload in (
+            ("xml-deleted-tail-credential", '<resources><string name="title">SAFE</string>API_TOKEN=aaaaaaaaaaaaaaaa</resources>'),
+            ("xml-deleted-comment-credential", '<resources><string name="title">SAFE</string><!-- API_TOKEN=aaaaaaaaaaaaaaaa --></resources>'),
+        ):
+            deleted_root = temp / fixture
+            deleted_repo, _deleted_renderer_log, _deleted_verifier_log, _deleted_compile_log = make_fake_repo(deleted_root)
+            deleted_patch = temp / f"{fixture}.patch"
+            deleted_resource = f"shared/src/commonMain/composeResources/values/{fixture}.xml"
+            make_deleted_resource_patch(deleted_patch, deleted_repo, deleted_resource, payload)
+            deleted_request = temp / f"{fixture}.json"
+            write_json(deleted_request, request(f"KANBAN-{fixture.upper()}", deleted_patch))
+            deleted_result = fresh_result(temp, f"{fixture}-result")
+            assert_failure(run_wrapper(deleted_repo, deleted_request, deleted_result), deleted_result, "validate-request")
 
         unscannable_binary_patch = temp / "unscannable-binary.patch"
         make_unscannable_binary_patch(unscannable_binary_patch)

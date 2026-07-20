@@ -541,6 +541,33 @@ os.chmod(out, 0o600)
 PY
 }
 
+make_deleted_resource_patch() {
+    local repo="$1"
+    local destination="$2"
+    local resource="$3"
+    local payload="$4"
+    python3 - "$repo" "$destination" "$resource" "$payload" <<'PY'
+import os
+import subprocess
+import sys
+from pathlib import Path
+repo = Path(sys.argv[1])
+destination = Path(sys.argv[2])
+resource = Path(sys.argv[3])
+payload = sys.argv[4]
+target = repo / resource
+target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+target.write_text(payload, encoding="utf-8")
+subprocess.run(["git", "-C", str(repo), "add", str(resource)], check=True)
+subprocess.run(["git", "-C", str(repo), "commit", "-qm", "XML credential baseline"], check=True)
+target.unlink()
+diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--full-index", "HEAD", "--", str(resource)])
+subprocess.run(["git", "-C", str(repo), "restore", "--", str(resource)], check=True)
+destination.write_bytes(diff)
+os.chmod(destination, 0o600)
+PY
+}
+
 make_binary_png_patch() {
     local destination="$1"
     local keyword="$2"
@@ -1415,7 +1442,7 @@ PY
 # Producer-shaped resource fixtures exercise the same decoded-input boundary as
 # the preview consumer.  Safe structured resources pass; generic assignments,
 # opaque binary Swift, and canonical rename/copy metadata fail before rendering.
-for fixture in json-safe xml-safe json-duplicate xml-nested-credential xml-key-credential json-credential xml-credential png-safe png-key-credential png-itxt-bearer png-itxt-host-path png-itxt-bad-flag png-itxt-bad-method png-itxt-xml-attribute-context png-itxt-xml-empty-credential-attribute nul-swift opaque-binary-swift rename copy; do
+for fixture in json-safe xml-safe json-duplicate xml-nested-credential xml-key-credential json-credential xml-credential xml-tail-credential xml-comment-credential png-safe png-key-credential png-itxt-bearer png-itxt-host-path png-itxt-bad-flag png-itxt-bad-method png-itxt-xml-attribute-context png-itxt-xml-empty-credential-attribute nul-swift opaque-binary-swift rename copy; do
     fixture_repo="$TMP_DIR/producer-$fixture-repo"
     make_fake_repo "$fixture_repo"
     fixture_patch="$TMP_DIR/producer-$fixture.patch"
@@ -1427,6 +1454,8 @@ for fixture in json-safe xml-safe json-duplicate xml-nested-credential xml-key-c
         xml-key-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<root api_token="aaaaaaaaaaaaaaaa">ok</root>' ;;
         json-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/labels.json" '{"title":"TOKEN=REDACTED_REDACTED"}' ;;
         xml-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<resources><string name="title">TOKEN=REDACTED_REDACTED</string></resources>' ;;
+        xml-tail-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/tail-secret.xml" '<resources><string name="title">SAFE</string>apiToken: aaaaaaaaaaaaaaaa</resources>' ;;
+        xml-comment-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/comment-secret.xml" '<resources><string name="title">SAFE</string><!-- apiToken: aaaaaaaaaaaaaaaa --></resources>' ;;
         png-safe) make_binary_png_patch "$fixture_patch" "XML:com.adobe.xmp" '{}' ;;
         png-key-credential) make_binary_png_patch "$fixture_patch" "API_TOKEN" 'SAFE' ;;
         png-itxt-bearer) make_binary_png_patch "$fixture_patch" "Description" 'Bearer aaaaaaaaaaaaaaaa' 1 0 ;;
@@ -1460,6 +1489,27 @@ result = json.loads(Path(sys.argv[1]).read_text())
 assert result["status"] == "failed"
 PY
     fi
+done
+
+for fixture in xml-deleted-tail-credential xml-deleted-comment-credential; do
+    deleted_repo="$TMP_DIR/producer-$fixture-repo"
+    make_fake_repo "$deleted_repo"
+    deleted_patch="$TMP_DIR/producer-$fixture.patch"
+    case "$fixture" in
+        xml-deleted-tail-credential) deleted_xml='<resources><string name="title">SAFE</string>apiToken: aaaaaaaaaaaaaaaa</resources>' ;;
+        xml-deleted-comment-credential) deleted_xml='<resources><string name="title">SAFE</string><!-- apiToken: aaaaaaaaaaaaaaaa --></resources>' ;;
+    esac
+    make_deleted_resource_patch "$deleted_repo" "$deleted_patch" "shared/src/commonMain/composeResources/values/$fixture.xml" "$deleted_xml"
+    deleted_artifact="$TMP_DIR/producer-$fixture-artifact"
+    if run_renderer "$deleted_repo" "$deleted_artifact" "$deleted_patch" >"$TMP_DIR/producer-$fixture.out" 2>&1; then
+        fail "producer accepted unsafe deleted XML fixture: $fixture"
+    fi
+    python3 - "$deleted_artifact/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+assert json.loads(Path(sys.argv[1]).read_text())["status"] == "failed"
+PY
 done
 
 for fixture in png-key-credential png-itxt-bearer png-itxt-host-path png-itxt-bad-flag png-itxt-bad-method; do
