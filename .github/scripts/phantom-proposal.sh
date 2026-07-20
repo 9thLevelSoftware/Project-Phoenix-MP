@@ -760,6 +760,27 @@ base_sha = sys.argv[3]
 max_blob_bytes = int(sys.argv[4])
 assignment = re.compile(r"(?i)\b(?:[A-Za-z0-9_.-]*(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?key|client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|authorization|token|secret|password|passwd|credential)[A-Za-z0-9_.-]*)\b[ \t]*(?::[ \t]*[A-Za-z_][A-Za-z0-9_.<>?, \t\[\]]*)?[ \t]*[:=][ \t]*['\"]?[A-Za-z0-9._~+/=-]{16,}['\"]?")
 name = re.compile(r"(?i)(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?(?:key|token)|client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|authorization|token|secret|password|passwd|credential)")
+HOST_PATH_ROOTS = (
+    "Users", "private", "tmp", "var", "home", "Volumes", "Applications", "System", "Library", "opt", "etc", "usr",
+    "bin", "sbin", "dev", "root", "run", "proc", "sys", "mnt", "media", "srv", "boot", "efi", "cores",
+)
+PNG_HOST_PATH_ROOT_RE = re.compile(r"(?<![A-Za-z0-9_.:/-])/(?:" + "|".join(HOST_PATH_ROOTS) + r")(?:/|$)")
+PNG_GENERIC_HOST_PATH_RE = re.compile(r"(?<![A-Za-z0-9_.:/-])/(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]+(?=$|[\s\"'<>])")
+CREDENTIAL_NAME_RE = (
+    r"[A-Za-z0-9_.-]*(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?key|"
+    r"client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|token|secret|"
+    r"password|passwd|credential|authorization)[A-Za-z0-9_.-]*"
+)
+CREDENTIAL_ASSIGNMENT_RE = re.compile(
+    r"(?im)(?:^|[\r\n])[ \t]*[+\-]?[ \t]*"
+    r"(?:(?:export|val|var|let|const|final|private|public|internal|protected|static|readonly)[ \t]+)*"
+    rf"{CREDENTIAL_NAME_RE}[ \t]*(?::[ \t]*[A-Za-z_][A-Za-z0-9_.<>?, \t\[\]]*)?"
+    r"[ \t]*=[ \t]*['\"]?[A-Za-z0-9._~+/=-]{16,}['\"]?"
+)
+STRUCTURED_CREDENTIAL_ASSIGNMENT_RE = re.compile(
+    rf"(?i)\b{CREDENTIAL_NAME_RE}\b[ \t]*(?::[ \t]*[A-Za-z_][A-Za-z0-9_.<>?, \t\[\]]*)?"
+    r"[ \t]*[:=][ \t]*['\"]?[A-Za-z0-9._~+/=-]{16,}['\"]?"
+)
 
 def no_duplicate_keys(pairs):
     result = {}
@@ -815,6 +836,53 @@ def scan_text(data):
         except element_tree.ParseError:
             raise SystemExit(1)
 
+def scan_structured_text(data):
+    if b"\x00" in data:
+        raise ValueError
+    text = data.decode("utf-8", "strict")
+    if STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(text):
+        raise ValueError
+    stripped = text.lstrip()
+    if stripped.startswith(("{", "[")):
+        scan_json(json.loads(text, object_pairs_hook=no_duplicate_keys))
+    elif stripped.startswith("<"):
+        try:
+            scan_xml(element_tree.fromstring(text))
+        except element_tree.ParseError:
+            raise ValueError
+
+
+def structured_credential_name(value):
+    return isinstance(value, str) and re.search(
+        r"(?i)(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?(?:key|token)|"
+        r"client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|authorization|"
+        r"token|password|passwd|credential|secret)",
+        value,
+    ) is not None
+
+
+def credential_detected(data):
+    text = data.decode("utf-8", "replace")
+    if re.search(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----", text, re.IGNORECASE):
+        return True
+    if re.search(r"\b(?:gh[pousr]|github_pat|glpat|xox[baprs]|sk|rk)[_-][A-Za-z0-9_./=-]{20,}\b", text, re.IGNORECASE):
+        return True
+    if re.search(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b", text):
+        return True
+    if re.search(r"\bBearer\s+[A-Za-z0-9._~+/=-]{16,}", text, re.IGNORECASE):
+        return True
+    if CREDENTIAL_ASSIGNMENT_RE.search(text):
+        return True
+    if re.search(r"\b(?:authorization|bearer)\s*:\s*(?:\*+\s*)?[A-Za-z0-9._~+/=-]{16,}", text, re.IGNORECASE):
+        return True
+    return False
+
+
+def png_host_path_detected(data):
+    text = data.decode("utf-8", "replace")
+    return bool(PNG_HOST_PATH_ROOT_RE.search(text) or PNG_GENERIC_HOST_PATH_RE.search(text))
+
+
 def scan_png(data):
     if len(data) < 33 or data[:8] != b"\x89PNG\r\n\x1a\n":
         raise SystemExit(1)
@@ -857,17 +925,28 @@ def scan_png(data):
                     text = zlib.decompress(compressed[1:])
                 else:
                     keyword_end = payload.index(b"\x00")
+                    if keyword_end <= 0 or len(payload) < keyword_end + 3:
+                        raise ValueError
                     keyword = payload[:keyword_end]
+                    compressed = payload[keyword_end + 1]
+                    compression_method = payload[keyword_end + 2]
+                    if compressed not in (0, 1) or compression_method != 0:
+                        raise ValueError
                     metadata_cursor = keyword_end + 3
                     language_end = payload.index(b"\x00", metadata_cursor)
                     translated_end = payload.index(b"\x00", language_end + 1)
                     text = payload[translated_end + 1:]
-                    if payload[keyword_end + 1] == 1:
+                    if compressed:
                         text = zlib.decompress(text)
                 keyword_text = keyword.decode("utf-8", "strict")
-                if name.search(keyword_text):
-                    raise ValueError
-                scan_text(text)
+                if kind == b"iTXt":
+                    scan_structured_text(text)
+                    if structured_credential_name(keyword_text) or credential_detected(text) or png_host_path_detected(text):
+                        raise ValueError
+                else:
+                    if name.search(keyword_text):
+                        raise ValueError
+                    scan_text(text)
             except (ValueError, IndexError, UnicodeError, zlib.error):
                 raise SystemExit(1)
         cursor += 12 + length

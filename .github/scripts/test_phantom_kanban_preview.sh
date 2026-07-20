@@ -102,7 +102,13 @@ def write_json(path, value):
     write_private(path, json.dumps(value, sort_keys=True) + "\n")
 
 
-def valid_png(metadata=b"safe metadata", pixels=b"\x00" + b"\x00" * 8 + b"\x00" + b"\x00" * 8):
+def valid_png(
+    metadata=b"safe metadata",
+    pixels=b"\x00" + b"\x00" * 8 + b"\x00" + b"\x00" * 8,
+    keyword=b"XML:com.adobe.xmp",
+    compression_flag=0,
+    compression_method=0,
+):
     import struct
     import zlib
 
@@ -110,7 +116,8 @@ def valid_png(metadata=b"safe metadata", pixels=b"\x00" + b"\x00" * 8 + b"\x00" 
         return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
 
     ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
-    itxt = b"XML:com.adobe.xmp\x00\x00\x00\x00\x00" + metadata
+    encoded_metadata = zlib.compress(metadata) if compression_flag == 1 else metadata
+    itxt = keyword + b"\x00" + bytes((compression_flag, compression_method)) + b"\x00\x00" + encoded_metadata
     return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"iTXt", itxt) + chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b"")
 
 
@@ -337,6 +344,38 @@ def make_binary_add_delete_patch(path, changed_path, operation):
             resource.unlink()
             subprocess.run(["git", "-C", str(repo), "add", "-u", changed_path], check=True)
         diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--cached", "--binary", "--full-index"])
+    write_private(path, diff)
+
+
+def make_itxt_binary_patch(path, repo, operation, name, keyword, metadata, compression_flag=0, compression_method=0):
+    resource = "shared/src/commonMain/composeResources/values/" + name
+    target = repo / resource
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    payload = valid_png(
+        metadata.encode("utf-8"),
+        keyword=keyword.encode("utf-8"),
+        compression_flag=compression_flag,
+        compression_method=compression_method,
+    )
+    if operation == "add":
+        if target.exists():
+            raise AssertionError(resource)
+        target.write_bytes(payload)
+        subprocess.run(["git", "-C", str(repo), "add", resource], check=True)
+    elif operation == "delete":
+        target.write_bytes(payload)
+        subprocess.run(["git", "-C", str(repo), "add", resource], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "iTXt PNG baseline"], check=True)
+        target.unlink()
+        subprocess.run(["git", "-C", str(repo), "add", "-u", resource], check=True)
+    else:
+        raise ValueError(operation)
+    diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--cached", "--binary", "--full-index"])
+    if operation == "add":
+        target.unlink()
+        subprocess.run(["git", "-C", str(repo), "reset", "--quiet", "--", resource], check=True)
+    else:
+        subprocess.run(["git", "-C", str(repo), "restore", "--staged", "--worktree", "--", resource], check=True)
     write_private(path, diff)
 
 
@@ -1269,6 +1308,36 @@ def main():
         write_json(deleted_binary_request, request("KANBAN-DELETED-BINARY-CREDENTIAL", deleted_binary_patch))
         deleted_binary_result = fresh_result(temp, "deleted-binary-credential-result")
         assert_failure(run_wrapper(deleted_binary_repo, deleted_binary_request, deleted_binary_result), deleted_binary_result, "validate-request")
+
+        for fixture, metadata, compression_flag, compression_method in (
+            ("keyword-credential", "SAFE", 0, 0),
+            ("decoded-bearer", "Bearer aaaaaaaaaaaaaaaa", 1, 0),
+            ("host-path", "/Users/fixture/private/image.xmp", 1, 0),
+            ("invalid-compression-flag", "SAFE", 2, 0),
+            ("invalid-compression-method", "SAFE", 0, 1),
+        ):
+            if fixture == "keyword-credential":
+                keyword = "API_TOKEN"
+            else:
+                keyword = "Description"
+            for operation in ("add", "delete"):
+                itxt_root = temp / f"itxt-{fixture}-{operation}"
+                itxt_repo, _itxt_renderer_log, _itxt_verifier_log, _itxt_compile_log = make_fake_repo(itxt_root)
+                itxt_patch = temp / f"itxt-{fixture}-{operation}.patch"
+                make_itxt_binary_patch(
+                    itxt_patch,
+                    itxt_repo,
+                    operation,
+                    f"{fixture}-{operation}.png",
+                    keyword,
+                    metadata,
+                    compression_flag,
+                    compression_method,
+                )
+                itxt_request = temp / f"itxt-{fixture}-{operation}.json"
+                write_json(itxt_request, request(f"KANBAN-ITXT-{fixture.upper()}-{operation.upper()}", itxt_patch))
+                itxt_result = fresh_result(temp, f"itxt-{fixture}-{operation}-result")
+                assert_failure(run_wrapper(itxt_repo, itxt_request, itxt_result), itxt_result, "validate-request")
 
         for operation, (source_patch, _changed_path) in binary_add_delete_patches.items():
             for mutation in ("missing", "extra"):

@@ -545,7 +545,9 @@ make_binary_png_patch() {
     local destination="$1"
     local keyword="$2"
     local text="$3"
-    python3 - "$destination" "$keyword" "$text" <<'PY'
+    local compression_flag="${4:-0}"
+    local compression_method="${5:-0}"
+    python3 - "$destination" "$keyword" "$text" "$compression_flag" "$compression_method" <<'PY'
 import os
 import struct
 import subprocess
@@ -553,12 +555,15 @@ import sys
 import tempfile
 import zlib
 from pathlib import Path
-destination, keyword, text = sys.argv[1:]
+destination, keyword, text = sys.argv[1:4]
+compression_flag = int(sys.argv[4])
+compression_method = int(sys.argv[5])
 resource = "shared/src/commonMain/composeResources/values/icon.png"
 def chunk(kind, payload):
     return len(payload).to_bytes(4, "big") + kind + payload + (zlib.crc32(kind + payload) & 0xffffffff).to_bytes(4, "big")
 ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
-itxt = keyword.encode("utf-8") + b"\x00\x00\x00\x00\x00" + text.encode("utf-8")
+encoded_text = zlib.compress(text.encode("utf-8")) if compression_flag == 1 else text.encode("utf-8")
+itxt = keyword.encode("utf-8") + b"\x00" + bytes((compression_flag, compression_method)) + b"\x00\x00" + encoded_text
 png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"iTXt", itxt) + chunk(b"IDAT", zlib.compress(b"\x00" * 18)) + chunk(b"IEND", b"")
 with tempfile.TemporaryDirectory(prefix="proposal-png-patch-") as name:
     repo = Path(name) / "repo"
@@ -578,21 +583,30 @@ PY
 make_deleted_binary_credential_patch() {
     local repo="$1"
     local destination="$2"
-    python3 - "$repo" "$destination" <<'PY'
+    local keyword="${3:-XML:com.adobe.xmp}"
+    local text="${4:-API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa}"
+    local compression_flag="${5:-0}"
+    local compression_method="${6:-0}"
+    python3 - "$repo" "$destination" "$keyword" "$text" "$compression_flag" "$compression_method" <<'PY'
 import os
 import struct
 import subprocess
 import sys
 import zlib
 from pathlib import Path
-repo, destination = map(Path, sys.argv[1:])
+repo, destination = map(Path, sys.argv[1:3])
+keyword = sys.argv[3]
+text = sys.argv[4].encode("utf-8")
+compression_flag = int(sys.argv[5])
+compression_method = int(sys.argv[6])
 resource = Path("shared/src/commonMain/composeResources/values/deleted-secret.png")
 target = repo / resource
 target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
 def chunk(kind, payload):
     return len(payload).to_bytes(4, "big") + kind + payload + (zlib.crc32(kind + payload) & 0xffffffff).to_bytes(4, "big")
 ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
-itxt = b"XML:com.adobe.xmp\x00\x00\x00\x00\x00API_TOKEN=" + b"a" * 24
+encoded_text = zlib.compress(text) if compression_flag == 1 else text
+itxt = keyword.encode("utf-8") + b"\x00" + bytes((compression_flag, compression_method)) + b"\x00\x00" + encoded_text
 target.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"iTXt", itxt) + chunk(b"IDAT", zlib.compress(b"\x00" * 18)) + chunk(b"IEND", b""))
 subprocess.run(["git", "-C", str(repo), "add", str(resource)], check=True)
 subprocess.run(["git", "-C", str(repo), "commit", "-qm", "credential PNG baseline"], check=True)
@@ -1367,7 +1381,7 @@ PY
 # Producer-shaped resource fixtures exercise the same decoded-input boundary as
 # the preview consumer.  Safe structured resources pass; generic assignments,
 # opaque binary Swift, and canonical rename/copy metadata fail before rendering.
-for fixture in json-safe xml-safe json-duplicate xml-nested-credential json-credential xml-credential png-safe png-key-credential nul-swift opaque-binary-swift rename copy; do
+for fixture in json-safe xml-safe json-duplicate xml-nested-credential json-credential xml-credential png-safe png-key-credential png-itxt-bearer png-itxt-host-path png-itxt-bad-flag png-itxt-bad-method nul-swift opaque-binary-swift rename copy; do
     fixture_repo="$TMP_DIR/producer-$fixture-repo"
     make_fake_repo "$fixture_repo"
     fixture_patch="$TMP_DIR/producer-$fixture.patch"
@@ -1380,6 +1394,10 @@ for fixture in json-safe xml-safe json-duplicate xml-nested-credential json-cred
         xml-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<resources><string name="title">TOKEN=REDACTED_REDACTED</string></resources>' ;;
         png-safe) make_binary_png_patch "$fixture_patch" "XML:com.adobe.xmp" '{}' ;;
         png-key-credential) make_binary_png_patch "$fixture_patch" "API_TOKEN" 'SAFE' ;;
+        png-itxt-bearer) make_binary_png_patch "$fixture_patch" "Description" 'Bearer aaaaaaaaaaaaaaaa' 1 0 ;;
+        png-itxt-host-path) make_binary_png_patch "$fixture_patch" "Description" '/Users/fixture/private/image.xmp' 1 0 ;;
+        png-itxt-bad-flag) make_binary_png_patch "$fixture_patch" "Description" 'SAFE' 2 0 ;;
+        png-itxt-bad-method) make_binary_png_patch "$fixture_patch" "Description" 'SAFE' 0 1 ;;
         nul-swift) make_nul_swift_patch "$fixture_patch" ;;
         opaque-binary-swift) make_binary_swift_patch "$fixture_patch" ;;
         rename|copy) make_rename_or_copy_patch "$fixture_patch" "$fixture" ;;
@@ -1407,19 +1425,27 @@ PY
     fi
 done
 
-DELETED_BINARY_REPO="$TMP_DIR/deleted-binary-repo"
-make_fake_repo "$DELETED_BINARY_REPO"
-DELETED_BINARY_PATCH="$TMP_DIR/deleted-binary.patch"
-make_deleted_binary_credential_patch "$DELETED_BINARY_REPO" "$DELETED_BINARY_PATCH"
-if run_renderer "$DELETED_BINARY_REPO" "$TMP_DIR/deleted-binary-artifact" "$DELETED_BINARY_PATCH" >"$TMP_DIR/deleted-binary.out" 2>&1; then
-    fail 'producer transported a credential-bearing deleted PNG payload'
-fi
-python3 - "$TMP_DIR/deleted-binary-artifact/proposal-manifest.json" <<'PY'
+for fixture in png-key-credential png-itxt-bearer png-itxt-host-path png-itxt-bad-flag png-itxt-bad-method; do
+    DELETED_BINARY_REPO="$TMP_DIR/deleted-binary-$fixture-repo"
+    make_fake_repo "$DELETED_BINARY_REPO"
+    DELETED_BINARY_PATCH="$TMP_DIR/deleted-binary-$fixture.patch"
+    case "$fixture" in
+        png-key-credential) make_deleted_binary_credential_patch "$DELETED_BINARY_REPO" "$DELETED_BINARY_PATCH" "API_TOKEN" 'SAFE' 0 0 ;;
+        png-itxt-bearer) make_deleted_binary_credential_patch "$DELETED_BINARY_REPO" "$DELETED_BINARY_PATCH" "Description" 'Bearer aaaaaaaaaaaaaaaa' 1 0 ;;
+        png-itxt-host-path) make_deleted_binary_credential_patch "$DELETED_BINARY_REPO" "$DELETED_BINARY_PATCH" "Description" '/Users/fixture/private/image.xmp' 1 0 ;;
+        png-itxt-bad-flag) make_deleted_binary_credential_patch "$DELETED_BINARY_REPO" "$DELETED_BINARY_PATCH" "Description" 'SAFE' 2 0 ;;
+        png-itxt-bad-method) make_deleted_binary_credential_patch "$DELETED_BINARY_REPO" "$DELETED_BINARY_PATCH" "Description" 'SAFE' 0 1 ;;
+    esac
+    if run_renderer "$DELETED_BINARY_REPO" "$TMP_DIR/deleted-binary-$fixture-artifact" "$DELETED_BINARY_PATCH" >"$TMP_DIR/deleted-binary-$fixture.out" 2>&1; then
+        fail "producer transported unsafe deleted PNG payload: $fixture"
+    fi
+    python3 - "$TMP_DIR/deleted-binary-$fixture-artifact/proposal-manifest.json" <<'PY'
 import json
 import sys
 from pathlib import Path
 assert json.loads(Path(sys.argv[1]).read_text())["status"] == "failed"
 PY
+done
 
 # A normal Swift candidate is accepted only after both canonical harness cases,
 # compile-free real-app execution, comparison validation, and cleanup.
