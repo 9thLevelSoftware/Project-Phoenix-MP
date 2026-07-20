@@ -120,7 +120,7 @@ if args[:3] == ["simctl", "list", "devices"]:
     print(json.dumps({{"devices": {{"com.apple.CoreSimulator.SimRuntime.iOS-26-5": [{{
         "state": "Booted" if (state / "booted").exists() else "Shutdown",
         "isAvailable": True,
-        "name": "{EXPECTED_SIMULATOR_NAME}",
+        "name": "literal wrong simulator name" if (state / "wrong-device-identity").exists() else "{EXPECTED_SIMULATOR_NAME}",
         "udid": "{EXPECTED_UDID}",
     }}]}}}}))
     raise SystemExit(0)
@@ -277,6 +277,7 @@ def invocation_env(fake_bin, root, java_home, inherited_value="not-a-secret"):
         "HOME": str(root / "test-home"),
         "TMPDIR": str(root / "test-tmp"),
         "JAVA_HOME": str(java_home),
+        "PHOENIX_PREVIEW_LAUNCH_TEST_MODE": "1",
         "PHOENIX_PREVIEW_LAUNCH_TEST_BIN": str(fake_bin),
         "UNSAFE_INHERITED_VALUE": inherited_value,
         "INHERITED_MARKER": "must-not-reach-child",
@@ -286,6 +287,24 @@ def invocation_env(fake_bin, root, java_home, inherited_value="not-a-secret"):
 def run_launch(host, fake_bin, root, java_home, *args, inherited_value="not-a-secret"):
     env = invocation_env(fake_bin, root, java_home, inherited_value)
     return run([str(host / ".github/scripts/phantom-preview-launch.sh"), *args], cwd=host, env=env)
+
+
+def run_launch_with_closed_stdout(host, fake_bin, root, java_home, *args):
+    env = invocation_env(fake_bin, root, java_home)
+    command = [str(host / ".github/scripts/phantom-preview-launch.sh"), *args]
+    read_fd, write_fd = os.pipe()
+    os.close(read_fd)
+    process = subprocess.Popen(
+        command,
+        cwd=host,
+        env=env,
+        stdout=write_fd,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    os.close(write_fd)
+    _, stderr = process.communicate()
+    return subprocess.CompletedProcess(command, process.returncode, "", stderr)
 
 
 def parse_descriptor(result):
@@ -370,6 +389,32 @@ with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_
     if clean_before:
         fail(f"fixture host unexpectedly dirty before launch: {clean_before!r}")
     head_before = base_sha(host)
+
+    # The arbitrary fake-tool PATH is accepted only with the exact test-mode
+    # gate.  A caller cannot smuggle test tools into a normal launch.
+    command_log.write_text("", encoding="utf-8")
+    ungated_env = invocation_env(fake_bin, root, java_home)
+    del ungated_env["PHOENIX_PREVIEW_LAUNCH_TEST_MODE"]
+    assert_rejected(
+        run(
+            [str(host / ".github/scripts/phantom-preview-launch.sh"), "launch", "just-lift-connected"],
+            cwd=host,
+            env=ungated_env,
+        ),
+        "ungated test-tool PATH override",
+        command_log,
+    )
+
+    # The fake simulator deliberately reports a literal unrelated name; the
+    # launcher must reject it rather than accepting a script-derived identity.
+    (state / "wrong-device-identity").write_text("wrong\n", encoding="ascii")
+    command_log.write_text("", encoding="utf-8")
+    wrong_identity = run_launch(host, fake_bin, root, java_home, "launch", "just-lift-connected")
+    assert_safe_failed(wrong_identity, "independent simulator identity mismatch")
+    if (host / CONFIG_REL).exists() or (state / "installed").exists() or (state / "running").exists():
+        fail("wrong simulator identity left app/config state behind")
+    (state / "wrong-device-identity").unlink()
+
     descriptor = parse_descriptor(run_launch(host, fake_bin, root, java_home, "launch", "just-lift-connected"))
     if not (state / "booted").exists() or not (state / "installed").exists() or not (state / "running").exists():
         fail("successful launch did not retain the booted simulator/app")
@@ -406,6 +451,19 @@ with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_
     if len(launch_envs) != 1 or launch_envs[0].get("SIMCTL_CHILD_PHOENIX_SIMULATOR_FIXTURE") != "just-lift-connected":
         fail(f"simctl launch did not receive the exact child fixture environment: {launch_envs!r}")
 
+    # A closed descriptor pipe is a failed launch delivery.  The app must not
+    # remain installed merely because the simulator launch already succeeded.
+    command_log.write_text("", encoding="utf-8")
+    closed_stdout = run_launch_with_closed_stdout(host, fake_bin, root, java_home, "launch", "just-lift-connected")
+    assert_safe_failed(closed_stdout, "descriptor delivery through closed stdout")
+    closed_commands = command_log.read_text(encoding="utf-8").splitlines()
+    if sum(line.startswith("xcrun simctl terminate ") for line in closed_commands) != 1:
+        fail(f"closed descriptor pipe did not terminate exactly once: {closed_commands!r}")
+    if sum(line.startswith("xcrun simctl uninstall ") for line in closed_commands) != 1:
+        fail(f"closed descriptor pipe did not uninstall exactly once: {closed_commands!r}")
+    if (state / "running").exists() or (state / "installed").exists() or (host / CONFIG_REL).exists():
+        fail("closed descriptor pipe left persistent app/config state behind")
+
     # Reuse the booted simulator through a caller-owned registered worktree.
     worktree = root / "clean-worktree"
     git(host, "worktree", "add", "--detach", str(worktree), "HEAD")
@@ -426,6 +484,18 @@ with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_
     descriptor_path = root / "session.json"
     descriptor_path.write_text(json.dumps(descriptor, sort_keys=True) + "\n", encoding="utf-8")
     descriptor_path.chmod(0o600)
+    ungated_stop_env = invocation_env(fake_bin, root, java_home)
+    del ungated_stop_env["PHOENIX_PREVIEW_LAUNCH_TEST_MODE"]
+    command_log.write_text("", encoding="utf-8")
+    assert_rejected(
+        run(
+            [str(host / ".github/scripts/phantom-preview-launch.sh"), "stop", str(descriptor_path)],
+            cwd=root,
+            env=ungated_stop_env,
+        ),
+        "ungated test-tool PATH override for stop",
+        command_log,
+    )
     # Cleanup must make the exact descriptor-bound simulator usable before
     # terminate/uninstall, even when the simulator is currently shut down.
     (state / "booted").unlink()
@@ -449,6 +519,54 @@ with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_
         fail(f"stop issued an unsafe/unexpected command set: {stop_commands!r}")
     if not (state / "booted").exists():
         fail("stopped simulator cleanup did not leave the descriptor-bound simulator booted")
+
+    # Hold the descriptor's owned FD open while atomically replacing its path.
+    # A replacement must be rejected without reaching any simulator action.
+    host_launcher = host / ".github/scripts/phantom-preview-launch.sh"
+    launcher_text = host_launcher.read_text(encoding="utf-8")
+    race_needle = "            opened_info = os.fstat(fd)\n"
+    race_hook = (
+        race_needle
+        + "            race_marker = os.environ.get(\"PHOENIX_PREVIEW_LAUNCH_DESCRIPTOR_RACE_MARKER\")\n"
+        + "            if race_marker:\n"
+        + "                Path(race_marker).write_text(\"ready\", encoding=\"ascii\")\n"
+        + "                while Path(race_marker).exists():\n"
+        + "                    time.sleep(0.01)\n"
+    )
+    if launcher_text.count(race_needle) != 1:
+        fail("descriptor race hook could not find the owned-FD read boundary")
+    host_launcher.write_text(launcher_text.replace(race_needle, race_hook), encoding="utf-8")
+    race_marker = root / "descriptor-race-ready"
+    race_replacement = root / "descriptor-race-replacement.json"
+    replacement_descriptor = dict(descriptor)
+    replacement_descriptor["baseSha"] = "0" * 40
+    race_replacement.write_text(json.dumps(replacement_descriptor) + "\n", encoding="utf-8")
+    race_replacement.chmod(0o600)
+    race_env = invocation_env(fake_bin, root, java_home)
+    race_env["PHOENIX_PREVIEW_LAUNCH_DESCRIPTOR_RACE_MARKER"] = str(race_marker)
+    command_log.write_text("", encoding="utf-8")
+    race_process = subprocess.Popen(
+        [str(host_launcher), "stop", str(descriptor_path)],
+        cwd=root,
+        env=race_env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline and not race_marker.exists():
+        time.sleep(0.01)
+    if not race_marker.exists():
+        race_process.kill()
+        race_process.communicate()
+        fail("descriptor race fixture did not reach the owned-FD read boundary")
+    os.replace(race_replacement, descriptor_path)
+    race_marker.unlink()
+    race_stdout, race_stderr = race_process.communicate(timeout=5)
+    race_result = subprocess.CompletedProcess(race_process.args, race_process.returncode, race_stdout, race_stderr)
+    assert_rejected(race_result, "descriptor replacement race", command_log)
+    descriptor_path.write_text(json.dumps(descriptor) + "\n", encoding="utf-8")
+    descriptor_path.chmod(0o600)
 
     # A simulator boot failure is reported through the same generic safe
     # boundary as malformed device output; no raw subprocess diagnostics leak.

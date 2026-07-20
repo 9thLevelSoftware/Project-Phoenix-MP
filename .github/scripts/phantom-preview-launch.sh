@@ -36,6 +36,8 @@ SIMULATOR_NAME = "Phantom Harness iPhone 17 Pro"
 SIMULATOR_UDID = "678A4E3B-6A1F-469C-8068-9A2608A85783"
 SIMULATOR_RUNTIME_SUFFIX = "iOS-26-5"
 SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
+TEST_MODE_ENV = "PHOENIX_PREVIEW_LAUNCH_TEST_MODE"
+TEST_BIN_ENV = "PHOENIX_PREVIEW_LAUNCH_TEST_BIN"
 COMMAND_TIMEOUT_SECONDS = 1800
 PROCESS_TERM_GRACE_SECONDS = 0.5
 PROCESS_REAP_TIMEOUT_SECONDS = 5
@@ -135,6 +137,12 @@ def reject_secret_arguments(arguments):
             fail()
         if name_pattern.search(argument) or any(pattern.search(argument) for pattern in value_patterns):
             fail()
+
+
+def reject_ungated_test_override():
+    test_tool_dir = os.environ.get(TEST_BIN_ENV, "")
+    if test_tool_dir and os.environ.get(TEST_MODE_ENV) != "1":
+        fail()
 
 
 def canonical_input_path(raw):
@@ -357,7 +365,7 @@ def child_environment(private_root, java_home):
     # Test-only stand-ins are accepted only through a caller-owned directory
     # that is validated before it can affect child lookup. Normal launches
     # retain the fixed system PATH above.
-    test_tool_dir = os.environ.get("PHOENIX_PREVIEW_LAUNCH_TEST_BIN", "")
+    test_tool_dir = os.environ.get(TEST_BIN_ENV, "")
     if test_tool_dir:
         test_tool_path = canonical_input_path(test_tool_dir)
         owned_directory(test_tool_path)
@@ -503,6 +511,50 @@ def remove_config(target, expected_identity):
         fail()
 
 
+def descriptor_bytes(path):
+    try:
+        initial_info = os.lstat(path)
+        if (
+            stat.S_ISLNK(initial_info.st_mode)
+            or not stat.S_ISREG(initial_info.st_mode)
+            or initial_info.st_uid != os.getuid()
+            or stat.S_IMODE(initial_info.st_mode) & 0o077
+        ):
+            fail()
+        fd = os.open(path, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0))
+        try:
+            opened_info = os.fstat(fd)
+            if (
+                not stat.S_ISREG(opened_info.st_mode)
+                or opened_info.st_uid != os.getuid()
+                or stat.S_IMODE(opened_info.st_mode) & 0o077
+                or (opened_info.st_dev, opened_info.st_ino)
+                != (initial_info.st_dev, initial_info.st_ino)
+            ):
+                fail()
+            chunks = []
+            total = 0
+            while True:
+                chunk = os.read(fd, MAX_DESCRIPTOR_BYTES + 1 - total)
+                if not chunk:
+                    break
+                chunks.append(chunk)
+                total += len(chunk)
+                if total > MAX_DESCRIPTOR_BYTES:
+                    fail()
+            final_info = os.fstat(fd)
+            if (final_info.st_dev, final_info.st_ino) != (opened_info.st_dev, opened_info.st_ino):
+                fail()
+            current_info = os.lstat(path)
+            if (current_info.st_dev, current_info.st_ino) != (opened_info.st_dev, opened_info.st_ino):
+                fail()
+            return b"".join(chunks)
+        finally:
+            os.close(fd)
+    except OSError:
+        fail()
+
+
 def parse_devices(payload):
     try:
         data = json.loads(payload.decode("utf-8"))
@@ -643,8 +695,8 @@ def launch(requested_worktree):
             "launchCommand": LAUNCH_COMMAND,
             "cleanupCommand": CLEANUP_COMMAND,
         }
+        print(json.dumps(descriptor, sort_keys=True, separators=(",", ":")), flush=True)
         success = True
-        print(json.dumps(descriptor, sort_keys=True, separators=(",", ":")))
     finally:
         if created_config:
             try:
@@ -659,16 +711,7 @@ def launch(requested_worktree):
 
 def descriptor_from_path(raw):
     path = canonical_input_path(raw)
-    owned_regular(path)
-    try:
-        info = os.lstat(path)
-        if stat.S_IMODE(info.st_mode) & 0o077:
-            fail()
-        data = path.read_bytes()
-    except OSError:
-        fail()
-    if len(data) > MAX_DESCRIPTOR_BYTES:
-        fail()
+    data = descriptor_bytes(path)
 
     def reject_duplicate_keys(entries):
         result = {}
@@ -733,7 +776,7 @@ def stop(raw_descriptor):
         "PHOENIX_PREVIEW_LAUNCH": "1",
     }
     try:
-        test_tool_dir = os.environ.get("PHOENIX_PREVIEW_LAUNCH_TEST_BIN", "")
+        test_tool_dir = os.environ.get(TEST_BIN_ENV, "")
         if test_tool_dir:
             test_tool_path = canonical_input_path(test_tool_dir)
             owned_directory(test_tool_path)
@@ -748,7 +791,7 @@ def stop(raw_descriptor):
         run_tool(private_root, "stop-uninstall", ["xcrun", "simctl", "uninstall", descriptor["simulatorUdid"], EXPECTED_BUNDLE_ID], REPO_ROOT, environment, allowed=(0, 149))
         stopped = dict(descriptor)
         stopped["status"] = "stopped"
-        print(json.dumps(stopped, sort_keys=True, separators=(",", ":")))
+        print(json.dumps(stopped, sort_keys=True, separators=(",", ":")), flush=True)
     finally:
         shutil.rmtree(private_root, ignore_errors=True)
 
@@ -756,6 +799,7 @@ def stop(raw_descriptor):
 def main(argv):
     reject_secret_environment()
     reject_secret_arguments(argv)
+    reject_ungated_test_override()
     if not argv:
         usage()
     if argv[0] == "launch":
