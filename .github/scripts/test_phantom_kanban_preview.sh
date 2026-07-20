@@ -116,6 +116,49 @@ def make_xml_patch(path):
     write_private(path, REAL_XML_PATCH)
 
 
+def make_structured_json_credential_patch(path):
+    resource = "shared/src/commonMain/composeResources/values/config.json"
+    write_private(
+        path,
+        f"diff --git a/{resource} b/{resource}\n"
+        f"--- a/{resource}\n"
+        f"+++ b/{resource}\n"
+        "@@ -1 +1 @@\n"
+        '-{\"title\":\"safe\"}\n'
+        '+{\"api_token\":\"' + "a" * 32 + '\"}\n',
+    )
+
+
+def make_structured_xml_credential_patch(path):
+    resource = "shared/src/commonMain/composeResources/values/strings.xml"
+    write_private(
+        path,
+        f"diff --git a/{resource} b/{resource}\n"
+        f"--- a/{resource}\n"
+        f"+++ b/{resource}\n"
+        "@@ -1 +1 @@\n"
+        '-<string name=\"autostart_ready\">AUTO-START READY</string>\n'
+        '+<credential apiToken=\"' + "b" * 32 + '\">value</credential>\n',
+    )
+
+
+def make_binary_payload_credential_patch(path):
+    resource = "shared/src/commonMain/composeResources/values/audio.mp3"
+    with tempfile.TemporaryDirectory(prefix="binary-credential-source-") as temp_name:
+        repo = Path(temp_name) / "repo"
+        target = repo / resource
+        target.parent.mkdir(mode=0o700, parents=True)
+        target.write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x00")
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "Binary Credential Fixture"], check=True)
+        subprocess.run(["git", "-C", str(repo), "add", resource], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "base"], check=True)
+        target.write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x00API_TOKEN=" + b"c" * 32)
+        diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--binary", "--full-index", "HEAD", "--", resource])
+    write_private(path, diff)
+
+
 def make_binary_patch(path):
     """Create the same deterministic tracked-resource binary diff producer emits."""
     resource = "shared/src/commonMain/composeResources/values/icon.png"
@@ -283,6 +326,13 @@ def make_fake_repo(root):
         "    metadata = ('API_TOKEN=' + 'a' * 24) if with_credential else ('<x:xmpmeta xmlns:x=\\\"adobe:ns:meta/\\\" xmlns:rdf=\\\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\\\"><rdf:RDF/></x:xmpmeta>')\n"
         "    itxt = b'XML:com.adobe.xmp\\x00\\x00\\x00\\x00\\x00' + metadata.encode('utf-8')\n"
         "    return b'\\x89PNG\\r\\n\\x1a\\n' + chunk(b'IHDR', ihdr) + chunk(b'iTXt', itxt) + chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b'')\n"
+        "def make_diff_png():\n"
+        "    import struct, zlib\n"
+        "    def chunk(kind, payload):\n"
+        "        return len(payload).to_bytes(4, 'big') + kind + payload + zlib.crc32(kind + payload).to_bytes(4, 'big')\n"
+        "    ihdr = struct.pack('>IIBBBBB', 2, 2, 8, 6, 0, 0, 0)\n"
+        "    pixels = b'\\x00' + b'\\xff\\x00\\x00\\xff' * 2 + b'\\x00' + b'\\xff\\x00\\x00\\xff' * 2\n"
+        "    return b'\\x89PNG\\r\\n\\x1a\\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b'')\n"
         "if len(sys.argv) != 5 or sys.argv[1] != 'render' or sys.argv[3] != 'just-lift-connected':\n"
         "    raise SystemExit(2)\n"
         "artifact, patch = Path(sys.argv[2]), Path(sys.argv[4])\n"
@@ -343,7 +393,7 @@ def make_fake_repo(root):
         "run = {'schemaVersion': 1, 'runId': 'run-fake-1', 'provenance': {'baseSha': base, 'fixture': {'id': 'just-lift-connected', 'sha256': fixture_sha}, 'xcode': 'Xcode 16.0', 'sdk': '18.0', 'simulator': simulator, 'bundleId': 'com.devil.phoenixproject.projectphoenix'}, 'commands': commands, 'semanticMarkers': {'required': markers, 'observed': markers}, 'captures': captures, 'textualArtifacts': [{'path': name} for name in ('toolchain.log', 'build.log', 'test.log', 'app-state.log', 'simulator.log', 'screenshot.log', '.commands.jsonl')]}\n"
         "run_bytes = (json.dumps(run, sort_keys=True, indent=2) + '\\n').encode()\n"
         "run_sha = hashlib.sha256(run_bytes).hexdigest()\n"
-        "diff_png = capture_png\n"
+        "diff_png = make_diff_png() if mode not in ('fake-capture-as-diff', 'forged-diff-image') else capture_png\n"
         "diff_sha = hashlib.sha256(diff_png).hexdigest()\n"
         "diff = {'passed': True, 'thresholdPassed': True, 'dimensions': {'width': 2, 'height': 2}, 'width': 2, 'height': 2, 'changedPixels': 0, 'changedPixelRatio': 0.0, 'changedRatio': 0.0, 'meanChannelDelta': 0.0, 'maxChannelDelta': 0, 'maskTopPixels': 0, 'threshold': 0.0, 'inputs': {'before': 'xctest-attachment.png', 'after': 'xctest-attachment.png'}}\n"
         "diff_bytes = (json.dumps(diff, sort_keys=True) + '\\n').encode()\n"
@@ -479,18 +529,34 @@ def make_fake_repo(root):
         "import json, os, sys, time\n"
         "from pathlib import Path\n"
         f"LOG = {str(verifier_log)!r}\n"
-        "if len(sys.argv) != 3 or sys.argv[1] != 'verify': raise SystemExit(2)\n"
-        "with open(LOG, 'a', encoding='utf-8') as stream:\n"
-        "    stream.write(json.dumps({'args': sys.argv[1:], 'env': dict(sorted(os.environ.items()))}) + '\\n')\n"
-        "if not sys.argv[2].endswith('/before') and not sys.argv[2].endswith('/after'): raise SystemExit(4)\n"
-        "phase = Path(sys.argv[2]).name\n"
-        "sleep_marker = Path(sys.argv[2]).parent / ('.sleep-verify-' + phase)\n"
-        "if sleep_marker.exists():\n"
-        "    pid_file = Path(str(sleep_marker) + '.pid')\n"
-        "    pid_file.write_text(str(os.getpid()) + '\\n', encoding='ascii')\n"
-        "    time.sleep(60)\n"
-        "if os.environ.get('PREVIEW_TEST_VERIFY_FAIL') == '1' or (Path(sys.argv[2]).parent / '.verify-fail').exists(): raise SystemExit(17)\n"
-        "print('{\"passed\":true}')\n",
+        "if sys.argv[1] == 'verify':\n"
+        "    if len(sys.argv) != 3 or not sys.argv[2].endswith(('/before', '/after')): raise SystemExit(4)\n"
+        "    with open(LOG, 'a', encoding='utf-8') as stream:\n"
+        "        stream.write(json.dumps({'args': sys.argv[1:], 'env': dict(sorted(os.environ.items()))}) + '\\n')\n"
+        "    phase = Path(sys.argv[2]).name\n"
+        "    sleep_marker = Path(sys.argv[2]).parent / ('.sleep-verify-' + phase)\n"
+        "    if sleep_marker.exists():\n"
+        "        pid_file = Path(str(sleep_marker) + '.pid')\n"
+        "        pid_file.write_text(str(os.getpid()) + '\\n', encoding='ascii')\n"
+        "        time.sleep(60)\n"
+        "    if os.environ.get('PREVIEW_TEST_VERIFY_FAIL') == '1' or (Path(sys.argv[2]).parent / '.verify-fail').exists(): raise SystemExit(17)\n"
+        "    print('{\\\"passed\\\":true}')\n"
+        "    raise SystemExit(0)\n"
+        "if len(sys.argv) != 5 or sys.argv[1] != 'compare': raise SystemExit(2)\n"
+        "output = Path(sys.argv[4])\n"
+        "output.mkdir(mode=0o700, parents=True, exist_ok=True)\n"
+        "def chunk(kind, payload):\n"
+        "    import zlib\n"
+        "    return len(payload).to_bytes(4, 'big') + kind + payload + zlib.crc32(kind + payload).to_bytes(4, 'big')\n"
+        "ihdr = (2).to_bytes(4, 'big') + (2).to_bytes(4, 'big') + bytes([8, 6, 0, 0, 0])\n"
+        "pixels = b'\\x00' + b'\\xff\\x00\\x00\\xff' * 2 + b'\\x00' + b'\\xff\\x00\\x00\\xff' * 2\n"
+        "import zlib\n"
+        "diff_png = b'\\x89PNG\\r\\n\\x1a\\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b'')\n"
+        "(output / 'diff.png').write_bytes(diff_png)\n"
+        "(output / 'diff.png').chmod(0o600)\n"
+        "diff = {'passed': True, 'thresholdPassed': True, 'dimensions': {'width': 2, 'height': 2}, 'width': 2, 'height': 2, 'changedPixels': 0, 'changedPixelRatio': 0.0, 'changedRatio': 0.0, 'meanChannelDelta': 0.0, 'maxChannelDelta': 0, 'maskTopPixels': 0, 'threshold': 0.0, 'inputs': {'before': 'xctest-attachment.png', 'after': 'xctest-attachment.png'}}\n"
+        "(output / 'diff.json').write_text(json.dumps(diff, sort_keys=True) + '\\n', encoding='utf-8')\n"
+        "(output / 'diff.json').chmod(0o600)\n",
         encoding="utf-8",
     )
     chmod(harness, 0o700)
@@ -501,6 +567,7 @@ def make_fake_repo(root):
     write_private(repo / "README.md", "fake source\n")
     write_private(repo / "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt", "ok\n")
     write_private(repo / "shared/src/commonMain/composeResources/values/strings.xml", "<string name=\"autostart_ready\">AUTO-START READY</string>\n")
+    write_private(repo / "shared/src/commonMain/composeResources/values/config.json", '{"title":"safe"}\n')
     write_private(repo / "shared/src/commonMain/composeResources/values/deleted.xml", "candidate\n")
     write_private(repo / "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Deleted.kt", "candidate\n")
     write_private(repo / "shared/src/commonMain/composeResources/values/icon.png", b"\x89PNG\r\n\x1a\n\x00\xff\x00\x81\x00\x02")
@@ -760,6 +827,27 @@ def main():
         if xml_payload.get("status") != "passed":
             fail(f"valid XML resource patch did not produce a passed result: {xml_payload}")
 
+        structured_json_patch = temp / "structured-json-credential.patch"
+        make_structured_json_credential_patch(structured_json_patch)
+        structured_json_request = temp / "structured-json-credential.json"
+        write_json(structured_json_request, request("KANBAN-STRUCTURED-JSON-CREDENTIAL", structured_json_patch))
+        structured_json_result = fresh_result(temp, "structured-json-credential-result")
+        assert_failure(run_wrapper(repo, structured_json_request, structured_json_result), structured_json_result, "validate-request")
+
+        structured_xml_patch = temp / "structured-xml-credential.patch"
+        make_structured_xml_credential_patch(structured_xml_patch)
+        structured_xml_request = temp / "structured-xml-credential.json"
+        write_json(structured_xml_request, request("KANBAN-STRUCTURED-XML-CREDENTIAL", structured_xml_patch))
+        structured_xml_result = fresh_result(temp, "structured-xml-credential-result")
+        assert_failure(run_wrapper(repo, structured_xml_request, structured_xml_result), structured_xml_result, "validate-request")
+
+        decoded_binary_credential_patch = temp / "decoded-binary-credential.patch"
+        make_binary_payload_credential_patch(decoded_binary_credential_patch)
+        decoded_binary_credential_request = temp / "decoded-binary-credential.json"
+        write_json(decoded_binary_credential_request, request("KANBAN-DECODED-BINARY-CREDENTIAL", decoded_binary_credential_patch))
+        decoded_binary_credential_result = fresh_result(temp, "decoded-binary-credential-result")
+        assert_failure(run_wrapper(repo, decoded_binary_credential_request, decoded_binary_credential_result), decoded_binary_credential_result, "validate-request")
+
         binary_patch = temp / "private" / "tracked-resource-binary.patch"
         make_binary_patch(binary_patch)
         binary_request = temp / "binary-resource.json"
@@ -915,7 +1003,7 @@ def main():
         for root in (
             "/Users", "/private", "/tmp", "/Applications", "/Library",
             "/var", "/home", "/Volumes", "/System", "/opt", "/etc", "/usr",
-            "/bin", "/sbin", "/dev", "/root", "/run", "/proc", "/sys", "/mnt", "/media", "/srv", "/boot", "/efi",
+            "/bin", "/sbin", "/dev", "/root", "/run", "/proc", "/sys", "/mnt", "/media", "/srv", "/boot", "/efi", "/cores",
         ):
             host_patch = temp / ("host-path-" + root[1:] + ".patch")
             make_patch(host_patch, marker=f"ok\nhost={root}/candidate")
@@ -1087,7 +1175,7 @@ def main():
         for mode in (
             "minimal-evidence", "unknown-run", "bad-run-types", "unknown-diff", "bad-diff-input",
             "forged-diff-ratio", "forged-diff-changed-ratio", "forged-diff-pixels",
-            "forged-diff-threshold", "forged-diff-pass", "forged-diff-mask",
+            "forged-diff-threshold", "forged-diff-pass", "forged-diff-mask", "fake-capture-as-diff", "forged-diff-image",
             "malformed-png", "png-text-credential", "bad-markdown", "bad-markdown-ref",
             "bad-markdown-fixture", "bad-markdown-base", "bad-markdown-patch", "bad-markdown-check",
         ):

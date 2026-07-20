@@ -99,7 +99,7 @@ PATCH_RESOURCE_EXTENSIONS = {
 }
 HOST_PATH_ROOTS = (
     "Users", "private", "tmp", "var", "home", "Volumes", "Applications", "System", "Library", "opt", "etc", "usr",
-    "bin", "sbin", "dev", "root", "run", "proc", "sys", "mnt", "media", "srv", "boot", "efi",
+    "bin", "sbin", "dev", "root", "run", "proc", "sys", "mnt", "media", "srv", "boot", "efi", "cores",
 )
 HOST_PATH_ROOT_RE = re.compile(r"(?<![A-Za-z0-9_.])/(?:" + "|".join(HOST_PATH_ROOTS) + r")(?:/|$)")
 PNG_HOST_PATH_ROOT_RE = re.compile(r"(?<![A-Za-z0-9_.:/-])/(?:" + "|".join(HOST_PATH_ROOTS) + r")(?:/|$)")
@@ -672,6 +672,119 @@ def cleanup_verification_worktree():
         pass
 
 
+def structured_credential_name(value):
+    return isinstance(value, str) and re.search(
+        r"(?i)(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?(?:key|token)|"
+        r"client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|authorization|"
+        r"password|passwd|credential|secret)",
+        value,
+    ) is not None
+
+
+BINARY_CREDENTIAL_RE = re.compile(
+    rb"(?i)(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?(?:key|token)|"
+    rb"client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|authorization|"
+    rb"password|passwd|credential|secret)\s*[:=]\s*[A-Za-z0-9._~+/=-]{16,}"
+)
+
+
+def scan_structured_json(value):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if structured_credential_name(key) and item not in (None, "", False, 0, [], {}):
+                raise ValueError
+            scan_structured_json(item)
+    elif isinstance(value, list):
+        for item in value:
+            scan_structured_json(item)
+
+
+class StructuredParseError(ValueError):
+    pass
+
+
+def scan_structured_xml(data):
+    import xml.etree.ElementTree as element_tree
+
+    try:
+        root = element_tree.fromstring(data.decode("utf-8", "strict"))
+    except element_tree.ParseError:
+        raise StructuredParseError
+    for element in root.iter():
+        for name, value in element.attrib.items():
+            if structured_credential_name(name) and value:
+                raise ValueError
+        local_name = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
+        if structured_credential_name(local_name) and (element.text or "").strip():
+            raise ValueError
+
+
+def scan_png_metadata(data):
+    if len(data) < 8 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        return
+    cursor = 8
+    while cursor + 12 <= len(data):
+        length = int.from_bytes(data[cursor:cursor + 4], "big")
+        if length > MAX_ARTIFACT_BYTES or cursor + 12 + length > len(data):
+            return
+        kind = data[cursor + 4:cursor + 8]
+        payload = data[cursor + 8:cursor + 8 + length]
+        if kind in (b"tEXt", b"iTXt", b"zTXt"):
+            try:
+                text = png_text_payload(kind, payload)
+            except ValueError:
+                text = None
+            if text is not None and (credential_detected(text) or png_host_path_detected(text)):
+                raise ValueError
+        cursor += 12 + length
+
+
+def scan_applied_patch_file(path):
+    info = os.lstat(path)
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+        raise ValueError
+    data = path.read_bytes()
+    suffix = path.suffix.lower()
+    if suffix == ".png":
+        try:
+            validate_png(data)
+        except ValueError:
+            scan_png_metadata(data)
+            if BINARY_CREDENTIAL_RE.search(data):
+                raise
+        return
+    if suffix == ".json":
+        scan_structured_json(parse_json_bytes(data))
+        if credential_detected(data):
+            raise ValueError
+        return
+    if suffix == ".xml":
+        try:
+            scan_structured_xml(data)
+        except (UnicodeError, StructuredParseError):
+            if credential_detected(data) or BINARY_CREDENTIAL_RE.search(data):
+                raise
+        return
+    if suffix == ".kt":
+        text = data.decode("utf-8", "strict")
+        if CREDENTIAL_ASSIGNMENT_RE.search(text) or credential_detected(data):
+            raise ValueError
+        return
+    if suffix in {".strings", ".stringsdict", ".properties", ".svg", ".swift"}:
+        if credential_detected(data):
+            raise ValueError
+        return
+    if BINARY_CREDENTIAL_RE.search(data):
+        raise ValueError
+
+
+def scan_applied_patch_files(repo, paths):
+    for relative in paths:
+        target = repo / relative
+        if target.exists():
+            scan_applied_patch_file(target)
+
+
 def verify_snapshot_application(snapshot):
     """Bind patch paths and the applied diff to the verified source base."""
     STATE.stage = "patch-verify"
@@ -692,6 +805,7 @@ def verify_snapshot_application(snapshot):
         expected = set(STATE.patch_paths or ())
         if actual != expected:
             raise ValueError
+        scan_applied_patch_files(path, actual)
         applied = run_git(["diff", "--binary", "--full-index", "HEAD", "--"], cwd=path).stdout
         STATE.applied_paths = sorted(actual)
         STATE.applied_diff_sha = hashlib.sha256(applied).hexdigest()
@@ -1714,6 +1828,28 @@ def zlib_crc(data):
     return zlib.crc32(data) & 0xFFFFFFFF
 
 
+def independently_recompute_comparison():
+    output = STATE.private_dir / "independent-comparison"
+    os.mkdir(output, mode=0o700)
+    os.chmod(output, 0o700)
+    before = STATE.private_dir / "proposal" / "before"
+    after = STATE.private_dir / "proposal" / "after"
+    run_tracked(
+        [str(RUNNER), "compare", str(before), str(after), str(output)],
+        cwd=REPO_ROOT,
+        env=child_environment(),
+    )
+    names = sorted(item.name for item in output.iterdir())
+    if names != ["diff.json", "diff.png"]:
+        raise ValueError
+    diff_data = read_private_path(str(output / "diff.json"), MAX_ARTIFACT_BYTES)
+    diff_png = read_private_path(str(output / "diff.png"), MAX_ARTIFACT_BYTES)
+    diff = validate_json_artifact(diff_data)
+    validate_diff_summary(diff)
+    validate_png(diff_png)
+    return diff, diff_png
+
+
 def validate_artifacts():
     try:
         root_fd = open_directory_path(str(STATE.private_dir / "proposal"))
@@ -1780,6 +1916,9 @@ def validate_artifacts():
         comparison = manifest["comparison"]
         comparison_mode = validate_comparison(comparison)
         validate_diff_summary(diff)
+        independent_diff, independent_png = independently_recompute_comparison()
+        if diff != independent_diff or artifacts["comparison/diff.png"] != independent_png:
+            raise ValueError
         if diff["inputs"] != {"before": before["captures"][1]["path"], "after": after["captures"][1]["path"]}:
             raise ValueError
         summary = json_values["evidence-summary.json"]

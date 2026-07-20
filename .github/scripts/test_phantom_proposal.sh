@@ -149,7 +149,24 @@ path = Path(sys.argv[1])
 def chunk(kind, payload):
     return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
 ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
-path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", b"") + chunk(b"IEND", b""))
+pixels = b"\x00" + b"\x00" * 8 + b"\x00" + b"\x00" * 8
+path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b""))
+path.chmod(0o600)
+PY2
+}
+
+write_diff_png() {
+    python3 - "$1" <<'PY2'
+import struct
+import sys
+import zlib
+from pathlib import Path
+path = Path(sys.argv[1])
+def chunk(kind, payload):
+    return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
+ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
+pixels = b"\x00" + b"\xff\x00\x00\xff" * 2 + b"\x00" + b"\xff\x00\x00\xff" * 2
+path.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b""))
 path.chmod(0o600)
 PY2
 }
@@ -325,13 +342,13 @@ compare)
     output="$4"
     mkdir -p "$output"
     chmod 700 "$output"
-    write_png "$output/diff.png"
+    write_diff_png "$output/diff.png"
     python3 - "$output/diff.json" <<'PY2'
 import json
 import sys
 from pathlib import Path
 path = Path(sys.argv[1])
-path.write_text(json.dumps({"passed": True, "thresholdPassed": True, "dimensions": {"width": 2, "height": 2}, "changedPixels": 0, "changedPixelRatio": 0.0, "meanChannelDelta": 0.0, "maxChannelDelta": 0, "threshold": 0.0}) + "\n", encoding="utf-8")
+path.write_text(json.dumps({"passed": True, "thresholdPassed": True, "dimensions": {"width": 2, "height": 2}, "width": 2, "height": 2, "changedPixels": 0, "changedPixelRatio": 0.0, "changedRatio": 0.0, "meanChannelDelta": 0.0, "maxChannelDelta": 0, "maskTopPixels": 0, "threshold": 0.0, "inputs": {"before": "xctest-attachment.png", "after": "xctest-attachment.png"}}) + "\n", encoding="utf-8")
 path.chmod(0o600)
 PY2
     ;;
@@ -927,6 +944,73 @@ for line in (
 destination = Path(sys.argv[2])
 destination.write_text(source, encoding="utf-8")
 os.chmod(destination, 0o700)
+PY
+
+# RED regression: a timed-out producer may exit on SIGTERM while its stubborn
+# descendant ignores SIGTERM and keeps the inherited output pipe open.  The
+# bounded command must still SIGKILL the whole process group and reap its leader.
+STUBBORN_SCRIPT="$TMP_DIR/stubborn-producer.py"
+STUBBORN_CHILD_PID="$TMP_DIR/stubborn-producer-child.pid"
+python3 - "$STUBBORN_SCRIPT" "$STUBBORN_CHILD_PID" <<'PY'
+import os
+import sys
+from pathlib import Path
+script = Path(sys.argv[1])
+child_pid = sys.argv[2]
+child_code = (
+    "import os, signal, time; "
+    "signal.signal(signal.SIGTERM, signal.SIG_IGN); "
+    f"open({child_pid!r}, 'w').write(str(os.getpid())); time.sleep(60)"
+)
+script.write_text(
+    "import signal, subprocess, sys, time\n"
+    f"subprocess.Popen([sys.executable, '-c', {child_code!r}])\n"
+    "def finish(_signum, _frame): raise SystemExit(0)\n"
+    "signal.signal(signal.SIGTERM, finish)\n"
+    "time.sleep(60)\n",
+    encoding="utf-8",
+)
+os.chmod(script, 0o700)
+PY
+STUBBORN_LOG="$TMP_DIR/stubborn-producer.log"
+python3 - "$BOUNDS_RENDERER" "$STUBBORN_SCRIPT" "$STUBBORN_LOG" "$STUBBORN_CHILD_PID" <<'PY'
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+renderer, script, log, child_pid_file = sys.argv[1:]
+child_pid_path = Path(child_pid_file)
+command = ["bash", "-c", 'source "$1"; bounded_command "$2" 2 "$PWD" python3 "$3"', "_", renderer, log, script]
+started = time.monotonic()
+process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+try:
+    stdout, stderr = process.communicate(timeout=5)
+except subprocess.TimeoutExpired:
+    os.killpg(process.pid, signal.SIGKILL)
+    process.wait()
+    raise SystemExit(f"stubborn producer exceeded bounded deadline: stdout={stdout!r} stderr={stderr!r}")
+elapsed = time.monotonic() - started
+if elapsed >= 4:
+    raise SystemExit(f"stubborn producer timeout grace was not bounded: {elapsed:.3f}s")
+startup_deadline = time.monotonic() + 1
+while not child_pid_path.exists() and time.monotonic() < startup_deadline:
+    time.sleep(0.02)
+if not child_pid_path.exists():
+    raise SystemExit("stubborn producer descendant did not start")
+child_pid = int(child_pid_path.read_text(encoding="ascii").strip())
+deadline = time.monotonic() + 2
+while time.monotonic() < deadline:
+    try:
+        os.kill(child_pid, 0)
+    except ProcessLookupError:
+        break
+    time.sleep(0.05)
+else:
+    raise SystemExit("stubborn producer descendant survived timeout cleanup")
+if process.returncode == 0:
+    raise SystemExit("stubborn producer unexpectedly succeeded")
 PY
 
 # The default profile remains the strict profile for non-build children.

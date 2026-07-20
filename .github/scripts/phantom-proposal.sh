@@ -868,12 +868,39 @@ pid_file = Path(str(log) + ".child-pid")
 pid_file.write_text(str(proc.pid) + "\n", encoding="ascii")
 os.chmod(pid_file, 0o600)
 interrupted = {"code": None}
-def forward_signal(signum, _frame):
-    interrupted["code"] = 128 + signum
+def signal_group(signum):
     try:
         os.killpg(proc.pid, signum)
     except OSError:
         pass
+
+def group_exists():
+    try:
+        os.killpg(proc.pid, 0)
+    except OSError:
+        return False
+    return True
+
+def terminate_group():
+    signal_group(signal.SIGTERM)
+    grace_deadline = time.monotonic() + 0.25
+    while time.monotonic() < grace_deadline and group_exists():
+        try:
+            proc.wait(timeout=0.02)
+        except subprocess.TimeoutExpired:
+            pass
+    # Always issue SIGKILL after the bounded grace, even when the direct
+    # leader already exited; descendants can retain the process group and pipe.
+    signal_group(signal.SIGKILL)
+    try:
+        proc.wait(timeout=5)
+    except subprocess.TimeoutExpired:
+        signal_group(signal.SIGKILL)
+        proc.wait()
+
+def forward_signal(signum, _frame):
+    interrupted["code"] = 128 + signum
+    signal_group(signum)
 for signum in (signal.SIGHUP, signal.SIGINT, signal.SIGTERM):
     signal.signal(signum, forward_signal)
 selector = selectors.DefaultSelector()
@@ -886,16 +913,14 @@ with log.open("wb") as stream:
         remaining = deadline - time.monotonic()
         if remaining <= 0 and result is None:
             result = 124
-            try:
-                os.killpg(proc.pid, signal.SIGTERM)
-            except OSError:
-                pass
         events = selector.select(min(0.2, max(0.0, remaining)))
+        if result is not None:
+            break
         if not events:
             if interrupted["code"] is not None:
                 result = interrupted["code"]
                 break
-            if proc.poll() is not None:
+            if proc.poll() is not None and not group_exists():
                 break
             continue
         for key, _ in events:
@@ -905,10 +930,6 @@ with log.open("wb") as stream:
                 continue
             if written + len(block) > max_output:
                 result = 125
-                try:
-                    os.killpg(proc.pid, signal.SIGTERM)
-                except OSError:
-                    pass
                 block = block[:max_output - written]
             if block:
                 stream.write(block)
@@ -921,14 +942,7 @@ with log.open("wb") as stream:
             result = interrupted["code"]
             break
     if result is not None:
-        try:
-            proc.wait(timeout=5)
-        except subprocess.TimeoutExpired:
-            try:
-                os.killpg(proc.pid, signal.SIGKILL)
-            except OSError:
-                pass
-            proc.wait()
+        terminate_group()
         selector.close()
         raise SystemExit(result)
     result = proc.wait()
