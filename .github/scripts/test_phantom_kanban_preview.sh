@@ -19,7 +19,6 @@ from pathlib import Path
 
 script_dir = Path(os.environ["SCRIPT_DIR"])
 wrapper_source = script_dir / "phantom-kanban-preview.sh"
-reviewed_real_packet = Path("/tmp/phantom-final-proposal-rootbound-success-1784497311")
 
 INTERNAL_HARNESS_FILES = (
     ".phantom-harness",
@@ -38,30 +37,14 @@ INTERNAL_HARNESS_FILES = (
     "simulator.log",
     "screenshot.log",
 )
-EXPECTED_PACKET_PATHS = {
-    ".phantom-proposal",
-    "proposal.patch",
-    "proposal.md",
-    "evidence-summary.json",
-    "proposal-manifest.json",
-    "comparison/diff.json",
-    "comparison/diff.png",
-    *{f"{phase}/{name}" for phase in ("before", "after") for name in INTERNAL_HARNESS_FILES},
-}
 REAL_XML_PATCH = (
     "diff --git a/shared/src/commonMain/composeResources/values/strings.xml "
     "b/shared/src/commonMain/composeResources/values/strings.xml\n"
     "--- a/shared/src/commonMain/composeResources/values/strings.xml\n"
     "+++ b/shared/src/commonMain/composeResources/values/strings.xml\n"
-    "@@ -856,7 +856,7 @@\n"
-    " \n"
-    "     <!-- ==================== Just Lift auto-start honesty (task-5B.3) ==================== -->\n"
-    "     <string name=\"autostart_connect_prompt\">Connect to enable auto-start</string>\n"
-    "-    <string name=\"autostart_ready\">AUTO-START READY</string>\n"
-    "+    <string name=\"autostart_ready\">SIMULATOR READY</string>\n"
-    "     <string name=\"autostart_grab_handles\">Grab handles to start</string>\n"
-    "     <string name=\"nav_profile\">Profile</string>\n"
-    "     <string name=\"cd_profile\">Profile</string>\n"
+    "@@ -1 +1 @@\n"
+    "-<string name=\"autostart_ready\">AUTO-START READY</string>\n"
+    "+<string name=\"autostart_ready\">SIMULATOR READY</string>\n"
 )
 
 
@@ -87,16 +70,15 @@ def write_json(path, value):
 
 
 def make_patch(path, marker="ok"):
-    old_lines = marker.splitlines() or [""]
-    old_count = len(old_lines)
-    old_body = "".join(f"-{line}\n" for line in old_lines)
+    new_lines = ["candidate"] + (marker.splitlines() or [""])
+    new_body = "".join(f"+{line}\n" for line in new_lines)
     write_private(
         path,
         "diff --git a/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt "
         "b/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt\n"
         "--- a/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt\n"
         "+++ b/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt\n"
-        f"@@ -1,{old_count} +1 @@\n{old_body}+candidate\n",
+        f"@@ -1 +1,{len(new_lines)} @@\n-ok\n{new_body}",
     )
 
 
@@ -104,22 +86,42 @@ def make_xml_patch(path):
     write_private(path, REAL_XML_PATCH)
 
 
+def make_binary_patch(path):
+    """Create the same deterministic tracked-resource binary diff producer emits."""
+    resource = "shared/src/commonMain/composeResources/values/icon.png"
+    with tempfile.TemporaryDirectory(prefix="binary-patch-source-") as temp_name:
+        repo = Path(temp_name) / "repo"
+        (repo / Path(resource).parent).mkdir(mode=0o700, parents=True)
+        (repo / resource).write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff\x00\x81\x00\x02")
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "Binary Fixture"], check=True)
+        subprocess.run(["git", "-C", str(repo), "add", resource], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "base"], check=True)
+        (repo / resource).write_bytes(b"\x89PNG\r\n\x1a\n\x01\xfe\x03\x82\x00\x05")
+        diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--binary", "--full-index", "HEAD", "--", resource])
+    write_private(path, diff)
+
+
 def make_add_delete_patch(path, changed_path, operation):
     if operation == "add":
         old_header = "/dev/null"
         new_header = f"b/{changed_path}"
+        mode = "new file mode 100644\n"
         hunk = "@@ -0,0 +1 @@\n+candidate\n"
     elif operation == "delete":
         old_header = f"a/{changed_path}"
         new_header = "/dev/null"
+        mode = "deleted file mode 100644\n"
         hunk = "@@ -1 +0,0 @@\n-candidate\n"
     else:
         raise ValueError(operation)
     write_private(
         path,
         f"diff --git a/{changed_path} b/{changed_path}\n"
-        f"--- {old_header}\n"
-        f"+++ {new_header}\n"
+        + mode
+        + f"--- {old_header}\n"
+        + f"+++ {new_header}\n"
         + hunk,
     )
 
@@ -209,7 +211,25 @@ def make_fake_repo(root):
         "base = subprocess.check_output(['git', '-C', str(Path(__file__).resolve().parents[2]), 'rev-parse', 'HEAD'], text=True).strip()\n"
         "patch_bytes = patch.read_bytes()\n"
         "patch_sha = hashlib.sha256(patch_bytes).hexdigest()\n"
-        "changed_file = 'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt'\n"
+        "def patch_facts(raw):\n"
+        "    paths = sorted({parts[index][2:] for line in raw.decode('utf-8').splitlines() if line.startswith('diff --git ') for parts in [line.split()] if len(parts) == 4 for index in (2, 3)})\n"
+        "    kinds = sorted({'kotlin' if path.startswith('shared/src/commonMain/kotlin/') else 'swift' if path.endswith('.swift') else 'resource' for path in paths})\n"
+        "    return paths, kinds, b'GIT binary patch' in raw\n"
+        "def applied_facts(repo, base_sha, patch_path):\n"
+        "    import shutil, tempfile\n"
+        "    holder = Path(tempfile.mkdtemp(prefix='fake-apply-'))\n"
+        "    tree = holder / 'tree'\n"
+        "    try:\n"
+        "        subprocess.run(['git', '-C', str(repo), 'worktree', 'add', '--detach', str(tree), base_sha], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        "        subprocess.run(['git', '-C', str(tree), 'apply', '--check', '--binary', '--whitespace=nowarn', str(patch_path)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        "        subprocess.run(['git', '-C', str(tree), 'apply', '--binary', '--whitespace=nowarn', str(patch_path)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        "        diff = subprocess.check_output(['git', '-C', str(tree), 'diff', '--binary', '--full-index', 'HEAD', '--'])\n"
+        "        return hashlib.sha256(diff).hexdigest()\n"
+        "    finally:\n"
+        "        subprocess.run(['git', '-C', str(repo), 'worktree', 'remove', '--force', str(tree)], check=False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
+        "        shutil.rmtree(holder, ignore_errors=True)\n"
+        "changed_files, candidate_kinds, binary_patch = patch_facts(patch_bytes)\n"
+        "applied_diff_sha = applied_facts(Path(__file__).resolve().parents[2], base, patch)\n"
         "fixture_sha = 'e180679548a2d96dbc59c51449edb3b99c19d3e3be82eca98c0707a21a64e78e'\n"
         "simulator = {'udid': '11111111-2222-3333-4444-555555555555', 'name': 'iPhone 16', 'runtime': 'iOS-18-0', 'state': 'Booted'}\n"
         "command_specs = [('xcodebuild.version', 'toolchain.log'), ('simulator.boot', 'boot.log'), ('simulator.bootstatus', 'bootstatus.log'), ('simulator.terminate', 'terminate.log'), ('simulator.uninstall', 'uninstall.log'), ('build', 'build.log'), ('run-tests', 'test.log'), ('simulator.app-state', 'app-state.log'), ('simulator.logs', 'simulator.log'), ('simulator.screenshot', 'screenshot.log')]\n"
@@ -229,13 +249,10 @@ def make_fake_repo(root):
         "identity = {'baseSha': base, 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'bundleId': 'com.devil.phoenixproject.projectphoenix', 'simulator': simulator, 'commands': [name for name, _ in command_specs], 'markers': sorted(markers)}\n"
         "compact_capture = {'path': 'after.png', 'sha256': capture_sha, 'dimensions': {'width': 2, 'height': 2}}\n"
         "comparison = {'before': compact_capture, 'after': compact_capture, 'diffJson': {'path': 'comparison/diff.json', 'sha256': diff_sha_json}, 'diffImage': {'path': 'comparison/diff.png', 'sha256': diff_sha, 'dimensions': {'width': 2, 'height': 2}}, 'summary': diff}\n"
-        "patch_lines = patch_text.splitlines()\n"
-        "changed_file = next((line[6:].split('\\t', 1)[0] for line in patch_lines if line.startswith('+++ b/')), None)\n"
-        "if changed_file is None: changed_file = next(line[6:].split('\\t', 1)[0] for line in patch_lines if line.startswith('--- a/'))\n"
-        "candidate_kind = 'resource' if changed_file.endswith('.xml') else 'kotlin'\n"
-        "manifest = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patch': {'path': 'proposal.patch', 'sha256': patch_sha, 'size': len(patch_bytes), 'binary': False, 'format': 'exact-input'}, 'candidateKinds': [candidate_kind], 'allowedChangedFiles': [changed_file], 'actualChangedFiles': [changed_file], 'worktree': {'baseSha': base, 'headSha': base, 'detached': True, 'uncommitted': True, 'statusEntryCount': 1, 'appliedDiffSha256': patch_sha}, 'focusedChecks': [{'name': 'git.diff.check', 'passed': True}], 'before': {'artifact': 'before', 'manifestSha256': run_sha, 'identity': identity}, 'after': {'artifact': 'after', 'manifestSha256': run_sha, 'identity': identity}, 'comparison': comparison, 'evidence': {'proposalMarkdown': 'proposal.md', 'summaryJson': 'evidence-summary.json'}}\n"
-        "summary = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patchSha256': patch_sha, 'changedFiles': [changed_file], 'beforeAfterIdentity': identity, 'comparison': comparison, 'artifacts': ['before', 'after', 'proposal.patch', 'proposal-manifest.json', 'proposal.md', 'comparison/diff.json', 'comparison/diff.png']}\n"
-        "proposal = '# Phantom proposal evidence\\n\\nStatus: **passed**\\n\\nThis proposal was rendered from the real Phoenix app in a disposable detached worktree using trusted candidate input.\\n\\n- Fixture: `just-lift-connected`\\n- Verified base SHA: `' + base + '`\\n- Proposal patch SHA-256: `' + patch_sha + '`\\n\\n## Allowed changed files\\n\\n- `' + changed_file + '`\\n\\n## Verification\\n\\n- Baseline canonical harness case: verified\\n- Candidate canonical harness case: verified\\n- Kotlin/resource compile gate when required: verified\\n- Bound comparison metadata: verified\\n- Temporary worktree: cleaned after rendering\\n'\n"
+        "focused_checks = [{'name': 'git.diff.check', 'passed': True}] + ([{'name': 'shared.compileKotlinIosSimulatorArm64', 'passed': True}] if {'kotlin', 'resource'} & set(candidate_kinds) else [])\n"
+        "manifest = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patch': {'path': 'proposal.patch', 'sha256': patch_sha, 'size': len(patch_bytes), 'binary': binary_patch, 'format': 'exact-input'}, 'candidateKinds': candidate_kinds, 'allowedChangedFiles': changed_files, 'actualChangedFiles': changed_files, 'worktree': {'baseSha': base, 'headSha': base, 'detached': True, 'uncommitted': True, 'statusEntryCount': len(changed_files), 'appliedDiffSha256': applied_diff_sha}, 'focusedChecks': focused_checks, 'before': {'artifact': 'before', 'manifestSha256': run_sha, 'identity': identity}, 'after': {'artifact': 'after', 'manifestSha256': run_sha, 'identity': identity}, 'comparison': comparison, 'evidence': {'proposalMarkdown': 'proposal.md', 'summaryJson': 'evidence-summary.json'}}\n"
+        "summary = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patchSha256': patch_sha, 'changedFiles': changed_files, 'beforeAfterIdentity': identity, 'comparison': comparison, 'artifacts': ['before', 'after', 'proposal.patch', 'proposal-manifest.json', 'proposal.md', 'comparison/diff.json', 'comparison/diff.png']}\n"
+        "proposal = '# Phantom proposal evidence\\n\\nStatus: **passed**\\n\\nThis proposal was rendered from the real Phoenix app in a disposable detached worktree using trusted candidate input.\\n\\n- Fixture: `just-lift-connected`\\n- Verified base SHA: `' + base + '`\\n- Proposal patch SHA-256: `' + patch_sha + '`\\n\\n## Allowed changed files\\n\\n' + ''.join('- `' + path + '`\\n' for path in changed_files) + '\\n## Verification\\n\\n- Baseline canonical harness case: verified\\n- Candidate canonical harness case: verified\\n- Kotlin/resource compile gate when required: verified\\n- Bound comparison metadata: verified\\n- Temporary worktree: cleaned after rendering\\n'\n"
         "if mode in ('sleep-verify-before', 'sleep-verify-after'):\n"
         "    private(artifact / ('.sleep-verify-' + ('before' if mode.endswith('before') else 'after')), b'1\\n', binary=True)\n"
         "for name in ('before/run.json', 'after/run.json'):\n"
@@ -270,6 +287,18 @@ def make_fake_repo(root):
         "    if mode == 'patch-mismatch-path': mismatch['patch']['path'] = 'safe.patch'\n"
         "    if mode == 'patch-mismatch-format': mismatch['patch']['format'] = 'unified-diff'\n"
         "    private(artifact / 'proposal-manifest.json', json.dumps(mismatch) + '\\n')\n"
+        "if mode == 'claim-fake-path':\n"
+        "    mismatch = dict(manifest); mismatch['candidateKinds'] = ['kotlin']; mismatch['allowedChangedFiles'] = ['shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Other.kt']; mismatch['actualChangedFiles'] = mismatch['allowedChangedFiles']; private(artifact / 'proposal-manifest.json', json.dumps(mismatch) + '\\n')\n"
+        "if mode == 'claim-fake-kind':\n"
+        "    mismatch = dict(manifest); mismatch['candidateKinds'] = ['resource']; private(artifact / 'proposal-manifest.json', json.dumps(mismatch) + '\\n')\n"
+        "if mode == 'claim-fake-checks':\n"
+        "    mismatch = dict(manifest); mismatch['focusedChecks'] = [{'name': 'git.diff.check', 'passed': True}]; private(artifact / 'proposal-manifest.json', json.dumps(mismatch) + '\\n')\n"
+        "if mode == 'claim-fake-head':\n"
+        "    mismatch = dict(manifest); mismatch['worktree'] = dict(manifest['worktree']); mismatch['worktree']['headSha'] = '0' * 40; private(artifact / 'proposal-manifest.json', json.dumps(mismatch) + '\\n')\n"
+        "if mode == 'claim-fake-status':\n"
+        "    mismatch = dict(manifest); mismatch['worktree'] = dict(manifest['worktree']); mismatch['worktree']['statusEntryCount'] = 99; private(artifact / 'proposal-manifest.json', json.dumps(mismatch) + '\\n')\n"
+        "if mode == 'claim-fake-applied-diff':\n"
+        "    mismatch = dict(manifest); mismatch['worktree'] = dict(manifest['worktree']); mismatch['worktree']['appliedDiffSha256'] = patch_sha; private(artifact / 'proposal-manifest.json', json.dumps(mismatch) + '\\n')\n"
         "leak = os.environ.get('PREVIEW_TEST_LEAK_KIND', '') or marker('LEAK_KIND:')\n"
         "if leak == 'proposal.md': private(artifact / leak, 'absolute=/Users/host/private/candidate.patch\\nAPI_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa\\n')\n"
         "elif leak == 'evidence-summary.json': private(artifact / leak, json.dumps({'schemaVersion': 1, 'status': 'passed', 'leak': '/private/host/API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa'}) + '\\n')\n"
@@ -342,11 +371,16 @@ def make_fake_repo(root):
     )
     chmod(harness, 0o700)
 
-    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
     subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
     subprocess.run(["git", "-C", str(repo), "config", "user.name", "Preview Test"], check=True)
     write_private(repo / "README.md", "fake source\n")
-    subprocess.run(["git", "-C", str(repo), "add", "README.md"], check=True)
+    write_private(repo / "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt", "ok\n")
+    write_private(repo / "shared/src/commonMain/composeResources/values/strings.xml", "<string name=\"autostart_ready\">AUTO-START READY</string>\n")
+    write_private(repo / "shared/src/commonMain/composeResources/values/deleted.xml", "candidate\n")
+    write_private(repo / "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Deleted.kt", "candidate\n")
+    write_private(repo / "shared/src/commonMain/composeResources/values/icon.png", b"\x89PNG\r\n\x1a\n\x00\xff\x00\x81\x00\x02")
+    subprocess.run(["git", "-C", str(repo), "add", "README.md", "shared"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-qm", "fixture"], check=True)
     return repo, renderer_log, verifier_log
 
@@ -419,54 +453,12 @@ def assert_result_only(result, stage, reason):
         fail(f"unexpected result-only payload for {stage}: {payload!r}")
 
 
-def validate_reviewed_real_packet(temp):
-    """Validate the reviewed packet's exact topology when safely available.
-
-    This is deliberately a fixture/topology check only: it never invokes Xcode and
-    skips when the private review packet is absent or not owned/mode-safe locally.
-    The patch is checked as the realistic XML fixture, but the old packet's evidence
-    is never accepted as fresh runtime evidence.
-    """
-    if not reviewed_real_packet.is_dir() or reviewed_real_packet.is_symlink():
-        return None
-    root_info = reviewed_real_packet.stat()
-    if root_info.st_uid != os.getuid() or stat.S_IMODE(root_info.st_mode) != 0o700:
-        return None
-    copied = temp / "reviewed-real-packet"
-    shutil.copytree(reviewed_real_packet, copied, symlinks=True)
-    actual_paths = {path.relative_to(copied).as_posix() for path in copied.rglob("*") if path.is_file() or path.is_symlink()}
-    if actual_paths != EXPECTED_PACKET_PATHS:
-        fail(f"reviewed real packet topology mismatch: {sorted(actual_paths)}")
-    directories = {path.relative_to(copied).as_posix() for path in copied.rglob("*") if path.is_dir()}
-    if directories != {"before", "after", "comparison"}:
-        fail(f"reviewed real packet directories mismatch: {sorted(directories)}")
-    if (copied / "proposal.patch").read_bytes().decode("utf-8") != REAL_XML_PATCH:
-        fail("reviewed real packet does not contain the expected XML proposal patch fixture")
-    for path in copied.rglob("*"):
-        info = path.lstat()
-        if info.st_uid != os.getuid() or stat.S_ISLNK(info.st_mode):
-            fail(f"reviewed real packet contains unsafe entry: {path}")
-        expected_mode = 0o700 if path.is_dir() else 0o600
-        if stat.S_IMODE(info.st_mode) != expected_mode:
-            fail(f"reviewed real packet mode mismatch: {path}")
-    diff = json.loads((copied / "comparison/diff.json").read_text(encoding="utf-8"))
-    if diff.get("inputs") != {"before": "xctest-attachment.png", "after": "xctest-attachment.png"}:
-        fail(f"reviewed real packet comparison inputs mismatch: {diff.get('inputs')!r}")
-    for phase in ("before", "after"):
-        run = json.loads((copied / phase / "run.json").read_text(encoding="utf-8"))
-        captures = {capture["slug"]: capture["path"] for capture in run["captures"]}
-        if captures != {"simulator-after": "after.png", "xctest-after": "xctest-attachment.png"}:
-            fail(f"reviewed real packet capture topology mismatch for {phase}: {captures!r}")
-    return copied
-
-
 def main():
     if not wrapper_source.exists():
         # This is intentional RED evidence before the production wrapper exists.
         fail("phantom-kanban-preview.sh is missing")
     with tempfile.TemporaryDirectory(prefix="phantom-kanban-preview-test-") as temp_name:
         temp = Path(temp_name)
-        reviewed_packet = validate_reviewed_real_packet(temp)
         repo, renderer_log, verifier_log = make_fake_repo(temp)
         patch = temp / "private" / "candidate.patch"
         make_patch(patch)
@@ -535,20 +527,6 @@ def main():
         if [record["args"][1].rsplit("/", 1)[-1] for record in verify_records] != ["before", "after"]:
             fail(f"canonical verifier was not called independently: {verify_records}")
 
-        if reviewed_packet is not None:
-            realistic_request = temp / "reviewed-real-request.json"
-            realistic_result = fresh_result(temp, "reviewed-real-result")
-            write_json(realistic_request, request("KANBAN-REAL-XML", reviewed_packet / "proposal.patch"))
-            completed = run_wrapper(repo, realistic_request, realistic_result)
-            if completed.returncode != 0:
-                fail(
-                    "reviewed real XML packet patch was rejected: "
-                    f"stdout={completed.stdout!r}, stderr={completed.stderr!r}"
-                )
-            realistic_payload = json.loads((realistic_result / "preview-result.json").read_text(encoding="utf-8"))
-            if realistic_payload.get("status") != "passed":
-                fail(f"reviewed real XML packet did not produce a passed result: {realistic_payload}")
-
         xml_patch = temp / "private" / "xml-resource.patch"
         make_xml_patch(xml_patch)
         xml_request = temp / "xml-resource.json"
@@ -560,6 +538,50 @@ def main():
         xml_payload = json.loads((xml_result / "preview-result.json").read_text(encoding="utf-8"))
         if xml_payload.get("status") != "passed":
             fail(f"valid XML resource patch did not produce a passed result: {xml_payload}")
+
+        binary_patch = temp / "private" / "tracked-resource-binary.patch"
+        make_binary_patch(binary_patch)
+        binary_request = temp / "binary-resource.json"
+        write_json(binary_request, request("KANBAN-BINARY", binary_patch))
+        binary_result = fresh_result(temp, "binary-resource-result")
+        completed = run_wrapper(repo, binary_request, binary_result)
+        if completed.returncode != 0:
+            fail(f"valid tracked binary resource patch was rejected: stdout={completed.stdout!r}, stderr={completed.stderr!r}")
+        binary_manifest = json.loads((binary_result / "proposal-manifest.json").read_text(encoding="utf-8"))
+        if binary_manifest["patch"]["binary"] is not True or binary_manifest["candidateKinds"] != ["resource"]:
+            fail(f"binary resource claims were not bound: {binary_manifest}")
+        if binary_manifest["allowedChangedFiles"] != ["shared/src/commonMain/composeResources/values/icon.png"] or binary_manifest["actualChangedFiles"] != binary_manifest["allowedChangedFiles"]:
+            fail(f"binary resource paths were not bound: {binary_manifest}")
+        if [item["name"] for item in binary_manifest["focusedChecks"]] != ["git.diff.check", "shared.compileKotlinIosSimulatorArm64"]:
+            fail(f"binary resource focused checks were not conditional: {binary_manifest}")
+
+        malformed_binary = temp / "malformed-binary.patch"
+        malformed_binary_bytes = binary_patch.read_bytes().replace(b"GIT binary patch\n", b"GIT binary patch\nliteral 4\n", 1)
+        write_private(malformed_binary, malformed_binary_bytes)
+        malformed_binary_request = temp / "malformed-binary.json"
+        write_json(malformed_binary_request, request("KANBAN-BINARY-BAD", malformed_binary))
+        malformed_binary_result = fresh_result(temp, "malformed-binary-result")
+        assert_failure(run_wrapper(repo, malformed_binary_request, malformed_binary_result), malformed_binary_result, "validate-request")
+
+        unsafe_binary = temp / "unsafe-binary.patch"
+        unsafe_binary_bytes = binary_patch.read_bytes().replace(
+            b"a/shared/src/commonMain/composeResources/values/icon.png b/shared/src/commonMain/composeResources/values/icon.png",
+            b"a/shared/src/commonMain/composeResources/values/../Unsafe.png b/shared/src/commonMain/composeResources/values/../Unsafe.png",
+            1,
+        )
+        write_private(unsafe_binary, unsafe_binary_bytes)
+        unsafe_binary_request = temp / "unsafe-binary.json"
+        write_json(unsafe_binary_request, request("KANBAN-BINARY-UNSAFE", unsafe_binary))
+        unsafe_binary_result = fresh_result(temp, "unsafe-binary-result")
+        assert_failure(run_wrapper(repo, unsafe_binary_request, unsafe_binary_result), unsafe_binary_result, "validate-request")
+
+        credential_binary = temp / "credential-binary.patch"
+        credential_binary_bytes = binary_patch.read_bytes().replace(b"GIT binary patch\n", b"GIT binary patch\nAPI_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa\n", 1)
+        write_private(credential_binary, credential_binary_bytes)
+        credential_binary_request = temp / "credential-binary.json"
+        write_json(credential_binary_request, request("KANBAN-BINARY-CREDENTIAL", credential_binary))
+        credential_binary_result = fresh_result(temp, "credential-binary-result")
+        assert_failure(run_wrapper(repo, credential_binary_request, credential_binary_result), credential_binary_result, "validate-request")
 
         for operation, changed_path in (
             ("add", "shared/src/commonMain/composeResources/values/added.xml"),
@@ -626,7 +648,7 @@ def main():
         for root in (
             "/Users", "/private", "/tmp", "/Applications", "/Library",
             "/var", "/home", "/Volumes", "/System", "/opt", "/etc", "/usr",
-            "/bin", "/sbin", "/dev", "/root", "/run", "/proc", "/sys",
+            "/bin", "/sbin", "/dev", "/root", "/run", "/proc", "/sys", "/mnt", "/media", "/srv", "/boot", "/efi",
         ):
             host_patch = temp / ("host-path-" + root[1:] + ".patch")
             make_patch(host_patch, marker=f"ok\nhost={root}/candidate")
@@ -641,6 +663,17 @@ def main():
         write_json(credential_request, request("KANBAN-CREDENTIAL", credential_patch))
         credential_result = fresh_result(temp, "credential-result")
         assert_failure(run_wrapper(repo, credential_request, credential_result), credential_result, "validate-request")
+
+        for label, assignment in (
+            ("typed-api-token", 'val apiToken: String = "' + "a" * 24 + '"'),
+            ("typed-client-secret", 'let clientSecret: String = "' + "b" * 24 + '"'),
+        ):
+            typed_patch = temp / (label + ".patch")
+            make_patch(typed_patch, marker="ok\n" + assignment)
+            typed_request = temp / (label + ".json")
+            write_json(typed_request, request("KANBAN-TYPED-CREDENTIAL", typed_patch))
+            typed_result = fresh_result(temp, label + "-result")
+            assert_failure(run_wrapper(repo, typed_request, typed_result), typed_result, "validate-request")
 
         traversal_patch = temp / "traversal.patch"
         make_path_patch(traversal_patch, "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/../Unsafe.kt")
@@ -658,7 +691,7 @@ def main():
 
         malformed_patch = temp / "malformed.patch"
         make_patch(malformed_patch)
-        write_private(malformed_patch, malformed_patch.read_text(encoding="utf-8").replace("@@ -1,1 +1 @@", "@@ malformed @@"))
+        write_private(malformed_patch, malformed_patch.read_text(encoding="utf-8").replace("@@ -1 +1,2 @@", "@@ malformed @@"))
         malformed_patch_request = temp / "malformed-patch.json"
         write_json(malformed_patch_request, request("KANBAN-MALFORMED-PATCH", malformed_patch))
         malformed_patch_result = fresh_result(temp, "malformed-patch-result")
@@ -793,6 +826,17 @@ def main():
             make_patch(mode_patch, marker="ok\nTEST_MODE:" + mode)
             mode_request = temp / (mode + ".json")
             write_json(mode_request, request("KANBAN-64", mode_patch))
+            mode_result = fresh_result(temp, mode + "-result")
+            assert_failure(run_wrapper(repo, mode_request, mode_result), mode_result, "validate-artifacts")
+
+        for mode in (
+            "claim-fake-path", "claim-fake-kind", "claim-fake-checks",
+            "claim-fake-head", "claim-fake-status", "claim-fake-applied-diff",
+        ):
+            mode_patch = temp / (mode + ".patch")
+            make_patch(mode_patch, marker="ok\nTEST_MODE:" + mode)
+            mode_request = temp / (mode + ".json")
+            write_json(mode_request, request("KANBAN-CLAIMS", mode_patch))
             mode_result = fresh_result(temp, mode + "-result")
             assert_failure(run_wrapper(repo, mode_request, mode_result), mode_result, "validate-artifacts")
 

@@ -97,7 +97,7 @@ PATCH_RESOURCE_EXTENSIONS = {
 }
 HOST_PATH_ROOTS = (
     "Users", "private", "tmp", "var", "home", "Volumes", "Applications", "System", "Library", "opt", "etc", "usr",
-    "bin", "sbin", "dev", "root", "run", "proc", "sys",
+    "bin", "sbin", "dev", "root", "run", "proc", "sys", "mnt", "media", "srv", "boot", "efi",
 )
 HOST_PATH_ROOT_RE = re.compile(r"(?<![A-Za-z0-9_.])/(?:" + "|".join(HOST_PATH_ROOTS) + r")(?:/|$)")
 PNG_HOST_PATH_ROOT_RE = re.compile(r"(?<![A-Za-z0-9_.:/-])/(?:" + "|".join(HOST_PATH_ROOTS) + r")(?:/|$)")
@@ -150,6 +150,12 @@ class State:
         self.published = False
         self.patch_sha = None
         self.patch_size = None
+        self.patch_paths = None
+        self.patch_kinds = None
+        self.patch_binary = None
+        self.applied_diff_sha = None
+        self.applied_paths = None
+        self.verification_worktree = None
 
 
 STATE = State()
@@ -493,10 +499,100 @@ def current_head():
 def snapshot_patch(data):
     path = STATE.private_dir / "patch.snapshot"
     make_private_file(path, data, 0o400)
-    digest = hashlib.sha256(data).hexdigest()
+    snapshot = read_private_path(str(path), MAX_PATCH_BYTES)
+    if snapshot != data:
+        fail("validate-request")
+    paths, kinds, binary = parse_proposal_patch(snapshot)
+    digest = hashlib.sha256(snapshot).hexdigest()
     STATE.patch_sha = digest
-    STATE.patch_size = len(data)
+    STATE.patch_size = len(snapshot)
+    STATE.patch_paths = paths
+    STATE.patch_kinds = kinds
+    STATE.patch_binary = binary
     return path, digest
+
+
+def git_environment():
+    return {
+        "PATH": SYSTEM_PATH,
+        "LC_ALL": "C",
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": "/dev/null",
+        "GIT_TERMINAL_PROMPT": "0",
+    }
+
+
+def run_git(args, cwd=REPO_ROOT, check=True):
+    return subprocess.run(
+        ["git", "-C", str(cwd), *[str(value) for value in args]],
+        check=check,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        env=git_environment(),
+    )
+
+
+def status_changed_paths(data):
+    try:
+        lines = data.decode("utf-8", "strict").splitlines()
+    except UnicodeError:
+        raise ValueError
+    paths = set()
+    for line in lines:
+        if len(line) < 4 or line[2] != " ":
+            raise ValueError
+        values = line[3:].split(" -> ", 1)
+        for value in values:
+            if not value or "\x00" in value:
+                raise ValueError
+            validate_patch_file_path(value)
+            paths.add(value)
+    return paths
+
+
+def cleanup_verification_worktree():
+    path = STATE.verification_worktree
+    if path is None:
+        return
+    STATE.verification_worktree = None
+    try:
+        run_git(["worktree", "remove", "--force", str(path)], check=False)
+        run_git(["worktree", "prune"], check=False)
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:
+        if path.exists() and path.is_dir() and path.resolve().parent == STATE.private_dir.resolve():
+            shutil.rmtree(path)
+    except (OSError, RuntimeError, ValueError):
+        pass
+
+
+def verify_snapshot_application(snapshot):
+    """Bind patch paths and the applied diff to the verified source base."""
+    path = STATE.private_dir / "patch-verify-worktree"
+    STATE.verification_worktree = path
+    try:
+        run_git(["worktree", "add", "--detach", str(path), STATE.base_sha])
+        head = run_git(["rev-parse", "--verify", "HEAD"], cwd=path).stdout.decode("ascii", "strict").strip().lower()
+        if head != STATE.base_sha.lower():
+            raise ValueError
+        clean = run_git(["status", "--porcelain=v1", "--untracked-files=all", "--ignored=no"], cwd=path).stdout
+        if clean:
+            raise ValueError
+        run_git(["apply", "--check", "--binary", "--whitespace=nowarn", str(snapshot)], cwd=path)
+        run_git(["apply", "--binary", "--whitespace=nowarn", str(snapshot)], cwd=path)
+        status = run_git(["status", "--porcelain=v1", "--untracked-files=all", "--ignored=no"], cwd=path).stdout
+        actual = status_changed_paths(status)
+        expected = set(STATE.patch_paths or ())
+        if actual != expected:
+            raise ValueError
+        applied = run_git(["diff", "--binary", "--full-index", "HEAD", "--"], cwd=path).stdout
+        STATE.applied_paths = sorted(actual)
+        STATE.applied_diff_sha = hashlib.sha256(applied).hexdigest()
+    except (OSError, UnicodeError, ValueError, subprocess.SubprocessError):
+        fail("validate-request")
+    finally:
+        cleanup_verification_worktree()
 
 
 def valid_optional_env(value):
@@ -701,6 +797,18 @@ def credential_detected(data):
         re.IGNORECASE,
     ):
         return True
+    # Kotlin/Swift/JavaScript-style typed declarations are just as sensitive
+    # as shell assignments.  Keep the declaration/type portion optional so
+    # plain XML tags and relative diff paths remain benign.
+    if re.search(
+        r"(?:^|[\r\n])\s*[+\-]?\s*(?:(?:export|val|var|let|const|final|private|public|internal|protected|static|readonly)\s+)*"
+        r"[A-Za-z_][A-Za-z0-9_.-]*(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?key|"
+        r"client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|token|secret|password|passwd|credential|authorization)"
+        r"[A-Za-z0-9_.-]*\s*(?::\s*[A-Za-z_][A-Za-z0-9_.<>?, ]*)?\s*=\s*['\"]?[A-Za-z0-9._~+/=-]{20,}['\"]?",
+        text,
+        re.IGNORECASE,
+    ):
+        return True
     return False
 
 
@@ -767,12 +875,37 @@ def patch_host_path_detected(text):
     for line in text.splitlines():
         if line.startswith(("--- ", "+++ ")) and line[4:].split("\t", 1)[0] == "/dev/null":
             continue
+        if HOST_PATH_ROOT_RE.search(line):
+            return True
         if PATCH_HOST_PATH_RE.search(line):
             return True
     return False
 
 
-def validate_proposal_patch(data):
+def patch_kind(path):
+    suffix = Path(path).suffix.lower()
+    if path.startswith(PATCH_ALLOWED_PREFIXES[0]):
+        if suffix != ".kt":
+            raise ValueError
+        return "kotlin"
+    if path.startswith(PATCH_ALLOWED_PREFIXES[1]):
+        if suffix not in PATCH_RESOURCE_EXTENSIONS:
+            raise ValueError
+        return "resource"
+    if suffix == ".swift":
+        return "swift"
+    if suffix not in PATCH_RESOURCE_EXTENSIONS:
+        raise ValueError
+    return "resource"
+
+
+def parse_proposal_patch(data):
+    """Parse a producer-compatible patch and return immutable path/kind facts.
+
+    Git binary diffs are deliberately parsed as their ASCII transport format,
+    not decoded as the target resource.  ``git apply --check --binary`` below
+    remains the authoritative decoder and application check.
+    """
     if not isinstance(data, bytes) or not data or len(data) > MAX_PATCH_BYTES or not data.endswith(b"\n"):
         raise ValueError
     try:
@@ -789,43 +922,82 @@ def validate_proposal_patch(data):
     index_header = re.compile(r"^index [0-9a-fA-F]+\.\.[0-9a-fA-F]+(?: [0-9]{6})?$")
     mode_header = re.compile(r"^(?:old mode|new mode|new file mode|deleted file mode) [0-7]{6}$")
     similarity_header = re.compile(r"^(?:similarity|dissimilarity) index [0-9]{1,3}%$")
+    binary_section = re.compile(r"^(literal|delta) ([0-9]+)$")
+    base85 = re.compile(r"^[!-~]{1,52}$")
     paths = set()
+    kinds = set()
     cursor = 0
     blocks = 0
+    any_binary = False
     while cursor < len(lines):
         match = diff_header.fullmatch(lines[cursor])
         if match is None:
             raise ValueError
         left = validate_patch_header_path(match.group(1), "a/")
         right = validate_patch_header_path(match.group(2), "b/")
-        if left:
-            paths.add(left)
-        if right:
-            paths.add(right)
+        header_paths = {path for path in (left, right) if path}
+        paths.update(header_paths)
         cursor += 1
         old_path = None
         new_path = None
         old_header_seen = False
         new_header_seen = False
         hunks = 0
+        binary = False
+        binary_sections = []
+        saw_index = False
+        new_file = False
+        deleted_file = False
         while cursor < len(lines) and not lines[cursor].startswith("diff --git "):
             line = lines[cursor]
             if line.startswith("--- "):
-                if old_header_seen or hunks:
+                if old_header_seen or hunks or binary:
                     raise ValueError
                 old_path = validate_patch_header_path(line[4:], "a/")
                 old_header_seen = True
                 cursor += 1
                 continue
             if line.startswith("+++ "):
-                if not old_header_seen or new_header_seen or hunks:
+                if not old_header_seen or new_header_seen or hunks or binary:
                     raise ValueError
                 new_path = validate_patch_header_path(line[4:], "b/")
                 new_header_seen = True
                 cursor += 1
                 continue
+            if line == "GIT binary patch":
+                if old_header_seen or new_header_seen or hunks or binary:
+                    raise ValueError
+                binary = True
+                any_binary = True
+                cursor += 1
+                while cursor < len(lines) and not lines[cursor].startswith("diff --git "):
+                    while cursor < len(lines) and not lines[cursor]:
+                        cursor += 1
+                    if cursor >= len(lines) or lines[cursor].startswith("diff --git "):
+                        break
+                    section = binary_section.fullmatch(lines[cursor])
+                    if section is None:
+                        raise ValueError
+                    decoded_size = int(section.group(2))
+                    if decoded_size > MAX_PATCH_BYTES:
+                        raise ValueError
+                    cursor += 1
+                    encoded_lines = 0
+                    while cursor < len(lines) and lines[cursor] and not lines[cursor].startswith("diff --git "):
+                        if binary_section.fullmatch(lines[cursor]):
+                            break
+                        if base85.fullmatch(lines[cursor]) is None:
+                            raise ValueError
+                        encoded_lines += 1
+                        cursor += 1
+                    if decoded_size and encoded_lines == 0:
+                        raise ValueError
+                    binary_sections.append((section.group(1), decoded_size, encoded_lines))
+                if not binary_sections or len(binary_sections) > 2:
+                    raise ValueError
+                continue
             if line.startswith("@@ "):
-                if not old_header_seen or not new_header_seen:
+                if not old_header_seen or not new_header_seen or binary:
                     raise ValueError
                 hunk = hunk_header.fullmatch(line)
                 if hunk is None:
@@ -855,24 +1027,42 @@ def validate_proposal_patch(data):
                     raise ValueError
                 hunks += 1
                 continue
-            if not old_header_seen and (index_header.fullmatch(line) or mode_header.fullmatch(line) or similarity_header.fullmatch(line)):
+            if not old_header_seen and index_header.fullmatch(line):
+                saw_index = True
                 cursor += 1
                 continue
-            if not old_header_seen and line.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
-                paths.add(validate_patch_file_path(line.split(" ", 2)[2]))
+            if not old_header_seen and mode_header.fullmatch(line):
+                new_file = new_file or line.startswith("new file mode ")
+                deleted_file = deleted_file or line.startswith("deleted file mode ")
+                cursor += 1
+                continue
+            if not old_header_seen and (similarity_header.fullmatch(line) or line.startswith(("rename from ", "rename to ", "copy from ", "copy to "))):
+                if line.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
+                    paths.add(validate_patch_file_path(line.split(" ", 2)[2]))
                 cursor += 1
                 continue
             raise ValueError
-        if not old_header_seen or not new_header_seen or hunks == 0 or (old_path is None and new_path is None):
-            raise ValueError
-        if old_path is None:
-            if new_path is None or right != new_path or (left is not None and left != new_path):
+        if binary:
+            if old_header_seen or new_header_seen or hunks or not saw_index and not (new_file or deleted_file):
                 raise ValueError
-        elif new_path is None:
-            if left != old_path or (right is not None and right != old_path):
+            if new_file or deleted_file:
+                if len(binary_sections) != 1:
+                    raise ValueError
+            elif len(binary_sections) != 2:
                 raise ValueError
-        elif left != old_path or right != new_path:
-            raise ValueError
+            if any(patch_kind(path) != "resource" for path in header_paths):
+                raise ValueError
+        else:
+            if not old_header_seen or not new_header_seen or hunks == 0 or (old_path is None and new_path is None):
+                raise ValueError
+            if old_path is None:
+                if new_path is None or right != new_path or (left is not None and left != new_path):
+                    raise ValueError
+            elif new_path is None:
+                if left != old_path or (right is not None and right != old_path):
+                    raise ValueError
+            elif left != old_path or right != new_path:
+                raise ValueError
         if old_path:
             paths.add(old_path)
         if new_path:
@@ -880,7 +1070,13 @@ def validate_proposal_patch(data):
         blocks += 1
     if not paths or blocks == 0:
         raise ValueError
-    return paths
+    for path in paths:
+        kinds.add(patch_kind(path))
+    return sorted(paths), sorted(kinds), any_binary
+
+
+def validate_proposal_patch(data):
+    return parse_proposal_patch(data)
 
 
 def bounded_walk(value, depth=0, seen=None):
@@ -1178,7 +1374,7 @@ def validate_manifest(manifest, base_sha, patch_sha, patch_size):
     patch = manifest["patch"]
     exact_keys(patch, {"path", "sha256", "size", "binary", "format"})
     validate_hash(patch["sha256"], 64)
-    if patch["path"] != "proposal.patch" or patch["sha256"].lower() != patch_sha.lower() or patch["format"] != "exact-input" or type(patch["binary"]) is not bool:
+    if patch["path"] != "proposal.patch" or patch["sha256"].lower() != patch_sha.lower() or patch["format"] != "exact-input" or type(patch["binary"]) is not bool or patch["binary"] != STATE.patch_binary:
         raise ValueError
     if not exact_int(patch["size"]) or not 0 <= patch["size"] <= MAX_PATCH_BYTES or patch["size"] != patch_size:
         raise ValueError
@@ -1190,19 +1386,30 @@ def validate_manifest(manifest, base_sha, patch_sha, patch_size):
             strict_relative(item)
     if manifest["candidateKinds"] != sorted(manifest["candidateKinds"]):
         raise ValueError
-    if manifest["allowedChangedFiles"] != manifest["actualChangedFiles"]:
+    expected_paths = STATE.patch_paths
+    expected_kinds = STATE.patch_kinds
+    if expected_paths is None or expected_kinds is None:
+        raise ValueError
+    if manifest["candidateKinds"] != expected_kinds:
+        raise ValueError
+    if manifest["allowedChangedFiles"] != expected_paths or manifest["actualChangedFiles"] != expected_paths:
         raise ValueError
     worktree = manifest["worktree"]
     exact_keys(worktree, {"baseSha", "headSha", "detached", "uncommitted", "statusEntryCount", "appliedDiffSha256"})
     validate_hash(worktree["baseSha"], 40)
     validate_hash(worktree["headSha"], 40)
-    if worktree["baseSha"].lower() != base_sha.lower() or type(worktree["detached"]) is not bool or type(worktree["uncommitted"]) is not bool or not worktree["detached"]:
+    if worktree["baseSha"].lower() != base_sha.lower() or worktree["headSha"].lower() != base_sha.lower() or type(worktree["detached"]) is not bool or type(worktree["uncommitted"]) is not bool or not worktree["detached"] or not worktree["uncommitted"]:
         raise ValueError
-    if not exact_int(worktree["statusEntryCount"]) or worktree["statusEntryCount"] < 0:
+    if not exact_int(worktree["statusEntryCount"]) or worktree["statusEntryCount"] != len(expected_paths):
         raise ValueError
     validate_hash(worktree["appliedDiffSha256"], 64)
+    if STATE.applied_diff_sha is None or worktree["appliedDiffSha256"].lower() != STATE.applied_diff_sha.lower():
+        raise ValueError
     checks = manifest["focusedChecks"]
-    if not isinstance(checks, list) or not checks:
+    expected_checks = [{"name": "git.diff.check", "passed": True}]
+    if {"kotlin", "resource"} & set(expected_kinds):
+        expected_checks.append({"name": "shared.compileKotlinIosSimulatorArm64", "passed": True})
+    if checks != expected_checks:
         raise ValueError
     for check in checks:
         exact_keys(check, {"name", "passed"})
@@ -1235,6 +1442,8 @@ def validate_evidence_summary(summary, base_sha, patch_sha):
     if summary["patchSha256"].lower() != patch_sha.lower():
         raise ValueError
     if not isinstance(summary["changedFiles"], list) or not summary["changedFiles"] or any(not isinstance(item, str) for item in summary["changedFiles"]):
+        raise ValueError
+    if STATE.patch_paths is None or summary["changedFiles"] != STATE.patch_paths:
         raise ValueError
     for item in summary["changedFiles"]:
         strict_relative(item)
@@ -1660,6 +1869,10 @@ def main_work(request_raw, result_raw):
     STATE.base_sha = current_head()
     patch_snapshot, patch_sha = snapshot_patch(patch_data)
     check_interrupted()
+    if current_head() != STATE.base_sha:
+        fail("validate-request")
+    verify_snapshot_application(patch_snapshot)
+    check_interrupted()
     if not EXPECTED_UDID_RE.fullmatch(os.environ.get("PHOENIX_HARNESS_UDID", "")):
         fail("renderer")
     env = child_environment()
@@ -1717,6 +1930,7 @@ def main():
             except (OSError, subprocess.TimeoutExpired):
                 pass
             STATE.active = None
+        cleanup_verification_worktree()
         cleanup_private()
         if STATE.result is not None:
             STATE.result.close()
