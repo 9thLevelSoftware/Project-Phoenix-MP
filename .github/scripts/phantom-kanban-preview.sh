@@ -82,6 +82,7 @@ INTERNAL_HARNESS_FILES = (
     "simulator.log",
     "screenshot.log",
 )
+INTERNAL_LOG_FILES = {name for name in INTERNAL_HARNESS_FILES if name.endswith(".log") or name == ".commands.jsonl"}
 INTERNAL_ARTIFACT_SET = ALLOWED_ARTIFACT_SET | {"proposal.patch", ".phantom-proposal"} | {
     f"{phase}/{name}" for phase in ("before", "after") for name in INTERNAL_HARNESS_FILES
 }
@@ -648,7 +649,7 @@ def scan_artifact_tree(fd, relative="", allowed_paths=None, total_size=None, dir
     return contents
 
 
-def credential_or_host_path(data):
+def credential_detected(data):
     text = data.decode("utf-8", "replace")
     if re.search(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----", text, re.IGNORECASE):
         return True
@@ -660,11 +661,20 @@ def credential_or_host_path(data):
         return True
     if re.search(r"\b[A-Za-z0-9_.-]*(?:token|secret|password|passwd|private[_-]?key|credential|api[_-]?key|api[_-]?token|access[_-]?key|authorization|anon[_-]?key)[A-Za-z0-9_.-]*\s*[:=]\s*['\"]?[A-Za-z0-9._~+/=-]{8,}", text, re.IGNORECASE):
         return True
+    return False
+
+
+def host_path_detected(data):
+    text = data.decode("utf-8", "replace")
     if re.search(r"/(?:Users|private|tmp|var|home|Volumes|Applications|System|Library|opt|etc|usr)(?:/|$)", text):
         return True
     if re.search(r"(?<![:/A-Za-z0-9_])/(?!/)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*", text):
         return True
     return False
+
+
+def credential_or_host_path(data):
+    return credential_detected(data) or host_path_detected(data)
 
 
 def bounded_walk(value, depth=0, seen=None):
@@ -882,10 +892,9 @@ def validate_run_manifest(run, base_sha, phase_files=None):
     return run_identity(run)
 
 
-def validate_diff_summary(value, allow_no_inputs=False):
-    required = {"passed", "thresholdPassed", "dimensions", "width", "height", "changedPixels", "changedPixelRatio", "changedRatio", "meanChannelDelta", "maxChannelDelta", "maskTopPixels", "threshold"}
-    accepted = (required, required | {"inputs"}) if allow_no_inputs else (required | {"inputs"},)
-    if not isinstance(value, dict) or set(value) not in accepted:
+def validate_diff_summary(value):
+    required = {"passed", "thresholdPassed", "dimensions", "width", "height", "changedPixels", "changedPixelRatio", "changedRatio", "meanChannelDelta", "maxChannelDelta", "maskTopPixels", "threshold", "inputs"}
+    if not isinstance(value, dict) or set(value) != required:
         raise ValueError
     validate_dimensions(value["dimensions"])
     if value["width"] != value["dimensions"]["width"] or value["height"] != value["dimensions"]["height"]:
@@ -909,10 +918,9 @@ def validate_diff_summary(value, allow_no_inputs=False):
         raise ValueError
     if type(value["threshold"]) not in (int, float) or isinstance(value["threshold"], bool) or not math.isfinite(float(value["threshold"])) or not 0 <= float(value["threshold"]) <= 255:
         raise ValueError
-    if "inputs" in value:
-        exact_keys(value["inputs"], {"before", "after"})
-        if value["inputs"] != {"before": "run.json", "after": "run.json"}:
-            raise ValueError
+    exact_keys(value["inputs"], {"before", "after"})
+    if value["inputs"] != {"before": "xctest-attachment.png", "after": "xctest-attachment.png"}:
+        raise ValueError
 
 
 def validate_public_capture(value, expected_path="after.png"):
@@ -951,7 +959,7 @@ def validate_comparison(value):
         validate_hash(descriptor["sha256"], 64)
         if key == "diffImage":
             validate_dimensions(descriptor["dimensions"])
-    validate_diff_summary(value["summary"], allow_no_inputs=comparison_mode == "renderer")
+    validate_diff_summary(value["summary"])
     return comparison_mode
 
 def validate_manifest(manifest, base_sha, patch_sha, patch_size):
@@ -1072,6 +1080,7 @@ def validate_png(data):
         raise ValueError
     cursor = 8
     seen_header = False
+    seen_data = False
     seen_end = False
     while cursor < len(data):
         if cursor + 12 > len(data):
@@ -1084,16 +1093,22 @@ def validate_png(data):
         checksum = int.from_bytes(data[cursor + 8 + length:cursor + 12 + length], "big")
         if zlib_crc(kind + payload) != checksum:
             raise ValueError
+        if kind in (b"tEXt", b"iTXt", b"zTXt") and credential_or_host_path(payload):
+            raise ValueError
         if kind == b"IHDR":
-            if seen_header or length != 13:
+            if cursor != 8 or seen_header or length != 13:
                 raise ValueError
             width = int.from_bytes(payload[0:4], "big")
             height = int.from_bytes(payload[4:8], "big")
             if not 1 <= width <= 100000 or not 1 <= height <= 100000:
                 raise ValueError
             seen_header = True
+        elif kind == b"IDAT":
+            if not seen_header or seen_end:
+                raise ValueError
+            seen_data = True
         elif kind == b"IEND":
-            if length != 0 or not seen_header or seen_end or cursor + 12 != len(data):
+            if length != 0 or not seen_header or not seen_data or seen_end or cursor + 12 != len(data):
                 raise ValueError
             seen_end = True
         cursor += 12 + length
@@ -1125,8 +1140,18 @@ def validate_artifacts():
             raise ValueError
         if set(directories) != {"", "before", "after", "comparison"}:
             raise ValueError
-        for data in artifacts.values():
-            if credential_or_host_path(data):
+        for name, data in artifacts.items():
+            leaf = name.rsplit("/", 1)[-1]
+            if leaf in INTERNAL_LOG_FILES:
+                # Xcode and CoreSimulator logs are private evidence. They may contain
+                # normal absolute host paths, but never credentials.
+                if credential_detected(data):
+                    raise ValueError
+            elif leaf.endswith(".png"):
+                # PNGs are checked by validate_png below; never regex-scan arbitrary
+                # compressed/pixel bytes as if they were text.
+                continue
+            elif credential_or_host_path(data):
                 raise ValueError
         snapshot = read_private_path(str(STATE.private_dir / "patch.snapshot"), MAX_PATCH_BYTES)
         if artifacts["proposal.patch"] != snapshot:
@@ -1157,7 +1182,9 @@ def validate_artifacts():
         diff = json_values["comparison/diff.json"]
         comparison = manifest["comparison"]
         comparison_mode = validate_comparison(comparison)
-        validate_diff_summary(diff, allow_no_inputs=comparison_mode == "renderer")
+        validate_diff_summary(diff)
+        if diff["inputs"] != {"before": before["captures"][1]["path"], "after": after["captures"][1]["path"]}:
+            raise ValueError
         summary = json_values["evidence-summary.json"]
         validate_evidence_summary(summary, STATE.base_sha, STATE.patch_sha)
         if hashlib.sha256(artifacts["before/run.json"]).hexdigest() != manifest["before"]["manifestSha256"] or hashlib.sha256(artifacts["after/run.json"]).hexdigest() != manifest["after"]["manifestSha256"]:
@@ -1244,6 +1271,28 @@ def json_result(value):
     return (json.dumps(value, sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
 
 
+def validate_preview_result(value):
+    exact_keys(value, {"schema_version", "status", "ticket_id", "fixture", "base_sha", "patch_sha256", "artifacts"})
+    if value["schema_version"] != 1 or value["status"] != "passed" or value["fixture"] != "just-lift-connected":
+        raise ValueError
+    if not isinstance(value["ticket_id"], str) or not TICKET_RE.fullmatch(value["ticket_id"]):
+        raise ValueError
+    validate_hash(value["base_sha"], 40)
+    validate_hash(value["patch_sha256"], 64)
+    entries = value["artifacts"]
+    if not isinstance(entries, list) or len(entries) != len(ALLOWED_ARTIFACTS):
+        raise ValueError
+    if [entry.get("path") if isinstance(entry, dict) else None for entry in entries] != list(ALLOWED_ARTIFACTS):
+        raise ValueError
+    for entry in entries:
+        exact_keys(entry, {"path", "sha256"})
+        if entry["path"] not in ALLOWED_ARTIFACT_SET:
+            raise ValueError
+        validate_hash(entry["sha256"], 64)
+    if credential_or_host_path(json_result(value)):
+        raise ValueError
+
+
 def write_failure_result(stage):
     if STATE.result is None or STATE.failure_written:
         return
@@ -1296,6 +1345,7 @@ def publish_success(artifacts, ticket, fixture, base_sha, patch_sha):
             "patch_sha256": patch_sha,
             "artifacts": entries,
         }
+        validate_preview_result(result)
         create_result_file(staging, "preview-result.json", json_result(result))
         create_result_file(staging, PUBLICATION_PRECHECK_NAME, b"ready\n")
         time.sleep(0.05)

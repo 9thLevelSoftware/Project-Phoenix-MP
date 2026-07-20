@@ -19,6 +19,35 @@ from pathlib import Path
 
 script_dir = Path(os.environ["SCRIPT_DIR"])
 wrapper_source = script_dir / "phantom-kanban-preview.sh"
+reviewed_real_packet = Path("/tmp/phantom-final-proposal-rootbound-success-1784497311")
+
+INTERNAL_HARNESS_FILES = (
+    ".phantom-harness",
+    ".commands.jsonl",
+    "run.json",
+    "after.png",
+    "xctest-attachment.png",
+    "toolchain.log",
+    "boot.log",
+    "bootstatus.log",
+    "terminate.log",
+    "uninstall.log",
+    "build.log",
+    "test.log",
+    "app-state.log",
+    "simulator.log",
+    "screenshot.log",
+)
+EXPECTED_PACKET_PATHS = {
+    ".phantom-proposal",
+    "proposal.patch",
+    "proposal.md",
+    "evidence-summary.json",
+    "proposal-manifest.json",
+    "comparison/diff.json",
+    "comparison/diff.png",
+    *{f"{phase}/{name}" for phase in ("before", "after") for name in INTERNAL_HARNESS_FILES},
+}
 
 
 def fail(message):
@@ -93,7 +122,8 @@ def make_fake_repo(root):
         "    def chunk(kind, payload):\n"
         "        return len(payload).to_bytes(4, 'big') + kind + payload + zlib.crc32(kind + payload).to_bytes(4, 'big')\n"
         "    ihdr = struct.pack('>IIBBBBB', 2, 2, 8, 6, 0, 0, 0)\n"
-        "    return b'\\x89PNG\\r\\n\\x1a\\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', b'') + chunk(b'IEND', b'')\n"
+        "    pixels = b'\\x00' + b'\\x00' * 8 + b'\\x00' + b'\\x00' * 8\n"
+        "    return b'\\x89PNG\\r\\n\\x1a\\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b'')\n"
         "if len(sys.argv) != 5 or sys.argv[1] != 'render' or sys.argv[3] != 'just-lift-connected':\n"
         "    raise SystemExit(2)\n"
         "artifact, patch = Path(sys.argv[2]), Path(sys.argv[4])\n"
@@ -135,7 +165,7 @@ def make_fake_repo(root):
         "run_sha = hashlib.sha256(run_bytes).hexdigest()\n"
         "diff_png = capture_png\n"
         "diff_sha = hashlib.sha256(diff_png).hexdigest()\n"
-        "diff = {'passed': True, 'thresholdPassed': True, 'dimensions': {'width': 2, 'height': 2}, 'width': 2, 'height': 2, 'changedPixels': 0, 'changedPixelRatio': 0.0, 'changedRatio': 0.0, 'meanChannelDelta': 0.0, 'maxChannelDelta': 0, 'maskTopPixels': 0, 'threshold': 0.0}\n"
+        "diff = {'passed': True, 'thresholdPassed': True, 'dimensions': {'width': 2, 'height': 2}, 'width': 2, 'height': 2, 'changedPixels': 0, 'changedPixelRatio': 0.0, 'changedRatio': 0.0, 'meanChannelDelta': 0.0, 'maxChannelDelta': 0, 'maskTopPixels': 0, 'threshold': 0.0, 'inputs': {'before': 'xctest-attachment.png', 'after': 'xctest-attachment.png'}}\n"
         "diff_bytes = (json.dumps(diff, sort_keys=True) + '\\n').encode()\n"
         "diff_sha_json = hashlib.sha256(diff_bytes).hexdigest()\n"
         "identity = {'baseSha': base, 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'bundleId': 'com.devil.phoenixproject.projectphoenix', 'simulator': simulator, 'commands': [name for name, _ in command_specs], 'markers': sorted(markers)}\n"
@@ -154,7 +184,7 @@ def make_fake_repo(root):
         "    private(artifact / (phase + '/.phantom-harness'), 'phantom-harness-artifact-v1\\n')\n"
         "    private(artifact / (phase + '/.commands.jsonl'), ''.join(json.dumps(item, sort_keys=True) + '\\n' for item in commands))\n"
         "    for _, output in command_specs:\n"
-        "        private(artifact / (phase + '/' + output), 'ok\\n')\n"
+        "        private(artifact / (phase + '/' + output), 'Xcode path: /Applications/Xcode.app\\nDerivedData: /Users/preview/Library/Developer/Xcode/DerivedData\\nTemporary directory: /tmp/phantom-preview\\nCoreSimulator: /Library/Developer/CoreSimulator\\n')\n"
         "    private(artifact / (phase + '/after.png'), capture_png, binary=True)\n"
         "    private(artifact / (phase + '/xctest-attachment.png'), capture_png, binary=True)\n"
         "private(artifact / 'proposal.md', proposal)\n"
@@ -166,6 +196,8 @@ def make_fake_repo(root):
         "if mode == 'unknown-run': run['unknown'] = True; private(artifact / 'before/run.json', json.dumps(run) + '\\n')\n"
         "if mode == 'bad-run-types': run['schemaVersion'] = True; private(artifact / 'after/run.json', json.dumps(run) + '\\n')\n"
         "if mode == 'unknown-diff': diff['unknown'] = True; private(artifact / 'comparison/diff.json', json.dumps(diff) + '\\n')\n"
+        "if mode == 'bad-diff-input': diff['inputs'] = {'before': 'run.json', 'after': 'run.json'}; private(artifact / 'comparison/diff.json', json.dumps(diff) + '\\n')\n"
+        "if mode == 'malformed-png': private(artifact / 'comparison/diff.png', b'not-a-png', binary=True)\n"
         "if mode == 'bad-markdown': private(artifact / 'proposal.md', '# Phantom proposal evidence\\nStatus: **passed**\\n')\n"
         "if mode == 'bad-markdown-ref': private(artifact / 'proposal.md', proposal + '\\n- `comparison/unknown.json`\\n')\n"
         "if mode.startswith('patch-mismatch-'):\n"
@@ -191,6 +223,7 @@ def make_fake_repo(root):
         "if mode == 'bad-proposal-marker': private(artifact / '.phantom-proposal', 'altered-proposal-marker\\n')\n"
         "if mode == 'symlink-proposal-marker': (artifact / '.phantom-proposal').unlink(); os.symlink('before/run.json', artifact / '.phantom-proposal')\n"
         "if mode == 'unknown-public': private(artifact / 'unknown-public.txt', 'must not publish\\n')\n"
+        "if mode == 'publish-internal-log': private(artifact / 'simulator.log', 'must remain private\\n')\n"
         "if mode == 'missing-proposal-patch': (artifact / 'proposal.patch').unlink()\n"
         "if mode == 'bad-proposal-patch': private(artifact / 'proposal.patch', b'not-the-request-patch\\n', binary=True)\n"
         "if mode == 'missing': (artifact / 'after/run.json').unlink()\n"
@@ -311,12 +344,50 @@ def assert_result_only(result, stage, reason):
         fail(f"unexpected result-only payload for {stage}: {payload!r}")
 
 
+def validate_reviewed_real_packet(temp):
+    """Validate the reviewed packet's exact topology when safely available.
+
+    This is deliberately a fixture/topology check only: it never invokes Xcode and
+    skips when the private review packet is absent or not owned/mode-safe locally.
+    """
+    if not reviewed_real_packet.is_dir() or reviewed_real_packet.is_symlink():
+        return False
+    root_info = reviewed_real_packet.stat()
+    if root_info.st_uid != os.getuid() or stat.S_IMODE(root_info.st_mode) != 0o700:
+        return False
+    copied = temp / "reviewed-real-packet"
+    shutil.copytree(reviewed_real_packet, copied, symlinks=True)
+    actual_paths = {path.relative_to(copied).as_posix() for path in copied.rglob("*") if path.is_file() or path.is_symlink()}
+    if actual_paths != EXPECTED_PACKET_PATHS:
+        fail(f"reviewed real packet topology mismatch: {sorted(actual_paths)}")
+    directories = {path.relative_to(copied).as_posix() for path in copied.rglob("*") if path.is_dir()}
+    if directories != {"before", "after", "comparison"}:
+        fail(f"reviewed real packet directories mismatch: {sorted(directories)}")
+    for path in copied.rglob("*"):
+        info = path.lstat()
+        if info.st_uid != os.getuid() or stat.S_ISLNK(info.st_mode):
+            fail(f"reviewed real packet contains unsafe entry: {path}")
+        expected_mode = 0o700 if path.is_dir() else 0o600
+        if stat.S_IMODE(info.st_mode) != expected_mode:
+            fail(f"reviewed real packet mode mismatch: {path}")
+    diff = json.loads((copied / "comparison/diff.json").read_text(encoding="utf-8"))
+    if diff.get("inputs") != {"before": "xctest-attachment.png", "after": "xctest-attachment.png"}:
+        fail(f"reviewed real packet comparison inputs mismatch: {diff.get('inputs')!r}")
+    for phase in ("before", "after"):
+        run = json.loads((copied / phase / "run.json").read_text(encoding="utf-8"))
+        captures = {capture["slug"]: capture["path"] for capture in run["captures"]}
+        if captures != {"simulator-after": "after.png", "xctest-after": "xctest-attachment.png"}:
+            fail(f"reviewed real packet capture topology mismatch for {phase}: {captures!r}")
+    return True
+
+
 def main():
     if not wrapper_source.exists():
         # This is intentional RED evidence before the production wrapper exists.
         fail("phantom-kanban-preview.sh is missing")
     with tempfile.TemporaryDirectory(prefix="phantom-kanban-preview-test-") as temp_name:
         temp = Path(temp_name)
+        validate_reviewed_real_packet(temp)
         repo, renderer_log, verifier_log = make_fake_repo(temp)
         patch = temp / "private" / "candidate.patch"
         make_patch(patch)
@@ -473,6 +544,8 @@ def main():
             ("unknown-run", "unknown-run"),
             ("bad-run-types", "bad-run-types"),
             ("unknown-diff", "unknown-diff"),
+            ("bad-diff-input", "bad-diff-input"),
+            ("malformed-png", "malformed-png"),
             ("bad-markdown", "bad-markdown"),
             ("bad-markdown-ref", "bad-markdown-ref"),
         ):
@@ -498,12 +571,12 @@ def main():
             "unexpected-internal-root",
             "unexpected-internal-nested",
             "internal-secret",
-            "internal-absolute-path",
             "internal-symlink",
             "missing-proposal-marker",
             "bad-proposal-marker",
             "symlink-proposal-marker",
             "unknown-public",
+            "publish-internal-log",
             "missing-proposal-patch",
             "bad-proposal-patch",
         ):
