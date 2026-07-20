@@ -283,6 +283,37 @@ class SqlDelightPersonalRecordRepositoryTest {
         assertEquals(70f, restoredPr.weightPerCableKg)
     }
 
+    @Test
+    fun `a lower valid PR replaces a deleted outlier with its stable sync uuid`() = runTest {
+        repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 100f,
+            volumePRWeightPerCableKg = 100f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 2_000L,
+            profileId = "default",
+        ).getOrThrow()
+        val deletedPr = assertNotNull(repository.getWeightPR("bench", "Old School", "default"))
+        val stableUuid = assertNotNull(deletedPr.uuid)
+        repository.deletePR(deletedPr.id, "default")
+
+        val result = repository.updatePRsIfBetter(
+            exerciseId = "bench",
+            weightPRWeightPerCableKg = 90f,
+            volumePRWeightPerCableKg = 90f,
+            reps = 5,
+            workoutMode = "Old School",
+            timestamp = 3_000L,
+            profileId = "default",
+        ).getOrThrow()
+
+        val replacementPr = assertNotNull(repository.getWeightPR("bench", "Old School", "default"))
+        assertTrue(result.contains(PRType.MAX_WEIGHT))
+        assertEquals(stableUuid, replacementPr.uuid)
+        assertEquals(90f, replacementPr.weightPerCableKg)
+    }
+
     private fun insertExercise(id: String, name: String) {
         database.vitruvianDatabaseQueries.insertExercise(
             id = id,

@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.screen
 import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.Test
 import kotlin.test.assertContains
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 
 class AnalyticsPersonalRecordDeleteReviewTest {
@@ -24,6 +25,7 @@ class AnalyticsPersonalRecordDeleteReviewTest {
                                 pendingDelete = null
                             }""",
         )
-        assertContains(analytics, "exportMessage = error.message?.takeIf { it.isNotBlank() }")
+        assertContains(analytics, "exportMessage = deletePersonalRecordFailed")
+        assertFalse(analytics.contains("exportMessage = error.message?.takeIf { it.isNotBlank() }"))
     }
 }

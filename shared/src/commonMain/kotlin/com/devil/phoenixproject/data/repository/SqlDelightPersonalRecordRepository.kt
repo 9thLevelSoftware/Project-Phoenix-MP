@@ -296,8 +296,9 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         // Issue #319: Log the profile context being used
         Logger.d { "PR_SAVE: Checking for exercise=$exerciseId, mode=$canonicalWorkoutMode, phase=$phaseName, profile=$effectiveProfileId" }
 
-        // Check weight PR for this phase
-        val currentWeightPR = queries.selectPRIncludingDeleted(
+        // Keep a tombstone's UUID for sync identity, but do not let a deleted
+        // outlier remain the active comparison baseline for future PRs.
+        val storedWeightPR = queries.selectPRIncludingDeleted(
             exerciseId,
             canonicalWorkoutMode,
             PRType.MAX_WEIGHT.name,
@@ -306,6 +307,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
             mapper = ::mapToPR,
         )
             .executeAsOneOrNull()
+        val currentWeightPR = storedWeightPR?.takeIf { it.deletedAt == null }
 
         // Issue #319: Detect profile mismatch if a PR exists with a different profile_id
         if (currentWeightPR != null && currentWeightPR.profileId != effectiveProfileId) {
@@ -321,8 +323,8 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                 "new=${weightPRWeightPerCableKg}kg vs current=${currentWeightPR?.weightPerCableKg ?: "NONE"} → ${if (isNewWeightPR) "NEW PR" else "no change"}"
         }
 
-        // Check volume PR for this phase
-        val currentVolumePR = queries.selectPRIncludingDeleted(
+        // Keep the deleted volume snapshot only for UUID reuse, not comparison.
+        val storedVolumePR = queries.selectPRIncludingDeleted(
             exerciseId,
             canonicalWorkoutMode,
             PRType.MAX_VOLUME.name,
@@ -331,6 +333,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
             mapper = ::mapToPR,
         )
             .executeAsOneOrNull()
+        val currentVolumePR = storedVolumePR?.takeIf { it.deletedAt == null }
 
         // Issue #319: Detect profile mismatch for volume PR too
         if (currentVolumePR != null && currentVolumePR.profileId != effectiveProfileId) {
@@ -364,7 +367,9 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     phase = phaseName,
                     profile_id = effectiveProfileId,
                     cable_count = cableCount?.toLong(),
-                    uuid = currentWeightPR?.uuid ?: generateUUID(),
+                    // A deleted snapshot is no longer the active comparison
+                    // baseline, but its UUID is retained until sync converges.
+                    uuid = storedWeightPR?.uuid ?: generateUUID(),
                 )
                 brokenPRs.add(PRType.MAX_WEIGHT)
             }
@@ -384,7 +389,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     phase = phaseName,
                     profile_id = effectiveProfileId,
                     cable_count = cableCount?.toLong(),
-                    uuid = currentVolumePR?.uuid ?: generateUUID(),
+                    uuid = storedVolumePR?.uuid ?: generateUUID(),
                 )
                 brokenPRs.add(PRType.MAX_VOLUME)
             }
