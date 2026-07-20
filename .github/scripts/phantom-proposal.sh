@@ -811,8 +811,9 @@ def scan_xml(element, inherited_credential_context=False):
     if name.search(local) and (element.text or "").strip():
         raise SystemExit(1)
     for key, value in element.attrib.items():
-        if name.search(key) or assignment.search(value):
+        if (name.search(key) and value) or assignment.search(value):
             raise SystemExit(1)
+        credential_context = credential_context or bool(name.search(value))
     text = (element.text or "").strip()
     if assignment.search(text):
         raise SystemExit(1)

@@ -1381,7 +1381,7 @@ PY
 # Producer-shaped resource fixtures exercise the same decoded-input boundary as
 # the preview consumer.  Safe structured resources pass; generic assignments,
 # opaque binary Swift, and canonical rename/copy metadata fail before rendering.
-for fixture in json-safe xml-safe json-duplicate xml-nested-credential json-credential xml-credential png-safe png-key-credential png-itxt-bearer png-itxt-host-path png-itxt-bad-flag png-itxt-bad-method nul-swift opaque-binary-swift rename copy; do
+for fixture in json-safe xml-safe json-duplicate xml-nested-credential json-credential xml-credential png-safe png-key-credential png-itxt-bearer png-itxt-host-path png-itxt-bad-flag png-itxt-bad-method png-itxt-xml-attribute-context png-itxt-xml-empty-credential-attribute nul-swift opaque-binary-swift rename copy; do
     fixture_repo="$TMP_DIR/producer-$fixture-repo"
     make_fake_repo "$fixture_repo"
     fixture_patch="$TMP_DIR/producer-$fixture.patch"
@@ -1398,12 +1398,14 @@ for fixture in json-safe xml-safe json-duplicate xml-nested-credential json-cred
         png-itxt-host-path) make_binary_png_patch "$fixture_patch" "Description" '/Users/fixture/private/image.xmp' 1 0 ;;
         png-itxt-bad-flag) make_binary_png_patch "$fixture_patch" "Description" 'SAFE' 2 0 ;;
         png-itxt-bad-method) make_binary_png_patch "$fixture_patch" "Description" 'SAFE' 0 1 ;;
+        png-itxt-xml-attribute-context) make_binary_png_patch "$fixture_patch" "Description" '<root kind="api_token"><value>16+secret</value></root>' ;;
+        png-itxt-xml-empty-credential-attribute) make_binary_png_patch "$fixture_patch" "Description" '<root api_token="">ok</root>' ;;
         nul-swift) make_nul_swift_patch "$fixture_patch" ;;
         opaque-binary-swift) make_binary_swift_patch "$fixture_patch" ;;
         rename|copy) make_rename_or_copy_patch "$fixture_patch" "$fixture" ;;
     esac
     fixture_artifact="$TMP_DIR/producer-$fixture-artifact"
-    if [[ "$fixture" == json-safe || "$fixture" == xml-safe || "$fixture" == png-safe ]]; then
+    if [[ "$fixture" == json-safe || "$fixture" == xml-safe || "$fixture" == png-safe || "$fixture" == png-itxt-xml-empty-credential-attribute ]]; then
         run_renderer "$fixture_repo" "$fixture_artifact" "$fixture_patch" >"$TMP_DIR/producer-$fixture.out"
         python3 - "$fixture_artifact/proposal-manifest.json" <<'PY'
 import json
@@ -1446,6 +1448,23 @@ from pathlib import Path
 assert json.loads(Path(sys.argv[1]).read_text())["status"] == "failed"
 PY
 done
+
+# The old/deleted iTXt XML payload must also match the preview consumer:
+# a credential-like attribute value propagates context to nested text.
+DELETED_XML_REPO="$TMP_DIR/deleted-xml-png-itxt-xml-attribute-context-repo"
+make_fake_repo "$DELETED_XML_REPO"
+DELETED_XML_PATCH="$TMP_DIR/deleted-xml-png-itxt-xml-attribute-context.patch"
+make_deleted_binary_credential_patch "$DELETED_XML_REPO" "$DELETED_XML_PATCH" "Description" '<root kind="api_token"><value>16+secret</value></root>' 0 0
+DELETED_XML_ARTIFACT="$TMP_DIR/deleted-xml-png-itxt-xml-attribute-context-artifact"
+if run_renderer "$DELETED_XML_REPO" "$DELETED_XML_ARTIFACT" "$DELETED_XML_PATCH" >"$TMP_DIR/deleted-xml-png-itxt-xml-attribute-context.out" 2>&1; then
+    fail 'producer transported unsafe deleted XML iTXt payload'
+fi
+python3 - "$DELETED_XML_ARTIFACT/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+assert json.loads(Path(sys.argv[1]).read_text())["status"] == "failed"
+PY
 
 # A normal Swift candidate is accepted only after both canonical harness cases,
 # compile-free real-app execution, comparison validation, and cleanup.

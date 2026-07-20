@@ -1339,6 +1339,41 @@ def main():
                 itxt_result = fresh_result(temp, f"itxt-{fixture}-{operation}-result")
                 assert_failure(run_wrapper(itxt_repo, itxt_request, itxt_result), itxt_result, "validate-request")
 
+        # XML iTXt credential context must match the producer: a nonempty
+        # credential-like attribute value taints nested text, while an empty
+        # credential-named attribute remains safe for both add and delete.
+        for fixture, metadata in (
+            ("xml-attribute-context", '<root kind="api_token"><value>16+secret</value></root>'),
+            ("xml-empty-credential-attribute", '<root api_token="">ok</root>'),
+        ):
+            for operation in ("add", "delete"):
+                itxt_root = temp / f"itxt-{fixture}-{operation}"
+                itxt_repo, _itxt_renderer_log, _itxt_verifier_log, _itxt_compile_log = make_fake_repo(itxt_root)
+                itxt_patch = temp / f"itxt-{fixture}-{operation}.patch"
+                make_itxt_binary_patch(
+                    itxt_patch,
+                    itxt_repo,
+                    operation,
+                    f"{fixture}-{operation}.png",
+                    "Description",
+                    metadata,
+                )
+                itxt_request = temp / f"itxt-{fixture}-{operation}.json"
+                write_json(itxt_request, request(f"KANBAN-ITXT-{fixture.upper()}-{operation.upper()}", itxt_patch))
+                itxt_result = fresh_result(temp, f"itxt-{fixture}-{operation}-result")
+                completed = run_wrapper(itxt_repo, itxt_request, itxt_result)
+                if fixture == "xml-attribute-context":
+                    assert_failure(completed, itxt_result, "validate-request")
+                else:
+                    if completed.returncode != 0:
+                        fail(
+                            f"safe XML iTXt {operation} resource patch was rejected: "
+                            f"stdout={completed.stdout!r}, stderr={completed.stderr!r}"
+                        )
+                    payload = json.loads((itxt_result / "preview-result.json").read_text(encoding="utf-8"))
+                    if payload.get("status") != "passed":
+                        fail(f"safe XML iTXt {operation} resource did not pass: {payload}")
+
         for operation, (source_patch, _changed_path) in binary_add_delete_patches.items():
             for mutation in ("missing", "extra"):
                 malformed_binary = temp / f"binary-{operation}-{mutation}.patch"
