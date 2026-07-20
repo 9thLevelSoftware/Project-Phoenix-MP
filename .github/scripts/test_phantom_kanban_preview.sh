@@ -141,6 +141,40 @@ def make_patch(path, marker="ok"):
     )
 
 
+def make_nul_swift_patch(path):
+    name = "iosApp/VitruvianPhoenix/VitruvianPhoenix/Opaque.swift"
+    write_private(path, (
+        f"diff --git a/{name} b/{name}\n"
+        "new file mode 100644\n"
+        "--- /dev/null\n"
+        f"+++ b/{name}\n"
+        "@@ -0,0 +1 @@\n"
+        "opaque\x00swift\n"
+    ).encode("utf-8"))
+
+
+def make_duplicate_json_patch(path):
+    resource = "shared/src/commonMain/composeResources/values/config.json"
+    write_private(path, (
+        f"diff --git a/{resource} b/{resource}\n"
+        f"--- a/{resource}\n+++ b/{resource}\n"
+        "@@ -1 +1 @@\n"
+        '-{\"title\":\"safe\"}\n'
+        '+{\"title\":\"safe\",\"title\":\"also-safe\"}\n'
+    ))
+
+
+def make_nested_xml_credential_patch(path):
+    resource = "shared/src/commonMain/composeResources/values/strings.xml"
+    write_private(path, (
+        f"diff --git a/{resource} b/{resource}\n"
+        f"--- a/{resource}\n+++ b/{resource}\n"
+        "@@ -1 +1 @@\n"
+        '-<string name=\"autostart_ready\">AUTO-START READY</string>\n'
+        '+<api_token><value>secret</value></api_token>\n'
+    ))
+
+
 def make_xml_patch(path):
     write_private(path, REAL_XML_PATCH)
 
@@ -303,6 +337,19 @@ def make_binary_add_delete_patch(path, changed_path, operation):
             resource.unlink()
             subprocess.run(["git", "-C", str(repo), "add", "-u", changed_path], check=True)
         diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--cached", "--binary", "--full-index"])
+    write_private(path, diff)
+
+
+def make_deleted_binary_credential_patch(path, repo):
+    resource = "shared/src/commonMain/composeResources/values/deleted-secret.png"
+    target = repo / resource
+    target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    target.write_bytes(valid_png(b"API_TOKEN=" + b"a" * 24))
+    subprocess.run(["git", "-C", str(repo), "add", resource], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "credential PNG baseline"], check=True)
+    target.unlink()
+    diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--binary", "--full-index"])
+    subprocess.run(["git", "-C", str(repo), "restore", "--", resource], check=True)
     write_private(path, diff)
 
 
@@ -1045,6 +1092,44 @@ def main():
             else:
                 fail("bounded process group left a descendant: " + mode)
 
+        closed_root = temp / "bounded-closed-output"
+        closed_repo, _closed_renderer_log, _closed_verifier_log, _closed_compile_log = make_fake_repo(closed_root)
+        closed_wrapper = closed_repo / ".github/scripts/phantom-kanban-preview.sh"
+        closed_wrapper.write_text(closed_wrapper.read_text(encoding="utf-8").replace("TRACKED_TIMEOUT_SECONDS = 30", "TRACKED_TIMEOUT_SECONDS = 1"), encoding="utf-8")
+        closed_wrapper.chmod(0o700)
+        subprocess.run(["git", "-C", str(closed_repo), "add", ".github/scripts/phantom-kanban-preview.sh"], check=True)
+        subprocess.run(["git", "-C", str(closed_repo), "commit", "-qm", "closed-output-timeout"], check=True)
+        closed_child_pid = temp / "closed-output-child.pid"
+        closed_request = temp / "closed-output.json"
+        write_json(closed_request, request("KANBAN-CLOSED-OUTPUT", patch))
+        closed_result = fresh_result(temp, "closed-output-result")
+        closed_env = {**os.environ, "PHOENIX_HARNESS_UDID": "11111111-2222-3333-4444-555555555555", "PHOENIX_PREVIEW_TEST_HOOK": "closed-output", "PHOENIX_PREVIEW_TEST_CHILD_PID": str(closed_child_pid)}
+        closed_process = subprocess.Popen([str(closed_wrapper), str(closed_request), str(closed_result)], cwd=closed_repo, env=closed_env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        try:
+            closed_stdout, closed_stderr = closed_process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            closed_process.kill()
+            closed_process.communicate(timeout=5)
+            fail("wrapper closed-output leader exceeded its tracked deadline")
+        if closed_process.returncode == 0:
+            fail("wrapper closed-output leader unexpectedly succeeded")
+        assert_failure(type("Completed", (), {"stdout": closed_stdout, "stderr": closed_stderr, "returncode": closed_process.returncode})(), closed_result, "validate-request")
+        deadline = time.monotonic() + 2
+        while not closed_child_pid.exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        if not closed_child_pid.exists():
+            fail("wrapper closed-output descendant did not start")
+        child_pid = int(closed_child_pid.read_text(encoding="ascii").strip())
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            try:
+                os.kill(child_pid, 0)
+            except ProcessLookupError:
+                break
+            time.sleep(0.05)
+        else:
+            fail("wrapper closed-output descendant survived cleanup")
+
         structured_json_patch = temp / "structured-json-credential.patch"
         make_structured_json_credential_patch(structured_json_patch)
         structured_json_request = temp / "structured-json-credential.json"
@@ -1058,6 +1143,27 @@ def main():
         write_json(structured_xml_request, request("KANBAN-STRUCTURED-XML-CREDENTIAL", structured_xml_patch))
         structured_xml_result = fresh_result(temp, "structured-xml-credential-result")
         assert_failure(run_wrapper(repo, structured_xml_request, structured_xml_result), structured_xml_result, "validate-request")
+
+        duplicate_json_patch = temp / "duplicate-json-resource.patch"
+        make_duplicate_json_patch(duplicate_json_patch)
+        duplicate_json_request = temp / "duplicate-json-resource.json"
+        write_json(duplicate_json_request, request("KANBAN-DUPLICATE-JSON", duplicate_json_patch))
+        duplicate_json_result = fresh_result(temp, "duplicate-json-resource-result")
+        assert_failure(run_wrapper(repo, duplicate_json_request, duplicate_json_result), duplicate_json_result, "validate-request")
+
+        nested_xml_patch = temp / "nested-xml-credential.patch"
+        make_nested_xml_credential_patch(nested_xml_patch)
+        nested_xml_request = temp / "nested-xml-credential.json"
+        write_json(nested_xml_request, request("KANBAN-NESTED-XML", nested_xml_patch))
+        nested_xml_result = fresh_result(temp, "nested-xml-credential-result")
+        assert_failure(run_wrapper(repo, nested_xml_request, nested_xml_result), nested_xml_result, "validate-request")
+
+        nul_swift_patch = temp / "nul-swift.patch"
+        make_nul_swift_patch(nul_swift_patch)
+        nul_swift_request = temp / "nul-swift.json"
+        write_json(nul_swift_request, request("KANBAN-NUL-SWIFT", nul_swift_patch))
+        nul_swift_result = fresh_result(temp, "nul-swift-result")
+        assert_failure(run_wrapper(repo, nul_swift_request, nul_swift_result), nul_swift_result, "validate-request")
 
         generic_json_patch = temp / "generic-json-credential.patch"
         make_generic_json_credential_patch(generic_json_patch)
@@ -1154,6 +1260,15 @@ def main():
                 fail(f"canonical binary {operation} resource claims were not bound: {binary_add_delete_manifest}")
             if binary_add_delete_manifest["allowedChangedFiles"] != [changed_path] or binary_add_delete_manifest["actualChangedFiles"] != [changed_path]:
                 fail(f"canonical binary {operation} resource paths were not bound: {binary_add_delete_manifest}")
+
+        deleted_binary_root = temp / "deleted-binary-credential-fixture"
+        deleted_binary_repo, _deleted_renderer_log, _deleted_verifier_log, _deleted_compile_log = make_fake_repo(deleted_binary_root)
+        deleted_binary_patch = temp / "deleted-binary-credential.patch"
+        make_deleted_binary_credential_patch(deleted_binary_patch, deleted_binary_repo)
+        deleted_binary_request = temp / "deleted-binary-credential.json"
+        write_json(deleted_binary_request, request("KANBAN-DELETED-BINARY-CREDENTIAL", deleted_binary_patch))
+        deleted_binary_result = fresh_result(temp, "deleted-binary-credential-result")
+        assert_failure(run_wrapper(deleted_binary_repo, deleted_binary_request, deleted_binary_result), deleted_binary_result, "validate-request")
 
         for operation, (source_patch, _changed_path) in binary_add_delete_patches.items():
             for mutation in ("missing", "extra"):

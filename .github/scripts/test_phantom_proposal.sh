@@ -541,6 +541,89 @@ os.chmod(out, 0o600)
 PY
 }
 
+make_binary_png_patch() {
+    local destination="$1"
+    local keyword="$2"
+    local text="$3"
+    python3 - "$destination" "$keyword" "$text" <<'PY'
+import os
+import struct
+import subprocess
+import sys
+import tempfile
+import zlib
+from pathlib import Path
+destination, keyword, text = sys.argv[1:]
+resource = "shared/src/commonMain/composeResources/values/icon.png"
+def chunk(kind, payload):
+    return len(payload).to_bytes(4, "big") + kind + payload + (zlib.crc32(kind + payload) & 0xffffffff).to_bytes(4, "big")
+ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
+itxt = keyword.encode("utf-8") + b"\x00\x00\x00\x00\x00" + text.encode("utf-8")
+png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"iTXt", itxt) + chunk(b"IDAT", zlib.compress(b"\x00" * 18)) + chunk(b"IEND", b"")
+with tempfile.TemporaryDirectory(prefix="proposal-png-patch-") as name:
+    repo = Path(name) / "repo"
+    target = repo / resource
+    target.parent.mkdir(mode=0o700, parents=True)
+    target.write_bytes(png)
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "PNG Fixture"], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", resource], check=True)
+    diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--cached", "--binary", "--full-index"])
+Path(destination).write_bytes(diff)
+os.chmod(destination, 0o600)
+PY
+}
+
+make_deleted_binary_credential_patch() {
+    local repo="$1"
+    local destination="$2"
+    python3 - "$repo" "$destination" <<'PY'
+import os
+import struct
+import subprocess
+import sys
+import zlib
+from pathlib import Path
+repo, destination = map(Path, sys.argv[1:])
+resource = Path("shared/src/commonMain/composeResources/values/deleted-secret.png")
+target = repo / resource
+target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+def chunk(kind, payload):
+    return len(payload).to_bytes(4, "big") + kind + payload + (zlib.crc32(kind + payload) & 0xffffffff).to_bytes(4, "big")
+ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
+itxt = b"XML:com.adobe.xmp\x00\x00\x00\x00\x00API_TOKEN=" + b"a" * 24
+target.write_bytes(b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"iTXt", itxt) + chunk(b"IDAT", zlib.compress(b"\x00" * 18)) + chunk(b"IEND", b""))
+subprocess.run(["git", "-C", str(repo), "add", str(resource)], check=True)
+subprocess.run(["git", "-C", str(repo), "commit", "-qm", "credential PNG baseline"], check=True)
+target.unlink()
+diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--binary", "--full-index"])
+subprocess.run(["git", "-C", str(repo), "restore", "--", str(resource)], check=True)
+Path(destination).write_bytes(diff)
+os.chmod(destination, 0o600)
+PY
+}
+
+make_nul_swift_patch() {
+    local destination="$1"
+    python3 - "$destination" <<'PY'
+import os
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+name = "iosApp/VitruvianPhoenix/VitruvianPhoenix/Opaque.swift"
+path.write_bytes((
+    f"diff --git a/{name} b/{name}\n"
+    "new file mode 100644\n"
+    "--- /dev/null\n"
+    f"+++ b/{name}\n"
+    "@@ -0,0 +1 @@\n"
+    "opaque\x00swift\n"
+).encode("utf-8"))
+os.chmod(path, 0o600)
+PY
+}
+
 make_rename_or_copy_patch() {
     local destination="$1"
     local operation="$2"
@@ -1093,6 +1176,63 @@ if process.returncode == 0:
     raise SystemExit("stubborn producer unexpectedly succeeded")
 PY
 
+# RED regression: both the leader and a surviving descendant close the output
+# descriptors.  EOF must not permit the producer to fall into an unbounded wait.
+CLOSED_OUTPUT_SCRIPT="$TMP_DIR/closed-output-producer.py"
+CLOSED_OUTPUT_CHILD_PID="$TMP_DIR/closed-output-producer-child.pid"
+python3 - "$CLOSED_OUTPUT_SCRIPT" "$CLOSED_OUTPUT_CHILD_PID" <<'PY'
+import os
+import sys
+from pathlib import Path
+script, child_pid = map(Path, sys.argv[1:])
+child_code = f"import os,time; open({str(child_pid)!r}, 'w').write(str(os.getpid())); os.close(1); os.close(2); time.sleep(60)"
+script.write_text(
+    "import os, subprocess, sys, time\n"
+    f"subprocess.Popen([sys.executable, '-c', {child_code!r}])\n"
+    "os.close(1); os.close(2); time.sleep(60)\n",
+    encoding="utf-8",
+)
+os.chmod(script, 0o700)
+PY
+CLOSED_OUTPUT_LOG="$TMP_DIR/closed-output-producer.log"
+python3 - "$BOUNDS_RENDERER" "$CLOSED_OUTPUT_SCRIPT" "$CLOSED_OUTPUT_LOG" "$CLOSED_OUTPUT_CHILD_PID" <<'PY'
+import os
+import signal
+import subprocess
+import sys
+import time
+from pathlib import Path
+renderer, script, log, child_pid_file = sys.argv[1:]
+command = ["bash", "-c", 'source "$1"; bounded_command "$2" 1 "$PWD" python3 "$3"', "_", renderer, log, script]
+started = time.monotonic()
+process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+try:
+    stdout, stderr = process.communicate(timeout=5)
+except subprocess.TimeoutExpired:
+    os.killpg(process.pid, signal.SIGKILL)
+    process.wait()
+    raise SystemExit(f"closed-output producer exceeded bounded deadline: stdout={stdout!r} stderr={stderr!r}")
+if time.monotonic() - started >= 4:
+    raise SystemExit("closed-output producer cleanup was not bounded")
+child_deadline = time.monotonic() + 2
+while not Path(child_pid_file).exists() and time.monotonic() < child_deadline:
+    time.sleep(0.02)
+if not Path(child_pid_file).exists():
+    raise SystemExit("closed-output producer descendant did not start")
+child_pid = int(Path(child_pid_file).read_text(encoding="ascii").strip())
+child_deadline = time.monotonic() + 2
+while time.monotonic() < child_deadline:
+    try:
+        os.kill(child_pid, 0)
+    except ProcessLookupError:
+        break
+    time.sleep(0.05)
+else:
+    raise SystemExit("closed-output producer descendant survived cleanup")
+if process.returncode == 0:
+    raise SystemExit("closed-output producer unexpectedly succeeded")
+PY
+
 # The default profile remains the strict profile for non-build children.
 DEFAULT_PROFILE_LOG="$TMP_DIR/default-profile.log"
 bash -c 'source "$1"; bounded_command "$2" 5 "$PWD" python3 -c "import resource; print(resource.getrlimit(resource.RLIMIT_FSIZE)[0], resource.getrlimit(resource.RLIMIT_NOFILE)[0])"' _ "$BOUNDS_RENDERER" "$DEFAULT_PROFILE_LOG"
@@ -1227,20 +1367,25 @@ PY
 # Producer-shaped resource fixtures exercise the same decoded-input boundary as
 # the preview consumer.  Safe structured resources pass; generic assignments,
 # opaque binary Swift, and canonical rename/copy metadata fail before rendering.
-for fixture in json-safe xml-safe json-credential xml-credential opaque-binary-swift rename copy; do
+for fixture in json-safe xml-safe json-duplicate xml-nested-credential json-credential xml-credential png-safe png-key-credential nul-swift opaque-binary-swift rename copy; do
     fixture_repo="$TMP_DIR/producer-$fixture-repo"
     make_fake_repo "$fixture_repo"
     fixture_patch="$TMP_DIR/producer-$fixture.patch"
     case "$fixture" in
         json-safe) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/labels.json" '{"title":"SAFE"}' ;;
         xml-safe) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<resources><string name="title">SAFE</string></resources>' ;;
+        json-duplicate) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/labels.json" '{"title":"SAFE","title":"ALSO-SAFE"}' ;;
+        xml-nested-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<api_token><value>secret</value></api_token>' ;;
         json-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/labels.json" '{"title":"TOKEN=REDACTED_REDACTED"}' ;;
         xml-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<resources><string name="title">TOKEN=REDACTED_REDACTED</string></resources>' ;;
+        png-safe) make_binary_png_patch "$fixture_patch" "XML:com.adobe.xmp" '{}' ;;
+        png-key-credential) make_binary_png_patch "$fixture_patch" "API_TOKEN" 'SAFE' ;;
+        nul-swift) make_nul_swift_patch "$fixture_patch" ;;
         opaque-binary-swift) make_binary_swift_patch "$fixture_patch" ;;
         rename|copy) make_rename_or_copy_patch "$fixture_patch" "$fixture" ;;
     esac
     fixture_artifact="$TMP_DIR/producer-$fixture-artifact"
-    if [[ "$fixture" == json-safe || "$fixture" == xml-safe ]]; then
+    if [[ "$fixture" == json-safe || "$fixture" == xml-safe || "$fixture" == png-safe ]]; then
         run_renderer "$fixture_repo" "$fixture_artifact" "$fixture_patch" >"$TMP_DIR/producer-$fixture.out"
         python3 - "$fixture_artifact/proposal-manifest.json" <<'PY'
 import json
@@ -1261,6 +1406,20 @@ assert result["status"] == "failed"
 PY
     fi
 done
+
+DELETED_BINARY_REPO="$TMP_DIR/deleted-binary-repo"
+make_fake_repo "$DELETED_BINARY_REPO"
+DELETED_BINARY_PATCH="$TMP_DIR/deleted-binary.patch"
+make_deleted_binary_credential_patch "$DELETED_BINARY_REPO" "$DELETED_BINARY_PATCH"
+if run_renderer "$DELETED_BINARY_REPO" "$TMP_DIR/deleted-binary-artifact" "$DELETED_BINARY_PATCH" >"$TMP_DIR/deleted-binary.out" 2>&1; then
+    fail 'producer transported a credential-bearing deleted PNG payload'
+fi
+python3 - "$TMP_DIR/deleted-binary-artifact/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+assert json.loads(Path(sys.argv[1]).read_text())["status"] == "failed"
+PY
 
 # A normal Swift candidate is accepted only after both canonical harness cases,
 # compile-free real-app execution, comparison validation, and cleanup.

@@ -322,7 +322,7 @@ def read_private_path(raw, limit, require_private=True):
 
 def test_hook_command(command):
     hook = os.environ.get("PHOENIX_PREVIEW_TEST_HOOK", "")
-    if hook not in {"request", "patch-verify", "gitrepo"} or STATE.private_dir is None:
+    if hook not in {"request", "patch-verify", "gitrepo", "closed-output"} or STATE.private_dir is None:
         return command
     args = [str(value) for value in command]
     if hook == "request" and STATE.stage == "validate-request" and args[-2:] == ["list", "--porcelain"]:
@@ -330,6 +330,8 @@ def test_hook_command(command):
     elif hook == "patch-verify" and STATE.stage == "patch-verify" and "apply" in args:
         matches = True
     elif hook == "gitrepo" and STATE.stage == "patch-verify" and "worktree" in args and "add" in args:
+        matches = True
+    elif hook == "closed-output" and STATE.stage == "validate-request" and args[-3:] == ["rev-parse", "--verify", "HEAD"]:
         matches = True
     else:
         matches = False
@@ -339,6 +341,16 @@ def test_hook_command(command):
     marker.write_text("ready\\n", encoding="ascii")
     os.chmod(marker, 0o600)
     child_marker = marker.with_name(marker.name + ".pid")
+    if hook == "closed-output":
+        external_marker = os.environ.get("PHOENIX_PREVIEW_TEST_CHILD_PID", "")
+        if not external_marker:
+            return ["/usr/bin/python3", "-c", "import time; time.sleep(60)"]
+        script = (
+            "import os, subprocess, sys, time; "
+            f"child = \"import os,time; open({external_marker!r}, 'w').write(str(os.getpid())); os.close(1); os.close(2); time.sleep(60)\"; "
+            "subprocess.Popen([sys.executable, '-c', child]); os.close(1); os.close(2); time.sleep(60)"
+        )
+        return ["/usr/bin/python3", "-c", script]
     script = (
         "import os, time; "
         f"open({str(child_marker)!r}, 'w', encoding='ascii').write(str(os.getpid()) + '\\n'); "
@@ -353,6 +365,16 @@ def process_group_exists(process):
     except OSError:
         return False
     return True
+
+
+def bounded_reap(process, timeout=PROCESS_REAP_TIMEOUT_SECONDS):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            return process.wait(timeout=min(0.05, max(0.0, deadline - time.monotonic())))
+        except subprocess.TimeoutExpired:
+            continue
+    raise subprocess.TimeoutExpired(process.args, timeout)
 
 
 def terminate_process_group(process, signum=signal.SIGTERM):
@@ -374,13 +396,15 @@ def terminate_process_group(process, signum=signal.SIGTERM):
     except OSError:
         pass
     try:
-        process.wait(timeout=PROCESS_REAP_TIMEOUT_SECONDS)
+        bounded_reap(process)
     except subprocess.TimeoutExpired:
         try:
             os.killpg(process.pid, signal.SIGKILL)
         except OSError:
             pass
-        process.wait()
+        # Keep the final reap bounded as well; an unbounded wait here defeats
+        # the deadline for a leader that closed its output descriptors.
+        bounded_reap(process)
 
 
 def run_tracked(command, cwd=REPO_ROOT, env=None, check=True):
@@ -434,7 +458,16 @@ def run_tracked(command, cwd=REPO_ROOT, env=None, check=True):
                         raise ValueError
                     captured.extend(block)
 
-        returncode = process.wait()
+        returncode = process.poll()
+        while returncode is None and time.monotonic() < deadline:
+            if STATE.interrupted is not None:
+                terminate_process_group(process, STATE.interrupted)
+                raise PreviewInterrupted
+            time.sleep(0.02)
+            returncode = process.poll()
+        if returncode is None:
+            terminate_process_group(process)
+            raise subprocess.TimeoutExpired(effective, TRACKED_TIMEOUT_SECONDS)
         if process_group_exists(process):
             terminate_process_group(process)
             if returncode == 0:
@@ -654,6 +687,8 @@ def snapshot_host_before_renderer():
         status = run_git(["status", "--porcelain=v2", "--untracked-files=all", "--ignored=no"]).stdout
     except (OSError, subprocess.SubprocessError, PreviewInterrupted):
         fail("validate-request")
+    if head != STATE.base_sha:
+        fail("validate-request")
     # The renderer is only safe against a clean source checkout.  Ignored local
     # build/simulator artifacts are intentionally excluded by --ignored=no.
     if status:
@@ -668,7 +703,7 @@ def assert_host_unchanged(stage):
         status = run_git(["status", "--porcelain=v2", "--untracked-files=all", "--ignored=no"]).stdout
     except (OSError, subprocess.SubprocessError, PreviewInterrupted):
         fail(stage)
-    if head != STATE.host_head_before_renderer or status != STATE.host_status_before_renderer:
+    if head != STATE.base_sha or head != STATE.host_head_before_renderer or status != STATE.host_status_before_renderer:
         fail(stage)
 
 
@@ -798,7 +833,7 @@ def scan_structured_xml_element(element, inherited_credential_context=False):
         raise ValueError
     if STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(text):
         raise ValueError
-    if credential_context and STRUCTURED_CREDENTIAL_VALUE_RE.fullmatch(text or ""):
+    if credential_context and text and text.casefold() not in {"false", "true", "0", "1"}:
         raise ValueError
     for child in element:
         scan_structured_xml_element(child, credential_context)
@@ -815,6 +850,8 @@ def scan_structured_xml(data):
 
 
 def scan_structured_text(data):
+    if b"\x00" in data:
+        raise ValueError
     text = data.decode("utf-8", "strict")
     stripped = text.lstrip()
     if STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(text):
@@ -837,20 +874,18 @@ def scan_png_metadata(data):
         payload = data[cursor + 8:cursor + 8 + length]
         if kind in (b"tEXt", b"iTXt", b"zTXt"):
             try:
-                text = png_text_payload(kind, payload)
+                keyword, text = png_text_payload(kind, payload)
             except ValueError:
                 text = None
-            if text is not None and (credential_detected(text) or png_host_path_detected(text)):
-                raise ValueError
+                keyword = None
+            if text is not None:
+                keyword_text = keyword.decode("utf-8", "strict")
+                if structured_credential_name(keyword_text) or credential_detected(text) or png_host_path_detected(text):
+                    raise ValueError
         cursor += 12 + length
 
 
-def scan_applied_patch_file(path):
-    info = os.lstat(path)
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
-        raise ValueError
-    data = path.read_bytes()
-    suffix = path.suffix.lower()
+def scan_applied_patch_bytes(data, suffix):
     if suffix == ".png":
         validate_png(data)
         return
@@ -863,6 +898,8 @@ def scan_applied_patch_file(path):
         scan_structured_xml(data)
         return
     if suffix == ".kt":
+        if b"\x00" in data:
+            raise ValueError
         text = data.decode("utf-8", "strict")
         if CREDENTIAL_ASSIGNMENT_RE.search(text) or credential_detected(data):
             raise ValueError
@@ -877,11 +914,42 @@ def scan_applied_patch_file(path):
     raise ValueError
 
 
+def scan_applied_patch_file(path):
+    info = os.lstat(path)
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid():
+        raise ValueError
+    scan_applied_patch_bytes(path.read_bytes(), path.suffix.lower())
+
+
+def baseline_blob(repo, relative):
+    object_name = f"{STATE.base_sha}:{relative}"
+    exists = run_git(["cat-file", "-e", object_name], cwd=repo, check=False)
+    if exists.returncode != 0:
+        # Git reports an absent path from a valid immutable tree with status
+        # 128 (rather than 1 on all supported Git versions); no baseline blob
+        # exists for a binary addition.
+        return None
+    blob = run_git(["cat-file", "blob", object_name], cwd=repo, check=False)
+    if blob.returncode != 0:
+        raise ValueError
+    return blob.stdout
+
+
 def scan_applied_patch_files(repo, paths):
     for relative in paths:
         target = repo / relative
         if target.exists():
             scan_applied_patch_file(target)
+        # A binary deletion has no candidate path left to scan.  Binary
+        # replacements also carry the old payload in Git's transport, so scan
+        # the immutable base blob after git has authoritatively decoded/applied
+        # the patch.  Non-PNG binary resources are rejected by the patch parser.
+        if STATE.patch_binary:
+            old = baseline_blob(repo, relative)
+            if old is not None:
+                if Path(relative).suffix.lower() != ".png":
+                    raise ValueError
+                scan_applied_patch_bytes(old, ".png")
 
 
 def verify_snapshot_application(snapshot):
@@ -1860,13 +1928,14 @@ def png_text_payload(kind, payload):
         separator = payload.find(b"\x00")
         if separator <= 0:
             raise ValueError
+        keyword = payload[:separator]
         text = payload[separator + 1:]
         if kind == b"tEXt":
-            return text
+            return keyword, text
         if not text or text[0] != 0:
             raise ValueError
         try:
-            return zlib.decompress(text[1:])
+            return keyword, zlib.decompress(text[1:])
         except zlib.error:
             raise ValueError
     if kind == b"iTXt":
@@ -1889,12 +1958,16 @@ def png_text_payload(kind, payload):
                 text = zlib.decompress(text)
             except zlib.error:
                 raise ValueError
-        return text
+        keyword = payload[:keyword_end]
+        return keyword, text
     raise ValueError
 
 
 def validate_png_text_chunk(kind, payload):
-    text = png_text_payload(kind, payload)
+    keyword, text = png_text_payload(kind, payload)
+    keyword_text = keyword.decode("utf-8", "strict")
+    if structured_credential_name(keyword_text):
+        raise ValueError
     scan_structured_text(text)
     if credential_detected(text) or png_host_path_detected(text):
         raise ValueError

@@ -433,6 +433,16 @@ assert_original_unchanged() {
     chmod 600 "$head_file"
 }
 
+assert_base_binding() {
+    local current_head=""
+    if ! current_head="$(git -C "$REPO_ROOT" rev-parse --verify HEAD 2>"$PRIVATE_DIR/base-binding.log")"; then
+        fail 'host HEAD could not be bound to the verified base'
+    fi
+    if [[ "$current_head" != "$BASE_SHA" ]]; then
+        fail 'host HEAD does not equal the verified base SHA'
+    fi
+}
+
 create_patch_metadata() {
     local input="$1"
     local snapshot="$2"
@@ -733,20 +743,34 @@ PY
 scan_candidate_contents() {
     local root="$1"
     local metadata="$2"
-    python3 - "$root" "$metadata" <<'PY'
+    local base_sha="$3"
+    python3 - "$root" "$metadata" "$base_sha" "$MAX_PATCH_BYTES" <<'PY'
 import json
 import os
 import re
 import stat
 import struct
+import subprocess
 import sys
 import xml.etree.ElementTree as element_tree
 import zlib
 from pathlib import Path
 root = Path(sys.argv[1])
-paths = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))["paths"]
+base_sha = sys.argv[3]
+max_blob_bytes = int(sys.argv[4])
 assignment = re.compile(r"(?i)\b(?:[A-Za-z0-9_.-]*(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?key|client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|authorization|token|secret|password|passwd|credential)[A-Za-z0-9_.-]*)\b[ \t]*(?::[ \t]*[A-Za-z_][A-Za-z0-9_.<>?, \t\[\]]*)?[ \t]*[:=][ \t]*['\"]?[A-Za-z0-9._~+/=-]{16,}['\"]?")
 name = re.compile(r"(?i)(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?(?:key|token)|client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|authorization|token|secret|password|passwd|credential)")
+
+def no_duplicate_keys(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError
+        result[key] = value
+    return result
+
+metadata = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"), object_pairs_hook=no_duplicate_keys)
+paths = metadata["paths"]
 
 def scan_json(value):
     if isinstance(value, dict):
@@ -760,8 +784,9 @@ def scan_json(value):
     elif isinstance(value, str) and assignment.search(value):
         raise SystemExit(1)
 
-def scan_xml(element):
+def scan_xml(element, inherited_credential_context=False):
     local = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
+    credential_context = inherited_credential_context or bool(name.search(local))
     if name.search(local) and (element.text or "").strip():
         raise SystemExit(1)
     for key, value in element.attrib.items():
@@ -770,16 +795,20 @@ def scan_xml(element):
     text = (element.text or "").strip()
     if assignment.search(text):
         raise SystemExit(1)
+    if credential_context and text and text.casefold() not in {"false", "true", "0", "1"}:
+        raise SystemExit(1)
     for child in element:
-        scan_xml(child)
+        scan_xml(child, credential_context)
 
 def scan_text(data):
+    if b"\x00" in data:
+        raise SystemExit(1)
     text = data.decode("utf-8", "strict")
     if assignment.search(text):
         raise SystemExit(1)
     stripped = text.lstrip()
     if stripped.startswith(("{", "[")):
-        scan_json(json.loads(text))
+        scan_json(json.loads(text, object_pairs_hook=no_duplicate_keys))
     elif stripped.startswith("<"):
         try:
             scan_xml(element_tree.fromstring(text))
@@ -820,7 +849,7 @@ def scan_png(data):
         if kind in (b"tEXt", b"iTXt", b"zTXt"):
             try:
                 if kind == b"tEXt":
-                    text = payload.split(b"\x00", 1)[1]
+                    keyword, text = payload.split(b"\x00", 1)
                 elif kind == b"zTXt":
                     keyword, compressed = payload.split(b"\x00", 1)
                     if len(compressed) < 2 or compressed[0] != 0:
@@ -828,12 +857,16 @@ def scan_png(data):
                     text = zlib.decompress(compressed[1:])
                 else:
                     keyword_end = payload.index(b"\x00")
-                    cursor = keyword_end + 3
-                    language_end = payload.index(b"\x00", cursor)
+                    keyword = payload[:keyword_end]
+                    metadata_cursor = keyword_end + 3
+                    language_end = payload.index(b"\x00", metadata_cursor)
                     translated_end = payload.index(b"\x00", language_end + 1)
                     text = payload[translated_end + 1:]
                     if payload[keyword_end + 1] == 1:
                         text = zlib.decompress(text)
+                keyword_text = keyword.decode("utf-8", "strict")
+                if name.search(keyword_text):
+                    raise ValueError
                 scan_text(text)
             except (ValueError, IndexError, UnicodeError, zlib.error):
                 raise SystemExit(1)
@@ -841,19 +874,32 @@ def scan_png(data):
     if not seen_end:
         raise SystemExit(1)
 
-for relative in paths:
-    path = root / relative
-    if not path.exists():
-        continue
-    info = os.lstat(path)
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+def baseline_blob(relative):
+    object_name = f"{base_sha}:{relative}"
+    exists = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "-e", object_name],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if exists.returncode != 0:
+        return None
+    blob = subprocess.run(
+        ["git", "-C", str(root), "cat-file", "blob", object_name],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if blob.returncode != 0 or len(blob.stdout) > max_blob_bytes:
         raise SystemExit(1)
-    data = path.read_bytes()
-    suffix = path.suffix.lower()
+    return blob.stdout
+
+def scan_path(relative, data):
+    suffix = Path(relative).suffix.lower()
     if suffix == ".png":
         scan_png(data)
     elif suffix == ".json":
-        scan_json(json.loads(data.decode("utf-8")))
+        scan_json(json.loads(data.decode("utf-8"), object_pairs_hook=no_duplicate_keys))
         scan_text(data)
     elif suffix == ".xml":
         try:
@@ -865,6 +911,20 @@ for relative in paths:
     else:
         # Opaque/compressed binary resource formats are not scannable.
         raise SystemExit(1)
+
+for relative in paths:
+    path = root / relative
+    if path.exists():
+        info = os.lstat(path)
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+            raise SystemExit(1)
+        scan_path(relative, path.read_bytes())
+    if metadata.get("binary"):
+        old = baseline_blob(relative)
+        if old is not None:
+            if Path(relative).suffix.lower() != ".png":
+                raise SystemExit(1)
+            scan_path(relative, old)
 PY
 }
 
@@ -1023,6 +1083,19 @@ def group_exists():
         return False
     return True
 
+def reap_leader(timeout=5):
+    # Never use an unbounded wait: a direct leader can close its output while
+    # remaining alive, and descendants can keep the process group around after
+    # the leader exits.  The group kill below handles descendants; this bounded
+    # loop reaps only our direct child.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            return proc.wait(timeout=min(0.05, max(0.0, deadline - time.monotonic())))
+        except subprocess.TimeoutExpired:
+            continue
+    raise subprocess.TimeoutExpired(command, timeout)
+
 def terminate_group():
     signal_group(signal.SIGTERM)
     grace_deadline = time.monotonic() + 0.25
@@ -1035,10 +1108,12 @@ def terminate_group():
     # leader already exited; descendants can retain the process group and pipe.
     signal_group(signal.SIGKILL)
     try:
-        proc.wait(timeout=5)
+        reap_leader()
     except subprocess.TimeoutExpired:
         signal_group(signal.SIGKILL)
-        proc.wait()
+        # A second bounded reap is the final fail-closed attempt.  Do not fall
+        # back to proc.wait(), which could hang the producer indefinitely.
+        reap_leader()
 
 def forward_signal(signum, _frame):
     interrupted["code"] = 128 + signum
@@ -1087,9 +1162,23 @@ with log.open("wb") as stream:
         terminate_group()
         selector.close()
         raise SystemExit(result)
-    result = proc.wait()
-selector.close()
-raise SystemExit(result)
+    # EOF is not proof that the command is finished: a leader may close both
+    # descriptors while continuing to run, or a descendant may have closed
+    # them while retaining the process group.  Inspect the leader and group
+    # before any reap, and keep the EOF path on the same deadline.
+    leader_result = proc.poll()
+    while leader_result is None and time.monotonic() < deadline:
+        time.sleep(0.02)
+        leader_result = proc.poll()
+    if leader_result is None:
+        terminate_group()
+        selector.close()
+        raise SystemExit(124)
+    if group_exists():
+        terminate_group()
+        leader_result = 1 if leader_result == 0 else leader_result
+    selector.close()
+    raise SystemExit(leader_result)
 PY
 }
 
@@ -1765,6 +1854,10 @@ PY
     create_empty_dir "$PRIVATE_DIR/gradle-user-home" || fail 'proposal private Gradle storage could not be created'
     STAGE="verify committed base"
     record_original_state
+    # Bind the initial host snapshot to the immutable proposal base before any
+    # baseline execution.  Later self-consistency checks cannot repair a base
+    # that was already allowed to drift here.
+    assert_base_binding
     if ! FIXTURE_SHA256="$(sha256_file "$FIXTURE_SOURCE")"; then fail 'canonical fixture hash could not be calculated'; fi
     [[ "$FIXTURE_SHA256" == "$EXPECTED_FIXTURE_SHA256" ]] || fail 'canonical fixture source hash is not allowlisted'
     STAGE="resolve Java runtime"
@@ -1814,7 +1907,7 @@ PY
     local status_after_patch="$PRIVATE_DIR/status-after-patch"
     local actual_files="$PRIVATE_DIR/actual-files.json"
     status_paths_and_validate "$WORKTREE" "$patch_metadata" "$status_after_patch" "$actual_files" || fail 'patch created an unsafe or unexpected worktree change'
-    if ! scan_candidate_contents "$WORKTREE" "$patch_metadata"; then fail 'candidate contains an unsafe or unscannable decoded resource'; fi
+    if ! scan_candidate_contents "$WORKTREE" "$patch_metadata" "$BASE_SHA"; then fail 'candidate contains an unsafe or unscannable decoded resource'; fi
     local applied_diff="$PRIVATE_DIR/applied.patch"
     if ! git -C "$WORKTREE" diff --binary --full-index "$BASE_SHA" -- >"$applied_diff" 2>&1; then fail 'applied worktree diff could not be recorded'; fi
     chmod 600 "$applied_diff"
