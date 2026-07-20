@@ -115,6 +115,25 @@ def reject_secret_environment():
                 fail()
 
 
+def reject_secret_arguments(arguments):
+    name_pattern = re.compile(
+        r"(?:TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE[_-]?KEY|CREDENTIAL|API[_-]?KEY|ANON[_-]?KEY|AUTHORIZATION|BEARER)",
+        re.IGNORECASE,
+    )
+    value_patterns = (
+        re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----", re.IGNORECASE),
+        re.compile(r"\b(?:gh[pousr]|github_pat|glpat|xox[baprs]|sk|rk)[_-][A-Za-z0-9_./=-]{20,}\b", re.IGNORECASE),
+        re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"),
+        re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{16,}", re.IGNORECASE),
+        re.compile(r"(?i)\b(?:https?|ssh|file)://[^\s]+"),
+    )
+    for argument in arguments:
+        if not isinstance(argument, str) or "\x00" in argument:
+            fail()
+        if name_pattern.search(argument) or any(pattern.search(argument) for pattern in value_patterns):
+            fail()
+
+
 def canonical_input_path(raw):
     if not isinstance(raw, str) or not raw or "\x00" in raw or "\n" in raw or "\r" in raw or "\\" in raw:
         fail()
@@ -259,39 +278,65 @@ def java_version_ok(java):
     return result.returncode == 0 and bool(re.search(rb'version\s+["\']', result.stderr))
 
 
+def trusted_directory(path, allowed_owners):
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    return (
+        stat.S_ISDIR(info.st_mode)
+        and info.st_uid in allowed_owners
+        and not (stat.S_IMODE(info.st_mode) & 0o022)
+    )
+
+
+def trusted_java_file(path, allowed_owners):
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return False
+    mode = stat.S_IMODE(info.st_mode)
+    return (
+        stat.S_ISREG(info.st_mode)
+        and info.st_uid in allowed_owners
+        and not (mode & 0o022)
+        and bool(mode & 0o111)
+        and os.access(path, os.X_OK)
+    )
+
+
 def valid_java_home(raw):
     if not isinstance(raw, str) or not raw or "\x00" in raw or "\n" in raw or "\r" in raw or "\\" in raw:
         return None
     if not os.path.isabs(raw) or os.path.normpath(raw) != raw:
         return None
-    java = Path(raw) / "bin/java"
+    allowed_owners = {0, os.getuid()}
     try:
-        resolved = java.resolve(strict=True)
+        canonical = Path(raw).resolve(strict=True)
     except (OSError, RuntimeError):
         return None
-    if resolved.parent.name != "bin" or not java_version_ok(resolved):
+    java = canonical / "bin" / "java"
+    if not trusted_directory(canonical, allowed_owners):
         return None
-    return raw
+    if not trusted_directory(java.parent, allowed_owners):
+        return None
+    if not trusted_java_file(java, allowed_owners):
+        return None
+    if not java_version_ok(java):
+        return None
+    return str(canonical)
 
 
 def bootstrap_java():
-    configured = os.environ.get("JAVA_HOME", "")
-    if configured:
-        configured_home = valid_java_home(configured)
-        if configured_home:
-            return configured_home
-    executable = shutil.which("java", path=SYSTEM_PATH)
-    if not executable:
+    # JAVA_HOME is an explicit trust assertion.  An unset value is not
+    # substituted with a system/PATH runtime, and an empty/invalid assertion
+    # fails before any simulator or build tool is started.
+    if "JAVA_HOME" not in os.environ:
         fail()
-    java = Path(executable)
-    try:
-        resolved = java.resolve(strict=True)
-    except (OSError, RuntimeError):
+    configured_home = valid_java_home(os.environ["JAVA_HOME"])
+    if configured_home is None:
         fail()
-    if resolved.parent.name != "bin" or not java_version_ok(resolved):
-        fail()
-    home = resolved.parent.parent
-    return str(home)
+    return configured_home
 
 
 def child_environment(private_root, java_home):
@@ -428,24 +473,38 @@ def remove_config(target, expected_identity):
 def parse_devices(payload):
     try:
         data = json.loads(payload.decode("utf-8"))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
         fail()
-    candidates = []
-    devices = data.get("devices", {})
+    if not isinstance(data, dict):
+        fail()
+    devices = data.get("devices")
     if not isinstance(devices, dict):
         fail()
+    candidates = []
     for runtime, entries in devices.items():
-        if not isinstance(runtime, str) or not runtime.endswith(SIMULATOR_RUNTIME_SUFFIX) or not isinstance(entries, list):
+        if not isinstance(runtime, str):
+            fail()
+        if not runtime.endswith(SIMULATOR_RUNTIME_SUFFIX):
             continue
+        if not isinstance(entries, list):
+            fail()
         for device in entries:
-            if not isinstance(device, dict) or device.get("isAvailable") is False:
+            if not isinstance(device, dict):
+                fail()
+            if device.get("isAvailable") is False:
                 continue
-            if device.get("name") != SIMULATOR_NAME or not UDID_RE.fullmatch(str(device.get("udid", ""))):
-                continue
+            if device.get("isAvailable") is not True:
+                fail()
+            name = device.get("name")
+            udid = device.get("udid")
             state = device.get("state")
+            if not isinstance(name, str) or not isinstance(udid, str) or not isinstance(state, str):
+                fail()
+            if name != SIMULATOR_NAME or not UDID_RE.fullmatch(udid):
+                continue
             if state not in {"Booted", "Shutdown"}:
                 continue
-            candidates.append((state == "Booted", str(device["udid"]), runtime, state))
+            candidates.append((state == "Booted", udid, runtime, state))
     if not candidates:
         fail()
     candidates.sort(key=lambda item: (not item[0], item[1]))
@@ -531,7 +590,12 @@ def launch(requested_worktree):
         validate_app(app)
         run_tool(private_root, "simulator-install", ["xcrun", "simctl", "install", udid, str(app)], target, environment)
         installed = True
-        run_tool(private_root, "simulator-launch", ["xcrun", "simctl", "launch", udid, EXPECTED_BUNDLE_ID], target, environment)
+        launch_environment = dict(environment)
+        # simctl only forwards SIMCTL_CHILD_* variables into the launched
+        # application.  Keeping this on the launch boundary is deliberate:
+        # PHOENIX_SIMULATOR_FIXTURE in xcrun's own environment is insufficient.
+        launch_environment["SIMCTL_CHILD_PHOENIX_SIMULATOR_FIXTURE"] = EXPECTED_FIXTURE
+        run_tool(private_root, "simulator-launch", ["xcrun", "simctl", "launch", udid, EXPECTED_BUNDLE_ID], target, launch_environment)
         source_unchanged(target, base_sha, expected_status)
         if created_config:
             remove_config(target, config_file_identity)
@@ -572,12 +636,20 @@ def descriptor_from_path(raw):
         fail()
     if len(data) > MAX_DESCRIPTOR_BYTES:
         fail()
+
+    def reject_duplicate_keys(entries):
+        result = {}
+        for key, item in entries:
+            if key in result:
+                raise ValueError
+            result[key] = item
+        return result
+
     try:
-        pairs = []
-        value = json.loads(data.decode("utf-8"), object_pairs_hook=lambda entries: pairs.append(entries) or dict(entries))
-    except (UnicodeDecodeError, json.JSONDecodeError):
+        value = json.loads(data.decode("utf-8"), object_pairs_hook=reject_duplicate_keys)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
         fail()
-    if not isinstance(value, dict) or len(pairs) != 1:
+    if not isinstance(value, dict):
         fail()
     expected_keys = {
         "schemaVersion",
@@ -591,15 +663,28 @@ def descriptor_from_path(raw):
     }
     if set(value) != expected_keys:
         fail()
-    if value.get("schemaVersion") != 1 or value.get("status") != "running":
+    if type(value.get("schemaVersion")) is not int or value["schemaVersion"] != 1:
         fail()
-    if not isinstance(value.get("simulatorUdid"), str) or not UDID_RE.fullmatch(value["simulatorUdid"]):
+    string_fields = (
+        "status",
+        "simulatorUdid",
+        "bundleId",
+        "fixture",
+        "baseSha",
+        "launchCommand",
+        "cleanupCommand",
+    )
+    if any(type(value.get(field)) is not str for field in string_fields):
         fail()
-    if value.get("bundleId") != EXPECTED_BUNDLE_ID or value.get("fixture") != EXPECTED_FIXTURE:
+    if value["status"] != "running":
         fail()
-    if not isinstance(value.get("baseSha"), str) or not SHA1_RE.fullmatch(value["baseSha"]):
+    if not UDID_RE.fullmatch(value["simulatorUdid"]):
         fail()
-    if value.get("launchCommand") != LAUNCH_COMMAND or value.get("cleanupCommand") != CLEANUP_COMMAND:
+    if value["bundleId"] != EXPECTED_BUNDLE_ID or value["fixture"] != EXPECTED_FIXTURE:
+        fail()
+    if not SHA1_RE.fullmatch(value["baseSha"]):
+        fail()
+    if value["launchCommand"] != LAUNCH_COMMAND or value["cleanupCommand"] != CLEANUP_COMMAND:
         fail()
     return value
 
@@ -634,6 +719,7 @@ def stop(raw_descriptor):
 
 def main(argv):
     reject_secret_environment()
+    reject_secret_arguments(argv)
     if not argv:
         usage()
     if argv[0] == "launch":

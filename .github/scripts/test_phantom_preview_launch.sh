@@ -40,6 +40,7 @@ ALLOWED_CHILD_ENV = {
     "LANG",
     "LC_ALL",
     "PHOENIX_SIMULATOR_FIXTURE",
+    "SIMCTL_CHILD_PHOENIX_SIMULATOR_FIXTURE",
     "PHOENIX_PREVIEW_LAUNCH",
     "SDKROOT",
     "CPATH",
@@ -101,6 +102,9 @@ with log.open("a", encoding="utf-8") as stream:
 with (state / "child-env.jsonl").open("a", encoding="utf-8") as stream:
     stream.write(json.dumps(dict(sorted(os.environ.items())), sort_keys=True) + "\\n")
 if args[:3] == ["simctl", "list", "devices"]:
+    if (state / "fail-device-output").exists():
+        print("{{malformed", end="")
+        raise SystemExit(0)
     print(json.dumps({{"devices": {{"com.apple.CoreSimulator.SimRuntime.iOS-26-5": [{{
         "state": "Booted" if (state / "booted").exists() else "Shutdown",
         "isAvailable": True,
@@ -119,6 +123,10 @@ if len(args) >= 4 and args[:2] == ["simctl", "install"]:
     (state / "installed").write_text(args[3], encoding="utf-8")
     raise SystemExit(0)
 if len(args) >= 4 and args[:2] == ["simctl", "launch"]:
+    with (state / "simctl-launch-env.jsonl").open("a", encoding="utf-8") as stream:
+        stream.write(json.dumps(dict(sorted(os.environ.items())), sort_keys=True) + "\\n")
+    if os.environ.get("SIMCTL_CHILD_PHOENIX_SIMULATOR_FIXTURE") != "just-lift-connected":
+        raise SystemExit(25)
     if (state / "fail-launch").exists():
         raise SystemExit(24)
     (state / "running").write_text(args[3], encoding="utf-8")
@@ -315,18 +323,30 @@ def assert_rejected(result, message, command_log):
         fail(message + ": reached fake simulator/build tools")
 
 
+def assert_safe_failed(result, message):
+    if result.returncode == 0:
+        fail(message + ": accepted")
+    if result.stdout.strip():
+        fail(message + f": emitted public stdout {result.stdout!r}")
+    if "Traceback" in result.stderr or "/" in result.stderr or "UNSAFE_INHERITED_VALUE" in result.stderr:
+        fail(message + f": leaked unsafe diagnostics {result.stderr!r}")
+
+
 with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_name:
     root = Path(temp_name)
     state = root / "state"
     state.mkdir(mode=0o700)
     (root / "test-home").mkdir(mode=0o700)
     (root / "test-tmp").mkdir(mode=0o700)
-    java_home = root / "fake-jdk"
-    (java_home / "bin").mkdir(mode=0o700, parents=True)
+    canonical_java_home = root / "cellar" / "openjdk@21" / "21.0.8" / "libexec" / "openjdk.jdk" / "Contents" / "Home"
+    (canonical_java_home / "bin").mkdir(mode=0o700, parents=True)
     write_executable(
-        java_home / "bin/java",
+        canonical_java_home / "bin/java",
         '#!/usr/bin/env bash\nif [[ "${1-}" == "-version" ]]; then printf \'openjdk version "21.0.8" fake\\n\' >&2; exit 0; fi\nexit 2\n',
     )
+    java_home = root / "package-manager" / "opt" / "openjdk@21"
+    java_home.parent.mkdir(mode=0o700, parents=True)
+    java_home.symlink_to(canonical_java_home, target_is_directory=True)
     host = make_repo(root, state)
     fake_bin, env_log, command_log = make_fake_tools(root, state)
     command_log.write_text("", encoding="utf-8")
@@ -362,6 +382,15 @@ with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_
             fail("fixture was not present in child environment")
         if child_env.get("PHOENIX_PREVIEW_LAUNCH") != "1":
             fail("persistent-launch marker was not present in child environment")
+        if child_env.get("JAVA_HOME") != str(canonical_java_home.resolve()):
+            fail(f"child did not receive canonical package-manager JAVA_HOME: {child_env.get('JAVA_HOME')!r}")
+
+    launch_envs = [
+        json.loads(line)
+        for line in (state / "simctl-launch-env.jsonl").read_text(encoding="utf-8").splitlines()
+    ]
+    if len(launch_envs) != 1 or launch_envs[0].get("SIMCTL_CHILD_PHOENIX_SIMULATOR_FIXTURE") != "just-lift-connected":
+        fail(f"simctl launch did not receive the exact child fixture environment: {launch_envs!r}")
 
     # Reuse the booted simulator through a caller-owned registered worktree.
     worktree = root / "clean-worktree"
@@ -412,6 +441,48 @@ with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_
     secret_env = invocation_env(fake_bin, root, java_home)
     secret_env["GITHUB_TOKEN"] = "not-a-real-token-but-refuse-it"
     assert_rejected(run([str(host / ".github/scripts/phantom-preview-launch.sh"), "launch", "just-lift-connected"], cwd=host, env=secret_env), "credential-like environment", command_log)
+
+    # Explicitly empty/invalid JAVA_HOME fails closed; the launcher must not
+    # silently use /usr/bin/java or another PATH fallback.
+    for java_value, label in [("", "empty JAVA_HOME"), (str(root / "missing-jdk"), "missing JAVA_HOME")]:
+        command_log.write_text("", encoding="utf-8")
+        bad_java_env = invocation_env(fake_bin, root, java_home)
+        bad_java_env["JAVA_HOME"] = java_value
+        assert_rejected(
+            run([str(host / ".github/scripts/phantom-preview-launch.sh"), "launch", "just-lift-connected"], cwd=host, env=bad_java_env),
+            label,
+            command_log,
+        )
+    unsafe_home = root / "unsafe-home-jdk"
+    shutil.copytree(canonical_java_home, unsafe_home)
+    unsafe_home.chmod(0o777)
+    unsafe_java_env = invocation_env(fake_bin, root, unsafe_home)
+    command_log.write_text("", encoding="utf-8")
+    assert_rejected(
+        run([str(host / ".github/scripts/phantom-preview-launch.sh"), "launch", "just-lift-connected"], cwd=host, env=unsafe_java_env),
+        "group/world-writable JDK home",
+        command_log,
+    )
+    unsafe_executable_home = root / "unsafe-executable-jdk"
+    shutil.copytree(canonical_java_home, unsafe_executable_home)
+    (unsafe_executable_home / "bin/java").chmod(0o777)
+    unsafe_executable_env = invocation_env(fake_bin, root, unsafe_executable_home)
+    command_log.write_text("", encoding="utf-8")
+    assert_rejected(
+        run([str(host / ".github/scripts/phantom-preview-launch.sh"), "launch", "just-lift-connected"], cwd=host, env=unsafe_executable_env),
+        "group/world-writable Java executable",
+        command_log,
+    )
+    symlink_executable_home = root / "symlink-executable-jdk"
+    (symlink_executable_home / "bin").mkdir(mode=0o700, parents=True)
+    (symlink_executable_home / "bin/java").symlink_to(canonical_java_home / "bin/java")
+    symlink_executable_env = invocation_env(fake_bin, root, symlink_executable_home)
+    command_log.write_text("", encoding="utf-8")
+    assert_rejected(
+        run([str(host / ".github/scripts/phantom-preview-launch.sh"), "launch", "just-lift-connected"], cwd=host, env=symlink_executable_env),
+        "symlink Java executable",
+        command_log,
+    )
 
     # Dirty tracked and untracked source is rejected. Build output remains ignored and harmless.
     tracked = host / "shared" / "tracked-source.txt"
@@ -469,6 +540,56 @@ with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_
     descriptor_path.write_text(json.dumps(descriptor) + "\n", encoding="utf-8")
     descriptor_path.chmod(0o600)
 
+    malformed_descriptor_cases = [
+        ('{"schemaVersion":', "malformed descriptor JSON"),
+        (json.dumps({**descriptor, "schemaVersion": True}) + "\n", "boolean schemaVersion"),
+        (
+            "{" + ",".join(
+                [json.dumps(key) + ":" + json.dumps(value) for key, value in descriptor.items()]
+                + [json.dumps("schemaVersion") + ":1"]
+            ) + "}\n",
+            "duplicate descriptor key",
+        ),
+        (json.dumps({**descriptor, "launchCommand": "/Users/host/unsafe-command"}) + "\n", "host path descriptor command"),
+    ]
+    for payload, label in malformed_descriptor_cases:
+        descriptor_path.write_text(payload, encoding="utf-8")
+        descriptor_path.chmod(0o600)
+        command_log.write_text("", encoding="utf-8")
+        assert_rejected(
+            run([str(host / ".github/scripts/phantom-preview-launch.sh"), "stop", str(descriptor_path)], cwd=root, env=invocation_env(fake_bin, root, java_home)),
+            label,
+            command_log,
+        )
+    secret_descriptor_path = root / "secret-session.json"
+    secret_descriptor_path.write_text(json.dumps(descriptor) + "\n", encoding="utf-8")
+    secret_descriptor_path.chmod(0o600)
+    command_log.write_text("", encoding="utf-8")
+    assert_rejected(
+        run([str(host / ".github/scripts/phantom-preview-launch.sh"), "stop", str(secret_descriptor_path)], cwd=root, env=invocation_env(fake_bin, root, java_home)),
+        "credential-like descriptor path",
+        command_log,
+    )
+    descriptor_path.write_text(json.dumps(descriptor) + "\n", encoding="utf-8")
+    descriptor_path.chmod(0o600)
+
+    # Malformed simulator JSON is a generic safe failure, not a traceback or
+    # a diagnostic containing the private fixture path.
+    (state / "fail-device-output").write_text("malformed\\n", encoding="ascii")
+    command_log.write_text("", encoding="utf-8")
+    malformed_device = run_launch(host, fake_bin, root, java_home, "launch", "just-lift-connected")
+    assert_safe_failed(malformed_device, "malformed simulator device output")
+    if (host / CONFIG_REL).exists() or (state / "running").exists() or (state / "installed").exists():
+        fail("malformed simulator output left app/config state behind")
+    command_log.write_text("", encoding="utf-8")
+    malformed_stop_device = run(
+        [str(host / ".github/scripts/phantom-preview-launch.sh"), "stop", str(descriptor_path)],
+        cwd=root,
+        env=invocation_env(fake_bin, root, java_home),
+    )
+    assert_safe_failed(malformed_stop_device, "malformed simulator stop device output")
+    (state / "fail-device-output").unlink()
+
     # Build/Gradle failure cleans the temporary config and leaves no app state or public logs.
     (state / "fail-gradle").write_text("fail\\n", encoding="ascii")
     command_log.write_text("", encoding="utf-8")
@@ -479,9 +600,45 @@ with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_
         fail(f"failed launch leaked raw path/build output: {failure.stderr!r}")
     if (host / CONFIG_REL).exists() or (state / "running").exists() or (state / "installed").exists():
         fail("failed launch did not clean temporary config/app state")
+    if any(line.startswith("xcrun simctl terminate ") or line.startswith("xcrun simctl uninstall ") for line in command_log.read_text(encoding="utf-8").splitlines()):
+        fail("pre-install Gradle failure attempted app cleanup")
     (state / "fail-gradle").unlink()
     if clean_status(host):
         fail("failure cleanup mutated source status")
+
+    # Install failure occurs before the app is installed, so no terminate or
+    # uninstall cleanup is appropriate.
+    (state / "fail-install").write_text("fail\\n", encoding="ascii")
+    command_log.write_text("", encoding="utf-8")
+    install_failure = run_launch(host, fake_bin, root, java_home, "launch", "just-lift-connected")
+    assert_safe_failed(install_failure, "simulator install failure")
+    install_commands = command_log.read_text(encoding="utf-8").splitlines()
+    if any(line.startswith("xcrun simctl terminate ") or line.startswith("xcrun simctl uninstall ") for line in install_commands):
+        fail("failed install attempted terminate/uninstall before installation")
+    if (host / CONFIG_REL).exists() or (state / "running").exists() or (state / "installed").exists():
+        fail("failed install did not clean temporary config/app state")
+    (state / "fail-install").unlink()
+    if clean_status(host):
+        fail("failed install mutated source status")
+
+    # Launch failure occurs after installation, so cleanup must terminate and
+    # uninstall exactly once and still emit no descriptor.
+    (state / "fail-launch").write_text("fail\\n", encoding="ascii")
+    (state / "terminate-called").unlink(missing_ok=True)
+    (state / "uninstall-called").unlink(missing_ok=True)
+    command_log.write_text("", encoding="utf-8")
+    launch_failure = run_launch(host, fake_bin, root, java_home, "launch", "just-lift-connected")
+    assert_safe_failed(launch_failure, "simulator launch failure")
+    launch_failure_commands = command_log.read_text(encoding="utf-8").splitlines()
+    if sum(line.startswith("xcrun simctl terminate ") for line in launch_failure_commands) != 1:
+        fail(f"failed launch did not terminate exactly once: {launch_failure_commands!r}")
+    if sum(line.startswith("xcrun simctl uninstall ") for line in launch_failure_commands) != 1:
+        fail(f"failed launch did not uninstall exactly once: {launch_failure_commands!r}")
+    if (state / "running").exists() or (state / "installed").exists() or (host / CONFIG_REL).exists():
+        fail("failed launch did not clean installed app/config state")
+    (state / "fail-launch").unlink()
+    if clean_status(host):
+        fail("failed launch mutated source status")
 
 print("GREEN: phantom persistent launch contract, safety gates, descriptor validation, cleanup, and minimal env passed")
 PY
