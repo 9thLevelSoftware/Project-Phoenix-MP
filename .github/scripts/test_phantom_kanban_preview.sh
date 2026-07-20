@@ -48,6 +48,21 @@ EXPECTED_PACKET_PATHS = {
     "comparison/diff.png",
     *{f"{phase}/{name}" for phase in ("before", "after") for name in INTERNAL_HARNESS_FILES},
 }
+REAL_XML_PATCH = (
+    "diff --git a/shared/src/commonMain/composeResources/values/strings.xml "
+    "b/shared/src/commonMain/composeResources/values/strings.xml\n"
+    "--- a/shared/src/commonMain/composeResources/values/strings.xml\n"
+    "+++ b/shared/src/commonMain/composeResources/values/strings.xml\n"
+    "@@ -856,7 +856,7 @@\n"
+    " \n"
+    "     <!-- ==================== Just Lift auto-start honesty (task-5B.3) ==================== -->\n"
+    "     <string name=\"autostart_connect_prompt\">Connect to enable auto-start</string>\n"
+    "-    <string name=\"autostart_ready\">AUTO-START READY</string>\n"
+    "+    <string name=\"autostart_ready\">SIMULATOR READY</string>\n"
+    "     <string name=\"autostart_grab_handles\">Grab handles to start</string>\n"
+    "     <string name=\"nav_profile\">Profile</string>\n"
+    "     <string name=\"cd_profile\">Profile</string>\n"
+)
 
 
 def fail(message):
@@ -72,13 +87,31 @@ def write_json(path, value):
 
 
 def make_patch(path, marker="ok"):
+    old_lines = marker.splitlines() or [""]
+    old_count = len(old_lines)
+    old_body = "".join(f"-{line}\n" for line in old_lines)
     write_private(
         path,
         "diff --git a/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt "
         "b/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt\n"
         "--- a/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt\n"
         "+++ b/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt\n"
-        f"@@ -1 +1 @@\n-{marker}\n+candidate\n",
+        f"@@ -1,{old_count} +1 @@\n{old_body}+candidate\n",
+    )
+
+
+def make_xml_patch(path):
+    write_private(path, REAL_XML_PATCH)
+
+
+def make_path_patch(path, changed_path):
+    write_private(
+        path,
+        f"diff --git a/{changed_path} b/{changed_path}\n"
+        f"--- a/{changed_path}\n"
+        f"+++ b/{changed_path}\n"
+        "@@ -0,0 +1 @@\n"
+        "+candidate\n",
     )
 
 
@@ -131,11 +164,13 @@ def make_fake_repo(root):
         "patch_text = patch.read_bytes().decode('utf-8', 'replace')\n"
         "def marker(prefix):\n"
         "    for line in patch_text.splitlines():\n"
-        "        if line.startswith(prefix): return line[len(prefix):]\n"
+        "        candidate = line[1:] if line.startswith(('+', '-', ' ')) else line\n"
+        "        if candidate.startswith(prefix): return candidate[len(prefix):]\n"
         "    return ''\n"
         "mode = os.environ.get('PREVIEW_TEST_RENDERER_MODE', '') or marker('TEST_MODE:') or 'ok'\n"
         "if mode == 'replace-patch':\n"
-        "    original, replacement, observed = marker('REPLACE_PATCH:').split('|', 2)\n"
+        "    original, replacement, observed = marker('REPLACE_PATCH_HEX:').split('|', 2)\n"
+        "    original, replacement, observed = [bytes.fromhex(value).decode('utf-8') for value in (original, replacement, observed)]\n"
         "    os.replace(replacement, original)\n"
         "    Path(observed).write_bytes(patch.read_bytes())\n"
         "if mode == 'replace-result':\n"
@@ -171,7 +206,10 @@ def make_fake_repo(root):
         "identity = {'baseSha': base, 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'bundleId': 'com.devil.phoenixproject.projectphoenix', 'simulator': simulator, 'commands': [name for name, _ in command_specs], 'markers': sorted(markers)}\n"
         "compact_capture = {'path': 'after.png', 'sha256': capture_sha, 'dimensions': {'width': 2, 'height': 2}}\n"
         "comparison = {'before': compact_capture, 'after': compact_capture, 'diffJson': {'path': 'comparison/diff.json', 'sha256': diff_sha_json}, 'diffImage': {'path': 'comparison/diff.png', 'sha256': diff_sha, 'dimensions': {'width': 2, 'height': 2}}, 'summary': diff}\n"
-        "manifest = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patch': {'path': 'proposal.patch', 'sha256': patch_sha, 'size': len(patch_bytes), 'binary': False, 'format': 'exact-input'}, 'candidateKinds': ['kotlin'], 'allowedChangedFiles': [changed_file], 'actualChangedFiles': [changed_file], 'worktree': {'baseSha': base, 'headSha': base, 'detached': True, 'uncommitted': True, 'statusEntryCount': 1, 'appliedDiffSha256': patch_sha}, 'focusedChecks': [{'name': 'git.diff.check', 'passed': True}], 'before': {'artifact': 'before', 'manifestSha256': run_sha, 'identity': identity}, 'after': {'artifact': 'after', 'manifestSha256': run_sha, 'identity': identity}, 'comparison': comparison, 'evidence': {'proposalMarkdown': 'proposal.md', 'summaryJson': 'evidence-summary.json'}}\n"
+        "patch_lines = patch_text.splitlines()\n"
+        "changed_file = next(line[6:].split('\t', 1)[0] for line in patch_lines if line.startswith('+++ b/'))\n"
+        "candidate_kind = 'resource' if changed_file.endswith('.xml') else 'kotlin'\n"
+        "manifest = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patch': {'path': 'proposal.patch', 'sha256': patch_sha, 'size': len(patch_bytes), 'binary': False, 'format': 'exact-input'}, 'candidateKinds': [candidate_kind], 'allowedChangedFiles': [changed_file], 'actualChangedFiles': [changed_file], 'worktree': {'baseSha': base, 'headSha': base, 'detached': True, 'uncommitted': True, 'statusEntryCount': 1, 'appliedDiffSha256': patch_sha}, 'focusedChecks': [{'name': 'git.diff.check', 'passed': True}], 'before': {'artifact': 'before', 'manifestSha256': run_sha, 'identity': identity}, 'after': {'artifact': 'after', 'manifestSha256': run_sha, 'identity': identity}, 'comparison': comparison, 'evidence': {'proposalMarkdown': 'proposal.md', 'summaryJson': 'evidence-summary.json'}}\n"
         "summary = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patchSha256': patch_sha, 'changedFiles': [changed_file], 'beforeAfterIdentity': identity, 'comparison': comparison, 'artifacts': ['before', 'after', 'proposal.patch', 'proposal-manifest.json', 'proposal.md', 'comparison/diff.json', 'comparison/diff.png']}\n"
         "proposal = '# Phantom proposal evidence\\n\\nStatus: **passed**\\n\\nThis proposal was rendered from the real Phoenix app in a disposable detached worktree using trusted candidate input.\\n\\n- Fixture: `just-lift-connected`\\n- Verified base SHA: `' + base + '`\\n- Proposal patch SHA-256: `' + patch_sha + '`\\n\\n## Allowed changed files\\n\\n- `' + changed_file + '`\\n\\n## Verification\\n\\n- Baseline canonical harness case: verified\\n- Candidate canonical harness case: verified\\n- Kotlin/resource compile gate when required: verified\\n- Bound comparison metadata: verified\\n- Temporary worktree: cleaned after rendering\\n'\n"
         "if mode in ('sleep-verify-before', 'sleep-verify-after'):\n"
@@ -362,12 +400,14 @@ def validate_reviewed_real_packet(temp):
 
     This is deliberately a fixture/topology check only: it never invokes Xcode and
     skips when the private review packet is absent or not owned/mode-safe locally.
+    The patch is checked as the realistic XML fixture, but the old packet's evidence
+    is never accepted as fresh runtime evidence.
     """
     if not reviewed_real_packet.is_dir() or reviewed_real_packet.is_symlink():
-        return False
+        return None
     root_info = reviewed_real_packet.stat()
     if root_info.st_uid != os.getuid() or stat.S_IMODE(root_info.st_mode) != 0o700:
-        return False
+        return None
     copied = temp / "reviewed-real-packet"
     shutil.copytree(reviewed_real_packet, copied, symlinks=True)
     actual_paths = {path.relative_to(copied).as_posix() for path in copied.rglob("*") if path.is_file() or path.is_symlink()}
@@ -376,6 +416,8 @@ def validate_reviewed_real_packet(temp):
     directories = {path.relative_to(copied).as_posix() for path in copied.rglob("*") if path.is_dir()}
     if directories != {"before", "after", "comparison"}:
         fail(f"reviewed real packet directories mismatch: {sorted(directories)}")
+    if (copied / "proposal.patch").read_bytes().decode("utf-8") != REAL_XML_PATCH:
+        fail("reviewed real packet does not contain the expected XML proposal patch fixture")
     for path in copied.rglob("*"):
         info = path.lstat()
         if info.st_uid != os.getuid() or stat.S_ISLNK(info.st_mode):
@@ -391,7 +433,7 @@ def validate_reviewed_real_packet(temp):
         captures = {capture["slug"]: capture["path"] for capture in run["captures"]}
         if captures != {"simulator-after": "after.png", "xctest-after": "xctest-attachment.png"}:
             fail(f"reviewed real packet capture topology mismatch for {phase}: {captures!r}")
-    return True
+    return copied
 
 
 def main():
@@ -400,7 +442,7 @@ def main():
         fail("phantom-kanban-preview.sh is missing")
     with tempfile.TemporaryDirectory(prefix="phantom-kanban-preview-test-") as temp_name:
         temp = Path(temp_name)
-        validate_reviewed_real_packet(temp)
+        reviewed_packet = validate_reviewed_real_packet(temp)
         repo, renderer_log, verifier_log = make_fake_repo(temp)
         patch = temp / "private" / "candidate.patch"
         make_patch(patch)
@@ -468,6 +510,77 @@ def main():
         verify_records = [json.loads(line) for line in verifier_log.read_text(encoding="utf-8").splitlines()]
         if [record["args"][1].rsplit("/", 1)[-1] for record in verify_records] != ["before", "after"]:
             fail(f"canonical verifier was not called independently: {verify_records}")
+
+        if reviewed_packet is not None:
+            realistic_request = temp / "reviewed-real-request.json"
+            realistic_result = fresh_result(temp, "reviewed-real-result")
+            write_json(realistic_request, request("KANBAN-REAL-XML", reviewed_packet / "proposal.patch"))
+            completed = run_wrapper(repo, realistic_request, realistic_result)
+            if completed.returncode != 0:
+                fail(
+                    "reviewed real XML packet patch was rejected: "
+                    f"stdout={completed.stdout!r}, stderr={completed.stderr!r}"
+                )
+            realistic_payload = json.loads((realistic_result / "preview-result.json").read_text(encoding="utf-8"))
+            if realistic_payload.get("status") != "passed":
+                fail(f"reviewed real XML packet did not produce a passed result: {realistic_payload}")
+
+        xml_patch = temp / "private" / "xml-resource.patch"
+        make_xml_patch(xml_patch)
+        xml_request = temp / "xml-resource.json"
+        write_json(xml_request, request("KANBAN-XML", xml_patch))
+        xml_result = fresh_result(temp, "xml-resource-result")
+        completed = run_wrapper(repo, xml_request, xml_result)
+        if completed.returncode != 0:
+            fail(f"valid XML resource patch was rejected: stdout={completed.stdout!r}, stderr={completed.stderr!r}")
+        xml_payload = json.loads((xml_result / "preview-result.json").read_text(encoding="utf-8"))
+        if xml_payload.get("status") != "passed":
+            fail(f"valid XML resource patch did not produce a passed result: {xml_payload}")
+
+        for root in ("/Users", "/private", "/tmp", "/Applications", "/Library"):
+            host_patch = temp / ("host-path-" + root[1:] + ".patch")
+            make_patch(host_patch, marker=f"ok\nhost={root}/candidate")
+            host_request = temp / (host_patch.stem + ".json")
+            write_json(host_request, request("KANBAN-HOST", host_patch))
+            host_result = fresh_result(temp, host_patch.stem + "-result")
+            assert_failure(run_wrapper(repo, host_request, host_result), host_result, "validate-request")
+
+        credential_patch = temp / "credential.patch"
+        make_patch(credential_patch, marker="ok\nAPI_TOKEN=aaaaaaaaaaaaaaaa")
+        credential_request = temp / "credential.json"
+        write_json(credential_request, request("KANBAN-CREDENTIAL", credential_patch))
+        credential_result = fresh_result(temp, "credential-result")
+        assert_failure(run_wrapper(repo, credential_request, credential_result), credential_result, "validate-request")
+
+        traversal_patch = temp / "traversal.patch"
+        make_path_patch(traversal_patch, "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/../Unsafe.kt")
+        traversal_request = temp / "traversal.json"
+        write_json(traversal_request, request("KANBAN-TRAVERSAL", traversal_patch))
+        traversal_result = fresh_result(temp, "traversal-result")
+        assert_failure(run_wrapper(repo, traversal_request, traversal_result), traversal_result, "validate-request")
+
+        unsafe_path_patch = temp / "unsafe-path.patch"
+        make_path_patch(unsafe_path_patch, "androidApp/src/main/res/values/strings.xml")
+        unsafe_path_request = temp / "unsafe-path.json"
+        write_json(unsafe_path_request, request("KANBAN-UNSAFE-PATH", unsafe_path_patch))
+        unsafe_path_result = fresh_result(temp, "unsafe-path-result")
+        assert_failure(run_wrapper(repo, unsafe_path_request, unsafe_path_result), unsafe_path_result, "validate-request")
+
+        malformed_patch = temp / "malformed.patch"
+        make_patch(malformed_patch)
+        write_private(malformed_patch, malformed_patch.read_text(encoding="utf-8").replace("@@ -1,1 +1 @@", "@@ malformed @@"))
+        malformed_patch_request = temp / "malformed-patch.json"
+        write_json(malformed_patch_request, request("KANBAN-MALFORMED-PATCH", malformed_patch))
+        malformed_patch_result = fresh_result(temp, "malformed-patch-result")
+        assert_failure(run_wrapper(repo, malformed_patch_request, malformed_patch_result), malformed_patch_result, "validate-request")
+
+        unknown_patch = temp / "unknown.patch"
+        make_patch(unknown_patch)
+        write_private(unknown_patch, unknown_patch.read_text(encoding="utf-8") + "unknown diff syntax\n")
+        unknown_patch_request = temp / "unknown-patch.json"
+        write_json(unknown_patch_request, request("KANBAN-UNKNOWN-PATCH", unknown_patch))
+        unknown_patch_result = fresh_result(temp, "unknown-patch-result")
+        assert_failure(run_wrapper(repo, unknown_patch_request, unknown_patch_result), unknown_patch_result, "validate-request")
 
         benign_patch = temp / "benign-internal-log.patch"
         make_patch(benign_patch, marker="ok\nTEST_MODE:internal-benign-log")
@@ -690,13 +803,16 @@ def main():
         make_patch(replacement, marker="replacement")
         observed_patch = temp / "observed-patch.bin"
         replacement_patch = temp / "replacement-race.patch"
-        make_patch(replacement_patch, marker=f"ok\nTEST_MODE:replace-patch\nREPLACE_PATCH:{replacement_patch}|{replacement}|{observed_patch}")
+        make_patch(replacement_patch, marker=f"ok\nTEST_MODE:replace-patch\nREPLACE_PATCH_HEX:{str(replacement_patch).encode().hex()}|{str(replacement).encode().hex()}|{str(observed_patch).encode().hex()}")
         replacement_request = temp / "replacement-race.json"
         write_json(replacement_request, request("KANBAN-54", replacement_patch))
         replacement_snapshot = replacement_patch.read_bytes()
         replacement_result = fresh_result(temp, "replacement-race-result")
         completed = run_wrapper(repo, replacement_request, replacement_result)
-        assert_failure(completed, replacement_result, "validate-artifacts")
+        if completed.returncode != 0:
+            fail(f"immutable patch snapshot was rejected: stdout={completed.stdout!r}, stderr={completed.stderr!r}")
+        if json.loads((replacement_result / "preview-result.json").read_text(encoding="utf-8")).get("status") != "passed":
+            fail("immutable patch snapshot did not produce a passed result")
         if observed_patch.read_bytes() != replacement_snapshot:
             fail("renderer observed replaced patch instead of immutable snapshot")
 

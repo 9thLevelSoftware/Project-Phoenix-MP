@@ -86,6 +86,21 @@ INTERNAL_LOG_FILES = {name for name in INTERNAL_HARNESS_FILES if name.endswith("
 INTERNAL_ARTIFACT_SET = ALLOWED_ARTIFACT_SET | {"proposal.patch", ".phantom-proposal"} | {
     f"{phase}/{name}" for phase in ("before", "after") for name in INTERNAL_HARNESS_FILES
 }
+PATCH_ALLOWED_PREFIXES = (
+    "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/",
+    "shared/src/commonMain/composeResources/",
+    "iosApp/VitruvianPhoenix/VitruvianPhoenix/",
+)
+PATCH_RESOURCE_EXTENSIONS = {
+    ".json", ".jpg", ".jpeg", ".gif", ".mp3", ".m4a", ".otf", ".properties", ".png",
+    ".strings", ".stringsdict", ".svg", ".ttf", ".wav", ".webp", ".xml",
+}
+PATCH_HOST_PATH_RE = re.compile(r"(?<![A-Za-z0-9_.])/(?:Users|private|tmp|Applications|Library)(?:/|$)")
+PATCH_CREDENTIAL_RE = re.compile(
+    r"(?im)^[+\-]?\s*(?:export\s+)?(?:SUPABASE_ANON_KEY|API_TOKEN|TOKEN|SECRET|PASSWORD|PASSWD|"
+    r"PRIVATE[_-]?KEY|CREDENTIAL|API[_-]?KEY|ANON[_-]?KEY|AUTHORIZATION)"
+    r"\s*[:=]\s*['\"]?[A-Za-z0-9._~+/=-]{16,}"
+)
 MAX_INTERNAL_FILES = 128
 MAX_INTERNAL_BYTES = 512 * 1024 * 1024
 KNOWN_ARTIFACT_REFERENCES = ALLOWED_ARTIFACT_SET | {"before", "after", "proposal.patch"}
@@ -443,6 +458,7 @@ def parse_request(request_raw):
         patch_data = read_private_path(patch_path, MAX_PATCH_BYTES - 1)
         if not patch_data:
             raise ValueError
+        validate_proposal_patch(patch_data)
         return payload["ticket_id"], patch_path, patch_data
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError, RuntimeError):
         fail("validate-request")
@@ -690,6 +706,150 @@ def host_path_detected(data):
 
 def credential_or_host_path(data):
     return credential_detected(data) or host_path_detected(data)
+
+
+def validate_patch_file_path(value):
+    if (
+        not isinstance(value, str)
+        or not value
+        or "\x00" in value
+        or "\\" in value
+        or value.startswith("/")
+        or any(part in ("", ".", "..") for part in value.split("/"))
+    ):
+        raise ValueError
+    if not any(value.startswith(prefix) for prefix in PATCH_ALLOWED_PREFIXES):
+        raise ValueError
+    components = [component.lower() for component in value.split("/")]
+    basename = components[-1]
+    if (
+        any(component in {"config", "configs", "configuration", "profile", "profiles", "ci", "harness", "gradle", "build", "deriveddata", "xcuserdata", "pods"} for component in components)
+        or any(word in basename for word in ("config", "harness", "runner"))
+        or basename in {"build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts", "gradle.properties", "info.plist"}
+    ):
+        raise ValueError
+    suffix = Path(value).suffix.lower()
+    if value.startswith(PATCH_ALLOWED_PREFIXES[0]):
+        if suffix != ".kt":
+            raise ValueError
+    elif value.startswith(PATCH_ALLOWED_PREFIXES[1]):
+        if suffix not in PATCH_RESOURCE_EXTENSIONS:
+            raise ValueError
+    elif suffix != ".swift" and suffix not in PATCH_RESOURCE_EXTENSIONS:
+        raise ValueError
+    return value
+
+
+def validate_patch_header_path(value, prefix):
+    value = value.split("\t", 1)[0]
+    if value == "/dev/null":
+        return None
+    if not value.startswith(prefix):
+        raise ValueError
+    return validate_patch_file_path(value[len(prefix):])
+
+
+def validate_proposal_patch(data):
+    if not isinstance(data, bytes) or not data or len(data) > MAX_PATCH_BYTES or not data.endswith(b"\n"):
+        raise ValueError
+    try:
+        text = data.decode("utf-8", "strict")
+    except UnicodeError:
+        raise ValueError
+    if "\r" in text or credential_detected(data) or PATCH_CREDENTIAL_RE.search(text) or PATCH_HOST_PATH_RE.search(text):
+        raise ValueError
+    lines = text.splitlines()
+    if not lines:
+        raise ValueError
+    diff_header = re.compile(r"^diff --git (\S+) (\S+)$")
+    hunk_header = re.compile(r"^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(?: .*)?$")
+    index_header = re.compile(r"^index [0-9a-fA-F]+\.\.[0-9a-fA-F]+(?: [0-9]{6})?$")
+    mode_header = re.compile(r"^(?:old mode|new mode|new file mode|deleted file mode) [0-7]{6}$")
+    similarity_header = re.compile(r"^(?:similarity|dissimilarity) index [0-9]{1,3}%$")
+    paths = set()
+    cursor = 0
+    blocks = 0
+    while cursor < len(lines):
+        match = diff_header.fullmatch(lines[cursor])
+        if match is None:
+            raise ValueError
+        left = validate_patch_header_path(match.group(1), "a/")
+        right = validate_patch_header_path(match.group(2), "b/")
+        if left:
+            paths.add(left)
+        if right:
+            paths.add(right)
+        cursor += 1
+        old_path = None
+        new_path = None
+        hunks = 0
+        while cursor < len(lines) and not lines[cursor].startswith("diff --git "):
+            line = lines[cursor]
+            if line.startswith("--- "):
+                if old_path is not None or hunks:
+                    raise ValueError
+                old_path = validate_patch_header_path(line[4:], "a/")
+                cursor += 1
+                continue
+            if line.startswith("+++ "):
+                if old_path is None or new_path is not None or hunks:
+                    raise ValueError
+                new_path = validate_patch_header_path(line[4:], "b/")
+                cursor += 1
+                continue
+            if line.startswith("@@ "):
+                if old_path is None or new_path is None:
+                    raise ValueError
+                hunk = hunk_header.fullmatch(line)
+                if hunk is None:
+                    raise ValueError
+                expected_old = int(hunk.group(2) or "1")
+                expected_new = int(hunk.group(4) or "1")
+                cursor += 1
+                actual_old = 0
+                actual_new = 0
+                saw_line = False
+                while cursor < len(lines):
+                    content = lines[cursor]
+                    if content == r"\ No newline at end of file":
+                        if not saw_line:
+                            raise ValueError
+                        cursor += 1
+                        continue
+                    if not content or content[0] not in " +-":
+                        break
+                    saw_line = True
+                    if content[0] in " -":
+                        actual_old += 1
+                    if content[0] in " +":
+                        actual_new += 1
+                    cursor += 1
+                if actual_old != expected_old or actual_new != expected_new:
+                    raise ValueError
+                hunks += 1
+                continue
+            if not old_path and (index_header.fullmatch(line) or mode_header.fullmatch(line) or similarity_header.fullmatch(line)):
+                cursor += 1
+                continue
+            if not old_path and line.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
+                paths.add(validate_patch_file_path(line.split(" ", 2)[2]))
+                cursor += 1
+                continue
+            raise ValueError
+        if old_path is None or new_path is None or hunks == 0:
+            raise ValueError
+        if old_path is not None and left is not None and old_path != left:
+            raise ValueError
+        if new_path is not None and right is not None and new_path != right:
+            raise ValueError
+        if old_path:
+            paths.add(old_path)
+        if new_path:
+            paths.add(new_path)
+        blocks += 1
+    if not paths or blocks == 0:
+        raise ValueError
+    return paths
 
 
 def bounded_walk(value, depth=0, seen=None):
@@ -1157,7 +1317,12 @@ def validate_artifacts():
             raise ValueError
         for name, data in artifacts.items():
             leaf = name.rsplit("/", 1)[-1]
-            if leaf in INTERNAL_LOG_FILES:
+            if name == "proposal.patch":
+                # Patch content has its own unified-diff/path policy.  The generic
+                # host-path scanner would misclassify XML closing tags such as
+                # </string> while still protecting all public text artifacts.
+                validate_proposal_patch(data)
+            elif leaf in INTERNAL_LOG_FILES:
                 # Xcode and CoreSimulator logs are private evidence. They may contain
                 # normal absolute host paths, but never credentials.
                 if credential_detected(data):
