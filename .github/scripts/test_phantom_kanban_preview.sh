@@ -79,6 +79,7 @@ PRODUCER_PUBLIC_VERIFICATION = (
 )
 LARGE_BINARY_RESOURCE = "shared/src/commonMain/composeResources/values/large.png"
 LARGE_BINARY_SIZE = 1024 * 1024
+TEST_JAVA_HOME = None
 
 
 def fail(message):
@@ -100,6 +101,27 @@ def write_private(path, data):
 
 def write_json(path, value):
     write_private(path, json.dumps(value, sort_keys=True) + "\n")
+
+
+def make_package_manager_java_home(root):
+    """Return a package-manager-style alias and its canonical JDK home."""
+    canonical = root / "cellar" / "openjdk@21" / "21.0.0" / "libexec" / "openjdk.jdk" / "Contents" / "Home"
+    java = canonical / "bin" / "java"
+    java.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    java.write_text(
+        "#!/usr/bin/env bash\n"
+        "if [[ \"${1-}\" == -version ]]; then\n"
+        "    printf 'openjdk version \\\"21.0.0\\\" fake-package-manager\\n' >&2\n"
+        "    exit 0\n"
+        "fi\n"
+        "exit 2\n",
+        encoding="utf-8",
+    )
+    chmod(java, 0o555)
+    alias_path = root / "package-manager" / "opt" / "openjdk@21"
+    alias_path.parent.mkdir(mode=0o700, parents=True)
+    alias_path.symlink_to(canonical, target_is_directory=True)
+    return alias_path, canonical
 
 
 def valid_png(
@@ -795,6 +817,8 @@ def make_fake_repo(root):
         "set -euo pipefail\n"
         "case \" $* \" in *\" :shared:compileKotlinIosSimulatorArm64 \"*);; *) exit 2;; esac\n"
         "case \" $* \" in *\" -Pskip.supabase.check=true \"*);; *) exit 2;; esac\n"
+        "[[ -n \"${JAVA_HOME-}\" && -f \"$JAVA_HOME/bin/java\" && ! -L \"$JAVA_HOME/bin/java\" && -x \"$JAVA_HOME/bin/java\" ]] || exit 18\n"
+        "\"$JAVA_HOME/bin/java\" -version >/dev/null 2>&1 || exit 18\n"
         f"/usr/bin/python3 - {str(compile_log)!r} <<'PY'\n"
         "import json, os, sys\n"
         "from pathlib import Path\n"
@@ -824,6 +848,8 @@ def make_fake_repo(root):
 
 def run_wrapper(repo, request_path, result_root, extra_env=None, timeout_seconds=None):
     env = os.environ.copy()
+    if TEST_JAVA_HOME is not None:
+        env["JAVA_HOME"] = str(TEST_JAVA_HOME)
     env.update({
         "PHOENIX_HARNESS_UDID": "11111111-2222-3333-4444-555555555555",
         "PREVIEW_TEST_SECRET_TOKEN": "must-not-cross-env-i",
@@ -956,6 +982,10 @@ def main():
         fail("phantom-kanban-preview.sh is missing")
     with tempfile.TemporaryDirectory(prefix="phantom-kanban-preview-test-") as temp_name:
         temp = Path(temp_name)
+        package_java_home, canonical_java_home = make_package_manager_java_home(temp)
+        global TEST_JAVA_HOME
+        TEST_JAVA_HOME = package_java_home
+        canonical_java_home = canonical_java_home.resolve()
         repo, renderer_log, verifier_log, compile_log = make_fake_repo(temp)
         patch = temp / "private" / "candidate.patch"
         make_patch(patch)
@@ -1071,6 +1101,45 @@ def main():
         xml_payload = json.loads((xml_result / "preview-result.json").read_text(encoding="utf-8"))
         if xml_payload.get("status") != "passed":
             fail(f"valid XML resource patch did not produce a passed result: {xml_payload}")
+        compile_records = [json.loads(line) for line in compile_log.read_text(encoding="utf-8").splitlines() if line.strip()]
+        if not compile_records or compile_records[-1]["env"].get("JAVA_HOME") != str(canonical_java_home):
+            fail(f"focused compile did not receive the canonical trusted JAVA_HOME: {compile_records}")
+        if "PREVIEW_TEST_SECRET_TOKEN" in compile_records[-1]["env"] or any("must-not-cross-env-i" in value for value in compile_records[-1]["env"].values()):
+            fail("focused compile received a credential-like parent environment value")
+
+        unsafe_home = temp / "unsafe-jdk"
+        (unsafe_home / "bin").mkdir(mode=0o700, parents=True)
+        missing_home = temp / "missing-jdk"
+        symlink_home = temp / "symlink-jdk"
+        (symlink_home / "bin").mkdir(mode=0o700, parents=True)
+        symlink_target = temp / "untrusted-java-target"
+        shutil.copy2(canonical_java_home / "bin" / "java", symlink_target)
+        chmod(symlink_target, 0o700)
+        (symlink_home / "bin" / "java").symlink_to(symlink_target)
+        world_writable_home = temp / "world-writable-jdk"
+        (world_writable_home / "bin").mkdir(mode=0o700, parents=True)
+        world_writable_java = world_writable_home / "bin" / "java"
+        shutil.copy2(canonical_java_home / "bin" / "java", world_writable_java)
+        chmod(world_writable_java, 0o777)
+        chmod(world_writable_home, 0o777)
+        for label, value in (
+            ("missing JAVA_HOME", ""),
+            ("missing JDK home", missing_home),
+            ("JDK without bin/java", unsafe_home),
+            ("symlink JDK executable", symlink_home),
+            ("world-writable JDK executable", world_writable_home),
+        ):
+            result = fresh_result(temp, "java-rejected-" + re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-"))
+            before_count = len([line for line in compile_log.read_text(encoding="utf-8").splitlines() if line.strip()])
+            rejected = run_wrapper(repo, xml_request, result, extra_env={"JAVA_HOME": str(value)})
+            assert_failure(rejected, result, "validate-request")
+            assert_no_traceback(rejected, label)
+            output = rejected.stdout + rejected.stderr
+            if "must-not-cross-env-i" in output or "PREVIEW_TEST_SECRET_TOKEN" in output:
+                fail(f"{label} rejection leaked a credential-like parent value: {output!r}")
+            after_count = len([line for line in compile_log.read_text(encoding="utf-8").splitlines() if line.strip()])
+            if after_count != before_count:
+                fail(f"{label} reached the compile child instead of being rejected")
 
         compile_fail_patch = temp / "compile-failure.patch"
         make_patch(compile_fail_patch, marker="COMPILE_FAIL")

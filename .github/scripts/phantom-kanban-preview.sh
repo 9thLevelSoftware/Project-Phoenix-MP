@@ -1011,6 +1011,61 @@ def valid_optional_env(value):
         return False
 
 
+def resolve_java_home(value):
+    """Return a canonical, trusted JDK home without forwarding arbitrary paths."""
+    if not isinstance(value, str) or not value or "\x00" in value or "\n" in value or "\r" in value or "\\" in value:
+        return None
+    if not os.path.isabs(value) or os.path.normpath(value) != value:
+        return None
+    allowed_owners = {0, os.getuid()}
+    try:
+        canonical = normalize_absolute(str(Path(value).resolve(strict=True)))
+        home_fd = open_directory_path(canonical)
+        try:
+            home_info = os.fstat(home_fd)
+            if (
+                not stat.S_ISDIR(home_info.st_mode)
+                or home_info.st_uid not in allowed_owners
+                or stat.S_IMODE(home_info.st_mode) & 0o022
+            ):
+                return None
+        finally:
+            os.close(home_fd)
+
+        bin_fd = open_directory_path(f"{canonical}/bin")
+        try:
+            bin_info = os.fstat(bin_fd)
+            if (
+                not stat.S_ISDIR(bin_info.st_mode)
+                or bin_info.st_uid not in allowed_owners
+                or stat.S_IMODE(bin_info.st_mode) & 0o022
+            ):
+                return None
+        finally:
+            os.close(bin_fd)
+
+        java_path = f"{canonical}/bin/java"
+        _parent_fd, java_fd = open_file_path(java_path)
+        try:
+            java_info = os.fstat(java_fd)
+            java_mode = stat.S_IMODE(java_info.st_mode)
+            if (
+                stat.S_ISLNK(java_info.st_mode)
+                or not stat.S_ISREG(java_info.st_mode)
+                or java_info.st_uid not in allowed_owners
+                or java_mode & 0o022
+                or not java_mode & 0o111
+                or not os.access(java_path, os.X_OK)
+            ):
+                return None
+        finally:
+            os.close(java_fd)
+            os.close(_parent_fd)
+        return canonical
+    except (OSError, RuntimeError, ValueError):
+        return None
+
+
 def child_environment():
     env = {
         "PATH": SYSTEM_PATH,
@@ -1021,10 +1076,15 @@ def child_environment():
         "PHOENIX_HARNESS_ALLOW_DESTRUCTIVE": "1",
         "PHOENIX_HARNESS_UDID": os.environ["PHOENIX_HARNESS_UDID"],
     }
-    for name in ("JAVA_HOME", "DEVELOPER_DIR"):
-        value = os.environ.get(name)
-        if value and valid_optional_env(value):
-            env[name] = value
+    java_home = os.environ.get("JAVA_HOME")
+    if java_home:
+        resolved_java_home = resolve_java_home(java_home)
+        if resolved_java_home is None:
+            raise ValueError
+        env["JAVA_HOME"] = resolved_java_home
+    developer_dir = os.environ.get("DEVELOPER_DIR")
+    if developer_dir and valid_optional_env(developer_dir):
+        env["DEVELOPER_DIR"] = developer_dir
     return env
 
 
