@@ -74,6 +74,8 @@ PRODUCER_PUBLIC_VERIFICATION = (
     "- Bound comparison metadata: verified",
     "- Temporary worktree: cleaned after rendering",
 )
+LARGE_BINARY_RESOURCE = "shared/src/commonMain/composeResources/values/large.png"
+LARGE_BINARY_SIZE = 1024 * 1024
 
 
 def fail(message):
@@ -128,6 +130,36 @@ def make_binary_patch(path):
         subprocess.run(["git", "-C", str(repo), "commit", "-qm", "base"], check=True)
         (repo / resource).write_bytes(b"\x89PNG\r\n\x1a\n\x01\xfe\x03\x82\x00\x05")
         diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--binary", "--full-index", "HEAD", "--", resource])
+    write_private(path, diff)
+
+
+def deterministic_binary_payload(seed):
+    """Return incompressible, deterministic bytes for a large Git binary diff."""
+    blocks = []
+    counter = 0
+    total = 0
+    while total < LARGE_BINARY_SIZE:
+        block = hashlib.sha256(seed + counter.to_bytes(8, "big")).digest()
+        blocks.append(block)
+        total += len(block)
+        counter += 1
+    return b"".join(blocks)[:LARGE_BINARY_SIZE]
+
+
+def make_large_binary_patch(path):
+    """Create a deterministic 1 MiB tracked-resource binary diff."""
+    with tempfile.TemporaryDirectory(prefix="large-binary-patch-source-") as temp_name:
+        repo = Path(temp_name) / "repo"
+        resource = repo / LARGE_BINARY_RESOURCE
+        resource.parent.mkdir(mode=0o700, parents=True)
+        resource.write_bytes(deterministic_binary_payload(b"phoenix-preview-base"))
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "Large Binary Fixture"], check=True)
+        subprocess.run(["git", "-C", str(repo), "add", LARGE_BINARY_RESOURCE], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "base"], check=True)
+        resource.write_bytes(deterministic_binary_payload(b"phoenix-preview-candidate"))
+        diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--binary", "--full-index", "HEAD", "--", LARGE_BINARY_RESOURCE])
     write_private(path, diff)
 
 
@@ -472,12 +504,13 @@ def make_fake_repo(root):
     write_private(repo / "shared/src/commonMain/composeResources/values/deleted.xml", "candidate\n")
     write_private(repo / "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Deleted.kt", "candidate\n")
     write_private(repo / "shared/src/commonMain/composeResources/values/icon.png", b"\x89PNG\r\n\x1a\n\x00\xff\x00\x81\x00\x02")
+    write_private(repo / LARGE_BINARY_RESOURCE, deterministic_binary_payload(b"phoenix-preview-base"))
     subprocess.run(["git", "-C", str(repo), "add", "README.md", "shared"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-qm", "fixture"], check=True)
     return repo, renderer_log, verifier_log
 
 
-def run_wrapper(repo, request_path, result_root, extra_env=None):
+def run_wrapper(repo, request_path, result_root, extra_env=None, timeout_seconds=None):
     env = os.environ.copy()
     env.update({
         "PHOENIX_HARNESS_UDID": "11111111-2222-3333-4444-555555555555",
@@ -485,13 +518,21 @@ def run_wrapper(repo, request_path, result_root, extra_env=None):
     })
     if extra_env:
         env.update(extra_env)
-    return subprocess.run(
-        [str(repo / ".github/scripts/phantom-kanban-preview.sh"), str(request_path), str(result_root)],
-        cwd=repo,
-        env=env,
-        text=True,
-        capture_output=True,
-    )
+    command = [str(repo / ".github/scripts/phantom-kanban-preview.sh"), str(request_path), str(result_root)]
+    if timeout_seconds is None:
+        return subprocess.run(command, cwd=repo, env=env, text=True, capture_output=True)
+    process = subprocess.Popen(command, cwd=repo, env=env, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+    try:
+        stdout, stderr = process.communicate(timeout=timeout_seconds)
+    except subprocess.TimeoutExpired:
+        process.send_signal(signal.SIGTERM)
+        try:
+            stdout, stderr = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout, stderr = process.communicate(timeout=5)
+        fail(f"wrapper timed out after {timeout_seconds}s: stdout={stdout!r}, stderr={stderr!r}")
+    return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def fresh_result(root, name="result"):
@@ -734,6 +775,20 @@ def main():
             fail(f"binary resource paths were not bound: {binary_manifest}")
         if [item["name"] for item in binary_manifest["focusedChecks"]] != ["git.diff.check", "shared.compileKotlinIosSimulatorArm64"]:
             fail(f"binary resource focused checks were not conditional: {binary_manifest}")
+
+        large_binary_patch = temp / "large-tracked-resource-binary.patch"
+        make_large_binary_patch(large_binary_patch)
+        large_binary_request = temp / "large-binary-resource.json"
+        write_json(large_binary_request, request("KANBAN-LARGE-BINARY", large_binary_patch))
+        large_binary_result = fresh_result(temp, "large-binary-resource-result")
+        completed = run_wrapper(repo, large_binary_request, large_binary_result, timeout_seconds=20)
+        if completed.returncode != 0:
+            fail(f"valid large tracked binary resource patch was rejected: stdout={completed.stdout!r}, stderr={completed.stderr!r}")
+        large_binary_manifest = json.loads((large_binary_result / "proposal-manifest.json").read_text(encoding="utf-8"))
+        if large_binary_manifest["patch"]["binary"] is not True or large_binary_manifest["candidateKinds"] != ["resource"]:
+            fail(f"large binary resource claims were not bound: {large_binary_manifest}")
+        if large_binary_manifest["allowedChangedFiles"] != [LARGE_BINARY_RESOURCE] or large_binary_manifest["actualChangedFiles"] != [LARGE_BINARY_RESOURCE]:
+            fail(f"large binary resource paths were not bound: {large_binary_manifest}")
 
         binary_add_delete_patches = {}
         for operation, changed_path in (

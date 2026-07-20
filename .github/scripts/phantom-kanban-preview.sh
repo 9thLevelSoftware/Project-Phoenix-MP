@@ -15,6 +15,7 @@ import re
 import shutil
 import signal
 import stat
+import selectors
 import subprocess
 import sys
 import tempfile
@@ -28,6 +29,7 @@ RUNNER = REPO_ROOT / ".github/scripts/phantom-harness.sh"
 SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 MAX_REQUEST_BYTES = 1024 * 1024
 MAX_PATCH_BYTES = 128 * 1024 * 1024
+MAX_TRACKED_OUTPUT_BYTES = MAX_PATCH_BYTES
 MAX_ARTIFACT_BYTES = 128 * 1024 * 1024
 MAX_JSON_NODES = 4096
 MAX_JSON_DEPTH = 32
@@ -340,6 +342,7 @@ def run_tracked(command, cwd=REPO_ROOT, env=None, check=True):
         raise PreviewInterrupted
     effective = test_hook_command(command)
     process = None
+    selector = None
     try:
         process = subprocess.Popen(
             [str(value) for value in effective],
@@ -352,23 +355,59 @@ def run_tracked(command, cwd=REPO_ROOT, env=None, check=True):
             close_fds=True,
         )
         STATE.active = process
-        while process.poll() is None:
+        stream = process.stdout
+        os.set_blocking(stream.fileno(), False)
+        selector = selectors.DefaultSelector()
+        selector.register(stream, selectors.EVENT_READ)
+        captured = bytearray()
+        stream_closed = False
+
+        def terminate(signum):
+            kill_active(signum)
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                kill_active(signal.SIGKILL)
+                process.wait()
+
+        while not stream_closed:
             if STATE.interrupted is not None:
-                kill_active(STATE.interrupted)
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    kill_active(signal.SIGKILL)
-                    process.wait()
+                terminate(STATE.interrupted)
                 raise PreviewInterrupted
-            time.sleep(0.02)
-        stdout, _ = process.communicate()
-        result = subprocess.CompletedProcess(command, process.returncode, stdout, b"")
+            for key, _ in selector.select(timeout=0.02):
+                while True:
+                    try:
+                        block = os.read(key.fd, 64 * 1024)
+                    except BlockingIOError:
+                        break
+                    if not block:
+                        selector.unregister(key.fileobj)
+                        stream_closed = True
+                        break
+                    if len(captured) + len(block) > MAX_TRACKED_OUTPUT_BYTES:
+                        terminate(signal.SIGTERM)
+                        raise ValueError
+                    captured.extend(block)
+            if process.poll() is not None and not stream_closed:
+                continue
+        returncode = process.wait()
+        result = subprocess.CompletedProcess(command, returncode, bytes(captured), b"")
     except PreviewInterrupted:
         raise
     except (OSError, ValueError):
         raise
     finally:
+        if selector is not None:
+            selector.close()
+        if process is not None:
+            if process.poll() is None:
+                kill_active(signal.SIGKILL)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    pass
+            if process.stdout is not None:
+                process.stdout.close()
         if STATE.active is process:
             STATE.active = None
     if STATE.interrupted is not None:
@@ -976,7 +1015,7 @@ def parse_proposal_patch(data):
     mode_header = re.compile(r"^(?:old mode|new mode|new file mode|deleted file mode) [0-7]{6}$")
     similarity_header = re.compile(r"^(?:similarity|dissimilarity) index [0-9]{1,3}%$")
     binary_section = re.compile(r"^(literal|delta) ([0-9]+)$")
-    base85 = re.compile(r"^[!-~]{1,52}$")
+    base85 = re.compile(r"^[!-~]{1,66}$")
     paths = set()
     kinds = set()
     cursor = 0
