@@ -35,7 +35,7 @@ import sys
 print(Path(sys.argv[1]).resolve())
 PY
 )"
-PARENT_AUTH_HINT='credential-value-that-must-not-leak'
+PARENT_AUTH_HINT='PARENT_REDACTED_VALUE'
 cleanup() {
     python3 - "$TMP_DIR" <<'PY'
 import shutil
@@ -67,6 +67,14 @@ import sys
 from pathlib import Path
 path = Path(sys.argv[1])
 path.write_text(sys.argv[2] + "\n", encoding="utf-8")
+os.chmod(path, 0o600)
+PY
+    python3 - "$repo/iosApp/VitruvianPhoenix/VitruvianPhoenix/Binary.swift" <<'PY'
+import os
+import sys
+from pathlib import Path
+path = Path(sys.argv[1])
+path.write_bytes(bytes([0]) + b"opaque-base")
 os.chmod(path, 0o600)
 PY
     python3 - "$repo/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Proposal.kt" <<'PY'
@@ -508,6 +516,78 @@ os.chmod(out, 0o600)
 PY
 }
 
+make_resource_patch() {
+    local destination="$1"
+    local resource="$2"
+    local payload="$3"
+    python3 - "$destination" "$resource" "$payload" <<'PY'
+import os
+import sys
+from pathlib import Path
+out = Path(sys.argv[1])
+resource = sys.argv[2]
+payload = sys.argv[3]
+out.write_text(
+    f"diff --git a/{resource} b/{resource}\n"
+    "new file mode 100644\n"
+    "index 0000000..0000000\n"
+    "--- /dev/null\n"
+    f"+++ b/{resource}\n"
+    "@@ -0,0 +1 @@\n"
+    f"+{payload}\n",
+    encoding="utf-8",
+)
+os.chmod(out, 0o600)
+PY
+}
+
+make_rename_or_copy_patch() {
+    local destination="$1"
+    local operation="$2"
+    python3 - "$destination" "$operation" <<'PY'
+import os
+import sys
+from pathlib import Path
+out = Path(sys.argv[1])
+operation = sys.argv[2]
+source = "iosApp/VitruvianPhoenix/VitruvianPhoenix/Proposal.swift"
+target = "iosApp/VitruvianPhoenix/VitruvianPhoenix/Canonical.swift"
+if operation == "rename":
+    body = f"diff --git a/{source} b/{target}\n" "similarity index 100%\n" f"rename from {source}\nrename to {target}\n"
+elif operation == "copy":
+    body = f"diff --git a/{source} b/{target}\n" "similarity index 100%\n" f"copy from {source}\ncopy to {target}\n"
+else:
+    raise SystemExit(2)
+out.write_text(body, encoding="utf-8")
+os.chmod(out, 0o600)
+PY
+}
+
+make_binary_swift_patch() {
+    local destination="$1"
+    python3 - "$destination" <<'PY'
+import os
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+with tempfile.TemporaryDirectory(prefix="proposal-binary-swift-") as name:
+    repo = Path(name) / "repo"
+    path = repo / "iosApp/VitruvianPhoenix/VitruvianPhoenix/Binary.swift"
+    path.parent.mkdir(mode=0o700, parents=True)
+    path.write_bytes(bytes([0]) + b"opaque-base")
+    subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+    subprocess.run(["git", "-C", str(repo), "config", "user.name", "Proposal Fixture"], check=True)
+    subprocess.run(["git", "-C", str(repo), "add", str(path.relative_to(repo))], check=True)
+    subprocess.run(["git", "-C", str(repo), "commit", "-qm", "base"], check=True)
+    path.write_bytes(bytes([0]) + b"opaque-candidate")
+    diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--binary", "--full-index", "HEAD", "--"])
+Path(sys.argv[1]).write_bytes(diff)
+os.chmod(sys.argv[1], 0o600)
+PY
+}
+
 run_renderer() {
     local repo="$1"
     local artifact="$2"
@@ -589,7 +669,7 @@ for record in cases[-2:]:
     assert env["PATH"] == "/usr/bin:/bin:/usr/sbin:/sbin", env
     assert env.get("PHOENIX_HARNESS_REPO_ROOT") == str(Path(record["cwd"]).resolve()), record
     assert "PARENT_AUTH_HINT" not in env, env
-    assert all("credential-value-that-must-not-leak" not in value for value in env.values()), env
+    assert all("PARENT_REDACTED_VALUE" not in value for value in env.values()), env
     assert record["rlimitFsize"] == resource.RLIM_INFINITY, record
     assert record["rlimitNoFile"] == resource.getrlimit(resource.RLIMIT_NOFILE)[0], record
 before_manifest = json.loads((Path(sys.argv[1]).parent / "child-env-baseline" / "before" / "run.json").read_text())
@@ -1143,6 +1223,44 @@ import shutil
 import sys
 shutil.rmtree(sys.argv[1])
 PY
+
+# Producer-shaped resource fixtures exercise the same decoded-input boundary as
+# the preview consumer.  Safe structured resources pass; generic assignments,
+# opaque binary Swift, and canonical rename/copy metadata fail before rendering.
+for fixture in json-safe xml-safe json-credential xml-credential opaque-binary-swift rename copy; do
+    fixture_repo="$TMP_DIR/producer-$fixture-repo"
+    make_fake_repo "$fixture_repo"
+    fixture_patch="$TMP_DIR/producer-$fixture.patch"
+    case "$fixture" in
+        json-safe) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/labels.json" '{"title":"SAFE"}' ;;
+        xml-safe) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<resources><string name="title">SAFE</string></resources>' ;;
+        json-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/labels.json" '{"title":"TOKEN=REDACTED_REDACTED"}' ;;
+        xml-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<resources><string name="title">TOKEN=REDACTED_REDACTED</string></resources>' ;;
+        opaque-binary-swift) make_binary_swift_patch "$fixture_patch" ;;
+        rename|copy) make_rename_or_copy_patch "$fixture_patch" "$fixture" ;;
+    esac
+    fixture_artifact="$TMP_DIR/producer-$fixture-artifact"
+    if [[ "$fixture" == json-safe || "$fixture" == xml-safe ]]; then
+        run_renderer "$fixture_repo" "$fixture_artifact" "$fixture_patch" >"$TMP_DIR/producer-$fixture.out"
+        python3 - "$fixture_artifact/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+assert json.loads(Path(sys.argv[1]).read_text())["status"] == "passed"
+PY
+    else
+        if run_renderer "$fixture_repo" "$fixture_artifact" "$fixture_patch" >"$TMP_DIR/producer-$fixture.out" 2>&1; then
+            fail "producer accepted unsafe fixture: $fixture"
+        fi
+        python3 - "$fixture_artifact/proposal-manifest.json" <<'PY'
+import json
+import sys
+from pathlib import Path
+result = json.loads(Path(sys.argv[1]).read_text())
+assert result["status"] == "failed"
+PY
+    fi
+done
 
 # A normal Swift candidate is accepted only after both canonical harness cases,
 # compile-free real-app execution, comparison validation, and cleanup.

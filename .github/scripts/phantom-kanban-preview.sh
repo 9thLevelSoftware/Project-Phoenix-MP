@@ -31,6 +31,14 @@ MAX_REQUEST_BYTES = 1024 * 1024
 MAX_PATCH_BYTES = 128 * 1024 * 1024
 MAX_TRACKED_OUTPUT_BYTES = MAX_PATCH_BYTES
 MAX_ARTIFACT_BYTES = 128 * 1024 * 1024
+# These deadlines are wrapper policy, not request fields.  The tracked git
+# operations are short control-plane calls; renderer/verifier children retain
+# the established real-app budget.  Every timeout has the same bounded
+# TERM-grace then unconditional KILL/reap process-group cleanup.
+TRACKED_TIMEOUT_SECONDS = 30
+CHILD_TIMEOUT_SECONDS = 1800
+PROCESS_GROUP_TERM_GRACE_SECONDS = 0.25
+PROCESS_REAP_TIMEOUT_SECONDS = 5
 MAX_JSON_NODES = 4096
 MAX_JSON_DEPTH = 32
 EXPECTED_UDID_RE = re.compile(r"[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}")
@@ -165,6 +173,9 @@ class State:
         self.patch_binary = None
         self.applied_diff_sha = None
         self.applied_paths = None
+        self.focused_checks = None
+        self.host_head_before_renderer = None
+        self.host_status_before_renderer = None
         self.verification_worktree = None
 
 
@@ -336,13 +347,50 @@ def test_hook_command(command):
     return ["/usr/bin/python3", "-c", script]
 
 
+def process_group_exists(process):
+    try:
+        os.killpg(process.pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def terminate_process_group(process, signum=signal.SIGTERM):
+    """Boundedly terminate and reap a session, including descendants."""
+    try:
+        os.killpg(process.pid, signum)
+    except OSError:
+        pass
+    grace_deadline = time.monotonic() + PROCESS_GROUP_TERM_GRACE_SECONDS
+    while time.monotonic() < grace_deadline:
+        try:
+            process.wait(timeout=0.02)
+        except subprocess.TimeoutExpired:
+            pass
+    # Do not make KILL conditional on the leader: a descendant may retain the
+    # pipe/process group after the direct child has already exited.
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except OSError:
+        pass
+    try:
+        process.wait(timeout=PROCESS_REAP_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        process.wait()
+
+
 def run_tracked(command, cwd=REPO_ROOT, env=None, check=True):
-    """Run a repository subprocess with signal-safe process-group ownership."""
+    """Run a bounded repository subprocess with process-group ownership."""
     if STATE.interrupted is not None:
         raise PreviewInterrupted
     effective = test_hook_command(command)
     process = None
     selector = None
+    result = None
     try:
         process = subprocess.Popen(
             [str(value) for value in effective],
@@ -361,20 +409,17 @@ def run_tracked(command, cwd=REPO_ROOT, env=None, check=True):
         selector.register(stream, selectors.EVENT_READ)
         captured = bytearray()
         stream_closed = False
-
-        def terminate(signum):
-            kill_active(signum)
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                kill_active(signal.SIGKILL)
-                process.wait()
+        deadline = time.monotonic() + TRACKED_TIMEOUT_SECONDS
 
         while not stream_closed:
             if STATE.interrupted is not None:
-                terminate(STATE.interrupted)
+                terminate_process_group(process, STATE.interrupted)
                 raise PreviewInterrupted
-            for key, _ in selector.select(timeout=0.02):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                terminate_process_group(process)
+                raise subprocess.TimeoutExpired(effective, TRACKED_TIMEOUT_SECONDS)
+            for key, _ in selector.select(timeout=min(0.02, remaining)):
                 while True:
                     try:
                         block = os.read(key.fd, 64 * 1024)
@@ -385,33 +430,34 @@ def run_tracked(command, cwd=REPO_ROOT, env=None, check=True):
                         stream_closed = True
                         break
                     if len(captured) + len(block) > MAX_TRACKED_OUTPUT_BYTES:
-                        terminate(signal.SIGTERM)
+                        terminate_process_group(process)
                         raise ValueError
                     captured.extend(block)
-            if process.poll() is not None and not stream_closed:
-                continue
+
         returncode = process.wait()
+        if process_group_exists(process):
+            terminate_process_group(process)
+            if returncode == 0:
+                returncode = 1
         result = subprocess.CompletedProcess(command, returncode, bytes(captured), b"")
-    except PreviewInterrupted:
-        raise
-    except (OSError, ValueError):
-        raise
     finally:
         if selector is not None:
             selector.close()
         if process is not None:
-            if process.poll() is None:
-                kill_active(signal.SIGKILL)
-                try:
-                    process.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    pass
+            if process_group_exists(process):
+                terminate_process_group(process, signal.SIGTERM)
+            try:
+                process.wait(timeout=PROCESS_REAP_TIMEOUT_SECONDS)
+            except subprocess.TimeoutExpired:
+                terminate_process_group(process, signal.SIGKILL)
             if process.stdout is not None:
                 process.stdout.close()
         if STATE.active is process:
             STATE.active = None
     if STATE.interrupted is not None:
         raise PreviewInterrupted
+    if result is None:
+        raise RuntimeError
     if check and result.returncode != 0:
         raise subprocess.CalledProcessError(result.returncode, result.args, output=result.stdout, stderr=result.stderr)
     return result
@@ -602,6 +648,30 @@ def current_head():
     return output.lower()
 
 
+def snapshot_host_before_renderer():
+    try:
+        head = current_head()
+        status = run_git(["status", "--porcelain=v2", "--untracked-files=all", "--ignored=no"]).stdout
+    except (OSError, subprocess.SubprocessError, PreviewInterrupted):
+        fail("validate-request")
+    # The renderer is only safe against a clean source checkout.  Ignored local
+    # build/simulator artifacts are intentionally excluded by --ignored=no.
+    if status:
+        fail("validate-request")
+    STATE.host_head_before_renderer = head
+    STATE.host_status_before_renderer = status
+
+
+def assert_host_unchanged(stage):
+    try:
+        head = current_head()
+        status = run_git(["status", "--porcelain=v2", "--untracked-files=all", "--ignored=no"]).stdout
+    except (OSError, subprocess.SubprocessError, PreviewInterrupted):
+        fail(stage)
+    if head != STATE.host_head_before_renderer or status != STATE.host_status_before_renderer:
+        fail(stage)
+
+
 def snapshot_patch(data):
     path = STATE.private_dir / "patch.snapshot"
     make_private_file(path, data, 0o400)
@@ -676,15 +746,21 @@ def structured_credential_name(value):
     return isinstance(value, str) and re.search(
         r"(?i)(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?(?:key|token)|"
         r"client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|authorization|"
-        r"password|passwd|credential|secret)",
+        r"token|password|passwd|credential|secret)",
         value,
     ) is not None
+
+
+STRUCTURED_CREDENTIAL_ASSIGNMENT_RE = re.compile(
+    rf"(?i)\b{CREDENTIAL_NAME_RE}\b[ \t]*(?::[ \t]*[A-Za-z_][A-Za-z0-9_.<>?, \t\[\]]*)?"
+    r"[ \t]*[:=][ \t]*['\"]?[A-Za-z0-9._~+/=-]{16,}['\"]?"
+)
 
 
 BINARY_CREDENTIAL_RE = re.compile(
     rb"(?i)(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?(?:key|token)|"
     rb"client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|authorization|"
-    rb"password|passwd|credential|secret)\s*[:=]\s*[A-Za-z0-9._~+/=-]{16,}"
+    rb"token|password|passwd|credential|secret)\s*[:=]\s*[A-Za-z0-9._~+/=-]{16,}"
 )
 
 
@@ -697,6 +773,8 @@ def scan_structured_json(value):
     elif isinstance(value, list):
         for item in value:
             scan_structured_json(item)
+    elif isinstance(value, str) and STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(value):
+        raise ValueError
 
 
 class StructuredParseError(ValueError):
@@ -712,9 +790,13 @@ def scan_structured_xml_element(element, inherited_credential_context=False):
     for name, value in element.attrib.items():
         if structured_credential_name(name) and value:
             raise ValueError
+        if STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(value):
+            raise ValueError
         credential_context = credential_context or structured_credential_name(value)
     text = (element.text or "").strip()
     if structured_credential_name(local_name) and text:
+        raise ValueError
+    if STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(text):
         raise ValueError
     if credential_context and STRUCTURED_CREDENTIAL_VALUE_RE.fullmatch(text or ""):
         raise ValueError
@@ -727,9 +809,20 @@ def scan_structured_xml(data):
 
     try:
         root = element_tree.fromstring(data.decode("utf-8", "strict"))
-    except element_tree.ParseError:
+    except (UnicodeError, element_tree.ParseError):
         raise StructuredParseError
     scan_structured_xml_element(root)
+
+
+def scan_structured_text(data):
+    text = data.decode("utf-8", "strict")
+    stripped = text.lstrip()
+    if STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(text):
+        raise ValueError
+    if stripped.startswith(("{", "[")):
+        scan_structured_json(parse_json_bytes(data))
+    elif stripped.startswith("<"):
+        scan_structured_xml(data)
 
 
 def scan_png_metadata(data):
@@ -759,12 +852,7 @@ def scan_applied_patch_file(path):
     data = path.read_bytes()
     suffix = path.suffix.lower()
     if suffix == ".png":
-        try:
-            validate_png(data)
-        except ValueError:
-            scan_png_metadata(data)
-            if BINARY_CREDENTIAL_RE.search(data):
-                raise
+        validate_png(data)
         return
     if suffix == ".json":
         scan_structured_json(parse_json_bytes(data))
@@ -772,11 +860,7 @@ def scan_applied_patch_file(path):
             raise ValueError
         return
     if suffix == ".xml":
-        try:
-            scan_structured_xml(data)
-        except (UnicodeError, StructuredParseError):
-            if credential_detected(data) or BINARY_CREDENTIAL_RE.search(data):
-                raise
+        scan_structured_xml(data)
         return
     if suffix == ".kt":
         text = data.decode("utf-8", "strict")
@@ -784,11 +868,13 @@ def scan_applied_patch_file(path):
             raise ValueError
         return
     if suffix in {".strings", ".stringsdict", ".properties", ".svg", ".swift"}:
+        scan_structured_text(data)
         if credential_detected(data):
             raise ValueError
         return
-    if BINARY_CREDENTIAL_RE.search(data):
-        raise ValueError
+    # Compressed/opaque binary resources cannot be decoded at this boundary;
+    # accepting them would permit a credential to hide in the candidate bytes.
+    raise ValueError
 
 
 def scan_applied_patch_files(repo, paths):
@@ -818,11 +904,26 @@ def verify_snapshot_application(snapshot):
         expected = set(STATE.patch_paths or ())
         if actual != expected:
             raise ValueError
+        run_git(["diff", "--check", "HEAD", "--"], cwd=path)
+        focused_checks = [{"name": "git.diff.check", "passed": True}]
+        if {"kotlin", "resource"} & set(STATE.patch_kinds or ()):
+            gradlew = path / "gradlew"
+            info = os.lstat(gradlew)
+            if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or not os.access(gradlew, os.X_OK):
+                raise ValueError
+            run_child(
+                ["bash", str(gradlew), ":shared:compileKotlinIosSimulatorArm64", "-Pskip.supabase.check=true", "--no-daemon", "--console=plain"],
+                "focused-compile.log",
+                child_environment(),
+                cwd=path,
+            )
+            focused_checks.append({"name": "shared.compileKotlinIosSimulatorArm64", "passed": True})
+        STATE.focused_checks = focused_checks
         scan_applied_patch_files(path, actual)
         applied = run_git(["diff", "--binary", "--full-index", "HEAD", "--"], cwd=path).stdout
         STATE.applied_paths = sorted(actual)
         STATE.applied_diff_sha = hashlib.sha256(applied).hexdigest()
-    except (OSError, UnicodeError, ValueError, subprocess.SubprocessError):
+    except (OSError, UnicodeError, ValueError, subprocess.SubprocessError, PreviewFailure):
         fail("validate-request")
     finally:
         cleanup_verification_worktree()
@@ -864,8 +965,9 @@ def kill_active(signum):
     if proc is None:
         return
     try:
-        if proc.poll() is None:
-            os.killpg(proc.pid, signum)
+        # Do not gate on proc.poll(): descendants may still own the process
+        # group and stdout after the direct leader has exited.
+        os.killpg(proc.pid, signum)
     except OSError:
         pass
 
@@ -878,17 +980,19 @@ def on_signal(signum, _frame):
         kill_active(signal.SIGKILL)
 
 
-def run_child(command, log_name, env):
+def run_child(command, log_name, env, cwd=REPO_ROOT, timeout_seconds=CHILD_TIMEOUT_SECONDS):
     if STATE.interrupted is not None:
         raise PreviewInterrupted
     log_path = STATE.private_dir / log_name
+    stream = None
+    proc = None
     try:
         log_fd = os.open(log_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | NOFOLLOW, 0o600)
         os.fchmod(log_fd, 0o600)
         stream = os.fdopen(log_fd, "wb", closefd=True)
         proc = subprocess.Popen(
             [str(value) for value in command],
-            cwd=str(REPO_ROOT),
+            cwd=str(cwd),
             env=env,
             stdin=subprocess.DEVNULL,
             stdout=stream,
@@ -897,36 +1001,40 @@ def run_child(command, log_name, env):
             close_fds=True,
         )
     except (OSError, ValueError):
-        try:
+        if stream is not None:
             stream.close()
-        except UnboundLocalError:
-            pass
         raise PreviewFailure(STATE.stage)
     STATE.active = proc
+    deadline = time.monotonic() + timeout_seconds
     rc = None
     try:
         while True:
             rc = proc.poll()
             if rc is not None:
+                # A successful leader with a live descendant is not success:
+                # descendants can retain output descriptors and mutate state.
+                if process_group_exists(proc):
+                    terminate_process_group(proc)
+                    rc = 1
                 break
             if STATE.interrupted is not None:
-                kill_active(signal.SIGTERM)
-                try:
-                    rc = proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    kill_active(signal.SIGKILL)
-                    rc = proc.wait()
-                break
+                terminate_process_group(proc, STATE.interrupted)
+                raise PreviewInterrupted
+            if time.monotonic() >= deadline:
+                terminate_process_group(proc)
+                raise PreviewFailure(STATE.stage)
             time.sleep(0.02)
     finally:
-        if STATE.interrupted is not None and proc.poll() is None:
-            kill_active(signal.SIGKILL)
+        if proc is not None and process_group_exists(proc):
+            terminate_process_group(proc, signal.SIGKILL)
+        if proc is not None:
             try:
-                proc.wait(timeout=5)
+                proc.wait(timeout=PROCESS_REAP_TIMEOUT_SECONDS)
             except subprocess.TimeoutExpired:
-                pass
+                terminate_process_group(proc, signal.SIGKILL)
         STATE.active = None
-        stream.close()
+        if stream is not None:
+            stream.close()
     if STATE.interrupted is not None:
         raise PreviewInterrupted
     if rc != 0:
@@ -1256,10 +1364,9 @@ def parse_proposal_patch(data):
                 cursor += 1
                 continue
             if not old_header_seen and (similarity_header.fullmatch(line) or line.startswith(("rename from ", "rename to ", "copy from ", "copy to "))):
-                if line.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
-                    paths.add(validate_patch_file_path(line.split(" ", 2)[2]))
-                cursor += 1
-                continue
+                # Producer and consumer intentionally share a conservative policy:
+                # canonical rename/copy metadata is not a safe candidate format.
+                raise ValueError
             raise ValueError
         if binary:
             if old_header_seen or new_header_seen or hunks or not saw_index and not (new_file or deleted_file):
@@ -1280,7 +1387,7 @@ def parse_proposal_patch(data):
                         raise ValueError
             elif len(binary_sections) != 2:
                 raise ValueError
-            if any(patch_kind(path) != "resource" for path in header_paths):
+            if any(patch_kind(path) != "resource" for path in header_paths) or any(Path(path).suffix.lower() != ".png" for path in header_paths):
                 raise ValueError
         else:
             if not old_header_seen or not new_header_seen or hunks == 0 or (old_path is None and new_path is None):
@@ -1665,10 +1772,8 @@ def validate_manifest(manifest, base_sha, patch_sha, patch_size):
     if STATE.applied_diff_sha is None or worktree["appliedDiffSha256"].lower() != STATE.applied_diff_sha.lower():
         raise ValueError
     checks = manifest["focusedChecks"]
-    expected_checks = [{"name": "git.diff.check", "passed": True}]
-    if {"kotlin", "resource"} & set(expected_kinds):
-        expected_checks.append({"name": "shared.compileKotlinIosSimulatorArm64", "passed": True})
-    if checks != expected_checks:
+    expected_checks = STATE.focused_checks
+    if expected_checks is None or checks != expected_checks:
         raise ValueError
     for check in checks:
         exact_keys(check, {"name", "passed"})
@@ -1790,6 +1895,7 @@ def png_text_payload(kind, payload):
 
 def validate_png_text_chunk(kind, payload):
     text = png_text_payload(kind, payload)
+    scan_structured_text(text)
     if credential_detected(text) or png_host_path_detected(text):
         raise ValueError
 
@@ -2022,7 +2128,7 @@ def json_result(value):
 
 def validate_preview_result(value):
     exact_keys(value, {"schema_version", "status", "ticket_id", "fixture", "base_sha", "patch_sha256", "artifacts"})
-    if value["schema_version"] != 1 or value["status"] != "passed" or value["fixture"] != "just-lift-connected":
+    if not exact_int(value["schema_version"]) or value["schema_version"] != 1 or value["status"] != "passed" or value["fixture"] != "just-lift-connected":
         raise ValueError
     if not isinstance(value["ticket_id"], str) or not TICKET_RE.fullmatch(value["ticket_id"]):
         raise ValueError
@@ -2156,23 +2262,26 @@ def main_work(request_raw, result_raw):
         fail("validate-request")
     verify_snapshot_application(patch_snapshot)
     check_interrupted()
+    snapshot_host_before_renderer()
     if not EXPECTED_UDID_RE.fullmatch(os.environ.get("PHOENIX_HARNESS_UDID", "")):
         fail("renderer")
     env = child_environment()
     STATE.stage = "renderer"
     run_child([RENDERER, "render", STATE.private_dir / "proposal", "just-lift-connected", patch_snapshot], "renderer.log", env)
+    assert_host_unchanged("renderer")
     check_interrupted()
     STATE.stage = "verify-before"
     run_child([RUNNER, "verify", STATE.private_dir / "proposal" / "before"], "before-verify.log", env)
+    assert_host_unchanged("verify-before")
     check_interrupted()
     STATE.stage = "verify-after"
     run_child([RUNNER, "verify", STATE.private_dir / "proposal" / "after"], "after-verify.log", env)
+    assert_host_unchanged("verify-after")
     check_interrupted()
     STATE.stage = "validate-artifacts"
     artifacts = validate_artifacts()
     check_interrupted()
-    if current_head() != STATE.base_sha:
-        fail("validate-artifacts")
+    assert_host_unchanged("validate-artifacts")
     check_interrupted()
     STATE.stage = "publish"
     publish_success(artifacts, ticket, "just-lift-connected", STATE.base_sha, patch_sha)
@@ -2207,11 +2316,7 @@ def main():
         if failure_stage is not None:
             write_failure_result(failure_stage)
         if STATE.active is not None:
-            kill_active(signal.SIGKILL)
-            try:
-                STATE.active.wait(timeout=5)
-            except (OSError, subprocess.TimeoutExpired):
-                pass
+            terminate_process_group(STATE.active, signal.SIGTERM)
             STATE.active = None
         cleanup_verification_worktree()
         cleanup_private()

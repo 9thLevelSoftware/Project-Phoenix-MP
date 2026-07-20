@@ -102,6 +102,32 @@ def write_json(path, value):
     write_private(path, json.dumps(value, sort_keys=True) + "\n")
 
 
+def valid_png(metadata=b"safe metadata", pixels=b"\x00" + b"\x00" * 8 + b"\x00" + b"\x00" * 8):
+    import struct
+    import zlib
+
+    def chunk(kind, payload):
+        return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
+
+    ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
+    itxt = b"XML:com.adobe.xmp\x00\x00\x00\x00\x00" + metadata
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"iTXt", itxt) + chunk(b"IDAT", zlib.compress(pixels)) + chunk(b"IEND", b"")
+
+
+def large_valid_png(seed):
+    import struct
+    import zlib
+
+    def chunk(kind, payload):
+        return len(payload).to_bytes(4, "big") + kind + payload + zlib.crc32(kind + payload).to_bytes(4, "big")
+
+    width = height = 512
+    raw = deterministic_binary_payload(seed)
+    pixels = (raw * ((height * (1 + width * 4) + len(raw) - 1) // len(raw)))[:height * (1 + width * 4)]
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(pixels, 0)) + chunk(b"IEND", b"")
+
+
 def make_patch(path, marker="ok"):
     new_lines = ["candidate"] + (marker.splitlines() or [""])
     new_body = "".join(f"+{line}\n" for line in new_lines)
@@ -129,6 +155,19 @@ def make_structured_json_credential_patch(path):
         "@@ -1 +1 @@\n"
         '-{\"title\":\"safe\"}\n'
         '+{\"api_token\":\"' + "a" * 32 + '\"}\n',
+    )
+
+
+def make_generic_json_credential_patch(path):
+    resource = "shared/src/commonMain/composeResources/values/config.json"
+    write_private(
+        path,
+        f"diff --git a/{resource} b/{resource}\n"
+        f"--- a/{resource}\n"
+        f"+++ b/{resource}\n"
+        "@@ -1 +1 @@\n"
+        '-{\"title\":\"safe\"}\n'
+        '+{\"title\":\"TOKEN=' + "a" * 32 + '\"}\n',
     )
 
 
@@ -161,6 +200,21 @@ def make_structured_xml_credential_patch(path):
     )
 
 
+def make_generic_xml_credential_patch(path):
+    resource = "shared/src/commonMain/composeResources/values/strings.xml"
+    xml = "<resources><string name=\"label\">TOKEN=" + "a" * 32 + "</string></resources>\n"
+    added_lines = "".join(f"+{line}\n" for line in xml.splitlines())
+    write_private(
+        path,
+        f"diff --git a/{resource} b/{resource}\n"
+        f"--- a/{resource}\n"
+        f"+++ b/{resource}\n"
+        "@@ -1 +1 @@\n"
+        '-<string name=\"autostart_ready\">AUTO-START READY</string>\n'
+        + added_lines,
+    )
+
+
 def make_binary_payload_credential_patch(path):
     resource = "shared/src/commonMain/composeResources/values/audio.mp3"
     with tempfile.TemporaryDirectory(prefix="binary-credential-source-") as temp_name:
@@ -184,13 +238,13 @@ def make_binary_patch(path):
     with tempfile.TemporaryDirectory(prefix="binary-patch-source-") as temp_name:
         repo = Path(temp_name) / "repo"
         (repo / Path(resource).parent).mkdir(mode=0o700, parents=True)
-        (repo / resource).write_bytes(b"\x89PNG\r\n\x1a\n\x00\xff\x00\x81\x00\x02")
+        (repo / resource).write_bytes(valid_png(b"base"))
         subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
         subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
         subprocess.run(["git", "-C", str(repo), "config", "user.name", "Binary Fixture"], check=True)
         subprocess.run(["git", "-C", str(repo), "add", resource], check=True)
         subprocess.run(["git", "-C", str(repo), "commit", "-qm", "base"], check=True)
-        (repo / resource).write_bytes(b"\x89PNG\r\n\x1a\n\x01\xfe\x03\x82\x00\x05")
+        (repo / resource).write_bytes(valid_png(b"candidate", b"\x00" + b"\xff\x00\x00\xff" * 2 + b"\x00" + b"\xff\x00\x00\xff" * 2))
         diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--binary", "--full-index", "HEAD", "--", resource])
     write_private(path, diff)
 
@@ -214,20 +268,20 @@ def make_large_binary_patch(path):
         repo = Path(temp_name) / "repo"
         resource = repo / LARGE_BINARY_RESOURCE
         resource.parent.mkdir(mode=0o700, parents=True)
-        resource.write_bytes(deterministic_binary_payload(b"phoenix-preview-base"))
+        resource.write_bytes(large_valid_png(b"phoenix-preview-base"))
         subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
         subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
         subprocess.run(["git", "-C", str(repo), "config", "user.name", "Large Binary Fixture"], check=True)
         subprocess.run(["git", "-C", str(repo), "add", LARGE_BINARY_RESOURCE], check=True)
         subprocess.run(["git", "-C", str(repo), "commit", "-qm", "base"], check=True)
-        resource.write_bytes(deterministic_binary_payload(b"phoenix-preview-candidate"))
+        resource.write_bytes(large_valid_png(b"phoenix-preview-candidate"))
         diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--binary", "--full-index", "HEAD", "--", LARGE_BINARY_RESOURCE])
     write_private(path, diff)
 
 
 def make_binary_add_delete_patch(path, changed_path, operation):
     """Create a canonical binary resource addition or deletion from a temporary git repo."""
-    payload = b"\x89PNG\r\n\x1a\n\x00\xff\x00\x81\x00\x02"
+    payload = valid_png(b"base" if operation == "delete" else b"normal")
     with tempfile.TemporaryDirectory(prefix="binary-add-delete-source-") as temp_name:
         repo = Path(temp_name) / "repo"
         resource = repo / changed_path
@@ -267,12 +321,67 @@ def mutate_binary_sections(data, mutation):
     return b"".join(mutated)
 
 
+def make_unscannable_binary_patch(path):
+    resource = "shared/src/commonMain/composeResources/values/audio.mp3"
+    with tempfile.TemporaryDirectory(prefix="unscannable-binary-source-") as temp_name:
+        repo = Path(temp_name) / "repo"
+        target = repo / resource
+        target.parent.mkdir(mode=0o700, parents=True)
+        target.write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x00")
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "Unscannable Binary Fixture"], check=True)
+        subprocess.run(["git", "-C", str(repo), "add", resource], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "base"], check=True)
+        target.write_bytes(b"ID3\x04\x00\x00\x00\x00\x00\x00normal-audio-payload")
+        diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--binary", "--full-index", "HEAD", "--", resource])
+    write_private(path, diff)
+
+
+def make_rename_copy_patch(path, operation):
+    old = "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt"
+    new = "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/" + ("Renamed.kt" if operation == "rename" else "Copied.kt")
+    with tempfile.TemporaryDirectory(prefix="rename-copy-source-") as temp_name:
+        repo = Path(temp_name) / "repo"
+        source = repo / old
+        source.parent.mkdir(mode=0o700, parents=True)
+        source.write_text("candidate\n", encoding="utf-8")
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "Rename Copy Fixture"], check=True)
+        subprocess.run(["git", "-C", str(repo), "add", old], check=True)
+        subprocess.run(["git", "-C", str(repo), "commit", "-qm", "base"], check=True)
+        if operation == "rename":
+            subprocess.run(["git", "-C", str(repo), "mv", old, new], check=True)
+            diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--find-renames", "--full-index", "HEAD", "--"])
+        elif operation == "copy":
+            subprocess.run(["cp", str(source), str(repo / new)], check=True)
+            subprocess.run(["git", "-C", str(repo), "add", new], check=True)
+            diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--cached", "--find-copies=100%", "--find-copies-harder", "--full-index"])
+        else:
+            raise ValueError(operation)
+    write_private(path, diff)
+
+
+def make_trailing_whitespace_patch(path):
+    write_private(
+        path,
+        "diff --git a/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt "
+        "b/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt\n"
+        "--- a/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt\n"
+        "+++ b/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt\n"
+        "@@ -1 +1 @@\n"
+        "-ok\n"
+        "+candidate   \n",
+    )
+
+
 def make_add_delete_patch(path, changed_path, operation):
     if operation == "add":
         old_header = "/dev/null"
         new_header = f"b/{changed_path}"
         mode = "new file mode 100644\n"
-        hunk = "@@ -0,0 +1 @@\n+candidate\n"
+        hunk = "@@ -0,0 +1 @@\n+<resources><string name=\"candidate\">SAFE</string></resources>\n" if changed_path.endswith(".xml") else "@@ -0,0 +1 @@\n+candidate\n"
     elif operation == "delete":
         old_header = f"a/{changed_path}"
         new_header = "/dev/null"
@@ -325,6 +434,7 @@ def make_fake_repo(root):
     chmod(scripts / wrapper_source.name, 0o700)
     renderer_log = root / "renderer-environment.json"
     verifier_log = root / "verifier-environment.jsonl"
+    compile_log = root / "compile-environment.jsonl"
 
     renderer_impl = scripts / "fake-renderer.py"
     renderer_impl.write_text(
@@ -342,7 +452,7 @@ def make_fake_repo(root):
         "        return len(payload).to_bytes(4, 'big') + kind + payload + zlib.crc32(kind + payload).to_bytes(4, 'big')\n"
         "    ihdr = struct.pack('>IIBBBBB', 2, 2, 8, 6, 0, 0, 0)\n"
         "    pixels = b'\\x00' + b'\\x00' * 8 + b'\\x00' + b'\\x00' * 8\n"
-        "    metadata = ('API_TOKEN=' + 'a' * 24) if with_credential else ('<x:xmpmeta xmlns:x=\\\"adobe:ns:meta/\\\" xmlns:rdf=\\\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\\\"><rdf:RDF/></x:xmpmeta>')\n"
+        "    metadata = ('API_TOKEN=' + 'a' * 24) if with_credential else ('{\\\"title\\\":\\\"TOKEN=' + 'a' * 24 + '\\\"}' if mode == 'png-structured-credential' else '<x:xmpmeta xmlns:x=\\\"adobe:ns:meta/\\\" xmlns:rdf=\\\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\\\"><rdf:RDF/></x:xmpmeta>')\n"
         "    itxt = b'XML:com.adobe.xmp\\x00\\x00\\x00\\x00\\x00' + metadata.encode('utf-8')\n"
         "    return b'\\x89PNG\\r\\n\\x1a\\n' + chunk(b'IHDR', ihdr) + chunk(b'iTXt', itxt) + chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b'')\n"
         "def make_diff_png():\n"
@@ -373,6 +483,19 @@ def make_fake_repo(root):
         "    result_root, original, outside = [bytes.fromhex(value).decode('utf-8') for value in (result_root, original, outside)]\n"
         "    os.rename(result_root, original)\n"
         "    os.symlink(outside, result_root)\n"
+        "if mode == 'mutate-host':\n"
+        "    Path(Path(__file__).resolve().parents[2] / 'README.md').write_text('host mutated\\n', encoding='utf-8')\n"
+        "if mode in ('stubborn-child', 'leader-exits-descendant', 'nested-child'):\n"
+        "    sleep_child = bytes.fromhex(marker('SLEEP_CHILD_HEX:')).decode('utf-8')\n"
+        "    grandchild_code = \"import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)\"\n"
+        "    child_code = \"import os, signal, subprocess, sys, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); open(%r, 'w').write(str(os.getpid()) + '\\\\n');\" % sleep_child\n"
+        "    child_code += \"subprocess.Popen([sys.executable, '-c', %r]) ;\" % grandchild_code if mode == 'nested-child' else ''\n"
+        "    child_code += \"time.sleep(60)\"\n"
+        "    child_env = dict(os.environ, PYTHONPATH='')\n"
+        "    subprocess.Popen([sys.executable, '-c', child_code], env=child_env)\n"
+        "    if mode == 'leader-exits-descendant': time.sleep(0.1); raise SystemExit(0)\n"
+        "    signal.signal(signal.SIGTERM, lambda _signum, _frame: os._exit(0))\n"
+        "    time.sleep(60)\n"
         "if mode == 'sleep':\n"
         "    sleep_child = bytes.fromhex(marker('SLEEP_CHILD_HEX:')).decode('utf-8')\n"
         "    Path(sleep_child).write_text(str(os.getpid()) + '\\n', encoding='ascii')\n"
@@ -483,11 +606,11 @@ def make_fake_repo(root):
         "if mode == 'claim-fake-applied-diff':\n"
         "    mismatch = dict(manifest); mismatch['worktree'] = dict(manifest['worktree']); mismatch['worktree']['appliedDiffSha256'] = patch_sha; private(artifact / 'proposal-manifest.json', json.dumps(mismatch) + '\\n')\n"
         "leak = os.environ.get('PREVIEW_TEST_LEAK_KIND', '') or marker('LEAK_KIND:')\n"
-        "if leak == 'proposal.md': private(artifact / leak, 'absolute=/Users/host/private/candidate.patch\\nAPI_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa\\n')\n"
-        "elif leak == 'evidence-summary.json': private(artifact / leak, json.dumps({'schemaVersion': 1, 'status': 'passed', 'leak': '/private/host/API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa'}) + '\\n')\n"
+        "if leak == 'proposal.md': private(artifact / leak, 'absolute=/Users/host/private/candidate.patch\\nAPI_TOKEN=REDACTED_REDACTED\\n')\n"
+        "elif leak == 'evidence-summary.json': private(artifact / leak, json.dumps({'schemaVersion': 1, 'status': 'passed', 'leak': '/private/host/API_TOKEN=REDACTED_REDACTED'}) + '\\n')\n"
         "elif leak == 'proposal-manifest.json': private(artifact / leak, json.dumps({'schemaVersion': 1, 'status': 'passed', 'fixture': 'just-lift-connected', 'baseSha': base, 'patch': {'path': '/Users/host/private/candidate.patch', 'sha256': '0' * 64, 'size': 1, 'binary': False, 'format': 'exact-input'}}) + '\\n')\n"
-        "elif leak in ('before/run.json', 'after/run.json', 'comparison/diff.json'): private(artifact / leak, json.dumps({'schemaVersion': 1, 'leak': 'Bearer aaaaaaaaaaaaaaaaaaaaaaaa /Users/host/private'}) + '\\n')\n"
-        "elif leak == 'comparison/diff.png': private(artifact / leak, png() + b' /Users/host/private API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa', binary=True)\n"
+        "elif leak in ('before/run.json', 'after/run.json', 'comparison/diff.json'): private(artifact / leak, json.dumps({'schemaVersion': 1, 'leak': 'Bearer REDACTED_REDACTED /Users/host/private'}) + '\\n')\n"
+        "elif leak == 'comparison/diff.png': private(artifact / leak, png() + b' /Users/host/private API_TOKEN=REDACTED_REDACTED', binary=True)\n"
         "if mode == 'unexpected-internal-root': private(artifact / 'internal-unexpected.log', 'unexpected internal output\\n')\n"
         "if mode == 'unexpected-internal-nested': private(artifact / 'before/internal-unexpected.log', 'unexpected internal output\\n')\n"
         "if mode == 'internal-benign-log':\n"
@@ -580,6 +703,23 @@ def make_fake_repo(root):
     )
     chmod(harness, 0o700)
 
+    gradlew = repo / "gradlew"
+    gradlew.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        "case \" $* \" in *\" :shared:compileKotlinIosSimulatorArm64 \"*);; *) exit 2;; esac\n"
+        "case \" $* \" in *\" -Pskip.supabase.check=true \"*);; *) exit 2;; esac\n"
+        f"/usr/bin/python3 - {str(compile_log)!r} <<'PY'\n"
+        "import json, os, sys\n"
+        "from pathlib import Path\n"
+        "Path(sys.argv[1]).open('a', encoding='utf-8').write(json.dumps({'cwd': os.getcwd(), 'env': dict(sorted(os.environ.items()))}) + '\\n')\n"
+        "PY\n"
+        "if grep -F COMPILE_FAIL shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Candidate.kt >/dev/null 2>&1; then exit 19; fi\n"
+        "exit 0\n",
+        encoding="utf-8",
+    )
+    chmod(gradlew, 0o700)
+
     subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
     subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
     subprocess.run(["git", "-C", str(repo), "config", "user.name", "Preview Test"], check=True)
@@ -589,11 +729,11 @@ def make_fake_repo(root):
     write_private(repo / "shared/src/commonMain/composeResources/values/config.json", '{"title":"safe"}\n')
     write_private(repo / "shared/src/commonMain/composeResources/values/deleted.xml", "candidate\n")
     write_private(repo / "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Deleted.kt", "candidate\n")
-    write_private(repo / "shared/src/commonMain/composeResources/values/icon.png", b"\x89PNG\r\n\x1a\n\x00\xff\x00\x81\x00\x02")
-    write_private(repo / LARGE_BINARY_RESOURCE, deterministic_binary_payload(b"phoenix-preview-base"))
-    subprocess.run(["git", "-C", str(repo), "add", "README.md", "shared"], check=True)
+    write_private(repo / "shared/src/commonMain/composeResources/values/icon.png", valid_png(b"base"))
+    write_private(repo / LARGE_BINARY_RESOURCE, large_valid_png(b"phoenix-preview-base"))
+    subprocess.run(["git", "-C", str(repo), "add", "README.md", "gradlew", ".github", "shared"], check=True)
     subprocess.run(["git", "-C", str(repo), "commit", "-qm", "fixture"], check=True)
-    return repo, renderer_log, verifier_log
+    return repo, renderer_log, verifier_log, compile_log
 
 
 def run_wrapper(repo, request_path, result_root, extra_env=None, timeout_seconds=None):
@@ -730,7 +870,7 @@ def main():
         fail("phantom-kanban-preview.sh is missing")
     with tempfile.TemporaryDirectory(prefix="phantom-kanban-preview-test-") as temp_name:
         temp = Path(temp_name)
-        repo, renderer_log, verifier_log = make_fake_repo(temp)
+        repo, renderer_log, verifier_log, compile_log = make_fake_repo(temp)
         patch = temp / "private" / "candidate.patch"
         make_patch(patch)
         request_path = temp / "private" / "request.json"
@@ -846,6 +986,65 @@ def main():
         if xml_payload.get("status") != "passed":
             fail(f"valid XML resource patch did not produce a passed result: {xml_payload}")
 
+        compile_fail_patch = temp / "compile-failure.patch"
+        make_patch(compile_fail_patch, marker="COMPILE_FAIL")
+        compile_fail_request = temp / "compile-failure.json"
+        write_json(compile_fail_request, request("KANBAN-COMPILE-FAILURE", compile_fail_patch))
+        compile_fail_result = fresh_result(temp, "compile-failure-result")
+        assert_failure(run_wrapper(repo, compile_fail_request, compile_fail_result), compile_fail_result, "validate-request")
+
+        png_structured_patch = temp / "png-structured-credential.patch"
+        make_patch(png_structured_patch, marker="ok\nTEST_MODE:png-structured-credential")
+        png_structured_request = temp / "png-structured-credential.json"
+        write_json(png_structured_request, request("KANBAN-PNG-STRUCTURED-CREDENTIAL", png_structured_patch))
+        png_structured_result = fresh_result(temp, "png-structured-credential-result")
+        assert_failure(run_wrapper(repo, png_structured_request, png_structured_result, extra_env={"PREVIEW_TEST_RENDERER_MODE": "png-structured-credential"}), png_structured_result, "validate-artifacts")
+
+        host_repo, _host_renderer_log, _host_verifier_log, _host_compile_log = make_fake_repo(temp / "host-mutation-fixture")
+        host_patch = temp / "host-mutation.patch"
+        make_patch(host_patch, marker="ok\nTEST_MODE:mutate-host")
+        host_request = temp / "host-mutation.json"
+        write_json(host_request, request("KANBAN-HOST-MUTATION", host_patch))
+        host_result = fresh_result(temp, "host-mutation-result")
+        assert_failure(run_wrapper(host_repo, host_request, host_result), host_result, "renderer")
+
+        for mode in ("stubborn-child", "leader-exits-descendant", "nested-child"):
+            bounded_root = temp / ("bounded-" + mode)
+            bounded_repo, _bounded_renderer_log, _bounded_verifier_log, _bounded_compile_log = make_fake_repo(bounded_root)
+            bounded_wrapper = bounded_repo / ".github/scripts/phantom-kanban-preview.sh"
+            bounded_wrapper.write_text(bounded_wrapper.read_text(encoding="utf-8").replace("CHILD_TIMEOUT_SECONDS = 1800", "CHILD_TIMEOUT_SECONDS = 1"), encoding="utf-8")
+            bounded_wrapper.chmod(0o700)
+            subprocess.run(["git", "-C", str(bounded_repo), "add", ".github/scripts/phantom-kanban-preview.sh"], check=True)
+            subprocess.run(["git", "-C", str(bounded_repo), "commit", "-qm", "bounded-test"], check=True)
+            child_pid_file = temp / (mode + ".pid")
+            bounded_patch = temp / (mode + ".patch")
+            child_hex = str(child_pid_file).encode("utf-8").hex()
+            make_patch(bounded_patch, marker="ok\nTEST_MODE:" + mode + "\nSLEEP_CHILD_HEX:" + child_hex)
+            bounded_request = temp / (mode + ".json")
+            write_json(bounded_request, request("KANBAN-BOUNDED-" + mode, bounded_patch))
+            bounded_result = fresh_result(temp, mode + "-result")
+            completed = run_wrapper(bounded_repo, bounded_request, bounded_result, timeout_seconds=10)
+            if completed.returncode == 0:
+                fail("bounded child unexpectedly succeeded: " + mode)
+            bounded_payload = json.loads((bounded_result / "preview-result.json").read_text(encoding="utf-8"))
+            if bounded_payload.get("stage") != "renderer":
+                fail(f"bounded child failed at wrong stage: mode={mode}, payload={bounded_payload}")
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline and not child_pid_file.exists():
+                time.sleep(0.02)
+            if not child_pid_file.exists():
+                fail("bounded child fixture did not start: " + mode)
+            child_pid = int(child_pid_file.read_text(encoding="ascii").strip())
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                try:
+                    os.kill(child_pid, 0)
+                except ProcessLookupError:
+                    break
+                time.sleep(0.02)
+            else:
+                fail("bounded process group left a descendant: " + mode)
+
         structured_json_patch = temp / "structured-json-credential.patch"
         make_structured_json_credential_patch(structured_json_patch)
         structured_json_request = temp / "structured-json-credential.json"
@@ -859,6 +1058,42 @@ def main():
         write_json(structured_xml_request, request("KANBAN-STRUCTURED-XML-CREDENTIAL", structured_xml_patch))
         structured_xml_result = fresh_result(temp, "structured-xml-credential-result")
         assert_failure(run_wrapper(repo, structured_xml_request, structured_xml_result), structured_xml_result, "validate-request")
+
+        generic_json_patch = temp / "generic-json-credential.patch"
+        make_generic_json_credential_patch(generic_json_patch)
+        generic_json_request = temp / "generic-json-credential.json"
+        write_json(generic_json_request, request("KANBAN-GENERIC-JSON-CREDENTIAL", generic_json_patch))
+        generic_json_result = fresh_result(temp, "generic-json-credential-result")
+        assert_failure(run_wrapper(repo, generic_json_request, generic_json_result), generic_json_result, "validate-request")
+
+        generic_xml_patch = temp / "generic-xml-credential.patch"
+        make_generic_xml_credential_patch(generic_xml_patch)
+        generic_xml_request = temp / "generic-xml-credential.json"
+        write_json(generic_xml_request, request("KANBAN-GENERIC-XML-CREDENTIAL", generic_xml_patch))
+        generic_xml_result = fresh_result(temp, "generic-xml-credential-result")
+        assert_failure(run_wrapper(repo, generic_xml_request, generic_xml_result), generic_xml_result, "validate-request")
+
+        unscannable_binary_patch = temp / "unscannable-binary.patch"
+        make_unscannable_binary_patch(unscannable_binary_patch)
+        unscannable_binary_request = temp / "unscannable-binary.json"
+        write_json(unscannable_binary_request, request("KANBAN-UNSCANNABLE-BINARY", unscannable_binary_patch))
+        unscannable_binary_result = fresh_result(temp, "unscannable-binary-result")
+        assert_failure(run_wrapper(repo, unscannable_binary_request, unscannable_binary_result), unscannable_binary_result, "validate-request")
+
+        for operation in ("rename", "copy"):
+            rename_copy_patch = temp / (operation + ".patch")
+            make_rename_copy_patch(rename_copy_patch, operation)
+            rename_copy_request = temp / (operation + ".json")
+            write_json(rename_copy_request, request("KANBAN-RESTRICTED-RENAME-COPY", rename_copy_patch))
+            rename_copy_result = fresh_result(temp, operation + "-result")
+            assert_failure(run_wrapper(repo, rename_copy_request, rename_copy_result), rename_copy_result, "validate-request")
+
+        trailing_patch = temp / "trailing-whitespace.patch"
+        make_trailing_whitespace_patch(trailing_patch)
+        trailing_request = temp / "trailing-whitespace.json"
+        write_json(trailing_request, request("KANBAN-TRAILING-WHITESPACE", trailing_patch))
+        trailing_result = fresh_result(temp, "trailing-whitespace-result")
+        assert_failure(run_wrapper(repo, trailing_request, trailing_result), trailing_result, "validate-request")
 
         decoded_binary_credential_patch = temp / "decoded-binary-credential.patch"
         make_binary_payload_credential_patch(decoded_binary_credential_patch)
@@ -950,7 +1185,7 @@ def main():
         assert_failure(run_wrapper(repo, unsafe_binary_request, unsafe_binary_result), unsafe_binary_result, "validate-request")
 
         credential_binary = temp / "credential-binary.patch"
-        credential_binary_bytes = binary_patch.read_bytes().replace(b"GIT binary patch\n", b"GIT binary patch\nAPI_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa\n", 1)
+        credential_binary_bytes = binary_patch.read_bytes().replace(b"GIT binary patch\n", b"GIT binary patch\nAPI_TOKEN=REDACTED_REDACTED\n", 1)
         write_private(credential_binary, credential_binary_bytes)
         credential_binary_request = temp / "credential-binary.json"
         write_json(credential_binary_request, request("KANBAN-BINARY-CREDENTIAL", credential_binary))
@@ -1032,7 +1267,7 @@ def main():
             assert_failure(run_wrapper(repo, host_request, host_result), host_result, "validate-request")
 
         credential_patch = temp / "credential.patch"
-        make_patch(credential_patch, marker="ok\nAPI_TOKEN=aaaaaaaaaaaaaaaa")
+        make_patch(credential_patch, marker="ok\nAPI_TOKEN=REDACTED_REDACTED")
         credential_request = temp / "credential.json"
         write_json(credential_request, request("KANBAN-CREDENTIAL", credential_patch))
         credential_result = fresh_result(temp, "credential-result")
@@ -1124,6 +1359,7 @@ def main():
         write_json(nested, request("KANBAN-44", nested_patch))
         result = fresh_result(temp, "nested-result")
         assert_failure(run_wrapper(repo, nested, result), result, "validate-request")
+        nested_patch.unlink()
 
         untrusted = temp / "untrusted.json"
         write_json(untrusted, request("KANBAN-45", patch, trusted_input=False))
@@ -1256,6 +1492,7 @@ def main():
         write_json(request_in_worktree, request("KANBAN-65", patch))
         request_in_worktree_result = fresh_result(temp, "request-in-registered-worktree-result")
         assert_failure(run_wrapper(repo, request_in_worktree, request_in_worktree_result), request_in_worktree_result, "validate-request")
+        request_in_worktree.unlink()
 
         task_worktree = temp / "registered-task-worktree"
         subprocess.run(["git", "-C", str(repo), "worktree", "add", "-q", "-b", "task-worktree", str(task_worktree)], check=True)
@@ -1478,9 +1715,9 @@ def main():
                 stderr=subprocess.PIPE,
             )
             deadline = time.monotonic() + 10
-            while not child_pid_file.exists() and time.monotonic() < deadline:
+            while (not child_pid_file.exists() or not child_pid_file.read_text(encoding="ascii").strip()) and time.monotonic() < deadline:
                 time.sleep(0.02)
-            if not child_pid_file.exists():
+            if not child_pid_file.exists() or not child_pid_file.read_text(encoding="ascii").strip():
                 process.kill()
                 process.communicate(timeout=5)
                 fail("renderer child did not start for " + signal_name)

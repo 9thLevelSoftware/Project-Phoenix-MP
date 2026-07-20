@@ -499,6 +499,11 @@ for raw_line in raw.splitlines():
         line = raw_line.decode("utf-8")
     except UnicodeDecodeError:
         raise SystemExit(1)
+    if line.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
+        # The renderer and preview wrapper intentionally share a
+        # conservative exact-file patch policy; canonical rename/copy
+        # metadata is not accepted by either producer or consumer.
+        raise SystemExit(1)
     if line.startswith("diff --git "):
         pieces = line.split(" ")
         if len(pieces) != 4:
@@ -517,13 +522,12 @@ for raw_line in raw.splitlines():
         value = clean_path(line[4:].strip(), "b/") if line[4:].strip() != "/dev/null" else None
         if value:
             paths.add(value)
-    elif line.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
-        value = clean_path(line.split(" ", 2)[2].strip())
-        if value:
-            paths.add(value)
 if not paths:
     raise SystemExit(1)
 
+binary = b"GIT binary patch" in raw
+if binary and any(Path(path).suffix.lower() != ".png" for path in paths):
+    raise SystemExit(1)
 kinds = set()
 for path in paths:
     if not path.startswith(allowed_prefixes):
@@ -723,6 +727,144 @@ for generated_root in generated_roots:
     validate_generated_tree(generated_root)
 Path(sys.argv[4]).write_text(json.dumps(sorted(actual), separators=(",", ":")) + "\n", encoding="utf-8")
 os.chmod(sys.argv[4], 0o600)
+PY
+}
+
+scan_candidate_contents() {
+    local root="$1"
+    local metadata="$2"
+    python3 - "$root" "$metadata" <<'PY'
+import json
+import os
+import re
+import stat
+import struct
+import sys
+import xml.etree.ElementTree as element_tree
+import zlib
+from pathlib import Path
+root = Path(sys.argv[1])
+paths = json.loads(Path(sys.argv[2]).read_text(encoding="utf-8"))["paths"]
+assignment = re.compile(r"(?i)\b(?:[A-Za-z0-9_.-]*(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?key|client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|authorization|token|secret|password|passwd|credential)[A-Za-z0-9_.-]*)\b[ \t]*(?::[ \t]*[A-Za-z_][A-Za-z0-9_.<>?, \t\[\]]*)?[ \t]*[:=][ \t]*['\"]?[A-Za-z0-9._~+/=-]{16,}['\"]?")
+name = re.compile(r"(?i)(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?(?:key|token)|client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|authorization|token|secret|password|passwd|credential)")
+
+def scan_json(value):
+    if isinstance(value, dict):
+        for key, item in value.items():
+            if name.search(key) and item not in (None, "", False, 0, [], {}):
+                raise SystemExit(1)
+            scan_json(item)
+    elif isinstance(value, list):
+        for item in value:
+            scan_json(item)
+    elif isinstance(value, str) and assignment.search(value):
+        raise SystemExit(1)
+
+def scan_xml(element):
+    local = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
+    if name.search(local) and (element.text or "").strip():
+        raise SystemExit(1)
+    for key, value in element.attrib.items():
+        if name.search(key) or assignment.search(value):
+            raise SystemExit(1)
+    text = (element.text or "").strip()
+    if assignment.search(text):
+        raise SystemExit(1)
+    for child in element:
+        scan_xml(child)
+
+def scan_text(data):
+    text = data.decode("utf-8", "strict")
+    if assignment.search(text):
+        raise SystemExit(1)
+    stripped = text.lstrip()
+    if stripped.startswith(("{", "[")):
+        scan_json(json.loads(text))
+    elif stripped.startswith("<"):
+        try:
+            scan_xml(element_tree.fromstring(text))
+        except element_tree.ParseError:
+            raise SystemExit(1)
+
+def scan_png(data):
+    if len(data) < 33 or data[:8] != b"\x89PNG\r\n\x1a\n":
+        raise SystemExit(1)
+    cursor = 8
+    seen_header = seen_data = seen_end = False
+    while cursor < len(data):
+        if cursor + 12 > len(data):
+            raise SystemExit(1)
+        length = int.from_bytes(data[cursor:cursor + 4], "big")
+        if cursor + 12 + length > len(data):
+            raise SystemExit(1)
+        kind = data[cursor + 4:cursor + 8]
+        payload = data[cursor + 8:cursor + 8 + length]
+        checksum = int.from_bytes(data[cursor + 8 + length:cursor + 12 + length], "big")
+        if zlib.crc32(kind + payload) & 0xffffffff != checksum:
+            raise SystemExit(1)
+        if kind == b"IHDR":
+            if cursor != 8 or length != 13 or seen_header:
+                raise SystemExit(1)
+            width, height = struct.unpack(">II", payload[:8])
+            if not 1 <= width <= 100000 or not 1 <= height <= 100000:
+                raise SystemExit(1)
+            seen_header = True
+        elif kind == b"IDAT":
+            if not seen_header or seen_end:
+                raise SystemExit(1)
+            seen_data = True
+        elif kind == b"IEND":
+            if length or not seen_header or not seen_data or seen_end or cursor + 12 != len(data):
+                raise SystemExit(1)
+            seen_end = True
+        if kind in (b"tEXt", b"iTXt", b"zTXt"):
+            try:
+                if kind == b"tEXt":
+                    text = payload.split(b"\x00", 1)[1]
+                elif kind == b"zTXt":
+                    keyword, compressed = payload.split(b"\x00", 1)
+                    if len(compressed) < 2 or compressed[0] != 0:
+                        raise ValueError
+                    text = zlib.decompress(compressed[1:])
+                else:
+                    keyword_end = payload.index(b"\x00")
+                    cursor = keyword_end + 3
+                    language_end = payload.index(b"\x00", cursor)
+                    translated_end = payload.index(b"\x00", language_end + 1)
+                    text = payload[translated_end + 1:]
+                    if payload[keyword_end + 1] == 1:
+                        text = zlib.decompress(text)
+                scan_text(text)
+            except (ValueError, IndexError, UnicodeError, zlib.error):
+                raise SystemExit(1)
+        cursor += 12 + length
+    if not seen_end:
+        raise SystemExit(1)
+
+for relative in paths:
+    path = root / relative
+    if not path.exists():
+        continue
+    info = os.lstat(path)
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        raise SystemExit(1)
+    data = path.read_bytes()
+    suffix = path.suffix.lower()
+    if suffix == ".png":
+        scan_png(data)
+    elif suffix == ".json":
+        scan_json(json.loads(data.decode("utf-8")))
+        scan_text(data)
+    elif suffix == ".xml":
+        try:
+            scan_xml(element_tree.fromstring(data.decode("utf-8")))
+        except (UnicodeError, element_tree.ParseError):
+            raise SystemExit(1)
+    elif suffix in {".kt", ".swift", ".strings", ".stringsdict", ".properties", ".svg"}:
+        scan_text(data)
+    else:
+        # Opaque/compressed binary resource formats are not scannable.
+        raise SystemExit(1)
 PY
 }
 
@@ -1672,6 +1814,7 @@ PY
     local status_after_patch="$PRIVATE_DIR/status-after-patch"
     local actual_files="$PRIVATE_DIR/actual-files.json"
     status_paths_and_validate "$WORKTREE" "$patch_metadata" "$status_after_patch" "$actual_files" || fail 'patch created an unsafe or unexpected worktree change'
+    if ! scan_candidate_contents "$WORKTREE" "$patch_metadata"; then fail 'candidate contains an unsafe or unscannable decoded resource'; fi
     local applied_diff="$PRIVATE_DIR/applied.patch"
     if ! git -C "$WORKTREE" diff --binary --full-index "$BASE_SHA" -- >"$applied_diff" 2>&1; then fail 'applied worktree diff could not be recorded'; fi
     chmod 600 "$applied_diff"
