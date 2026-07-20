@@ -104,6 +104,26 @@ def make_xml_patch(path):
     write_private(path, REAL_XML_PATCH)
 
 
+def make_add_delete_patch(path, changed_path, operation):
+    if operation == "add":
+        old_header = "/dev/null"
+        new_header = f"b/{changed_path}"
+        hunk = "@@ -0,0 +1 @@\n+candidate\n"
+    elif operation == "delete":
+        old_header = f"a/{changed_path}"
+        new_header = "/dev/null"
+        hunk = "@@ -1 +0,0 @@\n-candidate\n"
+    else:
+        raise ValueError(operation)
+    write_private(
+        path,
+        f"diff --git a/{changed_path} b/{changed_path}\n"
+        f"--- {old_header}\n"
+        f"+++ {new_header}\n"
+        + hunk,
+    )
+
+
 def make_path_patch(path, changed_path):
     write_private(
         path,
@@ -150,13 +170,15 @@ def make_fake_repo(root):
         "    if binary: path.write_bytes(data)\n"
         "    else: path.write_text(data, encoding='utf-8')\n"
         "    os.chmod(path, 0o600)\n"
-        "def png():\n"
+        "def png(with_credential=False):\n"
         "    import struct, zlib\n"
         "    def chunk(kind, payload):\n"
         "        return len(payload).to_bytes(4, 'big') + kind + payload + zlib.crc32(kind + payload).to_bytes(4, 'big')\n"
         "    ihdr = struct.pack('>IIBBBBB', 2, 2, 8, 6, 0, 0, 0)\n"
         "    pixels = b'\\x00' + b'\\x00' * 8 + b'\\x00' + b'\\x00' * 8\n"
-        "    return b'\\x89PNG\\r\\n\\x1a\\n' + chunk(b'IHDR', ihdr) + chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b'')\n"
+        "    metadata = ('API_TOKEN=' + 'a' * 24) if with_credential else ('<x:xmpmeta xmlns:x=\\\"adobe:ns:meta/\\\" xmlns:rdf=\\\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\\\"><rdf:RDF/></x:xmpmeta>')\n"
+        "    itxt = b'XML:com.adobe.xmp\\x00\\x00\\x00\\x00\\x00' + metadata.encode('utf-8')\n"
+        "    return b'\\x89PNG\\r\\n\\x1a\\n' + chunk(b'IHDR', ihdr) + chunk(b'iTXt', itxt) + chunk(b'IDAT', zlib.compress(pixels)) + chunk(b'IEND', b'')\n"
         "if len(sys.argv) != 5 or sys.argv[1] != 'render' or sys.argv[3] != 'just-lift-connected':\n"
         "    raise SystemExit(2)\n"
         "artifact, patch = Path(sys.argv[2]), Path(sys.argv[4])\n"
@@ -179,7 +201,8 @@ def make_fake_repo(root):
         "    os.rename(result_root, original)\n"
         "    os.symlink(outside, result_root)\n"
         "if mode == 'sleep':\n"
-        "    Path(marker('SLEEP_CHILD:')).write_text(str(os.getpid()) + '\\n', encoding='ascii')\n"
+        "    sleep_child = bytes.fromhex(marker('SLEEP_CHILD_HEX:')).decode('utf-8')\n"
+        "    Path(sleep_child).write_text(str(os.getpid()) + '\\n', encoding='ascii')\n"
         "    time.sleep(60)\n"
         "if b'FAIL_RENDERER' in patch.read_bytes(): raise SystemExit(17)\n"
         "artifact.mkdir(mode=0o700, parents=True, exist_ok=True)\n"
@@ -192,7 +215,7 @@ def make_fake_repo(root):
         "command_specs = [('xcodebuild.version', 'toolchain.log'), ('simulator.boot', 'boot.log'), ('simulator.bootstatus', 'bootstatus.log'), ('simulator.terminate', 'terminate.log'), ('simulator.uninstall', 'uninstall.log'), ('build', 'build.log'), ('run-tests', 'test.log'), ('simulator.app-state', 'app-state.log'), ('simulator.logs', 'simulator.log'), ('simulator.screenshot', 'screenshot.log')]\n"
         "commands = [{'name': name, 'exitCode': 0, 'output': output, **({'resultBundle': {'basename': 'test.xcresult', 'status': 'private-not-retained'}} if name == 'run-tests' else {})} for name, output in command_specs]\n"
         "markers = ['xctest.passed', 'phantom.connected', 'simulator.screenshot']\n"
-        "capture_png = png()\n"
+        "capture_png = png(mode == 'png-text-credential')\n"
         "capture_sha = hashlib.sha256(capture_png).hexdigest()\n"
         "captures = [{'slug': 'simulator-after', 'path': 'after.png', 'sha256': capture_sha, 'dimensions': {'width': 2, 'height': 2}, 'phase': 'after', 'pair': 'simulator-after', 'checkpoint': 'phantom-connected', 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'simulator': simulator}, {'slug': 'xctest-after', 'path': 'xctest-attachment.png', 'sha256': capture_sha, 'dimensions': {'width': 2, 'height': 2}, 'phase': 'after', 'pair': 'xctest-after', 'checkpoint': 'phantom-connected', 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'simulator': simulator}]\n"
         "run = {'schemaVersion': 1, 'runId': 'run-fake-1', 'provenance': {'baseSha': base, 'fixture': {'id': 'just-lift-connected', 'sha256': fixture_sha}, 'xcode': 'Xcode 16.0', 'sdk': '18.0', 'simulator': simulator, 'bundleId': 'com.devil.phoenixproject.projectphoenix'}, 'commands': commands, 'semanticMarkers': {'required': markers, 'observed': markers}, 'captures': captures, 'textualArtifacts': [{'path': name} for name in ('toolchain.log', 'build.log', 'test.log', 'app-state.log', 'simulator.log', 'screenshot.log', '.commands.jsonl')]}\n"
@@ -207,7 +230,8 @@ def make_fake_repo(root):
         "compact_capture = {'path': 'after.png', 'sha256': capture_sha, 'dimensions': {'width': 2, 'height': 2}}\n"
         "comparison = {'before': compact_capture, 'after': compact_capture, 'diffJson': {'path': 'comparison/diff.json', 'sha256': diff_sha_json}, 'diffImage': {'path': 'comparison/diff.png', 'sha256': diff_sha, 'dimensions': {'width': 2, 'height': 2}}, 'summary': diff}\n"
         "patch_lines = patch_text.splitlines()\n"
-        "changed_file = next(line[6:].split('\t', 1)[0] for line in patch_lines if line.startswith('+++ b/'))\n"
+        "changed_file = next((line[6:].split('\\t', 1)[0] for line in patch_lines if line.startswith('+++ b/')), None)\n"
+        "if changed_file is None: changed_file = next(line[6:].split('\\t', 1)[0] for line in patch_lines if line.startswith('--- a/'))\n"
         "candidate_kind = 'resource' if changed_file.endswith('.xml') else 'kotlin'\n"
         "manifest = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patch': {'path': 'proposal.patch', 'sha256': patch_sha, 'size': len(patch_bytes), 'binary': False, 'format': 'exact-input'}, 'candidateKinds': [candidate_kind], 'allowedChangedFiles': [changed_file], 'actualChangedFiles': [changed_file], 'worktree': {'baseSha': base, 'headSha': base, 'detached': True, 'uncommitted': True, 'statusEntryCount': 1, 'appliedDiffSha256': patch_sha}, 'focusedChecks': [{'name': 'git.diff.check', 'passed': True}], 'before': {'artifact': 'before', 'manifestSha256': run_sha, 'identity': identity}, 'after': {'artifact': 'after', 'manifestSha256': run_sha, 'identity': identity}, 'comparison': comparison, 'evidence': {'proposalMarkdown': 'proposal.md', 'summaryJson': 'evidence-summary.json'}}\n"
         "summary = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patchSha256': patch_sha, 'changedFiles': [changed_file], 'beforeAfterIdentity': identity, 'comparison': comparison, 'artifacts': ['before', 'after', 'proposal.patch', 'proposal-manifest.json', 'proposal.md', 'comparison/diff.json', 'comparison/diff.png']}\n"
@@ -537,7 +561,72 @@ def main():
         if xml_payload.get("status") != "passed":
             fail(f"valid XML resource patch did not produce a passed result: {xml_payload}")
 
-        for root in ("/Users", "/private", "/tmp", "/Applications", "/Library"):
+        for operation, changed_path in (
+            ("add", "shared/src/commonMain/composeResources/values/added.xml"),
+            ("delete", "shared/src/commonMain/composeResources/values/deleted.xml"),
+            ("add", "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Added.kt"),
+            ("delete", "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/Deleted.kt"),
+        ):
+            add_delete_patch = temp / f"{operation}-{Path(changed_path).name}.patch"
+            make_add_delete_patch(add_delete_patch, changed_path, operation)
+            add_delete_request = temp / (add_delete_patch.stem + ".json")
+            write_json(add_delete_request, request("KANBAN-ADD-DELETE", add_delete_patch))
+            add_delete_result = fresh_result(temp, add_delete_patch.stem + "-result")
+            completed = run_wrapper(repo, add_delete_request, add_delete_result)
+            if completed.returncode != 0:
+                fail(
+                    f"valid {operation} diff was rejected for {changed_path}: "
+                    f"stdout={completed.stdout!r}, stderr={completed.stderr!r}"
+                )
+            add_delete_payload = json.loads((add_delete_result / "preview-result.json").read_text(encoding="utf-8"))
+            if add_delete_payload.get("status") != "passed":
+                fail(f"valid {operation} diff did not produce a passed result: {add_delete_payload}")
+
+        bad_add_delete_cases = (
+            (
+                "add-absolute-endpoint",
+                "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/BadAbsolute.kt",
+                "add",
+                lambda text, changed_path: text.replace(f"+++ b/{changed_path}", "+++ /absolute/path.kt"),
+            ),
+            (
+                "add-traversal-endpoint",
+                "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/BadTraversal.kt",
+                "add",
+                lambda text, changed_path: text.replace(
+                    f"+++ b/{changed_path}",
+                    "+++ b/shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/../BadTraversal.kt",
+                ),
+            ),
+            (
+                "delete-unsupported-endpoint",
+                "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/BadUnsupported.kt",
+                "delete",
+                lambda text, changed_path: text.replace(
+                    f"--- a/{changed_path}",
+                    "--- a/androidApp/src/main/res/values/strings.xml",
+                ),
+            ),
+            (
+                "both-null-endpoints",
+                "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/BadBothNull.kt",
+                "add",
+                lambda text, changed_path: text.replace(f"+++ b/{changed_path}", "+++ /dev/null"),
+            ),
+        )
+        for label, changed_path, operation, mutate in bad_add_delete_cases:
+            bad_patch = temp / (label + ".patch")
+            make_add_delete_patch(bad_patch, changed_path, operation)
+            write_private(bad_patch, mutate(bad_patch.read_text(encoding="utf-8"), changed_path))
+            bad_request = temp / (label + ".json")
+            write_json(bad_request, request("KANBAN-BAD-ADD-DELETE", bad_patch))
+            bad_result = fresh_result(temp, label + "-result")
+            assert_failure(run_wrapper(repo, bad_request, bad_result), bad_result, "validate-request")
+
+        for root in (
+            "/Users", "/private", "/tmp", "/Applications", "/Library",
+            "/var", "/home", "/Volumes", "/System", "/opt", "/etc", "/usr",
+        ):
             host_patch = temp / ("host-path-" + root[1:] + ".patch")
             make_patch(host_patch, marker=f"ok\nhost={root}/candidate")
             host_request = temp / (host_patch.stem + ".json")
@@ -684,6 +773,7 @@ def main():
             ("unknown-diff", "unknown-diff"),
             ("bad-diff-input", "bad-diff-input"),
             ("malformed-png", "malformed-png"),
+            ("png-text-credential", "png-text-credential"),
             ("bad-markdown", "bad-markdown"),
             ("bad-markdown-ref", "bad-markdown-ref"),
         ):
@@ -902,7 +992,7 @@ def main():
         for signal_name in ("SIGINT", "SIGHUP", "SIGTERM"):
             child_pid_file = temp / ("renderer-child-" + signal_name + ".pid")
             signal_patch = temp / ("signal-" + signal_name + ".patch")
-            make_patch(signal_patch, marker=f"ok\nTEST_MODE:sleep\nSLEEP_CHILD:{child_pid_file}")
+            make_patch(signal_patch, marker=f"ok\nTEST_MODE:sleep\nSLEEP_CHILD_HEX:{str(child_pid_file).encode().hex()}")
             signal_request = temp / ("signal-" + signal_name + ".json")
             write_json(signal_request, request("KANBAN-60", signal_patch))
             signal_result = fresh_result(temp, "signal-" + signal_name + "-result")

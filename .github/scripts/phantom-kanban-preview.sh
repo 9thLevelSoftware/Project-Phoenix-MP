@@ -95,7 +95,15 @@ PATCH_RESOURCE_EXTENSIONS = {
     ".json", ".jpg", ".jpeg", ".gif", ".mp3", ".m4a", ".otf", ".properties", ".png",
     ".strings", ".stringsdict", ".svg", ".ttf", ".wav", ".webp", ".xml",
 }
-PATCH_HOST_PATH_RE = re.compile(r"(?<![A-Za-z0-9_.])/(?:Users|private|tmp|Applications|Library)(?:/|$)")
+HOST_PATH_ROOTS = (
+    "Users", "private", "tmp", "var", "home", "Volumes", "Applications", "System", "Library", "opt", "etc", "usr",
+)
+HOST_PATH_ROOT_RE = re.compile(r"(?<![A-Za-z0-9_.])/(?:" + "|".join(HOST_PATH_ROOTS) + r")(?:/|$)")
+PNG_HOST_PATH_ROOT_RE = re.compile(r"(?<![A-Za-z0-9_.:/-])/(?:" + "|".join(HOST_PATH_ROOTS) + r")(?:/|$)")
+PNG_GENERIC_HOST_PATH_RE = re.compile(
+    r"(?<![A-Za-z0-9_.:/-])/(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]+(?=$|[\s\"'<>])"
+)
+PATCH_HOST_PATH_RE = HOST_PATH_ROOT_RE
 PATCH_CREDENTIAL_RE = re.compile(
     r"(?im)^[+\-]?\s*(?:export\s+)?(?:SUPABASE_ANON_KEY|API_TOKEN|TOKEN|SECRET|PASSWORD|PASSWD|"
     r"PRIVATE[_-]?KEY|CREDENTIAL|API[_-]?KEY|ANON[_-]?KEY|AUTHORIZATION)"
@@ -697,11 +705,16 @@ def credential_detected(data):
 
 def host_path_detected(data):
     text = data.decode("utf-8", "replace")
-    if re.search(r"/(?:Users|private|tmp|var|home|Volumes|Applications|System|Library|opt|etc|usr)(?:/|$)", text):
+    if HOST_PATH_ROOT_RE.search(text):
         return True
     if re.search(r"(?<![:/A-Za-z0-9_])/(?!/)[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*", text):
         return True
     return False
+
+
+def png_host_path_detected(data):
+    text = data.decode("utf-8", "replace")
+    return bool(PNG_HOST_PATH_ROOT_RE.search(text) or PNG_GENERIC_HOST_PATH_RE.search(text))
 
 
 def credential_or_host_path(data):
@@ -782,23 +795,27 @@ def validate_proposal_patch(data):
         cursor += 1
         old_path = None
         new_path = None
+        old_header_seen = False
+        new_header_seen = False
         hunks = 0
         while cursor < len(lines) and not lines[cursor].startswith("diff --git "):
             line = lines[cursor]
             if line.startswith("--- "):
-                if old_path is not None or hunks:
+                if old_header_seen or hunks:
                     raise ValueError
                 old_path = validate_patch_header_path(line[4:], "a/")
+                old_header_seen = True
                 cursor += 1
                 continue
             if line.startswith("+++ "):
-                if old_path is None or new_path is not None or hunks:
+                if not old_header_seen or new_header_seen or hunks:
                     raise ValueError
                 new_path = validate_patch_header_path(line[4:], "b/")
+                new_header_seen = True
                 cursor += 1
                 continue
             if line.startswith("@@ "):
-                if old_path is None or new_path is None:
+                if not old_header_seen or not new_header_seen:
                     raise ValueError
                 hunk = hunk_header.fullmatch(line)
                 if hunk is None:
@@ -828,19 +845,23 @@ def validate_proposal_patch(data):
                     raise ValueError
                 hunks += 1
                 continue
-            if not old_path and (index_header.fullmatch(line) or mode_header.fullmatch(line) or similarity_header.fullmatch(line)):
+            if not old_header_seen and (index_header.fullmatch(line) or mode_header.fullmatch(line) or similarity_header.fullmatch(line)):
                 cursor += 1
                 continue
-            if not old_path and line.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
+            if not old_header_seen and line.startswith(("rename from ", "rename to ", "copy from ", "copy to ")):
                 paths.add(validate_patch_file_path(line.split(" ", 2)[2]))
                 cursor += 1
                 continue
             raise ValueError
-        if old_path is None or new_path is None or hunks == 0:
+        if not old_header_seen or not new_header_seen or hunks == 0 or (old_path is None and new_path is None):
             raise ValueError
-        if old_path is not None and left is not None and old_path != left:
-            raise ValueError
-        if new_path is not None and right is not None and new_path != right:
+        if old_path is None:
+            if new_path is None or right != new_path or (left is not None and left != new_path):
+                raise ValueError
+        elif new_path is None:
+            if left != old_path or (right is not None and right != old_path):
+                raise ValueError
+        elif left != old_path or right != new_path:
             raise ValueError
         if old_path:
             paths.add(old_path)
@@ -1250,6 +1271,52 @@ def validate_proposal_markdown(data, manifest):
         raise ValueError
 
 
+def png_text_payload(kind, payload):
+    import zlib
+
+    if kind in (b"tEXt", b"zTXt"):
+        separator = payload.find(b"\x00")
+        if separator <= 0:
+            raise ValueError
+        text = payload[separator + 1:]
+        if kind == b"tEXt":
+            return text
+        if not text or text[0] != 0:
+            raise ValueError
+        try:
+            return zlib.decompress(text[1:])
+        except zlib.error:
+            raise ValueError
+    if kind == b"iTXt":
+        keyword_end = payload.find(b"\x00")
+        if keyword_end <= 0 or len(payload) < keyword_end + 3:
+            raise ValueError
+        compressed = payload[keyword_end + 1]
+        compression_method = payload[keyword_end + 2]
+        if compressed not in (0, 1) or compression_method != 0:
+            raise ValueError
+        language_end = payload.find(b"\x00", keyword_end + 3)
+        if language_end < 0:
+            raise ValueError
+        translated_end = payload.find(b"\x00", language_end + 1)
+        if translated_end < 0:
+            raise ValueError
+        text = payload[translated_end + 1:]
+        if compressed:
+            try:
+                text = zlib.decompress(text)
+            except zlib.error:
+                raise ValueError
+        return text
+    raise ValueError
+
+
+def validate_png_text_chunk(kind, payload):
+    text = png_text_payload(kind, payload)
+    if credential_detected(text) or png_host_path_detected(text):
+        raise ValueError
+
+
 def validate_png(data):
     if len(data) < 33 or data[:8] != b"\x89PNG\r\n\x1a\n":
         raise ValueError
@@ -1268,8 +1335,8 @@ def validate_png(data):
         checksum = int.from_bytes(data[cursor + 8 + length:cursor + 12 + length], "big")
         if zlib_crc(kind + payload) != checksum:
             raise ValueError
-        if kind in (b"tEXt", b"iTXt", b"zTXt") and credential_or_host_path(payload):
-            raise ValueError
+        if kind in (b"tEXt", b"iTXt", b"zTXt"):
+            validate_png_text_chunk(kind, payload)
         if kind == b"IHDR":
             if cursor != 8 or seen_header or length != 13:
                 raise ValueError
