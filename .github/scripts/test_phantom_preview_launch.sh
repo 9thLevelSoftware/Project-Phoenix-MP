@@ -7,11 +7,13 @@ exec /usr/bin/python3 - <<'PY'
 import hashlib
 import json
 import os
+import signal
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 script_dir = Path(os.environ["SCRIPT_DIR"])
@@ -27,7 +29,8 @@ FIXTURE_REL = Path("shared/src/iosSimulatorArm64Main/kotlin/com/devil/phoenixpro
 PROJECT_REL = Path("iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj")
 CONFIG_REL = Path("iosApp/VitruvianPhoenix/Config/Supabase.xcconfig")
 EXPECTED_FIXTURE_SHA256 = "e180679548a2d96dbc59c51449edb3b99c19d3e3be82eca98c0707a21a64e78e"
-EXPECTED_UDID = "11111111-2222-3333-4444-555555555555"
+EXPECTED_UDID = "678A4E3B-6A1F-469C-8068-9A2608A85783"
+EXPECTED_SIMULATOR_NAME = "Phantom Harness iPhone 17 Pro"
 EXPECTED_BUNDLE = "com.devil.phoenixproject.projectphoenix"
 EXPECTED_LAUNCH_COMMAND = "phantom-preview-launch.sh launch [WORKTREE] just-lift-connected"
 EXPECTED_CLEANUP_COMMAND = "phantom-preview-launch.sh stop SESSION_DESCRIPTOR"
@@ -91,7 +94,10 @@ def make_fake_tools(root, state):
         f'''#!/usr/bin/env python3
 import json
 import os
+import signal
 import sys
+import subprocess
+import time
 from pathlib import Path
 
 state = Path({state_literal!r})
@@ -105,14 +111,22 @@ if args[:3] == ["simctl", "list", "devices"]:
     if (state / "fail-device-output").exists():
         print("{{malformed", end="")
         raise SystemExit(0)
+    if (state / "fail-process-group").exists():
+        child_code = "import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"
+        child = subprocess.Popen([sys.executable, "-c", child_code])
+        (state / "descendant-pid").write_text(str(child.pid), encoding="ascii")
+        signal.signal(signal.SIGTERM, lambda _signum, _frame: os._exit(0))
+        time.sleep(60)
     print(json.dumps({{"devices": {{"com.apple.CoreSimulator.SimRuntime.iOS-26-5": [{{
         "state": "Booted" if (state / "booted").exists() else "Shutdown",
         "isAvailable": True,
-        "name": "iPhone 17 Pro",
+        "name": "{EXPECTED_SIMULATOR_NAME}",
         "udid": "{EXPECTED_UDID}",
     }}]}}}}))
     raise SystemExit(0)
 if len(args) >= 3 and args[:2] == ["simctl", "boot"]:
+    if (state / "fail-boot").exists():
+        raise SystemExit(31)
     (state / "booted").write_text("booted\\n", encoding="ascii")
     raise SystemExit(0)
 if len(args) >= 3 and args[:2] == ["simctl", "bootstatus"]:
@@ -412,6 +426,9 @@ with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_
     descriptor_path = root / "session.json"
     descriptor_path.write_text(json.dumps(descriptor, sort_keys=True) + "\n", encoding="utf-8")
     descriptor_path.chmod(0o600)
+    # Cleanup must make the exact descriptor-bound simulator usable before
+    # terminate/uninstall, even when the simulator is currently shut down.
+    (state / "booted").unlink()
     command_log.write_text("", encoding="utf-8")
     stopped = run([str(host / ".github/scripts/phantom-preview-launch.sh"), "stop", str(descriptor_path)], cwd=root, env=invocation_env(fake_bin, root, java_home))
     if stopped.returncode != 0 or stopped.stderr or len(stopped.stdout.strip().splitlines()) != 1:
@@ -424,10 +441,30 @@ with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_
     stop_commands = command_log.read_text(encoding="utf-8").splitlines()
     if stop_commands != [
         "xcrun simctl list devices -j",
+        f"xcrun simctl boot {EXPECTED_UDID}",
+        f"xcrun simctl bootstatus {EXPECTED_UDID} -b",
         f"xcrun simctl terminate {EXPECTED_UDID} {EXPECTED_BUNDLE}",
         f"xcrun simctl uninstall {EXPECTED_UDID} {EXPECTED_BUNDLE}",
     ]:
         fail(f"stop issued an unsafe/unexpected command set: {stop_commands!r}")
+    if not (state / "booted").exists():
+        fail("stopped simulator cleanup did not leave the descriptor-bound simulator booted")
+
+    # A simulator boot failure is reported through the same generic safe
+    # boundary as malformed device output; no raw subprocess diagnostics leak.
+    (state / "booted").unlink()
+    (state / "fail-boot").write_text("fail\n", encoding="ascii")
+    command_log.write_text("", encoding="utf-8")
+    boot_failure = run(
+        [str(host / ".github/scripts/phantom-preview-launch.sh"), "stop", str(descriptor_path)],
+        cwd=root,
+        env=invocation_env(fake_bin, root, java_home),
+    )
+    assert_safe_failed(boot_failure, "simulator stop boot failure")
+    boot_failure_commands = command_log.read_text(encoding="utf-8").splitlines()
+    if any(line.startswith("xcrun simctl terminate ") or line.startswith("xcrun simctl uninstall ") for line in boot_failure_commands):
+        fail("stop boot failure attempted terminate/uninstall")
+    (state / "fail-boot").unlink()
 
     # Unknown fixtures, unsafe argument shapes, and secret-bearing environment values fail before tools.
     for args, label in [
@@ -532,7 +569,7 @@ with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_
 
     # Descriptor validation rejects tampering before any fixed cleanup action.
     tampered = json.loads(descriptor_path.read_text(encoding="utf-8"))
-    tampered["simulatorUdid"] = "bad"
+    tampered["simulatorUdid"] = "11111111-2222-3333-4444-555555555555"
     descriptor_path.write_text(json.dumps(tampered) + "\n", encoding="utf-8")
     descriptor_path.chmod(0o600)
     command_log.write_text("", encoding="utf-8")
@@ -639,6 +676,41 @@ with tempfile.TemporaryDirectory(prefix="phantom-preview-launch-test-") as temp_
     (state / "fail-launch").unlink()
     if clean_status(host):
         fail("failed launch mutated source status")
+
+    # A stubborn descendant must not survive timeout cleanup after its leader
+    # exits during TERM grace. Bound only this disposable fixture's launcher;
+    # production keeps the full command timeout.
+    bounded_launcher = host / ".github/scripts/phantom-preview-launch.sh"
+    bounded_launcher.write_text(
+        bounded_launcher.read_text(encoding="utf-8").replace(
+            "COMMAND_TIMEOUT_SECONDS = 1800", "COMMAND_TIMEOUT_SECONDS = 1"
+        ),
+        encoding="utf-8",
+    )
+    git(host, "add", bounded_launcher)
+    git(host, "commit", "-qm", "bounded process-group fixture")
+    (state / "fail-process-group").write_text("fail\n", encoding="ascii")
+    (state / "descendant-pid").unlink(missing_ok=True)
+    command_log.write_text("", encoding="utf-8")
+    process_group_failure = run_launch(host, fake_bin, root, java_home, "launch", "just-lift-connected")
+    assert_safe_failed(process_group_failure, "stubborn process-group descendant")
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline and not (state / "descendant-pid").exists():
+        time.sleep(0.02)
+    if not (state / "descendant-pid").exists():
+        fail("stubborn process-group fixture did not start its descendant")
+    descendant_pid = int((state / "descendant-pid").read_text(encoding="ascii"))
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        try:
+            os.kill(descendant_pid, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.02)
+    else:
+        os.kill(descendant_pid, signal.SIGKILL)
+        fail("stubborn process-group descendant survived cleanup")
+    (state / "fail-process-group").unlink()
 
 print("GREEN: phantom persistent launch contract, safety gates, descriptor validation, cleanup, and minimal env passed")
 PY

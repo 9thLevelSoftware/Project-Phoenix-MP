@@ -20,6 +20,7 @@ import stat
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 SCRIPT_DIR = Path(os.environ.get("PHOENIX_PREVIEW_LAUNCH_SCRIPT_DIR", "")).resolve()
@@ -31,11 +32,13 @@ GRADLEW_RELATIVE = Path("gradlew")
 EXPECTED_FIXTURE_SHA256 = "e180679548a2d96dbc59c51449edb3b99c19d3e3be82eca98c0707a21a64e78e"
 EXPECTED_BUNDLE_ID = "com.devil.phoenixproject.projectphoenix"
 EXPECTED_FIXTURE = "just-lift-connected"
-SIMULATOR_NAME = "iPhone 17 Pro"
+SIMULATOR_NAME = "Phantom Harness iPhone 17 Pro"
+SIMULATOR_UDID = "678A4E3B-6A1F-469C-8068-9A2608A85783"
 SIMULATOR_RUNTIME_SUFFIX = "iOS-26-5"
 SYSTEM_PATH = "/usr/bin:/bin:/usr/sbin:/sbin"
 COMMAND_TIMEOUT_SECONDS = 1800
 PROCESS_TERM_GRACE_SECONDS = 0.5
+PROCESS_REAP_TIMEOUT_SECONDS = 5
 MAX_DESCRIPTOR_BYTES = 64 * 1024
 UDID_RE = re.compile(r"^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$")
 SHA1_RE = re.compile(r"^[0-9A-Fa-f]{40}$")
@@ -366,24 +369,49 @@ def child_environment(private_root, java_home):
     return environment
 
 
+def process_group_exists(process):
+    try:
+        os.killpg(process.pid, 0)
+    except OSError:
+        return False
+    return True
+
+
+def bounded_reap(process, timeout=PROCESS_REAP_TIMEOUT_SECONDS):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            return process.wait(timeout=min(0.05, max(0.0, deadline - time.monotonic())))
+        except subprocess.TimeoutExpired:
+            continue
+    raise subprocess.TimeoutExpired(process.args, timeout)
+
+
 def terminate_process_group(process):
+    # A direct child can exit during TERM grace while a stubborn descendant
+    # keeps the session alive. KILL is therefore unconditional after grace.
     try:
         os.killpg(process.pid, signal.SIGTERM)
     except OSError:
         pass
-    try:
-        process.wait(timeout=PROCESS_TERM_GRACE_SECONDS)
-        return
-    except subprocess.TimeoutExpired:
-        pass
+    grace_deadline = time.monotonic() + PROCESS_TERM_GRACE_SECONDS
+    while time.monotonic() < grace_deadline:
+        try:
+            process.wait(timeout=0.02)
+        except subprocess.TimeoutExpired:
+            pass
     try:
         os.killpg(process.pid, signal.SIGKILL)
     except OSError:
         pass
     try:
-        process.wait(timeout=5)
+        bounded_reap(process)
     except subprocess.TimeoutExpired:
-        pass
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            pass
+        bounded_reap(process)
 
 
 def run_tool(private_root, stage, argv, cwd, environment, timeout=COMMAND_TIMEOUT_SECONDS, allowed=(0,)):
@@ -403,6 +431,11 @@ def run_tool(private_root, stage, argv, cwd, environment, timeout=COMMAND_TIMEOU
             try:
                 return_code = process.wait(timeout=timeout)
             except subprocess.TimeoutExpired:
+                terminate_process_group(process)
+                fail()
+            if process_group_exists(process):
+                # A successful leader is not sufficient: descendants must
+                # not outlive a tool invocation or retain the session.
                 terminate_process_group(process)
                 fail()
     except (OSError, ValueError):
@@ -500,7 +533,7 @@ def parse_devices(payload):
             state = device.get("state")
             if not isinstance(name, str) or not isinstance(udid, str) or not isinstance(state, str):
                 fail()
-            if name != SIMULATOR_NAME or not UDID_RE.fullmatch(udid):
+            if name != SIMULATOR_NAME or udid != SIMULATOR_UDID:
                 continue
             if state not in {"Booted", "Shutdown"}:
                 continue
@@ -678,7 +711,7 @@ def descriptor_from_path(raw):
         fail()
     if value["status"] != "running":
         fail()
-    if not UDID_RE.fullmatch(value["simulatorUdid"]):
+    if value["simulatorUdid"] != SIMULATOR_UDID:
         fail()
     if value["bundleId"] != EXPECTED_BUNDLE_ID or value["fixture"] != EXPECTED_FIXTURE:
         fail()
@@ -699,15 +732,18 @@ def stop(raw_descriptor):
         "PHOENIX_SIMULATOR_FIXTURE": EXPECTED_FIXTURE,
         "PHOENIX_PREVIEW_LAUNCH": "1",
     }
-    test_tool_dir = os.environ.get("PHOENIX_PREVIEW_LAUNCH_TEST_BIN", "")
-    if test_tool_dir:
-        test_tool_path = canonical_input_path(test_tool_dir)
-        owned_directory(test_tool_path)
-        environment["PATH"] = f"{test_tool_path}:{SYSTEM_PATH}"
     try:
+        test_tool_dir = os.environ.get("PHOENIX_PREVIEW_LAUNCH_TEST_BIN", "")
+        if test_tool_dir:
+            test_tool_path = canonical_input_path(test_tool_dir)
+            owned_directory(test_tool_path)
+            environment["PATH"] = f"{test_tool_path}:{SYSTEM_PATH}"
         devices = parse_devices(run_tool(private_root, "stop-list", ["xcrun", "simctl", "list", "devices", "-j"], REPO_ROOT, environment))
         if devices["udid"] != descriptor["simulatorUdid"]:
             fail()
+        if devices["state"] != "Booted":
+            run_tool(private_root, "stop-boot", ["xcrun", "simctl", "boot", descriptor["simulatorUdid"]], REPO_ROOT, environment)
+        run_tool(private_root, "stop-bootstatus", ["xcrun", "simctl", "bootstatus", descriptor["simulatorUdid"], "-b"], REPO_ROOT, environment)
         run_tool(private_root, "stop-terminate", ["xcrun", "simctl", "terminate", descriptor["simulatorUdid"], EXPECTED_BUNDLE_ID], REPO_ROOT, environment, allowed=(0, 149))
         run_tool(private_root, "stop-uninstall", ["xcrun", "simctl", "uninstall", descriptor["simulatorUdid"], EXPECTED_BUNDLE_ID], REPO_ROOT, environment, allowed=(0, 149))
         stopped = dict(descriptor)
@@ -742,6 +778,11 @@ except UsageFailure as error:
     print(f"phantom-preview-launch: {error}", file=sys.stderr)
     sys.exit(2)
 except LaunchFailure:
+    print("phantom-preview-launch: request refused or launch failed", file=sys.stderr)
+    sys.exit(1)
+except Exception:
+    # Never expose raw subprocess, filesystem, or parser diagnostics to the
+    # caller; all unexpected failures use the same bounded safe error.
     print("phantom-preview-launch: request refused or launch failed", file=sys.stderr)
     sys.exit(1)
 except KeyboardInterrupt:
