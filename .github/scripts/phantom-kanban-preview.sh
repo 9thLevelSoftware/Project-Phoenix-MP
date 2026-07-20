@@ -703,6 +703,25 @@ class StructuredParseError(ValueError):
     pass
 
 
+STRUCTURED_CREDENTIAL_VALUE_RE = re.compile(r"^[A-Za-z0-9._~+/=-]{16,}$")
+
+
+def scan_structured_xml_element(element, inherited_credential_context=False):
+    local_name = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
+    credential_context = inherited_credential_context or structured_credential_name(local_name)
+    for name, value in element.attrib.items():
+        if structured_credential_name(name) and value:
+            raise ValueError
+        credential_context = credential_context or structured_credential_name(value)
+    text = (element.text or "").strip()
+    if structured_credential_name(local_name) and text:
+        raise ValueError
+    if credential_context and STRUCTURED_CREDENTIAL_VALUE_RE.fullmatch(text or ""):
+        raise ValueError
+    for child in element:
+        scan_structured_xml_element(child, credential_context)
+
+
 def scan_structured_xml(data):
     import xml.etree.ElementTree as element_tree
 
@@ -710,13 +729,7 @@ def scan_structured_xml(data):
         root = element_tree.fromstring(data.decode("utf-8", "strict"))
     except element_tree.ParseError:
         raise StructuredParseError
-    for element in root.iter():
-        for name, value in element.attrib.items():
-            if structured_credential_name(name) and value:
-                raise ValueError
-        local_name = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
-        if structured_credential_name(local_name) and (element.text or "").strip():
-            raise ValueError
+    scan_structured_xml_element(root)
 
 
 def scan_png_metadata(data):

@@ -42,9 +42,12 @@ REAL_XML_PATCH = (
     "b/shared/src/commonMain/composeResources/values/strings.xml\n"
     "--- a/shared/src/commonMain/composeResources/values/strings.xml\n"
     "+++ b/shared/src/commonMain/composeResources/values/strings.xml\n"
-    "@@ -1 +1 @@\n"
+    "@@ -1 +1,4 @@\n"
     "-<string name=\"autostart_ready\">AUTO-START READY</string>\n"
+    "+<resources>\n"
     "+<string name=\"autostart_ready\">SIMULATOR READY</string>\n"
+    "+<bool name=\"api_token_enabled\">false</bool>\n"
+    "+</resources>\n"
 )
 
 # This fixture is deliberately shaped from the current producer contract in
@@ -131,14 +134,30 @@ def make_structured_json_credential_patch(path):
 
 def make_structured_xml_credential_patch(path):
     resource = "shared/src/commonMain/composeResources/values/strings.xml"
+    secret_values = {
+        "api_token": "a" * 16,
+        "apiToken": "b" * 17,
+        "api-token": "c" * 18,
+    }
+    xml = "\n".join(
+        [
+            "<resources>",
+            *[
+                f'<string name="{name}">{value}</string>'
+                for name, value in secret_values.items()
+            ],
+            "</resources>",
+        ]
+    ) + "\n"
+    added_lines = "".join(f"+{line}\n" for line in xml.splitlines())
     write_private(
         path,
         f"diff --git a/{resource} b/{resource}\n"
         f"--- a/{resource}\n"
         f"+++ b/{resource}\n"
-        "@@ -1 +1 @@\n"
+        f"@@ -1 +1,{len(xml.splitlines())} @@\n"
         '-<string name=\"autostart_ready\">AUTO-START READY</string>\n'
-        '+<credential apiToken=\"' + "b" * 32 + '\">value</credential>\n',
+        + added_lines,
     )
 
 
