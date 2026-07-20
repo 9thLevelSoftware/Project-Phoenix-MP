@@ -1046,8 +1046,19 @@ def parse_proposal_patch(data):
             if old_header_seen or new_header_seen or hunks or not saw_index and not (new_file or deleted_file):
                 raise ValueError
             if new_file or deleted_file:
-                if len(binary_sections) != 1:
+                if new_file and deleted_file:
                     raise ValueError
+                if len(binary_sections) != 2:
+                    raise ValueError
+                empty = ("literal", 0, 1)
+                if new_file:
+                    first, second = binary_sections
+                    if first[0] != "literal" or first[1] <= 0 or first[2] == 0 or second != empty:
+                        raise ValueError
+                else:
+                    first, second = binary_sections
+                    if first != empty or second[0] != "literal" or second[1] <= 0 or second[2] == 0:
+                        raise ValueError
             elif len(binary_sections) != 2:
                 raise ValueError
             if any(patch_kind(path) != "resource" for path in header_paths):

@@ -103,6 +103,48 @@ def make_binary_patch(path):
     write_private(path, diff)
 
 
+def make_binary_add_delete_patch(path, changed_path, operation):
+    """Create a canonical binary resource addition or deletion from a temporary git repo."""
+    payload = b"\x89PNG\r\n\x1a\n\x00\xff\x00\x81\x00\x02"
+    with tempfile.TemporaryDirectory(prefix="binary-add-delete-source-") as temp_name:
+        repo = Path(temp_name) / "repo"
+        resource = repo / changed_path
+        resource.parent.mkdir(mode=0o700, parents=True)
+        subprocess.run(["git", "-C", str(repo), "init", "-q"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.email", "test@example.invalid"], check=True)
+        subprocess.run(["git", "-C", str(repo), "config", "user.name", "Binary Fixture"], check=True)
+        if operation == "delete":
+            resource.write_bytes(payload)
+            subprocess.run(["git", "-C", str(repo), "add", changed_path], check=True)
+        elif operation == "add":
+            subprocess.run(["git", "-C", str(repo), "commit", "--allow-empty", "-qm", "base"], check=True)
+            resource.write_bytes(payload)
+            subprocess.run(["git", "-C", str(repo), "add", changed_path], check=True)
+        else:
+            raise ValueError(operation)
+        if operation == "delete":
+            subprocess.run(["git", "-C", str(repo), "commit", "-qm", "base"], check=True)
+            resource.unlink()
+            subprocess.run(["git", "-C", str(repo), "add", "-u", changed_path], check=True)
+        diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--cached", "--binary", "--full-index"])
+    write_private(path, diff)
+
+
+def mutate_binary_sections(data, mutation):
+    lines = data.splitlines(keepends=True)
+    section_indices = [index for index, line in enumerate(lines) if line.startswith((b"literal ", b"delta "))]
+    if len(section_indices) != 2:
+        raise AssertionError(f"expected canonical add/delete sections, got {section_indices}")
+    second = section_indices[1]
+    if mutation == "missing":
+        mutated = lines[:second] + lines[second + 2:]
+    elif mutation == "extra":
+        mutated = lines + lines[second:second + 2]
+    else:
+        raise ValueError(mutation)
+    return b"".join(mutated)
+
+
 def make_add_delete_patch(path, changed_path, operation):
     if operation == "add":
         old_header = "/dev/null"
@@ -554,6 +596,38 @@ def main():
             fail(f"binary resource paths were not bound: {binary_manifest}")
         if [item["name"] for item in binary_manifest["focusedChecks"]] != ["git.diff.check", "shared.compileKotlinIosSimulatorArm64"]:
             fail(f"binary resource focused checks were not conditional: {binary_manifest}")
+
+        binary_add_delete_patches = {}
+        for operation, changed_path in (
+            ("add", "shared/src/commonMain/composeResources/values/added-binary.png"),
+            ("delete", "shared/src/commonMain/composeResources/values/icon.png"),
+        ):
+            binary_add_delete_patch = temp / f"binary-{operation}.patch"
+            make_binary_add_delete_patch(binary_add_delete_patch, changed_path, operation)
+            binary_add_delete_patches[operation] = (binary_add_delete_patch, changed_path)
+            binary_add_delete_request = temp / f"binary-{operation}.json"
+            write_json(binary_add_delete_request, request(f"KANBAN-BINARY-{operation.upper()}", binary_add_delete_patch))
+            binary_add_delete_result = fresh_result(temp, f"binary-{operation}-result")
+            completed = run_wrapper(repo, binary_add_delete_request, binary_add_delete_result)
+            if completed.returncode != 0:
+                fail(
+                    f"valid canonical binary {operation} resource patch was rejected: "
+                    f"stdout={completed.stdout!r}, stderr={completed.stderr!r}"
+                )
+            binary_add_delete_manifest = json.loads((binary_add_delete_result / "proposal-manifest.json").read_text(encoding="utf-8"))
+            if binary_add_delete_manifest["patch"]["binary"] is not True or binary_add_delete_manifest["candidateKinds"] != ["resource"]:
+                fail(f"canonical binary {operation} resource claims were not bound: {binary_add_delete_manifest}")
+            if binary_add_delete_manifest["allowedChangedFiles"] != [changed_path] or binary_add_delete_manifest["actualChangedFiles"] != [changed_path]:
+                fail(f"canonical binary {operation} resource paths were not bound: {binary_add_delete_manifest}")
+
+        for operation, (source_patch, _changed_path) in binary_add_delete_patches.items():
+            for mutation in ("missing", "extra"):
+                malformed_binary = temp / f"binary-{operation}-{mutation}.patch"
+                write_private(malformed_binary, mutate_binary_sections(source_patch.read_bytes(), mutation))
+                malformed_binary_request = temp / f"binary-{operation}-{mutation}.json"
+                write_json(malformed_binary_request, request(f"KANBAN-BINARY-{operation.upper()}-{mutation.upper()}", malformed_binary))
+                malformed_binary_result = fresh_result(temp, f"binary-{operation}-{mutation}-result")
+                assert_failure(run_wrapper(repo, malformed_binary_request, malformed_binary_result), malformed_binary_result, "validate-request")
 
         malformed_binary = temp / "malformed-binary.patch"
         malformed_binary_bytes = binary_patch.read_bytes().replace(b"GIT binary patch\n", b"GIT binary patch\nliteral 4\n", 1)
