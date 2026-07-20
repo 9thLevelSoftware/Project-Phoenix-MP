@@ -1077,7 +1077,7 @@ def child_environment():
         "PHOENIX_HARNESS_UDID": os.environ["PHOENIX_HARNESS_UDID"],
     }
     java_home = os.environ.get("JAVA_HOME")
-    if java_home:
+    if java_home is not None:
         resolved_java_home = resolve_java_home(java_home)
         if resolved_java_home is None:
             raise ValueError

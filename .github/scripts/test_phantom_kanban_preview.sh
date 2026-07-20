@@ -817,6 +817,10 @@ def make_fake_repo(root):
         "set -euo pipefail\n"
         "case \" $* \" in *\" :shared:compileKotlinIosSimulatorArm64 \"*);; *) exit 2;; esac\n"
         "case \" $* \" in *\" -Pskip.supabase.check=true \"*);; *) exit 2;; esac\n"
+        "if [[ -z \"${JAVA_HOME-}\" ]]; then\n"
+        f"    printf '%s\\n' fallback-path-java >> {str(compile_log)!r}\n"
+        "    exit 18\n"
+        "fi\n"
         "[[ -n \"${JAVA_HOME-}\" && -f \"$JAVA_HOME/bin/java\" && ! -L \"$JAVA_HOME/bin/java\" && -x \"$JAVA_HOME/bin/java\" ]] || exit 18\n"
         "\"$JAVA_HOME/bin/java\" -version >/dev/null 2>&1 || exit 18\n"
         f"/usr/bin/python3 - {str(compile_log)!r} <<'PY'\n"
@@ -1116,12 +1120,17 @@ def main():
         shutil.copy2(canonical_java_home / "bin" / "java", symlink_target)
         chmod(symlink_target, 0o700)
         (symlink_home / "bin" / "java").symlink_to(symlink_target)
-        world_writable_home = temp / "world-writable-jdk"
+        world_writable_home = temp / "world-writable-java"
         (world_writable_home / "bin").mkdir(mode=0o700, parents=True)
+        chmod(world_writable_home, 0o700)
+        chmod(world_writable_home / "bin", 0o700)
         world_writable_java = world_writable_home / "bin" / "java"
         shutil.copy2(canonical_java_home / "bin" / "java", world_writable_java)
         chmod(world_writable_java, 0o777)
-        chmod(world_writable_home, 0o777)
+        if stat.S_IMODE(os.lstat(world_writable_home).st_mode) != 0o700 or stat.S_IMODE(os.lstat(world_writable_home / "bin").st_mode) != 0o700:
+            fail("unsafe Java executable fixture made its home or bin directory writable")
+        if stat.S_IMODE(os.lstat(world_writable_java).st_mode) != 0o777:
+            fail("unsafe Java executable fixture is not world-writable")
         for label, value in (
             ("missing JAVA_HOME", ""),
             ("missing JDK home", missing_home),
