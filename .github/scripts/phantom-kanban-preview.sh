@@ -36,6 +36,7 @@ MAX_ARTIFACT_BYTES = 128 * 1024 * 1024
 # the established real-app budget.  Every timeout has the same bounded
 # TERM-grace then unconditional KILL/reap process-group cleanup.
 TRACKED_TIMEOUT_SECONDS = 30
+CLEANUP_TIMEOUT_SECONDS = 5
 CHILD_TIMEOUT_SECONDS = 1800
 PROCESS_GROUP_TERM_GRACE_SECONDS = 0.25
 PROCESS_REAP_TIMEOUT_SECONDS = 5
@@ -322,14 +323,14 @@ def read_private_path(raw, limit, require_private=True):
 
 def test_hook_command(command):
     hook = os.environ.get("PHOENIX_PREVIEW_TEST_HOOK", "")
-    if hook not in {"request", "patch-verify", "gitrepo", "closed-output"} or STATE.private_dir is None:
+    if hook not in {"request", "patch-verify", "gitrepo", "gitrepo-created", "closed-output"} or STATE.private_dir is None:
         return command
     args = [str(value) for value in command]
     if hook == "request" and STATE.stage == "validate-request" and args[-2:] == ["list", "--porcelain"]:
         matches = True
     elif hook == "patch-verify" and STATE.stage == "patch-verify" and "apply" in args:
         matches = True
-    elif hook == "gitrepo" and STATE.stage == "patch-verify" and "worktree" in args and "add" in args:
+    elif hook in {"gitrepo", "gitrepo-created"} and STATE.stage == "patch-verify" and "worktree" in args and "add" in args:
         matches = True
     elif hook == "closed-output" and STATE.stage == "validate-request" and args[-3:] == ["rev-parse", "--verify", "HEAD"]:
         matches = True
@@ -338,9 +339,18 @@ def test_hook_command(command):
     if not matches:
         return command
     marker = STATE.private_dir / f".test-hook-{hook}"
+    child_marker = marker.with_name(marker.name + ".pid")
+    if hook == "gitrepo-created":
+        script = (
+            "import os, subprocess, time; "
+            f"subprocess.run({args!r}, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL); "
+            f"open({str(marker)!r}, 'w', encoding='ascii').write('ready\\n'); "
+            f"open({str(child_marker)!r}, 'w', encoding='ascii').write(str(os.getpid()) + '\\n'); "
+            "time.sleep(60)"
+        )
+        return ["/usr/bin/python3", "-c", script]
     marker.write_text("ready\\n", encoding="ascii")
     os.chmod(marker, 0o600)
-    child_marker = marker.with_name(marker.name + ".pid")
     if hook == "closed-output":
         external_marker = os.environ.get("PHOENIX_PREVIEW_TEST_CHILD_PID", "")
         if not external_marker:
@@ -575,6 +585,10 @@ def cleanup_private():
     path = STATE.private_dir
     if path is None:
         return
+    if STATE.verification_worktree is not None:
+        cleanup_verification_worktree()
+        if STATE.verification_worktree is not None:
+            return
     try:
         info = os.lstat(path)
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
@@ -760,16 +774,87 @@ def status_changed_paths(data):
     return paths
 
 
+def run_cleanup_git(args, capture=False):
+    """Run cleanup-only Git commands without the interrupt-aware runner."""
+    process = None
+    try:
+        process = subprocess.Popen(
+            ["git", "-C", str(REPO_ROOT), *[str(value) for value in args]],
+            cwd=str(REPO_ROOT),
+            env=git_environment(),
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE if capture else subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+        try:
+            stdout, _ = process.communicate(timeout=CLEANUP_TIMEOUT_SECONDS)
+        except subprocess.TimeoutExpired:
+            terminate_process_group(process)
+            return None
+        if process.returncode != 0:
+            return None
+        if not capture:
+            return b""
+        if stdout is None or len(stdout) > MAX_TRACKED_OUTPUT_BYTES:
+            return None
+        return stdout
+    except (OSError, subprocess.SubprocessError):
+        if process is not None and process_group_exists(process):
+            try:
+                terminate_process_group(process, signal.SIGKILL)
+            except (OSError, subprocess.SubprocessError):
+                pass
+        return None
+    finally:
+        if process is not None:
+            if process_group_exists(process):
+                try:
+                    terminate_process_group(process, signal.SIGKILL)
+                except (OSError, subprocess.SubprocessError):
+                    pass
+            try:
+                process.wait(timeout=PROCESS_REAP_TIMEOUT_SECONDS)
+            except (OSError, subprocess.SubprocessError):
+                pass
+            if process.stdout is not None:
+                process.stdout.close()
+
+
+def cleanup_registered_worktree(path):
+    try:
+        target = path.resolve()
+    except (OSError, RuntimeError):
+        return False
+    run_cleanup_git(["worktree", "remove", "--force", str(path)])
+    run_cleanup_git(["worktree", "prune"])
+    output = run_cleanup_git(["worktree", "list", "--porcelain"], capture=True)
+    if output is None:
+        return False
+    try:
+        text = output.decode("utf-8", "strict")
+    except UnicodeError:
+        return False
+    for line in text.splitlines():
+        if not line.startswith("worktree "):
+            continue
+        try:
+            registered = Path(line[9:]).resolve()
+        except (OSError, RuntimeError):
+            return False
+        if registered == target:
+            return False
+    return True
+
+
 def cleanup_verification_worktree():
     path = STATE.verification_worktree
     if path is None:
         return
+    if not cleanup_registered_worktree(path):
+        return
     STATE.verification_worktree = None
-    try:
-        run_git(["worktree", "remove", "--force", str(path)], check=False)
-        run_git(["worktree", "prune"], check=False)
-    except (OSError, subprocess.SubprocessError, PreviewInterrupted):
-        pass
     try:
         if path.exists() and path.is_dir() and path.resolve().parent == STATE.private_dir.resolve():
             shutil.rmtree(path)

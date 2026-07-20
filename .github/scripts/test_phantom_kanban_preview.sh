@@ -1007,6 +1007,29 @@ def run_git_phase_signal(repo, request_path, result_root, hook, signal_name):
         fail(f"{hook} {signal_name} left its active git/apply child alive")
     if marker.exists() or pid_file.exists():
         fail(f"{hook} {signal_name} left a private hook marker/orphan")
+    if hook == "gitrepo-created":
+        candidate = marker.parent / "patch-verify-worktree"
+        registry = subprocess.check_output(
+            ["git", "-C", str(repo), "worktree", "list", "--porcelain"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        registered = {
+            Path(line[len("worktree "):]).resolve()
+            for line in registry.splitlines()
+            if line.startswith("worktree ")
+        }
+        if candidate.resolve() in registered:
+            fail(f"{hook} {signal_name} left registered verification worktree: {candidate}")
+        if candidate.exists():
+            fail(f"{hook} {signal_name} left verification worktree directory: {candidate}")
+        host_status = subprocess.check_output(
+            ["git", "-C", str(repo), "status", "--porcelain=v2", "--untracked-files=all", "--ignored=no"],
+            text=True,
+            stderr=subprocess.DEVNULL,
+        )
+        if host_status:
+            fail(f"{hook} {signal_name} mutated source host status: {host_status!r}")
 
 
 def main():
@@ -1854,7 +1877,7 @@ def main():
         assert_failure(run_wrapper(repo, request_in_task_worktree, request_in_task_worktree_result), request_in_task_worktree_result, "validate-request")
         subprocess.run(["git", "-C", str(repo), "worktree", "remove", "--force", str(task_worktree)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        for hook in ("request", "patch-verify", "gitrepo"):
+        for hook in ("request", "patch-verify", "gitrepo", "gitrepo-created"):
             for signal_name in ("SIGHUP", "SIGINT", "SIGTERM"):
                 hook_patch = temp / (hook + "-signal.patch")
                 make_patch(hook_patch, marker="ok")
