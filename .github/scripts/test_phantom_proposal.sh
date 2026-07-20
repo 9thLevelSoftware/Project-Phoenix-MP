@@ -580,6 +580,40 @@ os.chmod(destination, 0o600)
 PY
 }
 
+make_replaced_binary_png_patch() {
+    local destination="$1"
+    local repo="$2"
+    local keyword="$3"
+    local old_text="$4"
+    python3 - "$destination" "$repo" "$keyword" "$old_text" <<'PY'
+import os
+import struct
+import subprocess
+import sys
+import zlib
+from pathlib import Path
+destination, repo, keyword, old_text = sys.argv[1:]
+repo = Path(repo)
+resource = Path("shared/src/commonMain/composeResources/values/old-xml-context.png")
+target = repo / resource
+target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+def chunk(kind, payload):
+    return len(payload).to_bytes(4, "big") + kind + payload + (zlib.crc32(kind + payload) & 0xffffffff).to_bytes(4, "big")
+def png(text):
+    ihdr = struct.pack(">IIBBBBB", 2, 2, 8, 6, 0, 0, 0)
+    itxt = keyword.encode("utf-8") + b"\x00\x00\x00\x00\x00" + text.encode("utf-8")
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"iTXt", itxt) + chunk(b"IDAT", zlib.compress(b"\x00" * 18)) + chunk(b"IEND", b"")
+target.write_bytes(png(old_text))
+subprocess.run(["git", "-C", str(repo), "add", str(resource)], check=True)
+subprocess.run(["git", "-C", str(repo), "commit", "-qm", "old XML PNG baseline"], check=True)
+target.write_bytes(png("<resources><string name=\"title\">SAFE</string></resources>"))
+diff = subprocess.check_output(["git", "-C", str(repo), "diff", "--binary", "--full-index", "HEAD", "--", str(resource)])
+subprocess.run(["git", "-C", str(repo), "restore", "--", str(resource)], check=True)
+Path(destination).write_bytes(diff)
+os.chmod(destination, 0o600)
+PY
+}
+
 make_deleted_binary_credential_patch() {
     local repo="$1"
     local destination="$2"
@@ -1381,15 +1415,16 @@ PY
 # Producer-shaped resource fixtures exercise the same decoded-input boundary as
 # the preview consumer.  Safe structured resources pass; generic assignments,
 # opaque binary Swift, and canonical rename/copy metadata fail before rendering.
-for fixture in json-safe xml-safe json-duplicate xml-nested-credential json-credential xml-credential png-safe png-key-credential png-itxt-bearer png-itxt-host-path png-itxt-bad-flag png-itxt-bad-method png-itxt-xml-attribute-context png-itxt-xml-empty-credential-attribute nul-swift opaque-binary-swift rename copy; do
+for fixture in json-safe xml-safe json-duplicate xml-nested-credential xml-key-credential json-credential xml-credential png-safe png-key-credential png-itxt-bearer png-itxt-host-path png-itxt-bad-flag png-itxt-bad-method png-itxt-xml-attribute-context png-itxt-xml-empty-credential-attribute nul-swift opaque-binary-swift rename copy; do
     fixture_repo="$TMP_DIR/producer-$fixture-repo"
     make_fake_repo "$fixture_repo"
     fixture_patch="$TMP_DIR/producer-$fixture.patch"
     case "$fixture" in
         json-safe) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/labels.json" '{"title":"SAFE"}' ;;
-        xml-safe) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<resources><string name="title">SAFE</string></resources>' ;;
+        xml-safe) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<resources><string name="label_password">Password</string><string name="label_confirm_password">Confirm Password</string><string name="backup_description">This does not include auth/session tokens.</string></resources>' ;;
         json-duplicate) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/labels.json" '{"title":"SAFE","title":"ALSO-SAFE"}' ;;
-        xml-nested-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<api_token><value>secret</value></api_token>' ;;
+        xml-nested-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<root kind="api_token"><value>aaaaaaaaaaaaaaaa</value></root>' ;;
+        xml-key-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<root api_token="aaaaaaaaaaaaaaaa">ok</root>' ;;
         json-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/labels.json" '{"title":"TOKEN=REDACTED_REDACTED"}' ;;
         xml-credential) make_resource_patch "$fixture_patch" "shared/src/commonMain/composeResources/values/strings.xml" '<resources><string name="title">TOKEN=REDACTED_REDACTED</string></resources>' ;;
         png-safe) make_binary_png_patch "$fixture_patch" "XML:com.adobe.xmp" '{}' ;;
@@ -1449,8 +1484,38 @@ assert json.loads(Path(sys.argv[1]).read_text())["status"] == "failed"
 PY
 done
 
-# The old/deleted iTXt XML payload must also match the preview consumer:
-# a credential-like attribute value propagates context to nested text.
+# Old iTXt XML payloads must match the candidate scanner.  The current PNG
+# payload is benign, while the immutable baseline payload exercises nested and
+# credential-key attribute context before replacement.
+for fixture in xml-old-benign-labels xml-old-attribute-context xml-old-key-attribute-context; do
+    OLD_XML_REPO="$TMP_DIR/old-$fixture-repo"
+    make_fake_repo "$OLD_XML_REPO"
+    OLD_XML_PATCH="$TMP_DIR/old-$fixture.patch"
+    case "$fixture" in
+        xml-old-benign-labels) old_xml='<resources><string name="label_password">Password</string><string name="label_confirm_password">Confirm Password</string><string name="backup_description">This does not include auth/session tokens.</string></resources>' ;;
+        xml-old-attribute-context) old_xml='<root kind="api_token"><value>16+secret</value></root>' ;;
+        xml-old-key-attribute-context) old_xml='<root api_token="aaaaaaaaaaaaaaaa">ok</root>' ;;
+    esac
+    make_replaced_binary_png_patch "$OLD_XML_PATCH" "$OLD_XML_REPO" "Description" "$old_xml"
+    OLD_XML_ARTIFACT="$TMP_DIR/old-$fixture-artifact"
+    if run_renderer "$OLD_XML_REPO" "$OLD_XML_ARTIFACT" "$OLD_XML_PATCH" >"$TMP_DIR/old-$fixture.out" 2>&1; then
+        if [[ "$fixture" != xml-old-benign-labels ]]; then
+            fail "producer transported unsafe old XML iTXt payload: $fixture"
+        fi
+    elif [[ "$fixture" == xml-old-benign-labels ]]; then
+        fail 'producer rejected benign old XML iTXt labels'
+    fi
+    python3 - "$OLD_XML_ARTIFACT/proposal-manifest.json" "$fixture" <<'PY'
+import json
+import sys
+from pathlib import Path
+status = json.loads(Path(sys.argv[1]).read_text())["status"]
+expected = "passed" if sys.argv[2] == "xml-old-benign-labels" else "failed"
+assert status == expected, (sys.argv[2], status)
+PY
+done
+
+# A deleted/old credential payload remains rejected by the producer boundary.
 DELETED_XML_REPO="$TMP_DIR/deleted-xml-png-itxt-xml-attribute-context-repo"
 make_fake_repo "$DELETED_XML_REPO"
 DELETED_XML_PATCH="$TMP_DIR/deleted-xml-png-itxt-xml-attribute-context.patch"

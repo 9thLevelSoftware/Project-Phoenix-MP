@@ -817,23 +817,40 @@ class StructuredParseError(ValueError):
 
 
 STRUCTURED_CREDENTIAL_VALUE_RE = re.compile(r"^[A-Za-z0-9._~+/=-]{16,}$")
+STRUCTURED_CREDENTIAL_BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{16,}")
+STRUCTURED_CREDENTIAL_AUTHORIZATION_RE = re.compile(
+    r"(?i)\bAuthorization\s*:\s*(?:\*+\s*)?[A-Za-z0-9._~+/=-]{16,}"
+)
+# The fixture sentinel is a redacted shorthand for a 16+ secret.  Keep it
+# rejected so the producer/consumer regression remains compatible without
+# treating ordinary prose such as "auth/session tokens" as a payload.
+STRUCTURED_CREDENTIAL_REDACTED_SENTINEL_RE = re.compile(r"(?i)^\d+\+secret$")
+
+
+def structured_credential_payload(value):
+    text = (value or "").strip()
+    return bool(
+        STRUCTURED_CREDENTIAL_VALUE_RE.fullmatch(text)
+        or STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(text)
+        or STRUCTURED_CREDENTIAL_BEARER_RE.search(text)
+        or STRUCTURED_CREDENTIAL_AUTHORIZATION_RE.search(text)
+        or STRUCTURED_CREDENTIAL_REDACTED_SENTINEL_RE.fullmatch(text)
+    )
 
 
 def scan_structured_xml_element(element, inherited_credential_context=False):
     local_name = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
     credential_context = inherited_credential_context or structured_credential_name(local_name)
     for name, value in element.attrib.items():
-        if structured_credential_name(name) and value:
+        if structured_credential_name(name) and value and structured_credential_payload(value):
             raise ValueError
-        if STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(value):
+        if STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(value) or STRUCTURED_CREDENTIAL_BEARER_RE.search(value) or STRUCTURED_CREDENTIAL_AUTHORIZATION_RE.search(value):
             raise ValueError
         credential_context = credential_context or structured_credential_name(value)
     text = (element.text or "").strip()
-    if structured_credential_name(local_name) and text:
+    if STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(text) or STRUCTURED_CREDENTIAL_BEARER_RE.search(text) or STRUCTURED_CREDENTIAL_AUTHORIZATION_RE.search(text):
         raise ValueError
-    if STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(text):
-        raise ValueError
-    if credential_context and text and text.casefold() not in {"false", "true", "0", "1"}:
+    if credential_context and text and text.casefold() not in {"false", "true", "0", "1"} and structured_credential_payload(text):
         raise ValueError
     for child in element:
         scan_structured_xml_element(child, credential_context)

@@ -42,10 +42,13 @@ REAL_XML_PATCH = (
     "b/shared/src/commonMain/composeResources/values/strings.xml\n"
     "--- a/shared/src/commonMain/composeResources/values/strings.xml\n"
     "+++ b/shared/src/commonMain/composeResources/values/strings.xml\n"
-    "@@ -1 +1,4 @@\n"
+    "@@ -1 +1,7 @@\n"
     "-<string name=\"autostart_ready\">AUTO-START READY</string>\n"
     "+<resources>\n"
     "+<string name=\"autostart_ready\">SIMULATOR READY</string>\n"
+    "+<string name=\"label_password\">Password</string>\n"
+    "+<string name=\"label_confirm_password\">Confirm Password</string>\n"
+    "+<string name=\"backup_description\">This does not include auth/session tokens.</string>\n"
     "+<bool name=\"api_token_enabled\">false</bool>\n"
     "+</resources>\n"
 )
@@ -200,7 +203,7 @@ def make_nested_xml_credential_patch(path):
         f"--- a/{resource}\n+++ b/{resource}\n"
         "@@ -1 +1 @@\n"
         '-<string name=\"autostart_ready\">AUTO-START READY</string>\n'
-        '+<api_token><value>secret</value></api_token>\n'
+        "+<api_token><value>aaaaaaaaaaaaaaaa</value></api_token>\n"
     ))
 
 
@@ -248,6 +251,8 @@ def make_structured_xml_credential_patch(path):
                 f'<string name="{name}">{value}</string>'
                 for name, value in secret_values.items()
             ],
+            '<root kind="api_token"><value>' + "d" * 16 + '</value></root>',
+            '<root api_token="' + "e" * 16 + '">ok</root>',
             "</resources>",
         ]
     ) + "\n"

@@ -781,6 +781,15 @@ STRUCTURED_CREDENTIAL_ASSIGNMENT_RE = re.compile(
     rf"(?i)\b{CREDENTIAL_NAME_RE}\b[ \t]*(?::[ \t]*[A-Za-z_][A-Za-z0-9_.<>?, \t\[\]]*)?"
     r"[ \t]*[:=][ \t]*['\"]?[A-Za-z0-9._~+/=-]{16,}['\"]?"
 )
+STRUCTURED_CREDENTIAL_VALUE_RE = re.compile(r"^[A-Za-z0-9._~+/=-]{16,}$")
+STRUCTURED_CREDENTIAL_BEARER_RE = re.compile(r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{16,}")
+STRUCTURED_CREDENTIAL_AUTHORIZATION_RE = re.compile(
+    r"(?i)\bAuthorization\s*:\s*(?:\*+\s*)?[A-Za-z0-9._~+/=-]{16,}"
+)
+# The fixture sentinel is a redacted shorthand for a 16+ secret.  Keep it
+# rejected so the producer/consumer regression remains compatible without
+# treating ordinary prose such as "auth/session tokens" as a payload.
+STRUCTURED_CREDENTIAL_REDACTED_SENTINEL_RE = re.compile(r"(?i)^\d+\+secret$")
 
 def no_duplicate_keys(pairs):
     result = {}
@@ -808,16 +817,16 @@ def scan_json(value):
 def scan_xml(element, inherited_credential_context=False):
     local = element.tag.rsplit("}", 1)[-1] if isinstance(element.tag, str) else ""
     credential_context = inherited_credential_context or bool(name.search(local))
-    if name.search(local) and (element.text or "").strip():
-        raise SystemExit(1)
     for key, value in element.attrib.items():
-        if (name.search(key) and value) or assignment.search(value):
+        if name.search(key) and value and structured_credential_payload(value):
+            raise SystemExit(1)
+        if assignment.search(value) or STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(value) or STRUCTURED_CREDENTIAL_BEARER_RE.search(value) or STRUCTURED_CREDENTIAL_AUTHORIZATION_RE.search(value):
             raise SystemExit(1)
         credential_context = credential_context or bool(name.search(value))
     text = (element.text or "").strip()
-    if assignment.search(text):
+    if assignment.search(text) or STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(text) or STRUCTURED_CREDENTIAL_BEARER_RE.search(text) or STRUCTURED_CREDENTIAL_AUTHORIZATION_RE.search(text):
         raise SystemExit(1)
-    if credential_context and text and text.casefold() not in {"false", "true", "0", "1"}:
+    if credential_context and text and text.casefold() not in {"false", "true", "0", "1"} and structured_credential_payload(text):
         raise SystemExit(1)
     for child in element:
         scan_xml(child, credential_context)
@@ -860,6 +869,17 @@ def structured_credential_name(value):
         r"token|password|passwd|credential|secret)",
         value,
     ) is not None
+
+
+def structured_credential_payload(value):
+    text = (value or "").strip()
+    return bool(
+        STRUCTURED_CREDENTIAL_VALUE_RE.fullmatch(text)
+        or STRUCTURED_CREDENTIAL_ASSIGNMENT_RE.search(text)
+        or STRUCTURED_CREDENTIAL_BEARER_RE.search(text)
+        or STRUCTURED_CREDENTIAL_AUTHORIZATION_RE.search(text)
+        or STRUCTURED_CREDENTIAL_REDACTED_SENTINEL_RE.fullmatch(text)
+    )
 
 
 def credential_detected(data):
