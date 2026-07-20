@@ -216,7 +216,20 @@ def make_fake_repo(root):
         "elif leak == 'comparison/diff.png': private(artifact / leak, png() + b' /Users/host/private API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa', binary=True)\n"
         "if mode == 'unexpected-internal-root': private(artifact / 'internal-unexpected.log', 'unexpected internal output\\n')\n"
         "if mode == 'unexpected-internal-nested': private(artifact / 'before/internal-unexpected.log', 'unexpected internal output\\n')\n"
-        "if mode == 'internal-secret': private(artifact / 'before/simulator.log', 'API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa\\n')\n"
+        "if mode == 'internal-benign-log':\n"
+        "    benign_log = ('2026-07-19 17:47:40.087 Df VitruvianPhoenix[75993:9e0b96] [com.apple.UIKit:EventDeferring] [0x106699420] Begin local event deferring requested for token:0x106699420; environments: 1; reason: UIWindowScene: 0x10662e000: Begin event deferring in keyboardFocus for window: 0x10640c800\\n'\n"
+        "        '2026-07-19 17:47:40.088 Df VitruvianPhoenix[75993:9e0ba8] [com.apple.BackBoard:EventDelivery] policyStatus:<BKSHIDEventDeliveryPolicyObserver: 0x1044a1140; token:0x1044a1140:sceneID%3Acom.example.project-default; status: ancestor> was:target\\n')\n"
+        "    private(artifact / 'before/simulator.log', benign_log)\n"
+        "    private(artifact / 'after/simulator.log', benign_log)\n"
+        "internal_log_credentials = {\n"
+        "    'internal-secret': 'API_TOKEN=' + 'a' * 24 + '\\n',\n"
+        "    'internal-private-key': '-----BEGIN ' + 'PRIVATE KEY-----\\n' + 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC\\n' + '-----END PRIVATE KEY-----\\n',\n"
+        "    'internal-bearer': 'Authorization: Bearer ' + 'a' * 24 + '\\n',\n"
+        "    'internal-api-key': 'OPENAI_API_KEY=sk-proj-' + 'a' * 24 + '\\n',\n"
+        "    'internal-aws-key': 'AWS_ACCESS_KEY_ID=AKIA' + 'IOSFODNN7EXAMPLE' + '\\n',\n"
+        "    'internal-known-token': 'GITHUB_TOKEN=ghp_' + 'a' * 24 + '\\n',\n"
+        "}\n"
+        "if mode in internal_log_credentials: private(artifact / 'before/simulator.log', internal_log_credentials[mode])\n"
         "if mode == 'internal-absolute-path': private(artifact / 'after/simulator.log', '/Users/host/private/output\\n')\n"
         "if mode == 'internal-symlink': os.symlink('run.json', artifact / 'before/internal-link')\n"
         "if mode == 'missing-proposal-marker': (artifact / '.phantom-proposal').unlink()\n"
@@ -456,6 +469,18 @@ def main():
         if [record["args"][1].rsplit("/", 1)[-1] for record in verify_records] != ["before", "after"]:
             fail(f"canonical verifier was not called independently: {verify_records}")
 
+        benign_patch = temp / "benign-internal-log.patch"
+        make_patch(benign_patch, marker="ok\nTEST_MODE:internal-benign-log")
+        benign_request = temp / "benign-internal-log.json"
+        write_json(benign_request, request("KANBAN-70", benign_patch))
+        benign_result = fresh_result(temp, "benign-internal-log-result")
+        completed = run_wrapper(repo, benign_request, benign_result)
+        if completed.returncode != 0:
+            fail(f"benign CoreSimulator log was rejected: stdout={completed.stdout!r}, stderr={completed.stderr!r}")
+        benign_payload = json.loads((benign_result / "preview-result.json").read_text(encoding="utf-8"))
+        if benign_payload.get("status") != "passed":
+            fail(f"benign CoreSimulator log did not produce a passed result: {benign_payload}")
+
         malformed = temp / "malformed.json"
         write_private(malformed, "{not-json")
         result = fresh_result(temp, "malformed-result")
@@ -571,6 +596,11 @@ def main():
             "unexpected-internal-root",
             "unexpected-internal-nested",
             "internal-secret",
+            "internal-private-key",
+            "internal-bearer",
+            "internal-api-key",
+            "internal-aws-key",
+            "internal-known-token",
             "internal-symlink",
             "missing-proposal-marker",
             "bad-proposal-marker",

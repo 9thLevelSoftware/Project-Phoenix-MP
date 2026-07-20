@@ -655,11 +655,26 @@ def credential_detected(data):
         return True
     if re.search(r"\b(?:gh[pousr]|github_pat|glpat|xox[baprs]|sk|rk)[_-][A-Za-z0-9_./=-]{20,}\b", text, re.IGNORECASE):
         return True
-    if re.search(r"\bAKIA[0-9A-Z]{16}\b", text):
+    if re.search(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b", text):
         return True
     if re.search(r"\bBearer\s+[A-Za-z0-9._~+/=-]{20,}", text, re.IGNORECASE):
         return True
-    if re.search(r"\b[A-Za-z0-9_.-]*(?:token|secret|password|passwd|private[_-]?key|credential|api[_-]?key|api[_-]?token|access[_-]?key|authorization|anon[_-]?key)[A-Za-z0-9_.-]*\s*[:=]\s*['\"]?[A-Za-z0-9._~+/=-]{8,}", text, re.IGNORECASE):
+    # CoreSimulator uses bare token:<object-or-URL> fields for UIKit/BackBoard
+    # bookkeeping. Require an explicit credential name and a substantive payload
+    # before treating an assignment as secret material.
+    if re.search(
+        r"\b[A-Za-z0-9_.-]*(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?key|"
+        r"client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token)[A-Za-z0-9_.-]*"
+        r"\s*[:=]\s*['\"]?[A-Za-z0-9._~+/=-]{20,}",
+        text,
+        re.IGNORECASE,
+    ):
+        return True
+    if re.search(
+        r"\b(?:token|secret|password|passwd|credential|authorization)\s*=\s*['\"]?[A-Za-z0-9._~+/=-]{20,}",
+        text,
+        re.IGNORECASE,
+    ):
         return True
     return False
 
