@@ -47,6 +47,34 @@ REAL_XML_PATCH = (
     "+<string name=\"autostart_ready\">SIMULATOR READY</string>\n"
 )
 
+# This fixture is deliberately shaped from the current producer contract in
+# phantom-harness.sh/write_manifest and phantom-proposal.sh/write_success_outputs:
+# the exact command journal, run-manifest provenance/capture topology, private
+# log set, real PNG chunk forms, diff JSON fields, and public Markdown claims.
+# It is self-contained and sanitized, but not a minimal success-shaped fake.
+PRODUCER_COMMAND_SPECS = (
+    ("xcodebuild.version", "toolchain.log"),
+    ("simulator.boot", "boot.log"),
+    ("simulator.bootstatus", "bootstatus.log"),
+    ("simulator.terminate", "terminate.log"),
+    ("simulator.uninstall", "uninstall.log"),
+    ("build", "build.log"),
+    ("run-tests", "test.log"),
+    ("simulator.app-state", "app-state.log"),
+    ("simulator.logs", "simulator.log"),
+    ("simulator.screenshot", "screenshot.log"),
+)
+PRODUCER_MARKERS = ("xctest.passed", "phantom.connected", "simulator.screenshot")
+PRODUCER_TEXTUAL_ARTIFACTS = ("toolchain.log", "build.log", "test.log", "app-state.log", "simulator.log", "screenshot.log", ".commands.jsonl")
+PRODUCER_FIXTURE_SHA256 = "e180679548a2d96dbc59c51449edb3b99c19d3e3be82eca98c0707a21a64e78e"
+PRODUCER_PUBLIC_VERIFICATION = (
+    "- Baseline canonical harness case: verified",
+    "- Candidate canonical harness case: verified",
+    "- Kotlin/resource compile gate when required: verified",
+    "- Bound comparison metadata: verified",
+    "- Temporary worktree: cleaned after rendering",
+)
+
 
 def fail(message):
     raise AssertionError(message)
@@ -318,9 +346,21 @@ def make_fake_repo(root):
         "if mode == 'bad-run-types': run['schemaVersion'] = True; private(artifact / 'after/run.json', json.dumps(run) + '\\n')\n"
         "if mode == 'unknown-diff': diff['unknown'] = True; private(artifact / 'comparison/diff.json', json.dumps(diff) + '\\n')\n"
         "if mode == 'bad-diff-input': diff['inputs'] = {'before': 'run.json', 'after': 'run.json'}; private(artifact / 'comparison/diff.json', json.dumps(diff) + '\\n')\n"
+        "if mode.startswith('forged-diff-'):\n"
+        "    if mode == 'forged-diff-ratio': diff['changedPixelRatio'] = 0.25\n"
+        "    if mode == 'forged-diff-changed-ratio': diff['changedRatio'] = 0.25\n"
+        "    if mode == 'forged-diff-pixels': diff['changedPixels'] = 5\n"
+        "    if mode == 'forged-diff-threshold': diff['maxChannelDelta'] = 1\n"
+        "    if mode == 'forged-diff-pass': diff['passed'] = False; diff['thresholdPassed'] = False\n"
+        "    if mode == 'forged-diff-mask': diff['maskTopPixels'] = 1\n"
+        "    private(artifact / 'comparison/diff.json', (json.dumps(diff, sort_keys=True) + '\\n').encode(), binary=True)\n"
         "if mode == 'malformed-png': private(artifact / 'comparison/diff.png', b'not-a-png', binary=True)\n"
         "if mode == 'bad-markdown': private(artifact / 'proposal.md', '# Phantom proposal evidence\\nStatus: **passed**\\n')\n"
         "if mode == 'bad-markdown-ref': private(artifact / 'proposal.md', proposal + '\\n- `comparison/unknown.json`\\n')\n"
+        "if mode == 'bad-markdown-fixture': private(artifact / 'proposal.md', proposal.replace('- Fixture: `just-lift-connected`', '- Fixture: `forged-fixture`'))\n"
+        "if mode == 'bad-markdown-base': private(artifact / 'proposal.md', proposal.replace('- Verified base SHA: `' + base + '`', '- Verified base SHA: `' + ('0' * 40) + '`'))\n"
+        "if mode == 'bad-markdown-patch': private(artifact / 'proposal.md', proposal.replace('- Proposal patch SHA-256: `' + patch_sha + '`', '- Proposal patch SHA-256: `' + ('0' * 64) + '`'))\n"
+        "if mode == 'bad-markdown-check': private(artifact / 'proposal.md', proposal.replace('- Bound comparison metadata: verified', '- Bound comparison metadata: forged'))\n"
         "if mode.startswith('patch-mismatch-'):\n"
         "    mismatch = dict(manifest)\n"
         "    mismatch['patch'] = dict(manifest['patch'])\n"
@@ -354,6 +394,16 @@ def make_fake_repo(root):
         "        '2026-07-19 17:47:40.088 Df VitruvianPhoenix[75993:9e0ba8] [com.apple.BackBoard:EventDelivery] policyStatus:<BKSHIDEventDeliveryPolicyObserver: 0x1044a1140; token:0x1044a1140:sceneID%3Acom.example.project-default; status: ancestor> was:target\\n')\n"
         "    private(artifact / 'before/simulator.log', benign_log)\n"
         "    private(artifact / 'after/simulator.log', benign_log)\n"
+        "if mode == 'benign-ui-label':\n"
+        "    benign_label = 'Text(\\\"API token\\\")\\nUILabel(text: \\\"Client secret\\\")\\n'\n"
+        "    private(artifact / 'before/simulator.log', benign_label)\n"
+        "    private(artifact / 'after/simulator.log', benign_label)\n"
+        "typed_credential_lengths = {'typed-credential-16': 16, 'typed-credential-17': 17, 'typed-credential-18': 18, 'typed-credential-19': 19, 'typed-credential-long': 64}\n"
+        "if mode in typed_credential_lengths:\n"
+        "    value = 'a' * typed_credential_lengths[mode]\n"
+        "    typed_log = 'val apiToken: String = \\\"' + value + '\\\"\\n'\n"
+        "    private(artifact / 'before/simulator.log', typed_log)\n"
+        "    private(artifact / 'after/simulator.log', typed_log)\n"
         "internal_log_credentials = {\n"
         "    'internal-secret': 'API_TOKEN=' + 'a' * 24 + '\\n',\n"
         "    'internal-private-key': '-----BEGIN ' + 'PRIVATE KEY-----\\n' + 'MIIEvQIBADANBgkqhkiG9w0BAQEFAASC\\n' + '-----END PRIVATE KEY-----\\n',\n"
@@ -495,6 +545,58 @@ def assert_result_only(result, stage, reason):
         fail(f"unexpected result-only payload for {stage}: {payload!r}")
 
 
+def run_git_phase_signal(repo, request_path, result_root, hook, signal_name):
+    env = {**os.environ, "PHOENIX_HARNESS_UDID": "11111111-2222-3333-4444-555555555555", "PHOENIX_PREVIEW_TEST_HOOK": hook}
+    process = subprocess.Popen(
+        [str(repo / ".github/scripts/phantom-kanban-preview.sh"), str(request_path), str(result_root)],
+        cwd=repo,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    marker = None
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        candidates = sorted(Path("/tmp").glob("phantom-kanban-preview-*/.test-hook-" + hook))
+        if candidates:
+            marker = candidates[-1]
+            break
+        time.sleep(0.02)
+    if marker is None:
+        process.kill()
+        process.communicate(timeout=5)
+        fail(f"{hook} git hook did not start")
+    pid_file = Path(str(marker) + ".pid")
+    child_pid = None
+    while time.monotonic() < deadline:
+        if pid_file.exists():
+            pid_text = pid_file.read_text(encoding="ascii").strip()
+            if pid_text.isdigit():
+                child_pid = int(pid_text)
+                break
+        time.sleep(0.02)
+    if child_pid is None:
+        process.kill()
+        process.communicate(timeout=5)
+        fail(f"{hook} git hook child did not become active")
+    process.send_signal(getattr(signal, signal_name))
+    stdout, stderr = process.communicate(timeout=10)
+    completed = type("Completed", (), {"stdout": stdout, "stderr": stderr})()
+    assert_no_traceback(completed, f"{hook} {signal_name}")
+    if process.returncode == 0:
+        fail(f"{hook} {signal_name} unexpectedly returned success")
+    assert_result_only(result_root, "interrupted", "preview interrupted")
+    try:
+        os.kill(child_pid, 0)
+    except ProcessLookupError:
+        pass
+    else:
+        fail(f"{hook} {signal_name} left its active git/apply child alive")
+    if marker.exists() or pid_file.exists():
+        fail(f"{hook} {signal_name} left a private hook marker/orphan")
+
+
 def main():
     if not wrapper_source.exists():
         # This is intentional RED evidence before the production wrapper exists.
@@ -533,6 +635,42 @@ def main():
             fail("base SHA is not a bounded hash")
         if payload["patch_sha256"] != hashlib.sha256(patch.read_bytes()).hexdigest():
             fail("patch SHA mismatch")
+        manifest = json.loads((valid_result / "proposal-manifest.json").read_text(encoding="utf-8"))
+        summary = json.loads((valid_result / "evidence-summary.json").read_text(encoding="utf-8"))
+        proposal_text = (valid_result / "proposal.md").read_text(encoding="utf-8")
+        expected_proposal = "\n".join([
+            "# Phantom proposal evidence", "", "Status: **passed**", "",
+            "This proposal was rendered from the real Phoenix app in a disposable detached worktree using trusted candidate input.", "",
+            f"- Fixture: `{manifest['fixture']}`",
+            f"- Verified base SHA: `{manifest['baseSha']}`",
+            f"- Proposal patch SHA-256: `{manifest['patch']['sha256']}`", "",
+            "## Allowed changed files", "",
+            *[f"- `{path}`" for path in manifest["actualChangedFiles"]], "",
+            "## Verification", "", *PRODUCER_PUBLIC_VERIFICATION, "",
+        ])
+        if proposal_text != expected_proposal:
+            fail("producer public proposal claims are not exact")
+        if manifest["baseSha"] != payload["base_sha"] or manifest["patch"]["sha256"] != payload["patch_sha256"] or summary["baseSha"] != manifest["baseSha"] or summary["patchSha256"] != manifest["patch"]["sha256"]:
+            fail("public claims are not bound to manifest and summary")
+        run = json.loads((valid_result / "before/run.json").read_text(encoding="utf-8"))
+        if run["provenance"]["fixture"]["id"] != "just-lift-connected" or run["provenance"]["fixture"]["sha256"] != PRODUCER_FIXTURE_SHA256:
+            fail("producer fixture provenance drifted")
+        if [capture["path"] for capture in run["captures"]] != ["after.png", "xctest-attachment.png"] or [capture["checkpoint"] for capture in run["captures"]] != ["phantom-connected", "phantom-connected"]:
+            fail("producer capture topology drifted")
+        if [item["name"] for item in run["commands"]] != [name for name, _ in PRODUCER_COMMAND_SPECS] or [item["path"] for item in run["textualArtifacts"]] != list(PRODUCER_TEXTUAL_ARTIFACTS):
+            fail("producer command/log topology drifted")
+        if tuple(run["semanticMarkers"]["required"]) != PRODUCER_MARKERS or tuple(run["semanticMarkers"]["observed"]) != PRODUCER_MARKERS:
+            fail("producer semantic marker contract drifted")
+        diff = json.loads((valid_result / "comparison/diff.json").read_text(encoding="utf-8"))
+        total_pixels = diff["width"] * diff["height"]
+        if total_pixels != 4 or diff["changedPixelRatio"] != diff["changedPixels"] / total_pixels or diff["changedRatio"] != diff["changedPixels"] / total_pixels:
+            fail("producer diff arithmetic is not dimension-bound")
+        for phase in ("before", "after"):
+            if not (valid_result / phase / "run.json").is_file():
+                fail(f"producer public run manifest missing {phase}/run.json")
+        png = (valid_result / "comparison/diff.png").read_bytes()
+        if not (png.startswith(b"\x89PNG\r\n\x1a\n") and b"IHDR" in png and b"IDAT" in png and b"IEND" in png):
+            fail("producer diff is not a PNG-shaped binary artifact")
         artifact_entries = payload["artifacts"]
         if [entry["path"] for entry in artifact_entries] != [
             "proposal.md", "evidence-summary.json", "proposal-manifest.json", "comparison/diff.png",
@@ -791,6 +929,23 @@ def main():
         if benign_payload.get("status") != "passed":
             fail(f"benign CoreSimulator log did not produce a passed result: {benign_payload}")
 
+        benign_label_patch = temp / "benign-ui-label.patch"
+        make_patch(benign_label_patch, marker="ok\nTEST_MODE:benign-ui-label")
+        benign_label_request = temp / "benign-ui-label.json"
+        write_json(benign_label_request, request("KANBAN-71", benign_label_patch))
+        benign_label_result = fresh_result(temp, "benign-ui-label-result")
+        completed = run_wrapper(repo, benign_label_request, benign_label_result)
+        if completed.returncode != 0:
+            fail(f"benign UI labels were rejected as credentials: stdout={completed.stdout!r}, stderr={completed.stderr!r}")
+
+        for typed_mode in ("typed-credential-16", "typed-credential-17", "typed-credential-18", "typed-credential-19", "typed-credential-long"):
+            typed_log_patch = temp / (typed_mode + ".patch")
+            make_patch(typed_log_patch, marker="ok\nTEST_MODE:" + typed_mode)
+            typed_log_request = temp / (typed_mode + ".json")
+            write_json(typed_log_request, request("KANBAN-TYPED-LOG", typed_log_patch))
+            typed_log_result = fresh_result(temp, typed_mode + "-result")
+            assert_failure(run_wrapper(repo, typed_log_request, typed_log_result), typed_log_result, "validate-artifacts")
+
         malformed = temp / "malformed.json"
         write_private(malformed, "{not-json")
         result = fresh_result(temp, "malformed-result")
@@ -874,22 +1029,18 @@ def main():
         bad_manifest_types_result = fresh_result(temp, "bad-manifest-types-result")
         assert_failure(run_wrapper(repo, bad_manifest_types_request, bad_manifest_types_result), bad_manifest_types_result, "validate-artifacts")
 
-        for mode, label in (
-            ("minimal-evidence", "minimal-evidence"),
-            ("unknown-run", "unknown-run"),
-            ("bad-run-types", "bad-run-types"),
-            ("unknown-diff", "unknown-diff"),
-            ("bad-diff-input", "bad-diff-input"),
-            ("malformed-png", "malformed-png"),
-            ("png-text-credential", "png-text-credential"),
-            ("bad-markdown", "bad-markdown"),
-            ("bad-markdown-ref", "bad-markdown-ref"),
+        for mode in (
+            "minimal-evidence", "unknown-run", "bad-run-types", "unknown-diff", "bad-diff-input",
+            "forged-diff-ratio", "forged-diff-changed-ratio", "forged-diff-pixels",
+            "forged-diff-threshold", "forged-diff-pass", "forged-diff-mask",
+            "malformed-png", "png-text-credential", "bad-markdown", "bad-markdown-ref",
+            "bad-markdown-fixture", "bad-markdown-base", "bad-markdown-patch", "bad-markdown-check",
         ):
-            mode_patch = temp / (label + ".patch")
+            mode_patch = temp / (mode + ".patch")
             make_patch(mode_patch, marker="ok\nTEST_MODE:" + mode)
-            mode_request = temp / (label + ".json")
+            mode_request = temp / (mode + ".json")
             write_json(mode_request, request("KANBAN-63", mode_patch))
-            mode_result = fresh_result(temp, label + "-result")
+            mode_result = fresh_result(temp, mode + "-result")
             completed = run_wrapper(repo, mode_request, mode_result)
             if completed.returncode == 0:
                 fail(f"strict mode unexpectedly accepted: {mode}")
@@ -951,6 +1102,15 @@ def main():
         request_in_task_worktree_result = fresh_result(temp, "task-worktree-request-result")
         assert_failure(run_wrapper(repo, request_in_task_worktree, request_in_task_worktree_result), request_in_task_worktree_result, "validate-request")
         subprocess.run(["git", "-C", str(repo), "worktree", "remove", "--force", str(task_worktree)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+        for hook in ("request", "patch-verify", "gitrepo"):
+            for signal_name in ("SIGHUP", "SIGINT", "SIGTERM"):
+                hook_patch = temp / (hook + "-signal.patch")
+                make_patch(hook_patch, marker="ok")
+                hook_request = temp / (hook + "-signal.json")
+                write_json(hook_request, request("KANBAN-GIT-SIGNAL", hook_patch))
+                hook_result = fresh_result(temp, hook + "-" + signal_name + "-result")
+                run_git_phase_signal(repo, hook_request, hook_result, hook, signal_name)
 
         for phase_name in ("before", "after"):
             for signal_name in ("SIGHUP", "SIGINT", "SIGTERM"):

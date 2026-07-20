@@ -105,11 +105,19 @@ PNG_GENERIC_HOST_PATH_RE = re.compile(
     r"(?<![A-Za-z0-9_.:/-])/(?:[A-Za-z0-9._-]+/)+[A-Za-z0-9._-]+(?=$|[\s\"'<>])"
 )
 PATCH_HOST_PATH_RE = HOST_PATH_ROOT_RE
-PATCH_CREDENTIAL_RE = re.compile(
-    r"(?im)^[+\-]?\s*(?:export\s+)?(?:SUPABASE_ANON_KEY|API_TOKEN|TOKEN|SECRET|PASSWORD|PASSWD|"
-    r"PRIVATE[_-]?KEY|CREDENTIAL|API[_-]?KEY|ANON[_-]?KEY|AUTHORIZATION)"
-    r"\s*[:=]\s*['\"]?[A-Za-z0-9._~+/=-]{16,}"
+CREDENTIAL_NAME_RE = (
+    r"[A-Za-z0-9_.-]*(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?key|"
+    r"client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|token|secret|"
+    r"password|passwd|credential|authorization)[A-Za-z0-9_.-]*"
 )
+CREDENTIAL_ASSIGNMENT_RE = re.compile(
+    r"(?im)(?:^|[\r\n])[ \t]*[+\-]?[ \t]*"
+    r"(?:(?:export|val|var|let|const|final|private|public|internal|protected|static|readonly)[ \t]+)*"
+    rf"{CREDENTIAL_NAME_RE}[ \t]*(?::[ \t]*[A-Za-z_][A-Za-z0-9_.<>?, \t\[\]]*)?"
+    r"[ \t]*=[ \t]*['\"]?[A-Za-z0-9._~+/=-]{16,}['\"]?"
+)
+PATCH_CREDENTIAL_RE = CREDENTIAL_ASSIGNMENT_RE
+
 MAX_INTERNAL_FILES = 128
 MAX_INTERNAL_BYTES = 512 * 1024 * 1024
 KNOWN_ARTIFACT_REFERENCES = ALLOWED_ARTIFACT_SET | {"before", "after", "proposal.patch"}
@@ -299,17 +307,84 @@ def read_private_path(raw, limit, require_private=True):
         os.close(parent_fd)
 
 
+def test_hook_command(command):
+    hook = os.environ.get("PHOENIX_PREVIEW_TEST_HOOK", "")
+    if hook not in {"request", "patch-verify", "gitrepo"} or STATE.private_dir is None:
+        return command
+    args = [str(value) for value in command]
+    if hook == "request" and STATE.stage == "validate-request" and args[-2:] == ["list", "--porcelain"]:
+        matches = True
+    elif hook == "patch-verify" and STATE.stage == "patch-verify" and "apply" in args:
+        matches = True
+    elif hook == "gitrepo" and STATE.stage == "patch-verify" and "worktree" in args and "add" in args:
+        matches = True
+    else:
+        matches = False
+    if not matches:
+        return command
+    marker = STATE.private_dir / f".test-hook-{hook}"
+    marker.write_text("ready\\n", encoding="ascii")
+    os.chmod(marker, 0o600)
+    child_marker = marker.with_name(marker.name + ".pid")
+    script = (
+        "import os, time; "
+        f"open({str(child_marker)!r}, 'w', encoding='ascii').write(str(os.getpid()) + '\\n'); "
+        "time.sleep(60)"
+    )
+    return ["/usr/bin/python3", "-c", script]
+
+
+def run_tracked(command, cwd=REPO_ROOT, env=None, check=True):
+    """Run a repository subprocess with signal-safe process-group ownership."""
+    if STATE.interrupted is not None:
+        raise PreviewInterrupted
+    effective = test_hook_command(command)
+    process = None
+    try:
+        process = subprocess.Popen(
+            [str(value) for value in effective],
+            cwd=str(cwd),
+            env=env,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+        STATE.active = process
+        while process.poll() is None:
+            if STATE.interrupted is not None:
+                kill_active(STATE.interrupted)
+                try:
+                    process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    kill_active(signal.SIGKILL)
+                    process.wait()
+                raise PreviewInterrupted
+            time.sleep(0.02)
+        stdout, _ = process.communicate()
+        result = subprocess.CompletedProcess(command, process.returncode, stdout, b"")
+    except PreviewInterrupted:
+        raise
+    except (OSError, ValueError):
+        raise
+    finally:
+        if STATE.active is process:
+            STATE.active = None
+    if STATE.interrupted is not None:
+        raise PreviewInterrupted
+    if check and result.returncode != 0:
+        raise subprocess.CalledProcessError(result.returncode, result.args, output=result.stdout, stderr=result.stderr)
+    return result
+
+
 def path_inside_worktree(raw, repo):
     try:
         target = Path(raw).resolve(strict=True)
-        output = subprocess.run(
+        output = run_tracked(
             ["git", "-C", str(repo), "worktree", "list", "--porcelain"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
             env={"PATH": SYSTEM_PATH, "LC_ALL": "C", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"},
-        ).stdout
+        ).stdout.decode("utf-8", "strict")
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
         raise ValueError
     for line in output.splitlines():
@@ -336,14 +411,10 @@ def parse_json_bytes(data):
 
 def worktree_paths(repo):
     try:
-        output = subprocess.run(
+        output = run_tracked(
             ["git", "-C", str(repo), "worktree", "list", "--porcelain"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
             env={"PATH": SYSTEM_PATH, "LC_ALL": "C", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"},
-        ).stdout
+        ).stdout.decode("utf-8", "strict")
     except (OSError, subprocess.SubprocessError):
         raise ValueError
     roots = []
@@ -481,14 +552,10 @@ def parse_request(request_raw):
 
 def current_head():
     try:
-        output = subprocess.run(
+        output = run_tracked(
             ["git", "-C", str(REPO_ROOT), "rev-parse", "--verify", "HEAD"],
-            check=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
-            text=True,
             env={"PATH": SYSTEM_PATH, "LC_ALL": "C", "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"},
-        ).stdout.strip()
+        ).stdout.decode("ascii", "strict").strip()
     except (OSError, subprocess.SubprocessError):
         fail("validate-request")
     if not SHA1_RE.fullmatch(output):
@@ -523,12 +590,11 @@ def git_environment():
 
 
 def run_git(args, cwd=REPO_ROOT, check=True):
-    return subprocess.run(
+    return run_tracked(
         ["git", "-C", str(cwd), *[str(value) for value in args]],
-        check=check,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.DEVNULL,
+        cwd=cwd,
         env=git_environment(),
+        check=check,
     )
 
 
@@ -558,7 +624,7 @@ def cleanup_verification_worktree():
     try:
         run_git(["worktree", "remove", "--force", str(path)], check=False)
         run_git(["worktree", "prune"], check=False)
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError, PreviewInterrupted):
         pass
     try:
         if path.exists() and path.is_dir() and path.resolve().parent == STATE.private_dir.resolve():
@@ -569,6 +635,7 @@ def cleanup_verification_worktree():
 
 def verify_snapshot_application(snapshot):
     """Bind patch paths and the applied diff to the verified source base."""
+    STATE.stage = "patch-verify"
     path = STATE.private_dir / "patch-verify-worktree"
     STATE.verification_worktree = path
     try:
@@ -778,33 +845,19 @@ def credential_detected(data):
         return True
     if re.search(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b", text):
         return True
-    if re.search(r"\bBearer\s+[A-Za-z0-9._~+/=-]{20,}", text, re.IGNORECASE):
+    if re.search(r"\bBearer\s+[A-Za-z0-9._~+/=-]{16,}", text, re.IGNORECASE):
         return True
-    # CoreSimulator uses bare token:<object-or-URL> fields for UIKit/BackBoard
-    # bookkeeping. Require an explicit credential name and a substantive payload
-    # before treating an assignment as secret material.
-    if re.search(
-        r"\b[A-Za-z0-9_.-]*(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?key|"
-        r"client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token)[A-Za-z0-9_.-]*"
-        r"\s*[:=]\s*['\"]?[A-Za-z0-9._~+/=-]{20,}",
-        text,
-        re.IGNORECASE,
-    ):
+    # A credential assignment is sensitive at 16 characters, including
+    # Kotlin/Swift/JavaScript typed camelCase declarations.  The anchored
+    # declaration shape deliberately excludes UI labels such as `Text(\"API
+    # token\")` and CoreSimulator bookkeeping such as `token:0x...`.
+    if CREDENTIAL_ASSIGNMENT_RE.search(text):
         return True
+    # Some system logs redact an authorization value with `***` and leave a
+    # colon rather than an equals sign.  Keep this special case narrow so
+    # benign `token:0x...` UI/event identifiers remain accepted.
     if re.search(
-        r"\b(?:token|secret|password|passwd|credential|authorization)\s*=\s*['\"]?[A-Za-z0-9._~+/=-]{20,}",
-        text,
-        re.IGNORECASE,
-    ):
-        return True
-    # Kotlin/Swift/JavaScript-style typed declarations are just as sensitive
-    # as shell assignments.  Keep the declaration/type portion optional so
-    # plain XML tags and relative diff paths remain benign.
-    if re.search(
-        r"(?:^|[\r\n])\s*[+\-]?\s*(?:(?:export|val|var|let|const|final|private|public|internal|protected|static|readonly)\s+)*"
-        r"[A-Za-z_][A-Za-z0-9_.-]*(?:api[_-]?(?:key|token|secret)|access[_-]?key|anon[_-]?key|"
-        r"client[_-]?(?:secret|token)|private[_-]?key|refresh[_-]?token|token|secret|password|passwd|credential|authorization)"
-        r"[A-Za-z0-9_.-]*\s*(?::\s*[A-Za-z_][A-Za-z0-9_.<>?, ]*)?\s*=\s*['\"]?[A-Za-z0-9._~+/=-]{20,}['\"]?",
+        r"\b(?:authorization|bearer)\s*:\s*(?:\*+\s*)?[A-Za-z0-9._~+/=-]{16,}",
         text,
         re.IGNORECASE,
     ):
@@ -1317,12 +1370,26 @@ def validate_diff_summary(value):
             raise ValueError
     if value["passed"] != value["thresholdPassed"]:
         raise ValueError
-    pixels = value["width"] * value["height"]
-    if not exact_int(value["changedPixels"]) or not 0 <= value["changedPixels"] <= pixels:
+    # The current producer invokes phantom-image-diff with no masked rows.  Its
+    # denominator is therefore the complete image, derived from the dimensions
+    # rather than trusted from a caller-controlled metric.
+    if not exact_int(value["maskTopPixels"]) or value["maskTopPixels"] != 0:
         raise ValueError
+    total_pixels = value["width"] * value["height"]
+    if total_pixels < 0:
+        raise ValueError
+    if not exact_int(value["changedPixels"]) or not 0 <= value["changedPixels"] <= total_pixels:
+        raise ValueError
+    expected_ratio = 0.0 if total_pixels == 0 else value["changedPixels"] / total_pixels
+    ratios = {}
     for key in ("changedPixelRatio", "changedRatio"):
         if type(value[key]) not in (int, float) or isinstance(value[key], bool) or not math.isfinite(float(value[key])) or not 0 <= float(value[key]) <= 1:
             raise ValueError
+        ratios[key] = float(value[key])
+        if not math.isclose(ratios[key], expected_ratio, rel_tol=1e-6, abs_tol=1e-9):
+            raise ValueError
+    if not math.isclose(ratios["changedPixelRatio"], ratios["changedRatio"], rel_tol=1e-6, abs_tol=1e-9):
+        raise ValueError
     if type(value["meanChannelDelta"]) not in (int, float) or isinstance(value["meanChannelDelta"], bool) or not math.isfinite(float(value["meanChannelDelta"])) or not 0 <= float(value["meanChannelDelta"]) <= 255:
         raise ValueError
     if not exact_int(value["maxChannelDelta"]) or not 0 <= value["maxChannelDelta"] <= 255:
@@ -1330,6 +1397,21 @@ def validate_diff_summary(value):
     if not exact_int(value["maskTopPixels"]) or not 0 <= value["maskTopPixels"] <= value["height"]:
         raise ValueError
     if type(value["threshold"]) not in (int, float) or isinstance(value["threshold"], bool) or not math.isfinite(float(value["threshold"])) or not 0 <= float(value["threshold"]) <= 255:
+        raise ValueError
+    # phantom-image-diff marks a result passed iff no unmasked pixel exceeds
+    # the threshold.  With maskTopPixels fixed at zero, the aggregate metrics
+    # must agree with that contract even though the wrapper does not decode all
+    # pixel bytes itself.
+    threshold = float(value["threshold"])
+    max_delta = value["maxChannelDelta"]
+    if value["changedPixels"] == 0:
+        if max_delta > threshold:
+            raise ValueError
+        if threshold == 0 and float(value["meanChannelDelta"]) != 0.0:
+            raise ValueError
+    elif max_delta <= threshold:
+        raise ValueError
+    if value["passed"] is not (value["changedPixels"] == 0):
         raise ValueError
     exact_keys(value["inputs"], {"before", "after"})
     if value["inputs"] != {"before": "xctest-attachment.png", "after": "xctest-attachment.png"}:
@@ -1465,39 +1547,38 @@ def validate_evidence_summary(summary, base_sha, patch_sha):
     return summary
 
 
-def validate_proposal_markdown(data, manifest):
+def validate_proposal_markdown(data, manifest, summary):
     text = data.decode("utf-8", "strict")
     if credential_or_host_path(data) or "\\" in text:
         raise ValueError
-    if not text.startswith("# Phantom proposal evidence\n") or "\n## Allowed changed files\n" not in text or "\n## Verification\n" not in text or "\nStatus: **passed**\n" not in text:
+    if summary["fixture"] != manifest["fixture"] or summary["baseSha"].lower() != manifest["baseSha"].lower() or summary["patchSha256"].lower() != manifest["patch"]["sha256"].lower() or summary["changedFiles"] != manifest["actualChangedFiles"] or summary["comparison"] != manifest["comparison"]:
         raise ValueError
-    lines = text.splitlines()
-    try:
-        start = lines.index("## Allowed changed files") + 1
-        end = lines.index("## Verification")
-    except ValueError:
+    if manifest["worktree"]["detached"] is not True or manifest["worktree"]["headSha"].lower() != manifest["baseSha"].lower():
         raise ValueError
-    changed = []
-    for line in lines[start:end]:
-        if not line:
-            continue
-        match = re.fullmatch(r"- `([^`]+)`", line)
-        if not match:
-            raise ValueError
-        changed.append(match.group(1))
-    if changed != manifest["actualChangedFiles"]:
-        raise ValueError
-    allowed = KNOWN_ARTIFACT_REFERENCES | set(manifest["actualChangedFiles"])
-    for token in re.findall(r"`([^`]+)`", text):
-        if "/" in token or token in KNOWN_ARTIFACT_REFERENCES:
-            if token not in allowed:
-                raise ValueError
-            strict_relative(token)
-    for token in re.findall(r"(?<![A-Za-z0-9_.-])(?:comparison|before|after)/[A-Za-z0-9_.-]+", text):
-        if token not in allowed:
-            raise ValueError
-        strict_relative(token)
-    if re.search(r"(?:^|\s)(?:/|\.\.?/)", text):
+    verification_lines = [
+        "- Baseline canonical harness case: verified",
+        "- Candidate canonical harness case: verified",
+        "- Kotlin/resource compile gate when required: verified",
+        "- Bound comparison metadata: verified",
+        "- Temporary worktree: cleaned after rendering",
+    ]
+    expected_lines = [
+        "# Phantom proposal evidence",
+        "",
+        "Status: **passed**",
+        "",
+        "This proposal was rendered from the real Phoenix app in a disposable detached worktree using trusted candidate input.",
+        "",
+        f"- Fixture: `{manifest['fixture']}`",
+        f"- Verified base SHA: `{manifest['baseSha']}`",
+        f"- Proposal patch SHA-256: `{manifest['patch']['sha256']}`",
+        "",
+        "## Allowed changed files",
+        "",
+    ]
+    expected_lines.extend(f"- `{path}`" for path in manifest["actualChangedFiles"])
+    expected_lines.extend(["", "## Verification", "", *verification_lines, ""])
+    if text != "\n".join(expected_lines):
         raise ValueError
 
 
@@ -1690,7 +1771,7 @@ def validate_artifacts():
             raise ValueError
         if summary["changedFiles"] != manifest["actualChangedFiles"]:
             raise ValueError
-        validate_proposal_markdown(artifacts["proposal.md"], manifest)
+        validate_proposal_markdown(artifacts["proposal.md"], manifest, summary)
         return {name: artifacts[name] for name in ALLOWED_ARTIFACTS}
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError, RuntimeError):
         fail("validate-artifacts")
