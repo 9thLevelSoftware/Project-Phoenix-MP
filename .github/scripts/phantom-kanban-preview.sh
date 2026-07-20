@@ -63,6 +63,8 @@ EXPECTED_TEXTUAL_ARTIFACTS = (
     "toolchain.log", "build.log", "test.log", "app-state.log", "simulator.log", "screenshot.log", ".commands.jsonl",
 )
 EXPECTED_HARNESS_MARKER = b"phantom-harness-artifact-v1\n"
+EXPECTED_PROPOSAL_MARKER = b"phantom-proposal-artifact-v1\n"
+MAX_PROPOSAL_MARKER_BYTES = 128
 INTERNAL_HARNESS_FILES = (
     ".phantom-harness",
     ".commands.jsonl",
@@ -80,7 +82,7 @@ INTERNAL_HARNESS_FILES = (
     "simulator.log",
     "screenshot.log",
 )
-INTERNAL_ARTIFACT_SET = ALLOWED_ARTIFACT_SET | {"proposal.patch"} | {
+INTERNAL_ARTIFACT_SET = ALLOWED_ARTIFACT_SET | {"proposal.patch", ".phantom-proposal"} | {
     f"{phase}/{name}" for phase in ("before", "after") for name in INTERNAL_HARNESS_FILES
 }
 MAX_INTERNAL_FILES = 128
@@ -1117,6 +1119,9 @@ def validate_artifacts():
         finally:
             os.close(root_fd)
         if len(artifacts) > MAX_INTERNAL_FILES or set(artifacts) != INTERNAL_ARTIFACT_SET:
+            raise ValueError
+        proposal_marker = artifacts[".phantom-proposal"]
+        if len(proposal_marker) > MAX_PROPOSAL_MARKER_BYTES or proposal_marker != EXPECTED_PROPOSAL_MARKER:
             raise ValueError
         if set(directories) != {"", "before", "after", "comparison"}:
             raise ValueError

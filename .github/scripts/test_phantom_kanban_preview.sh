@@ -149,6 +149,7 @@ def make_fake_repo(root):
         "for name in ('before/run.json', 'after/run.json'):\n"
         "    private(artifact / name, run_bytes, binary=True)\n"
         "private(artifact / 'proposal.patch', patch_bytes, binary=True)\n"
+        "private(artifact / '.phantom-proposal', 'phantom-proposal-artifact-v1\\n')\n"
         "for phase in ('before', 'after'):\n"
         "    private(artifact / (phase + '/.phantom-harness'), 'phantom-harness-artifact-v1\\n')\n"
         "    private(artifact / (phase + '/.commands.jsonl'), ''.join(json.dumps(item, sort_keys=True) + '\\n' for item in commands))\n"
@@ -186,6 +187,9 @@ def make_fake_repo(root):
         "if mode == 'internal-secret': private(artifact / 'before/simulator.log', 'API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa\\n')\n"
         "if mode == 'internal-absolute-path': private(artifact / 'after/simulator.log', '/Users/host/private/output\\n')\n"
         "if mode == 'internal-symlink': os.symlink('run.json', artifact / 'before/internal-link')\n"
+        "if mode == 'missing-proposal-marker': (artifact / '.phantom-proposal').unlink()\n"
+        "if mode == 'bad-proposal-marker': private(artifact / '.phantom-proposal', 'altered-proposal-marker\\n')\n"
+        "if mode == 'symlink-proposal-marker': (artifact / '.phantom-proposal').unlink(); os.symlink('before/run.json', artifact / '.phantom-proposal')\n"
         "if mode == 'unknown-public': private(artifact / 'unknown-public.txt', 'must not publish\\n')\n"
         "if mode == 'missing-proposal-patch': (artifact / 'proposal.patch').unlink()\n"
         "if mode == 'bad-proposal-patch': private(artifact / 'proposal.patch', b'not-the-request-patch\\n', binary=True)\n"
@@ -496,6 +500,9 @@ def main():
             "internal-secret",
             "internal-absolute-path",
             "internal-symlink",
+            "missing-proposal-marker",
+            "bad-proposal-marker",
+            "symlink-proposal-marker",
             "unknown-public",
             "missing-proposal-patch",
             "bad-proposal-patch",
