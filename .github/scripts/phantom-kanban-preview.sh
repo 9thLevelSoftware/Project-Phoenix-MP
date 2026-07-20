@@ -62,6 +62,29 @@ EXPECTED_FIXTURE_SHA256 = "e180679548a2d96dbc59c51449edb3b99c19d3e3be82eca98c070
 EXPECTED_TEXTUAL_ARTIFACTS = (
     "toolchain.log", "build.log", "test.log", "app-state.log", "simulator.log", "screenshot.log", ".commands.jsonl",
 )
+EXPECTED_HARNESS_MARKER = b"phantom-harness-artifact-v1\n"
+INTERNAL_HARNESS_FILES = (
+    ".phantom-harness",
+    ".commands.jsonl",
+    "run.json",
+    "after.png",
+    "xctest-attachment.png",
+    "toolchain.log",
+    "boot.log",
+    "bootstatus.log",
+    "terminate.log",
+    "uninstall.log",
+    "build.log",
+    "test.log",
+    "app-state.log",
+    "simulator.log",
+    "screenshot.log",
+)
+INTERNAL_ARTIFACT_SET = ALLOWED_ARTIFACT_SET | {"proposal.patch"} | {
+    f"{phase}/{name}" for phase in ("before", "after") for name in INTERNAL_HARNESS_FILES
+}
+MAX_INTERNAL_FILES = 128
+MAX_INTERNAL_BYTES = 512 * 1024 * 1024
 KNOWN_ARTIFACT_REFERENCES = ALLOWED_ARTIFACT_SET | {"before", "after", "proposal.patch"}
 PUBLICATION_STAGING_NAME = ".publication-staging"
 PUBLICATION_PRECHECK_NAME = ".publication-precheck"
@@ -581,11 +604,20 @@ def read_artifact_file(directory_fd, name, info):
         os.close(fd)
 
 
-def scan_artifact_tree(fd, relative=""):
+def scan_artifact_tree(fd, relative="", allowed_paths=None, total_size=None, directories=None):
     contents = {}
+    if allowed_paths is None:
+        allowed_paths = ALLOWED_ARTIFACT_SET
+    if total_size is None:
+        total_size = [0]
+    if directories is None:
+        directories = []
+    directories.append(relative)
     try:
         names = sorted(os.listdir(fd))
     except OSError:
+        raise ValueError
+    if len(names) > MAX_INTERNAL_FILES:
         raise ValueError
     for name in names:
         safe_name(name)
@@ -598,13 +630,17 @@ def scan_artifact_tree(fd, relative=""):
                 raise ValueError
             child = os.open(name, os.O_RDONLY | O_DIRECTORY | NOFOLLOW, dir_fd=fd)
             try:
-                contents.update(scan_artifact_tree(child, rel))
+                contents.update(scan_artifact_tree(child, rel, allowed_paths, total_size, directories))
             finally:
                 os.close(child)
         elif stat.S_ISREG(info.st_mode):
-            if stat.S_IMODE(info.st_mode) != 0o600 or rel not in ALLOWED_ARTIFACT_SET:
+            if stat.S_IMODE(info.st_mode) != 0o600 or rel not in allowed_paths:
                 raise ValueError
-            contents[rel] = read_artifact_file(fd, name, info)
+            data = read_artifact_file(fd, name, info)
+            total_size[0] += len(data)
+            if total_size[0] > MAX_INTERNAL_BYTES:
+                raise ValueError
+            contents[rel] = data
         else:
             raise ValueError
     return contents
@@ -758,7 +794,21 @@ def run_identity(run):
     }
 
 
-def validate_run_manifest(run, base_sha):
+def validate_command_log(data, commands):
+    try:
+        lines = data.decode("utf-8", "strict").splitlines()
+    except UnicodeError:
+        raise ValueError
+    if len(lines) != len(commands) or any(not line for line in lines):
+        raise ValueError
+    parsed = []
+    for line in lines:
+        parsed.append(parse_json_bytes(line.encode("utf-8")))
+    if parsed != commands:
+        raise ValueError
+
+
+def validate_run_manifest(run, base_sha, phase_files=None):
     exact_keys(run, {"schemaVersion", "runId", "provenance", "commands", "semanticMarkers", "captures", "textualArtifacts"})
     if not exact_int(run["schemaVersion"]) or run["schemaVersion"] != 1:
         raise ValueError
@@ -810,11 +860,31 @@ def validate_run_manifest(run, base_sha):
     for item in textual:
         exact_keys(item, {"path"})
         strict_relative(item["path"])
+    if phase_files is not None:
+        if phase_files.get(".phantom-harness") != EXPECTED_HARNESS_MARKER:
+            raise ValueError
+        for _, output in EXPECTED_COMMANDS:
+            if output not in phase_files:
+                raise ValueError
+        for item in textual:
+            if item["path"] not in phase_files:
+                raise ValueError
+        validate_command_log(phase_files[".commands.jsonl"], commands)
+        for capture in captures:
+            data = phase_files.get(capture["path"])
+            if data is None or hashlib.sha256(data).hexdigest() != capture["sha256"]:
+                raise ValueError
+            dimensions = validate_png(data)
+            if {"width": dimensions[0], "height": dimensions[1]} != capture["dimensions"]:
+                raise ValueError
     return run_identity(run)
 
 
-def validate_diff_summary(value):
-    exact_keys(value, {"passed", "thresholdPassed", "dimensions", "width", "height", "changedPixels", "changedPixelRatio", "changedRatio", "meanChannelDelta", "maxChannelDelta", "maskTopPixels", "threshold", "inputs"})
+def validate_diff_summary(value, allow_no_inputs=False):
+    required = {"passed", "thresholdPassed", "dimensions", "width", "height", "changedPixels", "changedPixelRatio", "changedRatio", "meanChannelDelta", "maxChannelDelta", "maskTopPixels", "threshold"}
+    accepted = (required, required | {"inputs"}) if allow_no_inputs else (required | {"inputs"},)
+    if not isinstance(value, dict) or set(value) not in accepted:
+        raise ValueError
     validate_dimensions(value["dimensions"])
     if value["width"] != value["dimensions"]["width"] or value["height"] != value["dimensions"]["height"]:
         raise ValueError
@@ -837,18 +907,39 @@ def validate_diff_summary(value):
         raise ValueError
     if type(value["threshold"]) not in (int, float) or isinstance(value["threshold"], bool) or not math.isfinite(float(value["threshold"])) or not 0 <= float(value["threshold"]) <= 255:
         raise ValueError
-    exact_keys(value["inputs"], {"before", "after"})
-    if value["inputs"] != {"before": "run.json", "after": "run.json"}:
+    if "inputs" in value:
+        exact_keys(value["inputs"], {"before", "after"})
+        if value["inputs"] != {"before": "run.json", "after": "run.json"}:
+            raise ValueError
+
+
+def validate_public_capture(value, expected_path="after.png"):
+    exact_keys(value, {"path", "sha256", "dimensions"})
+    if value["path"] != expected_path:
         raise ValueError
+    validate_hash(value["sha256"], 64)
+    validate_dimensions(value["dimensions"])
+    return value
 
 
 def validate_comparison(value):
-    exact_keys(value, {"identity", "beforeManifestSha256", "afterManifestSha256", "beforeCapture", "afterCapture", "diffJson", "diffImage", "summary"})
-    validate_identity(value["identity"])
-    validate_hash(value["beforeManifestSha256"], 64)
-    validate_hash(value["afterManifestSha256"], 64)
-    validate_capture(value["beforeCapture"], "simulator-after", "after.png")
-    validate_capture(value["afterCapture"], "simulator-after", "after.png")
+    full_keys = {"identity", "beforeManifestSha256", "afterManifestSha256", "beforeCapture", "afterCapture", "diffJson", "diffImage", "summary"}
+    renderer_keys = {"before", "after", "diffJson", "diffImage", "summary"}
+    if not isinstance(value, dict):
+        raise ValueError
+    if set(value) == full_keys:
+        validate_identity(value["identity"])
+        validate_hash(value["beforeManifestSha256"], 64)
+        validate_hash(value["afterManifestSha256"], 64)
+        validate_capture(value["beforeCapture"], "simulator-after", "after.png")
+        validate_capture(value["afterCapture"], "simulator-after", "after.png")
+        comparison_mode = "contract"
+    elif set(value) == renderer_keys:
+        validate_public_capture(value["before"])
+        validate_public_capture(value["after"])
+        comparison_mode = "renderer"
+    else:
+        raise ValueError
     for key, path in (("diffJson", "comparison/diff.json"), ("diffImage", "comparison/diff.png")):
         descriptor = value[key]
         required = {"path", "sha256"} | ({"dimensions"} if key == "diffImage" else set())
@@ -858,8 +949,8 @@ def validate_comparison(value):
         validate_hash(descriptor["sha256"], 64)
         if key == "diffImage":
             validate_dimensions(descriptor["dimensions"])
-    validate_diff_summary(value["summary"])
-
+    validate_diff_summary(value["summary"], allow_no_inputs=comparison_mode == "renderer")
+    return comparison_mode
 
 def validate_manifest(manifest, base_sha, patch_sha, patch_size):
     exact_keys(manifest, {"schemaVersion", "status", "trustedInput", "fixture", "baseSha", "patch", "candidateKinds", "allowedChangedFiles", "actualChangedFiles", "worktree", "focusedChecks", "before", "after", "comparison", "evidence"})
@@ -1021,47 +1112,67 @@ def validate_artifacts():
             info = os.fstat(root_fd)
             if info.st_uid != os.getuid() or stat.S_IMODE(info.st_mode) != 0o700:
                 raise ValueError
-            artifacts = scan_artifact_tree(root_fd)
+            directories = []
+            artifacts = scan_artifact_tree(root_fd, allowed_paths=INTERNAL_ARTIFACT_SET, directories=directories)
         finally:
             os.close(root_fd)
-        if set(artifacts) != ALLOWED_ARTIFACT_SET:
+        if len(artifacts) > MAX_INTERNAL_FILES or set(artifacts) != INTERNAL_ARTIFACT_SET:
             raise ValueError
+        if set(directories) != {"", "before", "after", "comparison"}:
+            raise ValueError
+        for data in artifacts.values():
+            if credential_or_host_path(data):
+                raise ValueError
+        snapshot = read_private_path(str(STATE.private_dir / "patch.snapshot"), MAX_PATCH_BYTES)
+        if artifacts["proposal.patch"] != snapshot:
+            raise ValueError
+        if hashlib.sha256(artifacts["proposal.patch"]).hexdigest() != STATE.patch_sha or len(artifacts["proposal.patch"]) != STATE.patch_size:
+            raise ValueError
+
         png_dimensions = None
         json_values = {}
         for name, data in artifacts.items():
             if name == "comparison/diff.png":
-                if credential_or_host_path(data):
-                    raise ValueError
                 png_dimensions = validate_png(data)
             elif name == "proposal.md":
                 data.decode("utf-8", "strict")
-                if credential_or_host_path(data):
-                    raise ValueError
-            else:
+            elif name in {"evidence-summary.json", "proposal-manifest.json", "before/run.json", "after/run.json", "comparison/diff.json"}:
                 json_values[name] = validate_json_artifact(data)
+
         before = json_values["before/run.json"]
         after = json_values["after/run.json"]
-        before_identity = validate_run_manifest(before, STATE.base_sha)
-        after_identity = validate_run_manifest(after, STATE.base_sha)
+        before_files = {name: artifacts[f"before/{name}"] for name in INTERNAL_HARNESS_FILES}
+        after_files = {name: artifacts[f"after/{name}"] for name in INTERNAL_HARNESS_FILES}
+        before_identity = validate_run_manifest(before, STATE.base_sha, before_files)
+        after_identity = validate_run_manifest(after, STATE.base_sha, after_files)
         if before_identity != after_identity:
             raise ValueError
         manifest = json_values["proposal-manifest.json"]
         validate_manifest(manifest, STATE.base_sha, STATE.patch_sha, STATE.patch_size)
         diff = json_values["comparison/diff.json"]
-        validate_diff_summary(diff)
+        comparison = manifest["comparison"]
+        comparison_mode = validate_comparison(comparison)
+        validate_diff_summary(diff, allow_no_inputs=comparison_mode == "renderer")
         summary = json_values["evidence-summary.json"]
         validate_evidence_summary(summary, STATE.base_sha, STATE.patch_sha)
         if hashlib.sha256(artifacts["before/run.json"]).hexdigest() != manifest["before"]["manifestSha256"] or hashlib.sha256(artifacts["after/run.json"]).hexdigest() != manifest["after"]["manifestSha256"]:
             raise ValueError
         if manifest["before"]["identity"] != before_identity or manifest["after"]["identity"] != after_identity:
             raise ValueError
-        comparison = manifest["comparison"]
-        if comparison["identity"] != before_identity or summary["beforeAfterIdentity"] != before_identity or summary["comparison"] != comparison:
+        if summary["beforeAfterIdentity"] != before_identity or summary["comparison"] != comparison:
             raise ValueError
-        if comparison["beforeManifestSha256"] != manifest["before"]["manifestSha256"] or comparison["afterManifestSha256"] != manifest["after"]["manifestSha256"]:
-            raise ValueError
-        if comparison["beforeCapture"] != before["captures"][0] or comparison["afterCapture"] != after["captures"][0]:
-            raise ValueError
+        if comparison_mode == "contract":
+            if comparison["identity"] != before_identity:
+                raise ValueError
+            if comparison["beforeManifestSha256"] != manifest["before"]["manifestSha256"] or comparison["afterManifestSha256"] != manifest["after"]["manifestSha256"]:
+                raise ValueError
+            if comparison["beforeCapture"] != before["captures"][0] or comparison["afterCapture"] != after["captures"][0]:
+                raise ValueError
+        else:
+            before_capture = {key: before["captures"][0][key] for key in ("path", "sha256", "dimensions")}
+            after_capture = {key: after["captures"][0][key] for key in ("path", "sha256", "dimensions")}
+            if comparison["before"] != before_capture or comparison["after"] != after_capture:
+                raise ValueError
         if comparison["summary"] != diff:
             raise ValueError
         if comparison["diffJson"]["sha256"] != hashlib.sha256(artifacts["comparison/diff.json"]).hexdigest() or comparison["diffImage"]["sha256"] != hashlib.sha256(artifacts["comparison/diff.png"]).hexdigest():
@@ -1071,7 +1182,7 @@ def validate_artifacts():
         if summary["changedFiles"] != manifest["actualChangedFiles"]:
             raise ValueError
         validate_proposal_markdown(artifacts["proposal.md"], manifest)
-        return artifacts
+        return {name: artifacts[name] for name in ALLOWED_ARTIFACTS}
     except (OSError, UnicodeError, ValueError, json.JSONDecodeError, RuntimeError):
         fail("validate-artifacts")
 
@@ -1153,6 +1264,8 @@ def publish_success(artifacts, ticket, fixture, base_sha, patch_sha):
     staging = None
     dirs = {}
     try:
+        if set(artifacts) != ALLOWED_ARTIFACT_SET:
+            raise ValueError
         destination = STATE.result.current()
         if os.listdir(destination):
             raise ValueError

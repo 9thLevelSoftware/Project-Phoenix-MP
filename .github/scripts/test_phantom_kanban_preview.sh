@@ -109,7 +109,8 @@ def make_fake_repo(root):
         "    os.replace(replacement, original)\n"
         "    Path(observed).write_bytes(patch.read_bytes())\n"
         "if mode == 'replace-result':\n"
-        "    result_root, original, outside = marker('REPLACE_RESULT:').split('|', 2)\n"
+        "    result_root, original, outside = marker('REPLACE_RESULT_HEX:').split('|', 2)\n"
+        "    result_root, original, outside = [bytes.fromhex(value).decode('utf-8') for value in (result_root, original, outside)]\n"
         "    os.rename(result_root, original)\n"
         "    os.symlink(outside, result_root)\n"
         "if mode == 'sleep':\n"
@@ -126,17 +127,20 @@ def make_fake_repo(root):
         "command_specs = [('xcodebuild.version', 'toolchain.log'), ('simulator.boot', 'boot.log'), ('simulator.bootstatus', 'bootstatus.log'), ('simulator.terminate', 'terminate.log'), ('simulator.uninstall', 'uninstall.log'), ('build', 'build.log'), ('run-tests', 'test.log'), ('simulator.app-state', 'app-state.log'), ('simulator.logs', 'simulator.log'), ('simulator.screenshot', 'screenshot.log')]\n"
         "commands = [{'name': name, 'exitCode': 0, 'output': output, **({'resultBundle': {'basename': 'test.xcresult', 'status': 'private-not-retained'}} if name == 'run-tests' else {})} for name, output in command_specs]\n"
         "markers = ['xctest.passed', 'phantom.connected', 'simulator.screenshot']\n"
-        "captures = [{'slug': 'simulator-after', 'path': 'after.png', 'sha256': 'a' * 64, 'dimensions': {'width': 2, 'height': 2}, 'phase': 'after', 'pair': 'simulator-after', 'checkpoint': 'phantom-connected', 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'simulator': simulator}, {'slug': 'xctest-after', 'path': 'xctest-attachment.png', 'sha256': 'b' * 64, 'dimensions': {'width': 2, 'height': 2}, 'phase': 'after', 'pair': 'xctest-after', 'checkpoint': 'phantom-connected', 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'simulator': simulator}]\n"
+        "capture_png = png()\n"
+        "capture_sha = hashlib.sha256(capture_png).hexdigest()\n"
+        "captures = [{'slug': 'simulator-after', 'path': 'after.png', 'sha256': capture_sha, 'dimensions': {'width': 2, 'height': 2}, 'phase': 'after', 'pair': 'simulator-after', 'checkpoint': 'phantom-connected', 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'simulator': simulator}, {'slug': 'xctest-after', 'path': 'xctest-attachment.png', 'sha256': capture_sha, 'dimensions': {'width': 2, 'height': 2}, 'phase': 'after', 'pair': 'xctest-after', 'checkpoint': 'phantom-connected', 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'simulator': simulator}]\n"
         "run = {'schemaVersion': 1, 'runId': 'run-fake-1', 'provenance': {'baseSha': base, 'fixture': {'id': 'just-lift-connected', 'sha256': fixture_sha}, 'xcode': 'Xcode 16.0', 'sdk': '18.0', 'simulator': simulator, 'bundleId': 'com.devil.phoenixproject.projectphoenix'}, 'commands': commands, 'semanticMarkers': {'required': markers, 'observed': markers}, 'captures': captures, 'textualArtifacts': [{'path': name} for name in ('toolchain.log', 'build.log', 'test.log', 'app-state.log', 'simulator.log', 'screenshot.log', '.commands.jsonl')]}\n"
         "run_bytes = (json.dumps(run, sort_keys=True, indent=2) + '\\n').encode()\n"
         "run_sha = hashlib.sha256(run_bytes).hexdigest()\n"
-        "diff_png = png()\n"
+        "diff_png = capture_png\n"
         "diff_sha = hashlib.sha256(diff_png).hexdigest()\n"
-        "diff = {'passed': True, 'thresholdPassed': True, 'dimensions': {'width': 2, 'height': 2}, 'width': 2, 'height': 2, 'changedPixels': 0, 'changedPixelRatio': 0.0, 'changedRatio': 0.0, 'meanChannelDelta': 0.0, 'maxChannelDelta': 0, 'maskTopPixels': 0, 'threshold': 0.0, 'inputs': {'before': 'run.json', 'after': 'run.json'}}\n"
+        "diff = {'passed': True, 'thresholdPassed': True, 'dimensions': {'width': 2, 'height': 2}, 'width': 2, 'height': 2, 'changedPixels': 0, 'changedPixelRatio': 0.0, 'changedRatio': 0.0, 'meanChannelDelta': 0.0, 'maxChannelDelta': 0, 'maskTopPixels': 0, 'threshold': 0.0}\n"
         "diff_bytes = (json.dumps(diff, sort_keys=True) + '\\n').encode()\n"
         "diff_sha_json = hashlib.sha256(diff_bytes).hexdigest()\n"
         "identity = {'baseSha': base, 'fixtureId': 'just-lift-connected', 'fixtureSha256': fixture_sha, 'bundleId': 'com.devil.phoenixproject.projectphoenix', 'simulator': simulator, 'commands': [name for name, _ in command_specs], 'markers': sorted(markers)}\n"
-        "comparison = {'identity': identity, 'beforeManifestSha256': run_sha, 'afterManifestSha256': run_sha, 'beforeCapture': captures[0], 'afterCapture': captures[0], 'diffJson': {'path': 'comparison/diff.json', 'sha256': diff_sha_json}, 'diffImage': {'path': 'comparison/diff.png', 'sha256': diff_sha, 'dimensions': {'width': 2, 'height': 2}}, 'summary': diff}\n"
+        "compact_capture = {'path': 'after.png', 'sha256': capture_sha, 'dimensions': {'width': 2, 'height': 2}}\n"
+        "comparison = {'before': compact_capture, 'after': compact_capture, 'diffJson': {'path': 'comparison/diff.json', 'sha256': diff_sha_json}, 'diffImage': {'path': 'comparison/diff.png', 'sha256': diff_sha, 'dimensions': {'width': 2, 'height': 2}}, 'summary': diff}\n"
         "manifest = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patch': {'path': 'proposal.patch', 'sha256': patch_sha, 'size': len(patch_bytes), 'binary': False, 'format': 'exact-input'}, 'candidateKinds': ['kotlin'], 'allowedChangedFiles': [changed_file], 'actualChangedFiles': [changed_file], 'worktree': {'baseSha': base, 'headSha': base, 'detached': True, 'uncommitted': True, 'statusEntryCount': 1, 'appliedDiffSha256': patch_sha}, 'focusedChecks': [{'name': 'git.diff.check', 'passed': True}], 'before': {'artifact': 'before', 'manifestSha256': run_sha, 'identity': identity}, 'after': {'artifact': 'after', 'manifestSha256': run_sha, 'identity': identity}, 'comparison': comparison, 'evidence': {'proposalMarkdown': 'proposal.md', 'summaryJson': 'evidence-summary.json'}}\n"
         "summary = {'schemaVersion': 1, 'status': 'passed', 'trustedInput': True, 'fixture': 'just-lift-connected', 'baseSha': base, 'patchSha256': patch_sha, 'changedFiles': [changed_file], 'beforeAfterIdentity': identity, 'comparison': comparison, 'artifacts': ['before', 'after', 'proposal.patch', 'proposal-manifest.json', 'proposal.md', 'comparison/diff.json', 'comparison/diff.png']}\n"
         "proposal = '# Phantom proposal evidence\\n\\nStatus: **passed**\\n\\nThis proposal was rendered from the real Phoenix app in a disposable detached worktree using trusted candidate input.\\n\\n- Fixture: `just-lift-connected`\\n- Verified base SHA: `' + base + '`\\n- Proposal patch SHA-256: `' + patch_sha + '`\\n\\n## Allowed changed files\\n\\n- `' + changed_file + '`\\n\\n## Verification\\n\\n- Baseline canonical harness case: verified\\n- Candidate canonical harness case: verified\\n- Kotlin/resource compile gate when required: verified\\n- Bound comparison metadata: verified\\n- Temporary worktree: cleaned after rendering\\n'\n"
@@ -144,6 +148,14 @@ def make_fake_repo(root):
         "    private(artifact / ('.sleep-verify-' + ('before' if mode.endswith('before') else 'after')), b'1\\n', binary=True)\n"
         "for name in ('before/run.json', 'after/run.json'):\n"
         "    private(artifact / name, run_bytes, binary=True)\n"
+        "private(artifact / 'proposal.patch', patch_bytes, binary=True)\n"
+        "for phase in ('before', 'after'):\n"
+        "    private(artifact / (phase + '/.phantom-harness'), 'phantom-harness-artifact-v1\\n')\n"
+        "    private(artifact / (phase + '/.commands.jsonl'), ''.join(json.dumps(item, sort_keys=True) + '\\n' for item in commands))\n"
+        "    for _, output in command_specs:\n"
+        "        private(artifact / (phase + '/' + output), 'ok\\n')\n"
+        "    private(artifact / (phase + '/after.png'), capture_png, binary=True)\n"
+        "    private(artifact / (phase + '/xctest-attachment.png'), capture_png, binary=True)\n"
         "private(artifact / 'proposal.md', proposal)\n"
         "private(artifact / 'evidence-summary.json', json.dumps(summary, sort_keys=True, indent=2) + '\\n')\n"
         "private(artifact / 'proposal-manifest.json', json.dumps(manifest, sort_keys=True, indent=2) + '\\n')\n"
@@ -169,6 +181,14 @@ def make_fake_repo(root):
         "elif leak == 'proposal-manifest.json': private(artifact / leak, json.dumps({'schemaVersion': 1, 'status': 'passed', 'fixture': 'just-lift-connected', 'baseSha': base, 'patch': {'path': '/Users/host/private/candidate.patch', 'sha256': '0' * 64, 'size': 1, 'binary': False, 'format': 'exact-input'}}) + '\\n')\n"
         "elif leak in ('before/run.json', 'after/run.json', 'comparison/diff.json'): private(artifact / leak, json.dumps({'schemaVersion': 1, 'leak': 'Bearer aaaaaaaaaaaaaaaaaaaaaaaa /Users/host/private'}) + '\\n')\n"
         "elif leak == 'comparison/diff.png': private(artifact / leak, png() + b' /Users/host/private API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa', binary=True)\n"
+        "if mode == 'unexpected-internal-root': private(artifact / 'internal-unexpected.log', 'unexpected internal output\\n')\n"
+        "if mode == 'unexpected-internal-nested': private(artifact / 'before/internal-unexpected.log', 'unexpected internal output\\n')\n"
+        "if mode == 'internal-secret': private(artifact / 'before/simulator.log', 'API_TOKEN=aaaaaaaaaaaaaaaaaaaaaaaa\\n')\n"
+        "if mode == 'internal-absolute-path': private(artifact / 'after/simulator.log', '/Users/host/private/output\\n')\n"
+        "if mode == 'internal-symlink': os.symlink('run.json', artifact / 'before/internal-link')\n"
+        "if mode == 'unknown-public': private(artifact / 'unknown-public.txt', 'must not publish\\n')\n"
+        "if mode == 'missing-proposal-patch': (artifact / 'proposal.patch').unlink()\n"
+        "if mode == 'bad-proposal-patch': private(artifact / 'proposal.patch', b'not-the-request-patch\\n', binary=True)\n"
         "if mode == 'missing': (artifact / 'after/run.json').unlink()\n"
         "if mode == 'malformed': private(artifact / 'comparison/diff.json', '{not-json\\n')\n"
         "if mode == 'duplicate-manifest': private(artifact / 'proposal-manifest.json', '{\\\"schemaVersion\\\":1,\\\"schemaVersion\\\":1,\\\"status\\\":\\\"passed\\\",\\\"fixture\\\":\\\"just-lift-connected\\\",\\\"baseSha\\\":' + json.dumps(base) + '}\\n')\n"
@@ -470,6 +490,23 @@ def main():
             mode_result = fresh_result(temp, mode + "-result")
             assert_failure(run_wrapper(repo, mode_request, mode_result), mode_result, "validate-artifacts")
 
+        for mode in (
+            "unexpected-internal-root",
+            "unexpected-internal-nested",
+            "internal-secret",
+            "internal-absolute-path",
+            "internal-symlink",
+            "unknown-public",
+            "missing-proposal-patch",
+            "bad-proposal-patch",
+        ):
+            mode_patch = temp / (mode + ".patch")
+            make_patch(mode_patch, marker="ok\nTEST_MODE:" + mode)
+            mode_request = temp / (mode + ".json")
+            write_json(mode_request, request("KANBAN-69", mode_patch))
+            mode_result = fresh_result(temp, mode + "-result")
+            assert_failure(run_wrapper(repo, mode_request, mode_result), mode_result, "validate-artifacts")
+
         request_in_worktree = repo / "request-in-registered-worktree.json"
         write_json(request_in_worktree, request("KANBAN-65", patch))
         request_in_worktree_result = fresh_result(temp, "request-in-registered-worktree-result")
@@ -549,20 +586,16 @@ def main():
         replacement_snapshot = replacement_patch.read_bytes()
         replacement_result = fresh_result(temp, "replacement-race-result")
         completed = run_wrapper(repo, replacement_request, replacement_result)
-        if completed.returncode != 0:
-            fail(f"patch replacement race failed unexpectedly: rc={completed.returncode} stdout={completed.stdout!r} stderr={completed.stderr!r}")
+        assert_failure(completed, replacement_result, "validate-artifacts")
         if observed_patch.read_bytes() != replacement_snapshot:
             fail("renderer observed replaced patch instead of immutable snapshot")
-        published = json.loads((replacement_result / "preview-result.json").read_text(encoding="utf-8"))
-        if published["patch_sha256"] != hashlib.sha256(replacement_snapshot).hexdigest():
-            fail("published patch hash was not derived from the snapshot")
 
         outside_result = temp / "replacement-outside"
         outside_result.mkdir(mode=0o700)
         raced_result = fresh_result(temp, "replacement-result")
         original_result = temp / "replacement-result-original"
         race_patch = temp / "result-race.patch"
-        make_patch(race_patch, marker=f"ok\nTEST_MODE:replace-result\nREPLACE_RESULT:{raced_result}|{original_result}|{outside_result}")
+        make_patch(race_patch, marker=f"ok\nTEST_MODE:replace-result\nREPLACE_RESULT_HEX:{str(raced_result).encode().hex()}|{str(original_result).encode().hex()}|{str(outside_result).encode().hex()}")
         race_request = temp / "result-race.json"
         write_json(race_request, request("KANBAN-55", race_patch))
         completed = run_wrapper(repo, race_request, raced_result)
