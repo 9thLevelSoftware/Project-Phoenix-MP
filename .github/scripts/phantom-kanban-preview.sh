@@ -97,6 +97,7 @@ PATCH_RESOURCE_EXTENSIONS = {
 }
 HOST_PATH_ROOTS = (
     "Users", "private", "tmp", "var", "home", "Volumes", "Applications", "System", "Library", "opt", "etc", "usr",
+    "bin", "sbin", "dev", "root", "run", "proc", "sys",
 )
 HOST_PATH_ROOT_RE = re.compile(r"(?<![A-Za-z0-9_.])/(?:" + "|".join(HOST_PATH_ROOTS) + r")(?:/|$)")
 PNG_HOST_PATH_ROOT_RE = re.compile(r"(?<![A-Za-z0-9_.:/-])/(?:" + "|".join(HOST_PATH_ROOTS) + r")(?:/|$)")
@@ -762,6 +763,15 @@ def validate_patch_header_path(value, prefix):
     return validate_patch_file_path(value[len(prefix):])
 
 
+def patch_host_path_detected(text):
+    for line in text.splitlines():
+        if line.startswith(("--- ", "+++ ")) and line[4:].split("\t", 1)[0] == "/dev/null":
+            continue
+        if PATCH_HOST_PATH_RE.search(line):
+            return True
+    return False
+
+
 def validate_proposal_patch(data):
     if not isinstance(data, bytes) or not data or len(data) > MAX_PATCH_BYTES or not data.endswith(b"\n"):
         raise ValueError
@@ -769,7 +779,7 @@ def validate_proposal_patch(data):
         text = data.decode("utf-8", "strict")
     except UnicodeError:
         raise ValueError
-    if "\r" in text or credential_detected(data) or PATCH_CREDENTIAL_RE.search(text) or PATCH_HOST_PATH_RE.search(text):
+    if "\r" in text or credential_detected(data) or PATCH_CREDENTIAL_RE.search(text) or patch_host_path_detected(text):
         raise ValueError
     lines = text.splitlines()
     if not lines:

@@ -626,6 +626,7 @@ def main():
         for root in (
             "/Users", "/private", "/tmp", "/Applications", "/Library",
             "/var", "/home", "/Volumes", "/System", "/opt", "/etc", "/usr",
+            "/bin", "/sbin", "/dev", "/root", "/run", "/proc", "/sys",
         ):
             host_patch = temp / ("host-path-" + root[1:] + ".patch")
             make_patch(host_patch, marker=f"ok\nhost={root}/candidate")
