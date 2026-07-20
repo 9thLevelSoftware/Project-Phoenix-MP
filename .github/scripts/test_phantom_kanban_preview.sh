@@ -952,38 +952,70 @@ def main():
         assert_failure(run_wrapper(repo, request_in_task_worktree, request_in_task_worktree_result), request_in_task_worktree_result, "validate-request")
         subprocess.run(["git", "-C", str(repo), "worktree", "remove", "--force", str(task_worktree)], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        for phase, signal_name in (("sleep-verify-before", "SIGINT"), ("sleep-verify-after", "SIGHUP")):
-            phase_patch = temp / (phase + ".patch")
-            make_patch(phase_patch, marker="ok\nTEST_MODE:" + phase)
-            phase_request = temp / (phase + ".json")
-            write_json(phase_request, request("KANBAN-67", phase_patch))
-            phase_result = fresh_result(temp, phase + "-result")
-            verifier_log.write_text("", encoding="utf-8")
-            process = subprocess.Popen(
-                [str(repo / ".github/scripts/phantom-kanban-preview.sh"), str(phase_request), str(phase_result)],
-                cwd=repo,
-                env={**os.environ, "PHOENIX_HARNESS_UDID": "11111111-2222-3333-4444-555555555555"},
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-            )
-            deadline = time.monotonic() + 10
-            expected_records = 1 if phase.endswith("before") else 2
-            while time.monotonic() < deadline:
-                if verifier_log.exists() and len(verifier_log.read_text(encoding="utf-8").splitlines()) >= expected_records:
-                    break
-                time.sleep(0.02)
-            else:
-                process.kill()
-                process.communicate(timeout=5)
-                fail("verification child did not start for " + phase)
-            process.send_signal(getattr(signal, signal_name))
-            stdout, stderr = process.communicate(timeout=10)
-            if not list(phase_result.rglob("*")):
-                fail(f"phase signal left empty result: phase={phase} rc={process.returncode} stdout={stdout!r} stderr={stderr!r}")
-            assert_result_only(phase_result, "interrupted", "preview interrupted")
-            if process.returncode == 0:
-                fail("signal unexpectedly returned success for " + phase)
+        for phase_name in ("before", "after"):
+            for signal_name in ("SIGHUP", "SIGINT", "SIGTERM"):
+                phase = "sleep-verify-" + phase_name
+                case = phase + "-" + signal_name
+                phase_patch = temp / (case + ".patch")
+                make_patch(phase_patch, marker="ok\nTEST_MODE:" + phase)
+                phase_request = temp / (case + ".json")
+                write_json(phase_request, request("KANBAN-67", phase_patch))
+                phase_result = fresh_result(temp, case + "-result")
+                verifier_log.write_text("", encoding="utf-8")
+                process = subprocess.Popen(
+                    [str(repo / ".github/scripts/phantom-kanban-preview.sh"), str(phase_request), str(phase_result)],
+                    cwd=repo,
+                    env={**os.environ, "PHOENIX_HARNESS_UDID": "11111111-2222-3333-4444-555555555555"},
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                )
+                deadline = time.monotonic() + 10
+                expected_records = 1 if phase_name == "before" else 2
+                while time.monotonic() < deadline:
+                    if verifier_log.exists() and len(verifier_log.read_text(encoding="utf-8").splitlines()) >= expected_records:
+                        break
+                    time.sleep(0.02)
+                else:
+                    process.kill()
+                    process.communicate(timeout=5)
+                    fail("verification child did not start for " + case)
+                verify_records = [json.loads(line) for line in verifier_log.read_text(encoding="utf-8").splitlines()]
+                active_record = verify_records[expected_records - 1]
+                pid_file = Path(active_record["env"]["TMPDIR"]).parent / "proposal" / (".sleep-verify-" + phase_name + ".pid")
+                verifier_pid = None
+                while time.monotonic() < deadline:
+                    if pid_file.exists():
+                        pid_text = pid_file.read_text(encoding="ascii").strip()
+                        if pid_text.isdigit():
+                            verifier_pid = int(pid_text)
+                            break
+                    time.sleep(0.02)
+                if verifier_pid is None:
+                    process.kill()
+                    process.communicate(timeout=5)
+                    fail("verification child did not enter deterministic sleep for " + case)
+                try:
+                    os.kill(verifier_pid, 0)
+                except ProcessLookupError:
+                    process.kill()
+                    process.communicate(timeout=5)
+                    fail("verification child exited before signal for " + case)
+                process.send_signal(getattr(signal, signal_name))
+                stdout, stderr = process.communicate(timeout=10)
+                completed = type("Completed", (), {"stdout": stdout, "stderr": stderr})()
+                assert_no_traceback(completed, "verifier " + case)
+                if not list(phase_result.rglob("*")):
+                    fail(f"phase signal left empty result: case={case} rc={process.returncode} stdout={stdout!r} stderr={stderr!r}")
+                assert_result_only(phase_result, "interrupted", "preview interrupted")
+                if process.returncode == 0:
+                    fail("signal unexpectedly returned success for " + case)
+                try:
+                    os.kill(verifier_pid, 0)
+                except ProcessLookupError:
+                    pass
+                else:
+                    fail("verifier child survived signal for " + case)
 
         request_link = temp / "request-link.json"
         request_link.symlink_to(request_path)
