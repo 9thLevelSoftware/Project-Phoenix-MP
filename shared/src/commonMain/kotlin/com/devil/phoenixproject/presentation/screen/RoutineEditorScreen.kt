@@ -138,6 +138,13 @@ fun RoutineEditorScreen(
     // Issue #266/#410: Get user preferences for weight increment
     val userPreferences by viewModel.userPreferences.collectAsState()
     val rackItems by viewModel.rackItems.collectAsState()
+    val activeProfileId by viewModel.activeProfileId.collectAsState()
+    val completedExerciseIdsState by viewModel.completedExerciseIdsState.collectAsState()
+    val pickerCompletedExerciseIds = completedExerciseIdsState.ids.takeIf {
+        completedExerciseIdsState.profileId == activeProfileId
+    } ?: emptySet()
+    val pickerCompletedExerciseIdsLoading =
+        completedExerciseIdsState.isLoading || completedExerciseIdsState.profileId != activeProfileId
 
     // 1. Initialize State
     var state by remember { mutableStateOf(RoutineEditorState()) }
@@ -249,9 +256,9 @@ fun RoutineEditorScreen(
     // always false in state; collapse UI uses state.collapsedSupersets instead.
     val isDirty = hasSnapshot && (
         state.routineName != snapshotName ||
-        state.exercises != snapshotExercises ||
-        state.supersets != snapshotSupersets
-    )
+            state.exercises != snapshotExercises ||
+            state.supersets != snapshotSupersets
+        )
 
     // Drag and Drop State
     val lazyListState = rememberLazyListState()
@@ -848,6 +855,9 @@ fun RoutineEditorScreen(
             },
             exerciseRepository = exerciseRepository,
             enableVideoPlayback = false,
+            enablePreviouslyCompletedFilter = true,
+            completedExerciseIds = pickerCompletedExerciseIds,
+            completedExerciseIdsLoading = pickerCompletedExerciseIdsLoading,
         )
     }
 

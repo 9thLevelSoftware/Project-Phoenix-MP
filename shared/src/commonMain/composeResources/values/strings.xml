@@ -931,4 +931,6 @@
     <string name="profile_disco_unlocked_body">Turn on Disco Mode in LED preferences to make your trainer party.</string>
     <string name="profile_disco_unlocked_action">Let\'s party</string>
     <string name="profile_adult_enable_partial_failure">Age confirmation was saved, but Vulgar Mode could not be enabled. Try again.</string>
+    <string name="label_previously_completed">Previously completed</string>
+    <string name="cd_filter_previously_completed">Filter exercises previously completed</string>
 </resources>

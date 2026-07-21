@@ -796,4 +796,6 @@
     <string name="profile_disco_unlocked_body">Activez le mode disco dans les préférences LED pour faire danser votre machine.</string>
     <string name="profile_disco_unlocked_action">C\'est parti !</string>
     <string name="profile_adult_enable_partial_failure">La confirmation de l\'âge a été enregistrée, mais le mode vulgaire n\'a pas pu être activé. Réessayez.</string>
+    <string name="label_previously_completed">Déjà terminés</string>
+    <string name="cd_filter_previously_completed">Filtrer les exercices déjà terminés</string>
 </resources>

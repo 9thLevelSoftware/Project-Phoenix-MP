@@ -1,8 +1,8 @@
 package com.devil.phoenixproject.testutil
 
+import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.PersonalRecordEntity
 import com.devil.phoenixproject.data.repository.PhaseStatisticsData
-import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.Routine
@@ -106,16 +106,16 @@ class FakeWorkoutRepository : WorkoutRepository {
     //   deletedAt IS NULL AND (workingReps > 0 OR totalReps > 0)
     // so unit tests using this fake exercise the same data the
     // production SqlDelightWorkoutRepository returns.
-    override fun getHistoryVisibleSessions(profileId: String): Flow<List<WorkoutSession>> =
-        _sessionsFlow.map { all ->
-            all.filter { session ->
-                // No deletedAt field on WorkoutSession today; when soft
-                // delete lands, gate on it here too. For now the in-memory
-                // fake never stores deleted rows, so only the rep guard is
-                // required to match the SQL behavior.
-                session.workingReps > 0 || session.totalReps > 0
-            }
+    override fun getHistoryVisibleSessions(profileId: String): Flow<List<WorkoutSession>> = _sessionsFlow.map { all ->
+        all.filter { session ->
+            // No deletedAt field on WorkoutSession today; when soft
+            // delete lands, gate on it here too. For now the in-memory
+            // fake never stores deleted rows, so only the profile and
+            // positive-rep guards are required to match the SQL behavior.
+            session.profileId == profileId &&
+                (session.workingReps > 0 || session.totalReps > 0)
         }
+    }
 
     override suspend fun getRecentCompletedSessionsForExercise(
         exerciseId: String,
@@ -335,14 +335,13 @@ class FakeWorkoutRepository : WorkoutRepository {
             )
         }
 
-    override suspend fun getExerciseIdsWithVelocityData(profileId: String): List<String> =
-        sessions.values
-            .filter { s ->
-                s.profileId == profileId &&
-                    s.avgMcvMmS != null &&
-                    s.workingReps > 0 &&
-                    s.exerciseId != null
-            }
-            .map { it.exerciseId!! }
-            .distinct()
+    override suspend fun getExerciseIdsWithVelocityData(profileId: String): List<String> = sessions.values
+        .filter { s ->
+            s.profileId == profileId &&
+                s.avgMcvMmS != null &&
+                s.workingReps > 0 &&
+                s.exerciseId != null
+        }
+        .map { it.exerciseId!! }
+        .distinct()
 }

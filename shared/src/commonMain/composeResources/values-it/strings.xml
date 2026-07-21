@@ -74,4 +74,6 @@
     <string name="set_type_warmup">Warm-up Set %1$d</string>
     <string name="set_type_working">Working Set</string>
 
+    <string name="label_previously_completed">Completati in precedenza</string>
+    <string name="cd_filter_previously_completed">Filtra gli esercizi completati in precedenza</string>
 </resources>

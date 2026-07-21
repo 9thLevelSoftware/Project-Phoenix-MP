@@ -22,6 +22,8 @@ import androidx.compose.material3.VerticalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.*
@@ -37,6 +39,9 @@ fun ExerciseFilterShelf(
     onToggleFavorites: () -> Unit,
     showCustomOnly: Boolean,
     onToggleCustom: () -> Unit,
+    enablePreviouslyCompletedFilter: Boolean = false,
+    showPreviouslyCompletedOnly: Boolean = false,
+    onTogglePreviouslyCompleted: () -> Unit = {},
     selectedMuscles: Set<String>,
     onToggleMuscle: (String) -> Unit,
     selectedEquipment: Set<String>,
@@ -57,7 +62,9 @@ fun ExerciseFilterShelf(
             "Bodyweight",
         )
 
-    val hasActiveFilters = showFavoritesOnly || showCustomOnly ||
+    val previouslyCompletedDescription =
+        stringResource(Res.string.cd_filter_previously_completed)
+    val hasActiveFilters = showFavoritesOnly || showCustomOnly || showPreviouslyCompletedOnly ||
         selectedMuscles.isNotEmpty() || selectedEquipment.isNotEmpty()
 
     LazyRow(
@@ -126,6 +133,23 @@ fun ExerciseFilterShelf(
                     selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
                 ),
             )
+        }
+
+        if (enablePreviouslyCompletedFilter) {
+            item {
+                FilterChip(
+                    selected = showPreviouslyCompletedOnly,
+                    onClick = onTogglePreviouslyCompleted,
+                    label = { Text(stringResource(Res.string.label_previously_completed)) },
+                    modifier = Modifier.semantics {
+                        contentDescription = previouslyCompletedDescription
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
         }
 
         // Divider
