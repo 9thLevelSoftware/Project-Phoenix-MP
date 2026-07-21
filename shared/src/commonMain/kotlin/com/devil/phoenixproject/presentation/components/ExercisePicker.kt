@@ -47,7 +47,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
@@ -66,7 +65,9 @@ import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExerciseFilterShelf
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExerciseListEmptyState
+import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
 import com.devil.phoenixproject.presentation.components.exercisepicker.GroupedExerciseList
+import com.devil.phoenixproject.presentation.components.exercisepicker.filterExercisePickerCandidates
 import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
@@ -110,6 +111,9 @@ fun ExercisePickerDialog(
     fullScreen: Boolean = false,
     themeMode: ThemeMode = ThemeMode.DARK,
     enableCustomExercises: Boolean = true,
+    enablePreviouslyCompletedFilter: Boolean = false,
+    completedExerciseIds: Set<String> = emptySet(),
+    completedExerciseIdsLoading: Boolean = false,
 ) {
     if (!showDialog) return
 
@@ -117,6 +121,10 @@ fun ExercisePickerDialog(
     var searchQuery by remember { mutableStateOf("") }
     var showFavoritesOnly by remember { mutableStateOf(false) }
     var showCustomOnly by remember { mutableStateOf(false) }
+    var showPreviouslyCompletedOnly by remember { mutableStateOf(false) }
+    LaunchedEffect(showDialog) {
+        if (showDialog) showPreviouslyCompletedOnly = false
+    }
     var selectedMuscles by remember { mutableStateOf(setOf<String>()) }
     var selectedEquipment by remember { mutableStateOf(setOf<String>()) }
     var showCreateDialog by remember { mutableStateOf(false) }
@@ -124,34 +132,48 @@ fun ExercisePickerDialog(
 
     val customExercises by exerciseRepository.getCustomExercises().collectAsState(initial = emptyList())
 
-    val allExercises by remember(searchQuery, showFavoritesOnly, showCustomOnly) {
+    val candidateExercises by remember(searchQuery) {
         when {
-            showCustomOnly -> exerciseRepository.getCustomExercises()
-            showFavoritesOnly -> exerciseRepository.getFavorites()
             searchQuery.isNotBlank() -> exerciseRepository.searchExercises(searchQuery)
             else -> exerciseRepository.getAllExercises()
         }
     }.collectAsState(initial = emptyList())
 
-    val exercises = remember(allExercises, selectedMuscles, selectedEquipment) {
-        allExercises.filter { exercise ->
-            val matchesMuscle = selectedMuscles.isEmpty() ||
-                selectedMuscles.any { muscle ->
-                    exercise.muscleGroups.contains(muscle, ignoreCase = true)
-                }
-            val matchesEquipment = selectedEquipment.isEmpty() ||
-                selectedEquipment.any { equipment ->
-                    val databaseValues = getEquipmentDatabaseValues(equipment)
-                    val equipmentList = exercise.equipment.uppercase().split(",").map { it.trim() }
-                    databaseValues.any { dbValue -> equipmentList.contains(dbValue.uppercase()) }
-                }
-            matchesMuscle && matchesEquipment
+    val isCompletedFilterLoading =
+        enablePreviouslyCompletedFilter && showPreviouslyCompletedOnly && completedExerciseIdsLoading
+    val exercises = remember(
+        candidateExercises,
+        showFavoritesOnly,
+        showCustomOnly,
+        selectedMuscles,
+        selectedEquipment,
+        showPreviouslyCompletedOnly,
+        completedExerciseIds,
+        isCompletedFilterLoading,
+    ) {
+        if (isCompletedFilterLoading) {
+            emptyList()
+        } else {
+            filterExercisePickerCandidates(
+                candidates = candidateExercises,
+                filters = ExercisePickerFilterState(
+                    showFavoritesOnly = showFavoritesOnly,
+                    showCustomOnly = showCustomOnly,
+                    selectedMuscles = selectedMuscles,
+                    selectedEquipment = selectedEquipment,
+                    showPreviouslyCompletedOnly =
+                        enablePreviouslyCompletedFilter && showPreviouslyCompletedOnly,
+                ),
+                completedExerciseIds = completedExerciseIds,
+            )
         }
     }
 
     fun clearAllFilters() {
+        searchQuery = ""
         showFavoritesOnly = false
         showCustomOnly = false
+        showPreviouslyCompletedOnly = false
         selectedMuscles = emptySet()
         selectedEquipment = emptySet()
     }
@@ -232,14 +254,13 @@ fun ExercisePickerDialog(
                         searchQuery = searchQuery,
                         onSearchQueryChange = { searchQuery = it },
                         showFavoritesOnly = showFavoritesOnly,
-                        onToggleFavorites = {
-                            showFavoritesOnly = !showFavoritesOnly
-                            if (showFavoritesOnly) showCustomOnly = false
-                        },
+                        onToggleFavorites = { showFavoritesOnly = !showFavoritesOnly },
                         showCustomOnly = showCustomOnly,
-                        onToggleCustom = {
-                            showCustomOnly = !showCustomOnly
-                            if (showCustomOnly) showFavoritesOnly = false
+                        onToggleCustom = { showCustomOnly = !showCustomOnly },
+                        enablePreviouslyCompletedFilter = enablePreviouslyCompletedFilter,
+                        showPreviouslyCompletedOnly = showPreviouslyCompletedOnly,
+                        onTogglePreviouslyCompleted = {
+                            showPreviouslyCompletedOnly = !showPreviouslyCompletedOnly
                         },
                         customExerciseCount = customExercises.size,
                         selectedMuscles = selectedMuscles,
@@ -275,6 +296,7 @@ fun ExercisePickerDialog(
                         enableCustomExercises = enableCustomExercises,
                         onCreateExercise = { showCreateDialog = true },
                         onEditExercise = { exercise -> exerciseToEdit = exercise },
+                        isLoading = isCompletedFilterLoading,
                         fullScreen = true,
                     )
                 }
@@ -295,14 +317,13 @@ fun ExercisePickerDialog(
                 searchQuery = searchQuery,
                 onSearchQueryChange = { searchQuery = it },
                 showFavoritesOnly = showFavoritesOnly,
-                onToggleFavorites = {
-                    showFavoritesOnly = !showFavoritesOnly
-                    if (showFavoritesOnly) showCustomOnly = false
-                },
+                onToggleFavorites = { showFavoritesOnly = !showFavoritesOnly },
                 showCustomOnly = showCustomOnly,
-                onToggleCustom = {
-                    showCustomOnly = !showCustomOnly
-                    if (showCustomOnly) showFavoritesOnly = false
+                onToggleCustom = { showCustomOnly = !showCustomOnly },
+                enablePreviouslyCompletedFilter = enablePreviouslyCompletedFilter,
+                showPreviouslyCompletedOnly = showPreviouslyCompletedOnly,
+                onTogglePreviouslyCompleted = {
+                    showPreviouslyCompletedOnly = !showPreviouslyCompletedOnly
                 },
                 customExerciseCount = customExercises.size,
                 selectedMuscles = selectedMuscles,
@@ -338,6 +359,7 @@ fun ExercisePickerDialog(
                 enableCustomExercises = enableCustomExercises,
                 onCreateExercise = { showCreateDialog = true },
                 onEditExercise = { exercise -> exerciseToEdit = exercise },
+                isLoading = isCompletedFilterLoading,
                 fullScreen = false,
             )
         }
@@ -361,6 +383,9 @@ fun ExercisePickerContent(
     onToggleFavorites: () -> Unit,
     showCustomOnly: Boolean,
     onToggleCustom: () -> Unit,
+    enablePreviouslyCompletedFilter: Boolean = false,
+    showPreviouslyCompletedOnly: Boolean = false,
+    onTogglePreviouslyCompleted: () -> Unit = {},
     customExerciseCount: Int,
     selectedMuscles: Set<String>,
     onToggleMuscle: (String) -> Unit,
@@ -389,6 +414,7 @@ fun ExercisePickerContent(
     val hasActiveFilters = searchQuery.isNotBlank() ||
         showFavoritesOnly ||
         showCustomOnly ||
+        showPreviouslyCompletedOnly ||
         selectedMuscles.isNotEmpty() ||
         selectedEquipment.isNotEmpty()
 
@@ -466,6 +492,9 @@ fun ExercisePickerContent(
                 onToggleFavorites = onToggleFavorites,
                 showCustomOnly = showCustomOnly,
                 onToggleCustom = onToggleCustom,
+                enablePreviouslyCompletedFilter = enablePreviouslyCompletedFilter,
+                showPreviouslyCompletedOnly = showPreviouslyCompletedOnly,
+                onTogglePreviouslyCompleted = onTogglePreviouslyCompleted,
                 selectedMuscles = selectedMuscles,
                 onToggleMuscle = onToggleMuscle,
                 selectedEquipment = selectedEquipment,

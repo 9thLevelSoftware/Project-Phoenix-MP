@@ -25,8 +25,10 @@ import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.usecase.CurrentOneRepMax
 import com.devil.phoenixproject.domain.usecase.ResolveCurrentOneRepMaxUseCase
-import com.devil.phoenixproject.presentation.components.canDeleteProfile
 import com.devil.phoenixproject.presentation.components.ProfileMeasurementKey
+import com.devil.phoenixproject.presentation.components.canDeleteProfile
+import com.devil.phoenixproject.presentation.components.exercisepicker.CompletedExerciseIdsState
+import com.devil.phoenixproject.presentation.components.exercisepicker.completedExerciseIdsFromHistory
 import com.devil.phoenixproject.presentation.components.latestImportedBodyWeightMeasuredAt
 import com.devil.phoenixproject.presentation.components.normalizedProfileColorIndex
 import kotlin.coroutines.cancellation.CancellationException
@@ -35,11 +37,17 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.receiveAsFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
@@ -99,8 +107,7 @@ data class ProfileUiState(
     val prHighlights: ProfileLoadable<ProfilePrHighlights> = ProfileLoadable.Empty,
     val recentSessions: ProfileLoadable<List<WorkoutSession>> = ProfileLoadable.Empty,
     val identityMutation: ProfileIdentityMutation? = null,
-    val preferenceMutations:
-        Map<ProfilePreferenceSection, ProfilePreferenceMutation> = emptyMap(),
+    val preferenceMutations: Map<ProfilePreferenceSection, ProfilePreferenceMutation> = emptyMap(),
     val importedBodyWeightMeasuredAt: Long? = null,
 ) {
     val identityMutationInFlight: Boolean
@@ -150,6 +157,43 @@ class ProfileViewModel(
     val uiState: StateFlow<ProfileUiState> = _uiState.asStateFlow()
     private val _events = Channel<ProfileUiEvent>(Channel.BUFFERED)
     val events: Flow<ProfileUiEvent> = _events.receiveAsFlow()
+
+    /** Profile-tagged history IDs for the Profile exercise picker only. */
+    val completedExerciseIdsState: StateFlow<CompletedExerciseIdsState> =
+        profiles.activeProfileContext
+            .flatMapLatest { context ->
+                when (context) {
+                    is ActiveProfileContext.Switching -> flowOf(
+                        CompletedExerciseIdsState(
+                            profileId = context.targetProfileId,
+                            isLoading = true,
+                        ),
+                    )
+
+                    is ActiveProfileContext.Ready ->
+                        workouts.getHistoryVisibleSessions(context.profile.id)
+                            .map { sessions ->
+                                CompletedExerciseIdsState(
+                                    profileId = context.profile.id,
+                                    ids = completedExerciseIdsFromHistory(sessions),
+                                    isLoading = false,
+                                )
+                            }
+                            .onStart {
+                                emit(
+                                    CompletedExerciseIdsState(
+                                        profileId = context.profile.id,
+                                        isLoading = true,
+                                    ),
+                                )
+                            }
+                }
+            }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = CompletedExerciseIdsState(profileId = null, isLoading = true),
+            )
 
     private val selectedExerciseIds = mutableMapOf<String, String>()
     private var resolvedSelectionProfileId: String? = null
@@ -240,12 +284,11 @@ class ProfileViewModel(
         profiles.updateVbt(profileId, value)
     }
 
-    fun updateLocalSafety(value: ProfileLocalSafetyPreferences): Long? =
-        startSinglePreferenceMutation(
-            section = ProfilePreferenceSection.LOCAL_SAFETY,
-        ) { profileId ->
-            profiles.updateLocalSafety(profileId, value)
-        }
+    fun updateLocalSafety(value: ProfileLocalSafetyPreferences): Long? = startSinglePreferenceMutation(
+        section = ProfilePreferenceSection.LOCAL_SAFETY,
+    ) { profileId ->
+        profiles.updateLocalSafety(profileId, value)
+    }
 
     fun confirmAdultsOnlyAndEnableVulgar(): Long? {
         val ready = currentReadyForPreferenceMutation() ?: return null
@@ -254,9 +297,11 @@ class ProfileViewModel(
                 ProfilePreferenceSection.LOCAL_SAFETY,
                 ProfilePreferenceSection.VBT,
             )
+
             !ready.preferences.vbt.value.vulgarModeEnabled -> setOf(
                 ProfilePreferenceSection.VBT,
             )
+
             else -> return null
         }
         return startPreferenceMutation(
@@ -536,16 +581,16 @@ class ProfileViewModel(
         }
     }
 
-    private fun requireAuthoritativeReady(profileId: String): ActiveProfileContext.Ready =
-        when (val context = profiles.activeProfileContext.value) {
-            is ActiveProfileContext.Switching -> throw ProfileContextUnavailableException()
-            is ActiveProfileContext.Ready -> {
-                if (context.profile.id != profileId) {
-                    throw StaleProfileContextException(profileId, context.profile.id)
-                }
-                context
+    private fun requireAuthoritativeReady(profileId: String): ActiveProfileContext.Ready = when (val context = profiles.activeProfileContext.value) {
+        is ActiveProfileContext.Switching -> throw ProfileContextUnavailableException()
+
+        is ActiveProfileContext.Ready -> {
+            if (context.profile.id != profileId) {
+                throw StaleProfileContextException(profileId, context.profile.id)
             }
+            context
         }
+    }
 
     private fun currentReadyForPreferenceMutation(): ActiveProfileContext.Ready? {
         val profileId = currentMutationProfileId() ?: return null
@@ -848,10 +893,9 @@ class ProfileViewModel(
         return repositoryReady.profile.id == profileId && uiReady.profile.id == profileId
     }
 
-    private fun isSelectionCurrent(profileId: String, exerciseId: String): Boolean =
-        isProfileCurrent(profileId) &&
-            uiState.value.selectedExercise?.id == exerciseId &&
-            selectedExerciseIds[profileId] == exerciseId
+    private fun isSelectionCurrent(profileId: String, exerciseId: String): Boolean = isProfileCurrent(profileId) &&
+        uiState.value.selectedExercise?.id == exerciseId &&
+        selectedExerciseIds[profileId] == exerciseId
 
     private inline fun updateIfProfileCurrent(
         profileId: String,

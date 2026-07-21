@@ -775,4 +775,6 @@
     <string name="profile_disco_unlocked_body">Schakel de discomodus in bij de LED-voorkeuren en laat je trainer feesten.</string>
     <string name="profile_disco_unlocked_action">Tijd voor een feestje</string>
     <string name="profile_adult_enable_partial_failure">De leeftijdsbevestiging is opgeslagen, maar de vulgaire modus kon niet worden ingeschakeld. Probeer het opnieuw.</string>
+    <string name="label_previously_completed">Eerder voltooid</string>
+    <string name="cd_filter_previously_completed">Eerder voltooide oefeningen filteren</string>
 </resources>

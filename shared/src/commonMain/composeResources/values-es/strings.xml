@@ -796,4 +796,6 @@
     <string name="profile_disco_unlocked_body">Activa el modo disco en las preferencias LED para que tu entrenador se una a la fiesta.</string>
     <string name="profile_disco_unlocked_action">¡A bailar!</string>
     <string name="profile_adult_enable_partial_failure">La confirmación de edad se guardó, pero no se pudo activar el modo vulgar. Inténtalo de nuevo.</string>
+    <string name="label_previously_completed">Completado anteriormente</string>
+    <string name="cd_filter_previously_completed">Filtrar ejercicios completados anteriormente</string>
 </resources>

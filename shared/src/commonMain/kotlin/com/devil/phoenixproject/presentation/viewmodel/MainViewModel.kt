@@ -8,6 +8,7 @@ import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
@@ -25,6 +26,7 @@ import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.Badge
+import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.EchoLevel
@@ -36,13 +38,11 @@ import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
-import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
-import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
-import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.UserPreferences
@@ -60,6 +60,8 @@ import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.presentation.components.exercisepicker.CompletedExerciseIdsState
+import com.devil.phoenixproject.presentation.components.exercisepicker.completedExerciseIdsFromHistory
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.manager.GamificationManager
@@ -70,6 +72,7 @@ import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.currentProfileTestSoundEvents
+import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupStats
 import com.devil.phoenixproject.util.DataBackupManager
@@ -82,7 +85,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -163,6 +169,46 @@ class MainViewModel constructor(
         userProfileRepository.activeProfile
             .map { it?.id ?: "default" }
             .stateIn(viewModelScope, SharingStarted.Eagerly, "default")
+
+    /**
+     * Picker-safe completed IDs.  The tag and loading sentinel prevent a picker from ever
+     * using a prior profile's history during an active-profile transition.
+     */
+    val completedExerciseIdsState: StateFlow<CompletedExerciseIdsState> =
+        userProfileRepository.activeProfileContext
+            .flatMapLatest { context ->
+                when (context) {
+                    is ActiveProfileContext.Switching -> flowOf(
+                        CompletedExerciseIdsState(
+                            profileId = context.targetProfileId,
+                            isLoading = true,
+                        ),
+                    )
+
+                    is ActiveProfileContext.Ready ->
+                        workoutRepository.getHistoryVisibleSessions(context.profile.id)
+                            .map { sessions ->
+                                CompletedExerciseIdsState(
+                                    profileId = context.profile.id,
+                                    ids = completedExerciseIdsFromHistory(sessions),
+                                    isLoading = false,
+                                )
+                            }
+                            .onStart {
+                                emit(
+                                    CompletedExerciseIdsState(
+                                        profileId = context.profile.id,
+                                        isLoading = true,
+                                    ),
+                                )
+                            }
+                }
+            }
+            .stateIn(
+                scope = viewModelScope,
+                started = SharingStarted.WhileSubscribed(5_000),
+                initialValue = CompletedExerciseIdsState(profileId = null, isLoading = true),
+            )
 
     // === Phase 2b: GamificationManager (extracted from this class) ===
     val gamificationManager: GamificationManager = GamificationManager(
@@ -444,9 +490,8 @@ class MainViewModel constructor(
      * back to the DB — the StateFlow intentionally filters out "cycle_routine_"-prefixed
      * template-cycle routines (issue #620), which must still be loadable for editing.
      */
-    suspend fun getRoutineById(routineId: String): Routine? =
-        workoutSessionManager.getRoutineById(routineId)
-            ?: workoutRepository.getRoutineById(routineId)
+    suspend fun getRoutineById(routineId: String): Routine? = workoutSessionManager.getRoutineById(routineId)
+        ?: workoutRepository.getRoutineById(routineId)
     fun saveRoutine(routine: Routine) = workoutSessionManager.saveRoutine(routine)
     fun updateRoutine(routine: Routine) = workoutSessionManager.updateRoutine(routine)
     fun saveRackBehaviorOverridesForExercise(
@@ -545,6 +590,7 @@ class MainViewModel constructor(
     fun confirmSessionBodyWeight(weightKg: Float?, saveToProfile: Boolean) = workoutSessionManager.confirmSessionBodyWeight(weightKg, saveToProfile)
     fun skipSessionBodyWeightPrompt() = workoutSessionManager.skipSessionBodyWeightPrompt()
     fun returnToOverview() = workoutSessionManager.returnToOverview()
+
     /**
      * Returns the navigation route to pop to when exiting the current routine flow.
      *
@@ -559,12 +605,11 @@ class MainViewModel constructor(
      *   viewModel.exitRoutineFlow()                     // 2. clears origin
      *   navController.popBackStack(dest, false)         // 3. navigate
      */
-    fun routineExitDestination(): String =
-        if (workoutSessionManager.coordinator.routineLaunchOrigin == RoutineLaunchOrigin.TRAINING_CYCLES) {
-            NavigationRoutes.TrainingCycles.route
-        } else {
-            NavigationRoutes.DailyRoutines.route
-        }
+    fun routineExitDestination(): String = if (workoutSessionManager.coordinator.routineLaunchOrigin == RoutineLaunchOrigin.TRAINING_CYCLES) {
+        NavigationRoutes.TrainingCycles.route
+    } else {
+        NavigationRoutes.DailyRoutines.route
+    }
 
     fun exitRoutineFlow() = workoutSessionManager.exitRoutineFlow()
     fun showRoutineComplete() = workoutSessionManager.showRoutineComplete()

@@ -796,4 +796,6 @@
     <string name="profile_disco_unlocked_body">Aktiviere den Disco-Modus in den LED-Einstellungen, damit dein Trainer Party macht.</string>
     <string name="profile_disco_unlocked_action">Party starten</string>
     <string name="profile_adult_enable_partial_failure">Die Altersbestätigung wurde gespeichert, aber der vulgäre Modus konnte nicht aktiviert werden. Versuche es erneut.</string>
+    <string name="label_previously_completed">Zuvor abgeschlossen</string>
+    <string name="cd_filter_previously_completed">Zuvor abgeschlossene Übungen filtern</string>
 </resources>
