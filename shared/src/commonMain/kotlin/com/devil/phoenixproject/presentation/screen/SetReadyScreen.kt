@@ -152,9 +152,10 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
     // Issue #671: Exercise history quick view
     val activeProfileId by viewModel.activeProfileId.collectAsState()
-    val recentSessions by viewModel.recentSessionsForExercise(
-        currentExercise.exercise.id, activeProfileId
-    ).collectAsState()
+    val recentSessionsFlow = remember(currentExercise.exercise.id, activeProfileId) {
+        viewModel.recentSessionsForExercise(currentExercise.exercise.id, activeProfileId)
+    }
+    val recentSessions by recentSessionsFlow.collectAsState()
 
     var runtimeBehaviorOverrides by remember(setReadyState.exerciseIndex) {
         mutableStateOf(currentExercise.rackBehaviorOverrides)

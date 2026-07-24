@@ -90,7 +90,7 @@ fun ExerciseQuickHistoryCard(
             ) {
                 Text(
                     text = "RECENT SESSIONS",
-                    style = MaterialTheme.typography.labelAllCaps,
+                    style = labelAllCaps,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -178,7 +178,7 @@ private fun SessionRow(
             .semantics {
                 val date = KmpUtils.formatTimestamp(session.timestamp, "MMM dd")
                 val weight = formatWeight(session.weightPerCableKg, weightUnit)
-                val reps = "${session.workingReps} reps"
+                val reps = "${if (session.workingReps > 0) session.workingReps else session.totalReps} reps"
                 val duration = if (session.duration > 0) ", duration ${formatDuration(session.duration)}" else ""
                 contentDescription = "$date, $weight, $reps$duration"
             },
@@ -197,7 +197,7 @@ private fun SessionRow(
             modifier = Modifier.weight(1f),
         )
         Text(
-            text = "${session.workingReps} reps",
+            text = "${if (session.workingReps > 0) session.workingReps else session.totalReps} reps",
             style = MaterialTheme.typography.bodyMedium,
             modifier = Modifier.weight(1f),
         )
