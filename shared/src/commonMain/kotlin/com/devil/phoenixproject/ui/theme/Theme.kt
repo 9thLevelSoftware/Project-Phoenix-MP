@@ -128,6 +128,8 @@ fun VitruvianTheme(
         LightColorScheme
     }
 
+    ApplyStatusBarAppearance(isDark = useDarkColors)
+
     MaterialTheme(
         colorScheme = colorScheme,
         typography = Typography,
