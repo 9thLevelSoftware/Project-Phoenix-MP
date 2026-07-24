@@ -79,6 +79,7 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
+import com.devil.phoenixproject.presentation.components.ExerciseQuickHistoryCard
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.VideoPlayer
@@ -148,6 +149,12 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     if (currentExercise == null) {
         return
     }
+
+    // Issue #671: Exercise history quick view
+    val activeProfileId by viewModel.activeProfileId.collectAsState()
+    val recentSessions by viewModel.recentSessionsForExercise(
+        currentExercise.exercise.id, activeProfileId
+    ).collectAsState()
 
     var runtimeBehaviorOverrides by remember(setReadyState.exerciseIndex) {
         mutableStateOf(currentExercise.rackBehaviorOverrides)
@@ -737,6 +744,13 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                     }
                 }
             }
+
+            // Issue #671: Exercise history quick view
+            ExerciseQuickHistoryCard(
+                sessions = recentSessions,
+                weightUnit = weightUnit,
+                formatWeight = viewModel::formatWeight,
+            )
 
             EquipmentRackSelectionCard(
                 rackItems = rackItems,
