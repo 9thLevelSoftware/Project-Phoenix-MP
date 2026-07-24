@@ -50,6 +50,7 @@ data class SetConfiguration(
     val duration: Int = 30,
     val restSeconds: Int = 60, // Add this
     val repeatCount: Int = 1, // 1 = no repeat, 2-20 = repeat N times (Issue #667)
+    val echoLevel: EchoLevel? = null, // Per-set echo override (Issue #667 review fix)
 )
 
 class ExerciseConfigViewModel constructor(
@@ -211,6 +212,7 @@ class ExerciseConfigViewModel constructor(
         val initialSets = exercise.setReps.mapIndexed { index, reps ->
             val perSetWeightKg = exercise.setWeightsPerCableKg.getOrNull(index) ?: exercise.weightPerCableKg
             val perSetRest = exercise.setRestSeconds.getOrNull(index) ?: 60
+            val perSetEcho = exercise.setEchoLevels.getOrNull(index) // Preserve per-set Echo overrides
             SetConfiguration(
                 id = generateUUID(),
                 setNumber = index + 1,
@@ -218,6 +220,7 @@ class ExerciseConfigViewModel constructor(
                 weightPerCable = kgToDisplay(perSetWeightKg, weightUnit),
                 duration = defaultDuration,
                 restSeconds = perSetRest,
+                echoLevel = perSetEcho,
             )
         }.ifEmpty {
             listOf(
@@ -786,7 +789,7 @@ class ExerciseConfigViewModel constructor(
                 expandedReps.add(set.reps)
                 expandedWeights.add(resolvedWeightsKg[index])
                 expandedRest.add(set.restSeconds)
-                expandedEcho.add(null) // null = fallback to exercise-level echoLevel
+                expandedEcho.add(set.echoLevel) // Preserve per-set Echo override (Issue #667 review fix)
             }
         }
         return ExpandedSets(expandedReps, expandedWeights, expandedRest, expandedEcho)

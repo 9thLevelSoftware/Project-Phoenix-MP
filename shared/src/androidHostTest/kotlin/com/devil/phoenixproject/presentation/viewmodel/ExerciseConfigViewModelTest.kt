@@ -995,4 +995,62 @@ class ExerciseConfigViewModelTest {
         assertEquals(listOf(20f, 25f, 30f), saved!!.setWeightsPerCableKg)
         assertEquals(listOf(60, 90, 120), saved!!.setRestSeconds)
     }
+
+    @Test
+    fun `onSave preserves per-set echo overrides through expansion`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-echo",
+            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10, 8),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f, 25f),
+            programMode = ProgramMode.OldSchool,
+            eccentricLoad = EccentricLoad.LOAD_100,
+            echoLevel = EchoLevel.HARDER,
+            setEchoLevels = listOf(EchoLevel.EASIER, EchoLevel.HARDER), // Per-set overrides
+            setRestSeconds = listOf(60, 90),
+            perSetRestTime = true,
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        // Set 2 has repeatCount=3
+        val setIds = viewModel.sets.value.map { it.id }
+        viewModel.onRepeatCountChange(setIds[1], 3)
+
+        // Verify SetConfiguration carries echo override
+        assertEquals(EchoLevel.EASIER, viewModel.sets.value[0].echoLevel, "Set 1 should carry EASIER echo override")
+        assertEquals(EchoLevel.HARDER, viewModel.sets.value[1].echoLevel, "Set 2 should carry HARDER echo override")
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        // Expanded: set1 (EASIER) + set2×3 (HARDER each)
+        assertEquals(listOf(EchoLevel.EASIER, EchoLevel.HARDER, EchoLevel.HARDER, EchoLevel.HARDER), saved!!.setEchoLevels,
+            "Per-set Echo overrides should be preserved through expansion")
+    }
+
+    @Test
+    fun `initialize loads per-set echo overrides into SetConfiguration`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-echo-init",
+            exercise = Exercise(id = "squat-1", name = "Squat", muscleGroup = "Legs", muscleGroups = "Legs", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10, 10, 10),
+            weightPerCableKg = 50f,
+            programMode = ProgramMode.OldSchool,
+            eccentricLoad = EccentricLoad.LOAD_100,
+            echoLevel = EchoLevel.HARDER,
+            setEchoLevels = listOf(EchoLevel.EASIER, null, EchoLevel.HARDER), // Mixed overrides
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        val sets = viewModel.sets.value
+        assertEquals(EchoLevel.EASIER, sets[0].echoLevel, "Set 1 echo should be EASIER")
+        assertNull(sets[1].echoLevel, "Set 2 echo should be null (no override)")
+        assertEquals(EchoLevel.HARDER, sets[2].echoLevel, "Set 3 echo should be HARDER")
+    }
 }
