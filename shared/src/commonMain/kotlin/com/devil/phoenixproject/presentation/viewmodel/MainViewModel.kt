@@ -349,6 +349,35 @@ class MainViewModel constructor(
 
     val workoutHistory: StateFlow<List<WorkoutSession>> get() = historyManager.workoutHistory
     val allWorkoutSessions: StateFlow<List<WorkoutSession>> get() = historyManager.allWorkoutSessions
+
+    /**
+     * Recent sessions for a specific exercise, filtered by profile.
+     * Returns the latest [limit] sessions sorted by timestamp descending.
+     * Used by ExerciseQuickHistoryCard in SetReadyScreen.
+     */
+    fun recentSessionsForExercise(
+        exerciseId: String?,
+        profileId: String?,
+        limit: Int = 5,
+    ): StateFlow<List<WorkoutSession>> {
+        return historyManager.allWorkoutSessions
+            .map { sessions ->
+                if (profileId == null || exerciseId == null) {
+                    emptyList()
+                } else {
+                    sessions
+                        .filter { it.profileId == profileId && it.exerciseId == exerciseId }
+                        .filter { it.workingReps > 0 || it.totalReps > 0 }
+                        .sortedWith(
+                            compareByDescending<WorkoutSession> { it.timestamp }
+                                .thenByDescending { it.id },
+                        )
+                        .take(limit)
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    }
+
     val groupedWorkoutHistory: StateFlow<List<HistoryItem>> get() = historyManager.groupedWorkoutHistory
     val isHistoryLoading: StateFlow<Boolean> get() = historyManager.isHistoryLoading
     val allPersonalRecords: StateFlow<List<PersonalRecord>> get() = historyManager.allPersonalRecords
