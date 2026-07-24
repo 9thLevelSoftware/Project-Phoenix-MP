@@ -176,7 +176,7 @@ private fun SessionRow(
             .fillMaxWidth()
             .padding(vertical = 2.dp)
             .semantics {
-                val date = KmpUtils.formatTimestamp(session.timestamp, "MMM dd")
+                val date = KmpUtils.formatTimestamp(session.timestamp, "MMM d")
                 val weight = formatWeight(session.weightPerCableKg, weightUnit)
                 val reps = "${if (session.workingReps > 0) session.workingReps else session.totalReps} reps"
                 val duration = if (session.duration > 0) ", duration ${formatDuration(session.duration)}" else ""
@@ -186,7 +186,7 @@ private fun SessionRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            text = KmpUtils.formatTimestamp(session.timestamp, "MMM dd"),
+            text = KmpUtils.formatTimestamp(session.timestamp, "MMM d"),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.weight(1f),
