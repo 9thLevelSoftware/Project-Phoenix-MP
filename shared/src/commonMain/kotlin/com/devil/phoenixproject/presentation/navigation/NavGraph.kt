@@ -135,8 +135,7 @@ fun NavGraph(
     SharedTransitionLayout {
         NavHost(
             navController = navController,
-            // Prototype-only entry point for Issue #674 visual review.
-            startDestination = NavigationRoutes.JustLift.route,
+            startDestination = NavigationRoutes.Home.route,
             modifier = modifier,
         ) {
             // Home screen - workout type selection
