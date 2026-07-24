@@ -83,8 +83,8 @@ class ExerciseQuickHistoryCardWiringTest {
     fun historyCard_dateFormatting() {
         val src = readHistoryCardSource()
         assertTrue(
-            src.contains("MMM dd"),
-            "ExerciseQuickHistoryCard must format dates as 'MMM dd' (e.g., 'Jul 16').",
+            src.contains("MMM d"),
+            "ExerciseQuickHistoryCard must format dates as 'MMM d' (e.g., 'Jul 6').",
         )
         assertTrue(
             src.contains("formatTimestamp"),
