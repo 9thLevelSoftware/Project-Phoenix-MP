@@ -1009,7 +1009,7 @@ class ExerciseConfigViewModelTest {
             programMode = ProgramMode.OldSchool,
             eccentricLoad = EccentricLoad.LOAD_100,
             echoLevel = EchoLevel.HARDER,
-            setEchoLevels = listOf(EchoLevel.EASIER, EchoLevel.HARDER), // Per-set overrides
+            setEchoLevels = listOf(EchoLevel.HARD, EchoLevel.HARDER), // Per-set overrides
             setRestSeconds = listOf(60, 90),
             perSetRestTime = true,
         )
@@ -1020,15 +1020,15 @@ class ExerciseConfigViewModelTest {
         viewModel.onRepeatCountChange(setIds[1], 3)
 
         // Verify SetConfiguration carries echo override
-        assertEquals(EchoLevel.EASIER, viewModel.sets.value[0].echoLevel, "Set 1 should carry EASIER echo override")
+        assertEquals(EchoLevel.HARD, viewModel.sets.value[0].echoLevel, "Set 1 should carry HARD echo override")
         assertEquals(EchoLevel.HARDER, viewModel.sets.value[1].echoLevel, "Set 2 should carry HARDER echo override")
 
         var saved: RoutineExercise? = null
         viewModel.onSave { updated -> saved = updated }
 
         assertNotNull(saved)
-        // Expanded: set1 (EASIER) + set2×3 (HARDER each)
-        assertEquals(listOf(EchoLevel.EASIER, EchoLevel.HARDER, EchoLevel.HARDER, EchoLevel.HARDER), saved!!.setEchoLevels,
+        // Expanded: set1 (HARD) + set2×3 (HARDER each)
+        assertEquals(listOf(EchoLevel.HARD, EchoLevel.HARDER, EchoLevel.HARDER, EchoLevel.HARDER), saved!!.setEchoLevels,
             "Per-set Echo overrides should be preserved through expansion")
     }
 
@@ -1044,12 +1044,12 @@ class ExerciseConfigViewModelTest {
             programMode = ProgramMode.OldSchool,
             eccentricLoad = EccentricLoad.LOAD_100,
             echoLevel = EchoLevel.HARDER,
-            setEchoLevels = listOf(EchoLevel.EASIER, null, EchoLevel.HARDER), // Mixed overrides
+            setEchoLevels = listOf(EchoLevel.HARD, null, EchoLevel.HARDER), // Mixed overrides
         )
         viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
 
         val sets = viewModel.sets.value
-        assertEquals(EchoLevel.EASIER, sets[0].echoLevel, "Set 1 echo should be EASIER")
+        assertEquals(EchoLevel.HARD, sets[0].echoLevel, "Set 1 echo should be HARD")
         assertNull(sets[1].echoLevel, "Set 2 echo should be null (no override)")
         assertEquals(EchoLevel.HARDER, sets[2].echoLevel, "Set 3 echo should be HARDER")
     }
