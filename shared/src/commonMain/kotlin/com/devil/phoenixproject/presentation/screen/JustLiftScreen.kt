@@ -219,6 +219,15 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
         }
     }
 
+    // Prototype-only fixture: present the proposed Old School eccentric control
+    // with realistic sample data without changing ViewModel or persistence code.
+    LaunchedEffect(defaultsLoaded) {
+        if (defaultsLoaded) {
+            selectedMode = WorkoutMode.OldSchool
+            eccentricLoad = EccentricLoad.LOAD_130
+        }
+    }
+
     // Navigate to ActiveWorkout when workout becomes active
     LaunchedEffect(workoutState) {
         if (workoutState is WorkoutState.Active) {
@@ -585,7 +594,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             }
 
             val isEchoMode = selectedMode is WorkoutMode.Echo
-            if (isEchoMode) {
+            val isOldSchool = selectedMode is WorkoutMode.OldSchool
+            val showEccentricLoad = isEchoMode || isOldSchool
+            if (showEccentricLoad) {
                 Card(
                     modifier = flexibleBodyModifier,
                     colors = CardDefaults.cardColors(
@@ -648,16 +659,17 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             overflow = TextOverflow.Ellipsis,
                         )
 
-                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
+                        if (isEchoMode) {
+                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.35f))
 
-                        Text(
-                            stringResource(Res.string.echo_level),
-                            style = MaterialTheme.typography.labelLarge,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onSurface,
-                        )
+                            Text(
+                                stringResource(Res.string.echo_level),
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
 
-                        if (useCompactAccessibility) {
+                            if (useCompactAccessibility) {
                             FlowRow(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -674,22 +686,23 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                                     )
                                 }
                             }
-                        } else {
-                            SingleChoiceSegmentedButtonRow(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 4.dp),
-                            ) {
-                                EchoLevel.entries.forEachIndexed { index, level ->
-                                    SegmentedButton(
-                                        shape = SegmentedButtonDefaults.itemShape(index = index, count = EchoLevel.entries.size),
-                                        onClick = {
-                                            echoLevel = level
-                                            selectedMode = WorkoutMode.Echo(level)
-                                        },
-                                        selected = echoLevel == level,
-                                    ) {
-                                        Text(echoLevelLabel(level), maxLines = 1)
+                            } else {
+                                SingleChoiceSegmentedButtonRow(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 4.dp),
+                                ) {
+                                    EchoLevel.entries.forEachIndexed { index, level ->
+                                        SegmentedButton(
+                                            shape = SegmentedButtonDefaults.itemShape(index = index, count = EchoLevel.entries.size),
+                                            onClick = {
+                                                echoLevel = level
+                                                selectedMode = WorkoutMode.Echo(level)
+                                            },
+                                            selected = echoLevel == level,
+                                        ) {
+                                            Text(echoLevelLabel(level), maxLines = 1)
+                                        }
                                     }
                                 }
                             }
