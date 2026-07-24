@@ -164,6 +164,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     var echoLevel by remember { mutableStateOf(EchoLevel.HARDER) }
     var repCountTiming by remember { mutableStateOf(RepCountTiming.TOP) }
     var stallDetectionEnabled by rememberSaveable { mutableStateOf(true) }
+    // Prototype-only mock state for Issue #673. Final implementation will persist
+    // these values from the routine editor and apply them at safe set boundaries.
+    var dropSetEnabled by rememberSaveable { mutableStateOf(true) }
+    var dropSetMinWeight by rememberSaveable { mutableStateOf(15f) }
     var restSeconds by rememberSaveable { mutableStateOf(60) } // Rest timer between sets (0 = off)
     var defaultsProfileId by remember { mutableStateOf<String?>(null) }
     // Profile-scoped workout defaults
@@ -210,6 +214,17 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             "Loaded Just Lift defaults for profile=$loadingProfileId: modeId=${defaults.workoutModeId}, weight=${defaults.weightPerCableKg}kg, progression=${defaults.weightChangePerRep}, repTiming=${defaults.repCountTimingName}, restSeconds=${defaults.restSeconds}",
         )
         defaultsProfileId = loadingProfileId
+    }
+
+    // Prototype-only fixture: render the proposed drop-set controls in Old School
+    // mode with realistic values without changing ViewModel or persistence code.
+    LaunchedEffect(defaultsLoaded) {
+        if (defaultsLoaded) {
+            selectedMode = WorkoutMode.OldSchool
+            weightChangePerRep = -5
+            dropSetEnabled = true
+            dropSetMinWeight = 15f
+        }
     }
 
     LaunchedEffect(workoutParameters.programMode) {
@@ -580,6 +595,57 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                             valueRange = -10f..10f,
                             modifier = Modifier.fillMaxWidth(),
                         )
+                    }
+                }
+
+                // Prototype-only Drop-Set Mode card for Issue #673.
+                if (selectedMode is WorkoutMode.OldSchool) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .then(if (useCompactAccessibility || stackWeightCards) Modifier else Modifier.weight(1f)),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
+                        ),
+                        shape = MaterialTheme.shapes.medium,
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .then(if (useCompactAccessibility || stackWeightCards) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                                .padding(Spacing.small),
+                            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Drop-Set Mode",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        "Weight decreases only when a rep is failed",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Switch(
+                                    checked = dropSetEnabled,
+                                    onCheckedChange = { dropSetEnabled = it },
+                                )
+                            }
+                            if (dropSetEnabled) {
+                                Text(
+                                    "Drop 5 kg on failure  •  Floor: 15 kg",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.primary,
+                                )
+                            }
+                        }
                     }
                 }
             }
