@@ -452,6 +452,7 @@ fun ExerciseEditBottomSheet(
                     onRestChange = viewModel::updateRestTime,
                     onAddSet = viewModel::addSet,
                     onDeleteSet = viewModel::deleteSet,
+                    onRepeatCountChange = viewModel::onRepeatCountChange, // Issue #667
                 )
 
                 // Per Set Rest Time toggle — immediately follows SetsConfiguration so rest
@@ -818,6 +819,7 @@ fun SetsConfiguration(
     onRestChange: (String, Int) -> Unit,
     onAddSet: () -> Unit,
     onDeleteSet: (Int) -> Unit,
+    onRepeatCountChange: (String, Int) -> Unit = { _, _ -> }, // Issue #667
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -847,8 +849,22 @@ fun SetsConfiguration(
                     onRestChange = { newRest -> onRestChange(setConfig.id, newRest) },
                     onDelete = { onDeleteSet(index) },
                     perSetRestTime = perSetRestTime,
+                    repeatCount = setConfig.repeatCount, // Issue #667
+                    onRepeatCountChange = { newCount -> onRepeatCountChange(setConfig.id, newCount) }, // Issue #667
                 )
             }
+        }
+
+        // Issue #667: Total expanded sets preview
+        if (sets.any { it.repeatCount > 1 }) {
+            val total = sets.sumOf { it.repeatCount.coerceIn(1, 20) }
+            Text(
+                "Total sets after expansion: $total",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(vertical = Spacing.extraSmall),
+            )
         }
 
         // Add Set button
@@ -890,6 +906,8 @@ fun SetRow(
     onRestChange: (Int) -> Unit,
     onDelete: () -> Unit,
     perSetRestTime: Boolean = false,
+    repeatCount: Int = 1, // Issue #667
+    onRepeatCountChange: (Int) -> Unit = {}, // Issue #667
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -914,6 +932,15 @@ fun SetRow(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                 )
+                // Issue #667: ×N badge for repeated sets
+                if (repeatCount > 1) {
+                    Text(
+                        " ×$repeatCount",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
                 IconButton(
                     onClick = onDelete,
                     enabled = canDelete,
@@ -950,6 +977,28 @@ fun SetRow(
                 }
                 Spacer(modifier = Modifier.height(Spacing.small))
             }
+
+            // Issue #667: Repeat counter
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            ) {
+                Text(
+                    "Repeat:",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                )
+                CompactNumberPicker(
+                    value = repeatCount,
+                    onValueChange = onRepeatCountChange,
+                    range = 1..20,
+                    label = "",
+                    suffix = "x",
+                )
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.small))
 
             // Reps/Duration and Weight side-by-side
             Row(

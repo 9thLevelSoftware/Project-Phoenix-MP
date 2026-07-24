@@ -747,4 +747,310 @@ class ExerciseConfigViewModelTest {
         }
         assertTrue(condition(), "Timed out waiting for view model state update")
     }
+
+    // ──────────────────────────────────────────────────────────────────
+    // Issue #667: Set repetition tests
+    // ──────────────────────────────────────────────────────────────────
+
+    @Test
+    fun `onRepeatCountChange updates correct set`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-1",
+            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10, 10, 10),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f, 20f, 20f),
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        val secondSetId = viewModel.sets.value[1].id
+        viewModel.onRepeatCountChange(secondSetId, 4)
+
+        assertEquals(1, viewModel.sets.value[0].repeatCount)
+        assertEquals(4, viewModel.sets.value[1].repeatCount)
+        assertEquals(1, viewModel.sets.value[2].repeatCount)
+    }
+
+    @Test
+    fun `onRepeatCountChange coerces to 1-20 range`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-2",
+            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f),
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        val setId = viewModel.sets.value[0].id
+
+        viewModel.onRepeatCountChange(setId, 0)
+        assertEquals(1, viewModel.sets.value[0].repeatCount, "0 should coerce to 1")
+
+        viewModel.onRepeatCountChange(setId, 25)
+        assertEquals(20, viewModel.sets.value[0].repeatCount, "25 should coerce to 20")
+    }
+
+    @Test
+    fun `totalExpandedSetCount sums repeatCounts`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-3",
+            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10, 10, 10),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f, 20f, 20f),
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        assertEquals(3, viewModel.totalExpandedSetCount, "All repeatCount=1 → 3")
+
+        val setIds = viewModel.sets.value.map { it.id }
+        viewModel.onRepeatCountChange(setIds[1], 3)
+        viewModel.onRepeatCountChange(setIds[2], 2)
+        assertEquals(6, viewModel.totalExpandedSetCount, "[1,3,2] → 6")
+    }
+
+    @Test
+    fun `onSave with repeatCount produces expanded arrays`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-4",
+            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10, 8, 10),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f, 25f, 20f),
+            programMode = ProgramMode.OldSchool,
+            eccentricLoad = EccentricLoad.LOAD_100,
+            echoLevel = EchoLevel.HARDER,
+            setRestSeconds = listOf(60, 60, 60),
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        // Set 2 has repeatCount=3
+        val setIds = viewModel.sets.value.map { it.id }
+        viewModel.onRepeatCountChange(setIds[1], 3)
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        // 1 + 3 + 1 = 5 expanded sets
+        assertEquals(5, saved!!.setReps.size, "setReps should have 5 entries")
+        assertEquals(5, saved!!.setWeightsPerCableKg.size, "setWeights should have 5 entries")
+        assertEquals(5, saved!!.setRestSeconds.size, "setRestSeconds should have 5 entries")
+        // Check values: [10, 8, 8, 8, 10]
+        assertEquals(listOf(10, 8, 8, 8, 10), saved!!.setReps)
+        // Check weights: [20, 25, 25, 25, 20]
+        assertEquals(listOf(20f, 25f, 25f, 25f, 20f), saved!!.setWeightsPerCableKg)
+    }
+
+    @Test
+    fun `onSave with repeatCount and AMRAP sets`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-5",
+            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(null, null),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f, 20f),
+            programMode = ProgramMode.OldSchool,
+            eccentricLoad = EccentricLoad.LOAD_100,
+            echoLevel = EchoLevel.HARDER,
+            isAMRAP = true,
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        val setIds = viewModel.sets.value.map { it.id }
+        viewModel.onRepeatCountChange(setIds[0], 2)
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        assertTrue(saved!!.isAMRAP, "AMRAP should be preserved")
+        assertEquals(3, saved!!.setReps.size, "2+1=3 expanded sets")
+        assertTrue(saved!!.setReps.all { it == null }, "All reps should be null (AMRAP)")
+    }
+
+    @Test
+    fun `onSave with repeatCount and uniform rest`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-6",
+            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10, 10),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f, 20f),
+            programMode = ProgramMode.OldSchool,
+            eccentricLoad = EccentricLoad.LOAD_100,
+            echoLevel = EchoLevel.HARDER,
+            perSetRestTime = false,
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+        viewModel.onRestChange(90)
+        viewModel.onPerSetRestTimeChange(false)
+
+        val setIds = viewModel.sets.value.map { it.id }
+        viewModel.onRepeatCountChange(setIds[0], 3)
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        assertEquals(4, saved!!.setRestSeconds.size, "3+1=4 expanded rest entries")
+        assertTrue(saved!!.setRestSeconds.all { it == 90 }, "Uniform rest applied to all expanded sets")
+    }
+
+    @Test
+    fun `initialize sets all repeatCount to 1`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-7",
+            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10, 8, 6),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f, 25f, 30f),
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        assertEquals(3, viewModel.sets.value.size)
+        assertTrue(viewModel.sets.value.all { it.repeatCount == 1 }, "All sets should have repeatCount=1 after init")
+    }
+
+    @Test
+    fun `addSet creates set with repeatCount 1`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-8",
+            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10, 10),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f, 20f),
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        viewModel.addSet()
+        assertEquals(3, viewModel.sets.value.size)
+        assertEquals(1, viewModel.sets.value.last().repeatCount, "New set should have repeatCount=1")
+    }
+
+    @Test
+    fun `deleteSet preserves repeatCount on remaining sets`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-9",
+            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10, 10, 10),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f, 20f, 20f),
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        val setIds = viewModel.sets.value.map { it.id }
+        viewModel.onRepeatCountChange(setIds[0], 1)
+        viewModel.onRepeatCountChange(setIds[1], 3)
+        viewModel.onRepeatCountChange(setIds[2], 1)
+
+        viewModel.deleteSet(0) // Remove first set
+        assertEquals(2, viewModel.sets.value.size)
+        assertEquals(3, viewModel.sets.value[0].repeatCount, "Second set's repeatCount should survive reindex")
+        assertEquals(1, viewModel.sets.value[1].repeatCount)
+    }
+
+    @Test
+    fun `onSave backward compat - all repeatCount 1 produces identical output`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-10",
+            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10, 8, 6),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f, 25f, 30f),
+            programMode = ProgramMode.OldSchool,
+            eccentricLoad = EccentricLoad.LOAD_100,
+            echoLevel = EchoLevel.HARDER,
+            setRestSeconds = listOf(60, 90, 120),
+            perSetRestTime = true,
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        assertEquals(listOf(10, 8, 6), saved!!.setReps)
+        assertEquals(listOf(20f, 25f, 30f), saved!!.setWeightsPerCableKg)
+        assertEquals(listOf(60, 90, 120), saved!!.setRestSeconds)
+    }
+
+    @Test
+    fun `onSave preserves per-set echo overrides through expansion`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-echo",
+            exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10, 8),
+            weightPerCableKg = 20f,
+            setWeightsPerCableKg = listOf(20f, 25f),
+            programMode = ProgramMode.OldSchool,
+            eccentricLoad = EccentricLoad.LOAD_100,
+            echoLevel = EchoLevel.HARDER,
+            setEchoLevels = listOf(EchoLevel.HARD, EchoLevel.HARDER), // Per-set overrides
+            setRestSeconds = listOf(60, 90),
+            perSetRestTime = true,
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        // Set 2 has repeatCount=3
+        val setIds = viewModel.sets.value.map { it.id }
+        viewModel.onRepeatCountChange(setIds[1], 3)
+
+        // Verify SetConfiguration carries echo override
+        assertEquals(EchoLevel.HARD, viewModel.sets.value[0].echoLevel, "Set 1 should carry HARD echo override")
+        assertEquals(EchoLevel.HARDER, viewModel.sets.value[1].echoLevel, "Set 2 should carry HARDER echo override")
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+
+        assertNotNull(saved)
+        // Expanded: set1 (HARD) + set2×3 (HARDER each)
+        assertEquals(listOf(EchoLevel.HARD, EchoLevel.HARDER, EchoLevel.HARDER, EchoLevel.HARDER), saved!!.setEchoLevels,
+            "Per-set Echo overrides should be preserved through expansion")
+    }
+
+    @Test
+    fun `initialize loads per-set echo overrides into SetConfiguration`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-667-echo-init",
+            exercise = Exercise(id = "squat-1", name = "Squat", muscleGroup = "Legs", muscleGroups = "Legs", equipment = "BAR"),
+            orderIndex = 0,
+            setReps = listOf(10, 10, 10),
+            weightPerCableKg = 50f,
+            programMode = ProgramMode.OldSchool,
+            eccentricLoad = EccentricLoad.LOAD_100,
+            echoLevel = EchoLevel.HARDER,
+            setEchoLevels = listOf(EchoLevel.HARD, null, EchoLevel.HARDER), // Mixed overrides
+        )
+        viewModel.initialize(exercise = exercise, unit = WeightUnit.KG, toDisplay = { v, _ -> v }, toKg = { v, _ -> v })
+
+        val sets = viewModel.sets.value
+        assertEquals(EchoLevel.HARD, sets[0].echoLevel, "Set 1 echo should be HARD")
+        assertNull(sets[1].echoLevel, "Set 2 echo should be null (no override)")
+        assertEquals(EchoLevel.HARDER, sets[2].echoLevel, "Set 3 echo should be HARDER")
+    }
 }

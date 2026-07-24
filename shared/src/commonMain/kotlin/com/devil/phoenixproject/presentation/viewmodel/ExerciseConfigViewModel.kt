@@ -49,6 +49,8 @@ data class SetConfiguration(
     val weightPerCable: Float = 15.0f,
     val duration: Int = 30,
     val restSeconds: Int = 60, // Add this
+    val repeatCount: Int = 1, // 1 = no repeat, 2-20 = repeat N times (Issue #667)
+    val echoLevel: EchoLevel? = null, // Per-set echo override (Issue #667 review fix)
 )
 
 class ExerciseConfigViewModel constructor(
@@ -210,6 +212,7 @@ class ExerciseConfigViewModel constructor(
         val initialSets = exercise.setReps.mapIndexed { index, reps ->
             val perSetWeightKg = exercise.setWeightsPerCableKg.getOrNull(index) ?: exercise.weightPerCableKg
             val perSetRest = exercise.setRestSeconds.getOrNull(index) ?: 60
+            val perSetEcho = exercise.setEchoLevels.getOrNull(index) // Preserve per-set Echo overrides
             SetConfiguration(
                 id = generateUUID(),
                 setNumber = index + 1,
@@ -217,6 +220,7 @@ class ExerciseConfigViewModel constructor(
                 weightPerCable = kgToDisplay(perSetWeightKg, weightUnit),
                 duration = defaultDuration,
                 restSeconds = perSetRest,
+                echoLevel = perSetEcho,
             )
         }.ifEmpty {
             listOf(
@@ -765,33 +769,55 @@ class ExerciseConfigViewModel constructor(
         }
     }
 
+    // Issue #667: Set repetition support
+    private data class ExpandedSets(
+        val reps: List<Int?>,
+        val weights: List<Float>,
+        val rest: List<Int>,
+        val echo: List<EchoLevel?>,
+    )
+
+    private fun expandSets(sets: List<SetConfiguration>, resolvedWeightsKg: List<Float>): ExpandedSets {
+        val expandedReps = mutableListOf<Int?>()
+        val expandedWeights = mutableListOf<Float>()
+        val expandedRest = mutableListOf<Int>()
+        val expandedEcho = mutableListOf<EchoLevel?>()
+
+        for ((index, set) in sets.withIndex()) {
+            val count = set.repeatCount.coerceIn(1, 20)
+            repeat(count) {
+                expandedReps.add(set.reps)
+                expandedWeights.add(resolvedWeightsKg[index])
+                expandedRest.add(set.restSeconds)
+                expandedEcho.add(set.echoLevel) // Preserve per-set Echo override (Issue #667 review fix)
+            }
+        }
+        return ExpandedSets(expandedReps, expandedWeights, expandedRest, expandedEcho)
+    }
+
+    fun onRepeatCountChange(setId: String, count: Int) {
+        val coerced = count.coerceIn(1, 20)
+        _sets.value = _sets.value.map { set ->
+            if (set.id == setId) set.copy(repeatCount = coerced) else set
+        }
+    }
+
+    val totalExpandedSetCount: Int
+        get() = _sets.value.sumOf { it.repeatCount.coerceIn(1, 20) }
+
     fun onSave(onSaveCallback: (RoutineExercise) -> Unit) {
         if (_sets.value.isEmpty()) return
-
-        // Determine rest times based on perSetRestTime toggle
-        val restTimes = if (_perSetRestTime.value) {
-            // Per-set rest times: use each set's rest time
-            _sets.value.map { it.restSeconds }
-        } else {
-            // Single rest time: use the bottom rest time picker value for all sets
-            List(_sets.value.size) { _rest.value }
-        }
-
-        // Determine if exercise is AMRAP (all sets have null reps)
-        val isAMRAP = _sets.value.all { it.reps == null }
 
         // Debug logging for AMRAP exercise data saving
         logDebug("━━━━━ ExerciseConfigViewModel.onSave() ━━━━━")
         logDebug("Exercise: ${originalExercise.exercise.name}")
-        logDebug("isAMRAP computed: $isAMRAP")
         logDebug("perSetRestTime toggle: ${_perSetRestTime.value}")
-        logDebug("Current sets before save:")
+        logDebug("Current sets before expansion:")
         _sets.value.forEach { set ->
-            logDebug("  Set ${set.setNumber}: reps=${set.reps}, weight=${set.weightPerCable}, rest=${set.restSeconds}")
+            logDebug("  Set ${set.setNumber}: reps=${set.reps}, weight=${set.weightPerCable}, rest=${set.restSeconds}, repeat=${set.repeatCount}")
         }
-        logDebug("Rest times to save: $restTimes")
-        logDebug("Weights to save: ${_sets.value.map { displayToKg(it.weightPerCable, weightUnit) }}")
 
+        // Resolve weights BEFORE expansion (Issue #667)
         val resolvedSetWeightsKg = resolvedSetWeightsKgFromCurrentBasis()
             ?: _sets.value.map { displayToKg(it.weightPerCable, weightUnit) }
         val resolvedSetWeightsPercentOfPR = if (_usePercentOfPR.value) {
@@ -804,15 +830,48 @@ class ExerciseConfigViewModel constructor(
             emptyList()
         }
 
+        // Expand repeated sets into flat arrays (Issue #667)
+        val expanded = expandSets(_sets.value, resolvedSetWeightsKg)
+
+        // Expand rest times: after per-set/uniform decision
+        val expandedRestTimes = if (_perSetRestTime.value) {
+            expanded.rest // per-set rest already expanded
+        } else {
+            List(expanded.reps.size) { _rest.value }
+        }
+
+        // Expand PR percentage weights in parallel
+        val expandedPercentOfPR = if (_usePercentOfPR.value && resolvedSetWeightsPercentOfPR.isNotEmpty()) {
+            val expandedPercent = mutableListOf<Int>()
+            for ((index, set) in _sets.value.withIndex()) {
+                val count = set.repeatCount.coerceIn(1, 20)
+                val percent = resolvedSetWeightsPercentOfPR.getOrElse(index) { _weightPercentOfPR.value.coerceIn(50, 120) }
+                repeat(count) { expandedPercent.add(percent) }
+            }
+            expandedPercent
+        } else {
+            resolvedSetWeightsPercentOfPR
+        }
+
+        // Determine if exercise is AMRAP (all expanded reps are null)
+        val isAMRAP = expanded.reps.all { it == null }
+
+        logDebug("Expanded sets: ${expanded.reps.size} (from ${_sets.value.size} editor sets)")
+        logDebug("Expanded reps: ${expanded.reps}")
+        logDebug("Expanded weights: ${expanded.weights}")
+        logDebug("Expanded rest: $expandedRestTimes")
+        logDebug("isAMRAP computed: $isAMRAP")
+
         val updatedExercise = originalExercise.copy(
-            setReps = _sets.value.map { it.reps },
-            weightPerCableKg = resolvedSetWeightsKg.first(),
-            setWeightsPerCableKg = resolvedSetWeightsKg,
+            setReps = expanded.reps,
+            weightPerCableKg = expanded.weights.first(),
+            setWeightsPerCableKg = expanded.weights,
             programMode = _selectedMode.value.toProgramMode(),
             eccentricLoad = _eccentricLoad.value,
             echoLevel = _echoLevel.value,
             progressionKg = displayToKg(_weightChange.value.toFloat(), weightUnit),
-            setRestSeconds = restTimes,
+            setRestSeconds = expandedRestTimes,
+            setEchoLevels = expanded.echo,
             duration = if (_setMode.value == SetMode.DURATION) {
                 _sets.value.firstOrNull()?.duration ?: 30 // Default to 30 seconds if not set
             } else {
@@ -827,7 +886,7 @@ class ExerciseConfigViewModel constructor(
             usePercentOfPR = _usePercentOfPR.value,
             weightPercentOfPR = _weightPercentOfPR.value,
             prTypeForScaling = _prTypeForScaling.value,
-            setWeightsPercentOfPR = resolvedSetWeightsPercentOfPR,
+            setWeightsPercentOfPR = expandedPercentOfPR,
             // Issue #517: persist explicit scaling basis (null = back-compat derivation from prTypeForScaling)
             scalingBasis = _scalingBasis.value,
             // Warm-up sets (Issue #30)
