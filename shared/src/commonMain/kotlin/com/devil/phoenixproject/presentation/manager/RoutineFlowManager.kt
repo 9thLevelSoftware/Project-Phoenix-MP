@@ -799,6 +799,9 @@ class RoutineFlowManager(
         coordinator._completedExercises.value = emptySet()
         coordinator._completedRoutineSetKeys.value = emptySet()
         coordinator._weightAdjustmentRecommendation.value = null
+        // A pending drop belongs to the completed set of the prior routine. Never
+        // let it carry into the first working set of a newly loaded routine.
+        coordinator.dropSetNextWeightKg = null
 
         // Issue #222 diagnostic: Reset bodyweight counter for new routine
         coordinator.bodyweightSetsCompletedInRoutine = 0

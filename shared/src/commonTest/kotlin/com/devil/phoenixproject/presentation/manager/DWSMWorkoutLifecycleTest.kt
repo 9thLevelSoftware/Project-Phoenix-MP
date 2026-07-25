@@ -42,6 +42,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 /**
@@ -462,6 +463,7 @@ class DWSMWorkoutLifecycleTest {
             currentSet = 1,
             totalSets = 2,
         )
+        harness.dwsm.coordinator.dropSetNextWeightKg = 17.5f
         harness.dwsm.updateWorkoutParameters(
             harness.dwsm.coordinator.workoutParameters.value.copy(
                 weightPerCableKg = 42f,
@@ -475,6 +477,7 @@ class DWSMWorkoutLifecycleTest {
         val params = harness.dwsm.coordinator.workoutParameters.value
         assertEquals(42f, params.weightPerCableKg)
         assertEquals(11, params.reps)
+        assertNull(harness.dwsm.coordinator.dropSetNextWeightKg)
         harness.cleanup()
     }
 
@@ -524,6 +527,45 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `summary advance discards pending drop weight when moving to a different exercise`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val base = createTestRoutine(exerciseCount = 2, setsPerExercise = 1)
+        val routine = base.copy(
+            exercises = listOf(
+                base.exercises[0].copy(
+                    setReps = listOf(8),
+                    setWeightsPerCableKg = listOf(20f),
+                    weightPerCableKg = 20f,
+                ),
+                base.exercises[1].copy(
+                    setReps = listOf(10),
+                    setWeightsPerCableKg = listOf(55f),
+                    weightPerCableKg = 55f,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.coordinator.dropSetNextWeightKg = 17.5f
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 20f,
+            avgLoadKgPerCable = 20f,
+            repCount = 8,
+        )
+        harness.dwsm.proceedFromSummary()
+        advanceUntilIdle()
+
+        val params = harness.dwsm.coordinator.workoutParameters.value
+        assertEquals(1, harness.dwsm.coordinator.currentExerciseIndex.value)
+        assertEquals(55f, params.weightPerCableKg)
+        assertNull(harness.dwsm.coordinator.dropSetNextWeightKg)
+        harness.cleanup()
+    }
+
+    @Test
     fun `rest timer catches up after background delay shorter than rest duration`() = runTest {
         val harness = DWSMTestHarness(this)
         val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
@@ -539,6 +581,38 @@ class DWSMWorkoutLifecycleTest {
 
         val state = assertIs<WorkoutState.Resting>(harness.dwsm.coordinator.workoutState.value)
         assertEquals(30, state.restSecondsRemaining)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `drop set weight survives rest preview and is consumed at next same entry set`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.setActiveSummaryCountdownSeconds(0)
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.dwsm.coordinator.dropSetNextWeightKg = 17.5f
+        harness.activeSessionEngine.startRestTimer()
+        runCurrent()
+
+        assertEquals(
+            17.5f,
+            harness.dwsm.coordinator.workoutParameters.value.weightPerCableKg,
+            "Rest can preview the upcoming drop weight",
+        )
+        assertEquals(
+            17.5f,
+            harness.dwsm.coordinator.dropSetNextWeightKg,
+            "Previewing the rest screen must not consume the weight before the set boundary",
+        )
+
+        harness.dwsm.skipRest()
+        runCurrent()
+
+        assertEquals(17.5f, harness.dwsm.coordinator.workoutParameters.value.weightPerCableKg)
+        assertNull(harness.dwsm.coordinator.dropSetNextWeightKg)
         harness.cleanup()
     }
 

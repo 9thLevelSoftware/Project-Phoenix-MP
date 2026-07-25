@@ -467,7 +467,6 @@ class WorkoutCoordinator(
         stallArmedByDeload = false
         dropSetDropCount = 0
         dropSetOriginalWeightKg = 0f
-        dropSetNextWeightKg = null
         deferAutoStopDeadlineMs = 0L
         _autoStopState.value = AutoStopUiState()
     }

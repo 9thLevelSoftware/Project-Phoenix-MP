@@ -42,4 +42,18 @@ class WorkoutCoordinatorAutoStopResetTest {
         assertEquals(0L, coordinator.deferAutoStopDeadlineMs)
         assertEquals(AutoStopUiState(), coordinator._autoStopState.value)
     }
+
+    @Test
+    fun `resetAutoStopState preserves pending drop set weight for the next set boundary`() {
+        val coordinator = WorkoutCoordinator()
+        coordinator.dropSetNextWeightKg = 17.5f
+
+        coordinator.resetAutoStopState()
+
+        assertEquals(
+            17.5f,
+            coordinator.dropSetNextWeightKg,
+            "A set-boundary auto-stop reset must not discard the drop weight before it is consumed",
+        )
+    }
 }

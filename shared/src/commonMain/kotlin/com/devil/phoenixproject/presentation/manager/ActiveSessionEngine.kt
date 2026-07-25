@@ -1734,6 +1734,11 @@ class ActiveSessionEngine(
             currentState is WorkoutState.SetSummary
         ) {
             coordinator._userAdjustedWeightDuringRest = true
+            if (currentState is WorkoutState.Resting || currentState is WorkoutState.SetSummary) {
+                // An explicit user weight choice wins over the automatically queued
+                // drop target that was merely being previewed during the transition.
+                coordinator.dropSetNextWeightKg = null
+            }
             Logger.d("ActiveSessionEngine: User adjusted weight in ${currentState::class.simpleName} - will preserve on next set")
         }
 
@@ -2142,6 +2147,7 @@ class ActiveSessionEngine(
         coordinator._totalWarmupSets.value = 0
         coordinator._selectedBodyweightVariants.value = emptyMap()
         coordinator.bodyweightCompletionVariantOverride = null
+        coordinator.dropSetNextWeightKg = null
         coordinator.clearActiveRackSelection()
     }
 
@@ -2185,6 +2191,13 @@ class ActiveSessionEngine(
             currentState is WorkoutState.SetSummary
         ) {
             coordinator._userAdjustedWeightDuringRest = true
+            if ((currentState is WorkoutState.Resting || currentState is WorkoutState.SetSummary) &&
+                safeParams.weightPerCableKg != coordinator._workoutParameters.value.weightPerCableKg
+            ) {
+                // Editing reps/progression alone must not cancel a queued drop, but
+                // a manual weight edit is an explicit replacement for it.
+                coordinator.dropSetNextWeightKg = null
+            }
             Logger.d("updateWorkoutParameters: User edited params in ${currentState::class.simpleName} - will preserve on transition")
         }
         coordinator._workoutParameters.value = safeParams
@@ -4455,7 +4468,6 @@ class ActiveSessionEngine(
                     val isSameExercise = !isTransitioningToNextExercise
                     val pendingDropWeight = coordinator.dropSetNextWeightKg
                     val nextSetWeight = if (pendingDropWeight != null && isSameExercise) {
-                        coordinator.dropSetNextWeightKg = null
                         pendingDropWeight
                     } else if (pendingDropWeight != null && !isSameExercise) {
                         // Different exercise: discard the drop-set weight
@@ -4757,7 +4769,16 @@ class ActiveSessionEngine(
         if (autoplay) {
             startWorkout(skipCountdown = true)
         } else {
-            flowDelegate?.enterSetReady(coordinator._currentExerciseIndex.value, coordinator._currentSetIndex.value)
+            // The transition has already selected the next set's parameters. Passing
+            // those values through SetReady prevents it from reloading the routine
+            // default and losing a pending drop-set target (or a user rest edit).
+            val params = coordinator._workoutParameters.value
+            flowDelegate?.enterSetReadyWithAdjustments(
+                coordinator._currentExerciseIndex.value,
+                coordinator._currentSetIndex.value,
+                params.weightPerCableKg,
+                params.reps,
+            )
         }
     }
 
@@ -4823,6 +4844,7 @@ class ActiveSessionEngine(
                 currentExercise != null &&
                 isAdjacentLinearExercise &&
                 flowDelegate?.isSameExercise(currentExercise, nextExercise) == true
+            val isSameRoutineExercise = !isChangingExercise
 
             coordinator._currentExerciseIndex.value = nextExIdx
             coordinator._currentSetIndex.value = nextSetIdx
@@ -4831,9 +4853,12 @@ class ActiveSessionEngine(
             val currentParams = coordinator._workoutParameters.value
             val preserveRestEdits = coordinator._userAdjustedWeightDuringRest
 
-            // Consume pending drop-set weight for same-exercise transitions only.
+            // Consume a pending drop-set weight only after we have crossed the set
+            // boundary for the same routine entry (or the explicit same-exercise
+            // continuation path). The rest UI may preview the pending value, but it
+            // must not consume it before this point.
             val pendingDropWeight = coordinator.dropSetNextWeightKg
-            val nextSetWeight = if (pendingDropWeight != null && isSameExerciseContinuation) {
+            val nextSetWeight = if (pendingDropWeight != null && (isSameRoutineExercise || isSameExerciseContinuation)) {
                 coordinator.dropSetNextWeightKg = null
                 pendingDropWeight
             } else if (pendingDropWeight != null) {

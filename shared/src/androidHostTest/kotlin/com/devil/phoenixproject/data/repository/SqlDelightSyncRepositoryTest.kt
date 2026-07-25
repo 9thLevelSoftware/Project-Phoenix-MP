@@ -780,7 +780,7 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
-    fun `mergePortalRoutines preserves local scalingBasis across portal pull`() = runTest {
+    fun `mergePortalRoutines preserves local scalingBasis and drop set fields across portal pull`() = runTest {
         database.vitruvianDatabaseQueries.insertRoutine(
             id = "routine-scaling-basis",
             name = "Scaling Basis",
@@ -820,8 +820,8 @@ class SqlDelightSyncRepositoryTest {
             prTypeForScaling = "MAX_WEIGHT",
             setWeightsPercentOfPR = null,
             stallDetectionEnabled = 1,
-            dropSetEnabled = 0,
-            dropSetMinWeightKg = 0.0,
+            dropSetEnabled = 1,
+            dropSetMinWeightKg = 17.5,
             stopAtTop = 0,
             repCountTiming = "TOP",
             setEchoLevels = "",
@@ -861,6 +861,8 @@ class SqlDelightSyncRepositoryTest {
             .executeAsList()
             .single()
         assertEquals("ESTIMATED_1RM", exercise.scalingBasis)
+        assertEquals(1L, exercise.dropSetEnabled)
+        assertEquals(17.5, exercise.dropSetMinWeightKg)
     }
 
     @Test

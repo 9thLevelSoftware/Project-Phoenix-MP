@@ -911,6 +911,8 @@ class DefaultWorkoutSessionManager(
                     if (!autoplay) {
                         Logger.d { "proceedFromSummary: Autoplay OFF - going to SetReady for next step" }
                         val (nextExIdx, nextSetIdx) = nextStep
+                        val isSameRoutineExercise =
+                            nextExIdx == coordinator._currentExerciseIndex.value
 
                         // Advance to next step
                         coordinator._currentExerciseIndex.value = nextExIdx
@@ -922,8 +924,7 @@ class DefaultWorkoutSessionManager(
                         // Get next exercise and update parameters
                         val nextExercise = routine.exercises[nextExIdx]
                         val pendingDropWeight = coordinator.dropSetNextWeightKg
-                        val isSameExercise = nextExIdx == coordinator._currentExerciseIndex.value
-                        val nextSetWeight = if (pendingDropWeight != null && isSameExercise) {
+                        val nextSetWeight = if (pendingDropWeight != null && isSameRoutineExercise) {
                             coordinator.dropSetNextWeightKg = null
                             pendingDropWeight
                         } else if (pendingDropWeight != null) {
@@ -962,7 +963,12 @@ class DefaultWorkoutSessionManager(
                         // Issue #656: clear workoutState so the ActiveWorkoutScreen nav gate
                         // unmounts SetSummary and routes to SetReady.
                         coordinator._workoutState.value = WorkoutState.Idle
-                        enterSetReady(nextExIdx, nextSetIdx)
+                        enterSetReadyWithAdjustments(
+                            nextExIdx,
+                            nextSetIdx,
+                            nextSetWeight,
+                            nextSetReps ?: 0,
+                        )
                         return@launch
                     }
                 }
