@@ -333,6 +333,7 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                     adjustedReps = adjustments.reps,
                     isAMRAP = exercise.isAMRAP,
                     isEchoMode = exercise.programMode is ProgramMode.Echo,
+                    isOldSchool = exercise.programMode is ProgramMode.OldSchool,
                     echoLevel = adjustments.echoLevel,
                     eccentricLoadPercent = adjustments.eccentricLoadPercent,
                     sizing = overviewSizing,
@@ -552,6 +553,7 @@ private fun ExerciseOverviewCard(
     adjustedReps: Int,
     isAMRAP: Boolean,
     isEchoMode: Boolean,
+    isOldSchool: Boolean = false,
     echoLevel: EchoLevel,
     eccentricLoadPercent: Int,
     sizing: RoutineOverviewSizing,
@@ -667,18 +669,22 @@ private fun ExerciseOverviewCard(
                             )
 
                             if (isEchoMode) {
-                                // Echo mode: Show Echo Level + Eccentric Load + Reps
                                 EchoLevelPillSelector(
                                     selectedLevel = echoLevel,
                                     onLevelChange = onEchoLevelChange,
                                 )
+                            }
 
+                            // Eccentric Load slider — visible for Echo and Old School modes
+                            if (isEchoMode || isOldSchool) {
                                 OverviewEccentricLoadSlider(
                                     percent = eccentricLoadPercent,
                                     onPercentChange = onEccentricLoadChange,
                                 )
+                            }
 
-                                // Reps for Echo mode
+                            // Reps adjuster for Echo mode only
+                            if (isEchoMode) {
                                 if (!isAMRAP) {
                                     SliderWithButtons(
                                         value = adjustedReps.toFloat(),

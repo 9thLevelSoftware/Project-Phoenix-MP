@@ -137,4 +137,50 @@ class WorkoutParametersTest {
 
         assertEquals(2.5f, params.progressionRegressionKg)
     }
+
+    // Issue #674: Old School eccentric overload tests
+
+    @Test
+    fun `hasEccentricOverload true for Old School with LOAD_130`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            eccentricLoad = EccentricLoad.LOAD_130,
+        )
+
+        assertTrue(params.hasEccentricOverload)
+    }
+
+    @Test
+    fun `hasEccentricOverload false for Old School with LOAD_100`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            eccentricLoad = EccentricLoad.LOAD_100,
+        )
+
+        assertFalse(params.hasEccentricOverload)
+    }
+
+    @Test
+    fun `hasEccentricOverload false for Echo with LOAD_100`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.Echo,
+            reps = 10,
+            eccentricLoad = EccentricLoad.LOAD_100,
+        )
+
+        assertFalse(params.hasEccentricOverload)
+    }
+
+    @Test
+    fun `hasEccentricOverload true for Echo with LOAD_130`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.Echo,
+            reps = 10,
+            eccentricLoad = EccentricLoad.LOAD_130,
+        )
+
+        assertTrue(params.hasEccentricOverload)
+    }
 }
