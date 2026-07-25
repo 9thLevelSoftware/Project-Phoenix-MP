@@ -1516,6 +1516,9 @@ class RoutineFlowManager(
         coordinator.restTimerJob?.cancel()
         coordinator.bodyweightTimerJob?.cancel()
         coordinator._timedExerciseRemainingSeconds.value = null
+        // Manual navigation abandons the pending transition; never carry a failed
+        // exercise's queued drop into the newly selected exercise.
+        coordinator.dropSetNextWeightKg = null
         resetAutoStopState()
 
         // Issue #172: Async navigation with proper BLE cleanup

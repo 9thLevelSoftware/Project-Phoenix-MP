@@ -590,6 +590,9 @@ class SqlDelightSyncRepository(
                             .associate { it.id to it.dropSetEnabled }
                         val localDropSetMinWeightByExerciseId = localExerciseRows
                             .associate { it.id to it.dropSetMinWeightKg }
+                        val localDropSetProgressionByExerciseId = localExerciseRows
+                            .filter { it.dropSetEnabled != 0L }
+                            .associate { it.id to it.progressionKg }
 
                         mergePortalExercisesForRoutine(
                             routineId = portalRoutine.id,
@@ -599,6 +602,7 @@ class SqlDelightSyncRepository(
                             localScalingBasisByExerciseId = localScalingBasisByExerciseId,
                             localDropSetEnabledByExerciseId = localDropSetEnabledByExerciseId,
                             localDropSetMinWeightByExerciseId = localDropSetMinWeightByExerciseId,
+                            localDropSetProgressionByExerciseId = localDropSetProgressionByExerciseId,
                         )
                     } else {
                         Logger.w("SyncRepository") {
@@ -1672,6 +1676,9 @@ class SqlDelightSyncRepository(
                             .associate { it.id to it.dropSetEnabled }
                         val localDropSetMinWeightByExerciseId2 = localExerciseRows2
                             .associate { it.id to it.dropSetMinWeightKg }
+                        val localDropSetProgressionByExerciseId2 = localExerciseRows2
+                            .filter { it.dropSetEnabled != 0L }
+                            .associate { it.id to it.progressionKg }
 
                         mergePortalExercisesForRoutine(
                             routineId = portalRoutine.id,
@@ -1681,6 +1688,7 @@ class SqlDelightSyncRepository(
                             localScalingBasisByExerciseId = localScalingBasisByExerciseId,
                             localDropSetEnabledByExerciseId = localDropSetEnabledByExerciseId2,
                             localDropSetMinWeightByExerciseId = localDropSetMinWeightByExerciseId2,
+                            localDropSetProgressionByExerciseId = localDropSetProgressionByExerciseId2,
                         )
                     }
                 }
@@ -2177,6 +2185,7 @@ class SqlDelightSyncRepository(
         localScalingBasisByExerciseId: Map<String, String?>,
         localDropSetEnabledByExerciseId: Map<String, Long> = emptyMap(),
         localDropSetMinWeightByExerciseId: Map<String, Double> = emptyMap(),
+        localDropSetProgressionByExerciseId: Map<String, Double> = emptyMap(),
     ) {
         queries.deleteRoutineExercises(routineId)
         queries.deleteSupersetsByRoutine(routineId)
@@ -2285,7 +2294,7 @@ class SqlDelightSyncRepository(
                 mode = mobileMode,
                 eccentricLoad = PortalPullAdapter.parseEccentricLoad(exercise.eccentricLoad),
                 echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
-                progressionKg = 0.0,
+                progressionKg = localDropSetProgressionByExerciseId[exercise.id] ?: 0.0,
                 restSeconds = exercise.restSeconds.toLong(),
                 duration = null,
                 setRestSeconds = setRestSeconds,

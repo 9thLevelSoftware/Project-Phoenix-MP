@@ -457,7 +457,8 @@ class ActiveSessionEngine(
                             val currentDropWeight = coordinator._workoutParameters.value.weightPerCableKg
                             if (currentDropWeight > params.dropSetMinWeightKg) {
                                 val dropAmount = kotlin.math.abs(params.progressionRegressionKg)
-                                val newDropWeight = (currentDropWeight - dropAmount).coerceAtLeast(params.dropSetMinWeightKg)
+                                val safeFloor = maxOf(params.dropSetMinWeightKg, Constants.DEFAULT_WEIGHT_INCREMENT_KG)
+                                val newDropWeight = (currentDropWeight - dropAmount).coerceAtLeast(safeFloor)
                                 Logger.d("Drop-set: DELOAD_OCCURRED -> weight ${currentDropWeight}kg -> ${newDropWeight}kg (drop=$dropAmount, floor=${params.dropSetMinWeightKg})")
                                 // Store the pending drop-set weight for the next set boundary
                                 // without modifying the active-set weightPerCableKg (so

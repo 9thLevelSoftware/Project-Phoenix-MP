@@ -23,6 +23,7 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.model.toWorkoutMode
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineScalingBaselineUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineScalingBaseline
+import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -264,7 +265,10 @@ class ExerciseConfigViewModel constructor(
         // Drop sets are valid only for Old School, so normalize the editor state
         // before a subsequent save can persist that unsupported configuration.
         _dropSetEnabled.value = exercise.dropSetEnabled && loadedMode is WorkoutMode.OldSchool
-        _dropSetMinWeight.value = kgToDisplay(exercise.dropSetMinWeightKg, weightUnit).toInt()
+        _dropSetMinWeight.value = maxOf(
+            kgToDisplay(exercise.dropSetMinWeightKg, weightUnit).toInt(),
+            kgToDisplay(Constants.DEFAULT_WEIGHT_INCREMENT_KG, weightUnit).toInt(),
+        )
         _repCountTiming.value = exercise.repCountTiming
         _stopAtTop.value = exercise.stopAtTop
 

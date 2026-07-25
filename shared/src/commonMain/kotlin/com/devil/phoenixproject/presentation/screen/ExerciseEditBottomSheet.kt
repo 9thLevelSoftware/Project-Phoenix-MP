@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
+import com.devil.phoenixproject.util.Constants
+
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
@@ -645,7 +647,7 @@ fun ExerciseEditBottomSheet(
                                 ExpressiveSlider(
                                     value = dropSetMinWeight.toFloat(),
                                     onValueChange = { viewModel.onDropSetMinWeightChange(it.roundToInt()) },
-                                    valueRange = 0f..maxWeight,
+                                    valueRange = kgToDisplay(Constants.DEFAULT_WEIGHT_INCREMENT_KG, weightUnit)..maxWeight,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
                             }

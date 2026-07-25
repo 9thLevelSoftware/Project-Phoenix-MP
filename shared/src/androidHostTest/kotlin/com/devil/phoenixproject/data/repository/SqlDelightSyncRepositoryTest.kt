@@ -807,7 +807,7 @@ class SqlDelightSyncRepositoryTest {
             mode = "OldSchool",
             eccentricLoad = 100,
             echoLevel = 1,
-            progressionKg = 0.0,
+            progressionKg = -8.0,
             restSeconds = 90,
             duration = null,
             setRestSeconds = "[]",
@@ -863,6 +863,7 @@ class SqlDelightSyncRepositoryTest {
         assertEquals("ESTIMATED_1RM", exercise.scalingBasis)
         assertEquals(1L, exercise.dropSetEnabled)
         assertEquals(17.5, exercise.dropSetMinWeightKg)
+        assertEquals(-8.0, exercise.progressionKg)
     }
 
     @Test

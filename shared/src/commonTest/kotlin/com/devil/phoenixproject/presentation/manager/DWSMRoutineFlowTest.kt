@@ -18,6 +18,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.advanceTimeBy
@@ -727,6 +728,7 @@ class DWSMRoutineFlowTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
+        harness.dwsm.coordinator.dropSetNextWeightKg = 17.5f
         harness.dwsm.jumpToExercise(2)
         advanceUntilIdle()
 
@@ -736,6 +738,7 @@ class DWSMRoutineFlowTest {
             params.selectedExerciseId,
             "After jumpToExercise(2), selected exercise should be the third exercise",
         )
+        assertNull(harness.dwsm.coordinator.dropSetNextWeightKg)
 
         // Stop the auto-started workout to clean up monitoring coroutines
         harness.dwsm.stopWorkout(exitingWorkout = true)
