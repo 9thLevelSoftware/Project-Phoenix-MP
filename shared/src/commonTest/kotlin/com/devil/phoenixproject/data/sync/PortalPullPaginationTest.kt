@@ -15,6 +15,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFalse
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
@@ -713,9 +714,18 @@ class PortalPullPaginationTest {
             ),
         )
 
-        createManager().sync()
+        val manager = createManager()
+        manager.sync()
 
         // sync() returns partial success; pull consumed 2 pages then detected the repeat.
+        val state = assertIs<SyncState.PartialSuccess>(manager.syncState.value)
+        assertTrue(state.pushSucceeded, "Push should have succeeded")
+        assertFalse(state.pullSucceeded, "Pull should have failed")
+        assertNotNull(state.pullError, "pullError must be populated")
+        assertTrue(
+            state.pullError.contains("repeated cursor", ignoreCase = true),
+            "pullError should mention the repeated cursor",
+        )
         assertEquals(2, fakeApi.pullCallCount, "Two pages fetched before cursor repetition detected")
         assertEquals(
             initial,
@@ -744,9 +754,18 @@ class PortalPullPaginationTest {
             ),
         )
 
-        createManager().sync()
+        val manager = createManager()
+        manager.sync()
 
         // Page 1 is fetched and merged; the blank cursor is detected on the NEXT iteration.
+        val state = assertIs<SyncState.PartialSuccess>(manager.syncState.value)
+        assertTrue(state.pushSucceeded, "Push should have succeeded")
+        assertFalse(state.pullSucceeded, "Pull should have failed")
+        assertNotNull(state.pullError, "pullError must be populated")
+        assertTrue(
+            state.pullError.contains("blank continuation cursor", ignoreCase = true),
+            "pullError should mention the blank cursor",
+        )
         assertEquals(1, fakeApi.pullCallCount, "One page fetched before blank cursor detected")
         assertEquals(
             initial,
@@ -757,10 +776,12 @@ class PortalPullPaginationTest {
 
     @Test
     fun pullWithNullCursorAndHasMoreFailsGracefully() = runTest {
-        // The existing null-cursor guard (line 1634) already handles this,
-        // but we verify it still works with the new cursor-validity checks.
+        // Issue #679: hasMore=true with null nextCursor is a server protocol violation.
+        // sync() must return failure through pullRemoteChangesWithResult, exposing
+        // SyncState.PartialSuccess with diagnostic pullError and unchanged lastSync.
         authenticate()
-        tokenStorage.setLastSyncTimestamp(5000L)
+        val initial = 5000L
+        tokenStorage.setLastSyncTimestamp(initial)
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
 
         fakeApi.pullResultsQueue = mutableListOf(
@@ -774,11 +795,23 @@ class PortalPullPaginationTest {
             ),
         )
 
-        val result = createManager().sync()
+        val manager = createManager()
+        val result = manager.sync()
 
-        // The existing guard breaks the loop on null cursor + hasMore=true.
-        // With the fix, this still succeeds (the break treats it as end-of-pagination).
-        assertTrue(result.isSuccess, "null cursor + hasMore=true breaks loop gracefully")
+        // Pull failure surfaces as PartialSuccess (push succeeded, pull failed).
+        val state = assertIs<SyncState.PartialSuccess>(manager.syncState.value)
+        assertTrue(state.pushSucceeded, "Push should have succeeded")
+        assertFalse(state.pullSucceeded, "Pull should have failed")
+        assertNotNull(state.pullError, "pullError must be populated")
+        assertTrue(
+            state.pullError.contains("no nextCursor"),
+            "pullError should mention the missing cursor",
+        )
+        assertEquals(
+            initial,
+            tokenStorage.getLastSyncTimestamp(),
+            "Null cursor + hasMore=true must not advance lastSync",
+        )
         assertEquals(1, fakeApi.pullCallCount)
     }
 

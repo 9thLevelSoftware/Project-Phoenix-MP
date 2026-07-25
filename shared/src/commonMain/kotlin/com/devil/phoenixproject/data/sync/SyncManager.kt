@@ -1667,11 +1667,15 @@ class SyncManager(
             // Prepare for next page
             currentCursor = pullResponse.nextCursor
             if (currentCursor == null) {
-                // hasMore=true but no cursor - should not happen, break to prevent infinite loop
-                Logger.w("SyncManager") {
-                    "Pull page $pagesProcessed has hasMore=true but no nextCursor. Breaking."
-                }
-                break
+                // hasMore=true but no cursor is a protocol violation — treat as pull failure
+                // so sync() reports PartialSuccess and preserves the prior lastSync timestamp.
+                val error = PortalApiException(
+                    "Pull page $pagesProcessed has hasMore=true but no nextCursor. " +
+                        "Processed $totalEntitiesFetched entities across $pagesProcessed pages. " +
+                        "Server pagination protocol error — missing continuation cursor.",
+                )
+                Logger.e("SyncManager") { error.message!! }
+                return Result.failure(error)
             }
         }
 
