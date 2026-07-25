@@ -1017,6 +1017,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 setWeightsPercentOfPR TEXT,
                 scalingBasis TEXT,
                 stallDetectionEnabled INTEGER NOT NULL DEFAULT 1,
+                dropSetEnabled INTEGER NOT NULL DEFAULT 0,
+                dropSetMinWeightKg REAL NOT NULL DEFAULT 0.0,
                 stopAtTop INTEGER NOT NULL DEFAULT 0,
                 repCountTiming TEXT NOT NULL DEFAULT 'TOP',
                 setEchoLevels TEXT NOT NULL DEFAULT '',
@@ -1024,8 +1026,6 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 defaultRackItemIds TEXT NOT NULL DEFAULT '[]',
                 rackBehaviorOverrides TEXT NOT NULL DEFAULT '{}',
                 isBodyweight INTEGER,
-                dropSetEnabled INTEGER NOT NULL DEFAULT 0,
-                dropSetMinWeightKg REAL NOT NULL DEFAULT 0.0,
                 FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
                 FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL

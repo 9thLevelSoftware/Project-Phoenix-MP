@@ -450,7 +450,17 @@ class ActiveSessionEngine(
                         if (!shouldEnableAutoStop(params)) return@collect
                         // Drop-set mode: reduce weight instead of arming stall timer
                         if (params.dropSetEnabled && params.progressionRegressionKg < 0f) {
-                            handleDropSetDeload(params)
+                            val currentDropWeight = coordinator._workoutParameters.value.weightPerCableKg
+                            if (currentDropWeight > params.dropSetMinWeightKg) {
+                                val dropAmount = kotlin.math.abs(params.progressionRegressionKg)
+                                val newDropWeight = (currentDropWeight - dropAmount).coerceAtLeast(params.dropSetMinWeightKg)
+                                Logger.d("Drop-set: DELOAD_OCCURRED -> weight ${currentDropWeight}kg -> ${newDropWeight}kg (drop=$dropAmount, floor=${params.dropSetMinWeightKg})")
+                                adjustWeight(newDropWeight, sendToMachine = false)
+                                coordinator._userAdjustedWeightDuringRest = true
+                                coordinator.dropSetDropCount++
+                            } else {
+                                Logger.d("Drop-set: DELOAD_OCCURRED ignored - already at floor (${params.dropSetMinWeightKg}kg)")
+                            }
                             return@collect
                         }
                         Logger.d("DELOAD_OCCURRED: Machine detected cable release - starting auto-stop timer")
@@ -474,32 +484,6 @@ class ActiveSessionEngine(
                     }
                 }
         }
-
-        /**
-     * Drop-set mode: DELOAD_OCCURRED triggers weight reduction instead of stall timer.
-     * Weight is deferred to next set boundary (machine cannot accept mid-set BLE commands).
-     */
-    private fun handleDropSetDeload(params: WorkoutParameters) {
-        val currentWeight = coordinator._workoutParameters.value.weightPerCableKg
-        // Guard: if already at the floor, don't drop again for the same deload event
-        if (currentWeight <= params.dropSetMinWeightKg) {
-            Logger.d("Drop-set: DELOAD_OCCURRED ignored - already at floor (${params.dropSetMinWeightKg}kg)")
-            return
-        }
-        val dropAmount = kotlin.math.abs(params.progressionRegressionKg)
-        val newWeight = (currentWeight - dropAmount).coerceAtLeast(params.dropSetMinWeightKg)
-
-        Logger.d("Drop-set: DELOAD_OCCURRED -> weight ${currentWeight}kg -> ${newWeight}kg (drop=$dropAmount, floor=${params.dropSetMinWeightKg})")
-
-        // Update internal state immediately (HUD shows reduced weight)
-        // adjustWeight during WorkoutState.Active sets pendingWeightChangeKg (deferred to next set start)
-        adjustWeight(newWeight, sendToMachine = false)
-
-        // Mark as user-adjusted so set-boundary advancement preserves the dropped weight
-        coordinator._userAdjustedWeightDuringRest = true
-
-        coordinator.dropSetDropCount++
-    }
 
     // #6: Rep events collector for handling machine rep notifications
         coordinator.repEventsCollectionJob = scope.launch {
