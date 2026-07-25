@@ -32,6 +32,7 @@ import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
+import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
@@ -430,8 +431,8 @@ class ActiveSessionEngine(
                         // deload after 1.25s below 40 mm/s — Issue #553), so DELOAD_OCCURRED fires
                         // routinely mid-set as the athlete fatigues. It is NOT a cable-release
                         // signal in Echo mode and must never arm the auto-stop stall timer.
-                        if (params.isEchoMode) {
-                            Logger.d("DELOAD_OCCURRED ignored - Echo mode (deload windows define Echo levels)")
+                        if (params.isEchoMode || params.hasEccentricOverload) {
+                            Logger.d("DELOAD_OCCURRED ignored - eccentric overload active (Echo or Old School+ecc)")
                             return@collect
                         }
                         if (!isWarmupGateOpenForAutoStop()) {
@@ -1843,8 +1844,8 @@ class ActiveSessionEngine(
         val params = coordinator._workoutParameters.value
         if (!params.isJustLift) return
 
-        val eccentricLoadPct = if (params.isEchoMode) params.eccentricLoad.percentage else 100
-        val echoLevelVal = if (params.isEchoMode) params.echoLevel.levelValue else 0
+        val eccentricLoadPct = params.eccentricLoad.percentage
+        val echoLevelVal = params.echoLevel.levelValue
 
         try {
             val defaults = JustLiftDefaultsDocument(
@@ -1882,9 +1883,8 @@ class ActiveSessionEngine(
         val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value) ?: return
         val exerciseId = currentExercise.exercise.id ?: return
 
-        val isEchoExercise = currentExercise.programMode == ProgramMode.Echo
-        val eccentricLoadPct = if (isEchoExercise) currentExercise.eccentricLoad.percentage else 100
-        val echoLevelVal = if (isEchoExercise) currentExercise.echoLevel.levelValue else 0
+        val eccentricLoadPct = currentExercise.eccentricLoad.percentage
+        val echoLevelVal = currentExercise.echoLevel.levelValue
 
         try {
             val setReps = currentExercise.setReps.ifEmpty { listOf(10) }
@@ -2831,10 +2831,13 @@ class ActiveSessionEngine(
                     }
                 }
 
-                val commandValidation = if (bleParams.isEchoMode) {
+                val hasEccentricOverload = bleParams.eccentricLoad.percentage > 100
+                val useEchoPacket = bleParams.isEchoMode || hasEccentricOverload
+
+                val commandValidation = if (useEchoPacket) {
                     WorkoutCommandValidator.validateEchoControl(
-                        level = bleParams.echoLevel,
-                        warmupReps = bleParams.warmupReps,
+                        level = if (bleParams.isEchoMode) bleParams.echoLevel else EchoLevel.HARDER,
+                        warmupReps = if (bleParams.isEchoMode) bleParams.warmupReps else Constants.DEFAULT_WARMUP_REPS,
                         targetReps = bleParams.reps,
                         isJustLift = isJustLiftMode || bleParams.isJustLift,
                         isAMRAP = bleParams.isAMRAP,
@@ -2849,10 +2852,10 @@ class ActiveSessionEngine(
                     return@launch
                 }
 
-                val command = if (bleParams.isEchoMode) {
+                val command = if (useEchoPacket) {
                     BlePacketFactory.createEchoControl(
-                        level = bleParams.echoLevel,
-                        warmupReps = bleParams.warmupReps,
+                        level = if (bleParams.isEchoMode) bleParams.echoLevel else EchoLevel.HARDER,
+                        warmupReps = if (bleParams.isEchoMode) bleParams.warmupReps else Constants.DEFAULT_WARMUP_REPS,
                         targetReps = bleParams.reps,
                         isJustLift = isJustLiftMode || bleParams.isJustLift,
                         isAMRAP = bleParams.isAMRAP,

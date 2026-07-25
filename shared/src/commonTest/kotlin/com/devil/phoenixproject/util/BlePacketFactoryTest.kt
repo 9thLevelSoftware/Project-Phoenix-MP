@@ -1699,4 +1699,41 @@ class BlePacketFactoryTest {
         assertEquals(ProgramMode.TUTBeast, beastProgram, "TUTBeast -> ProgramMode.TUTBeast")
         assertEquals(WorkoutMode.TUTBeast, beastProgram.toWorkoutMode(), "ProgramMode.TUTBeast -> WorkoutMode.TUTBeast")
     }
+
+    // ========== Issue #674: Old School Eccentric Overload Tests ==========
+
+    @Test
+    fun `createEchoControl produces 0x4E for Old School with eccentric 130 percent`() {
+        // Old School with eccentric > 100% should dispatch 0x4E with HARDER level and warmupReps=3
+        val packet = BlePacketFactory.createEchoControl(
+            level = EchoLevel.HARDER,
+            warmupReps = 3,
+            targetReps = 10,
+            isJustLift = false,
+            isAMRAP = false,
+            eccentricPct = 130,
+        )
+
+        assertEquals(32, packet.size, "Packet should be 32 bytes")
+        assertEquals(0x4E, packet[0].toInt() and 0xFF, "Command ID should be 0x4E")
+        assertEquals(3, packet[0x04].toInt(), "warmupReps should be 3 (firmware calibration buffer)")
+        assertEquals(10, packet[0x05].toInt(), "targetReps should be 10")
+        assertEquals(130, readUShortLE(packet, 0x08), "eccentricOverload should be 130")
+        // HARDER = velocity 40, duration = 50/40 = 1.25s
+        assertEquals(1.25f, readFloatLE(packet, 0x10), "concentricDurationSeconds (HARDER=50/40)")
+        assertEquals(40.0f, readFloatLE(packet, 0x14), "concentricMaxVelocity (HARDER=40)")
+    }
+
+    @Test
+    fun `createEchoControl produces correct packet for Old School with max eccentric 150 percent`() {
+        val packet = BlePacketFactory.createEchoControl(
+            level = EchoLevel.HARDER,
+            warmupReps = 3,
+            targetReps = 8,
+            eccentricPct = 150,
+        )
+
+        assertEquals(0x4E, packet[0].toInt() and 0xFF)
+        assertEquals(150, readUShortLE(packet, 0x08), "eccentricOverload should be 150")
+    }
 }

@@ -372,6 +372,9 @@ data class WorkoutParameters(
 ) {
     /** True if this is an Echo workout */
     val isEchoMode: Boolean get() = programMode == ProgramMode.Echo
+
+    /** True if eccentric load exceeds 100% (triggers Echo 0x4E dispatch for Old School) */
+    val hasEccentricOverload: Boolean get() = eccentricLoad.percentage > 100
 }
 
 /**

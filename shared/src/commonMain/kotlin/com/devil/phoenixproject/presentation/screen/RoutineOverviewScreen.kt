@@ -666,19 +666,27 @@ private fun ExerciseOverviewCard(
                                 modifier = Modifier.align(Alignment.CenterHorizontally),
                             )
 
+                            val isOldSchool = exercise.programMode is ProgramMode.OldSchool
+                            val showEccentricLoad = isEchoMode || isOldSchool
+
+                            // Echo Level — Echo mode only
                             if (isEchoMode) {
-                                // Echo mode: Show Echo Level + Eccentric Load + Reps
                                 EchoLevelPillSelector(
                                     selectedLevel = echoLevel,
                                     onLevelChange = onEchoLevelChange,
                                 )
+                            }
 
+                            // Eccentric Load — Echo and Old School (when > 100%)
+                            if (showEccentricLoad && (isEchoMode || eccentricLoadPercent > 100)) {
                                 OverviewEccentricLoadSlider(
                                     percent = eccentricLoadPercent,
                                     onPercentChange = onEccentricLoadChange,
                                 )
+                            }
 
-                                // Reps for Echo mode
+                            // Reps for Echo mode
+                            if (isEchoMode) {
                                 if (!isAMRAP) {
                                     SliderWithButtons(
                                         value = adjustedReps.toFloat(),

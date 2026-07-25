@@ -164,6 +164,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     var pendingOverridesToSave by remember { mutableStateOf<Map<String, RackItemBehavior>>(emptyMap()) }
 
     val isEchoMode = currentExercise.programMode is ProgramMode.Echo
+    val showEccentricLoad = isEchoMode || currentExercise.programMode is ProgramMode.OldSchool
     val isAMRAP = currentExercise.isAMRAP
 
     // #635: explicit stored flag with equipment-derivation fallback
@@ -640,19 +641,23 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                         )
 
                         if (isEchoMode) {
-                            // Echo Level selector - matching RestTimerCard style
+                            // Echo Level selector - Echo mode only
                             EchoLevelPillSelector(
                                 selectedLevel = setReadyState.echoLevel ?: EchoLevel.HARDER,
                                 onLevelChange = { viewModel.updateSetReadyEchoLevel(it) },
                             )
+                        }
 
-                            // Eccentric Load slider - matching RestTimerCard style
+                        // Eccentric Load slider — visible for Echo and Old School
+                        if (showEccentricLoad) {
                             SetReadyEccentricLoadSlider(
                                 percent = setReadyState.eccentricLoadPercent ?: 100,
                                 onPercentChange = { viewModel.updateSetReadyEccentricLoad(it) },
                             )
+                        }
 
-                            // Reps adjuster for Echo mode too
+                        // Reps adjuster for Echo mode only
+                        if (isEchoMode) {
                             if (!isAMRAP) {
                                 SliderWithButtons(
                                     value = setReadyState.adjustedReps.toFloat(),

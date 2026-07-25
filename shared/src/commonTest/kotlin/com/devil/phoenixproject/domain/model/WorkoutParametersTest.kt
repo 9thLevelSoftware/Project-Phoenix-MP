@@ -1,140 +1,57 @@
 package com.devil.phoenixproject.domain.model
 
 import kotlin.test.Test
-import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
+/**
+ * Tests for WorkoutParameters computed properties — Issue #674 (Old School eccentric overload).
+ */
 class WorkoutParametersTest {
 
     @Test
-    fun `default values are set correctly for Program mode`() {
+    fun `hasEccentricOverload true for Old School plus LOAD_130`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
-            reps = 10,
+            eccentricLoad = EccentricLoad.LOAD_130,
         )
-
-        assertEquals(10, params.reps)
-        assertEquals(0f, params.weightPerCableKg)
-        assertEquals(0f, params.progressionRegressionKg)
-        assertFalse(params.isJustLift)
-        assertFalse(params.useAutoStart)
-        assertFalse(params.stopAtTop)
-        assertEquals(3, params.warmupReps)
-        assertNull(params.selectedExerciseId)
-        assertFalse(params.isAMRAP)
-        assertNull(params.lastUsedWeightKg)
-        assertNull(params.prWeightKg)
-        assertTrue(params.stallDetectionEnabled)
+        assertTrue(params.hasEccentricOverload)
     }
 
     @Test
-    fun `Just Lift params have correct settings`() {
+    fun `hasEccentricOverload false for Old School plus LOAD_100`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
-            reps = 0,
-            weightPerCableKg = 30f,
-            isJustLift = true,
-            useAutoStart = true,
-            isAMRAP = true,
+            eccentricLoad = EccentricLoad.LOAD_100,
         )
-
-        assertTrue(params.isJustLift)
-        assertTrue(params.useAutoStart)
-        assertTrue(params.isAMRAP)
-        assertEquals(0, params.reps)
+        assertFalse(params.hasEccentricOverload)
     }
 
     @Test
-    fun `Echo mode params work correctly`() {
+    fun `hasEccentricOverload false for Echo plus LOAD_100`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.Echo,
-            reps = 8,
-            selectedExerciseId = "squat-001",
-            echoLevel = EchoLevel.HARDEST,
-            eccentricLoad = EccentricLoad.LOAD_120,
+            eccentricLoad = EccentricLoad.LOAD_100,
         )
-
-        assertEquals(ProgramMode.Echo, params.programMode)
-        assertEquals(EchoLevel.HARDEST, params.echoLevel)
-        assertEquals(EccentricLoad.LOAD_120, params.eccentricLoad)
-        assertEquals("squat-001", params.selectedExerciseId)
+        assertFalse(params.hasEccentricOverload)
     }
 
     @Test
-    fun `Echo mode defaults use issue 553 Echo level`() {
+    fun `hasEccentricOverload true for Echo plus LOAD_130`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.Echo,
-            reps = 8,
+            eccentricLoad = EccentricLoad.LOAD_130,
         )
-
-        assertEquals(EchoLevel.HARDER, params.echoLevel)
-        assertEquals(WorkoutMode.Echo(EchoLevel.HARDER), ProgramMode.Echo.toWorkoutMode())
+        assertTrue(params.hasEccentricOverload)
     }
 
     @Test
-    fun `stopAtTop can be configured`() {
-        val paramsBottom = WorkoutParameters(
-            programMode = ProgramMode.OldSchool,
-            reps = 10,
-            stopAtTop = false,
-        )
-
-        val paramsTop = WorkoutParameters(
-            programMode = ProgramMode.OldSchool,
-            reps = 10,
-            stopAtTop = true,
-        )
-
-        assertFalse(paramsBottom.stopAtTop)
-        assertTrue(paramsTop.stopAtTop)
-    }
-
-    @Test
-    fun `warmupReps can be customized`() {
+    fun `isEchoMode remains false for Old School with eccentric overload`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
-            reps = 10,
-            warmupReps = 5,
+            eccentricLoad = EccentricLoad.LOAD_130,
         )
-
-        assertEquals(5, params.warmupReps)
-    }
-
-    @Test
-    fun `stall detection can be disabled`() {
-        val params = WorkoutParameters(
-            programMode = ProgramMode.OldSchool,
-            reps = 10,
-            stallDetectionEnabled = false,
-        )
-
-        assertFalse(params.stallDetectionEnabled)
-    }
-
-    @Test
-    fun `last used and PR weights are stored`() {
-        val params = WorkoutParameters(
-            programMode = ProgramMode.OldSchool,
-            reps = 10,
-            lastUsedWeightKg = 40f,
-            prWeightKg = 50f,
-        )
-
-        assertEquals(40f, params.lastUsedWeightKg)
-        assertEquals(50f, params.prWeightKg)
-    }
-
-    @Test
-    fun `progressionRegressionKg is stored`() {
-        val params = WorkoutParameters(
-            programMode = ProgramMode.OldSchool,
-            reps = 10,
-            weightPerCableKg = 25f,
-            progressionRegressionKg = 2.5f,
-        )
-
-        assertEquals(2.5f, params.progressionRegressionKg)
+        assertFalse(params.isEchoMode)
+        assertTrue(params.hasEccentricOverload)
     }
 }

@@ -1064,7 +1064,7 @@ class RoutineFlowManager(
             adjustedReps = setReps,
             adjustedProgressionKg = progressionKg,
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
-            eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
+            eccentricLoadPercent = exercise.eccentricLoad.percentage,
         )
 
         // Issue #129: Determine if this specific set is AMRAP (null reps = AMRAP)
@@ -1145,7 +1145,7 @@ class RoutineFlowManager(
             adjustedReps = adjustedReps,
             adjustedProgressionKg = progressionKg,
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
-            eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
+            eccentricLoadPercent = exercise.eccentricLoad.percentage,
         )
 
         // Issue #129: Check raw value for AMRAP - null reps in setReps list = AMRAP

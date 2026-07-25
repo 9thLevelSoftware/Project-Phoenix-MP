@@ -212,6 +212,36 @@ class WorkoutCommandValidatorTest {
         RGBColor(0, 0, 255),
     )
 
+    // ========== Issue #674: Old School Eccentric Overload Validation ==========
+
+    @Test
+    fun `validateEchoControl passes for Old School params with eccentric 130 percent`() {
+        assertTrue(
+            WorkoutCommandValidator.validateEchoControl(
+                level = EchoLevel.HARDER,
+                warmupReps = 3,
+                targetReps = 10,
+                isJustLift = false,
+                isAMRAP = false,
+                eccentricPct = 130,
+            ).isSuccess,
+            "Old School with HARDER + warmupReps=3 + eccentric 130% should be valid",
+        )
+    }
+
+    @Test
+    fun `validateEchoControl passes for Old School with max eccentric 150 percent`() {
+        assertTrue(
+            WorkoutCommandValidator.validateEchoControl(
+                level = EchoLevel.HARDER,
+                warmupReps = 3,
+                targetReps = 8,
+                eccentricPct = 150,
+            ).isSuccess,
+            "Old School with max eccentric 150% should be valid",
+        )
+    }
+
     private fun assertFailureContains(result: Result<Unit>, expectedMessage: String) {
         assertTrue(result.isFailure, "Expected validation failure")
         assertTrue(

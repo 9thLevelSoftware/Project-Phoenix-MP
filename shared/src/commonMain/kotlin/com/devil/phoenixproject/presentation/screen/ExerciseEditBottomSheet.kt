@@ -234,6 +234,8 @@ fun ExerciseEditBottomSheet(
     val isTutMode = showCableOnlyExerciseControls &&
         (selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast)
     val isEchoMode = showCableOnlyExerciseControls && selectedMode is WorkoutMode.Echo
+    val isOldSchool = showCableOnlyExerciseControls && selectedMode is WorkoutMode.OldSchool
+    val showEccentricLoad = isEchoMode || isOldSchool
 
     LaunchedEffect(rackItems, defaultRackItemIds) {
         val enabledRackIds = rackItems.filter { it.enabled }.map { it.id }.toSet()
@@ -414,12 +416,15 @@ fun ExerciseEditBottomSheet(
                     }
                 }
 
-                // Echo Mode options
-                if (isEchoMode) {
+                // Eccentric Load — visible for Echo and Old School
+                if (showEccentricLoad) {
                     EccentricLoadSelector(
                         eccentricLoad = eccentricLoad,
                         onLoadChange = viewModel::onEccentricLoadChange,
                     )
+                }
+                // Echo Level — Echo mode only
+                if (isEchoMode) {
                     EchoLevelSelector(
                         level = echoLevel,
                         onLevelChange = viewModel::onEchoLevelChange,
