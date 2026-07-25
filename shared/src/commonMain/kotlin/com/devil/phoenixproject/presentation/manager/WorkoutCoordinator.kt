@@ -16,6 +16,7 @@ import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.WeightAdjustmentRecommendation
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -411,6 +412,9 @@ class WorkoutCoordinator(
 
     // Guard to prevent duplicate auto-completion when rep target is reached
     internal val setCompletionInProgress = MutableStateFlow(false)
+
+    // Issue #673: Tracks why the current set ended, set by handleSetCompletion
+    internal var lastSetEndReason: SetEndReason = SetEndReason.TARGET_REPS_REACHED
 
     // Issue #355: Guard to prevent duplicate proceedFromSummary() calls on iOS
     // When app foregrounds, both manager-level fallback AND UI-level countdown can fire

@@ -48,6 +48,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SetQualitySummary
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.SingleExerciseDefaultsDocument
 import com.devil.phoenixproject.domain.model.TrainingCycle
@@ -531,7 +532,7 @@ class ActiveSessionEngine(
                         // Issue #182: Trigger set completion immediately on WORKOUT_COMPLETE event.
                         if (executionGuard.isCurrent(eventLease) && coordinator._workoutState.value is WorkoutState.Active) {
                             Logger.d("WORKOUT_COMPLETE event received - triggering immediate set completion")
-                            handleSetCompletion(eventLease)
+                            handleSetCompletion(eventLease, SetEndReason.TARGET_REPS_REACHED)
                         }
                     }
                 }
@@ -1127,7 +1128,7 @@ class ActiveSessionEngine(
             totalReps = coercedReps,
             isWarmupComplete = true,
         )
-        handleSetCompletion()
+        handleSetCompletion(SetEndReason.TARGET_REPS_REACHED)
     }
 
     private suspend fun showBodyweightRepEntry(currentExercise: RoutineExercise) {
@@ -1271,7 +1272,7 @@ class ActiveSessionEngine(
             coordinator._autoStopState.value = AutoStopUiState()
         }
 
-        handleSetCompletion()
+        handleSetCompletion(SetEndReason.STALL_FAILURE)
     }
 
     // ===== Rep Processing =====
@@ -1631,7 +1632,7 @@ class ActiveSessionEngine(
 
             if (consecutiveThresholdReps >= 2 && runtime.autoEndOnVelocityLoss) {
                 Logger.i { "VBT: Auto-ending set — $consecutiveThresholdReps consecutive reps above threshold" }
-                handleSetCompletion()
+                handleSetCompletion(SetEndReason.VBT_AUTO_END)
             }
         } else {
             consecutiveThresholdReps = 0
@@ -1680,7 +1681,7 @@ class ActiveSessionEngine(
             }
 
             if (repCounter.shouldStopWorkout()) {
-                handleSetCompletion()
+                handleSetCompletion(SetEndReason.TARGET_REPS_REACHED)
             }
         } else {
             resetAutoStopTimer()
@@ -3549,6 +3550,7 @@ class ActiveSessionEngine(
                 loggedRpe = coordinator._currentSetRpe.value,
                 isPr = false,
                 completedAt = wallClockMillisProvider(),
+                setEndReason = coordinator.lastSetEndReason,
             )
         } else {
             null
@@ -3968,6 +3970,7 @@ class ActiveSessionEngine(
                         loggedRpe = coordinator._currentSetRpe.value,
                         isPr = false,
                         completedAt = currentTimeMillis(),
+                        setEndReason = coordinator.lastSetEndReason,
                     )
                     completedSetRepository.saveCompletedSet(completedSet)
                     Logger.d("Saved CompletedSet (manual stop): set #$setIndex, ${repCount.workingReps} reps${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
@@ -4606,6 +4609,7 @@ class ActiveSessionEngine(
                 loggedRpe = coordinator._currentSetRpe.value,
                 isPr = false,
                 completedAt = currentTimeMillis(),
+                setEndReason = coordinator.lastSetEndReason,
             )
             completedSetRepository.saveCompletedSet(completedSet)
             Logger.d("Saved CompletedSet: set #$setIndex, $working reps @ ${savedWeightKg}kg${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
@@ -4671,23 +4675,32 @@ class ActiveSessionEngine(
      * Phase A: Stop BLE, save session, emit haptics, show summary.
      * Phase B: Rest timer, navigation advancement (delegated back to DWSM via startRestTimer).
      */
-    internal fun handleSetCompletion(lease: ExecutionLease) {
+    internal fun handleSetCompletion(
+        lease: ExecutionLease,
+        endReason: SetEndReason = SetEndReason.TARGET_REPS_REACHED,
+    ) {
         if (!executionGuard.isCurrent(lease)) return
-        handleSetCompletion(lease, TeardownReason.AUTO_COMPLETE)
+        handleSetCompletion(lease, TeardownReason.AUTO_COMPLETE, endReason)
     }
 
-    internal fun handleSetCompletion() {
+    internal fun handleSetCompletion(endReason: SetEndReason = SetEndReason.TARGET_REPS_REACHED) {
         val lease = executionGuard.currentLease ?: return
-        handleSetCompletion(lease, TeardownReason.AUTO_COMPLETE)
+        handleSetCompletion(lease, TeardownReason.AUTO_COMPLETE, endReason)
     }
 
-    private fun handleSetCompletion(lease: ExecutionLease, reason: TeardownReason) {
+    private fun handleSetCompletion(
+        lease: ExecutionLease,
+        reason: TeardownReason,
+        endReason: SetEndReason,
+    ) {
         if (!executionGuard.isCurrent(lease)) return
         // 1.2: Atomic compareAndSet prevents duplicate set completion across dispatchers
         if (!coordinator.setCompletionInProgress.compareAndSet(expect = false, update = true)) {
             Logger.d("handleSetCompletion: already in progress - ignoring")
             return
         }
+
+        coordinator.lastSetEndReason = endReason
 
         // Issue #319: Log full context at entry so we can diagnose what the pipeline receives
         val repCount = coordinator._repCount.value
@@ -5825,7 +5838,7 @@ class ActiveSessionEngine(
             }
             if (!hasCurrentAuthority(lease, "exercise_timer_completion")) return@launch
             coordinator._timedExerciseRemainingSeconds.value = 0
-            handleSetCompletion(lease)
+            handleSetCompletion(lease, SetEndReason.TIMER_EXPIRED)
         }
         coordinator.bodyweightTimerJob = timerJob
         timerJob.start()
