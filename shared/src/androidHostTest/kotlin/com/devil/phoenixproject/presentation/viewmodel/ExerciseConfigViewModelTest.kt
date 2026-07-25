@@ -57,6 +57,40 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
+    fun `initialize clears stale drop set mode outside Old School`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        val exercise = RoutineExercise(
+            id = "rex-drop-set-pump",
+            exercise = Exercise(
+                id = "cable-row-1",
+                name = "Cable Row",
+                muscleGroup = "Back",
+                muscleGroups = "Back",
+                equipment = "CABLE",
+            ),
+            orderIndex = 0,
+            setReps = listOf(10),
+            weightPerCableKg = 30f,
+            progressionKg = -2f,
+            programMode = ProgramMode.Pump,
+            dropSetEnabled = true,
+            dropSetMinWeightKg = 15f,
+        )
+
+        viewModel.initialize(
+            exercise = exercise,
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+
+        assertFalse(viewModel.dropSetEnabled.value)
+        var saved: RoutineExercise? = null
+        viewModel.onSave { saved = it }
+        assertFalse(saved?.dropSetEnabled ?: true)
+    }
+
+    @Test
     fun `bodyweight exercise hides cable-only configuration toggles`() {
         val bodyweightSets = listOf(SetConfiguration(setNumber = 1, reps = 10))
 

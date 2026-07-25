@@ -425,7 +425,10 @@ class ActiveSessionEngine(
                     val params = coordinator._workoutParameters.value
                     val currentState = coordinator._workoutState.value
 
-                    if ((params.stallDetectionEnabled || params.dropSetEnabled) && currentState is WorkoutState.Active) {
+                    val dropSetIsActive = params.dropSetEnabled &&
+                        params.programMode is ProgramMode.OldSchool &&
+                        params.progressionRegressionKg < 0f
+                    if ((params.stallDetectionEnabled || dropSetIsActive) && currentState is WorkoutState.Active) {
                         // Echo levels are defined by the firmware's deload window (e.g. HARDER =
                         // deload after 1.25s below 40 mm/s — Issue #553), so DELOAD_OCCURRED fires
                         // routinely mid-set as the athlete fatigues. It is NOT a cable-release
@@ -450,7 +453,7 @@ class ActiveSessionEngine(
                         // Drop-set mode: reduce weight instead of arming stall timer.
                         // Must be BEFORE shouldEnableAutoStop gate so drop-set fires
                         // even when stallDetectionEnabled is false (fixed-rep Old School).
-                        if (params.dropSetEnabled && params.progressionRegressionKg < 0f) {
+                        if (dropSetIsActive) {
                             val currentDropWeight = coordinator._workoutParameters.value.weightPerCableKg
                             if (currentDropWeight > params.dropSetMinWeightKg) {
                                 val dropAmount = kotlin.math.abs(params.progressionRegressionKg)
@@ -2166,6 +2169,19 @@ class ActiveSessionEngine(
     }
 
     private fun clampUpcomingProgressionKg(valueKg: Float): Float = valueKg.coerceIn(-3f, 3f)
+
+    /**
+     * Regular upcoming-set progression is intentionally bounded for safe automatic
+     * adjustment. A drop-set's negative progression is the user-configured drop
+     * amount, however, and the editor permits a wider range; do not silently
+     * change that amount between failures.
+     */
+    private fun progressionForNextSet(exercise: RoutineExercise): Float =
+        if (exercise.dropSetEnabled && exercise.programMode is ProgramMode.OldSchool && exercise.progressionKg < 0f) {
+            exercise.progressionKg
+        } else {
+            clampUpcomingProgressionKg(exercise.progressionKg)
+        }
 
     fun updateWorkoutParameters(params: WorkoutParameters) {
         // Defense: reject near-zero weight writes in Just Lift mode.
@@ -4489,7 +4505,7 @@ class ActiveSessionEngine(
                         programMode = exerciseForNextSet.programMode,
                         echoLevel = exerciseForNextSet.getEchoLevelForSet(nextSetIdx),
                         eccentricLoad = exerciseForNextSet.eccentricLoad,
-                        progressionRegressionKg = clampUpcomingProgressionKg(exerciseForNextSet.progressionKg),
+                        progressionRegressionKg = progressionForNextSet(exerciseForNextSet),
                         selectedExerciseId = exerciseForNextSet.exercise.id,
                         isAMRAP = nextIsAMRAP,
                         stallDetectionEnabled = exerciseForNextSet.stallDetectionEnabled,
@@ -4729,7 +4745,7 @@ class ActiveSessionEngine(
             val setProgressionKg = if (coordinator._userAdjustedWeightDuringRest) {
                 currentParams.progressionRegressionKg
             } else {
-                clampUpcomingProgressionKg(currentExercise.progressionKg)
+                progressionForNextSet(currentExercise)
             }
             coordinator._userAdjustedWeightDuringRest = false
 
@@ -4890,7 +4906,7 @@ class ActiveSessionEngine(
             val nextProgressionKg = if (preserveRestEdits) {
                 currentParams.progressionRegressionKg
             } else {
-                clampUpcomingProgressionKg(nextExercise.progressionKg)
+                progressionForNextSet(nextExercise)
             }
 
             val nextIsBodyweight = isBodyweightExercise(nextExercise)

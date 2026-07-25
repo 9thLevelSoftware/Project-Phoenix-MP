@@ -87,9 +87,10 @@ class RestTimerProgressionWiringTest {
             "Single-exercise rest advance must preserve WorkoutParameters.progressionRegressionKg when the user edits Rest Timer config.",
         )
         assertTrue(
-            src.contains("clampUpcomingProgressionKg(nextExercise.progressionKg)") &&
-                src.contains("clampUpcomingProgressionKg(exerciseForNextSet.progressionKg)"),
-            "Rest Timer defaults must be clamped to the signed-off control range before display/advance.",
+            src.contains("private fun progressionForNextSet(exercise: RoutineExercise)") &&
+                src.contains("progressionForNextSet(nextExercise)") &&
+                src.contains("progressionForNextSet(exerciseForNextSet)"),
+            "Rest Timer defaults must retain a configured negative drop amount for Old School drop-sets while continuing to clamp ordinary progression values.",
         )
     }
 

@@ -106,6 +106,13 @@ class RoutineFlowManager(
 
     private fun clampUpcomingProgressionKg(valueKg: Float): Float = valueKg.coerceIn(-3f, 3f)
 
+    private fun progressionForSetReady(exercise: RoutineExercise, valueKg: Float): Float =
+        if (exercise.dropSetEnabled && exercise.programMode is ProgramMode.OldSchool && valueKg < 0f) {
+            valueKg
+        } else {
+            clampUpcomingProgressionKg(valueKg)
+        }
+
     private fun shouldPreserveRestEditedProgression(): Boolean =
         coordinator._userAdjustedWeightDuringRest &&
             (coordinator._workoutState.value is WorkoutState.Resting ||
@@ -1054,9 +1061,9 @@ class RoutineFlowManager(
         val setReps = rawSetReps ?: exercise.reps
         val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
         val progressionKg = if (preserveRestEditedProgression) {
-            clampUpcomingProgressionKg(coordinator._workoutParameters.value.progressionRegressionKg)
+            progressionForSetReady(exercise, coordinator._workoutParameters.value.progressionRegressionKg)
         } else {
-            clampUpcomingProgressionKg(exercise.progressionKg)
+            progressionForSetReady(exercise, exercise.progressionKg)
         }
         if (!preserveRestEditedProgression) {
             coordinator._userAdjustedWeightDuringRest = false
@@ -1137,9 +1144,9 @@ class RoutineFlowManager(
         applyDefaultRackSelectionForExercise(exercise)
         val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
         val progressionKg = if (preserveRestEditedProgression) {
-            clampUpcomingProgressionKg(coordinator._workoutParameters.value.progressionRegressionKg)
+            progressionForSetReady(exercise, coordinator._workoutParameters.value.progressionRegressionKg)
         } else {
-            clampUpcomingProgressionKg(exercise.progressionKg)
+            progressionForSetReady(exercise, exercise.progressionKg)
         }
         if (!preserveRestEditedProgression) {
             coordinator._userAdjustedWeightDuringRest = false

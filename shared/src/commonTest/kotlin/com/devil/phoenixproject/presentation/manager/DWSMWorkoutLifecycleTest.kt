@@ -617,6 +617,30 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `drop set preserves configured regression amount during rest preview`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val base = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
+        val routine = base.copy(
+            exercises = listOf(
+                base.exercises.first().copy(
+                    progressionKg = -8f,
+                    dropSetEnabled = true,
+                    dropSetMinWeightKg = 10f,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        harness.activeSessionEngine.startRestTimer()
+        runCurrent()
+
+        assertEquals(-8f, harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg)
+        harness.cleanup()
+    }
+
+    @Test
     fun `rest timer clamps to zero after background delay longer than rest duration without autoplay`() = runTest {
         val harness = DWSMTestHarness(this)
         val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)

@@ -251,7 +251,8 @@ class ExerciseConfigViewModel constructor(
 
         _sets.value = initialSets
 
-        _selectedMode.value = exercise.programMode.toWorkoutMode(exercise.echoLevel)
+        val loadedMode = exercise.programMode.toWorkoutMode(exercise.echoLevel)
+        _selectedMode.value = loadedMode
         _weightChange.value = kgToDisplay(exercise.progressionKg, weightUnit).toInt()
         logDebug("Issue #164: Loaded progressionKg=${exercise.progressionKg}kg → display=${_weightChange.value}")
         _rest.value = exercise.setRestSeconds.firstOrNull()?.coerceIn(0, 300) ?: 60 // Use first rest time or default
@@ -259,7 +260,10 @@ class ExerciseConfigViewModel constructor(
         _eccentricLoad.value = exercise.eccentricLoad
         _echoLevel.value = exercise.echoLevel
         _stallDetectionEnabled.value = exercise.stallDetectionEnabled
-        _dropSetEnabled.value = exercise.dropSetEnabled
+        // Sync/import paths can carry stale local-only fields across a mode change.
+        // Drop sets are valid only for Old School, so normalize the editor state
+        // before a subsequent save can persist that unsupported configuration.
+        _dropSetEnabled.value = exercise.dropSetEnabled && loadedMode is WorkoutMode.OldSchool
         _dropSetMinWeight.value = kgToDisplay(exercise.dropSetMinWeightKg, weightUnit).toInt()
         _repCountTiming.value = exercise.repCountTiming
         _stopAtTop.value = exercise.stopAtTop
@@ -497,7 +501,9 @@ class ExerciseConfigViewModel constructor(
         _stallDetectionEnabled.value = enabled
     }
     fun onDropSetEnabledChange(enabled: Boolean) {
-        _dropSetEnabled.value = enabled
+        _dropSetEnabled.value = enabled &&
+            _selectedMode.value is WorkoutMode.OldSchool &&
+            _weightChange.value < 0
     }
     fun onDropSetMinWeightChange(kg: Int) {
         _dropSetMinWeight.value = kg
