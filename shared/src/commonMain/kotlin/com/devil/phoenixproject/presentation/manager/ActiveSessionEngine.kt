@@ -481,6 +481,11 @@ class ActiveSessionEngine(
      */
     private fun handleDropSetDeload(params: WorkoutParameters) {
         val currentWeight = coordinator._workoutParameters.value.weightPerCableKg
+        // Guard: if already at the floor, don't drop again for the same deload event
+        if (currentWeight <= params.dropSetMinWeightKg) {
+            Logger.d("Drop-set: DELOAD_OCCURRED ignored - already at floor (${params.dropSetMinWeightKg}kg)")
+            return
+        }
         val dropAmount = kotlin.math.abs(params.progressionRegressionKg)
         val newWeight = (currentWeight - dropAmount).coerceAtLeast(params.dropSetMinWeightKg)
 
@@ -489,6 +494,9 @@ class ActiveSessionEngine(
         // Update internal state immediately (HUD shows reduced weight)
         // adjustWeight during WorkoutState.Active sets pendingWeightChangeKg (deferred to next set start)
         adjustWeight(newWeight, sendToMachine = false)
+
+        // Mark as user-adjusted so set-boundary advancement preserves the dropped weight
+        coordinator._userAdjustedWeightDuringRest = true
 
         coordinator.dropSetDropCount++
     }
@@ -4451,8 +4459,12 @@ class ActiveSessionEngine(
                 val hasNextSet = nextSetIdx < exerciseForNextSet.setReps.size
                 if (hasNextSet) {
                     val nextSetReps = exerciseForNextSet.setReps.getOrNull(nextSetIdx)
-                    val nextSetWeight = exerciseForNextSet.setWeightsPerCableKg.getOrNull(nextSetIdx)
-                        ?: exerciseForNextSet.weightPerCableKg
+                    val nextSetWeight = if (coordinator._userAdjustedWeightDuringRest) {
+                        coordinator._workoutParameters.value.weightPerCableKg
+                    } else {
+                        exerciseForNextSet.setWeightsPerCableKg.getOrNull(nextSetIdx)
+                            ?: exerciseForNextSet.weightPerCableKg
+                    }
                     val isNextSetLastSet = nextSetIdx >= exerciseForNextSet.setReps.size - 1
                     val nextIsAMRAP = nextSetReps == null || (exerciseForNextSet.isAMRAP && isNextSetLastSet)
 
@@ -4466,6 +4478,8 @@ class ActiveSessionEngine(
                         selectedExerciseId = exerciseForNextSet.exercise.id,
                         isAMRAP = nextIsAMRAP,
                         stallDetectionEnabled = exerciseForNextSet.stallDetectionEnabled,
+                        dropSetEnabled = exerciseForNextSet.dropSetEnabled,
+                        dropSetMinWeightKg = exerciseForNextSet.dropSetMinWeightKg,
                         warmupReps = if (nextExerciseIsBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS,
                     )
                     Logger.d { "startRestTimer: Issue #203 - Updated params for next set: ${exerciseForNextSet.exercise.name}, setIdx=$nextSetIdx, isAMRAP=$nextIsAMRAP, nextSetReps=$nextSetReps" }
@@ -4708,6 +4722,8 @@ class ActiveSessionEngine(
                 weightPerCableKg = setWeight,
                 isAMRAP = nextIsAMRAP,
                 stallDetectionEnabled = currentExercise.stallDetectionEnabled,
+                dropSetEnabled = currentExercise.dropSetEnabled,
+                dropSetMinWeightKg = currentExercise.dropSetMinWeightKg,
                 progressionRegressionKg = setProgressionKg,
             )
             Logger.d { "advanceToNextSetInSingleExercise: Issue #203 - setIdx=${coordinator._currentSetIndex.value}, isAMRAP=$nextIsAMRAP" }
@@ -4872,6 +4888,8 @@ class ActiveSessionEngine(
                 selectedExerciseId = nextExercise.exercise.id,
                 isAMRAP = nextIsAMRAP,
                 stallDetectionEnabled = nextExercise.stallDetectionEnabled,
+                dropSetEnabled = nextExercise.dropSetEnabled,
+                dropSetMinWeightKg = nextExercise.dropSetMinWeightKg,
                 warmupReps = if (nextIsBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS,
             )
             Logger.d {

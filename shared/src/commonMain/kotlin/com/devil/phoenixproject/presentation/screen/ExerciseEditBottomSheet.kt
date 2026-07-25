@@ -609,6 +609,12 @@ fun ExerciseEditBottomSheet(
                                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                                     )
                                 }
+                                // Auto-disable drop-set when Weight Change Per Rep becomes nonnegative
+                            LaunchedEffect(weightChange) {
+                                if (weightChange >= 0 && dropSetEnabled) {
+                                    viewModel.onDropSetEnabledChange(false)
+                                }
+                            }
                                 Switch(
                                     checked = dropSetEnabled,
                                     onCheckedChange = viewModel::onDropSetEnabledChange,
@@ -639,7 +645,7 @@ fun ExerciseEditBottomSheet(
                                 ExpressiveSlider(
                                     value = dropSetMinWeight.toFloat(),
                                     onValueChange = { viewModel.onDropSetMinWeightChange(it.roundToInt()) },
-                                    valueRange = 0f..maxWeightChange.toFloat(),
+                                    valueRange = 0f..110f,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
                             }

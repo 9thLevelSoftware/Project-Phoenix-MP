@@ -1024,6 +1024,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 defaultRackItemIds TEXT NOT NULL DEFAULT '[]',
                 rackBehaviorOverrides TEXT NOT NULL DEFAULT '{}',
                 isBodyweight INTEGER,
+                dropSetEnabled INTEGER NOT NULL DEFAULT 0,
+                dropSetMinWeightKg REAL NOT NULL DEFAULT 0.0,
                 FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
                 FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -1374,6 +1376,9 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("RoutineExercise", "stallDetectionEnabled", "ALTER TABLE RoutineExercise ADD COLUMN stallDetectionEnabled INTEGER NOT NULL DEFAULT 1"),
     SchemaHealOperation("RoutineExercise", "stopAtTop", "ALTER TABLE RoutineExercise ADD COLUMN stopAtTop INTEGER NOT NULL DEFAULT 0"),
     SchemaHealOperation("RoutineExercise", "repCountTiming", "ALTER TABLE RoutineExercise ADD COLUMN repCountTiming TEXT NOT NULL DEFAULT 'TOP'"),
+    // Migration 43: drop-set mode for Old School (issue #673)
+    SchemaHealOperation("RoutineExercise", "dropSetEnabled", "ALTER TABLE RoutineExercise ADD COLUMN dropSetEnabled INTEGER NOT NULL DEFAULT 0"),
+    SchemaHealOperation("RoutineExercise", "dropSetMinWeightKg", "ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL NOT NULL DEFAULT 0.0"),
 
     // ── UserProfile (4 columns) ─────────────────────────────────────────
 
