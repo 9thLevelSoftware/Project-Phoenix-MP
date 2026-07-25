@@ -150,6 +150,17 @@ class ResolveCurrentOneRepMaxUseCaseTest {
         val legacySession = session(perCableKg = 50f, workingReps = 5, totalReps = 5)
         val legacyResult = legacySession.estimatedOneRepMaxPerCableOrNull()
         assertEquals(56.25f, legacyResult!!, 0.1f) // 1RM from 50kg x 5 reps
+
+        // Edge case: heaviestLiftKg = 0f (measured zero) should fall back to weightPerCableKg
+        // matching SQL selectExerciseWeightHistory that treats nonpositive heaviestLiftKg as absent
+        val zeroMeasuredSession = session(
+            perCableKg = 50f,
+            workingReps = 5,
+            totalReps = 5,
+            heaviestLiftKg = 0f,
+        )
+        val zeroMeasuredResult = zeroMeasuredSession.estimatedOneRepMaxPerCableOrNull()
+        assertEquals(56.25f, zeroMeasuredResult!!, 0.1f) // falls back to weightPerCableKg=50
     }
 
     @Test

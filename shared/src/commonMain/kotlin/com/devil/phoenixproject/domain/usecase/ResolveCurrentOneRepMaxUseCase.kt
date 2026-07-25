@@ -21,7 +21,13 @@ data class CurrentOneRepMax(
 )
 
 fun WorkoutSession.estimatedOneRepMaxPerCableOrNull(): Float? {
-    val load = effectiveHeaviestKgPerCable().takeIf { it.isFinite() && it > 0f } ?: return null
+    // effectiveHeaviestKgPerCable() returns heaviestLiftKg ?: weightPerCableKg,
+    // but heaviestLiftKg = 0f (measured zero) is treated as "no data" here,
+    // matching the SQL selectExerciseWeightHistory fallback that treats
+    // nonpositive heaviestLiftKg as absent.
+    val load = effectiveHeaviestKgPerCable().takeIf { it.isFinite() && it > 0f }
+        ?: weightPerCableKg.takeIf { it.isFinite() && it > 0f }
+        ?: return null
     val reps = workingReps.takeIf { it > 0 }
         ?: totalReps.takeIf { it > 0 }
         ?: return null
