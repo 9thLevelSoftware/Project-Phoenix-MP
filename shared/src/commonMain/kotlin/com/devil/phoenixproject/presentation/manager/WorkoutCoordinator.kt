@@ -430,6 +430,8 @@ class WorkoutCoordinator(
     // handles must cancel it).
     @Volatile
     internal var stallArmedByDeload = false
+    internal var dropSetDropCount: Int = 0
+    internal var dropSetOriginalWeightKg: Float = 0f
 
     // Issue #649: defer position/stall auto-stop until the verbal-cue + short
     // transition window elapses, or a completed working rep clears it. The
@@ -458,6 +460,8 @@ class WorkoutCoordinator(
         stallStartTime = null
         isCurrentlyStalled = false
         stallArmedByDeload = false
+        dropSetDropCount = 0
+        dropSetOriginalWeightKg = 0f
         deferAutoStopDeadlineMs = 0L
         _autoStopState.value = AutoStopUiState()
     }

@@ -847,6 +847,8 @@ class RoutineFlowManager(
             isAMRAP = firstIsAMRAP, // Issue #203: Check both per-set (null reps) and exercise-level flag
             selectedExerciseId = firstExercise.exercise.id,
             stallDetectionEnabled = firstExercise.stallDetectionEnabled,
+            dropSetEnabled = firstExercise.dropSetEnabled,
+            dropSetMinWeightKg = firstExercise.dropSetMinWeightKg,
             repCountTiming = firstExercise.repCountTiming,
         )
 
@@ -1104,6 +1106,8 @@ class RoutineFlowManager(
             eccentricLoad = exercise.eccentricLoad,
             selectedExerciseId = exercise.exercise.id,
             stallDetectionEnabled = exercise.stallDetectionEnabled,
+            dropSetEnabled = exercise.dropSetEnabled,
+            dropSetMinWeightKg = exercise.dropSetMinWeightKg,
             repCountTiming = exercise.repCountTiming,
             stopAtTop = exercise.stopAtTop,
             isAMRAP = isSetAmrap,
@@ -1179,6 +1183,8 @@ class RoutineFlowManager(
             eccentricLoad = exercise.eccentricLoad,
             selectedExerciseId = exercise.exercise.id,
             stallDetectionEnabled = exercise.stallDetectionEnabled,
+            dropSetEnabled = exercise.dropSetEnabled,
+            dropSetMinWeightKg = exercise.dropSetMinWeightKg,
             repCountTiming = exercise.repCountTiming,
             stopAtTop = exercise.stopAtTop,
             isAMRAP = isSetAmrap,
@@ -1424,6 +1430,8 @@ class RoutineFlowManager(
                 warmupReps = 3,
                 selectedExerciseId = exercise.exercise.id,
                 stallDetectionEnabled = exercise.stallDetectionEnabled,
+                dropSetEnabled = exercise.dropSetEnabled,
+                dropSetMinWeightKg = exercise.dropSetMinWeightKg,
                 repCountTiming = exercise.repCountTiming,
                 stopAtTop = exercise.stopAtTop,
             )

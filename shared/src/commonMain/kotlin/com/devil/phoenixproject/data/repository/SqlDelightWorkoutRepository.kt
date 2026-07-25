@@ -403,6 +403,8 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     perSetRestTime = row.perSetRestTime == 1L,
                     // Per-exercise behavior overrides
                     stallDetectionEnabled = row.stallDetectionEnabled == 1L,
+                    dropSetEnabled = row.dropSetEnabled == 1L,
+                    dropSetMinWeightKg = row.dropSetMinWeightKg.toFloat(),
                     repCountTiming = try {
                         com.devil.phoenixproject.domain.model.RepCountTiming.valueOf(row.repCountTiming)
                     } catch (
@@ -751,6 +753,8 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             },
             // Per-exercise behavior overrides
             stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
+            dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
+            dropSetMinWeightKg = exercise.dropSetMinWeightKg.toDouble(),
             stopAtTop = if (exercise.stopAtTop) 1L else 0L,
             repCountTiming = exercise.repCountTiming.name,
             // Per-set echo levels (stored as JSON array of nullable ordinals)

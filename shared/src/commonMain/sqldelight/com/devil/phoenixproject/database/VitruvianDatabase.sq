@@ -250,6 +250,8 @@ CREATE TABLE RoutineExercise (
     scalingBasis TEXT,
     -- Per-exercise behavior overrides (PR #245)
     stallDetectionEnabled INTEGER NOT NULL DEFAULT 1,
+    dropSetEnabled INTEGER NOT NULL DEFAULT 0,
+    dropSetMinWeightKg REAL NOT NULL DEFAULT 0.0,
     stopAtTop INTEGER NOT NULL DEFAULT 0,
     repCountTiming TEXT NOT NULL DEFAULT 'TOP',
     -- Phase 4 Routine Programming (migration 18)
@@ -1248,10 +1250,10 @@ INSERT INTO RoutineExercise (
     eccentricLoad, echoLevel, progressionKg, restSeconds, duration, setRestSeconds,
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
-    stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
+    stallDetectionEnabled, dropSetEnabled, dropSetMinWeightKg, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
     rackBehaviorOverrides, scalingBasis, isBodyweight
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert with IGNORE for import (won't overwrite existing)
 insertRoutineExerciseIgnore:
@@ -1261,10 +1263,10 @@ INSERT OR IGNORE INTO RoutineExercise (
     eccentricLoad, echoLevel, progressionKg, restSeconds, duration, setRestSeconds,
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
-    stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
+    stallDetectionEnabled, dropSetEnabled, dropSetMinWeightKg, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
     rackBehaviorOverrides, scalingBasis, isBodyweight
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRoutineExercises:
 DELETE FROM RoutineExercise WHERE routineId = ?;

@@ -254,7 +254,7 @@ object BlePacketFactory {
         putFloatLE(
             frame,
             BleConstants.ActivationPacket.OFFSET_PROGRESSION,
-            params.progressionRegressionKg,
+            if (params.dropSetEnabled && params.progressionRegressionKg < 0f) 0f else params.progressionRegressionKg,
         )
 
         // Diagnostic logging

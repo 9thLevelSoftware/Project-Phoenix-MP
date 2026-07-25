@@ -164,6 +164,8 @@ data class RoutineExerciseBackup(
     val setWeightsPercentOfPR: String? = null, // JSON array as string
     // Per-exercise behavior overrides (PR #245)
     val stallDetectionEnabled: Boolean = true,
+    val dropSetEnabled: Boolean = false,
+    val dropSetMinWeightKg: Float = 0f,
     val stopAtTop: Boolean = false,
     val repCountTiming: String = "TOP",
     // Variable warm-up sets (Phase 35C)

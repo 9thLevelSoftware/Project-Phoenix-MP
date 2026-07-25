@@ -159,6 +159,8 @@ fun ExerciseEditBottomSheet(
     val eccentricLoad by viewModel.eccentricLoad.collectAsState()
     val echoLevel by viewModel.echoLevel.collectAsState()
     val stallDetectionEnabled by viewModel.stallDetectionEnabled.collectAsState()
+    val dropSetEnabled by viewModel.dropSetEnabled.collectAsState()
+    val dropSetMinWeight by viewModel.dropSetMinWeight.collectAsState()
     val repCountTiming by viewModel.repCountTiming.collectAsState()
     val stopAtTop by viewModel.stopAtTop.collectAsState()
     val defaultRackItemIds by viewModel.defaultRackItemIds.collectAsState()
@@ -577,9 +579,77 @@ fun ExerciseEditBottomSheet(
                         }
                     }
                 }
+                // Drop-Set Mode (Issue #673)
+                if (showCableOnlyExerciseControls && !isEchoMode && selectedMode is WorkoutMode.OldSchool) {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
+                        border = BorderStroke(2.dp, MaterialTheme.colorScheme.outlineVariant),
+                    ) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(Spacing.medium),
+                        ) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        "Drop-Set Mode",
+                                        style = MaterialTheme.typography.titleMedium,
+                                        fontWeight = FontWeight.Bold,
+                                        color = MaterialTheme.colorScheme.onSurface,
+                                    )
+                                    Text(
+                                        "Weight decreases only when a rep is failed (cable release)",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                                Switch(
+                                    checked = dropSetEnabled,
+                                    onCheckedChange = viewModel::onDropSetEnabledChange,
+                                    enabled = weightChange < 0,
+                                )
+                            }
+                            if (weightChange >= 0) {
+                                Text(
+                                    "Set a negative Weight Change Per Rep to enable drop-set mode.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier.padding(top = Spacing.small),
+                                )
+                            }
+                            if (dropSetEnabled) {
+                                Spacer(modifier = Modifier.height(Spacing.medium))
+                                Text(
+                                    "Minimum Weight",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.onSurface,
+                                )
+                                Text(
+                                    "Weight won't drop below this value during drop-sets",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                                ExpressiveSlider(
+                                    value = dropSetMinWeight.toFloat(),
+                                    onValueChange = { viewModel.onDropSetMinWeightChange(it.roundToInt()) },
+                                    valueRange = 0f..maxWeightChange.toFloat(),
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                        }
+                    }
+                }
 
                 if (showCableOnlyExerciseControls) {
                     // Stall Detection toggle
+                    val stallDisabledByDropSet = dropSetEnabled
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = MaterialTheme.shapes.small,
@@ -596,13 +666,13 @@ fun ExerciseEditBottomSheet(
                         ) {
                             Column(modifier = Modifier.weight(1f)) {
                                 Text(
-                                    text = "Stall Detection",
+                                    text = if (stallDisabledByDropSet) "Stall Detection (disabled by Drop-Set)" else "Stall Detection",
                                     style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = if (stallDetectionEnabled) FontWeight.Bold else FontWeight.Normal,
                                     color = if (stallDetectionEnabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                                 )
                                 Text(
-                                    text = "Auto-stop set when movement pauses for 5 seconds",
+                                    text = if (stallDisabledByDropSet) "Stall detection is disabled during drop-set mode" else "Auto-stop set when movement pauses for 5 seconds",
                                     style = MaterialTheme.typography.bodySmall,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -610,6 +680,7 @@ fun ExerciseEditBottomSheet(
                             Switch(
                                 checked = stallDetectionEnabled,
                                 onCheckedChange = viewModel::onStallDetectionEnabledChange,
+                                enabled = !stallDisabledByDropSet,
                             )
                         }
                     }

@@ -129,6 +129,10 @@ class ExerciseConfigViewModel constructor(
 
     private val _stallDetectionEnabled = MutableStateFlow(true)
     val stallDetectionEnabled: StateFlow<Boolean> = _stallDetectionEnabled.asStateFlow()
+    private val _dropSetEnabled = MutableStateFlow(false)
+    val dropSetEnabled: StateFlow<Boolean> = _dropSetEnabled.asStateFlow()
+    private val _dropSetMinWeight = MutableStateFlow(0)
+    val dropSetMinWeight: StateFlow<Int> = _dropSetMinWeight.asStateFlow()
 
     private val _repCountTiming = MutableStateFlow(RepCountTiming.TOP)
     val repCountTiming: StateFlow<RepCountTiming> = _repCountTiming.asStateFlow()
@@ -255,6 +259,8 @@ class ExerciseConfigViewModel constructor(
         _eccentricLoad.value = exercise.eccentricLoad
         _echoLevel.value = exercise.echoLevel
         _stallDetectionEnabled.value = exercise.stallDetectionEnabled
+        _dropSetEnabled.value = exercise.dropSetEnabled
+        _dropSetMinWeight.value = kgToDisplay(exercise.dropSetMinWeightKg, weightUnit).toInt()
         _repCountTiming.value = exercise.repCountTiming
         _stopAtTop.value = exercise.stopAtTop
 
@@ -483,6 +489,12 @@ class ExerciseConfigViewModel constructor(
 
     fun onStallDetectionEnabledChange(enabled: Boolean) {
         _stallDetectionEnabled.value = enabled
+    }
+    fun onDropSetEnabledChange(enabled: Boolean) {
+        _dropSetEnabled.value = enabled
+    }
+    fun onDropSetMinWeightChange(kg: Int) {
+        _dropSetMinWeight.value = kg
     }
 
     fun onRepCountTimingChange(timing: RepCountTiming) {
@@ -880,6 +892,8 @@ class ExerciseConfigViewModel constructor(
             perSetRestTime = _perSetRestTime.value,
             isAMRAP = isAMRAP,
             stallDetectionEnabled = _stallDetectionEnabled.value,
+            dropSetEnabled = _dropSetEnabled.value,
+            dropSetMinWeightKg = displayToKg(_dropSetMinWeight.value.toFloat(), weightUnit),
             repCountTiming = _repCountTiming.value,
             stopAtTop = _stopAtTop.value,
             // PR percentage scaling fields (Issue #57)

@@ -1043,6 +1043,8 @@ class SqlDelightSyncRepository(
                         isAMRAP = exRow.isAMRAP == 1L,
                         perSetRestTime = exRow.perSetRestTime == 1L,
                         stallDetectionEnabled = exRow.stallDetectionEnabled == 1L,
+                        dropSetEnabled = exRow.dropSetEnabled == 1L,
+                        dropSetMinWeightKg = exRow.dropSetMinWeightKg.toFloat(),
                         repCountTiming = try {
                             RepCountTiming.valueOf(exRow.repCountTiming)
                         } catch (
@@ -2282,6 +2284,8 @@ class SqlDelightSyncRepository(
                 prTypeForScaling = "MAX_WEIGHT",
                 setWeightsPercentOfPR = null,
                 stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
+                dropSetEnabled = 0L,
+                dropSetMinWeightKg = 0.0,
                 stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
                 repCountTiming = exercise.repCountTiming ?: "TOP",
                 setEchoLevels = setEchoLevels,

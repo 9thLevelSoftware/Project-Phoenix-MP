@@ -90,6 +90,8 @@ data class RoutineExercise(
     val eccentricLoad: EccentricLoad = EccentricLoad.LOAD_100,
     val echoLevel: EchoLevel = EchoLevel.HARDER,
     val progressionKg: Float = 0f,
+    val dropSetEnabled: Boolean = false,
+    val dropSetMinWeightKg: Float = 0f,
     val setRestSeconds: List<Int> = emptyList(), // per-set rest times
     // Per-set echo level overrides; null entries fall back to exercise-level echoLevel
     val setEchoLevels: List<EchoLevel?> = emptyList(),

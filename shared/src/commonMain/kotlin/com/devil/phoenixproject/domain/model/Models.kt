@@ -351,6 +351,8 @@ data class WorkoutParameters(
     val externalAddedLoadKg: Float = 0f,
     val counterweightKg: Float = 0f,
     val progressionRegressionKg: Float = 0f, // Positive = progression, negative = regression
+    val dropSetEnabled: Boolean = false,
+    val dropSetMinWeightKg: Float = 0f,
     val isJustLift: Boolean = false,
     val useAutoStart: Boolean = false, // true for Just Lift, false for others
     val stopAtTop: Boolean = false, // false = stop at bottom (extended), true = stop at top (contracted)

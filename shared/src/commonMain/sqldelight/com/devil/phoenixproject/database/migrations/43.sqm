@@ -1,0 +1,3 @@
+-- Issue #673: Drop-set option for Old School mode
+ALTER TABLE RoutineExercise ADD COLUMN dropSetEnabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL NOT NULL DEFAULT 0.0;

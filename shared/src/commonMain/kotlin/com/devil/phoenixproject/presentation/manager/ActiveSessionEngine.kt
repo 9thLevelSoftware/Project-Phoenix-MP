@@ -425,7 +425,7 @@ class ActiveSessionEngine(
                     val params = coordinator._workoutParameters.value
                     val currentState = coordinator._workoutState.value
 
-                    if (params.stallDetectionEnabled && currentState is WorkoutState.Active) {
+                    if ((params.stallDetectionEnabled || params.dropSetEnabled) && currentState is WorkoutState.Active) {
                         // Echo levels are defined by the firmware's deload window (e.g. HARDER =
                         // deload after 1.25s below 40 mm/s — Issue #553), so DELOAD_OCCURRED fires
                         // routinely mid-set as the athlete fatigues. It is NOT a cable-release
@@ -448,6 +448,11 @@ class ActiveSessionEngine(
                             return@collect
                         }
                         if (!shouldEnableAutoStop(params)) return@collect
+                        // Drop-set mode: reduce weight instead of arming stall timer
+                        if (params.dropSetEnabled && params.progressionRegressionKg < 0f) {
+                            handleDropSetDeload(params)
+                            return@collect
+                        }
                         Logger.d("DELOAD_OCCURRED: Machine detected cable release - starting auto-stop timer")
 
                         val hasMeaningfulRange = repCounter.hasMeaningfulRange(WorkoutCoordinator.MIN_RANGE_THRESHOLD)
@@ -470,7 +475,25 @@ class ActiveSessionEngine(
                 }
         }
 
-        // #6: Rep events collector for handling machine rep notifications
+        /**
+     * Drop-set mode: DELOAD_OCCURRED triggers weight reduction instead of stall timer.
+     * Weight is deferred to next set boundary (machine cannot accept mid-set BLE commands).
+     */
+    private fun handleDropSetDeload(params: WorkoutParameters) {
+        val currentWeight = coordinator._workoutParameters.value.weightPerCableKg
+        val dropAmount = kotlin.math.abs(params.progressionRegressionKg)
+        val newWeight = (currentWeight - dropAmount).coerceAtLeast(params.dropSetMinWeightKg)
+
+        Logger.d("Drop-set: DELOAD_OCCURRED -> weight ${currentWeight}kg -> ${newWeight}kg (drop=$dropAmount, floor=${params.dropSetMinWeightKg})")
+
+        // Update internal state immediately (HUD shows reduced weight)
+        // adjustWeight during WorkoutState.Active sets pendingWeightChangeKg (deferred to next set start)
+        adjustWeight(newWeight, sendToMachine = false)
+
+        coordinator.dropSetDropCount++
+    }
+
+    // #6: Rep events collector for handling machine rep notifications
         coordinator.repEventsCollectionJob = scope.launch {
             bleRepository.repEvents
                 .catch { e -> Logger.e(e) { "repEvents collector error" } }
