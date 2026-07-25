@@ -645,7 +645,7 @@ fun ExerciseEditBottomSheet(
                                 ExpressiveSlider(
                                     value = dropSetMinWeight.toFloat(),
                                     onValueChange = { viewModel.onDropSetMinWeightChange(it.roundToInt()) },
-                                    valueRange = 0f..110f,
+                                    valueRange = 0f..maxWeight,
                                     modifier = Modifier.fillMaxWidth(),
                                 )
                             }

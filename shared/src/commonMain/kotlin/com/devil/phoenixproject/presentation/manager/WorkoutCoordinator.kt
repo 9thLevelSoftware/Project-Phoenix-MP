@@ -432,6 +432,11 @@ class WorkoutCoordinator(
     internal var stallArmedByDeload = false
     internal var dropSetDropCount: Int = 0
     internal var dropSetOriginalWeightKg: Float = 0f
+    /** Pending drop-set weight for the next set boundary. Set when a DELOAD_OCCURRED
+     *  fires during a drop-set active set; consumed at the next set start. Unlike
+     *  _userAdjustedWeightDuringRest this is weight-only and scoped to same-exercise
+     *  transitions so it does not bleed into unrelated exercises or override reps/echo/etc. */
+    internal var dropSetNextWeightKg: Float? = null
 
     // Issue #649: defer position/stall auto-stop until the verbal-cue + short
     // transition window elapses, or a completed working rep clears it. The
@@ -462,6 +467,7 @@ class WorkoutCoordinator(
         stallArmedByDeload = false
         dropSetDropCount = 0
         dropSetOriginalWeightKg = 0f
+        dropSetNextWeightKg = null
         deferAutoStopDeadlineMs = 0L
         _autoStopState.value = AutoStopUiState()
     }

@@ -42,6 +42,8 @@ data class SingleExerciseDefaultsDocument(
     val isAMRAP: Boolean,
     val perSetRestTime: Boolean,
     val defaultRackItemIds: List<String> = emptyList(),
+    val dropSetEnabled: Boolean = false,
+    val dropSetMinWeightKg: Float = 0f,
 )
 
 @Serializable

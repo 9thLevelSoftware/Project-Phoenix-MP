@@ -303,6 +303,12 @@ class ExerciseConfigViewModel constructor(
 
     fun onSelectedModeChange(mode: WorkoutMode) {
         _selectedMode.value = mode
+        // Clear drop-set when leaving Old School mode — the runtime path checks
+        // dropSetEnabled without requiring Old School, so a stale flag from a
+        // previous Old School session could react to deload events in unsupported modes.
+        if (mode !is WorkoutMode.OldSchool && _dropSetEnabled.value) {
+            onDropSetEnabledChange(false)
+        }
         // Load PR for the new mode
         if (::originalExercise.isInitialized) {
             originalExercise.exercise.id?.let { exerciseId ->

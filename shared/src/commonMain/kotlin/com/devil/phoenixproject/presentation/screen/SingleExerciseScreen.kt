@@ -440,6 +440,8 @@ private fun buildSingleExerciseRoutineExercise(
         isAMRAP = savedDefaults.isAMRAP,
         perSetRestTime = savedDefaults.perSetRestTime,
         defaultRackItemIds = savedDefaults.defaultRackItemIds,
+        dropSetEnabled = savedDefaults.dropSetEnabled,
+        dropSetMinWeightKg = savedDefaults.dropSetMinWeightKg,
     )
 } else {
     RoutineExercise(

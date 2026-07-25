@@ -447,22 +447,27 @@ class ActiveSessionEngine(
                             resetStallTimer()
                             return@collect
                         }
-                        if (!shouldEnableAutoStop(params)) return@collect
-                        // Drop-set mode: reduce weight instead of arming stall timer
+                        // Drop-set mode: reduce weight instead of arming stall timer.
+                        // Must be BEFORE shouldEnableAutoStop gate so drop-set fires
+                        // even when stallDetectionEnabled is false (fixed-rep Old School).
                         if (params.dropSetEnabled && params.progressionRegressionKg < 0f) {
                             val currentDropWeight = coordinator._workoutParameters.value.weightPerCableKg
                             if (currentDropWeight > params.dropSetMinWeightKg) {
                                 val dropAmount = kotlin.math.abs(params.progressionRegressionKg)
                                 val newDropWeight = (currentDropWeight - dropAmount).coerceAtLeast(params.dropSetMinWeightKg)
                                 Logger.d("Drop-set: DELOAD_OCCURRED -> weight ${currentDropWeight}kg -> ${newDropWeight}kg (drop=$dropAmount, floor=${params.dropSetMinWeightKg})")
-                                adjustWeight(newDropWeight, sendToMachine = false)
-                                coordinator._userAdjustedWeightDuringRest = true
+                                // Store the pending drop-set weight for the next set boundary
+                                // without modifying the active-set weightPerCableKg (so
+                                // saveWorkoutSession captures the original load, not the
+                                // dropped next-set target).
+                                coordinator.dropSetNextWeightKg = newDropWeight
                                 coordinator.dropSetDropCount++
                             } else {
                                 Logger.d("Drop-set: DELOAD_OCCURRED ignored - already at floor (${params.dropSetMinWeightKg}kg)")
                             }
                             return@collect
                         }
+                        if (!shouldEnableAutoStop(params)) return@collect
                         Logger.d("DELOAD_OCCURRED: Machine detected cable release - starting auto-stop timer")
 
                         val hasMeaningfulRange = repCounter.hasMeaningfulRange(WorkoutCoordinator.MIN_RANGE_THRESHOLD)
@@ -1931,6 +1936,8 @@ class ActiveSessionEngine(
                 isAMRAP = currentExercise.isAMRAP,
                 perSetRestTime = currentExercise.perSetRestTime,
                 defaultRackItemIds = currentExercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct(),
+                dropSetEnabled = currentExercise.dropSetEnabled,
+                dropSetMinWeightKg = currentExercise.dropSetMinWeightKg,
             )
             settingsManager.saveSingleExerciseDefaultsDocument(defaults.toDocument())
             Logger.d { "Saved Single Exercise defaults for ${currentExercise.exercise.name}" }
@@ -4443,7 +4450,19 @@ class ActiveSessionEngine(
                 val hasNextSet = nextSetIdx < exerciseForNextSet.setReps.size
                 if (hasNextSet) {
                     val nextSetReps = exerciseForNextSet.setReps.getOrNull(nextSetIdx)
-                    val nextSetWeight = if (coordinator._userAdjustedWeightDuringRest) {
+                    // Consume pending drop-set weight only for same-exercise transitions
+                    // so it does not bleed into an unrelated next exercise.
+                    val isSameExercise = !isTransitioningToNextExercise
+                    val pendingDropWeight = coordinator.dropSetNextWeightKg
+                    val nextSetWeight = if (pendingDropWeight != null && isSameExercise) {
+                        coordinator.dropSetNextWeightKg = null
+                        pendingDropWeight
+                    } else if (pendingDropWeight != null && !isSameExercise) {
+                        // Different exercise: discard the drop-set weight
+                        coordinator.dropSetNextWeightKg = null
+                        exerciseForNextSet.setWeightsPerCableKg.getOrNull(nextSetIdx)
+                            ?: exerciseForNextSet.weightPerCableKg
+                    } else if (coordinator._userAdjustedWeightDuringRest) {
                         coordinator._workoutParameters.value.weightPerCableKg
                     } else {
                         exerciseForNextSet.setWeightsPerCableKg.getOrNull(nextSetIdx)
@@ -4680,7 +4699,11 @@ class ActiveSessionEngine(
             val targetReps = currentExercise.setReps[coordinator._currentSetIndex.value]
             val currentParams = coordinator._workoutParameters.value
 
-            val setWeight = if (coordinator._userAdjustedWeightDuringRest) {
+            val pendingDropWeight = coordinator.dropSetNextWeightKg
+            val setWeight = if (pendingDropWeight != null) {
+                coordinator.dropSetNextWeightKg = null
+                pendingDropWeight
+            } else if (coordinator._userAdjustedWeightDuringRest) {
                 currentParams.weightPerCableKg
             } else {
                 currentExercise.setWeightsPerCableKg.getOrNull(coordinator._currentSetIndex.value)
@@ -4808,7 +4831,17 @@ class ActiveSessionEngine(
             val currentParams = coordinator._workoutParameters.value
             val preserveRestEdits = coordinator._userAdjustedWeightDuringRest
 
-            val nextSetWeight = if (preserveRestEdits) {
+            // Consume pending drop-set weight for same-exercise transitions only.
+            val pendingDropWeight = coordinator.dropSetNextWeightKg
+            val nextSetWeight = if (pendingDropWeight != null && isSameExerciseContinuation) {
+                coordinator.dropSetNextWeightKg = null
+                pendingDropWeight
+            } else if (pendingDropWeight != null) {
+                // Different exercise: discard the drop-set weight
+                coordinator.dropSetNextWeightKg = null
+                nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
+                    ?: nextExercise.weightPerCableKg
+            } else if (preserveRestEdits) {
                 currentParams.weightPerCableKg
             } else {
                 nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)

@@ -17,6 +17,8 @@ internal fun SingleExerciseDefaults.toDocument() = SingleExerciseDefaultsDocumen
     isAMRAP = isAMRAP,
     perSetRestTime = perSetRestTime,
     defaultRackItemIds = defaultRackItemIds,
+    dropSetEnabled = dropSetEnabled,
+    dropSetMinWeightKg = dropSetMinWeightKg,
 )
 
 internal fun SingleExerciseDefaultsDocument.toLegacySingleExerciseDefaults() = SingleExerciseDefaults(
@@ -33,6 +35,8 @@ internal fun SingleExerciseDefaultsDocument.toLegacySingleExerciseDefaults() = S
     isAMRAP = isAMRAP,
     perSetRestTime = perSetRestTime,
     defaultRackItemIds = defaultRackItemIds,
+    dropSetEnabled = dropSetEnabled,
+    dropSetMinWeightKg = dropSetMinWeightKg,
 )
 
 internal fun com.devil.phoenixproject.data.preferences.JustLiftDefaults.toDocument() =

@@ -921,8 +921,19 @@ class DefaultWorkoutSessionManager(
 
                         // Get next exercise and update parameters
                         val nextExercise = routine.exercises[nextExIdx]
-                        val nextSetWeight = nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
-                            ?: nextExercise.weightPerCableKg
+                        val pendingDropWeight = coordinator.dropSetNextWeightKg
+                        val isSameExercise = nextExIdx == coordinator._currentExerciseIndex.value
+                        val nextSetWeight = if (pendingDropWeight != null && isSameExercise) {
+                            coordinator.dropSetNextWeightKg = null
+                            pendingDropWeight
+                        } else if (pendingDropWeight != null) {
+                            coordinator.dropSetNextWeightKg = null
+                            nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
+                                ?: nextExercise.weightPerCableKg
+                        } else {
+                            nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
+                                ?: nextExercise.weightPerCableKg
+                        }
                         val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
                         val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
                         val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)
@@ -937,6 +948,8 @@ class DefaultWorkoutSessionManager(
                             selectedExerciseId = nextExercise.exercise.id,
                             isAMRAP = nextIsAMRAP,
                             stallDetectionEnabled = nextExercise.stallDetectionEnabled,
+                            dropSetEnabled = nextExercise.dropSetEnabled,
+                            dropSetMinWeightKg = nextExercise.dropSetMinWeightKg,
                         )
                         Logger.d {
                             "proceedFromSummary: Issue #203 - Updated params for next set: ${nextExercise.exercise.name}, setIdx=$nextSetIdx, isAMRAP=$nextIsAMRAP"
