@@ -643,6 +643,145 @@ class PortalPullPaginationTest {
             },
         )
 
+    // ==================== Cursor-Validity Guards (issue #679) ====================
+
+    @Test
+    fun pullBeyond100PagesSucceedsWhenCursorsAreDistinct() = runTest {
+        // Issue #679: accounts with >10,000 entities hit the old MAX_PAGES=100 ceiling.
+        // After the fix, pagination continues as long as cursors are distinct and non-blank.
+        authenticate()
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        val pageCount = 101
+        var limiterClockMs = 0L
+        fakeApi.pullTimestampSourceMs = { limiterClockMs }
+        val pages = MutableList(pageCount) { index ->
+            val isLast = index == pageCount - 1
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1_740_000_000_000L + index,
+                    hasMore = !isLast,
+                    nextCursor = if (isLast) null else "cursor-page-${index + 1}",
+                    routines = listOf(PullRoutineDto(id = "r$index", name = "Routine $index")),
+                ),
+            )
+        }
+        fakeApi.pullResultsQueue = pages
+
+        val result = createManager(
+            rateLimiter = ClientRateLimiter(
+                windowMillis = 250L,
+                nowMs = { limiterClockMs },
+                waitFor = { delayMs -> limiterClockMs += delayMs },
+            ),
+        ).sync()
+
+        assertTrue(result.isSuccess, "101-page pull with distinct cursors should succeed")
+        assertEquals(pageCount, fakeApi.pullCallCount, "Should fire once per page")
+        assertEquals(
+            1_740_000_000_000L + pageCount - 1,
+            tokenStorage.getLastSyncTimestamp(),
+            "Final sync timestamp should be from the last page",
+        )
+    }
+
+    @Test
+    fun pullWithRepeatedCursorDetectsLoopAndDoesNotAdvanceLastSync() = runTest {
+        // Issue #679: a repeated cursor means the server is stuck in a loop.
+        // sync() returns partial success (push succeeded, pull failed); lastSync must not advance.
+        authenticate()
+        val initial = 5000L
+        tokenStorage.setLastSyncTimestamp(initial)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1L,
+                    hasMore = true,
+                    nextCursor = "cursor-loop",
+                    routines = listOf(PullRoutineDto(id = "r1", name = "R1")),
+                ),
+            ),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 2L,
+                    hasMore = true,
+                    nextCursor = "cursor-loop", // repeated!
+                    routines = listOf(PullRoutineDto(id = "r2", name = "R2")),
+                ),
+            ),
+        )
+
+        createManager().sync()
+
+        // sync() returns partial success; pull consumed 2 pages then detected the repeat.
+        assertEquals(2, fakeApi.pullCallCount, "Two pages fetched before cursor repetition detected")
+        assertEquals(
+            initial,
+            tokenStorage.getLastSyncTimestamp(),
+            "Repeated cursor must not advance lastSync",
+        )
+    }
+
+    @Test
+    fun pullWithBlankCursorDetectsProtocolViolationAndDoesNotAdvanceLastSync() = runTest {
+        // Issue #679: a blank cursor with hasMore=true is a server protocol violation.
+        // sync() returns partial success (push succeeded, pull failed); lastSync must not advance.
+        authenticate()
+        val initial = 5000L
+        tokenStorage.setLastSyncTimestamp(initial)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1L,
+                    hasMore = true,
+                    nextCursor = "  ", // blank cursor
+                    routines = listOf(PullRoutineDto(id = "r1", name = "R1")),
+                ),
+            ),
+        )
+
+        createManager().sync()
+
+        // Page 1 is fetched and merged; the blank cursor is detected on the NEXT iteration.
+        assertEquals(1, fakeApi.pullCallCount, "One page fetched before blank cursor detected")
+        assertEquals(
+            initial,
+            tokenStorage.getLastSyncTimestamp(),
+            "Blank cursor must not advance lastSync",
+        )
+    }
+
+    @Test
+    fun pullWithNullCursorAndHasMoreFailsGracefully() = runTest {
+        // The existing null-cursor guard (line 1634) already handles this,
+        // but we verify it still works with the new cursor-validity checks.
+        authenticate()
+        tokenStorage.setLastSyncTimestamp(5000L)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1L,
+                    hasMore = true,
+                    nextCursor = null, // null cursor + hasMore=true
+                    routines = listOf(PullRoutineDto(id = "r1", name = "R1")),
+                ),
+            ),
+        )
+
+        val result = createManager().sync()
+
+        // The existing guard breaks the loop on null cursor + hasMore=true.
+        // With the fix, this still succeeds (the break treats it as end-of-pagination).
+        assertTrue(result.isSuccess, "null cursor + hasMore=true breaks loop gracefully")
+        assertEquals(1, fakeApi.pullCallCount)
+    }
+
     // ==================== pageSize Wiring ====================
 
     @Test
