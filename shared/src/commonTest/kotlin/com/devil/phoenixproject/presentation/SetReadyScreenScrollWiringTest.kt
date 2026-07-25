@@ -248,7 +248,10 @@ class SetReadyScreenScrollWiringTest {
     @Test
     fun setReadyConfiguration_appearsBeforeVideo() {
         val src = readSetReadyScreenSource()
-        val configIdx = src.indexOf("if (isEchoMode) \"ECHO SETTINGS\" else \"SET CONFIGURATION\"")
+        // Issue #674: Old School mode now has its own settings label
+        val configIdx = src.indexOf("if (isEchoMode) \"ECHO SETTINGS\" else if (isOldSchool) \"OLD SCHOOL SETTINGS\" else \"SET CONFIGURATION\"")
+            .takeIf { it >= 0 }
+            ?: src.indexOf("if (isEchoMode) \"ECHO SETTINGS\" else \"SET CONFIGURATION\"")
         val rackIdx = src.indexOf("testTag(SetReadyTestTags.RACK_CARD)")
         val videoIdx = src.indexOf("Video thumbnail stays available")
 
