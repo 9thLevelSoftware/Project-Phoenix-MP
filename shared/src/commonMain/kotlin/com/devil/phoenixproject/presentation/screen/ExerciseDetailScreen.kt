@@ -188,11 +188,19 @@ fun ExerciseDetailScreen(
     val previousSessionOneRepMax =
         validSessionEstimatesNewestFirst.getOrNull(1)?.second
 
+    // Display-safe heaviest load: fall back to weightPerCableKg when
+    // heaviestLiftKg is 0f (measured zero), matching SQL behavior.
+    fun WorkoutSession.displayHeaviestKgPerCable(): Float =
+        effectiveHeaviestKgPerCable().takeIf { it > 0f }
+            ?: weightPerCableKg.takeIf { it > 0f }
+            ?: 0f
+
     // Weight-over-time trend data using saved per-cable load.
     val weightTrendData = remember(exerciseSessions) {
         exerciseSessions.mapNotNull { session ->
-            if (session.effectiveHeaviestKgPerCable() > 0) {
-                session.timestamp to session.effectiveHeaviestKgPerCable()
+            val load = session.displayHeaviestKgPerCable()
+            if (load > 0) {
+                session.timestamp to load
             } else {
                 null
             }
@@ -738,7 +746,7 @@ private fun ExerciseHistoryTable(sessions: List<WorkoutSession>, weightUnit: Wei
                         )
                         TableCell(
                             WeightDisplayFormatter.formatDisplayWeight(
-                                session.effectiveHeaviestKgPerCable(),
+                                session.displayHeaviestKgPerCable(),
                                 null,
                                 weightUnit,
                             ),
@@ -824,7 +832,7 @@ private fun SessionHistoryRow(session: WorkoutSession, weightUnit: WeightUnit, f
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        "${WeightDisplayFormatter.formatDisplayWeight(session.effectiveHeaviestKgPerCable(), null, weightUnit)} × ${session.workingReps} reps",
+                        "${WeightDisplayFormatter.formatDisplayWeight(session.displayHeaviestKgPerCable(), null, weightUnit)} × ${session.workingReps} reps",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
