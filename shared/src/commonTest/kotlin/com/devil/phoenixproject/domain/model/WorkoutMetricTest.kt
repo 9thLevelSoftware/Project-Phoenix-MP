@@ -217,7 +217,7 @@ class WorkoutSessionTest {
     }
 
     @Test
-    fun `display heaviest load preserves counterweighted zero and rejects invalid summary values`() {
+    fun `display heaviest load falls back from zero and invalid summary values`() {
         val counterweightedSession = WorkoutSession(
             weightPerCableKg = 30f,
             heaviestLiftKg = 0f,
@@ -228,7 +228,9 @@ class WorkoutSessionTest {
             heaviestLiftKg = Float.POSITIVE_INFINITY,
         )
 
-        assertEquals(0f, counterweightedSession.displayHeaviestKgPerCable())
+        // WorkoutSession does not persist Exercise.isBodyweight, so rack counterweight alone
+        // cannot prove this zero was an intentional bodyweight effective load.
+        assertEquals(30f, counterweightedSession.displayHeaviestKgPerCable())
         assertEquals(30f, nonFiniteMeasuredSession.displayHeaviestKgPerCable())
     }
 
