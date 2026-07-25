@@ -658,12 +658,14 @@ class ActiveSessionEngine(
                             coordinator.stallStartTime = currentTimeMillis()
                             coordinator.isCurrentlyStalled = true
                             coordinator.stallArmedByDeload = true
+                            coordinator.autoStopReason = SetEndReason.CABLE_RELEASED
                             Logger.d("Auto-stop stall timer STARTED via DELOAD_OCCURRED flag")
                         } else if (coordinator.stallStartTime != null && !inGrace) {
                             // F4: a real deload is the stronger signal — upgrade a
                             // velocity-armed countdown so the retracting cables
                             // (position -> 0) don't cancel it via the racked-handles check.
                             coordinator.stallArmedByDeload = true
+                            coordinator.autoStopReason = SetEndReason.CABLE_RELEASED
                         } else if (inGrace) {
                             Logger.d("DELOAD_OCCURRED ignored - in AMRAP startup grace period")
                         }
@@ -1128,7 +1130,10 @@ class ActiveSessionEngine(
             totalReps = coercedReps,
             isWarmupComplete = true,
         )
-        handleSetCompletion(SetEndReason.TARGET_REPS_REACHED)
+        val preservedReason = coordinator.lastSetEndReason.takeIf {
+            it != SetEndReason.TARGET_REPS_REACHED
+        } ?: SetEndReason.TARGET_REPS_REACHED
+        handleSetCompletion(preservedReason)
     }
 
     private suspend fun showBodyweightRepEntry(currentExercise: RoutineExercise) {
@@ -1184,6 +1189,7 @@ class ActiveSessionEngine(
         coordinator.stallStartTime = null
         coordinator.isCurrentlyStalled = false
         coordinator.stallArmedByDeload = false
+        coordinator.autoStopReason = SetEndReason.STALL_FAILURE
         if (coordinator.autoStopStartTime == null && !coordinator.autoStopTriggered) {
             coordinator._autoStopState.value = AutoStopUiState()
         }
@@ -1272,7 +1278,7 @@ class ActiveSessionEngine(
             coordinator._autoStopState.value = AutoStopUiState()
         }
 
-        handleSetCompletion(SetEndReason.STALL_FAILURE)
+        handleSetCompletion(coordinator.autoStopReason)
     }
 
     // ===== Rep Processing =====
@@ -3776,6 +3782,8 @@ class ActiveSessionEngine(
     fun stopWorkout(exitingWorkout: Boolean = false) {
         // C1: Atomic compareAndSet prevents TOCTOU race — only the first caller proceeds
         if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
+
+        coordinator.lastSetEndReason = SetEndReason.USER_STOPPED
 
         val lease = executionGuard.currentLease
         if (exitingWorkout && lease != null) {
