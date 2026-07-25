@@ -233,8 +233,8 @@ object BlePacketFactory {
         }
 
         // Issue #673: Firmware validation bounds (official app: "Soft max is too high!" / "Increment is too high!")
-        require(params.weightPerCableKg <= 100.0f) {
-            "weightPerCableKg=${params.weightPerCableKg} exceeds firmware softMax bound (100.0f)"
+        require(params.weightPerCableKg <= Constants.MAX_WEIGHT_PER_CABLE_KG) {
+            "weightPerCableKg=${params.weightPerCableKg} exceeds max allowed (${Constants.MAX_WEIGHT_PER_CABLE_KG})"
         }
         require(kotlin.math.abs(params.progressionRegressionKg) <= 10.0f) {
             "progressionRegressionKg=${params.progressionRegressionKg} exceeds firmware increment bound (10.0f)"

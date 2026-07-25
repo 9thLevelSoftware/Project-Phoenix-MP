@@ -542,6 +542,7 @@ class DataBackupManagerRoutineNameTest {
             logged_rpe = null,
             is_pr = 0,
             completed_at = 1700000060000L,
+            set_end_reason = "TARGET_REPS_REACHED",
         )
 
         // Export just this session
@@ -650,6 +651,7 @@ class DataBackupManagerRoutineNameTest {
             logged_rpe = null,
             is_pr = 0,
             completed_at = 1_700_000_006_000L,
+            set_end_reason = "TARGET_REPS_REACHED",
         )
         database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
             id = "cs-row",
@@ -662,6 +664,7 @@ class DataBackupManagerRoutineNameTest {
             logged_rpe = null,
             is_pr = 0,
             completed_at = 1_700_000_106_000L,
+            set_end_reason = "TARGET_REPS_REACHED",
         )
 
         val result = backupManager.exportRoutine(sharedRoutineSessionId)
