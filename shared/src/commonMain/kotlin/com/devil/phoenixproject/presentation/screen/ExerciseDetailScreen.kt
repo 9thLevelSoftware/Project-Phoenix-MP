@@ -188,13 +188,6 @@ fun ExerciseDetailScreen(
     val previousSessionOneRepMax =
         validSessionEstimatesNewestFirst.getOrNull(1)?.second
 
-    // Display-safe heaviest load: fall back to weightPerCableKg when
-    // heaviestLiftKg is 0f (measured zero), matching SQL behavior.
-    fun WorkoutSession.displayHeaviestKgPerCable(): Float =
-        effectiveHeaviestKgPerCable().takeIf { it > 0f }
-            ?: weightPerCableKg.takeIf { it > 0f }
-            ?: 0f
-
     // Weight-over-time trend data using saved per-cable load.
     val weightTrendData = remember(exerciseSessions) {
         exerciseSessions.mapNotNull { session ->
@@ -896,3 +889,13 @@ private fun formatDuration(durationMs: Long): String {
     val minutes = durationMs / 60000
     return if (minutes > 0) "${minutes}min" else "<1min"
 }
+
+/**
+ * Display-safe heaviest load per cable: falls back to weightPerCableKg when
+ * heaviestLiftKg is 0f (measured zero), matching SQL selectExerciseWeightHistory
+ * behavior that treats nonpositive heaviestLiftKg as absent.
+ */
+private fun WorkoutSession.displayHeaviestKgPerCable(): Float =
+    effectiveHeaviestKgPerCable().takeIf { it > 0f }
+        ?: weightPerCableKg.takeIf { it > 0f }
+        ?: 0f
