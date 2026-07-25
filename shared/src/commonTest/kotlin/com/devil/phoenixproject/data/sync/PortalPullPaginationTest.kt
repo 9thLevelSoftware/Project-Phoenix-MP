@@ -15,6 +15,7 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.test.assertFalse
 import kotlinx.coroutines.test.currentTime
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.buildJsonObject
@@ -642,6 +643,177 @@ class PortalPullPaginationTest {
                 put("weightIncrement", 0.5)
             },
         )
+
+    // ==================== Cursor-Validity Guards (issue #679) ====================
+
+    @Test
+    fun pullBeyond100PagesSucceedsWhenCursorsAreDistinct() = runTest {
+        // Issue #679: accounts with >10,000 entities hit the old MAX_PAGES=100 ceiling.
+        // After the fix, pagination continues as long as cursors are distinct and non-blank.
+        authenticate()
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        val pageCount = 101
+        var limiterClockMs = 0L
+        fakeApi.pullTimestampSourceMs = { limiterClockMs }
+        val pages = MutableList(pageCount) { index ->
+            val isLast = index == pageCount - 1
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1_740_000_000_000L + index,
+                    hasMore = !isLast,
+                    nextCursor = if (isLast) null else "cursor-page-${index + 1}",
+                    routines = listOf(PullRoutineDto(id = "r$index", name = "Routine $index")),
+                ),
+            )
+        }
+        fakeApi.pullResultsQueue = pages
+
+        val result = createManager(
+            rateLimiter = ClientRateLimiter(
+                windowMillis = 250L,
+                nowMs = { limiterClockMs },
+                waitFor = { delayMs -> limiterClockMs += delayMs },
+            ),
+        ).sync()
+
+        assertTrue(result.isSuccess, "101-page pull with distinct cursors should succeed")
+        assertEquals(pageCount, fakeApi.pullCallCount, "Should fire once per page")
+        assertEquals(
+            1_740_000_000_000L + pageCount - 1,
+            tokenStorage.getLastSyncTimestamp(),
+            "Final sync timestamp should be from the last page",
+        )
+    }
+
+    @Test
+    fun pullWithRepeatedCursorDetectsLoopAndDoesNotAdvanceLastSync() = runTest {
+        // Issue #679: a repeated cursor means the server is stuck in a loop.
+        // sync() returns partial success (push succeeded, pull failed); lastSync must not advance.
+        authenticate()
+        val initial = 5000L
+        tokenStorage.setLastSyncTimestamp(initial)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1L,
+                    hasMore = true,
+                    nextCursor = "cursor-loop",
+                    routines = listOf(PullRoutineDto(id = "r1", name = "R1")),
+                ),
+            ),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 2L,
+                    hasMore = true,
+                    nextCursor = "cursor-loop", // repeated!
+                    routines = listOf(PullRoutineDto(id = "r2", name = "R2")),
+                ),
+            ),
+        )
+
+        val manager = createManager()
+        manager.sync()
+
+        // sync() returns partial success; pull consumed 2 pages then detected the repeat.
+        val state = assertIs<SyncState.PartialSuccess>(manager.syncState.value)
+        assertTrue(state.pushSucceeded, "Push should have succeeded")
+        assertFalse(state.pullSucceeded, "Pull should have failed")
+        assertNotNull(state.pullError, "pullError must be populated")
+        assertTrue(
+            state.pullError.contains("repeated cursor", ignoreCase = true),
+            "pullError should mention the repeated cursor",
+        )
+        assertEquals(2, fakeApi.pullCallCount, "Two pages fetched before cursor repetition detected")
+        assertEquals(
+            initial,
+            tokenStorage.getLastSyncTimestamp(),
+            "Repeated cursor must not advance lastSync",
+        )
+    }
+
+    @Test
+    fun pullWithBlankCursorDetectsProtocolViolationAndDoesNotAdvanceLastSync() = runTest {
+        // Issue #679: a blank cursor with hasMore=true is a server protocol violation.
+        // sync() returns partial success (push succeeded, pull failed); lastSync must not advance.
+        authenticate()
+        val initial = 5000L
+        tokenStorage.setLastSyncTimestamp(initial)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1L,
+                    hasMore = true,
+                    nextCursor = "  ", // blank cursor
+                    routines = listOf(PullRoutineDto(id = "r1", name = "R1")),
+                ),
+            ),
+        )
+
+        val manager = createManager()
+        manager.sync()
+
+        // Page 1 is fetched and merged; the blank cursor is detected on the NEXT iteration.
+        val state = assertIs<SyncState.PartialSuccess>(manager.syncState.value)
+        assertTrue(state.pushSucceeded, "Push should have succeeded")
+        assertFalse(state.pullSucceeded, "Pull should have failed")
+        assertNotNull(state.pullError, "pullError must be populated")
+        assertTrue(
+            state.pullError.contains("blank continuation cursor", ignoreCase = true),
+            "pullError should mention the blank cursor",
+        )
+        assertEquals(1, fakeApi.pullCallCount, "One page fetched before blank cursor detected")
+        assertEquals(
+            initial,
+            tokenStorage.getLastSyncTimestamp(),
+            "Blank cursor must not advance lastSync",
+        )
+    }
+
+    @Test
+    fun pullWithNullCursorAndHasMoreFailsGracefully() = runTest {
+        // Issue #679: hasMore=true with null nextCursor is a server protocol violation.
+        // sync() must return failure through pullRemoteChangesWithResult, exposing
+        // SyncState.PartialSuccess with diagnostic pullError and unchanged lastSync.
+        authenticate()
+        val initial = 5000L
+        tokenStorage.setLastSyncTimestamp(initial)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1L,
+                    hasMore = true,
+                    nextCursor = null, // null cursor + hasMore=true
+                    routines = listOf(PullRoutineDto(id = "r1", name = "R1")),
+                ),
+            ),
+        )
+
+        val manager = createManager()
+        val result = manager.sync()
+
+        // Pull failure surfaces as PartialSuccess (push succeeded, pull failed).
+        val state = assertIs<SyncState.PartialSuccess>(manager.syncState.value)
+        assertTrue(state.pushSucceeded, "Push should have succeeded")
+        assertFalse(state.pullSucceeded, "Pull should have failed")
+        assertNotNull(state.pullError, "pullError must be populated")
+        assertTrue(
+            state.pullError.contains("no nextCursor"),
+            "pullError should mention the missing cursor",
+        )
+        assertEquals(
+            initial,
+            tokenStorage.getLastSyncTimestamp(),
+            "Null cursor + hasMore=true must not advance lastSync",
+        )
+        assertEquals(1, fakeApi.pullCallCount)
+    }
 
     // ==================== pageSize Wiring ====================
 

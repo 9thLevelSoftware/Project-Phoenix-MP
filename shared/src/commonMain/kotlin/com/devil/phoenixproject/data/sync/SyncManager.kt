@@ -70,8 +70,18 @@ object SyncConfig {
     /** Default number of entities per pull page. */
     const val DEFAULT_PAGE_SIZE = 100
 
-    /** Maximum pages to fetch in a single pull operation (prevents infinite loops). */
-    const val MAX_PAGES = 100
+    /**
+     * Emergency circuit breaker: absolute maximum pages per pull.
+     *
+     * This is a telemetry-backed safety net, NOT a product limit. Normal pagination
+     * terminates via `hasMore=false` or cursor-validity checks. A legitimate account
+     * should never reach this ceiling; if it fires, it signals a server-side
+     * pagination bug (e.g. cursor never exhausted).
+     *
+     * Previous value was 100, which blocked accounts with >10,000 entities.
+     * See: https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues/679
+     */
+    const val MAX_PAGES = 10_000
 
     /**
      * Maximum number of IDs per parity list sent in a single pull request.
@@ -1484,21 +1494,46 @@ class SyncManager(
         var totalEntitiesFetched = 0
         var currentCursor: String? = null
         var finalSyncTime: Long = 0
+        val seenCursors = mutableSetOf<String>() // cursor-repetition detection (issue #679)
 
         // Pagination loop: fetch pages until hasMore is false
         while (true) {
             // Early exit on coroutine cancellation
             currentCoroutineContext().ensureActive()
 
-            // Infinite loop prevention
+            // Emergency circuit breaker — should never fire during normal operation.
+            // If it does, the server's pagination protocol is broken (cursor never exhausted).
             if (pagesProcessed >= SyncConfig.MAX_PAGES) {
                 val error = PortalApiException(
-                    "Pull exceeded maximum page limit (${SyncConfig.MAX_PAGES}). " +
+                    "Pull exceeded emergency page limit (${SyncConfig.MAX_PAGES}). " +
                         "Processed $totalEntitiesFetched entities across $pagesProcessed pages. " +
-                        "This may indicate a data issue - please contact support.",
+                        "Server pagination may be broken - please contact support.",
                 )
                 Logger.e("SyncManager") { error.message!! }
                 return Result.failure(error)
+            }
+
+            // Cursor-validity guard: reject blank or repeated cursors (issue #679).
+            // A repeated cursor means the server is sending the same page forever;
+            // a blank cursor with hasMore=true is a protocol violation.
+            if (currentCursor != null) {
+                if (currentCursor.isBlank()) {
+                    val error = PortalApiException(
+                        "Pull received blank continuation cursor after $pagesProcessed pages. " +
+                            "Processed $totalEntitiesFetched entities. Server pagination protocol error.",
+                    )
+                    Logger.e("SyncManager") { error.message!! }
+                    return Result.failure(error)
+                }
+                if (!seenCursors.add(currentCursor)) {
+                    val error = PortalApiException(
+                        "Pull detected repeated cursor after $pagesProcessed pages " +
+                            "(cursor=${currentCursor.take(16)}...). " +
+                            "Processed $totalEntitiesFetched entities. Server may be stuck in a loop.",
+                    )
+                    Logger.e("SyncManager") { error.message!! }
+                    return Result.failure(error)
+                }
             }
 
             // Emit progress state for UI feedback
@@ -1632,11 +1667,15 @@ class SyncManager(
             // Prepare for next page
             currentCursor = pullResponse.nextCursor
             if (currentCursor == null) {
-                // hasMore=true but no cursor - should not happen, break to prevent infinite loop
-                Logger.w("SyncManager") {
-                    "Pull page $pagesProcessed has hasMore=true but no nextCursor. Breaking."
-                }
-                break
+                // hasMore=true but no cursor is a protocol violation — treat as pull failure
+                // so sync() reports PartialSuccess and preserves the prior lastSync timestamp.
+                val error = PortalApiException(
+                    "Pull page $pagesProcessed has hasMore=true but no nextCursor. " +
+                        "Processed $totalEntitiesFetched entities across $pagesProcessed pages. " +
+                        "Server pagination protocol error — missing continuation cursor.",
+                )
+                Logger.e("SyncManager") { error.message!! }
+                return Result.failure(error)
             }
         }
 
