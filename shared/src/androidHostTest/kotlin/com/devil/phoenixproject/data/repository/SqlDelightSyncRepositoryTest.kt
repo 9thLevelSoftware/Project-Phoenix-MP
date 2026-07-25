@@ -515,6 +515,8 @@ class SqlDelightSyncRepositoryTest {
             null,
             null,
             isBodyweight = null,
+            dropSetEnabled = 0,
+            dropSetMinWeightKg = 0.0,
         )
 
         // Strategy 0: resolves by catalog id (unambiguous), ignoring name
@@ -744,6 +746,8 @@ class SqlDelightSyncRepositoryTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
             isBodyweight = null,
+            dropSetEnabled = 0,
+            dropSetMinWeightKg = 0.0,
         )
 
         repository.mergePortalRoutines(
@@ -826,6 +830,8 @@ class SqlDelightSyncRepositoryTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = "ESTIMATED_1RM",
             isBodyweight = null,
+            dropSetEnabled = 0,
+            dropSetMinWeightKg = 0.0,
         )
 
         repository.mergePortalRoutines(
@@ -861,6 +867,8 @@ class SqlDelightSyncRepositoryTest {
 
     @Test
     fun `mergePortalRoutines stores isBodyweight flag without corrupting equipment`() = runTest {
+            dropSetEnabled = 0,
+            dropSetMinWeightKg = 0.0,
         // #635 regression: the pull path used to write a "Bodyweight" sentinel string
         // into exerciseEquipment, which permanently poisoned classification because
         // snapshot Exercises re-derived isBodyweight from the equipment string.
@@ -891,6 +899,8 @@ class SqlDelightSyncRepositoryTest {
             one_rep_max_kg = null,
             mvtOverrideMs = null,
             isBodyweight = 0,
+            dropSetEnabled = 0,
+            dropSetMinWeightKg = 0.0,
         )
         repository.mergePortalRoutines(
             routines = listOf(
@@ -909,6 +919,8 @@ class SqlDelightSyncRepositoryTest {
                             reps = 10,
                             weight = 0f,
                             isBodyweight = true,
+            dropSetEnabled = 0,
+            dropSetMinWeightKg = 0.0,
                         ),
                         PullRoutineExerciseDto(
                             id = "rex-635-cable",
@@ -919,6 +931,8 @@ class SqlDelightSyncRepositoryTest {
                             reps = 8,
                             weight = 40f,
                             isBodyweight = false,
+            dropSetEnabled = 0,
+            dropSetMinWeightKg = 0.0,
                         ),
                         // Older Edge Function payloads omit the field entirely — the
                         // stored flag must stay NULL (derive from catalog equipment),

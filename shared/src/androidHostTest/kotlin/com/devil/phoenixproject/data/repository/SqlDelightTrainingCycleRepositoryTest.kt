@@ -281,6 +281,8 @@ class SqlDelightTrainingCycleRepositoryTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
             isBodyweight = null,
+            dropSetEnabled = 0,
+            dropSetMinWeightKg = 0.0,
         )
     }
 }

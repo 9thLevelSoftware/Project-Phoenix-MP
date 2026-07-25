@@ -457,6 +457,8 @@ class MigrationManagerTest {
             one_rep_max_kg = null,
             mvtOverrideMs = null,
             isBodyweight = null,
+            dropSetEnabled = 0,
+            dropSetMinWeightKg = 0.0,
         )
         queries.insertRecord(
             exerciseId = "deadlift",
@@ -932,6 +934,8 @@ class MigrationManagerTest {
             one_rep_max_kg = oneRepMaxKg,
             mvtOverrideMs = null,
             isBodyweight = null,
+            dropSetEnabled = 0,
+            dropSetMinWeightKg = 0.0,
         )
     }
 
@@ -973,6 +977,8 @@ class MigrationManagerTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
             isBodyweight = null,
+            dropSetEnabled = 0,
+            dropSetMinWeightKg = 0.0,
         )
     }
 
