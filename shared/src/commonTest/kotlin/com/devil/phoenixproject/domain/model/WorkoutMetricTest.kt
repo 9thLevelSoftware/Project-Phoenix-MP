@@ -217,6 +217,22 @@ class WorkoutSessionTest {
     }
 
     @Test
+    fun `display heaviest load preserves counterweighted zero and rejects invalid summary values`() {
+        val counterweightedSession = WorkoutSession(
+            weightPerCableKg = 30f,
+            heaviestLiftKg = 0f,
+            counterweightKg = 80f,
+        )
+        val nonFiniteMeasuredSession = WorkoutSession(
+            weightPerCableKg = 30f,
+            heaviestLiftKg = Float.POSITIVE_INFINITY,
+        )
+
+        assertEquals(0f, counterweightedSession.displayHeaviestKgPerCable())
+        assertEquals(30f, nonFiniteMeasuredSession.displayHeaviestKgPerCable())
+    }
+
+    @Test
     fun `effectiveTotalVolumeKg uses measured summary value when present`() {
         val session = WorkoutSession(
             weightPerCableKg = 40f,

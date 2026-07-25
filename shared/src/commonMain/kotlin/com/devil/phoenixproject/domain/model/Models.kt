@@ -609,6 +609,24 @@ data class WorkoutSession(
 fun WorkoutSession.effectiveHeaviestKgPerCable(): Float = heaviestLiftKg ?: weightPerCableKg
 
 /**
+ * Resolves the safe per-cable load for history, progression, and 1RM display.
+ *
+ * A finite positive recorded summary value is authoritative. A zero recorded value is
+ * preserved only when persisted counterweight context proves that a bodyweight load was
+ * genuinely offset to zero; otherwise zero, negative, and non-finite summary values fall
+ * back to the finite positive configured value. Legacy sessions have no summary value and
+ * therefore use their configured weight unchanged.
+ */
+fun WorkoutSession.displayHeaviestKgPerCable(): Float {
+    val measured = heaviestLiftKg
+    if (measured != null && measured.isFinite()) {
+        if (measured > 0f) return measured
+        if (measured == 0f && counterweightKg.isFinite() && counterweightKg > 0f) return 0f
+    }
+    return weightPerCableKg.takeIf { it.isFinite() && it > 0f } ?: 0f
+}
+
+/**
  * Legacy multiplier metadata for explicit total/compatibility paths.
  *
  * Ordinary saved-session load display matches the official app and stays per-cable.

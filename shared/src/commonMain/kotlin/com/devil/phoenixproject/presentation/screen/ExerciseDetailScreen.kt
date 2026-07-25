@@ -29,7 +29,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
-import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
+import com.devil.phoenixproject.domain.model.displayHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.domain.usecase.CurrentOneRepMax
 import com.devil.phoenixproject.domain.usecase.CurrentOneRepMaxSource
@@ -889,13 +889,3 @@ private fun formatDuration(durationMs: Long): String {
     val minutes = durationMs / 60000
     return if (minutes > 0) "${minutes}min" else "<1min"
 }
-
-/**
- * Display-safe heaviest load per cable: falls back to weightPerCableKg when
- * heaviestLiftKg is 0f (measured zero), matching SQL selectExerciseWeightHistory
- * behavior that treats nonpositive heaviestLiftKg as absent.
- */
-private fun WorkoutSession.displayHeaviestKgPerCable(): Float =
-    effectiveHeaviestKgPerCable().takeIf { it > 0f }
-        ?: weightPerCableKg.takeIf { it > 0f }
-        ?: 0f
