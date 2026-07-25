@@ -228,9 +228,10 @@ class WorkoutSessionTest {
             heaviestLiftKg = Float.POSITIVE_INFINITY,
         )
 
-        // WorkoutSession does not persist Exercise.isBodyweight, so rack counterweight alone
-        // cannot prove this zero was an intentional bodyweight effective load.
-        assertEquals(30f, counterweightedSession.displayHeaviestKgPerCable())
+        // Counterweight alone cannot prove a bodyweight set, but a screen that has the
+        // canonical Exercise.isBodyweight classification can preserve a real zero.
+        assertEquals(30f, counterweightedSession.displayHeaviestKgPerCable(isBodyweight = false))
+        assertEquals(0f, counterweightedSession.displayHeaviestKgPerCable(isBodyweight = true))
         assertEquals(30f, nonFiniteMeasuredSession.displayHeaviestKgPerCable())
     }
 

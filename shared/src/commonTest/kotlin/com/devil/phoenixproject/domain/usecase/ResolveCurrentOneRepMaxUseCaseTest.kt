@@ -162,11 +162,15 @@ class ResolveCurrentOneRepMaxUseCaseTest {
         val zeroMeasuredResult = zeroMeasuredSession.estimatedOneRepMaxPerCableOrNull()
         assertEquals(56.25f, zeroMeasuredResult!!, 0.1f) // falls back to weightPerCableKg=50
 
-        // WorkoutSession does not persist bodyweight classification, so counterweight alone
-        // cannot distinguish a legitimate zero bodyweight load from an invalid machine metric.
-        // Preserve the canonical configured-load fallback used by history SQL.
+        // Preserve a deliberate zero only when the caller supplies the canonical exercise
+        // classification; machine sessions with counterweight retain the SQL fallback.
         val counterweightedBodyweightSession = zeroMeasuredSession.copy(counterweightKg = 100f)
-        assertEquals(56.25f, counterweightedBodyweightSession.estimatedOneRepMaxPerCableOrNull()!!, 0.1f)
+        assertEquals(
+            56.25f,
+            counterweightedBodyweightSession.estimatedOneRepMaxPerCableOrNull(isBodyweight = false)!!,
+            0.1f,
+        )
+        assertNull(counterweightedBodyweightSession.estimatedOneRepMaxPerCableOrNull(isBodyweight = true))
     }
 
     @Test

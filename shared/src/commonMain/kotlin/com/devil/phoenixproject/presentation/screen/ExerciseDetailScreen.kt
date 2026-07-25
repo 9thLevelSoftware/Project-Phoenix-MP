@@ -56,6 +56,7 @@ internal data class ExerciseDetailOneRepMaxRequest(
     val exerciseId: String,
     val profileId: String,
     val completedSessions: List<WorkoutSession>,
+    val isBodyweight: Boolean = false,
 )
 
 internal data class ExerciseDetailOneRepMaxLoadToken(
@@ -82,13 +83,13 @@ internal sealed interface ExerciseDetailOneRepMaxState {
 internal suspend fun loadExerciseDetailOneRepMax(
     request: ExerciseDetailOneRepMaxRequest,
     gate: ExerciseDetailOneRepMaxLoadGate,
-    resolve: suspend (exerciseId: String, profileId: String) -> CurrentOneRepMax?,
+    resolve: suspend (exerciseId: String, profileId: String, isBodyweight: Boolean) -> CurrentOneRepMax?,
     publish: (ExerciseDetailOneRepMaxState) -> Unit,
 ) {
     val token = gate.begin(request)
     publish(ExerciseDetailOneRepMaxState.Loading)
     try {
-        val resolution = resolve(request.exerciseId, request.profileId)
+        val resolution = resolve(request.exerciseId, request.profileId, request.isBodyweight)
         if (gate.isCurrent(token)) {
             publish(ExerciseDetailOneRepMaxState.Ready(resolution))
         }
@@ -140,22 +141,25 @@ fun ExerciseDetailScreen(
 
     // Get exercise name — null while the repository call is in flight
     val unknownExerciseLabel = stringResource(Res.string.exercise_unknown)
-    var exerciseName by remember { mutableStateOf<String?>(null) }
+    var exerciseName by remember(exerciseId) { mutableStateOf<String?>(null) }
+    var exerciseIsBodyweight by remember(exerciseId) { mutableStateOf(false) }
     LaunchedEffect(exerciseId) {
         val exercise = viewModel.exerciseRepository.getExerciseById(exerciseId)
         exerciseName = exercise?.name ?: unknownExerciseLabel
+        exerciseIsBodyweight = exercise?.isBodyweight == true
         // Clear topbar title to allow dynamic title from EnhancedMainScreen
         viewModel.updateTopBarTitle("")
     }
 
     val resolveCurrentOneRepMax: ResolveCurrentOneRepMaxUseCase = koinInject()
     val loadGate = remember { ExerciseDetailOneRepMaxLoadGate() }
-    val request = remember(exerciseId, profileId, exerciseSessions) {
+    val request = remember(exerciseId, profileId, exerciseSessions, exerciseIsBodyweight) {
         profileId?.let {
             ExerciseDetailOneRepMaxRequest(
                 exerciseId = exerciseId,
                 profileId = it,
                 completedSessions = exerciseSessions,
+                isBodyweight = exerciseIsBodyweight,
             )
         }
     }
@@ -176,9 +180,9 @@ fun ExerciseDetailScreen(
         )
     }
 
-    val validSessionEstimatesNewestFirst = remember(exerciseSessions) {
+    val validSessionEstimatesNewestFirst = remember(exerciseSessions, exerciseIsBodyweight) {
         exerciseSessions.mapNotNull { session ->
-            session.estimatedOneRepMaxPerCableOrNull()
+            session.estimatedOneRepMaxPerCableOrNull(exerciseIsBodyweight)
                 ?.let { estimate -> session.timestamp to estimate }
         }
     }
@@ -189,9 +193,9 @@ fun ExerciseDetailScreen(
         validSessionEstimatesNewestFirst.getOrNull(1)?.second
 
     // Weight-over-time trend data using saved per-cable load.
-    val weightTrendData = remember(exerciseSessions) {
+    val weightTrendData = remember(exerciseSessions, exerciseIsBodyweight) {
         exerciseSessions.mapNotNull { session ->
-            val load = session.displayHeaviestKgPerCable()
+            val load = session.displayHeaviestKgPerCable(exerciseIsBodyweight)
             if (load > 0) {
                 session.timestamp to load
             } else {
@@ -336,6 +340,7 @@ fun ExerciseDetailScreen(
                                 session = session,
                                 weightUnit = weightUnit,
                                 formatWeight = viewModel::formatWeight,
+                                isBodyweight = exerciseIsBodyweight,
                             )
                         }
                     }
@@ -346,6 +351,7 @@ fun ExerciseDetailScreen(
                             sessions = exerciseSessions,
                             weightUnit = weightUnit,
                             formatWeight = viewModel::formatWeight,
+                            isBodyweight = exerciseIsBodyweight,
                         )
                     }
                 }
@@ -661,7 +667,12 @@ private fun VolumeChartCard(sessions: List<WorkoutSession>, weightUnit: WeightUn
 }
 
 @Composable
-private fun ExerciseHistoryTable(sessions: List<WorkoutSession>, weightUnit: WeightUnit, formatWeight: (Float, WeightUnit) -> String) {
+private fun ExerciseHistoryTable(
+    sessions: List<WorkoutSession>,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String,
+    isBodyweight: Boolean,
+) {
     if (sessions.isEmpty()) {
         Text(
             "No workout history for this exercise.",
@@ -739,7 +750,7 @@ private fun ExerciseHistoryTable(sessions: List<WorkoutSession>, weightUnit: Wei
                         )
                         TableCell(
                             WeightDisplayFormatter.formatDisplayWeight(
-                                session.displayHeaviestKgPerCable(),
+                                session.displayHeaviestKgPerCable(isBodyweight),
                                 null,
                                 weightUnit,
                             ),
@@ -754,7 +765,7 @@ private fun ExerciseHistoryTable(sessions: List<WorkoutSession>, weightUnit: Wei
                             Modifier.weight(1f),
                         )
                         TableCell(
-                            session.estimatedOneRepMaxPerCableOrNull()
+                            session.estimatedOneRepMaxPerCableOrNull(isBodyweight)
                                 ?.let { formatWeight(it, weightUnit) }
                                 ?: "-",
                             Modifier.weight(1f),
@@ -798,7 +809,12 @@ private fun TableCell(text: String, modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun SessionHistoryRow(session: WorkoutSession, weightUnit: WeightUnit, formatWeight: (Float, WeightUnit) -> String) {
+private fun SessionHistoryRow(
+    session: WorkoutSession,
+    weightUnit: WeightUnit,
+    formatWeight: (Float, WeightUnit) -> String,
+    isBodyweight: Boolean,
+) {
     var isExpanded by remember { mutableStateOf(false) }
 
     ExpressiveCard(
@@ -825,7 +841,7 @@ private fun SessionHistoryRow(session: WorkoutSession, weightUnit: WeightUnit, f
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        "${WeightDisplayFormatter.formatDisplayWeight(session.displayHeaviestKgPerCable(), null, weightUnit)} × ${session.workingReps} reps",
+                        "${WeightDisplayFormatter.formatDisplayWeight(session.displayHeaviestKgPerCable(isBodyweight), null, weightUnit)} × ${session.workingReps} reps",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

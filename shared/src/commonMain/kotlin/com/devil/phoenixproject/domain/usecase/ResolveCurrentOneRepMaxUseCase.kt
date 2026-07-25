@@ -20,8 +20,8 @@ data class CurrentOneRepMax(
     val measuredAt: Long,
 )
 
-fun WorkoutSession.estimatedOneRepMaxPerCableOrNull(): Float? {
-    val load = displayHeaviestKgPerCable().takeIf { it > 0f } ?: return null
+fun WorkoutSession.estimatedOneRepMaxPerCableOrNull(isBodyweight: Boolean = false): Float? {
+    val load = displayHeaviestKgPerCable(isBodyweight).takeIf { it > 0f } ?: return null
     val reps = workingReps.takeIf { it > 0 }
         ?: totalReps.takeIf { it > 0 }
         ?: return null
@@ -37,7 +37,11 @@ class ResolveCurrentOneRepMaxUseCase(
     private val assessmentRepository: AssessmentRepository,
     private val workoutRepository: WorkoutRepository,
 ) {
-    suspend operator fun invoke(exerciseId: String, profileId: String): CurrentOneRepMax? {
+    suspend operator fun invoke(
+        exerciseId: String,
+        profileId: String,
+        isBodyweight: Boolean = false,
+    ): CurrentOneRepMax? {
         require(exerciseId.isNotBlank())
         require(profileId.isNotBlank())
 
@@ -80,7 +84,7 @@ class ResolveCurrentOneRepMaxUseCase(
             limit = MAX_RECENT_EXERCISE_SESSIONS,
         ).forEach { session ->
             if (session.exerciseId == exerciseId && session.profileId == profileId) {
-                val estimate = session.estimatedOneRepMaxPerCableOrNull()
+                val estimate = session.estimatedOneRepMaxPerCableOrNull(isBodyweight)
                 if (estimate != null) {
                     return CurrentOneRepMax(
                         perCableKg = estimate,
