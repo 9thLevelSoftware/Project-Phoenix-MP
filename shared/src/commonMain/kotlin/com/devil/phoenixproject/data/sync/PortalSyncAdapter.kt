@@ -580,7 +580,8 @@ object PortalSyncAdapter {
                 repCountTiming = ex.repCountTiming.name,
                 stopAtPosition = if (ex.stopAtTop) "TOP" else null,
                 stallDetection = ex.stallDetectionEnabled,
-                eccentricLoad = if (ex.programMode == ProgramMode.Echo) {
+                eccentricLoad = if (ex.programMode == ProgramMode.Echo ||
+                    (ex.programMode == ProgramMode.OldSchool && ex.eccentricLoad.percentage > 100)) {
                     ex.eccentricLoad.name
                 } else {
                     null

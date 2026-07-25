@@ -371,8 +371,10 @@ data class WorkoutParameters(
     /** True if this is an Echo workout */
     val isEchoMode: Boolean get() = programMode == ProgramMode.Echo
 
-    /** True if eccentric load exceeds 100% (triggers 0x4E Echo packet dispatch for Old School mode) */
-    val hasEccentricOverload: Boolean get() = eccentricLoad.percentage > 100
+    /** True if Old School mode has eccentric load > 100% (triggers 0x4E Echo packet dispatch).
+     *  Gated on ProgramMode.OldSchool so switching to Pump/TUT/TUTBeast/EccentricOnly
+     *  doesn't accidentally dispatch the 0x4E packet from a stale eccentric value. */
+    val hasEccentricOverload: Boolean get() = programMode == ProgramMode.OldSchool && eccentricLoad.percentage > 100
 }
 
 /**

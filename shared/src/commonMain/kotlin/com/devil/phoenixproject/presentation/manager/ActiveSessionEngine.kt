@@ -2832,7 +2832,7 @@ class ActiveSessionEngine(
                     }
                 }
 
-                val hasEccentricOverload = bleParams.eccentricLoad.percentage > 100
+                val hasEccentricOverload = bleParams.hasEccentricOverload
                 val commandValidation = if (bleParams.isEchoMode || hasEccentricOverload) {
                     WorkoutCommandValidator.validateEchoControl(
                         level = if (bleParams.isEchoMode) bleParams.echoLevel else EchoLevel.HARDER,

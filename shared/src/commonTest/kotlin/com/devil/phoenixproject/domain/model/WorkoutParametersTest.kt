@@ -174,13 +174,26 @@ class WorkoutParametersTest {
     }
 
     @Test
-    fun `hasEccentricOverload true for Echo with LOAD_130`() {
+    fun `hasEccentricOverload false for Echo with LOAD_130`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.Echo,
             reps = 10,
             eccentricLoad = EccentricLoad.LOAD_130,
         )
 
-        assertTrue(params.hasEccentricOverload)
+        // Echo has its own overload mechanism (isEchoMode); hasEccentricOverload is OldSchool-only
+        assertFalse(params.hasEccentricOverload)
+    }
+
+    @Test
+    fun `hasEccentricOverload false for Pump with LOAD_130 after mode switch`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.Pump,
+            reps = 10,
+            eccentricLoad = EccentricLoad.LOAD_130,
+        )
+
+        // Mode switch from Old School+130% to Pump must NOT trigger 0x4E dispatch
+        assertFalse(params.hasEccentricOverload)
     }
 }
