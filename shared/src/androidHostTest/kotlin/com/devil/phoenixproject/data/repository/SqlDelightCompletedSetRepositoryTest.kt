@@ -145,6 +145,8 @@ class SqlDelightCompletedSetRepositoryTest {
             prTypeForScaling = "MAX_WEIGHT",
             setWeightsPercentOfPR = null,
             stallDetectionEnabled = 1L,
+            dropSetEnabled = 0L,
+            dropSetMinWeightKg = 0.0,
             stopAtTop = 0L,
             repCountTiming = "TOP",
             setEchoLevels = "",
@@ -153,8 +155,6 @@ class SqlDelightCompletedSetRepositoryTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
             isBodyweight = null,
-            dropSetEnabled = 0,
-            dropSetMinWeightKg = 0.0,
         )
     }
 
