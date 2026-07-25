@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 
 enum class CurrentOneRepMaxSource {
@@ -20,7 +21,7 @@ data class CurrentOneRepMax(
 )
 
 fun WorkoutSession.estimatedOneRepMaxPerCableOrNull(): Float? {
-    val load = weightPerCableKg.takeIf { it.isFinite() && it > 0f } ?: return null
+    val load = effectiveHeaviestKgPerCable().takeIf { it.isFinite() && it > 0f } ?: return null
     val reps = workingReps.takeIf { it > 0 }
         ?: totalReps.takeIf { it > 0 }
         ?: return null

@@ -29,6 +29,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.effectiveHeaviestKgPerCable
 import com.devil.phoenixproject.domain.model.effectiveTotalVolumeKg
 import com.devil.phoenixproject.domain.usecase.CurrentOneRepMax
 import com.devil.phoenixproject.domain.usecase.CurrentOneRepMaxSource
@@ -190,8 +191,8 @@ fun ExerciseDetailScreen(
     // Weight-over-time trend data using saved per-cable load.
     val weightTrendData = remember(exerciseSessions) {
         exerciseSessions.mapNotNull { session ->
-            if (session.weightPerCableKg > 0) {
-                session.timestamp to session.weightPerCableKg
+            if (session.effectiveHeaviestKgPerCable() > 0) {
+                session.timestamp to session.effectiveHeaviestKgPerCable()
             } else {
                 null
             }
@@ -737,7 +738,7 @@ private fun ExerciseHistoryTable(sessions: List<WorkoutSession>, weightUnit: Wei
                         )
                         TableCell(
                             WeightDisplayFormatter.formatDisplayWeight(
-                                session.weightPerCableKg,
+                                session.effectiveHeaviestKgPerCable(),
                                 null,
                                 weightUnit,
                             ),
@@ -823,7 +824,7 @@ private fun SessionHistoryRow(session: WorkoutSession, weightUnit: WeightUnit, f
                         color = MaterialTheme.colorScheme.onSurface,
                     )
                     Text(
-                        "${WeightDisplayFormatter.formatDisplayWeight(session.weightPerCableKg, null, weightUnit)} × ${session.workingReps} reps",
+                        "${WeightDisplayFormatter.formatDisplayWeight(session.effectiveHeaviestKgPerCable(), null, weightUnit)} × ${session.workingReps} reps",
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
