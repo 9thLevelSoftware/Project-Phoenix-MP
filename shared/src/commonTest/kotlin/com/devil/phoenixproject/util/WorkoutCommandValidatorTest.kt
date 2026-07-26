@@ -206,6 +206,91 @@ class WorkoutCommandValidatorTest {
         )
     }
 
+    @Test
+    fun `progressionRegressionKg within plus minus 10 is accepted`() {
+        assertTrue(
+            WorkoutCommandValidator.validateProgramParams(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    weightPerCableKg = 40f,
+                    progressionRegressionKg = 10.0f,
+                ),
+            ).isSuccess,
+        )
+        assertTrue(
+            WorkoutCommandValidator.validateProgramParams(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    weightPerCableKg = 40f,
+                    progressionRegressionKg = -10.0f,
+                ),
+            ).isSuccess,
+        )
+        assertTrue(
+            WorkoutCommandValidator.validateProgramParams(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    weightPerCableKg = 40f,
+                    progressionRegressionKg = 0.0f,
+                ),
+            ).isSuccess,
+        )
+    }
+
+    @Test
+    fun `progressionRegressionKg outside plus minus 10 is rejected early`() {
+        assertFailureContains(
+            WorkoutCommandValidator.validateProgramParams(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    weightPerCableKg = 40f,
+                    progressionRegressionKg = 11.0f,
+                ),
+            ),
+            "progressionRegressionKg",
+        )
+        assertFailureContains(
+            WorkoutCommandValidator.validateProgramParams(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    weightPerCableKg = 40f,
+                    progressionRegressionKg = -15.0f,
+                ),
+            ),
+            "progressionRegressionKg",
+        )
+    }
+
+    @Test
+    fun `program params reject weightPerCableKg above signed protocol softMax 100`() {
+        // 101kg exceeds the signed protocol softMax bound (100.0f)
+        assertFailureContains(
+            WorkoutCommandValidator.validateProgramParams(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    weightPerCableKg = 101f,
+                ),
+            ),
+            "weightPerCableKg",
+        )
+        // 100kg is exactly at the bound — accepted by the validator (BlePacketFactory enforces the hard limit)
+        assertTrue(
+            WorkoutCommandValidator.validateProgramParams(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    weightPerCableKg = 100f,
+                ),
+            ).isSuccess,
+        )
+    }
+
     private fun validColors(): List<RGBColor> = listOf(
         RGBColor(255, 0, 0),
         RGBColor(0, 255, 0),

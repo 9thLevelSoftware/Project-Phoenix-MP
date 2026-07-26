@@ -1438,6 +1438,10 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // ── ExternalActivity (1 column, migration 31) ──────────────────────
     // Migration 31: provider tombstone handling
     SchemaHealOperation("ExternalActivity", "deletedAt", "ALTER TABLE ExternalActivity ADD COLUMN deletedAt INTEGER"),
+
+    // ── CompletedSet (1 column, migration 43) ──────────────────────────
+    // Migration 43: set-end reason for workout history analytics (Issue #673 PR 1)
+    SchemaHealOperation("CompletedSet", "set_end_reason", "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'TARGET_REPS_REACHED'"),
 )
 
 // ============================================================
