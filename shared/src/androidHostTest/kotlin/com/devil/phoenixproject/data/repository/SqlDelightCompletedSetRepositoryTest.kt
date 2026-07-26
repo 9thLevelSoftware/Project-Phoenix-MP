@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.PlannedSet
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
@@ -71,6 +72,37 @@ class SqlDelightCompletedSetRepositoryTest {
         assertEquals(2, sets.size)
     }
 
+    @Test
+    fun `saveCompletedSet round-trips setEndReason STALL_FAILURE`() = runTest {
+        val completed = completedSet("cset-stall", "session-1", setNumber = 1, setEndReason = SetEndReason.STALL_FAILURE)
+        repository.saveCompletedSet(completed)
+
+        val loaded = repository.getCompletedSets("session-1").first { it.id == "cset-stall" }
+        assertEquals(SetEndReason.STALL_FAILURE, loaded.setEndReason)
+    }
+
+    @Test
+    fun `saveCompletedSet round-trips setEndReason TARGET_REPS_REACHED default`() = runTest {
+        val completed = completedSet("cset-default", "session-1", setNumber = 1)
+        repository.saveCompletedSet(completed)
+
+        val loaded = repository.getCompletedSets("session-1").first { it.id == "cset-default" }
+        assertEquals(SetEndReason.TARGET_REPS_REACHED, loaded.setEndReason)
+    }
+
+    @Test
+    fun `saveCompletedSet round-trips all SetEndReason values`() = runTest {
+        for ((index, reason) in SetEndReason.entries.withIndex()) {
+            repository.saveCompletedSet(completedSet("cset-$index", "session-1", setNumber = index + 1, setEndReason = reason))
+        }
+
+        val loaded = repository.getCompletedSets("session-1")
+        assertEquals(SetEndReason.entries.size, loaded.size)
+        for ((index, reason) in SetEndReason.entries.withIndex()) {
+            assertEquals(reason, loaded[index].setEndReason, "Mismatch at index $index")
+        }
+    }
+
     private fun plannedSet(
         id: String,
         routineExerciseId: String,
@@ -89,7 +121,7 @@ class SqlDelightCompletedSetRepositoryTest {
         restSeconds = restSeconds,
     )
 
-    private fun completedSet(id: String, sessionId: String, setNumber: Int) = CompletedSet(
+    private fun completedSet(id: String, sessionId: String, setNumber: Int, setEndReason: SetEndReason = SetEndReason.TARGET_REPS_REACHED) = CompletedSet(
         id = id,
         sessionId = sessionId,
         plannedSetId = null,
@@ -100,6 +132,7 @@ class SqlDelightCompletedSetRepositoryTest {
         loggedRpe = null,
         isPr = false,
         completedAt = 1000L + setNumber,
+        setEndReason = setEndReason,
     )
 
     private fun insertRoutine(id: String) {

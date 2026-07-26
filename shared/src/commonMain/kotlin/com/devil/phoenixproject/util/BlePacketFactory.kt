@@ -232,9 +232,12 @@ object BlePacketFactory {
             }
         }
 
-        // Issue #673: Firmware validation bounds (official app: "Soft max is too high!" / "Increment is too high!")
-        require(params.weightPerCableKg <= Constants.MAX_WEIGHT_PER_CABLE_KG) {
-            "weightPerCableKg=${params.weightPerCableKg} exceeds max allowed (${Constants.MAX_WEIGHT_PER_CABLE_KG})"
+        // Issue #673: Signed protocol contract — softMax must not exceed 100.0f.
+        // The firmware's signed 8-bit protocol field limits the maximum to 100kg.
+        // Constants.MAX_WEIGHT_PER_CABLE_KG (110) is the UI/display maximum but
+        // must not be sent over BLE as softMax.
+        require(params.weightPerCableKg <= 100.0f) {
+            "weightPerCableKg=${params.weightPerCableKg} exceeds signed protocol softMax bound (100.0f)"
         }
         require(kotlin.math.abs(params.progressionRegressionKg) <= 10.0f) {
             "progressionRegressionKg=${params.progressionRegressionKg} exceeds firmware increment bound (10.0f)"

@@ -35,6 +35,15 @@ object WorkoutCommandValidator {
         validateFiniteWeight(params.weightPerCableKg).onFailure { return Result.failure(it) }
         validateFiniteWeight(params.progressionRegressionKg, field = "progressionRegressionKg")
             .onFailure { return Result.failure(it) }
+        // Issue #673: Validate firmware increment bound early (±10kg)
+        // so invalid imported/synced values are rejected before reaching
+        // BlePacketFactory.createProgramParams() which enforces the same
+        // bound via require().
+        if (kotlin.math.abs(params.progressionRegressionKg) > 10.0f) {
+            return failure(
+                "progressionRegressionKg must be within ±10.0f (firmware increment bound), got ${params.progressionRegressionKg}",
+            )
+        }
 
         if (params.isJustLift && params.weightPerCableKg < Constants.JUST_LIFT_MIN_VALID_WEIGHT_KG) {
             return failure(
