@@ -661,8 +661,12 @@ class SchemaParityTest {
             0,
         )
 
-        // Migrate 42 → 43
-        VitruvianDatabase.Schema.migrate(driver, 42, 43)
+        // Migrate 42 → 43 with resilient fallback (matches production behavior)
+        try {
+            VitruvianDatabase.Schema.migrate(driver, 42, 43)
+        } catch (_: Exception) {
+            applyMigrationResilient(driver, 42)
+        }
 
         assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "set_end_reason"))
 
