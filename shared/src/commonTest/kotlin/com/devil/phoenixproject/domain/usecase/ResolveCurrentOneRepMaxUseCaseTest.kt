@@ -123,6 +123,57 @@ class ResolveCurrentOneRepMaxUseCaseTest {
     }
 
     @Test
+    fun `session helper uses effectiveHeaviestKgPerCable for bodyweight sessions`() {
+        // Bodyweight session: configured weight is 0 but effective heaviest is 40 kg
+        val bodyweightSession = session(
+            perCableKg = 0f,
+            workingReps = 10,
+            totalReps = 10,
+            heaviestLiftKg = 40f,
+        )
+        val result = bodyweightSession.estimatedOneRepMaxPerCableOrNull()
+        assertEquals(53.3f, result!!, 0.2f) // 1RM from 40kg x 10 reps ≈ 53.3
+        // The old code would return null here since weightPerCableKg=0
+
+        // Nominal configured load but effective heaviest is higher (weighted vest + bodyweight)
+        val vestSession = session(
+            perCableKg = 5f,
+            workingReps = 10,
+            totalReps = 10,
+            heaviestLiftKg = 40f,
+        )
+        val vestResult = vestSession.estimatedOneRepMaxPerCableOrNull()
+        assertEquals(53.3f, vestResult!!, 0.2f)
+        // Old code would compute from 5f → ~6.7f, not 40f
+
+        // Legacy session with no heaviestLiftKg falls back to configured weight
+        val legacySession = session(perCableKg = 50f, workingReps = 5, totalReps = 5)
+        val legacyResult = legacySession.estimatedOneRepMaxPerCableOrNull()
+        assertEquals(56.25f, legacyResult!!, 0.1f) // 1RM from 50kg x 5 reps
+
+        // Edge case: heaviestLiftKg = 0f (measured zero) should fall back to weightPerCableKg
+        // matching SQL selectExerciseWeightHistory that treats nonpositive heaviestLiftKg as absent
+        val zeroMeasuredSession = session(
+            perCableKg = 50f,
+            workingReps = 5,
+            totalReps = 5,
+            heaviestLiftKg = 0f,
+        )
+        val zeroMeasuredResult = zeroMeasuredSession.estimatedOneRepMaxPerCableOrNull()
+        assertEquals(56.25f, zeroMeasuredResult!!, 0.1f) // falls back to weightPerCableKg=50
+
+        // Preserve a deliberate zero only when the caller supplies the canonical exercise
+        // classification; machine sessions with counterweight retain the SQL fallback.
+        val counterweightedBodyweightSession = zeroMeasuredSession.copy(counterweightKg = 100f)
+        assertEquals(
+            56.25f,
+            counterweightedBodyweightSession.estimatedOneRepMaxPerCableOrNull(isBodyweight = false)!!,
+            0.1f,
+        )
+        assertNull(counterweightedBodyweightSession.estimatedOneRepMaxPerCableOrNull(isBodyweight = true))
+    }
+
+    @Test
     fun `wrong profile and exercise at higher sources cannot block current session`() = runTest {
         velocity.latestPassing = velocityEstimate(
             perCableKg = 200f,
@@ -249,6 +300,7 @@ class ResolveCurrentOneRepMaxUseCaseTest {
         profileId: String = "athlete-a",
         exerciseId: String = "bench",
         timestamp: Long = 10L,
+        heaviestLiftKg: Float? = null,
     ) = WorkoutSession(
         id = "$profileId-$exerciseId-$timestamp-$perCableKg",
         timestamp = timestamp,
@@ -261,6 +313,7 @@ class ResolveCurrentOneRepMaxUseCaseTest {
         exerciseId = exerciseId,
         exerciseName = exerciseId,
         profileId = profileId,
+        heaviestLiftKg = heaviestLiftKg,
     )
 
     private fun velocityEstimate(
