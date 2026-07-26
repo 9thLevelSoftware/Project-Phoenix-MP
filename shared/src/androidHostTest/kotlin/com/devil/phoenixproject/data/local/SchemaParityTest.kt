@@ -644,10 +644,12 @@ class SchemaParityTest {
         buildSchemaAtVersion(driver, 42)
 
         // Create prerequisite rows: UserProfile, Routine, WorkoutSession
+        // Note: profile_id is added by manifest reconciliation, not by migration 42.
+        // Use columns available at schema v42 (pre-reconciliation).
         driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
-        driver.execute(null, "INSERT INTO Routine(id,name,createdAt,profile_id) VALUES('r1','R1',1,'default')", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
         driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)", 0)
-        driver.execute(null, "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg,profile_id) VALUES('s1',1,'OldSchool',10,40.0,'default')", 0)
+        driver.execute(null, "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('s1',1,'OldSchool',10,40.0)", 0)
 
         // Insert a CompletedSet BEFORE migration 43 (no set_end_reason column yet)
         driver.execute(
@@ -677,9 +679,9 @@ class SchemaParityTest {
         driver.execute(null, "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'TARGET_REPS_REACHED'", 0)
 
         driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
-        driver.execute(null, "INSERT INTO Routine(id,name,createdAt,profile_id) VALUES('r1','R1',1,'default')", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
         driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)", 0)
-        driver.execute(null, "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg,profile_id) VALUES('s1',1,'OldSchool',10,40.0,'default')", 0)
+        driver.execute(null, "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('s1',1,'OldSchool',10,40.0)", 0)
         driver.execute(
             null,
             """
