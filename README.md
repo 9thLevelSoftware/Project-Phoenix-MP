@@ -27,7 +27,7 @@ Your support helps cover development, testing, and platform costs and keeps this
 | **Android** | [Play Store](https://play.google.com/store/apps/details?id=com.devil.phoenixproject) / [Join Beta](ANDROID_INSTALL.md#join-the-beta) | [Android Guide](ANDROID_INSTALL.md) |
 | **iOS** | [TestFlight](https://testflight.apple.com/join/TFw1m89R) | [iOS Guide](iOS_INSTALL.md) |
 
-Current release: **v0.9.2** — Equipment Rack, Health Connect / HealthKit sync, Routine Intelligence, and a broad stability pass. See the [release notes](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.2) for full details.
+Current release: **[v0.9.6](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.6)** — profile-centered training controls, Exercise Insights, and workout reliability improvements. See the [release notes](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.6) for full details.
 
 ---
 
@@ -67,12 +67,21 @@ Current release: **v0.9.2** — Equipment Rack, Health Connect / HealthKit sync,
 - Day strip navigation for quick access
 
 ### Analytics & Progress
-- **Automatic personal record detection**
-- Complete workout history with expandable stats
-- Muscle balance radar chart
-- Workout consistency tracking
-- Volume vs intensity comparisons
-- Mode distribution breakdown
+- **Automatic personal record detection** with velocity-estimated 1RM, percent-of-1RM scaling, badges, and backfill
+- Complete workout history with expandable stats; exercise-history quick view *(merged after v0.9.6; release pending)*
+- Exercise picker filter for previously completed movements *(merged after v0.9.6; release pending)*
+- Muscle balance radar chart, workout consistency tracking, volume/intensity comparisons, and mode distribution
+
+### Profiles & Personalized Training
+- Dedicated **Profile** tab for switching, creating, and managing lifters
+- Per-profile body weight, Equipment Rack, workout behavior, audio, LED, VBT, and safety preferences
+- **Exercise Insights** for profile-specific PRs, estimated 1RM, recent sessions, volume trends, and full history
+
+### Smarter Workout Setup
+- Equipment Rack support for external load, counterweight, and display-only accessories
+- Next-set recommendations, session body-weight prompts, and temporary Active Recovery / Heavy Deload routine starts
+- TUT and TUT Beast in Just Lift; set-type labels during workouts
+- Routine-set repetition *(merged after v0.9.6; release pending)*
 
 ### Privacy Focused
 - All data stored locally on your device
@@ -97,9 +106,12 @@ For the latest features, fixes, and upgrade notes see the
 [GitHub Releases page](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases).
 Recent highlights:
 
-- **v0.9.2** — Equipment Rack for accessories, Health Connect / HealthKit sync with body-weight import, Routine Intelligence (next-set suggestions), TV remote navigation, and a broad stability pass across sync, history, analytics, OAuth, BLE, and backups.
-- **v0.9.1** — Stability, diagnostics, and integration sync improvements.
-- Earlier releases are listed in the [Releases](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases) page.
+- **[v0.9.6](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.6)** — Profile tab, profile-scoped preferences, Exercise Insights, clearer set types, Health Connect mapping, and workout-flow reliability fixes.
+- **[v0.9.5](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.5)** — UI/BLE compatibility and training-cycle reliability.
+- **[v0.9.4](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.4)** — Optional age-gated VBT verbal feedback.
+- **[v0.9.3](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.3)** — Velocity-based 1RM, body-weight prompts, Equipment Rack improvements, and TUT/TUT Beast in Just Lift.
+- **[v0.9.2](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.2)** — Equipment Rack, health sync, next-set recommendations, and routine modifiers.
+- Earlier releases are listed on the [Releases](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases) page.
 
 ---
 
