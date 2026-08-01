@@ -937,6 +937,8 @@ class DefaultWorkoutSessionManager(
                             selectedExerciseId = nextExercise.exercise.id,
                             isAMRAP = nextIsAMRAP,
                             stallDetectionEnabled = nextExercise.stallDetectionEnabled,
+                            stopAtTop = nextExercise.stopAtTop,
+                            repCountTiming = nextExercise.repCountTiming,
                         )
                         Logger.d {
                             "proceedFromSummary: Issue #203 - Updated params for next set: ${nextExercise.exercise.name}, setIdx=$nextSetIdx, isAMRAP=$nextIsAMRAP"

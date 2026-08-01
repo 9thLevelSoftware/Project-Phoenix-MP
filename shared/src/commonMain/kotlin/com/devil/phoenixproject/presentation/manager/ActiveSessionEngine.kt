@@ -4444,6 +4444,8 @@ class ActiveSessionEngine(
                         isAMRAP = nextIsAMRAP,
                         stallDetectionEnabled = exerciseForNextSet.stallDetectionEnabled,
                         warmupReps = if (nextExerciseIsBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS,
+                        stopAtTop = exerciseForNextSet.stopAtTop,
+                        repCountTiming = exerciseForNextSet.repCountTiming,
                     )
                     Logger.d { "startRestTimer: Issue #203 - Updated params for next set: ${exerciseForNextSet.exercise.name}, setIdx=$nextSetIdx, isAMRAP=$nextIsAMRAP, nextSetReps=$nextSetReps" }
                 }
@@ -4850,6 +4852,8 @@ class ActiveSessionEngine(
                 isAMRAP = nextIsAMRAP,
                 stallDetectionEnabled = nextExercise.stallDetectionEnabled,
                 warmupReps = if (nextIsBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS,
+                stopAtTop = nextExercise.stopAtTop,
+                repCountTiming = nextExercise.repCountTiming,
             )
             Logger.d {
                 "startNextSetOrExercise: Issue #203 - progressionKg=${nextExercise.progressionKg}kg for " +
