@@ -858,38 +858,37 @@ class DWSMRoutineFlowTest {
     }
 
     /**
-     * Issue #689: Regression test for per-exercise stopAtTop/repCountTiming propagation.
+     * Issue #689: Regression test for the autoplay exercise-boundary transition.
      *
-     * Before the fix, WorkoutParameters.copy() at the proceedFromSummary transition
-     * omitted stopAtTop and repCountTiming, so the first exercise's values leaked
-     * to all subsequent exercises during autoplay-off routines.
+     * ActiveSessionEngine.startNextSetOrExercise must replace the preceding exercise's
+     * stopAtTop and repCountTiming values with the next RoutineExercise's values.
      */
     @Test
-    fun proceedFromSummary_propagatesPerExerciseStopAtTopAndRepCountTiming() = runTest {
+    fun startNextSet_propagatesPerExerciseStopAtTopAndRepCountTiming() = runTest {
         val harness = DWSMTestHarness(this)
         val exercise0 = TestFixtures.allExercises[0]
         val exercise1 = TestFixtures.allExercises[1]
         val routine = Routine(
-            id = "test-689-stopAtTop-repCountTiming",
-            name = "Issue689 Regression",
+            id = "test-689-autoplay-stopAtTop-repCountTiming",
+            name = "Issue689 Autoplay Regression",
             exercises = listOf(
                 RoutineExercise(
-                    id = "re-0-stopAtTop-false",
+                    id = "re-0-stopAtTop-true",
                     exercise = exercise0,
                     orderIndex = 0,
-                    setReps = listOf(10, 10, 10),
+                    setReps = listOf(10),
                     weightPerCableKg = 25f,
-                    stopAtTop = false,
-                    repCountTiming = RepCountTiming.BOTTOM,
-                ),
-                RoutineExercise(
-                    id = "re-1-stopAtTop-true",
-                    exercise = exercise1,
-                    orderIndex = 1,
-                    setReps = listOf(12, 12, 12),
-                    weightPerCableKg = 15f,
                     stopAtTop = true,
                     repCountTiming = RepCountTiming.TOP,
+                ),
+                RoutineExercise(
+                    id = "re-1-stopAtTop-false",
+                    exercise = exercise1,
+                    orderIndex = 1,
+                    setReps = listOf(12),
+                    weightPerCableKg = 15f,
+                    stopAtTop = false,
+                    repCountTiming = RepCountTiming.BOTTOM,
                 ),
             ),
         )
@@ -899,36 +898,35 @@ class DWSMRoutineFlowTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
-        // Verify initial state: exercise 0's values seeded
-        assertEquals(false, harness.dwsm.coordinator.workoutParameters.value.stopAtTop)
-        assertEquals(RepCountTiming.BOTTOM, harness.dwsm.coordinator.workoutParameters.value.repCountTiming)
+        // Exercise 0 has the values that the report says leaked into later exercises.
+        assertEquals(true, harness.dwsm.coordinator.workoutParameters.value.stopAtTop)
+        assertEquals(RepCountTiming.TOP, harness.dwsm.coordinator.workoutParameters.value.repCountTiming)
 
-        // Simulate finishing the last set of exercise 0 (autoplay OFF path)
+        // Simulate a completed rest countdown advancing from exercise 0 to exercise 1.
+        harness.setActiveSummaryCountdownSeconds(0)
         harness.dwsm.coordinator._currentExerciseIndex.value = 0
-        harness.dwsm.coordinator._currentSetIndex.value = 2 // last of 3 sets
-        harness.dwsm.coordinator._workoutState.value = WorkoutState.SetSummary(
-            metrics = emptyList(),
-            peakLoadKgPerCable = 20f,
-            avgLoadKgPerCable = 18f,
-            repCount = 10,
-            workingReps = 10,
-            warmupReps = 0,
+        harness.dwsm.coordinator._currentSetIndex.value = 0
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = 0,
+            nextExerciseName = exercise1.displayName,
+            isLastExercise = false,
+            currentSet = 1,
+            totalSets = 1,
         )
 
-        harness.dwsm.proceedFromSummary()
+        harness.dwsm.startNextSet()
         advanceUntilIdle()
 
-        // Assert: exercise 1's stopAtTop and repCountTiming propagated
         val params = harness.dwsm.coordinator.workoutParameters.value
         assertEquals(
-            true,
+            false,
             params.stopAtTop,
-            "stopAtTop must propagate from exercise 1 after proceedFromSummary (Issue #689 regression)",
+            "stopAtTop must not leak from exercise 0 to exercise 1 (Issue #689 regression)",
         )
         assertEquals(
-            RepCountTiming.TOP,
+            RepCountTiming.BOTTOM,
             params.repCountTiming,
-            "repCountTiming must propagate from exercise 1 after proceedFromSummary (Issue #689 regression)",
+            "repCountTiming must not leak from exercise 0 to exercise 1 (Issue #689 regression)",
         )
         assertEquals(
             exercise1.id,
