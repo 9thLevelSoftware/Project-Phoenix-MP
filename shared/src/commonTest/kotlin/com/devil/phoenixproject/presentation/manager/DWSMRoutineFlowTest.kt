@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.manager
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -853,6 +854,87 @@ class DWSMRoutineFlowTest {
         )
         val complete = assertIs<RoutineFlowState.Complete>(harness.dwsm.coordinator.routineFlowState.value)
         assertEquals(0, complete.totalExercises, "Warmup-only completion should not count as a completed exercise")
+        harness.cleanup()
+    }
+
+    /**
+     * Issue #689: Regression test for per-exercise stopAtTop/repCountTiming propagation.
+     *
+     * Before the fix, WorkoutParameters.copy() at the proceedFromSummary transition
+     * omitted stopAtTop and repCountTiming, so the first exercise's values leaked
+     * to all subsequent exercises during autoplay-off routines.
+     */
+    @Test
+    fun proceedFromSummary_propagatesPerExerciseStopAtTopAndRepCountTiming() = runTest {
+        val harness = DWSMTestHarness(this)
+        val exercise0 = TestFixtures.allExercises[0]
+        val exercise1 = TestFixtures.allExercises[1]
+        val routine = Routine(
+            id = "test-689-stopAtTop-repCountTiming",
+            name = "Issue689 Regression",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-0-stopAtTop-false",
+                    exercise = exercise0,
+                    orderIndex = 0,
+                    setReps = listOf(10, 10, 10),
+                    weightPerCableKg = 25f,
+                    stopAtTop = false,
+                    repCountTiming = RepCountTiming.BOTTOM,
+                ),
+                RoutineExercise(
+                    id = "re-1-stopAtTop-true",
+                    exercise = exercise1,
+                    orderIndex = 1,
+                    setReps = listOf(12, 12, 12),
+                    weightPerCableKg = 15f,
+                    stopAtTop = true,
+                    repCountTiming = RepCountTiming.TOP,
+                ),
+            ),
+        )
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+
+        // Verify initial state: exercise 0's values seeded
+        assertEquals(false, harness.dwsm.coordinator.workoutParameters.value.stopAtTop)
+        assertEquals(RepCountTiming.BOTTOM, harness.dwsm.coordinator.workoutParameters.value.repCountTiming)
+
+        // Simulate finishing the last set of exercise 0 (autoplay OFF path)
+        harness.dwsm.coordinator._currentExerciseIndex.value = 0
+        harness.dwsm.coordinator._currentSetIndex.value = 2 // last of 3 sets
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 20f,
+            avgLoadKgPerCable = 18f,
+            repCount = 10,
+            workingReps = 10,
+            warmupReps = 0,
+        )
+
+        harness.dwsm.proceedFromSummary()
+        advanceUntilIdle()
+
+        // Assert: exercise 1's stopAtTop and repCountTiming propagated
+        val params = harness.dwsm.coordinator.workoutParameters.value
+        assertEquals(
+            true,
+            params.stopAtTop,
+            "stopAtTop must propagate from exercise 1 after proceedFromSummary (Issue #689 regression)",
+        )
+        assertEquals(
+            RepCountTiming.TOP,
+            params.repCountTiming,
+            "repCountTiming must propagate from exercise 1 after proceedFromSummary (Issue #689 regression)",
+        )
+        assertEquals(
+            exercise1.id,
+            params.selectedExerciseId,
+            "Selected exercise should advance to exercise 1",
+        )
         harness.cleanup()
     }
 
