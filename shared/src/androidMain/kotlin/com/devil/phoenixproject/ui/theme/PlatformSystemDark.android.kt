@@ -37,6 +37,10 @@ actual fun rememberPlatformSystemDark(): Boolean {
 
     var isDark by remember { mutableStateOf(readUiModeDark()) }
 
+    // Capture the Compose system-dark signal during composition so we can compare
+    // it against the authoritative Configuration.uiMode value on resume.
+    val composeSignal = isSystemInDarkTheme()
+
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
@@ -46,19 +50,14 @@ actual fun rememberPlatformSystemDark(): Boolean {
                 }
                 isDark = refreshed
 
-                // Diagnostic: log mismatch between Android-owned value and Compose signal
-                val composeSignal = try {
-                    // Evaluate the Compose system-dark signal outside of composition
-                    // so we can compare it against our authoritative source.
-                    (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) ==
-                        Configuration.UI_MODE_NIGHT_YES
-                } catch (_: Throwable) {
-                    null
-                }
-                if (composeSignal != null && composeSignal != refreshed) {
+                // Diagnostic: log mismatch between Android-owned value and Compose signal.
+                // composeSignal is captured during composition; refreshed comes from
+                // Configuration.uiMode on this resume event.  A drift between them means
+                // the Compose ambient and the OS night-mode flag disagree.
+                if (composeSignal != refreshed) {
                     log.w {
                         "MISMATCH: Configuration.uiMode says dark=$refreshed " +
-                            "but Compose signal says dark=$composeSignal"
+                            "but Compose isSystemInDarkTheme() says dark=$composeSignal"
                     }
                 }
             }
