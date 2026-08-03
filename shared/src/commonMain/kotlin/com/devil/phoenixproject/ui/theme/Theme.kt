@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -107,7 +106,7 @@ fun VitruvianTheme(
     content: @Composable () -> Unit,
 ) {
     val useDarkColors = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
+        ThemeMode.SYSTEM -> rememberPlatformSystemDark()
         ThemeMode.LIGHT -> false
         ThemeMode.DARK -> true
     }

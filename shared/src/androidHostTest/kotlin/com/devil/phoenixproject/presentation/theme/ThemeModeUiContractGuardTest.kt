@@ -62,12 +62,16 @@ class ThemeModeUiContractGuardTest {
     }
 
     @Test
-    fun commonTheme_mapsSystemToSystemDarkTheme() {
+    fun commonTheme_mapsSystemToLifecycleSafePlatformDark() {
         val source = read("shared/src/commonMain/kotlin/com/devil/phoenixproject/ui/theme/Theme.kt")
 
         assertTrue(
-            source.contains("ThemeMode.SYSTEM -> isSystemInDarkTheme()"),
-            "System theme mode must continue to follow the platform system dark-theme signal.",
+            source.contains("ThemeMode.SYSTEM -> rememberPlatformSystemDark()"),
+            "System theme mode must use the lifecycle-safe platform dark signal (Configuration.uiMode on Android) rather than the transient isSystemInDarkTheme().",
+        )
+        assertFalse(
+            source.contains("isSystemInDarkTheme()"),
+            "Theme.kt must not directly call isSystemInDarkTheme(); use rememberPlatformSystemDark() for lifecycle-safe resume reconciliation.",
         )
     }
 
