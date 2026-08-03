@@ -75,4 +75,22 @@ class ThemeModeUiContractGuardTest {
         )
     }
 
+    @Test
+    fun androidSystemDarkDiagnostic_readsTheLatestComposeSignalOnResume() {
+        val source = read("shared/src/androidMain/kotlin/com/devil/phoenixproject/ui/theme/PlatformSystemDark.android.kt")
+
+        assertTrue(
+            source.contains("Lifecycle.Event.ON_RESUME") && source.contains("isDark = refreshed"),
+            "The Android-owned theme source must reconcile its state from Configuration.uiMode on every lifecycle resume so lock/unlock can repair a stale system appearance.",
+        )
+        assertTrue(
+            source.contains("val currentComposeSignal by rememberUpdatedState(composeSignal)"),
+            "The lifecycle observer must bridge a recomposed isSystemInDarkTheme() value with rememberUpdatedState so ON_RESUME does not compare Configuration.uiMode with the first composition's stale Compose signal.",
+        )
+        assertTrue(
+            source.contains("currentComposeSignal != refreshed"),
+            "The resume mismatch diagnostic must compare Configuration.uiMode with the current Compose signal rather than the observer's initial captured value.",
+        )
+    }
+
 }

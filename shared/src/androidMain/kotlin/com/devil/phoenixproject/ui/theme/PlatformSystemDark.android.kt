@@ -7,6 +7,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.Lifecycle
@@ -37,9 +38,10 @@ actual fun rememberPlatformSystemDark(): Boolean {
 
     var isDark by remember { mutableStateOf(readUiModeDark()) }
 
-    // Capture the Compose system-dark signal during composition so we can compare
-    // it against the authoritative Configuration.uiMode value on resume.
+    // Capture the Compose system-dark signal during composition and bridge its latest
+    // value into the long-lived lifecycle observer for each resume diagnostic.
     val composeSignal = isSystemInDarkTheme()
+    val currentComposeSignal by rememberUpdatedState(composeSignal)
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
@@ -50,14 +52,13 @@ actual fun rememberPlatformSystemDark(): Boolean {
                 }
                 isDark = refreshed
 
-                // Diagnostic: log mismatch between Android-owned value and Compose signal.
-                // composeSignal is captured during composition; refreshed comes from
-                // Configuration.uiMode on this resume event.  A drift between them means
-                // the Compose ambient and the OS night-mode flag disagree.
-                if (composeSignal != refreshed) {
+                // Diagnostic: log mismatch between Android-owned value and the latest
+                // recomposed Compose signal. `rememberUpdatedState` keeps this observer
+                // current without re-registering it on every recomposition.
+                if (currentComposeSignal != refreshed) {
                     log.w {
                         "MISMATCH: Configuration.uiMode says dark=$refreshed " +
-                            "but Compose isSystemInDarkTheme() says dark=$composeSignal"
+                            "but Compose isSystemInDarkTheme() says dark=$currentComposeSignal"
                     }
                 }
             }
