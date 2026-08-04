@@ -62,12 +62,34 @@ class ThemeModeUiContractGuardTest {
     }
 
     @Test
-    fun commonTheme_mapsSystemToSystemDarkTheme() {
+    fun commonTheme_mapsSystemToLifecycleSafePlatformDark() {
         val source = read("shared/src/commonMain/kotlin/com/devil/phoenixproject/ui/theme/Theme.kt")
 
         assertTrue(
-            source.contains("ThemeMode.SYSTEM -> isSystemInDarkTheme()"),
-            "System theme mode must continue to follow the platform system dark-theme signal.",
+            source.contains("ThemeMode.SYSTEM -> rememberPlatformSystemDark()"),
+            "System theme mode must use the lifecycle-safe platform dark signal (Configuration.uiMode on Android) rather than the transient isSystemInDarkTheme().",
+        )
+        assertFalse(
+            source.contains("isSystemInDarkTheme()"),
+            "Theme.kt must not directly call isSystemInDarkTheme(); use rememberPlatformSystemDark() for lifecycle-safe resume reconciliation.",
+        )
+    }
+
+    @Test
+    fun androidSystemDarkDiagnostic_readsTheLatestComposeSignalOnResume() {
+        val source = read("shared/src/androidMain/kotlin/com/devil/phoenixproject/ui/theme/PlatformSystemDark.android.kt")
+
+        assertTrue(
+            source.contains("Lifecycle.Event.ON_RESUME") && source.contains("isDark = refreshed"),
+            "The Android-owned theme source must reconcile its state from Configuration.uiMode on every lifecycle resume so lock/unlock can repair a stale system appearance.",
+        )
+        assertTrue(
+            source.contains("val currentComposeSignal by rememberUpdatedState(composeSignal)"),
+            "The lifecycle observer must bridge a recomposed isSystemInDarkTheme() value with rememberUpdatedState so ON_RESUME does not compare Configuration.uiMode with the first composition's stale Compose signal.",
+        )
+        assertTrue(
+            source.contains("currentComposeSignal != refreshed"),
+            "The resume mismatch diagnostic must compare Configuration.uiMode with the current Compose signal rather than the observer's initial captured value.",
         )
     }
 
