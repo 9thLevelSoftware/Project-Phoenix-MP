@@ -602,6 +602,44 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `disconnect during bodyweight-only workout does not show connection lost alert`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+
+        val bodyweightRoutine = Routine(
+            id = "routine-bodyweight-test",
+            name = "Bodyweight Test",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "routine-ex-bw-1",
+                    exercise = Exercise(
+                        id = "pullup",
+                        name = "Pull-Up",
+                        muscleGroup = "Back",
+                        equipment = "",
+                        isBodyweightOverride = true,
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 0f,
+                    warmupSets = emptyList(),
+                ),
+            ),
+        )
+        viewModel.loadRoutine(bodyweightRoutine)
+        advanceUntilIdle()
+        viewModel.enterSetReady(0, 0)
+        advanceUntilIdle()
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        fakeBleRepository.simulateDisconnect()
+        advanceUntilIdle()
+
+        assertFalse(viewModel.connectionLostDuringWorkout.value)
+    }
+
+    @Test
     fun `disconnect during workout sets connection lost flag`() = runTest(testCoroutineRule.dispatcher) {
         fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
         advanceUntilIdle()

@@ -472,9 +472,24 @@ class DefaultWorkoutSessionManager(
     // ===== WorkoutStateProvider Implementation =====
 
     override val isWorkoutActiveForConnectionAlert: Boolean
-        get() = when (coordinator._workoutState.value) {
-            is WorkoutState.Active, is WorkoutState.Countdown, is WorkoutState.Resting -> true
-            else -> false
+        get() {
+            val state = coordinator._workoutState.value
+            if (state !is WorkoutState.Active &&
+                state !is WorkoutState.Countdown &&
+                state !is WorkoutState.Resting
+            ) {
+                return false
+            }
+            // Issue #693: Suppress connection alerts for bodyweight-only workouts.
+            // When all exercises in the loaded routine are bodyweight, the Vitruvian
+            // trainer is not needed and its auto-power-off should not interrupt the user.
+            val routine = coordinator._loadedRoutine.value
+            if (routine != null && routine.exercises.isNotEmpty() &&
+                routine.exercises.all { it.exercise.isBodyweight }
+            ) {
+                return false
+            }
+            return true
         }
 
     override val isWorkoutMidSet: Boolean
