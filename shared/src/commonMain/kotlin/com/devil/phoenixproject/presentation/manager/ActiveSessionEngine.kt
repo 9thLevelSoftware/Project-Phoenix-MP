@@ -47,6 +47,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SetQualitySummary
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.UserPreferences
@@ -338,7 +339,7 @@ class ActiveSessionEngine(
                         // Issue #182: Trigger set completion immediately on WORKOUT_COMPLETE event.
                         if (coordinator._workoutState.value is WorkoutState.Active) {
                             Logger.d("WORKOUT_COMPLETE event received - triggering immediate set completion")
-                            handleSetCompletion()
+                            handleSetCompletion(SetEndReason.TARGET_REPS_REACHED)
                         }
                     }
                 }
@@ -457,12 +458,14 @@ class ActiveSessionEngine(
                             coordinator.stallStartTime = currentTimeMillis()
                             coordinator.isCurrentlyStalled = true
                             coordinator.stallArmedByDeload = true
+                            coordinator.autoStopReason = SetEndReason.CABLE_RELEASED
                             Logger.d("Auto-stop stall timer STARTED via DELOAD_OCCURRED flag")
                         } else if (coordinator.stallStartTime != null && !inGrace) {
                             // F4: a real deload is the stronger signal — upgrade a
                             // velocity-armed countdown so the retracting cables
                             // (position -> 0) don't cancel it via the racked-handles check.
                             coordinator.stallArmedByDeload = true
+                            coordinator.autoStopReason = SetEndReason.CABLE_RELEASED
                         } else if (inGrace) {
                             Logger.d("DELOAD_OCCURRED ignored - in AMRAP startup grace period")
                         }
@@ -932,7 +935,12 @@ class ActiveSessionEngine(
             totalReps = coercedReps,
             isWarmupComplete = true,
         )
-        handleSetCompletion()
+        // Issue #673: Preserve existing reason (e.g. TIMER_EXPIRED) if one was already set
+        // by a prior handleSetCompletion call that opened this bodyweight dialog.
+        val preservedReason = coordinator.lastSetEndReason.takeIf {
+            it != SetEndReason.TARGET_REPS_REACHED
+        } ?: SetEndReason.TARGET_REPS_REACHED
+        handleSetCompletion(preservedReason)
     }
 
     private suspend fun showBodyweightRepEntry(currentExercise: RoutineExercise) {
@@ -988,6 +996,7 @@ class ActiveSessionEngine(
         coordinator.stallStartTime = null
         coordinator.isCurrentlyStalled = false
         coordinator.stallArmedByDeload = false
+        coordinator.autoStopReason = SetEndReason.STALL_FAILURE
         if (coordinator.autoStopStartTime == null && !coordinator.autoStopTriggered) {
             coordinator._autoStopState.value = AutoStopUiState()
         }
@@ -1076,7 +1085,7 @@ class ActiveSessionEngine(
             coordinator._autoStopState.value = AutoStopUiState()
         }
 
-        handleSetCompletion()
+        handleSetCompletion(coordinator.autoStopReason)
     }
 
     // ===== Rep Processing =====
@@ -1405,7 +1414,7 @@ class ActiveSessionEngine(
 
             if (consecutiveThresholdReps >= 2 && runtime.autoEndOnVelocityLoss) {
                 Logger.i { "VBT: Auto-ending set — $consecutiveThresholdReps consecutive reps above threshold" }
-                handleSetCompletion()
+                handleSetCompletion(SetEndReason.VBT_AUTO_END)
             }
         } else {
             consecutiveThresholdReps = 0
@@ -1454,7 +1463,7 @@ class ActiveSessionEngine(
             }
 
             if (repCounter.shouldStopWorkout()) {
-                handleSetCompletion()
+                handleSetCompletion(SetEndReason.TARGET_REPS_REACHED)
             }
         } else {
             resetAutoStopTimer()
@@ -2685,7 +2694,7 @@ class ActiveSessionEngine(
                             }
                         }
                         coordinator._timedExerciseRemainingSeconds.value = 0
-                        handleSetCompletion()
+                        handleSetCompletion(SetEndReason.TIMER_EXPIRED)
                     }
 
                     return@launch
@@ -3000,7 +3009,7 @@ class ActiveSessionEngine(
                             }
                         }
                         coordinator._timedExerciseRemainingSeconds.value = 0
-                        handleSetCompletion()
+                        handleSetCompletion(SetEndReason.TIMER_EXPIRED)
                     }
                 }
 
@@ -3122,6 +3131,9 @@ class ActiveSessionEngine(
     fun stopWorkout(exitingWorkout: Boolean = false) {
         // C1: Atomic compareAndSet prevents TOCTOU race — only the first caller proceeds
         if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
+
+        // Issue #673: Mark manual stop so CompletedSet persists USER_STOPPED
+        coordinator.lastSetEndReason = SetEndReason.USER_STOPPED
 
         val shouldExitToIdle = exitingWorkout
         coordinator._weightAdjustmentRecommendation.value = null
@@ -3271,6 +3283,7 @@ class ActiveSessionEngine(
                     loggedRpe = coordinator._currentSetRpe.value,
                     isPr = false,
                     completedAt = currentTimeMillis(),
+                    setEndReason = coordinator.lastSetEndReason,
                 )
                 completedSetRepository.saveCompletedSet(completedSet)
                 Logger.d("Saved CompletedSet (manual stop): set #$setIndex, ${repCount.workingReps} reps${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
@@ -3359,7 +3372,7 @@ class ActiveSessionEngine(
             Logger.d { "stopAndReturnToSetReady: Issue #320 - workingReps=${coordinator._repCount.value.workingReps} > 0, routing through handleSetCompletion to save reps and advance" }
             // Release stop guard before delegating — handleSetCompletion uses its own atomic guard (setCompletionInProgress)
             coordinator.stopWorkoutInProgress.value = false
-            handleSetCompletion()
+            handleSetCompletion(SetEndReason.USER_STOPPED)
             return
         }
 
@@ -3855,6 +3868,7 @@ class ActiveSessionEngine(
                 loggedRpe = coordinator._currentSetRpe.value,
                 isPr = false,
                 completedAt = currentTimeMillis(),
+                setEndReason = coordinator.lastSetEndReason,
             )
             completedSetRepository.saveCompletedSet(completedSet)
             Logger.d("Saved CompletedSet: set #$setIndex, $working reps @ ${savedWeightKg}kg${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
@@ -3920,12 +3934,15 @@ class ActiveSessionEngine(
      * Phase A: Stop BLE, save session, emit haptics, show summary.
      * Phase B: Rest timer, navigation advancement (delegated back to DWSM via startRestTimer).
      */
-    internal fun handleSetCompletion() {
+    internal fun handleSetCompletion(reason: SetEndReason = SetEndReason.TARGET_REPS_REACHED) {
         // 1.2: Atomic compareAndSet prevents duplicate set completion across dispatchers
         if (!coordinator.setCompletionInProgress.compareAndSet(expect = false, update = true)) {
             Logger.d("handleSetCompletion: already in progress - ignoring")
             return
         }
+
+        // Issue #673: Store reason for CompletedSet persistence
+        coordinator.lastSetEndReason = reason
 
         // Issue #319: Log full context at entry so we can diagnose what the pipeline receives
         val repCount = coordinator._repCount.value

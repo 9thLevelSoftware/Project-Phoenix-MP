@@ -877,6 +877,7 @@ abstract class BaseDataBackupManager(
                             logged_rpe = completedSet.loggedRpe?.toLong(),
                             is_pr = if (completedSet.isPr) 1L else 0L,
                             completed_at = completedSet.completedAt,
+                            set_end_reason = completedSet.setEndReason,
                         )
                         completedSetsImported++
                     }
@@ -1797,6 +1798,7 @@ abstract class BaseDataBackupManager(
                                                     logged_rpe = completedSet.loggedRpe?.toLong(),
                                                     is_pr = if (completedSet.isPr) 1L else 0L,
                                                     completed_at = completedSet.completedAt,
+                                                    set_end_reason = completedSet.setEndReason,
                                                 )
                                                 completedSetsImported++
                                             }
@@ -2986,6 +2988,7 @@ abstract class BaseDataBackupManager(
         loggedRpe = cs.logged_rpe?.toInt(),
         isPr = cs.is_pr != 0L,
         completedAt = cs.completed_at,
+        setEndReason = cs.set_end_reason,
     )
 
     private fun mapProgressionEventToBackup(pe: ProgressionEvent): ProgressionEventBackup = ProgressionEventBackup(

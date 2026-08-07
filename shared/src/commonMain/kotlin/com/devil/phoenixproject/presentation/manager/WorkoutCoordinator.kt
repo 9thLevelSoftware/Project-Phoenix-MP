@@ -16,6 +16,7 @@ import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.WeightAdjustmentRecommendation
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -412,6 +413,9 @@ class WorkoutCoordinator(
     // Guard to prevent duplicate auto-completion when rep target is reached
     internal val setCompletionInProgress = MutableStateFlow(false)
 
+    // Issue #673: Tracks why the current set ended, set by handleSetCompletion
+    internal var lastSetEndReason: SetEndReason = SetEndReason.TARGET_REPS_REACHED
+
     // Issue #355: Guard to prevent duplicate proceedFromSummary() calls on iOS
     // When app foregrounds, both manager-level fallback AND UI-level countdown can fire
     internal val proceedFromSummaryInProgress = MutableStateFlow(false)
@@ -430,6 +434,11 @@ class WorkoutCoordinator(
     // handles must cancel it).
     @Volatile
     internal var stallArmedByDeload = false
+
+    // Issue #673: Track the reason for the auto-stop (STALL_FAILURE vs CABLE_RELEASED)
+    @Volatile
+    internal var autoStopReason: com.devil.phoenixproject.domain.model.SetEndReason =
+        com.devil.phoenixproject.domain.model.SetEndReason.STALL_FAILURE
 
     // Issue #649: defer position/stall auto-stop until the verbal-cue + short
     // transition window elapses, or a completed working rep clears it. The
@@ -458,6 +467,7 @@ class WorkoutCoordinator(
         stallStartTime = null
         isCurrentlyStalled = false
         stallArmedByDeload = false
+        autoStopReason = com.devil.phoenixproject.domain.model.SetEndReason.STALL_FAILURE
         deferAutoStopDeadlineMs = 0L
         _autoStopState.value = AutoStopUiState()
     }
