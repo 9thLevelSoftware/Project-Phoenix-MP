@@ -1,7 +1,7 @@
 # Issue #687: Workout Execution Isolation and Safe BLE Teardown
 
-**Date:** 2026-08-13  
-**Status:** Approved design  
+**Date:** 2026-08-13
+**Status:** Approved design
 **Issue:** https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues/687
 
 ## Summary
@@ -59,7 +59,7 @@ Add an internal WorkoutExecutionGuard owned by ActiveSessionEngine. It owns:
 - the current execution's completion job;
 - the current teardown job;
 - the rep-notification freshness state;
-- the terminal persistence claim for the current stable session ID.
+- a small terminal-persistence claim ledger keyed by stable session ID.
 
 The guard does not replace WorkoutState or RoutineFlowState. Those remain the UI and routine-flow models in WorkoutCoordinator. The guard is an authority boundary that determines whether asynchronous work may act on those models.
 
@@ -69,7 +69,7 @@ Every set start creates a new ExecutionLease containing:
 - stable session ID;
 - activation cutover timestamp;
 - originating profile ID;
-- enough mode information to apply the correct teardown and freshness rules.
+- isBodyweight, isJustLift, isAMRAP, isTimedCable, and the configured working-rep target.
 
 Completion, summary delay, rest transition, bodyweight timer, timed-cable timer, autoplay transition, and delayed navigation work capture the lease. Before changing coordinator state, launching a successor transition, or starting a persistence claim, the work verifies that the lease is still current. A failed check is a logged no-op.
 
@@ -127,7 +127,7 @@ The gate concerns machine safety only. Successful BLE teardown may return to Rea
 
 Manual exit and automatic completion share the execution's stable session ID and terminal persistence claim.
 
-The first terminal path atomically claims persistence. Once claimed, its immutable persistence work is separated from presentation transitions and is not cancelled merely because the execution is invalidated. A competing terminal path observes InProgress or Persisted and does not write a duplicate. A failure is recorded through the existing workout-data error path and may be retried with the same stable session ID.
+The first terminal path atomically claims persistence in a ledger keyed by stable session ID. The ledger entry survives creation of later executions until the save reaches Persisted or its failure is handed to the existing retry/error path. Once claimed, immutable persistence work is separated from presentation transitions and is not cancelled merely because the execution is invalidated. A competing terminal path observes InProgress or Persisted and does not write a duplicate. A failure may be retried with the same stable session ID.
 
 The first valid claim wins. If automatic completion has already captured and claimed the completed-set snapshot, End Workout cancels its later UI transitions but allows that immutable save to finish. If End Workout claims first, the stale automatic completion cannot claim or publish anything.
 
@@ -148,8 +148,8 @@ Autoplay, motion-triggered start, handle detection, voice actions, and direct UI
 Each execution starts in AwaitingEvidence. Notifications parsed before the activation cutover are rejected using RepNotification.timestamp. Notifications received after the cutover are evaluated as follows:
 
 - A modern zero-count packet establishes a fresh baseline and arms the execution.
-- A modern non-terminal progression below the configured target is current-set evidence; it arms the execution and is then processed normally.
-- Post-cutover movement from the current monitor stream arms the execution. This covers fixed one-rep sets whose first rep packet may already be terminal.
+- A modern non-terminal progression below the configured target is current-set evidence when the packet's reported target is zero/unavailable or matches the lease's configured target; it arms the execution and is then processed normally.
+- Post-cutover HandleState.Moving from the existing HandleStateDetector arms the execution. This reuses the current movement threshold and covers fixed one-rep sets whose first rep packet may already be terminal.
 - For legacy packets, the first post-cutover directional counters are captured as a baseline without producing reps. A subsequent counter change or post-cutover movement arms normal processing.
 - A terminal packet received before any current-set evidence is rejected and logged. It cannot update RepCounterFromMachine, rep UI, completion flags, or WorkoutState.
 
@@ -207,12 +207,13 @@ Add coroutine-controlled tests using the DWSM test harness and controllable BLE/
 4. Deliver post-cutover movement or non-terminal progression, then a terminal packet. B completes normally.
 5. Cover a fixed one-rep set: movement arms freshness before the terminal rep.
 6. Cover legacy packets: the first packet baselines directional counters and cannot create phantom reps.
-7. Suspend profile A persistence, switch to profile B, then resume the save. The session is stored once under profile A with profile A's routine metadata.
-8. Race automatic completion and End Workout in both claim orders. Each execution produces at most one WorkoutSession and one matching CompletedSet.
-9. Verify direct, autoplay, motion, handle, and voice start paths are rejected during TearingDown and RecoveryRequired.
-10. Verify RESET success returns to Ready; failure and five-second timeout enter RecoveryRequired; Retry/Reconnect cannot fail open.
-11. Verify bodyweight-only exit cancels local work and reopens the gate without sending an unnecessary trainer command.
-12. Cover routine, temporary single-exercise, Just Lift, and timed-cable flows.
+7. Reject a modern packet whose reported target conflicts with the current lease.
+8. Suspend profile A persistence, switch to profile B, start a later execution, then resume the save. The session is stored once under profile A with profile A's routine metadata.
+9. Race automatic completion and End Workout in both claim orders. Each execution produces at most one WorkoutSession and one matching CompletedSet.
+10. Verify direct, autoplay, motion, handle, and voice start paths are rejected during TearingDown and RecoveryRequired.
+11. Verify RESET success returns to Ready; failure and five-second timeout enter RecoveryRequired; Retry/Reconnect cannot fail open.
+12. Verify bodyweight-only exit cancels local work and reopens the gate without sending an unnecessary trainer command.
+13. Cover routine, temporary single-exercise, Just Lift, and timed-cable flows.
 
 Existing workout lifecycle, navigation, rep-counting, profile-attribution, BLE queue, and cancellation tests must remain green.
 
