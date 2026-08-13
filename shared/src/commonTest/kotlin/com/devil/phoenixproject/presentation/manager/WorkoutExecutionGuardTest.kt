@@ -10,6 +10,21 @@ import kotlin.test.assertTrue
 class WorkoutExecutionGuardTest {
 
     @Test
+    fun `throwing diagnostics do not change begin or persistence claim authority`() {
+        val guard = WorkoutExecutionGuard { _, _ -> error("diagnostics unavailable") }
+
+        val lease = guard.beginExecution(seed("session-a")).getOrThrow()
+
+        assertTrue(guard.isCurrent(lease))
+        assertIs<PersistenceClaimResult.Claimed>(
+            guard.claimPersistence("session-a", TerminalPath.AUTO_COMPLETE),
+        )
+        assertIs<PersistenceClaimResult.DuplicateInProgress>(
+            guard.claimPersistence("session-a", TerminalPath.END_WORKOUT),
+        )
+    }
+
+    @Test
     fun `invalidating execution A makes every A lease check fail`() {
         val guard = WorkoutExecutionGuard()
         val leaseA = guard.beginExecution(seed("session-a")).getOrThrow()

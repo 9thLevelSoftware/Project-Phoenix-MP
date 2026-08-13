@@ -104,7 +104,7 @@ internal class WorkoutExecutionGuard(
             isTimedCable = seed.isTimedCable,
         )
         currentLeaseRef.value = lease
-        logger(LogEventType.WORKOUT_EXECUTION, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=begun")
+        log(LogEventType.WORKOUT_EXECUTION, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=begun")
         Result.success(lease)
     }
 
@@ -114,7 +114,7 @@ internal class WorkoutExecutionGuard(
             if (!sameIdentity(current, lease)) return null
             val activated = current.copy(activationCutoverTimestampMs = cutoverTimestampMs)
             if (currentLeaseRef.compareAndSet(current, activated)) {
-                logger(LogEventType.WORKOUT_EXECUTION, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=activated")
+                log(LogEventType.WORKOUT_EXECUTION, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=activated")
                 return activated
             }
         }
@@ -126,7 +126,7 @@ internal class WorkoutExecutionGuard(
 
     fun invalidateCurrent(reason: ExecutionInvalidationReason): ExecutionLease? {
         val invalidated = currentLeaseRef.getAndSet(null) ?: return null
-        logger(
+        log(
             LogEventType.WORKOUT_EXECUTION,
             "executionId=${invalidated.executionId},sessionId=${invalidated.sessionId},transition=invalidated,reason=$reason",
         )
@@ -140,7 +140,7 @@ internal class WorkoutExecutionGuard(
         teardownLease = lease
         teardownAttempt = attempt
         _machineTeardownState.value = MachineTeardownState.TearingDown(lease.executionId, attempt)
-        logger(LogEventType.WORKOUT_TEARDOWN, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=begun,attempt=$attempt")
+        log(LogEventType.WORKOUT_TEARDOWN, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=begun,attempt=$attempt")
         true
     }
 
@@ -152,7 +152,7 @@ internal class WorkoutExecutionGuard(
         teardownLease = null
         teardownAttempt = 0
         _machineTeardownState.value = MachineTeardownState.Ready
-        logger(LogEventType.WORKOUT_TEARDOWN, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=ready,attempt=${state.attempt}")
+        log(LogEventType.WORKOUT_TEARDOWN, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=ready,attempt=${state.attempt}")
         true
     }
 
@@ -162,7 +162,7 @@ internal class WorkoutExecutionGuard(
             return@withPlatformLock false
         }
         _machineTeardownState.value = MachineTeardownState.RecoveryRequired(lease.executionId)
-        logger(
+        log(
             LogEventType.WORKOUT_TEARDOWN,
             "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=recovery_required,reason=$reason,attempt=${state.attempt}",
         )
@@ -178,7 +178,7 @@ internal class WorkoutExecutionGuard(
         val attempt = teardownAttempt + 1
         teardownAttempt = attempt
         _machineTeardownState.value = MachineTeardownState.TearingDown(lease.executionId, attempt)
-        logger(LogEventType.WORKOUT_TEARDOWN, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=recovery_attempt,attempt=$attempt")
+        log(LogEventType.WORKOUT_TEARDOWN, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=recovery_attempt,attempt=$attempt")
         RecoveryAttempt(lease, attempt)
     }
 
@@ -186,7 +186,7 @@ internal class WorkoutExecutionGuard(
         when (persistedClaims[sessionId]) {
             null -> {
                 persistedClaims[sessionId] = PersistenceClaimState.InProgress
-                logger(LogEventType.WORKOUT_PERSISTENCE, "sessionId=$sessionId,transition=claimed,path=$path")
+                log(LogEventType.WORKOUT_PERSISTENCE, "sessionId=$sessionId,transition=claimed,path=$path")
                 PersistenceClaimResult.Claimed
             }
             PersistenceClaimState.InProgress -> PersistenceClaimResult.DuplicateInProgress
@@ -198,14 +198,14 @@ internal class WorkoutExecutionGuard(
         if (persistedClaims[sessionId] == PersistenceClaimState.InProgress) {
             persistedClaims.remove(sessionId)
             persistedClaims[sessionId] = PersistenceClaimState.Persisted
-            logger(LogEventType.WORKOUT_PERSISTENCE, "sessionId=$sessionId,transition=persisted")
+            log(LogEventType.WORKOUT_PERSISTENCE, "sessionId=$sessionId,transition=persisted")
         }
     }
 
     fun markPersistenceFailed(sessionId: String) = withPlatformLock(persistenceLock) {
         if (persistedClaims[sessionId] == PersistenceClaimState.InProgress) {
             persistedClaims.remove(sessionId)
-            logger(LogEventType.WORKOUT_PERSISTENCE, "sessionId=$sessionId,transition=failed")
+            log(LogEventType.WORKOUT_PERSISTENCE, "sessionId=$sessionId,transition=failed")
         }
     }
 
@@ -217,6 +217,14 @@ internal class WorkoutExecutionGuard(
 
     private fun sameIdentity(first: ExecutionLease?, second: ExecutionLease): Boolean =
         first?.executionId == second.executionId && first.sessionId == second.sessionId
+
+    private fun log(eventType: String, details: String) {
+        try {
+            logger(eventType, details)
+        } catch (_: Throwable) {
+            // Diagnostics must never alter completed authority transitions.
+        }
+    }
 
     private enum class PersistenceClaimState {
         InProgress,
