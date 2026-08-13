@@ -71,6 +71,7 @@ internal data class RecoveryAttempt(
 internal class WorkoutExecutionGuard(
     private val logger: (eventType: String, details: String) -> Unit = { _, _ -> },
 ) {
+    internal val repFreshnessGate = RepNotificationFreshnessGate()
     private val executionSequence = atomic(0L)
     private val currentLeaseRef = atomic<ExecutionLease?>(null)
     private val teardownLock = Any()
