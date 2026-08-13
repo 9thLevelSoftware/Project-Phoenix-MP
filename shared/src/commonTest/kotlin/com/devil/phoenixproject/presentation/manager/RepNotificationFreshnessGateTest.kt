@@ -91,13 +91,26 @@ class RepNotificationFreshnessGateTest {
     }
 
     @Test
-    fun `legacy counter change processes instead of remaining baseline only`() {
+    fun `unchanged legacy packet remains baseline only until complete counter changes`() {
         val gate = RepNotificationFreshnessGate()
         val lease = activeLease(target = 3, cutover = 1_000L)
         gate.evaluate(lease, legacyPacket(topCounter = 5, completeCounter = 4, timestamp = 1_001L))
 
-        assertEquals(RepFreshnessDecision.Process, gate.evaluate(lease, legacyPacket(topCounter = 6, completeCounter = 4, timestamp = 1_002L)))
+        assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, legacyPacket(topCounter = 5, completeCounter = 4, timestamp = 1_002L)))
+        assertEquals(RepFreshnessState.LegacyBaseline(5, 4), gate.stateFor(lease))
+        assertEquals(RepFreshnessDecision.Process, gate.evaluate(lease, legacyPacket(topCounter = 5, completeCounter = 5, timestamp = 1_003L)))
         assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
+    }
+
+    @Test
+    fun `lease without activation cutover drops instead of processing notification`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = inactiveLease(target = 3)
+
+        assertEquals(
+            RepFreshnessDecision.Drop(RepDropReason.LEASE_NOT_ACTIVE),
+            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 3, timestamp = 1_001L)),
+        )
     }
 
     @Test
@@ -138,6 +151,10 @@ class RepNotificationFreshnessGateTest {
         isAmrap = false,
         isTimedCable = false,
         activationCutoverTimestampMs = cutover,
+    )
+
+    private fun inactiveLease(target: Int) = activeLease(target, cutover = 0L).copy(
+        activationCutoverTimestampMs = null,
     )
 
     private fun modernPacket(repsSetCount: Int = 0, repsSetTotal: Int = 0, timestamp: Long): RepNotification =
