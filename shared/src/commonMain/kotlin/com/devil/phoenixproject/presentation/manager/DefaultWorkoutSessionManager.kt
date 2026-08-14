@@ -177,6 +177,7 @@ class DefaultWorkoutSessionManager(
     private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val scope: CoroutineScope,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
+    private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 32,
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.SUSPEND,
@@ -225,12 +226,17 @@ class DefaultWorkoutSessionManager(
             override fun startWorkout(skipCountdown: Boolean) {
                 this@DefaultWorkoutSessionManager.startWorkout(skipCountdown = skipCountdown)
             }
-            override suspend fun sendStopCommand() {
-                bleRepository.sendStopCommand()
+            override fun requestTeardownForTransition(
+                expectedLease: ExecutionLease?,
+                reason: TeardownReason,
+                afterReady: () -> Unit,
+            ) {
+                activeSessionEngine.requestTeardownForTransition(expectedLease, reason, afterReady)
             }
-            override suspend fun stopMachineWorkout() {
-                bleRepository.stopWorkout()
-            }
+            override fun currentExecutionLeaseOrNull(): ExecutionLease? =
+                activeSessionEngine.currentExecutionLeaseOrNull()
+            override fun isCurrentExecution(lease: ExecutionLease): Boolean =
+                activeSessionEngine.isCurrentExecution(lease)
             override fun setWorkoutParametersInternal(params: WorkoutParameters) {
                 this@DefaultWorkoutSessionManager.setWorkoutParametersInternal(params)
             }
@@ -268,6 +274,7 @@ class DefaultWorkoutSessionManager(
         externalActivityRepository = externalActivityRepository,
         healthExportCursorRepository = healthExportCursorRepository,
         elapsedRealtimeProvider = elapsedRealtimeProvider,
+        wallClockMillisProvider = wallClockMillisProvider,
     )
 
     companion object {
@@ -304,7 +311,8 @@ class DefaultWorkoutSessionManager(
             override fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean = routineFlowManager.calculateIsLastExercise(isSingleExercise, currentExercise, routine)
             override fun clearCycleContext() = routineFlowManager.clearCycleContext()
             override fun seedRackSelectionForExercise(exerciseIndex: Int) = routineFlowManager.seedRackSelectionForExercise(exerciseIndex)
-            override fun proceedFromSummary() = this@DefaultWorkoutSessionManager.proceedFromSummary()
+            override fun proceedFromSummary(lease: ExecutionLease) =
+                this@DefaultWorkoutSessionManager.proceedFromSummary(lease)
         }
 
         scope.launch {
@@ -353,11 +361,16 @@ class DefaultWorkoutSessionManager(
 
                     if (!shouldAutoAdvanceInManager) return@collect
 
+                    val lease = activeSessionEngine.currentExecutionLeaseOrNull() ?: return@collect
+
                     summaryAutoAdvanceJob = scope.launch {
+                        if (!activeSessionEngine.isCurrentExecution(lease)) return@launch
                         delay(summaryCountdownSeconds * 1000L)
-                        if (coordinator._workoutState.value is WorkoutState.SetSummary) {
+                        if (activeSessionEngine.isCurrentExecution(lease) &&
+                            coordinator._workoutState.value is WorkoutState.SetSummary
+                        ) {
                             Logger.d { "Summary auto-advance fallback fired - proceeding from summary in manager scope" }
-                            proceedFromSummary()
+                            proceedFromSummary(lease)
                         }
                     }
                 }
@@ -716,6 +729,16 @@ class DefaultWorkoutSessionManager(
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = activeSessionEngine.startWorkout(skipCountdown, isJustLiftMode)
     fun skipCountdown() = activeSessionEngine.skipCountdown()
     fun stopWorkout(exitingWorkout: Boolean = false) = activeSessionEngine.stopWorkout(exitingWorkout)
+    val machineTeardownState: StateFlow<MachineTeardownState>
+        get() = activeSessionEngine.machineTeardownState
+    fun retryMachineTeardown() = activeSessionEngine.retryMachineTeardown()
+    fun reconnectWorkoutTeardown(bleConnectionManager: BleConnectionManager) {
+        if (machineTeardownState.value !is MachineTeardownState.RecoveryRequired) return
+        bleConnectionManager.reconnectForWorkoutRecovery(
+            onConnected = ::retryMachineTeardown,
+            onFailed = {},
+        )
+    }
 
     // Issue #627: Read-only exposure of the stop guard. It is armed by stop entry points.
     // A successful Stop Set deliberately keeps it armed until startWorkout() begins the retry,
@@ -828,6 +851,15 @@ class DefaultWorkoutSessionManager(
      * Stays in DWSM because it coordinates between RoutineFlowManager and ActiveSessionEngine.
      */
     fun proceedFromSummary() {
+        proceedFromSummaryFor(activeSessionEngine.currentExecutionLeaseOrNull())
+    }
+
+    internal fun proceedFromSummary(lease: ExecutionLease) {
+        proceedFromSummaryFor(lease)
+    }
+
+    private fun proceedFromSummaryFor(expectedLease: ExecutionLease?) {
+        if (expectedLease != null && !activeSessionEngine.isCurrentExecution(expectedLease)) return
         // Issue #355: Atomic guard to prevent duplicate calls on iOS.
         // When app foregrounds, both manager-level fallback AND UI-level countdown can fire,
         // causing duplicate navigation to RoutineComplete screen.
@@ -837,6 +869,9 @@ class DefaultWorkoutSessionManager(
         }
         scope.launch {
             try {
+                if (expectedLease != null && !activeSessionEngine.isCurrentExecution(expectedLease)) {
+                    return@launch
+                }
                 if (coordinator._workoutState.value !is WorkoutState.SetSummary) {
                     Logger.d { "proceedFromSummary: ignored because current state is ${coordinator._workoutState.value}" }
                     return@launch
@@ -1001,7 +1036,11 @@ class DefaultWorkoutSessionManager(
                 // Show rest timer if there are more sets/exercises (autoplay ON path)
                 if (shouldShowRestTimer) {
                     Logger.d { "proceedFromSummary: Starting rest timer..." }
-                    activeSessionEngine.startRestTimer()
+                    if (expectedLease != null) {
+                        activeSessionEngine.startRestTimer(expectedLease)
+                    } else {
+                        activeSessionEngine.startRestTimer()
+                    }
                 } else {
                     Logger.d { "proceedFromSummary: No rest timer - marking as completed/idle" }
                     repCounter.reset()

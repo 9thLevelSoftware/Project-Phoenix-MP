@@ -87,6 +87,9 @@
     <string name="stop_label">STOP</string>
     <string name="waiting_for_data">Wachten op gegevens…</string>
     <string name="reconnect">Opnieuw verbinden</string>
+    <string name="workout_teardown_finishing">Vorige training wordt afgerond…</string>
+    <string name="workout_teardown_failed">Het resetten van de trainer is niet voltooid</string>
+    <string name="workout_teardown_retry">Opnieuw proberen</string>
 
     <string name="stop_current_set_title">Huidige serie stoppen?</string>
     <string name="stop_current_set_message">Stop deze serie, sla deze oefening over of beëindig de hele training.</string>

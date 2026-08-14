@@ -42,8 +42,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import com.devil.phoenixproject.presentation.components.LoadingIndicator
-import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -91,10 +89,16 @@ import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
+import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
+import com.devil.phoenixproject.presentation.components.toStartGatePresentation
+import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
@@ -139,6 +143,7 @@ import vitruvianprojectphoenix.shared.generated.resources.scanning_for_devices
 import vitruvianprojectphoenix.shared.generated.resources.stop_workout
 import vitruvianprojectphoenix.shared.generated.resources.tag_lift_message
 import vitruvianprojectphoenix.shared.generated.resources.tag_lift_title
+import vitruvianprojectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * WorkoutTab with State Holder Pattern (2025 Material Expressive).
@@ -172,6 +177,7 @@ fun WorkoutTab(
         enableVideoPlayback = state.enableVideoPlayback,
         exerciseRepository = exerciseRepository,
         isWorkoutSetupDialogVisible = state.isWorkoutSetupDialogVisible,
+        machineTeardownState = state.machineTeardownState,
         hapticEvents = hapticEvents,
         loadedRoutine = state.loadedRoutine,
         currentExerciseIndex = state.currentExerciseIndex,
@@ -190,6 +196,8 @@ fun WorkoutTab(
         onCancelScan = actions::onCancelScan,
         onDisconnect = actions::onDisconnect,
         onStartWorkout = actions::onStartWorkout,
+        onRetryWorkoutTeardown = actions::onRetryWorkoutTeardown,
+        onReconnectWorkoutTeardown = actions::onReconnectWorkoutTeardown,
         onStopWorkout = actions::onStopWorkout,
         onSkipRest = actions::onSkipRest,
         onExtendRest = actions::onExtendRest,
@@ -249,6 +257,7 @@ fun WorkoutTab(
     enableVideoPlayback: Boolean,
     exerciseRepository: ExerciseRepository,
     isWorkoutSetupDialogVisible: Boolean = false,
+    machineTeardownState: MachineTeardownState = MachineTeardownState.Ready,
     hapticEvents: SharedFlow<HapticEvent>? = null,
     loadedRoutine: Routine? = null,
     currentExerciseIndex: Int = 0,
@@ -267,6 +276,8 @@ fun WorkoutTab(
     onCancelScan: () -> Unit,
     onDisconnect: () -> Unit,
     onStartWorkout: () -> Unit,
+    onRetryWorkoutTeardown: () -> Unit = {},
+    onReconnectWorkoutTeardown: () -> Unit = {},
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
     onExtendRest: (Int) -> Unit = {},
@@ -389,6 +400,12 @@ fun WorkoutTab(
                 )
             }
 
+            WorkoutStartGateNotice(
+                state = machineTeardownState,
+                onRetry = onRetryWorkoutTeardown,
+                onReconnect = onReconnectWorkoutTeardown,
+            )
+
             if (connectionState is ConnectionState.Connected) {
                 // Show setup button when in Idle state, otherwise show workout controls
                 when (workoutState) {
@@ -410,6 +427,7 @@ fun WorkoutTab(
                             currentExerciseIndex = currentExerciseIndex,
                             onStartNextExercise = onStartNextExercise,
                             onResetForNewWorkout = onResetForNewWorkout,
+                            machineTeardownState = machineTeardownState,
                         )
                     }
 
@@ -764,6 +782,9 @@ fun WorkoutTab(
                 onHideWorkoutSetupDialog()
             },
             onDismiss = onHideWorkoutSetupDialog,
+            machineTeardownState = machineTeardownState,
+            onRetryWorkoutTeardown = onRetryWorkoutTeardown,
+            onReconnectWorkoutTeardown = onReconnectWorkoutTeardown,
         )
     }
 }
@@ -985,13 +1006,13 @@ private fun WorkoutPausedCard(onScan: () -> Unit, workoutState: WorkoutState, re
 /**
  * Completed Card - shown when workout/exercise is complete
  */
-@Suppress("SENSELESS_COMPARISON") // Smart-cast helper: null check needed for non-null usage below
 @Composable
 private fun CompletedCard(
     loadedRoutine: Routine?,
     currentExerciseIndex: Int,
     onStartNextExercise: () -> Unit,
     onResetForNewWorkout: () -> Unit,
+    machineTeardownState: MachineTeardownState,
 ) {
     // workout-setup-16: spring scaleIn entrance on the CheckCircle icon.
     // reduceMotion: EnterTransition.None — icon appears instantly (complete static final state).
@@ -1015,8 +1036,11 @@ private fun CompletedCard(
         ) {
             AnimatedVisibility(
                 visible = iconVisible,
-                enter = if (reduceMotion) EnterTransition.None
-                        else scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn(),
+                enter = if (reduceMotion) {
+                    EnterTransition.None
+                } else {
+                    scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn()
+                },
             ) {
                 Icon(
                     Icons.Default.CheckCircle,
@@ -1037,10 +1061,13 @@ private fun CompletedCard(
             val hasMoreExercises = loadedRoutine != null &&
                 currentExerciseIndex < (loadedRoutine.exercises.size - 1)
 
-            if (hasMoreExercises && loadedRoutine != null) { // null check for smart-cast
+            val startGate = machineTeardownState.toStartGatePresentation()
+            val nextExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex + 1)
+            val nextExerciseStartGate = machineTeardownState.toStartGatePresentation(
+                requiresMachine = nextExercise?.exercise?.isBodyweight != true,
+            )
+            if (hasMoreExercises && nextExercise != null) {
                 // Show next exercise preview
-                val nextExercise = loadedRoutine.exercises[currentExerciseIndex + 1]
-
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -1078,6 +1105,7 @@ private fun CompletedCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp),
+                            enabled = nextExerciseStartGate.startEnabled,
                             shape = MaterialTheme.shapes.medium,
                             elevation = ButtonDefaults.buttonElevation(
                                 defaultElevation = 4.dp,
@@ -1085,7 +1113,11 @@ private fun CompletedCard(
                             ),
                         ) {
                             Text(
-                                "Start Next Exercise",
+                                if (nextExerciseStartGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                                    stringResource(Res.string.workout_teardown_finishing)
+                                } else {
+                                    "Start Next Exercise"
+                                },
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                             )
@@ -1099,6 +1131,7 @@ private fun CompletedCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
+                    enabled = startGate.startEnabled,
                     shape = MaterialTheme.shapes.medium,
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
@@ -1108,7 +1141,11 @@ private fun CompletedCard(
                     Icon(Icons.Default.Refresh, contentDescription = stringResource(Res.string.cd_start_new_workout))
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        "Start New Workout",
+                        if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                            stringResource(Res.string.workout_teardown_finishing)
+                        } else {
+                            "Start New Workout"
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
@@ -1137,10 +1174,11 @@ private fun BodyweightRepEntryDialog(
 
     val reps = repsText.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val effectiveWeightKg = if (entry.bodyWeightKg > 0f && selectedVariant.percentage > 0f) {
-        (entry.bodyWeightKg * selectedVariant.percentage +
-            rackLoadAdjustment.externalAddedLoadKg -
-            rackLoadAdjustment.counterweightKg
-        ).coerceAtLeast(0f)
+        (
+            entry.bodyWeightKg * selectedVariant.percentage +
+                rackLoadAdjustment.externalAddedLoadKg -
+                rackLoadAdjustment.counterweightKg
+            ).coerceAtLeast(0f)
     } else {
         0f
     }

@@ -3,8 +3,8 @@ package com.devil.phoenixproject.presentation.manager
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
-import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
@@ -21,8 +21,10 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -689,6 +691,67 @@ class DWSMRoutineFlowTest {
         harness.cleanup()
     }
 
+    @Test
+    fun `Issue687 routine Set Ready start creates one guarded routine execution`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 1, setsPerExercise = 1)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            advanceUntilIdle()
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            advanceUntilIdle()
+
+            harness.dwsm.startSetFromReady()
+            runCurrent()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(lease.requiresMachine)
+            assertFalse(lease.isBodyweight)
+            assertFalse(lease.isJustLift)
+            assertFalse(lease.isTimedCable)
+            assertEquals(routine.exercises.single().setReps.single(), lease.workingRepTarget)
+            assertEquals(routine.id, harness.coordinator.currentRoutineId)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Issue687 temporary single Set Ready start creates one guarded nonroutine execution`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val tempRoutine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 1, setsPerExercise = 1).copy(
+                id = "${DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX}issue-687",
+            )
+            tempRoutine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            advanceUntilIdle()
+            harness.dwsm.loadRoutine(tempRoutine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            advanceUntilIdle()
+
+            harness.dwsm.startSetFromReady()
+            runCurrent()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(lease.requiresMachine)
+            assertFalse(lease.isBodyweight)
+            assertFalse(lease.isJustLift)
+            assertFalse(lease.isTimedCable)
+            assertEquals(tempRoutine.exercises.single().setReps.single(), lease.workingRepTarget)
+            assertEquals(null, harness.coordinator.currentRoutineId)
+            assertEquals(null, harness.coordinator.currentRoutineSessionId)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
     // ===== C. Navigation =====
 
     @Test
@@ -742,6 +805,46 @@ class DWSMRoutineFlowTest {
         harness.dwsm.stopWorkout(exitingWorkout = true)
         advanceUntilIdle()
         harness.cleanup()
+    }
+
+    @Test
+    fun `jump successor does not navigate or start until reset succeeds`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val resetResult = CompletableDeferred<Result<Unit>>()
+        try {
+            val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 3)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            advanceUntilIdle()
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.coordinator._workoutState.value = WorkoutState.Idle
+            val outgoingExecutionId = harness.activeSessionEngine.currentExecutionLeaseForTest().executionId
+            harness.fakeBleRepo.stopWorkoutBlock = { resetResult.await() }
+
+            harness.dwsm.jumpToExercise(2)
+            runCurrent()
+
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertEquals(0, harness.fakeBleRepo.stopPacketCallCount)
+            assertEquals(0, harness.coordinator.currentExerciseIndex.value)
+            assertEquals(
+                outgoingExecutionId,
+                harness.activeSessionEngine.currentExecutionLeaseForTest().executionId,
+            )
+
+            resetResult.complete(Result.success(Unit))
+            runCurrent()
+
+            assertEquals(2, harness.coordinator.currentExerciseIndex.value)
+            assertTrue(
+                harness.activeSessionEngine.currentExecutionLeaseForTest().executionId > outgoingExecutionId,
+            )
+        } finally {
+            harness.cleanup()
+        }
     }
 
     @Test
@@ -1802,6 +1905,7 @@ class DWSMRoutineFlowTest {
             ),
         )
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.setActiveSummaryCountdownSeconds(10)
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
@@ -1872,6 +1976,7 @@ class DWSMRoutineFlowTest {
             ),
         )
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.setActiveSummaryCountdownSeconds(10)
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()

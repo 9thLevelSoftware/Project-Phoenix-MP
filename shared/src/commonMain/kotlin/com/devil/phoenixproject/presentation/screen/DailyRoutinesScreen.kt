@@ -11,6 +11,9 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
+import com.devil.phoenixproject.presentation.components.StartGateLabel
+import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
+import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
@@ -35,6 +38,7 @@ fun DailyRoutinesScreen(
     val routineGroups by viewModel.routineGroups.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
+    val machineTeardownState by viewModel.machineTeardownState.collectAsState()
 
     val connectionError by viewModel.connectionError.collectAsState()
 
@@ -136,6 +140,11 @@ fun DailyRoutinesScreen(
         // Resume/Restart Dialog (Issue #101)
         if (showResumeDialog) {
             viewModel.getResumableProgressInfo()?.let { info ->
+                val startGate = machineTeardownState.toStartGatePresentation(
+                    requiresMachine = pendingRoutine?.exercises
+                        ?.getOrNull(info.currentExercise - 1)
+                        ?.exercise?.isBodyweight != true,
+                )
                 ResumeRoutineDialog(
                     progressInfo = info,
                     onResume = {
@@ -157,6 +166,19 @@ fun DailyRoutinesScreen(
                         }
                     },
                     onDismiss = { showResumeDialog = false },
+                    confirmEnabled = startGate.startEnabled,
+                    confirmLabel = if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                        stringResource(Res.string.workout_teardown_finishing)
+                    } else {
+                        null
+                    },
+                    supportingContent = {
+                        WorkoutStartGateNotice(
+                            state = machineTeardownState,
+                            onRetry = { viewModel.retryWorkoutTeardown() },
+                            onReconnect = { viewModel.reconnectWorkoutTeardown() },
+                        )
+                    },
                 )
             }
         }

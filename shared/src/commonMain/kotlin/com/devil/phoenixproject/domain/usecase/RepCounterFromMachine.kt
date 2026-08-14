@@ -166,6 +166,18 @@ class RepCounterFromMachine {
     }
 
     /**
+     * Records carried legacy directional counters without producing a rep.
+     *
+     * The execution freshness gate calls this for the first post-cutover legacy packet. The next
+     * accepted packet is then interpreted as a delta from this execution's baseline instead of a
+     * delta from zero.
+     */
+    internal fun establishLegacyCounterBaseline(topCounter: Int, completeCounter: Int) {
+        lastTopCounter = topCounter
+        lastCompleteCounter = completeCounter
+    }
+
+    /**
      * Sets the initial baseline position when the workout starts (after countdown completes).
      * This calibrates the position bars to the starting rope position, so bars show 0% at
      * the starting position rather than showing raw machine values.
@@ -592,7 +604,6 @@ class RepCounterFromMachine {
                 )
             }
         }
-
     }
 
     private fun calculateDelta(last: Int, current: Int): Int = if (current >= last) {

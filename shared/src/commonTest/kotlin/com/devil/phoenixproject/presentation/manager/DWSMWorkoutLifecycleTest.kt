@@ -8,9 +8,9 @@ import com.devil.phoenixproject.domain.model.BadgeCategory
 import com.devil.phoenixproject.domain.model.BadgeRequirement
 import com.devil.phoenixproject.domain.model.BadgeTier
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
+import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
-import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -29,13 +29,6 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.activeDWSM
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.createTestRoutine
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -43,6 +36,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 
 /**
  * Characterization tests for DefaultWorkoutSessionManager workout lifecycle.
@@ -184,6 +184,81 @@ class DWSMWorkoutLifecycleTest {
                 harness.fakeBleRepo.commandsReceived.any { it.firstOrNull() == 0x03.toByte() },
                 "Activation workout start should not send legacy 0x03 start packet for $mode",
             )
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Issue687 Just Lift direct start creates a machine execution lease`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(TestFixtures.justLiftParams)
+
+            harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+            runCurrent()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(lease.requiresMachine)
+            assertTrue(lease.isJustLift)
+            assertFalse(lease.isBodyweight)
+            assertFalse(lease.isTimedCable)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Issue687 bodyweight direct start creates a machine independent execution lease`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = createBodyweightRoutine(sets = 1, repsPerSet = 10, durationSeconds = 30)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            advanceUntilIdle()
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            advanceUntilIdle()
+
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertFalse(lease.requiresMachine)
+            assertTrue(lease.isBodyweight)
+            assertFalse(lease.isJustLift)
+            assertFalse(lease.isTimedCable)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty())
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Issue687 timed cable direct start creates a timed machine execution lease`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTimedCableRoutine(durationSeconds = 30)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            advanceUntilIdle()
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            advanceUntilIdle()
+
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(lease.requiresMachine)
+            assertTrue(lease.isTimedCable)
+            assertFalse(lease.isBodyweight)
+            assertFalse(lease.isJustLift)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+        } finally {
             harness.cleanup()
         }
     }
@@ -335,7 +410,7 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.coordinator.workoutStartTime = 1700000000000L
         harness.dwsm.coordinator.collectedMetrics.value = listOf(
             WorkoutMetric(
-                timestamp = 100L,
+                timestamp = harness.nowMs + 100L,
                 loadA = 25f,
                 loadB = 25f,
                 positionA = 120f,
@@ -1119,7 +1194,7 @@ class DWSMWorkoutLifecycleTest {
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = 100L,
+                timestamp = harness.nowMs + 100L,
             ),
         )
         advanceUntilIdle()
@@ -1175,7 +1250,7 @@ class DWSMWorkoutLifecycleTest {
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = 100L,
+                timestamp = harness.nowMs + 100L,
             ),
         )
         advanceUntilIdle()
@@ -1325,7 +1400,7 @@ class DWSMWorkoutLifecycleTest {
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = 5L,
+                timestamp = harness.nowMs + 5L,
             ),
         )
         advanceUntilIdle()
@@ -2184,7 +2259,7 @@ class DWSMWorkoutLifecycleTest {
                     rangeTop = 800f,
                     rangeBottom = 0f,
                     rawData = ByteArray(24),
-                    timestamp = warmupRep.toLong(),
+                    timestamp = harness.nowMs + warmupRep,
                 ),
             )
         }
@@ -2258,8 +2333,11 @@ class DWSMWorkoutLifecycleTest {
             state is WorkoutState.BodyweightRepEntry,
             "Issue #593 fix: untimed bodyweight completion must prompt for manual reps. Got: $state",
         )
-        assertEquals(0, harness.fakeWorkoutRepo.getAllSessions("default").first().size,
-            "No session may be persisted before the user confirms reps")
+        assertEquals(
+            0,
+            harness.fakeWorkoutRepo.getAllSessions("default").first().size,
+            "No session may be persisted before the user confirms reps",
+        )
 
         harness.cleanup()
     }
@@ -2690,7 +2768,7 @@ class DWSMWorkoutLifecycleTest {
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = (warmupTarget + 1).toLong(),
+                timestamp = harness.nowMs + warmupTarget + 1L,
             ),
         )
     }

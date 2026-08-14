@@ -1,9 +1,12 @@
 package com.devil.phoenixproject.testutil
 
-import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
-import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
+import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.UserPreferences
+import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
@@ -56,7 +59,17 @@ class FakeWorkoutServiceController : WorkoutServiceController {
     }
 }
 
-class DWSMTestHarness(val testScope: TestScope) {
+class DWSMTestHarness(
+    val testScope: TestScope,
+    onPostSaveComputed: suspend (exerciseId: String, profileId: String, sessionMcvMmS: Float?) -> Unit = { _, _, _ -> },
+) {
+    companion object {
+        const val TEST_WALL_CLOCK_EPOCH_MS = 1_800_000_000_000L
+    }
+
+    val nowMs: Long
+        get() = TEST_WALL_CLOCK_EPOCH_MS + testScope.testScheduler.currentTime
+
     val fakeBleRepo = FakeBleRepository()
     val fakeWorkoutRepo = FakeWorkoutRepository()
     val fakeExerciseRepo = FakeExerciseRepository()
@@ -95,6 +108,7 @@ class DWSMTestHarness(val testScope: TestScope) {
         MutableSharedFlow<HapticEvent>(extraBufferCapacity = 10),
         dwsmScope,
         settingsManager.gamificationEnabled,
+        onPostSaveComputed,
     )
 
     val dwsm = DefaultWorkoutSessionManager(
@@ -120,6 +134,7 @@ class DWSMTestHarness(val testScope: TestScope) {
         workoutServiceController = fakeWorkoutServiceController,
         scope = dwsmScope,
         elapsedRealtimeProvider = { testScope.testScheduler.currentTime },
+        wallClockMillisProvider = { nowMs },
     )
 
     // BleConnectionManager receives errors via coordinator.bleErrorEvents (no circular dependency)
@@ -140,8 +155,57 @@ class DWSMTestHarness(val testScope: TestScope) {
     /** Convenience accessor for the active session engine (workout lifecycle, BLE, auto-stop, rest timer) */
     val activeSessionEngine get() = dwsm.activeSessionEngine
 
-    private fun readyProfile(): ActiveProfileContext.Ready =
-        fakeUserProfileRepo.activeProfileContext.value as ActiveProfileContext.Ready
+    fun startCableSet(targetReps: Int) {
+        dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = targetReps,
+                warmupReps = 0,
+                weightPerCableKg = 25f,
+            ),
+        )
+        dwsm.startWorkout(skipCountdown = true)
+        testScope.testScheduler.advanceUntilIdle()
+    }
+
+    fun modernRepPacket(
+        repsSetCount: Int,
+        repsSetTotal: Int,
+        timestamp: Long,
+        topCounter: Int = repsSetCount,
+        completeCounter: Int = repsSetCount,
+        repsRomCount: Int = 0,
+        repsRomTotal: Int = 3,
+    ) = RepNotification(
+        topCounter = topCounter,
+        completeCounter = completeCounter,
+        repsRomCount = repsRomCount,
+        repsRomTotal = repsRomTotal,
+        repsSetCount = repsSetCount,
+        repsSetTotal = repsSetTotal,
+        rangeTop = 800f,
+        rangeBottom = 0f,
+        rawData = ByteArray(24),
+        timestamp = timestamp,
+    )
+
+    fun legacyRepPacket(
+        topCounter: Int,
+        completeCounter: Int,
+        timestamp: Long,
+    ) = RepNotification(
+        topCounter = topCounter,
+        completeCounter = completeCounter,
+        repsRomCount = 0,
+        repsRomTotal = 0,
+        repsSetCount = 0,
+        repsSetTotal = 0,
+        rawData = ByteArray(6),
+        timestamp = timestamp,
+        isLegacyFormat = true,
+    )
+
+    private fun readyProfile(): ActiveProfileContext.Ready = fakeUserProfileRepo.activeProfileContext.value as ActiveProfileContext.Ready
 
     suspend fun setActiveBodyWeightKg(value: Float) {
         val ready = readyProfile()

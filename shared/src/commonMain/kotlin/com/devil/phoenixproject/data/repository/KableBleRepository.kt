@@ -22,6 +22,7 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.rethrowIfCancellation
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -250,21 +251,15 @@ class KableBleRepository : BleRepository {
             // polling, but surface a send failure so the caller can react.
             val sendResult = sendWorkoutCommand(resetCmd)
             delay(50)
-
+            sendResult
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            log.e { "Failed to stop workout: ${error.message}" }
+            Result.failure(error)
+        } finally {
             log.d { "Stopping polling after RESET..." }
             stopPolling()
-
-            sendResult.fold(
-                onSuccess = { Result.success(Unit) },
-                onFailure = { cause ->
-                    log.e { "RESET command failed to send; polling stopped but machine may not be reset: ${cause.message}" }
-                    Result.failure(cause)
-                },
-            )
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.e { "Failed to stop workout: ${e.message}" }
-            Result.failure(e)
         }
     }
 

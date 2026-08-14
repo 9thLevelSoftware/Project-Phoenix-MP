@@ -1046,21 +1046,24 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
     override suspend fun saveMetrics(sessionId: String, metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>) {
         withContext(Dispatchers.IO) {
-            metrics.forEach { metric ->
-                // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
-                val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
-                queries.insertMetric(
-                    sessionId = sessionId,
-                    timestamp = metric.timestamp,
-                    position = metric.positionA.toDouble(),
-                    positionB = metric.positionB.toDouble(),
-                    velocity = metric.velocityA,
-                    velocityB = metric.velocityB,
-                    load = metric.loadA.toDouble(),
-                    loadB = metric.loadB.toDouble(),
-                    power = power.toDouble(),
-                    status = metric.status.toLong(),
-                )
+            db.transaction {
+                queries.deleteMetricsBySession(sessionId)
+                metrics.forEach { metric ->
+                    // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
+                    val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
+                    queries.insertMetric(
+                        sessionId = sessionId,
+                        timestamp = metric.timestamp,
+                        position = metric.positionA.toDouble(),
+                        positionB = metric.positionB.toDouble(),
+                        velocity = metric.velocityA,
+                        velocityB = metric.velocityB,
+                        load = metric.loadA.toDouble(),
+                        loadB = metric.loadB.toDouble(),
+                        power = power.toDouble(),
+                        status = metric.status.toLong(),
+                    )
+                }
             }
         }
     }

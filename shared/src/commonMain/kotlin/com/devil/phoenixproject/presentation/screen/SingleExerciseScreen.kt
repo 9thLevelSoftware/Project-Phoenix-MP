@@ -37,10 +37,13 @@ import com.devil.phoenixproject.presentation.components.CustomExerciseSaveAction
 import com.devil.phoenixproject.presentation.components.ExercisePickerContent
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
+import com.devil.phoenixproject.presentation.components.StartGateLabel
+import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExercisePickerFilterState
 import com.devil.phoenixproject.presentation.components.exercisepicker.filterExercisePickerCandidates
 import com.devil.phoenixproject.presentation.components.resolveCustomExerciseDeleteTarget
 import com.devil.phoenixproject.presentation.components.resolveCustomExerciseSaveAction
+import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -48,8 +51,10 @@ import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
+import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.single_exercise_unavailable
+import vitruvianprojectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * Single Exercise screen - allows user to pick and configure a single exercise
@@ -70,6 +75,7 @@ fun SingleExerciseScreen(
     val rackItems by viewModel.rackItems.collectAsState()
     val activeProfileId by viewModel.activeProfileId.collectAsState()
     val completedExerciseIdsState by viewModel.completedExerciseIdsState.collectAsState()
+    val machineTeardownState by viewModel.machineTeardownState.collectAsState()
     val pickerCompletedExerciseIds = completedExerciseIdsState.ids.takeIf {
         completedExerciseIdsState.profileId == activeProfileId
     } ?: emptySet()
@@ -77,6 +83,14 @@ fun SingleExerciseScreen(
     val connectionError by viewModel.connectionError.collectAsState()
 
     var exerciseToConfig by remember { mutableStateOf<RoutineExercise?>(null) }
+    val startGate = machineTeardownState.toStartGatePresentation(
+        requiresMachine = exerciseToConfig?.exercise?.isBodyweight != true,
+    )
+    val startButtonText = if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+        stringResource(Res.string.workout_teardown_finishing)
+    } else {
+        "Start Workout"
+    }
     var isLoadingDefaults by remember { mutableStateOf(false) }
     var missingInitialExerciseMessage by remember { mutableStateOf<String?>(null) }
     var initialExerciseHandled by remember(initialExerciseId) { mutableStateOf(false) }
@@ -343,8 +357,16 @@ fun SingleExerciseScreen(
                         personalRecordRepository = viewModel.personalRecordRepository,
                         formatWeight = viewModel::formatWeight,
                         rackItems = rackItems,
-                        buttonText = "Start Workout",
+                        buttonText = startButtonText,
                         weightStepOverride = userPreferences.effectiveWeightIncrementKg, // Issue #266/#410
+                        primaryActionEnabled = startGate.startEnabled,
+                        primaryActionSupportingContent = {
+                            WorkoutStartGateNotice(
+                                state = machineTeardownState,
+                                onRetry = { viewModel.retryWorkoutTeardown() },
+                                onReconnect = { viewModel.reconnectWorkoutTeardown() },
+                            )
+                        },
                         onSave = { configuredExercise ->
                             Logger.d { "SingleExercise: Start button clicked for ${configuredExercise.exercise.name}" }
                             val tempRoutine = Routine(

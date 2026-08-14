@@ -107,6 +107,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     // Issue #190: Exercise timer pause state
     val isExerciseTimerPaused by viewModel.isExerciseTimerPaused.collectAsState()
     val currentRackLoadAdjustment by viewModel.currentRackLoadAdjustment.collectAsState()
+    val machineTeardownState by viewModel.machineTeardownState.collectAsState()
 
     val connectionError by viewModel.connectionError.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
@@ -367,6 +368,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         userPreferences.velocityLossThresholdPercent,
         userPreferences.effectiveWeightIncrementKg,
         currentRackLoadAdjustment,
+        machineTeardownState,
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -407,6 +409,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             velocityLossThresholdPercent = userPreferences.velocityLossThresholdPercent,
             weightStepKg = userPreferences.effectiveWeightIncrementKg,
             rackLoadAdjustment = currentRackLoadAdjustment,
+            machineTeardownState = machineTeardownState,
         )
     }
 
@@ -421,6 +424,8 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                     onFailed = { /* Error shown via StateFlow */ },
                 )
             },
+            onRetryWorkoutTeardown = { viewModel.retryWorkoutTeardown() },
+            onReconnectWorkoutTeardown = { viewModel.reconnectWorkoutTeardown() },
             onStopWorkout = { showExitConfirmation = true },
             onSkipRest = { viewModel.skipRest() },
             onExtendRest = { seconds -> viewModel.extendRestTime(seconds) },

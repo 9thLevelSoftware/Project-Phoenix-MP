@@ -87,6 +87,9 @@
     <string name="stop_label">ARRÊT</string>
     <string name="waiting_for_data">En attente des données…</string>
     <string name="reconnect">Reconnecter</string>
+    <string name="workout_teardown_finishing">Finalisation de l’entraînement précédent…</string>
+    <string name="workout_teardown_failed">La réinitialisation de l’appareil n’a pas abouti</string>
+    <string name="workout_teardown_retry">Réessayer</string>
 
     <string name="stop_current_set_title">Arrêter la série en cours ?</string>
     <string name="stop_current_set_message">Arrêtez cette série, passez cet exercice ou terminez tout l\'entraînement.</string>

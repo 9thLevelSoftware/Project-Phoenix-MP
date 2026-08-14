@@ -22,9 +22,9 @@ import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
+import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
-import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.cancel
@@ -129,6 +129,11 @@ class WorkoutFlowE2ETest {
                 computeAllTime = { _, _, _ -> null },
             ),
         )
+        val deterministicElapsedRealtime: () -> Long = { testCoroutineRule.dispatcher.scheduler.currentTime }
+        viewModel.workoutSessionManager.activeSessionEngine.javaClass
+            .getDeclaredField("elapsedRealtimeProvider")
+            .apply { isAccessible = true }
+            .set(viewModel.workoutSessionManager.activeSessionEngine, deterministicElapsedRealtime)
 
         robot = WorkoutRobot(viewModel, fakeBleRepository)
     }

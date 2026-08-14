@@ -14,6 +14,7 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.RepRanges
+import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 
 /**
  * UI State holder for WorkoutTab.
@@ -98,6 +99,7 @@ data class WorkoutUiState(
     // Issue #266/#410: Configurable weight step from user preferences (kg)
     val weightStepKg: Float = 0.25f,
     val rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
+    val machineTeardownState: MachineTeardownState = MachineTeardownState.Ready,
 ) {
     /** True when currently executing a variable warm-up set (for HUD label) */
     val isInVariableWarmup: Boolean get() = currentWarmupSetIndex >= 0
@@ -128,6 +130,10 @@ interface WorkoutActions {
 
     /** Start the workout (may trigger connection first) */
     fun onStartWorkout()
+
+    fun onRetryWorkoutTeardown()
+
+    fun onReconnectWorkoutTeardown()
 
     /** Stop the current workout */
     fun onStopWorkout()
@@ -204,6 +210,8 @@ object PreviewWorkoutActions : WorkoutActions {
     override fun onCancelScan() {}
     override fun onDisconnect() {}
     override fun onStartWorkout() {}
+    override fun onRetryWorkoutTeardown() {}
+    override fun onReconnectWorkoutTeardown() {}
     override fun onStopWorkout() {}
     override fun onSkipRest() {}
     override fun onExtendRest(seconds: Int) {}
@@ -237,6 +245,8 @@ fun workoutActions(
     onCancelScan: () -> Unit,
     onDisconnect: () -> Unit,
     onStartWorkout: () -> Unit,
+    onRetryWorkoutTeardown: () -> Unit = {},
+    onReconnectWorkoutTeardown: () -> Unit = {},
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
     onExtendRest: (Int) -> Unit = {},
@@ -264,6 +274,8 @@ fun workoutActions(
     override fun onCancelScan() = onCancelScan()
     override fun onDisconnect() = onDisconnect()
     override fun onStartWorkout() = onStartWorkout()
+    override fun onRetryWorkoutTeardown() = onRetryWorkoutTeardown()
+    override fun onReconnectWorkoutTeardown() = onReconnectWorkoutTeardown()
     override fun onStopWorkout() = onStopWorkout()
     override fun onSkipRest() = onSkipRest()
     override fun onExtendRest(seconds: Int) = onExtendRest(seconds)

@@ -26,7 +26,15 @@ import vitruvianprojectphoenix.shared.generated.resources.Res
  * Issue #101: Provides clear UX for resume vs restart behavior.
  */
 @Composable
-fun ResumeRoutineDialog(progressInfo: ResumableProgressInfo, onResume: () -> Unit, onRestart: () -> Unit, onDismiss: () -> Unit) {
+fun ResumeRoutineDialog(
+    progressInfo: ResumableProgressInfo,
+    onResume: () -> Unit,
+    onRestart: () -> Unit,
+    onDismiss: () -> Unit,
+    confirmEnabled: Boolean = true,
+    confirmLabel: String? = null,
+    supportingContent: (@Composable () -> Unit)? = null,
+) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(Res.string.resume_workout_title)) },
@@ -44,6 +52,10 @@ fun ResumeRoutineDialog(progressInfo: ResumableProgressInfo, onResume: () -> Uni
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+                supportingContent?.let { content ->
+                    Spacer(Modifier.height(16.dp))
+                    content()
+                }
                 Spacer(Modifier.height(16.dp))
                 OutlinedButton(
                     onClick = onRestart,
@@ -54,8 +66,8 @@ fun ResumeRoutineDialog(progressInfo: ResumableProgressInfo, onResume: () -> Uni
             }
         },
         confirmButton = {
-            Button(onClick = onResume) {
-                Text(stringResource(Res.string.action_continue))
+            Button(onClick = onResume, enabled = confirmEnabled) {
+                Text(confirmLabel ?: stringResource(Res.string.action_continue))
             }
         },
         dismissButton = {

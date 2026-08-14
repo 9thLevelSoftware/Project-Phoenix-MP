@@ -81,18 +81,25 @@ class RoutineFlowManager(
      * Implemented by DefaultWorkoutSessionManager to bridge RoutineFlowManager back to DWSM
      * without creating a direct reference.
      */
-    interface WorkoutLifecycleDelegate {
+    internal interface WorkoutLifecycleDelegate {
         /** Reset the rep counter state */
         fun resetRepCounter()
 
         /** Start a workout with optional countdown skip */
         fun startWorkout(skipCountdown: Boolean = false)
 
-        /** Send BLE stop command to clear fault state */
-        suspend fun sendStopCommand()
+        /** Complete machine teardown before a transition may navigate or start. */
+        fun requestTeardownForTransition(
+            expectedLease: ExecutionLease?,
+            reason: TeardownReason,
+            afterReady: () -> Unit,
+        )
 
-        /** Send BLE stop/reset to put machine in BASELINE mode */
-        suspend fun stopMachineWorkout()
+        /** Lease captured by an asynchronous routine transition, if a set owns it. */
+        fun currentExecutionLeaseOrNull(): ExecutionLease?
+
+        /** Renew authority before an asynchronous routine transition mutates navigation. */
+        fun isCurrentExecution(lease: ExecutionLease): Boolean
 
         /** Update workout parameters for internal manager transitions (no user-adjusted side-effects) */
         fun setWorkoutParametersInternal(params: WorkoutParameters)
@@ -1500,23 +1507,15 @@ class RoutineFlowManager(
         coordinator._timedExerciseRemainingSeconds.value = null
         resetAutoStopState()
 
-        // Issue #172: Async navigation with proper BLE cleanup
-        scope.launch {
-            try {
-                // Issue #205: Clear fault state with StopPacket (0x50)
-                lifecycleDelegate.sendStopCommand()
-                delay(100)
-
-                // Full reset with RESET command (0x0A)
-                lifecycleDelegate.stopMachineWorkout()
-                delay(150)
-
-                Logger.d("RoutineFlowManager") { "BLE stop sequence sent before navigation to exercise $index" }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                Logger.w(e) { "Stop command before navigation failed (non-fatal): ${e.message}" }
+        val transitionLease = lifecycleDelegate.currentExecutionLeaseOrNull()
+        lifecycleDelegate.requestTeardownForTransition(transitionLease, TeardownReason.EXERCISE_JUMP) transition@{
+            if (transitionLease != null && !lifecycleDelegate.isCurrentExecution(transitionLease)) {
+                return@transition
             }
-
+            if (transitionLease == null && lifecycleDelegate.currentExecutionLeaseOrNull() != null) {
+                return@transition
+            }
+            Logger.d("RoutineFlowManager") { "Machine teardown complete before navigation to exercise $index" }
             navigateToExerciseInternal(routine, index)
             // Auto-start the next exercise with countdown
             lifecycleDelegate.startWorkout(skipCountdown = false)
