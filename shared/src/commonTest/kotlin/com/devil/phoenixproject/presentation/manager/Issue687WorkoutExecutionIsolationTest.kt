@@ -16,6 +16,8 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.util.KmpUtils
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -24,12 +26,59 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 class Issue687WorkoutExecutionIsolationTest {
+    @Test
+    fun `suspended execution A biomechanics cannot auto end execution B`() = runTest {
+        val biomechanicsDispatcher = PausedCoroutineDispatcher()
+        val harness = DWSMTestHarness(this, biomechanicsDispatcher = biomechanicsDispatcher)
+        try {
+            harness.setActiveProfilePreferences(
+                UserPreferences(
+                    vbtEnabled = true,
+                    velocityLossThresholdPercent = 20,
+                    autoEndOnVelocityLoss = true,
+                ),
+            )
+            advanceUntilIdle()
+            startCableSet(harness, targetReps = 10)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val cutoverA = requireNotNull(leaseA.activationCutoverTimestampMs)
+
+            listOf(100.0, 60.0, 55.0).forEachIndexed { index, velocity ->
+                queueAsyncVbtRep(
+                    harness = harness,
+                    repNumber = index + 1,
+                    velocityMmS = velocity,
+                    packetTimestamp = cutoverA + index + 1,
+                )
+            }
+            assertEquals(3, biomechanicsDispatcher.queuedTaskCount)
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            startCableSet(harness, targetReps = 10)
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(isWarmupComplete = true)
+
+            biomechanicsDispatcher.runAll()
+            advanceUntilIdle()
+
+            assertNotEquals(leaseA.sessionId, leaseB.sessionId)
+            assertEquals(leaseB, harness.activeSessionEngine.currentExecutionLeaseForTest())
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(emptyList(), harness.fakeCompletedSetRepo.getCompletedSets(leaseB.sessionId))
+        } finally {
+            biomechanicsDispatcher.runAll()
+            harness.cleanup()
+        }
+    }
+
     @Test
     fun `issue 687 reporter workflow remains on execution B at zero reps`() = runTest {
         val harness = DWSMTestHarness(this)
@@ -734,6 +783,35 @@ class Issue687WorkoutExecutionIsolationTest {
         assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
     }
 
+    private suspend fun queueAsyncVbtRep(
+        harness: DWSMTestHarness,
+        repNumber: Int,
+        velocityMmS: Double,
+        packetTimestamp: Long,
+    ) {
+        val metricTimestamp = KmpUtils.currentTimeMillis() - 10L
+        harness.coordinator.collectedMetrics.value = List(4) { index ->
+            WorkoutMetric(
+                timestamp = metricTimestamp + index,
+                loadA = 20f,
+                loadB = 20f,
+                positionA = index * 50f,
+                positionB = index * 50f,
+                velocityA = velocityMmS,
+                velocityB = velocityMmS,
+            )
+        }
+        harness.coordinator.repBoundaryTimestamps.value = emptyList()
+        harness.fakeBleRepo.emitRepNotification(
+            harness.modernRepPacket(
+                repsSetCount = repNumber,
+                repsSetTotal = 10,
+                timestamp = packetTimestamp,
+            ),
+        )
+        harness.testScope.testScheduler.runCurrent()
+    }
+
     private fun cableRoutine(id: String, profileId: String): Routine = Routine(
         id = id,
         name = id,
@@ -785,5 +863,22 @@ class Issue687WorkoutExecutionIsolationTest {
         const val PRIVATE_EXERCISE_ID = "private-exercise-id-687"
         const val PRIVATE_LOAD_TOKEN = "37.25"
         const val PRIVATE_METRIC_TOKEN = "9876.5"
+    }
+}
+
+private class PausedCoroutineDispatcher : CoroutineDispatcher() {
+    private val queuedTasks = ArrayDeque<Runnable>()
+
+    val queuedTaskCount: Int
+        get() = queuedTasks.size
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        queuedTasks.addLast(block)
+    }
+
+    fun runAll() {
+        while (queuedTasks.isNotEmpty()) {
+            queuedTasks.removeFirst().run()
+        }
     }
 }

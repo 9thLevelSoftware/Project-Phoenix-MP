@@ -21,6 +21,8 @@ import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceSnapshot
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -65,6 +67,7 @@ class DWSMTestHarness(
     val testScope: TestScope,
     workoutRepositoryOverride: WorkoutRepository? = null,
     completedSetRepositoryOverride: CompletedSetRepository? = null,
+    biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
     onPostSaveComputed: suspend (exerciseId: String, profileId: String, sessionMcvMmS: Float?) -> Unit = { _, _, _ -> },
 ) {
     companion object {
@@ -139,6 +142,7 @@ class DWSMTestHarness(
         userProfileRepository = fakeUserProfileRepo,
         workoutServiceController = fakeWorkoutServiceController,
         scope = dwsmScope,
+        biomechanicsDispatcher = biomechanicsDispatcher,
         elapsedRealtimeProvider = { testScope.testScheduler.currentTime },
         wallClockMillisProvider = { nowMs },
     )

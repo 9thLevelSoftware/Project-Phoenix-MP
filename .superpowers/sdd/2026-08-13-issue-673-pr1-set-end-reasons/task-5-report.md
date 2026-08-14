@@ -132,3 +132,52 @@ A read-only independent review found no Critical production correctness defects.
 - The legacy DWSM partial-set test documents a simulated stall completion but its mechanical explicit-reason adaptation supplied `TARGET_REPS_REACHED`; it now supplies `STALL_FAILURE`.
 
 The reviewer independently reran the focused Task 5 suite successfully. Repository-wide `spotlessCheck` remains red on more than 203 pre-existing files, beginning in unrelated Android QA sources, so it is recorded as baseline noise rather than Task 5 verification; `git diff --check` is the scoped whitespace gate for this change.
+
+## Controller rework round 1
+
+### Review findings addressed
+
+- The biomechanics/VBT job now captures the `ExecutionLease` accepted with the rep notification, carries it through background processing and evaluation, and revalidates it before biomechanics, VBT state writes, haptic/defer writes, and terminal completion. The terminal uses that captured lease and never borrows `executionGuard.currentLease` from a replacement execution.
+- Bodyweight completion now uses a lease-scoped atomic `Available -> Pending -> Consuming` state machine with an `Invalidated` tombstone. Confirmation claims the shared completion guard before changing `Pending` to `Consuming`, so a failed claim leaves the original completion retryable and never presents an empty replacement window. Invalidation and newer execution installation are monotonic by execution ID and compare the stable execution/session identity, so stale A work cannot republish into B.
+- The danger countdown seam remains necessary because the unchanged production path resets the position timer immediately before danger evaluation. It is now an atomic, one-shot override keyed by stable execution/session identity. Stale leases cannot prime or consume it, and reset/start/failure/End/Stop/Skip/cleanup clear it without changing any detector predicate, threshold, duration, classification, or reset ordering.
+- `DefaultWorkoutSessionManager` gained only the narrow dispatcher pass-through required to suspend the actual production biomechanics job deterministically. The dispatcher defaults to `Dispatchers.Default`; production behavior is unchanged. `DWSMTestHarness` exposes the corresponding test adapter while preserving its existing trailing callback API.
+
+### Rework RED evidence
+
+1. `suspended execution A biomechanics cannot auto end execution B`
+   - Initial compile-scaffolding RED: the test-owned paused dispatcher could not be supplied.
+   - After dispatcher-only plumbing, the behavior-level RED queued three real A rep/biomechanics jobs, ended A, started B, and released A. Expected B `Active`; actual B `SetSummary`, proving A's VBT result auto-ended B.
+2. `bodyweight confirmation cannot expose its origin to a competing completion`
+   - Behavior-level RED forced confirmation to lose the shared completion CAS after the old code had cleared its pending origin. A competing terminal then persisted `TARGET_REPS_REACHED`; expected the original `USER_STOPPED`.
+3. `bodyweight completion gate rejects a stale A publication after B begins`
+   - Compile-scaffolding RED: `BodyweightCompletionGate` did not exist. The implemented test invalidates A, begins B, attempts a late lower-ID A begin/publication, then proves only B can publish and consume once.
+4. `danger zone countdown override cannot cross executions`
+   - Compile-scaffolding RED: the replacement lease-bound priming API did not exist. The test primes A, ends A, starts B, retries an A prime, sends a real B danger-zone metric, and proves B remains active with no completed set.
+
+### Rework GREEN evidence
+
+Focused lifecycle/race/guard/persistence/VBT gate:
+
+```powershell
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest `
+  --tests 'com.devil.phoenixproject.presentation.manager.Issue673SetEndReasonLifecycleTest' `
+  --tests 'com.devil.phoenixproject.presentation.manager.Issue687WorkoutExecutionIsolationTest' `
+  --tests 'com.devil.phoenixproject.presentation.manager.WorkoutExitPersistenceTest' `
+  --tests 'com.devil.phoenixproject.presentation.manager.WorkoutExecutionGuardTest' `
+  --tests 'com.devil.phoenixproject.presentation.manager.VbtEnabledRuntimeTest' `
+  --console=plain
+```
+
+Result: `BUILD SUCCESSFUL` (78 tests: 17 + 21 + 22 + 14 + 4; zero failures/errors).
+
+The two direct danger tests also passed together: the real danger branch persists `CABLE_RELEASED`, while an A override cannot affect B.
+
+The broader 10-class lifecycle/integration/teardown gate was rerun unchanged and passed all 151 tests with zero failures/errors. Production and host-test compilation completed as part of these runs.
+
+### Rework self-review
+
+- Verified the VBT regression suspends the actual dispatcher-launched processing path and was behavior-red before lease threading.
+- Verified bodyweight `Pending` is never cleared before completion authority is claimed, `Consuming` preserves the first reason through completion, and stale execution IDs cannot replace newer gate state.
+- Verified every bodyweight terminal invalidation is lease-scoped and occurs before the corresponding execution invalidation/continuation.
+- Verified the danger override is lease-bound, one-shot, reset across executions, and the existing behavior-sensitive danger-origin mutation proof remains valid against the actual branch.
+- Verified the existing #687 teardown/persistence/retry behavior remained green and the dispatcher default keeps production scheduling unchanged.

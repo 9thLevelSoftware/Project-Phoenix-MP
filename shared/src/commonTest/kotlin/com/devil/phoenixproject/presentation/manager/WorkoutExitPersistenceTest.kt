@@ -21,8 +21,10 @@ import com.devil.phoenixproject.util.BleConstants
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
@@ -594,6 +596,27 @@ class WorkoutExitPersistenceTest {
     }
 
     @Test
+    fun `bodyweight completion gate rejects a stale A publication after B begins`() {
+        val leaseA = executionLease(executionId = 1L, sessionId = "bodyweight-a")
+        val leaseB = executionLease(executionId = 2L, sessionId = "bodyweight-b")
+        val completionA = SetExecutionCompletion(leaseA, SetEndReason.USER_STOPPED)
+        val completionB = SetExecutionCompletion(leaseB, SetEndReason.TIMER_EXPIRED)
+        val gate = BodyweightCompletionGate()
+
+        gate.beginExecution(leaseA)
+        gate.invalidate(leaseA)
+        gate.beginExecution(leaseB)
+        gate.beginExecution(leaseA)
+
+        assertFalse(gate.tryPublish(completionA))
+        assertNull(gate.pendingFor(leaseB))
+        assertTrue(gate.tryPublish(completionB))
+        assertEquals(completionB, gate.pendingFor(leaseB))
+        assertTrue(gate.tryConsume(completionB))
+        assertFalse(gate.tryConsume(completionB))
+    }
+
+    @Test
     fun `starting B automatically retries failed A with its stable identities`() = runTest {
         val harness = DWSMTestHarness(this)
         var failedCompletedSetId: String? = null
@@ -914,6 +937,18 @@ class WorkoutExitPersistenceTest {
             peakEccentricForceKg = 0f,
             sessionMcvMmS = null,
         ),
+    )
+
+    private fun executionLease(executionId: Long, sessionId: String) = ExecutionLease(
+        executionId = executionId,
+        sessionId = sessionId,
+        profileId = "profile-a",
+        requiresMachine = false,
+        workingRepTarget = 0,
+        isBodyweight = true,
+        isJustLift = false,
+        isAmrap = false,
+        isTimedCable = false,
     )
 
     private fun repMetric() = RepMetricData(

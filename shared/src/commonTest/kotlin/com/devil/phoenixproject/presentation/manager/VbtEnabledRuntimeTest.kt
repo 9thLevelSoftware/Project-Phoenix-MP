@@ -261,7 +261,9 @@ class VbtEnabledRuntimeTest {
             allRepMetrics = metrics,
             timestamp = repNumber * 1_000L,
         )
-        harness.activeSessionEngine.evaluateLatestVbtResult()
+        harness.activeSessionEngine.evaluateLatestVbtResult(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+        )
     }
 
     private fun startCableExecution(harness: DWSMTestHarness): ExecutionLease {

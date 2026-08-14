@@ -151,7 +151,10 @@ class Issue673SetEndReasonLifecycleTest {
                 isAmrap = true,
             )
             seedWorkingReps(harness, rangeBottom = 100f)
-            harness.activeSessionEngine.dangerZoneCountdownStartTimeForTest = currentTimeMillis() - 10_000L
+            harness.activeSessionEngine.primeDangerZoneCountdownForTest(
+                lease = lease,
+                startTimeMs = currentTimeMillis() - 10_000L,
+            )
 
             harness.fakeBleRepo.emitMetric(
                 activeMetric().copy(
@@ -162,6 +165,50 @@ class Issue673SetEndReasonLifecycleTest {
             advanceUntilIdle()
 
             assertEquals(SetEndReason.CABLE_RELEASED, persistedReason(harness, lease))
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `danger zone countdown override cannot cross executions`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val leaseA = startTrackedCableSet(
+                harness = harness,
+                stallDetectionEnabled = false,
+                isAmrap = true,
+            )
+            harness.activeSessionEngine.primeDangerZoneCountdownForTest(
+                lease = leaseA,
+                startTimeMs = currentTimeMillis() - 10_000L,
+            )
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            val leaseB = startTrackedCableSet(
+                harness = harness,
+                stallDetectionEnabled = false,
+                isAmrap = true,
+            )
+            seedWorkingReps(harness, rangeBottom = 100f)
+            harness.coordinator.workoutStartTime = currentTimeMillis() - 10_000L
+            harness.activeSessionEngine.primeDangerZoneCountdownForTest(
+                lease = leaseA,
+                startTimeMs = currentTimeMillis() - 10_000L,
+            )
+
+            harness.fakeBleRepo.emitMetric(
+                activeMetric().copy(
+                    positionA = 105f,
+                    positionB = 500f,
+                ),
+            )
+            runCurrent()
+
+            assertEquals(leaseB, harness.activeSessionEngine.currentExecutionLeaseForTest())
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(emptyList(), harness.fakeCompletedSetRepo.getCompletedSets(leaseB.sessionId))
         } finally {
             harness.cleanup()
         }
@@ -321,6 +368,36 @@ class Issue673SetEndReasonLifecycleTest {
             harness.dwsm.confirmBodyweightSetResult(reps = 6, variant = entry.selectedVariant)
             advanceUntilIdle()
             harness.dwsm.confirmBodyweightSetResult(reps = 99, variant = entry.selectedVariant)
+            advanceUntilIdle()
+
+            assertEquals(SetEndReason.USER_STOPPED, persistedReason(harness, lease))
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `bodyweight confirmation cannot expose its origin to a competing completion`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = bodyweightRoutine(durationSeconds = 60)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.USER_STOPPED)
+            advanceUntilIdle()
+            val entry = assertIs<WorkoutState.BodyweightRepEntry>(harness.coordinator.workoutState.value)
+
+            harness.coordinator.setCompletionInProgress.value = true
+            harness.dwsm.confirmBodyweightSetResult(reps = 6, variant = entry.selectedVariant)
+            harness.coordinator.setCompletionInProgress.value = false
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            harness.dwsm.confirmBodyweightSetResult(reps = 6, variant = entry.selectedVariant)
             advanceUntilIdle()
 
             assertEquals(SetEndReason.USER_STOPPED, persistedReason(harness, lease))
@@ -498,7 +575,9 @@ class Issue673SetEndReasonLifecycleTest {
             allRepMetrics = metrics,
             timestamp = repNumber * 1_000L,
         )
-        harness.activeSessionEngine.evaluateLatestVbtResult()
+        harness.activeSessionEngine.evaluateLatestVbtResult(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+        )
     }
 
     private suspend fun persistedReason(

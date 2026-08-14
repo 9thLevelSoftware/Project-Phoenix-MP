@@ -45,7 +45,9 @@ import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.DataBackupManager
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -176,6 +178,7 @@ class DefaultWorkoutSessionManager(
     private val workoutServiceController: WorkoutServiceController,
     private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val scope: CoroutineScope,
+    private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
@@ -264,6 +267,7 @@ class DefaultWorkoutSessionManager(
         settingsManager = settingsManager,
         userProfileRepository = userProfileRepository,
         scope = scope,
+        biomechanicsDispatcher = biomechanicsDispatcher,
         regenerateFiveThreeOneUseCase = RegenerateFiveThreeOneRoutinesUseCase(
             trainingCycleRepository = trainingCycleRepository,
             workoutRepository = workoutRepository,
