@@ -643,9 +643,8 @@ class SchemaParityTest {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         buildSchemaAtVersion(driver, 43)
 
-        // Create prerequisite rows: UserProfile, Routine, WorkoutSession
-        // Note: profile_id is added by manifest reconciliation, not by migration 42.
-        // Use columns available at schema v42 (pre-reconciliation).
+        // Create prerequisite rows using columns available at schema v43,
+        // before migration 43 adds the reason column.
         driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
         driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
         driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)", 0)
@@ -661,12 +660,9 @@ class SchemaParityTest {
             0,
         )
 
-        // Migrate 43 → 44 with resilient fallback (matches production behavior).
-        try {
-            VitruvianDatabase.Schema.migrate(driver, 43, 44)
-        } catch (_: Exception) {
-            applyMigrationResilient(driver, 43)
-        }
+        // This test proves generated migration 43.sqm itself; resilient recovery
+        // behavior is covered separately below.
+        VitruvianDatabase.Schema.migrate(driver, 43, 44)
 
         assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "set_end_reason"))
 

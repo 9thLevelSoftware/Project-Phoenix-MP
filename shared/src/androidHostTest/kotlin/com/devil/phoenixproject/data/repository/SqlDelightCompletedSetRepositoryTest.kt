@@ -104,6 +104,20 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     @Test
+    fun `saveCompletedSets preserves distinct non-default end reasons`() = runTest {
+        repository.saveCompletedSets(
+            listOf(
+                completedSet("cset-bulk-stall", "session-1", setNumber = 1, setEndReason = SetEndReason.STALL_FAILURE),
+                completedSet("cset-bulk-timer", "session-1", setNumber = 2, setEndReason = SetEndReason.TIMER_EXPIRED),
+            ),
+        )
+
+        val reasonsById = repository.getCompletedSets("session-1").associate { it.id to it.setEndReason }
+        assertEquals(SetEndReason.STALL_FAILURE, reasonsById["cset-bulk-stall"])
+        assertEquals(SetEndReason.TIMER_EXPIRED, reasonsById["cset-bulk-timer"])
+    }
+
+    @Test
     fun `unknown persisted end reason reads as UNKNOWN`() = runTest {
         database.vitruvianDatabaseQueries.insertCompletedSet(
             id = "cset-future",
