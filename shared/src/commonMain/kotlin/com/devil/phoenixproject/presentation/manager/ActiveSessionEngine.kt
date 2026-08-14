@@ -670,6 +670,62 @@ class ActiveSessionEngine(
                 }
         }
 
+        // #5b: Issue #673 PR 2: ROM-fraction stall detection collector.
+        // Consumes MachineStatusEvent carrying the full SampleStatus + position + velocity.
+        // When velocity is in the dead band (2.5–10 mm/s) AND position is mid-ROM
+        // (30–80%), arms the stall timer as a secondary signal.  Rep events cancel
+        // any position-armed countdown (handled via resetStallTimer in rep processing).
+        scope.launch {
+            bleRepository.machineStatusEvents
+                .catch { e -> Logger.e(e) { "machineStatusEvents collector error" } }
+                .collect { event ->
+                    val params = coordinator._workoutParameters.value
+                    val currentState = coordinator._workoutState.value
+
+                    if (!params.stallDetectionEnabled || currentState !is WorkoutState.Active) return@collect
+                    if (params.isEchoMode) return@collect
+                    if (!isWarmupGateOpenForAutoStop()) return@collect
+                    if (!shouldEnableAutoStop(params)) return@collect
+
+                    // Track ROM range from position observations
+                    val pos = event.position
+                    val currentTop = coordinator.romRangeTop
+                    val currentBottom = coordinator.romRangeBottom
+                    if (currentTop == null || pos > currentTop) coordinator.romRangeTop = pos
+                    if (currentBottom == null || pos < currentBottom) coordinator.romRangeBottom = pos
+
+                    val top = coordinator.romRangeTop ?: return@collect
+                    val bottom = coordinator.romRangeBottom ?: return@collect
+                    val range = top - bottom
+                    if (range < WorkoutCoordinator.MIN_RANGE_THRESHOLD) return@collect
+
+                    val fraction = (pos - bottom) / range
+                    coordinator.romFraction = fraction
+
+                    val velocity = event.velocity.toDouble()
+
+                    // Arm conditions: mid-ROM (30–80%) AND velocity in dead band (2.5–10 mm/s)
+                    val inMidRom = fraction in 0.3f..0.8f
+                    val inDeadBand = velocity >= WorkoutCoordinator.STALL_VELOCITY_LOW &&
+                        velocity <= WorkoutCoordinator.STALL_VELOCITY_HIGH
+
+                    if (inMidRom && inDeadBand) {
+                        val repCount = coordinator._repCount.value
+                        if (shouldDeferStandardSetStall(params, repCount)) return@collect
+
+                        val hasMeaningfulRange = repCounter.hasMeaningfulRange(WorkoutCoordinator.MIN_RANGE_THRESHOLD)
+                        if (isInAmrapStartupGrace(hasMeaningfulRange)) return@collect
+
+                        if (coordinator.stallStartTime == null) {
+                            coordinator.stallStartTime = currentTimeMillis()
+                            coordinator.isCurrentlyStalled = true
+                            coordinator.stallArmedByRomFraction = true
+                            Logger.d("Auto-stop stall timer STARTED via ROM-fraction signal (fraction=$fraction, velocity=$velocity)")
+                        }
+                    }
+                }
+        }
+
         // #6: Rep events collector for handling machine rep notifications
         coordinator.repEventsCollectionJob = scope.launch {
             bleRepository.repEvents
@@ -1183,6 +1239,8 @@ class ActiveSessionEngine(
         coordinator.stallStartTime = null
         coordinator.isCurrentlyStalled = false
         coordinator.stallArmedByDeload = false
+        // Issue #673 PR 2: also clear ROM-fraction stall arm
+        coordinator.stallArmedByRomFraction = false
         if (coordinator.autoStopStartTime == null && !coordinator.autoStopTriggered) {
             coordinator._autoStopState.value = AutoStopUiState()
         }
@@ -1752,6 +1810,8 @@ class ActiveSessionEngine(
                 // F4: re-check per sample — a velocity-armed countdown must not keep
                 // running once the handles return to rest (racked pause). A deload-armed
                 // countdown must survive this (real cable release retracts to ~0mm).
+                // Issue #673 PR 2: ROM-fraction-armed countdown also cancels at rest,
+                // same as velocity-armed — racking handles means the user stopped.
                 if (!coordinator.stallArmedByDeload && maxPosition <= WorkoutCoordinator.STALL_MIN_POSITION) {
                     resetStallTimer()
                     return

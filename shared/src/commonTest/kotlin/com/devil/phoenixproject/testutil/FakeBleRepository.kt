@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
+import com.devil.phoenixproject.domain.model.MachineStatusEvent
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlinx.coroutines.flow.Flow
@@ -45,6 +46,9 @@ class FakeBleRepository : BleRepository {
 
     private val _deloadOccurredEvents = MutableSharedFlow<Unit>(replay = 0)
     override val deloadOccurredEvents: Flow<Unit> = _deloadOccurredEvents.asSharedFlow()
+
+    private val _machineStatusEvents = MutableSharedFlow<MachineStatusEvent>(replay = 0)
+    override val machineStatusEvents: Flow<MachineStatusEvent> = _machineStatusEvents.asSharedFlow()
 
     private val _reconnectionRequested = MutableSharedFlow<ReconnectionRequest>(replay = 0)
     override val reconnectionRequested: Flow<ReconnectionRequest> = _reconnectionRequested.asSharedFlow()
@@ -120,6 +124,10 @@ class FakeBleRepository : BleRepository {
 
     suspend fun emitDeloadOccurred() {
         _deloadOccurredEvents.emit(Unit)
+    }
+
+    suspend fun emitMachineStatusEvent(event: MachineStatusEvent) {
+        _machineStatusEvents.emit(event)
     }
 
     suspend fun emitReconnectionRequest(request: ReconnectionRequest) {

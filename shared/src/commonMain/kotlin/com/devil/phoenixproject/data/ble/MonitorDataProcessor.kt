@@ -1,12 +1,14 @@
 package com.devil.phoenixproject.data.ble
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.domain.model.MachineStatusEvent
 import com.devil.phoenixproject.domain.model.SampleStatus
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.Constants
 import kotlin.math.abs
+import kotlin.math.max
 
 /**
  * Synchronous processing pipeline for BLE monitor packets.
@@ -42,6 +44,7 @@ import kotlin.math.abs
 class MonitorDataProcessor(
     private val onDeloadOccurred: () -> Unit = {},
     private val onRomViolation: (RomViolationType) -> Unit = {},
+    private val onStatusEvent: (MachineStatusEvent) -> Unit = {},
     private val timeProvider: () -> Long = { currentTimeMillis() },
 ) {
     private val log = Logger.withTag("MonitorDataProcessor")
@@ -219,6 +222,21 @@ class MonitorDataProcessor(
 
         // Update timestamp for poll rate diagnostics
         lastTimestamp = currentTime
+
+        // ===== STAGE 6B: STATUS EVENT EMISSION =====
+        // Issue #673 PR 2: emit MachineStatusEvent carrying the full SampleStatus +
+        // position + velocity for downstream ROM-fraction stall detection.
+        // Only fires on packets that carry a non-zero status word.
+        if (packet.status != 0) {
+            onStatusEvent(
+                MachineStatusEvent(
+                    timestamp = currentTime,
+                    sampleStatus = SampleStatus(packet.status),
+                    position = max(posA, posB),
+                    velocity = max(smoothedVelocityA, smoothedVelocityB).toFloat(),
+                ),
+            )
+        }
 
         // ===== STAGE 7: BUILD METRIC =====
         return WorkoutMetric(

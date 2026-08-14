@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.ble.DiagnosticPacket
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.MachineStatusEvent
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -141,6 +142,9 @@ interface BleRepository {
 
     // Deload safety event (for Just Lift mode safety recovery)
     val deloadOccurredEvents: Flow<Unit>
+
+    // Full machine status-word events (Issue #673 PR 2: ROM-fraction stall detection)
+    val machineStatusEvents: Flow<MachineStatusEvent>
 
     // Reconnection request (for auto-recovery on connection loss)
     val reconnectionRequested: Flow<ReconnectionRequest>

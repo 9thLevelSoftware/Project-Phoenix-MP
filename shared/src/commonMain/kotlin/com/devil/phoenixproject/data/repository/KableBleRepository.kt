@@ -18,6 +18,7 @@ import com.devil.phoenixproject.data.ble.parseRepPacket
 import com.devil.phoenixproject.data.ble.toVitruvianHex
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
+import com.devil.phoenixproject.domain.model.MachineStatusEvent
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.util.BlePacketFactory
@@ -83,6 +84,12 @@ class KableBleRepository : BleRepository {
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
     override val deloadOccurredEvents: Flow<Unit> = _deloadOccurredEvents.asSharedFlow()
+    private val _machineStatusEvents = MutableSharedFlow<MachineStatusEvent>(
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+    override val machineStatusEvents: Flow<MachineStatusEvent> = _machineStatusEvents.asSharedFlow()
     enum class RomViolationType { OUTSIDE_HIGH, OUTSIDE_LOW }
     private val _romViolationEvents = MutableSharedFlow<RomViolationType>(
         replay = 0,
@@ -118,6 +125,9 @@ class KableBleRepository : BleRepository {
                 MonitorDataProcessor.RomViolationType.OUTSIDE_LOW -> RomViolationType.OUTSIDE_LOW
             }
             publishSafetyEvent(_romViolationEvents, mapped, BleCriticalEventType.ROM_VIOLATION)
+        },
+        onStatusEvent = { event ->
+            _machineStatusEvents.tryEmit(event)
         },
     )
 
@@ -510,6 +520,10 @@ class KableBleRepository : BleRepository {
 
     internal suspend fun publishDeloadOccurredForTest() {
         _deloadOccurredEvents.emit(Unit)
+    }
+
+    internal suspend fun publishMachineStatusEventForTest(event: MachineStatusEvent) {
+        _machineStatusEvents.emit(event)
     }
 
     internal suspend fun publishRomViolationForTest(type: RomViolationType) {
