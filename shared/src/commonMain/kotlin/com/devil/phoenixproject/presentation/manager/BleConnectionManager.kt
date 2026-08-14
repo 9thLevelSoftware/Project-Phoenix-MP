@@ -349,6 +349,9 @@ class BleConnectionManager(
             try {
                 connectionJob?.cancelAndJoin()
                 connectionJob = null
+                _isAutoConnecting.value = false
+                _pendingConnectionCallback = null
+                _connectionError.value = null
                 bleRepository.stopScanning()
                 bleRepository.cancelConnection()
                 bleRepository.disconnect()

@@ -484,10 +484,7 @@ class MainViewModel constructor(
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = workoutSessionManager.startWorkout(skipCountdown, isJustLiftMode)
     fun stopWorkout(exitingWorkout: Boolean = false) = workoutSessionManager.stopWorkout(exitingWorkout)
     fun retryWorkoutTeardown() = workoutSessionManager.retryMachineTeardown()
-    fun reconnectWorkoutTeardown() = bleConnectionManager.reconnectForWorkoutRecovery(
-        onConnected = workoutSessionManager::retryMachineTeardown,
-        onFailed = {},
-    )
+    fun reconnectWorkoutTeardown() = workoutSessionManager.reconnectWorkoutTeardown(bleConnectionManager)
 
     // Issue #627: Delegates read-only stop-in-progress flag to suppress resume-bounce.
     fun isStoppingWorkout(): Boolean = workoutSessionManager.isStoppingWorkout

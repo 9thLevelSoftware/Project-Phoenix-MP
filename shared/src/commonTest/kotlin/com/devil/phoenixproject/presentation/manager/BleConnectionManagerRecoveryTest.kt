@@ -6,6 +6,9 @@ import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -130,6 +133,93 @@ class BleConnectionManagerRecoveryTest {
             assertEquals("recovery connection failed", harness.manager.connectionError.value)
             assertEquals(1, repository.disconnectCallCount)
             assertEquals(1, repository.scanAndConnectCallCount)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `reconnect cancels active ensure and clears its bookkeeping`() = runTest {
+        val repository = RecoveryRecordingBleRepository()
+        val harness = BleManagerRecoveryHarness(this, repository)
+        val oldScanStarted = CompletableDeferred<Unit>()
+        val recoveryScanResult = CompletableDeferred<Result<Unit>>()
+        var staleConnectedCalls = 0
+        try {
+            repository.scanAndConnectBlock = { attempt ->
+                if (attempt == 1) {
+                    oldScanStarted.complete(Unit)
+                    try {
+                        awaitCancellation()
+                    } finally {
+                        repository.events += "old-job-cancelled"
+                    }
+                } else {
+                    recoveryScanResult.await()
+                }
+            }
+            harness.manager.ensureConnection(onConnected = { staleConnectedCalls++ })
+            runCurrent()
+            oldScanStarted.await()
+            assertTrue(harness.manager.isAutoConnecting.value)
+            harness.manager.setConnectionError("stale connection error")
+
+            harness.manager.reconnectForWorkoutRecovery(
+                onConnected = {},
+                onFailed = {},
+            )
+            runCurrent()
+
+            assertFalse(harness.manager.isAutoConnecting.value)
+            assertNull(harness.manager.connectionError.value)
+            assertEquals(0, staleConnectedCalls)
+
+            repository.fake.simulateConnect("Vee_Test")
+            recoveryScanResult.complete(Result.success(Unit))
+            runCurrent()
+            assertEquals(0, staleConnectedCalls)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `new reconnect clears prior failure before scan and keeps it clear on success`() = runTest {
+        val repository = RecoveryRecordingBleRepository()
+        val harness = BleManagerRecoveryHarness(this, repository)
+        val successfulScan = CompletableDeferred<Result<Unit>>()
+        var connectedCalls = 0
+        try {
+            repository.scanAndConnectBlock = { attempt ->
+                if (attempt == 1) {
+                    Result.failure(IllegalStateException("first recovery failed"))
+                } else {
+                    successfulScan.await()
+                }
+            }
+
+            harness.manager.reconnectForWorkoutRecovery(
+                onConnected = { connectedCalls++ },
+                onFailed = {},
+            )
+            runCurrent()
+            assertEquals("first recovery failed", harness.manager.connectionError.value)
+
+            harness.manager.reconnectForWorkoutRecovery(
+                onConnected = { connectedCalls++ },
+                onFailed = {},
+            )
+            runCurrent()
+
+            assertNull(harness.manager.connectionError.value)
+            assertFalse(harness.manager.isAutoConnecting.value)
+
+            repository.fake.simulateConnect("Vee_Test")
+            successfulScan.complete(Result.success(Unit))
+            runCurrent()
+
+            assertEquals(1, connectedCalls)
+            assertNull(harness.manager.connectionError.value)
         } finally {
             harness.cleanup()
         }

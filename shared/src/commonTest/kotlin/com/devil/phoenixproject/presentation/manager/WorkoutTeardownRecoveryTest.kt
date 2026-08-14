@@ -148,6 +148,43 @@ class WorkoutTeardownRecoveryTest {
     }
 
     @Test
+    fun `public reconnect ignores a second tap while post-connect reset is in flight`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val postConnectReset = CompletableDeferred<Result<Unit>>()
+        val postConnectResetStarted = CompletableDeferred<Unit>()
+        try {
+            harness.forceResetFailureThenRecoveryRequired()
+            harness.fakeBleRepo.simulateDisconnect()
+            harness.fakeBleRepo.stopWorkoutBlock = {
+                postConnectResetStarted.complete(Unit)
+                postConnectReset.await()
+            }
+
+            harness.dwsm.reconnectWorkoutTeardown(harness.bleConnectionManager)
+            runCurrent()
+            postConnectResetStarted.await()
+
+            assertEquals(1, harness.fakeBleRepo.disconnectCallCount)
+            assertEquals(1, harness.fakeBleRepo.reconnectCallCount)
+            assertEquals(2, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertIs<MachineTeardownState.TearingDown>(harness.dwsm.machineTeardownState.value)
+
+            harness.dwsm.reconnectWorkoutTeardown(harness.bleConnectionManager)
+            runCurrent()
+
+            assertEquals(1, harness.fakeBleRepo.disconnectCallCount)
+            assertEquals(1, harness.fakeBleRepo.reconnectCallCount)
+            assertEquals(2, harness.fakeBleRepo.stopWorkoutCallCount)
+
+            postConnectReset.complete(Result.success(Unit))
+            advanceUntilIdle()
+            assertEquals(MachineTeardownState.Ready, harness.dwsm.machineTeardownState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `reconnect failure leaves recovery required`() = runTest {
         val harness = DWSMTestHarness(this)
         try {

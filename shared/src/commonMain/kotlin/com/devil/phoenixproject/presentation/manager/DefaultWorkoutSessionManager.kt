@@ -717,6 +717,13 @@ class DefaultWorkoutSessionManager(
     val machineTeardownState: StateFlow<MachineTeardownState>
         get() = activeSessionEngine.machineTeardownState
     fun retryMachineTeardown() = activeSessionEngine.retryMachineTeardown()
+    fun reconnectWorkoutTeardown(bleConnectionManager: BleConnectionManager) {
+        if (machineTeardownState.value !is MachineTeardownState.RecoveryRequired) return
+        bleConnectionManager.reconnectForWorkoutRecovery(
+            onConnected = ::retryMachineTeardown,
+            onFailed = {},
+        )
+    }
 
     // Issue #627: Read-only exposure of the stop guard. It is armed by stop entry points.
     // A successful Stop Set deliberately keeps it armed until startWorkout() begins the retry,
