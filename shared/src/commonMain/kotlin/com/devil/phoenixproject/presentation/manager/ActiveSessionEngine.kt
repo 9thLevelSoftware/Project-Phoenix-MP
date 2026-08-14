@@ -657,12 +657,14 @@ class ActiveSessionEngine(
                             coordinator.stallStartTime = currentTimeMillis()
                             coordinator.isCurrentlyStalled = true
                             coordinator.stallArmedByDeload = true
+                            coordinator.stallArmedByRomFraction = false
                             Logger.d("Auto-stop stall timer STARTED via DELOAD_OCCURRED flag")
                         } else if (coordinator.stallStartTime != null && !inGrace) {
                             // F4: a real deload is the stronger signal — upgrade a
                             // velocity-armed countdown so the retracting cables
                             // (position -> 0) don't cancel it via the racked-handles check.
                             coordinator.stallArmedByDeload = true
+                            coordinator.stallArmedByRomFraction = false
                         } else if (inGrace) {
                             Logger.d("DELOAD_OCCURRED ignored - in AMRAP startup grace period")
                         }
@@ -720,8 +722,20 @@ class ActiveSessionEngine(
                         if (coordinator.stallStartTime == null) {
                             coordinator.stallStartTime = currentTimeMillis()
                             coordinator.isCurrentlyStalled = true
+                            coordinator.stallArmedByDeload = false
+                            coordinator.stallArmedByRomFraction = true
                             Logger.d("Auto-stop stall timer STARTED via ROM-fraction signal (fraction=$fraction, velocity=$velocity)")
                         }
+                    } else if (
+                        coordinator.stallStartTime != null &&
+                        coordinator.stallArmedByRomFraction &&
+                        !coordinator.stallArmedByDeload
+                    ) {
+                        Logger.d(
+                            "Auto-stop stall timer CANCELLED via ROM-fraction signal " +
+                                "(fraction=$fraction, velocity=$velocity)",
+                        )
+                        resetStallTimer()
                     }
                 }
         }
@@ -1239,6 +1253,7 @@ class ActiveSessionEngine(
         coordinator.stallStartTime = null
         coordinator.isCurrentlyStalled = false
         coordinator.stallArmedByDeload = false
+        coordinator.stallArmedByRomFraction = false
         if (coordinator.autoStopStartTime == null && !coordinator.autoStopTriggered) {
             coordinator._autoStopState.value = AutoStopUiState()
         }
@@ -1799,6 +1814,7 @@ class ActiveSessionEngine(
                 coordinator.stallStartTime = currentTimeMillis()
                 coordinator.isCurrentlyStalled = true
                 coordinator.stallArmedByDeload = false
+                coordinator.stallArmedByRomFraction = false
             } else if (isDefinitelyMoving && coordinator.stallStartTime != null) {
                 resetStallTimer()
             }

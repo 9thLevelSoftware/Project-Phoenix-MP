@@ -1055,6 +1055,35 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `Issue 673 ROM fraction timer cancels when status leaves qualifying window`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepareRomFractionStallHarness(harness) { advanceUntilIdle() }
+
+            // Mid-ROM at 5 mm/s arms the ROM-fraction countdown.
+            harness.fakeBleRepo.emitMachineStatusEvent(
+                MachineStatusEvent(harness.nowMs + 2L, SampleStatus(0), position = 50f, velocity = 5f),
+            )
+            advanceUntilIdle()
+            assertNotNull(harness.dwsm.coordinator.stallStartTime)
+            assertTrue(harness.dwsm.coordinator.isCurrentlyStalled)
+
+            // A later sample outside the 30–80% window means the geometric
+            // condition no longer holds, so the ROM-specific countdown must stop.
+            harness.fakeBleRepo.emitMachineStatusEvent(
+                MachineStatusEvent(harness.nowMs + 3L, SampleStatus(0), position = 90f, velocity = 5f),
+            )
+            advanceUntilIdle()
+
+            assertEquals(null, harness.dwsm.coordinator.stallStartTime)
+            assertFalse(harness.dwsm.coordinator.isCurrentlyStalled)
+            assertFalse(harness.dwsm.coordinator.autoStopState.value.isActive)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `Issue 673 completed working rep cancels ROM fraction stall timer`() = runTest {
         val harness = DWSMTestHarness(this)
         try {

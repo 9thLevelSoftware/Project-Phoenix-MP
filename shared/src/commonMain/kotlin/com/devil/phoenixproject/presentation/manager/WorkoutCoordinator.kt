@@ -431,6 +431,13 @@ class WorkoutCoordinator(
     @Volatile
     internal var stallArmedByDeload = false
 
+    // True only while the current stall countdown was armed by the ROM-fraction
+    // collector. That collector may cancel its own countdown when later status
+    // samples leave the geometric/velocity window, but must not cancel a timer
+    // that was upgraded to the stronger DELOAD signal.
+    @Volatile
+    internal var stallArmedByRomFraction = false
+
     // Issue #673 PR 2: ROM-fraction stall detection state.
     // Geometric signal: when velocity is in the dead band (2.5–10 mm/s) AND
     // the cable position is mid-ROM (30–80% of observed range), the user is
@@ -469,6 +476,7 @@ class WorkoutCoordinator(
         stallStartTime = null
         isCurrentlyStalled = false
         stallArmedByDeload = false
+        stallArmedByRomFraction = false
         // Issue #673 PR 2: clear ROM-fraction stall state on set start/reset
         romRangeTop = null
         romRangeBottom = null
