@@ -30,6 +30,7 @@ import com.devil.phoenixproject.domain.model.ProfilePreferenceSection
 import com.devil.phoenixproject.domain.model.ProfilePreferenceValidity
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackPreferences
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.UserProfilePreferences
 import com.devil.phoenixproject.domain.model.VbtPreferences
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
@@ -877,7 +878,7 @@ abstract class BaseDataBackupManager(
                             logged_rpe = completedSet.loggedRpe?.toLong(),
                             is_pr = if (completedSet.isPr) 1L else 0L,
                             completed_at = completedSet.completedAt,
-                            set_end_reason = completedSet.setEndReason,
+                            set_end_reason = SetEndReason.fromPersisted(completedSet.setEndReason).name,
                         )
                         completedSetsImported++
                     }
@@ -1798,7 +1799,7 @@ abstract class BaseDataBackupManager(
                                                     logged_rpe = completedSet.loggedRpe?.toLong(),
                                                     is_pr = if (completedSet.isPr) 1L else 0L,
                                                     completed_at = completedSet.completedAt,
-                                                    set_end_reason = completedSet.setEndReason,
+                                                    set_end_reason = SetEndReason.fromPersisted(completedSet.setEndReason).name,
                                                 )
                                                 completedSetsImported++
                                             }
@@ -2988,7 +2989,7 @@ abstract class BaseDataBackupManager(
         loggedRpe = cs.logged_rpe?.toInt(),
         isPr = cs.is_pr != 0L,
         completedAt = cs.completed_at,
-        setEndReason = cs.set_end_reason,
+        setEndReason = SetEndReason.fromPersisted(cs.set_end_reason).name,
     )
 
     private fun mapProgressionEventToBackup(pe: ProgressionEvent): ProgressionEventBackup = ProgressionEventBackup(

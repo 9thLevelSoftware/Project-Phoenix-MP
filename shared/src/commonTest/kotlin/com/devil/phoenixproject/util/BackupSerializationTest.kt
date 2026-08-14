@@ -3,6 +3,7 @@ package com.devil.phoenixproject.util
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackItemCategory
+import com.devil.phoenixproject.domain.model.SetEndReason
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -315,5 +316,27 @@ class BackupSerializationTest {
         assertTrue(backupData.privacy.userFacingSummary.contains("profile training preferences"))
         assertTrue(backupData.privacy.userFacingSummary.contains("voice", ignoreCase = true))
         assertTrue(backupData.privacy.userFacingSummary.contains("adult", ignoreCase = true))
+    }
+
+    @Test
+    fun completedSetEndReasonsRoundTripAndLegacyOrFutureValuesDecodeSafely() {
+        SetEndReason.entries.forEach { reason ->
+            val original = CompletedSetBackup(
+                id = "set-${reason.name}",
+                sessionId = "session-1",
+                setNumber = 1,
+                actualReps = 8,
+                actualWeightKg = 40f,
+                completedAt = 1000L,
+                setEndReason = reason.name,
+            )
+            assertEquals(reason.name, json.decodeFromString<CompletedSetBackup>(json.encodeToString(original)).setEndReason)
+        }
+
+        val legacy = json.decodeFromString<CompletedSetBackup>("""{"id":"legacy","sessionId":"s","setNumber":1,"actualReps":8,"actualWeightKg":40.0,"completedAt":1000}""")
+        val future = json.decodeFromString<CompletedSetBackup>("""{"id":"future","sessionId":"s","setNumber":1,"actualReps":8,"actualWeightKg":40.0,"completedAt":1000,"setEndReason":"FUTURE_REASON"}""")
+
+        assertEquals("UNKNOWN", legacy.setEndReason)
+        assertEquals("FUTURE_REASON", future.setEndReason)
     }
 }

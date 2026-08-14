@@ -67,8 +67,7 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
         loggedRpe = loggedRpe?.toInt(),
         isPr = isPr == 1L,
         completedAt = completedAt,
-        setEndReason = runCatching { SetEndReason.valueOf(setEndReason) }
-            .getOrElse { SetEndReason.TARGET_REPS_REACHED },
+        setEndReason = SetEndReason.fromPersisted(setEndReason),
     )
 
     // ==================== Planned Sets ====================

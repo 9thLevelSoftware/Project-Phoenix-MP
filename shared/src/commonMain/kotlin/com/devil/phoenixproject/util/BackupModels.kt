@@ -315,7 +315,7 @@ data class CompletedSetBackup(
     val loggedRpe: Int? = null,
     val isPr: Boolean = false,
     val completedAt: Long,
-    val setEndReason: String = "TARGET_REPS_REACHED",
+    val setEndReason: String = "UNKNOWN",
 )
 
 /**

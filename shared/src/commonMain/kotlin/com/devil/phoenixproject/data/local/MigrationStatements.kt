@@ -1020,7 +1020,7 @@ WHERE gs.rowid = (
     // Records why a set ended for workout history analytics.
     // Mirrors 43.sqm exactly.
     43 -> listOf(
-        "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'TARGET_REPS_REACHED'",
+        "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'",
     )
 
     else -> emptyList()

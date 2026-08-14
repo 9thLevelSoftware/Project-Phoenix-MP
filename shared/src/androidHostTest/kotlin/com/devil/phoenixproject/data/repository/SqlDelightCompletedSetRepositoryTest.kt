@@ -103,6 +103,25 @@ class SqlDelightCompletedSetRepositoryTest {
         }
     }
 
+    @Test
+    fun `unknown persisted end reason reads as UNKNOWN`() = runTest {
+        database.vitruvianDatabaseQueries.insertCompletedSet(
+            id = "cset-future",
+            session_id = "session-1",
+            planned_set_id = null,
+            set_number = 1L,
+            set_type = "STANDARD",
+            actual_reps = 8L,
+            actual_weight_kg = 40.0,
+            logged_rpe = null,
+            is_pr = 0L,
+            completed_at = 1001L,
+            set_end_reason = "FUTURE_REASON",
+        )
+
+        assertEquals(SetEndReason.UNKNOWN, repository.getCompletedSets("session-1").single().setEndReason)
+    }
+
     private fun plannedSet(
         id: String,
         routineExerciseId: String,

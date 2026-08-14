@@ -1156,7 +1156,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 logged_rpe INTEGER,
                 is_pr INTEGER NOT NULL DEFAULT 0,
                 completed_at INTEGER NOT NULL,
-                set_end_reason TEXT NOT NULL DEFAULT 'TARGET_REPS_REACHED',
+                set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN',
                 FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE,
                 FOREIGN KEY (planned_set_id) REFERENCES PlannedSet(id) ON DELETE SET NULL
             )
@@ -1441,7 +1441,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
 
     // ── CompletedSet (1 column, migration 43) ──────────────────────────
     // Migration 43: set-end reason for workout history analytics (Issue #673 PR 1)
-    SchemaHealOperation("CompletedSet", "set_end_reason", "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'TARGET_REPS_REACHED'"),
+    SchemaHealOperation("CompletedSet", "set_end_reason", "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'"),
 )
 
 // ============================================================

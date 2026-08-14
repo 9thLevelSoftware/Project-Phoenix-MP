@@ -1,3 +1,3 @@
 -- Migration 43: Add set_end_reason to CompletedSet (Issue #673 PR 1)
 -- Records why a set ended for workout history analytics.
-ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'TARGET_REPS_REACHED';
+ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN';

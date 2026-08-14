@@ -578,6 +578,95 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `buffered and streaming completed set imports canonicalize unknown end reasons`() = runTest {
+        val backup = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-08-14T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-future-reason",
+                        timestamp = 1L,
+                        mode = "OldSchool",
+                        targetReps = 8,
+                        weightPerCableKg = 40f,
+                        progressionKg = 0f,
+                        duration = 0L,
+                        totalReps = 8,
+                        warmupReps = 0,
+                        workingReps = 8,
+                        isJustLift = false,
+                        stopAtTop = false,
+                    ),
+                ),
+                completedSets = listOf(
+                    CompletedSetBackup(
+                        id = "set-future-reason",
+                        sessionId = "session-future-reason",
+                        setNumber = 1,
+                        actualReps = 8,
+                        actualWeightKg = 40f,
+                        completedAt = 2L,
+                        setEndReason = "FUTURE_REASON",
+                    ),
+                ),
+            ),
+        )
+        val payload = testJson.encodeToString(backup)
+
+        assertTrue(backupManager.importFromJson(payload).isSuccess)
+        assertEquals(
+            "UNKNOWN",
+            database.vitruvianDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne().set_end_reason,
+        )
+
+        val streamingDatabase = createTestDatabase()
+        val streamingManager = TestDataBackupManager(streamingDatabase)
+        assertTrue(streamingManager.importFromStringStreaming(payload).isSuccess)
+        assertEquals(
+            "UNKNOWN",
+            streamingDatabase.vitruvianDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne().set_end_reason,
+        )
+    }
+
+    @Test
+    fun `buffered and streaming completed set exports canonicalize unknown end reasons`() = runTest {
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "session-export-future-reason",
+                timestamp = 1L,
+                mode = "OldSchool",
+                reps = 8,
+                weightPerCableKg = 40f,
+                totalReps = 8,
+                workingReps = 8,
+            ),
+        )
+        database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
+            id = "set-export-future-reason",
+            session_id = "session-export-future-reason",
+            planned_set_id = null,
+            set_number = 1L,
+            set_type = "STANDARD",
+            actual_reps = 8L,
+            actual_weight_kg = 40.0,
+            logged_rpe = null,
+            is_pr = 0L,
+            completed_at = 2L,
+            set_end_reason = "FUTURE_REASON",
+        )
+
+        val buffered = backupManager.exportAllData()
+        val streamingPath = backupManager.exportToCachePublic()
+        val streaming = testJson.decodeFromString<BackupData>(File(streamingPath).readText())
+
+        assertEquals("UNKNOWN", buffered.data.completedSets.single().setEndReason)
+        assertEquals("UNKNOWN", streaming.data.completedSets.single().setEndReason)
+        File(streamingPath).delete()
+    }
+
+    @Test
     fun `exportSession returns failure for non-existent session`() = runTest {
         val result = backupManager.exportSession("non-existent-session")
         assertTrue(result.isFailure, "Should fail for non-existent session")
@@ -1919,6 +2008,16 @@ class DataBackupManagerRoutineNameTest {
 
         suspend fun exportToCachePublic(): String = exportToCache()
 
+        suspend fun importFromStringStreaming(value: String): Result<ImportResult> {
+            val source = StringBackupStreamSource(value)
+            source.open()
+            return try {
+                importFromStream(source)
+            } finally {
+                source.close()
+            }
+        }
+
         override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
 
         override suspend fun saveToFile(backup: BackupData): Result<String> {
@@ -1947,5 +2046,20 @@ class DataBackupManagerRoutineNameTest {
 
         override fun openBackupFolder() = Unit
         override fun pruneOldBackups(keepCount: Int) = Unit
+    }
+
+    private class StringBackupStreamSource(private val value: String) : BackupStreamSource {
+        private var index = 0
+
+        override fun open() { index = 0 }
+        override fun close() = Unit
+        override fun read(): Int = if (index < value.length) value[index++].code else -1
+        override fun read(buffer: CharArray, offset: Int, length: Int): Int {
+            if (index >= value.length) return -1
+            val count = minOf(length, value.length - index)
+            value.toCharArray(index, index + count).copyInto(buffer, offset)
+            index += count
+            return count
+        }
     }
 }
