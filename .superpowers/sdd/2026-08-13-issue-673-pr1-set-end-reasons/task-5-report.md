@@ -277,3 +277,42 @@ The alert cancellation proof is mutation-sensitive: temporarily removing the ale
 - Verified reset suppresses both paused-processor HUD publication and post-VBT-commit terminal/persistence effects.
 - Verified valid VBT alert ordering and suspending delivery are preserved, and invalidation cancels only the matching execution's alert job.
 - Verified the round-3 diff remains inside Task 5 manager/lifecycle/#687 test ownership plus the narrow test harness and this report.
+
+## Controller rework round 4
+
+### Review findings addressed
+
+- Reset now captures an execution-generation token with A's lease. After A is invalidated, all non-suspending global cleanup is committed under the execution guard only when that token still owns the latest generation and no successor is current. If B starts in the gap, reset's identity-scoped A cleanup may finish but its global cleanup is discarded; if B starts and ends in the gap, the advanced generation still rejects stale cleanup.
+- Execution replacement now revokes A, clears A's completion claim, and marks A's registered completion and alert-delivery jobs canceled under the same guard transition before B is published. Job registration uses that same lock, so it either registers before replacement and is canceled or loses the current-lease check after replacement. `Job.cancel()` is non-suspending; no join or coroutine work is awaited under the guard.
+- The existing suspending `SharedFlow.emit` path remains unchanged. Only execution ownership and cancellation ordering changed; valid alert delivery and backpressure semantics remain intact.
+- Detector predicates, thresholds, durations, reset ordering within the shared cleanup block, VBT classification, and stall/auto-stop logic were not changed.
+
+### Round-4 RED and mutation evidence
+
+The first valid class run compiled and executed 29 `Issue687WorkoutExecutionIsolationTest` tests. `reset cleanup cannot erase a successor that starts after A is invalidated` failed at assertion level because legacy reset continued after real B startup and erased B's coordinator state. The test asserts B's guard lease, session id, active state, rep count, selection map, biomechanics engine/HUD identity, and ability to persist its own terminal reason.
+
+The same run also exposed a fixture-only full-lease comparison in the new alert test because activation returns an immutable lease copy with a cutover timestamp. That comparison was corrected to stable execution/session identity and is not counted as behavior RED. Behavior sensitivity for `replacement cancels backpressured A alert before B becomes current` was then proven by mutation: temporarily removing the outgoing-job cancellation from `beginExecution` caused the exact stale-haptic assertion to fail after capacity reopened in the B-current/pre-legacy-cancel seam. Restoring guard-atomic cancellation made the test pass.
+
+An initial unresolved `BiomechanicsEngine` test import was compile scaffolding and is excluded from RED evidence. The first broad gate also found one obsolete #687 unit assertion that expected B job registration to remain blocked until a post-replacement A cancellation. It was narrowly updated to assert the new contract: replacement already canceled A, B can attach, and a later stale-A cancellation cannot cancel B.
+
+### Round-4 GREEN evidence
+
+The final consolidated focused gate completed 168 tests with zero failures or errors:
+
+- `Issue673SetEndReasonLifecycleTest`: 20
+- `Issue687WorkoutExecutionIsolationTest`: 29
+- `WorkoutExitPersistenceTest`: 23
+- `WorkoutExecutionGuardTest`: 17
+- `VbtEnabledRuntimeTest`: 4
+- `DWSMWorkoutLifecycleTest`: 75
+
+The unchanged broader ten-class lifecycle/integration/teardown gate completed 151 tests with zero failures or errors. Both gates compiled production and host-test sources. The mandatory absence scan
+`rg -n "lastSetEndReason|autoStopReason|handleSetCompletion\(\)" shared/src` returned zero matches, and `git diff --check` was clean.
+
+### Round-4 self-review
+
+- Audited the only production `executionGuard.beginExecution` call and every `invalidate`/`invalidateCurrent` path. Registration and replacement are lock-serialized, A is revoked before cancellation can resume it, and B is not published until matching jobs are marked canceled.
+- Audited reset races before invalidation, after invalidation, during successor startup, and after successor termination. Bodyweight and danger cleanup are lease-identity scoped; rep freshness, execution context, and biomechanics detach are A-scoped; generation-guarded global cleanup cannot erase B.
+- Confirmed the guard holds no lock across `emit`, `join`, biomechanics computation, BLE work, persistence, teardown, or other suspension/expensive work. The guarded reset block contains only immediate state updates and non-suspending job cancellation.
+- Confirmed Android's monitor and iOS's recursive platform lock cannot form a new cross-lock cycle in these paths: the replacement helper does not acquire the biomechanics lock, while identity-checked biomechanics detach/install remains outside the execution guard.
+- Confirmed the round-4 diff is limited to Task 5 manager sources, focused guard/execution-isolation tests, the narrowly adapted #687 stale-work guard assertion, the test harness, and this report.

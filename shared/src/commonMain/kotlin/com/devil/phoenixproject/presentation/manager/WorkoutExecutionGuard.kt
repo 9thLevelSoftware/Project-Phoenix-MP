@@ -88,6 +88,11 @@ internal data class RecoveryAttempt(
     val attempt: Int,
 )
 
+internal data class ResetCleanupToken(
+    val lease: ExecutionLease?,
+    val executionGeneration: Long,
+)
+
 internal class WorkoutExecutionGuard(
     private val logger: (eventType: String, details: String) -> Unit = { _, _ -> },
 ) {
@@ -116,6 +121,13 @@ internal class WorkoutExecutionGuard(
     val currentLease: ExecutionLease?
         get() = currentLeaseRef.value
 
+    fun captureResetCleanupToken(): ResetCleanupToken = withPlatformLock(teardownLock) {
+        ResetCleanupToken(
+            lease = currentLeaseRef.value,
+            executionGeneration = executionSequence.value,
+        )
+    }
+
     fun beginExecution(seed: ExecutionSeed): Result<ExecutionLease> = withPlatformLock(teardownLock) {
         if (seed.requiresMachine && _machineTeardownState.value !is MachineTeardownState.Ready) {
             return@withPlatformLock Result.failure(
@@ -134,6 +146,13 @@ internal class WorkoutExecutionGuard(
             isAmrap = seed.isAmrap,
             isTimedCable = seed.isTimedCable,
         )
+        currentLeaseRef.value?.let { outgoingLease ->
+            currentLeaseRef.value = null
+            if (sameIdentity(completionClaimLease, outgoingLease)) {
+                completionClaimLease = null
+            }
+            cancelPresentationJobsLocked(outgoingLease)
+        }
         invalidatedLeaseRef.value = null
         currentLeaseRef.value = lease
         completionClaimLease = null
@@ -155,7 +174,9 @@ internal class WorkoutExecutionGuard(
     } == true
 
     fun invalidateCurrent(reason: ExecutionInvalidationReason): ExecutionLease? = withPlatformLock(teardownLock) {
-        val invalidated = currentLeaseRef.getAndSet(null) ?: return null
+        val invalidated = currentLeaseRef.value ?: return null
+        currentLeaseRef.value = null
+        cancelPresentationJobsLocked(invalidated)
         if (sameIdentity(completionClaimLease, invalidated)) {
             completionClaimLease = null
         }
@@ -171,6 +192,7 @@ internal class WorkoutExecutionGuard(
         val current = currentLeaseRef.value ?: return@withPlatformLock false
         if (!sameIdentity(current, lease)) return@withPlatformLock false
         currentLeaseRef.value = null
+        cancelPresentationJobsLocked(current)
         if (sameIdentity(completionClaimLease, current)) {
             completionClaimLease = null
         }
@@ -179,6 +201,24 @@ internal class WorkoutExecutionGuard(
             LogEventType.WORKOUT_EXECUTION,
             "executionId=${current.executionId},sessionId=${current.sessionId},transition=invalidated,reason=$reason",
         )
+        true
+    }
+
+    fun commitResetCleanupIfNoSuccessor(
+        token: ResetCleanupToken,
+        invalidatedLease: ExecutionLease?,
+        block: () -> Unit,
+    ): Boolean = withPlatformLock(teardownLock) {
+        if (currentLeaseRef.value != null) return@withPlatformLock false
+        if (executionSequence.value != token.executionGeneration) return@withPlatformLock false
+        if (token.lease == null && invalidatedLease != null) return@withPlatformLock false
+        if (token.lease != null && (invalidatedLease == null || !sameIdentity(token.lease, invalidatedLease))) {
+            return@withPlatformLock false
+        }
+        if (invalidatedLease != null && !sameIdentity(invalidatedLeaseRef.value, invalidatedLease)) {
+            return@withPlatformLock false
+        }
+        block()
         true
     }
 
@@ -258,6 +298,24 @@ internal class WorkoutExecutionGuard(
                 }
             }
         }
+        ownedJobs.forEach(Job::cancel)
+    }
+
+    private fun cancelPresentationJobsLocked(lease: ExecutionLease) {
+        val ownedJobs = buildList {
+            if (sameIdentity(completionJobLease, lease)) {
+                completionJobLease = null
+                completionJob?.let(::add)
+                completionJob = null
+            }
+            if (sameIdentity(alertDeliveryJobLease, lease)) {
+                alertDeliveryJobLease = null
+                alertDeliveryJob?.let(::add)
+                alertDeliveryJob = null
+            }
+        }
+        // Job.cancel() is non-suspending. Marking these jobs cancelled before publishing
+        // a successor closes the stale-delivery window without waiting under this lock.
         ownedJobs.forEach(Job::cancel)
     }
 

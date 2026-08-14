@@ -75,6 +75,8 @@ class DWSMTestHarness(
     afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
     beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    afterResetInvalidation: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    afterExecutionBegin: (outgoingExecutionId: Long?, executionId: Long) -> Unit = { _, _ -> },
     hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 32,
         onBufferOverflow = BufferOverflow.SUSPEND,
@@ -159,6 +161,8 @@ class DWSMTestHarness(
         afterVbtDecisionCommit = afterVbtDecisionCommit,
         beforeBodyweightCompletionClaim = beforeBodyweightCompletionClaim,
         afterBodyweightCompletionConsume = afterBodyweightCompletionConsume,
+        afterResetInvalidation = afterResetInvalidation,
+        afterExecutionBegin = afterExecutionBegin,
         _hapticEvents = hapticEvents,
         elapsedRealtimeProvider = { testScope.testScheduler.currentTime },
         wallClockMillisProvider = { nowMs },

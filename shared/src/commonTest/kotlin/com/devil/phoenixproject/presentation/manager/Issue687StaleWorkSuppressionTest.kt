@@ -54,7 +54,7 @@ class Issue687StaleWorkSuppressionTest {
     }
 
     @Test
-    fun `guard cancels only the exact lease completion job`() {
+    fun `guard replacement cancels A before B attaches and stale A cancellation preserves B`() {
         val guard = WorkoutExecutionGuard()
         val leaseA = guard.beginExecution(executionSeed("guard-a")).getOrThrow()
         val completionA = Job()
@@ -62,13 +62,13 @@ class Issue687StaleWorkSuppressionTest {
 
         val leaseB = guard.beginExecution(executionSeed("guard-b")).getOrThrow()
         val completionB = Job()
-        assertFalse(guard.attachCompletionJob(leaseB, completionB))
+        assertTrue(completionA.isCancelled)
+        assertTrue(guard.attachCompletionJob(leaseB, completionB))
 
         guard.cancelPresentationJobsFor(leaseA)
 
         assertTrue(completionA.isCancelled)
         assertFalse(completionB.isCancelled)
-        assertTrue(guard.attachCompletionJob(leaseB, completionB))
         guard.clearCompletionJobIfOwned(leaseA)
         guard.cancelPresentationJobsFor(leaseB)
         assertTrue(completionB.isCancelled)

@@ -67,6 +67,22 @@ class WorkoutExecutionGuardTest {
     }
 
     @Test
+    fun `reset token rejects cleanup after a successor begins and ends`() {
+        val guard = WorkoutExecutionGuard()
+        val resetToken = guard.captureResetCleanupToken()
+        val leaseB = guard.beginExecution(seed("session-b")).getOrThrow()
+        guard.invalidate(leaseB, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
+        var cleanupRan = false
+
+        val committed = guard.commitResetCleanupIfNoSuccessor(resetToken, invalidatedLease = null) {
+            cleanupRan = true
+        }
+
+        assertFalse(committed)
+        assertFalse(cleanupRan)
+    }
+
+    @Test
     fun `current commit discards A mutation after B begins despite optimistic A validation`() = runTest {
         val guard = WorkoutExecutionGuard()
         val leaseA = guard.beginExecution(seed("session-a")).getOrThrow()

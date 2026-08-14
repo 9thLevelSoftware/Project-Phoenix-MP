@@ -182,6 +182,8 @@ class ActiveSessionEngine(
     private val afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
     private val beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     private val afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    private val afterResetInvalidation: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    private val afterExecutionBegin: (outgoingExecutionId: Long?, executionId: Long) -> Unit = { _, _ -> },
     private val regenerateFiveThreeOneUseCase: RegenerateFiveThreeOneRoutinesUseCase? = null,
     private val dataBackupManager: DataBackupManager? = null,
     private val healthIntegration: HealthIntegration? = null,
@@ -2529,20 +2531,28 @@ class ActiveSessionEngine(
     // ===== Core Workout Lifecycle =====
 
     fun resetForNewWorkout() {
-        val lease = executionGuard.currentLease
+        val resetToken = executionGuard.captureResetCleanupToken()
+        val lease = resetToken.lease
         lease?.let(bodyweightCompletionGate::invalidate)
         lease?.let(::clearDangerZoneCountdownOverride)
         val invalidatedLease = lease?.takeIf {
             executionGuard.invalidate(it, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
         }
         if (invalidatedLease != null) {
+            afterResetInvalidation(invalidatedLease.executionId, invalidatedLease.sessionId)
             repFreshnessGate.invalidate(invalidatedLease)
-            executionGuard.cancelPresentationJobsFor(invalidatedLease)
             detachBiomechanicsContext(invalidatedLease)
             if (executionContext?.lease?.sameExecutionAs(invalidatedLease) == true) {
                 executionContext = null
             }
         }
+        if (lease != null && invalidatedLease == null) return
+        executionGuard.commitResetCleanupIfNoSuccessor(resetToken, invalidatedLease) {
+            clearSharedStateForNewWorkout()
+        }
+    }
+
+    private fun clearSharedStateForNewWorkout() {
         cancelJustLiftEggTimer()
         interruptedSetRecovery = null
         pendingStartOverride = null
@@ -2558,11 +2568,6 @@ class ActiveSessionEngine(
         coordinator._repCount.value = RepCount()
         coordinator._repRanges.value = null
         coordinator.setRepMetrics.value = emptyList()
-        // Reset biomechanics HUD and rep boundary timestamps. The detached engine prevents
-        // suspended work from the invalidated execution from republishing into this idle state.
-        if (invalidatedLease == null) {
-            lease?.let(::resetBiomechanicsContext)
-        }
         coordinator.deferAutoStopDeadlineMs = 0L
         coordinator.repBoundaryTimestamps.value = emptyList()
         coordinator.warmupCompleteTimeMs = 0
@@ -3092,11 +3097,9 @@ class ActiveSessionEngine(
             }
             return
         }
+        afterExecutionBegin(outgoingLease?.executionId, lease.executionId)
         bodyweightCompletionGate.beginExecution(lease)
         if (!installBiomechanicsContext(lease)) return
-        if (outgoingLease != null) {
-            executionGuard.cancelPresentationJobsFor(outgoingLease)
-        }
         retryRetainedWorkoutExitPersistence()
         executionContext = null
         val priorWorkoutState = coordinator._workoutState.value

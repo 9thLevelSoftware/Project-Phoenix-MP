@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.manager
 import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.LogEventType
+import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
@@ -14,6 +15,7 @@ import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.util.BleConstants
@@ -230,6 +232,78 @@ class Issue687WorkoutExecutionIsolationTest {
     }
 
     @Test
+    fun `reset cleanup cannot erase a successor that starts after A is invalidated`() = runTest {
+        lateinit var harness: DWSMTestHarness
+        var overlapResetWithStart = false
+        var leaseB: ExecutionLease? = null
+        var engineB: BiomechanicsEngine? = null
+        val expectedRepCount = RepCount(workingReps = 4, isWarmupComplete = true)
+        val expectedHudTimestamp = 77_777L
+        val expectedSelections = mapOf(
+            "successor-selection" to BodyweightVariantOption(label = "Successor", percentage = 0.75f),
+        )
+        harness = DWSMTestHarness(
+            testScope = this,
+            afterResetInvalidation = { _, _ ->
+                if (overlapResetWithStart) {
+                    overlapResetWithStart = false
+                    startCableSet(harness, targetReps = 10)
+                    leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+                    engineB = harness.coordinator.biomechanicsEngine
+                    val successorMetrics = List(4) { index ->
+                        WorkoutMetric(
+                            timestamp = expectedHudTimestamp + index,
+                            loadA = 20f,
+                            loadB = 20f,
+                            positionA = index * 50f,
+                            positionB = index * 50f,
+                            velocityA = 100.0,
+                            velocityB = 100.0,
+                        )
+                    }
+                    val successorResult = requireNotNull(engineB).processRep(
+                        repNumber = 1,
+                        concentricMetrics = successorMetrics,
+                        allRepMetrics = successorMetrics,
+                        timestamp = expectedHudTimestamp,
+                    )
+                    assertTrue(harness.coordinator.publishBiomechanicsResult(requireNotNull(engineB), successorResult))
+                    harness.coordinator._repCount.value = expectedRepCount
+                    harness.coordinator._selectedBodyweightVariants.value = expectedSelections
+                }
+            },
+        )
+        try {
+            startCableSet(harness, targetReps = 10)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            overlapResetWithStart = true
+            harness.activeSessionEngine.resetForNewWorkout()
+
+            val successor = requireNotNull(leaseB)
+            assertNotEquals(leaseA.executionId, successor.executionId)
+            assertEquals(successor, harness.activeSessionEngine.currentExecutionLeaseForTest())
+            assertEquals(successor.sessionId, harness.coordinator.currentSessionId)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(expectedRepCount, harness.coordinator.repCount.value)
+            assertEquals(expectedSelections, harness.coordinator.selectedBodyweightVariants.value)
+            assertTrue(engineB === harness.coordinator.biomechanicsEngine)
+            assertEquals(expectedHudTimestamp, harness.coordinator.latestBiomechanicsResult.value?.timestamp)
+
+            harness.activeSessionEngine.handleSetCompletion(successor, SetEndReason.USER_STOPPED)
+            advanceUntilIdle()
+
+            assertEquals(
+                SetEndReason.USER_STOPPED,
+                harness.fakeCompletedSetRepo.getCompletedSets(successor.sessionId).single().setEndReason,
+            )
+            assertEquals(emptyList(), harness.fakeCompletedSetRepo.getCompletedSets(leaseA.sessionId))
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `direct reset after a VBT decision commit prevents its terminal effect`() = runTest {
         lateinit var harness: DWSMTestHarness
         var resetAfterDecision = false
@@ -386,6 +460,81 @@ class Issue687WorkoutExecutionIsolationTest {
             assertTrue(haptics.none { it == HapticEvent.VELOCITY_THRESHOLD_REACHED })
             assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+        } finally {
+            releaseCollector.complete(Unit)
+            hapticJob.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `replacement cancels backpressured A alert before B becomes current`() = runTest {
+        val hapticFlow = MutableSharedFlow<HapticEvent>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.SUSPEND,
+        )
+        val firstEventReceived = CompletableDeferred<Unit>()
+        val releaseCollector = CompletableDeferred<Unit>()
+        var releaseDuringReplacement = false
+        var replacementLease: ExecutionLease? = null
+        lateinit var harness: DWSMTestHarness
+        harness = DWSMTestHarness(
+            testScope = this,
+            biomechanicsDispatcher = StandardTestDispatcher(testScheduler),
+            afterExecutionBegin = { _, _ ->
+                if (releaseDuringReplacement) {
+                    releaseDuringReplacement = false
+                    replacementLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+                    releaseCollector.complete(Unit)
+                    testScheduler.runCurrent()
+                }
+            },
+            hapticEvents = hapticFlow,
+        )
+        val haptics = mutableListOf<HapticEvent>()
+        val hapticJob = launch(UnconfinedTestDispatcher(testScheduler)) {
+            hapticFlow.collect { event ->
+                haptics += event
+                if (event == HapticEvent.REP_COMPLETED) {
+                    firstEventReceived.complete(Unit)
+                    releaseCollector.await()
+                }
+            }
+        }
+        try {
+            harness.setActiveProfilePreferences(
+                UserPreferences(
+                    vbtEnabled = true,
+                    velocityLossThresholdPercent = 20,
+                    autoEndOnVelocityLoss = false,
+                ),
+            )
+            advanceUntilIdle()
+            startCableSet(harness, targetReps = 10)
+            harness.coordinator._repCount.value = RepCount(isWarmupComplete = true)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val cutoverA = requireNotNull(leaseA.activationCutoverTimestampMs)
+            queueAsyncVbtRep(harness, repNumber = 1, velocityMmS = 100.0, packetTimestamp = cutoverA + 1)
+            runCurrent()
+
+            hapticFlow.emit(HapticEvent.REP_COMPLETED)
+            firstEventReceived.await()
+            hapticFlow.emit(HapticEvent.FINAL_REP)
+            assertFalse(hapticFlow.tryEmit(HapticEvent.WORKOUT_END), "fixture must hold the flow at capacity")
+
+            queueAsyncVbtRep(harness, repNumber = 2, velocityMmS = 60.0, packetTimestamp = cutoverA + 2)
+            runCurrent()
+            assertTrue(haptics.none { it == HapticEvent.VELOCITY_THRESHOLD_REACHED })
+
+            releaseDuringReplacement = true
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+
+            val leaseB = requireNotNull(replacementLease)
+            assertNotEquals(leaseA.executionId, leaseB.executionId)
+            assertEquals(leaseB.executionId, harness.activeSessionEngine.currentExecutionLeaseForTest().executionId)
+            assertEquals(leaseB.sessionId, harness.activeSessionEngine.currentExecutionLeaseForTest().sessionId)
+            assertTrue(haptics.none { it == HapticEvent.VELOCITY_THRESHOLD_REACHED })
         } finally {
             releaseCollector.complete(Unit)
             hapticJob.cancel()
