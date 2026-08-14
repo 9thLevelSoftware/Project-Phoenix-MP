@@ -48,7 +48,7 @@ class MonitorDataProcessorStatusEventTest {
     }
 
     @Test
-    fun `onStatusEvent fires for zero status with SampleStatus(0)`() {
+    fun `onStatusEvent fires for zero status with SampleStatus zero`() {
         val events = mutableListOf<MachineStatusEvent>()
         val processor = MonitorDataProcessor(
             onStatusEvent = { events.add(it) },
