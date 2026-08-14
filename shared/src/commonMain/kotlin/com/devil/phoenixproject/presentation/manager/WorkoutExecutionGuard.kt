@@ -85,6 +85,7 @@ internal class WorkoutExecutionGuard(
     internal val repFreshnessGate = RepNotificationFreshnessGate()
     private val executionSequence = atomic(0L)
     private val currentLeaseRef = atomic<ExecutionLease?>(null)
+    private val invalidatedLeaseRef = atomic<ExecutionLease?>(null)
     private val teardownLock = Any()
     private val persistenceLock = Any()
     private val persistedClaims = LinkedHashMap<String, PersistenceClaimState>()
@@ -117,6 +118,7 @@ internal class WorkoutExecutionGuard(
             isAmrap = seed.isAmrap,
             isTimedCable = seed.isTimedCable,
         )
+        invalidatedLeaseRef.value = null
         currentLeaseRef.value = lease
         log(LogEventType.WORKOUT_EXECUTION, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=begun")
         Result.success(lease)
@@ -140,6 +142,7 @@ internal class WorkoutExecutionGuard(
 
     fun invalidateCurrent(reason: ExecutionInvalidationReason): ExecutionLease? {
         val invalidated = currentLeaseRef.getAndSet(null) ?: return null
+        invalidatedLeaseRef.value = invalidated
         log(
             LogEventType.WORKOUT_EXECUTION,
             "executionId=${invalidated.executionId},sessionId=${invalidated.sessionId},transition=invalidated,reason=$reason",
@@ -152,6 +155,7 @@ internal class WorkoutExecutionGuard(
             val current = currentLeaseRef.value ?: return false
             if (!sameIdentity(current, lease)) return false
             if (currentLeaseRef.compareAndSet(current, null)) {
+                invalidatedLeaseRef.value = current
                 log(
                     LogEventType.WORKOUT_EXECUTION,
                     "executionId=${current.executionId},sessionId=${current.sessionId},transition=invalidated,reason=$reason",
@@ -162,8 +166,12 @@ internal class WorkoutExecutionGuard(
     }
 
     fun beginTeardown(lease: ExecutionLease, attempt: Int = 1): Boolean = withPlatformLock(teardownLock) {
-        if (attempt < 1 || _machineTeardownState.value !is MachineTeardownState.Ready || !isCurrent(lease)) {
+        val ownsExecution = isCurrent(lease) || sameIdentity(invalidatedLeaseRef.value, lease)
+        if (attempt < 1 || _machineTeardownState.value !is MachineTeardownState.Ready || !ownsExecution) {
             return@withPlatformLock false
+        }
+        if (sameIdentity(invalidatedLeaseRef.value, lease)) {
+            invalidatedLeaseRef.value = null
         }
         teardownLease = lease
         teardownAttempt = attempt
@@ -201,6 +209,9 @@ internal class WorkoutExecutionGuard(
         }
         teardownLease = null
         teardownAttempt = 0
+        if (sameIdentity(invalidatedLeaseRef.value, lease)) {
+            invalidatedLeaseRef.value = null
+        }
         _machineTeardownState.value = MachineTeardownState.Ready
         log(LogEventType.WORKOUT_TEARDOWN, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=ready,attempt=${state.attempt}")
         true

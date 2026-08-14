@@ -38,6 +38,9 @@ class FakeWorkoutRepository : WorkoutRepository {
     private val _phaseStatisticsFlow = MutableStateFlow<List<PhaseStatisticsData>>(emptyList())
 
     val recentCompletedRequests = mutableListOf<RecentCompletedRequest>()
+    val saveSessionAttempts = mutableListOf<WorkoutSession>()
+    var beforeSaveSession: suspend (WorkoutSession) -> Unit = {}
+    var afterSaveSession: suspend (WorkoutSession) -> Unit = {}
     var recentCompletedFailure: Throwable? = null
     var mostRecentCompletedExerciseFailure: Throwable? = null
 
@@ -73,6 +76,9 @@ class FakeWorkoutRepository : WorkoutRepository {
         personalRecords.clear()
         phaseStatistics.clear()
         recentCompletedRequests.clear()
+        saveSessionAttempts.clear()
+        beforeSaveSession = {}
+        afterSaveSession = {}
         recentCompletedFailure = null
         mostRecentCompletedExerciseFailure = null
         updateSessionsFlow()
@@ -158,8 +164,11 @@ class FakeWorkoutRepository : WorkoutRepository {
     override suspend fun getSessionCountForExercise(exerciseId: String, profileId: String): Long = sessions.values.count { it.exerciseId == exerciseId }.toLong()
 
     override suspend fun saveSession(session: WorkoutSession) {
+        saveSessionAttempts += session
+        beforeSaveSession(session)
         sessions[session.id] = session
         updateSessionsFlow()
+        afterSaveSession(session)
     }
 
     override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {

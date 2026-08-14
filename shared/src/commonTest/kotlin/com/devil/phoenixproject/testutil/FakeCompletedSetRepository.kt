@@ -16,6 +16,11 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 open class FakeCompletedSetRepository : CompletedSetRepository {
 
+    val saved = mutableListOf<CompletedSet>()
+    val saveCompletedSetAttempts = mutableListOf<CompletedSet>()
+    var beforeSaveCompletedSet: suspend (CompletedSet) -> Unit = {}
+    var afterSaveCompletedSet: suspend (CompletedSet) -> Unit = {}
+
     private val plannedSets = mutableMapOf<String, PlannedSet>()
     private val completedSets = mutableMapOf<String, CompletedSet>()
     private val plannedSetsByExercise = mutableMapOf<String, MutableList<String>>()
@@ -30,6 +35,10 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     }
 
     fun reset() {
+        saved.clear()
+        saveCompletedSetAttempts.clear()
+        beforeSaveCompletedSet = {}
+        afterSaveCompletedSet = {}
         plannedSets.clear()
         completedSets.clear()
         plannedSetsByExercise.clear()
@@ -97,10 +106,14 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> = getCompletedSetsForExercise(exerciseId).take(limit)
 
     override suspend fun saveCompletedSet(set: CompletedSet) {
+        saveCompletedSetAttempts += set
+        beforeSaveCompletedSet(set)
         completedSets[set.id] = set
         completedSetsBySession.getOrPut(set.sessionId) { mutableListOf() }
             .apply { if (!contains(set.id)) add(set.id) }
         updateCompletedFlow(set.sessionId)
+        saved += set
+        afterSaveCompletedSet(set)
     }
 
     override suspend fun ensureCompletedSetForTaggedJustLift(session: WorkoutSession, isAmrap: Boolean): CompletedSet? {
