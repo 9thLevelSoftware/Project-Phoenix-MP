@@ -2161,6 +2161,8 @@ class ActiveSessionEngine(
                                 bumpTrainingMax = bumpTrainingMax,
                             )
                         }
+                    } catch (error: CancellationException) {
+                        throw error
                     } catch (e: Exception) {
                         Logger.w(e) {
                             "5/3/1 regeneration failed after cycle completion: cycleId=$cycleId targetWeek=$targetWeek"
@@ -2182,6 +2184,8 @@ class ActiveSessionEngine(
                         if (isRotationComplete) " (rotation $newRotationCount complete!)" else ""
                 }
             }
+        } catch (error: CancellationException) {
+            throw error
         } catch (e: Exception) {
             Logger.e(e) { "Error updating cycle progress: ${e.message}" }
         }
@@ -2757,6 +2761,7 @@ class ActiveSessionEngine(
             }
             return
         }
+        retryRetainedWorkoutExitPersistence()
         executionContext = null
         val priorWorkoutState = coordinator._workoutState.value
 
@@ -3561,6 +3566,12 @@ class ActiveSessionEngine(
         }
     }
 
+    private fun retryRetainedWorkoutExitPersistence() {
+        scope.launch {
+            exitSnapshotStore.retainedSnapshots().forEach(::launchSnapshotPersistence)
+        }
+    }
+
     internal fun retryWorkoutExitPersistence(sessionId: String): Boolean {
         val snapshot = exitSnapshotStore.findBySessionId(sessionId) ?: return false
         return when (executionGuard.claimPersistence(sessionId, snapshot.terminalPath)) {
@@ -3628,6 +3639,8 @@ class ActiveSessionEngine(
             updateCycleProgressFromSnapshot(snapshot)
             scope.launch { syncTriggerManager?.onWorkoutCompleted() }
             executionGuard.markPersistenceSucceeded(sessionId)
+            exitSnapshotStore.remove(snapshot)
+            executionGuard.prunePersistedClaims(retainNewest = 32)
         } catch (error: CancellationException) {
             executionGuard.markPersistenceFailed(sessionId)
             throw error

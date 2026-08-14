@@ -90,15 +90,20 @@ internal class WorkoutExitSnapshotStore {
             snapshots[key]?.copy(terminalPath = terminalPath) ?: candidate.also { installed ->
                 snapshots[key] = installed
                 onInstalled(installed)
-                while (snapshots.size > MAX_RETAINED_SNAPSHOTS) {
-                    snapshots.remove(snapshots.keys.first())
-                }
             }
         }
     }
 
+    fun retainedSnapshots(): List<WorkoutExitSnapshot> = withPlatformLock(lock) {
+        snapshots.values.toList()
+    }
+
     fun findBySessionId(sessionId: String): WorkoutExitSnapshot? = withPlatformLock(lock) {
         snapshots.values.lastOrNull { it.session.id == sessionId }
+    }
+
+    fun remove(snapshot: WorkoutExitSnapshot) = withPlatformLock(lock) {
+        snapshots.remove(snapshot.lease.snapshotKey())
     }
 
     private fun ExecutionLease.snapshotKey() = WorkoutExitSnapshotKey(
@@ -106,10 +111,6 @@ internal class WorkoutExitSnapshotStore {
         sessionId = sessionId,
         profileId = profileId,
     )
-
-    private companion object {
-        const val MAX_RETAINED_SNAPSHOTS = 32
-    }
 }
 
 internal fun RepMetricData.deepCopyForExitSnapshot() = copy(
