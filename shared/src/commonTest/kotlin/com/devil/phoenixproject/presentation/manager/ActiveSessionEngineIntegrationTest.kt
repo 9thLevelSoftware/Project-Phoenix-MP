@@ -648,7 +648,10 @@ class ActiveSessionEngineIntegrationTest {
             ),
         )
 
-        engine.handleSetCompletion()
+        engine.handleSetCompletion(
+            engine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+        )
         harness.testScope.advanceUntilIdle()
     }
 

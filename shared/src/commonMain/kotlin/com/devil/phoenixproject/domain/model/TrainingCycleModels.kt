@@ -376,6 +376,39 @@ data class PlannedSet(
 }
 
 /**
+ * Reason a set ended. Persisted on [CompletedSet] for workout history analytics.
+ * Threaded through [ActiveSessionEngine.handleSetCompletion] from every call site.
+ */
+enum class SetEndReason {
+    /** Rep target reached or WORKOUT_COMPLETE machine event */
+    TARGET_REPS_REACHED,
+
+    /** Stall detection auto-stop fired (velocity/deload threshold) */
+    STALL_FAILURE,
+
+    /** VBT auto-end: consecutive reps above velocity-loss threshold */
+    VBT_AUTO_END,
+
+    /** User manually stopped the set */
+    USER_STOPPED,
+
+    /** Cable released detected by machine */
+    CABLE_RELEASED,
+
+    /** Timed exercise countdown reached zero */
+    TIMER_EXPIRED,
+
+    /** Persisted reason is absent, malformed, or not supported by this app version */
+    UNKNOWN,
+
+    ;
+
+    companion object {
+        fun fromPersisted(value: String?): SetEndReason = entries.firstOrNull { it.name == value } ?: UNKNOWN
+    }
+}
+
+/**
  * A completed set with actual performance data.
  * Records what the user actually did.
  */
@@ -390,6 +423,7 @@ data class CompletedSet(
     val loggedRpe: Int?,
     val isPr: Boolean,
     val completedAt: Long,
+    val setEndReason: SetEndReason = SetEndReason.UNKNOWN,
 ) {
     /**
      * Calculate estimated 1RM using canonical hybrid formula (Brzycki ≤10 reps, Epley >10 reps).
@@ -412,6 +446,7 @@ data class CompletedSet(
             actualWeightKg: Float,
             loggedRpe: Int? = null,
             isPr: Boolean = false,
+            setEndReason: SetEndReason = SetEndReason.UNKNOWN,
         ) = CompletedSet(
             id = id,
             sessionId = sessionId,
@@ -423,6 +458,7 @@ data class CompletedSet(
             loggedRpe = loggedRpe,
             isPr = isPr,
             completedAt = currentTimeMillis(),
+            setEndReason = setEndReason,
         )
     }
 }

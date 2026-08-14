@@ -135,7 +135,13 @@ class DWSMEquipmentRackTest {
             ),
         )
 
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+        )
         advanceUntilIdle()
 
         val session = harness.fakeWorkoutRepo.getAllSessions("default").first().first()
@@ -381,7 +387,13 @@ class DWSMEquipmentRackTest {
             ),
         )
 
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+        )
         advanceUntilIdle()
 
         val defaults = harness.activeSessionEngine.getSingleExerciseDefaults(exerciseId)
@@ -436,7 +448,13 @@ class DWSMEquipmentRackTest {
                 }
             }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             snapshotMutationEntered.await()
 
             harness.settingsManager.setStopAtTop(true)
@@ -499,7 +517,13 @@ class DWSMEquipmentRackTest {
             )
             harness.fakeWorkoutRepo.beforeSaveSession = { releasePersistence.await() }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.size)
 

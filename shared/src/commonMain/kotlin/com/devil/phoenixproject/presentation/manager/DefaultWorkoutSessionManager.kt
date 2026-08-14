@@ -31,6 +31,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.SessionBodyweightAction
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -45,7 +46,9 @@ import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.DataBackupManager
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -176,6 +179,15 @@ class DefaultWorkoutSessionManager(
     private val workoutServiceController: WorkoutServiceController,
     private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val scope: CoroutineScope,
+    private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
+    private val beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    private val afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    private val afterCompletionClaim: (executionId: Long, sessionId: String, reason: SetEndReason) -> Unit = { _, _, _ -> },
+    private val beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    private val afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    private val afterResetInvalidation: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    private val afterExecutionBegin: (outgoingExecutionId: Long?, executionId: Long) -> Unit = { _, _ -> },
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
@@ -264,6 +276,15 @@ class DefaultWorkoutSessionManager(
         settingsManager = settingsManager,
         userProfileRepository = userProfileRepository,
         scope = scope,
+        biomechanicsDispatcher = biomechanicsDispatcher,
+        biomechanicsRepProcessor = biomechanicsRepProcessor,
+        beforeVbtCommit = beforeVbtCommit,
+        afterVbtDecisionCommit = afterVbtDecisionCommit,
+        afterCompletionClaim = afterCompletionClaim,
+        beforeBodyweightCompletionClaim = beforeBodyweightCompletionClaim,
+        afterBodyweightCompletionConsume = afterBodyweightCompletionConsume,
+        afterResetInvalidation = afterResetInvalidation,
+        afterExecutionBegin = afterExecutionBegin,
         regenerateFiveThreeOneUseCase = RegenerateFiveThreeOneRoutinesUseCase(
             trainingCycleRepository = trainingCycleRepository,
             workoutRepository = workoutRepository,

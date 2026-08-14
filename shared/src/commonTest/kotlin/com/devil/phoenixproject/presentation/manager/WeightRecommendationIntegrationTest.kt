@@ -31,7 +31,13 @@ class WeightRecommendationIntegrationTest {
 
         seedCompletedSet(harness, actualReps = 10, qualityScores = listOf(95, 92, 90, 88))
 
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+        )
         advanceTimeBy(1_000)
 
         val recommendation = harness.coordinator.weightAdjustmentRecommendation.value
@@ -58,7 +64,13 @@ class WeightRecommendationIntegrationTest {
 
         seedCompletedSet(harness, actualReps = 10, qualityScores = listOf(95, 92, 90, 88))
 
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+        )
         advanceTimeBy(1_000)
 
         val recommendation = harness.coordinator.weightAdjustmentRecommendation.value
@@ -80,7 +92,10 @@ class WeightRecommendationIntegrationTest {
             ),
         )
         seedCompletedSet(harness, actualReps = 10, qualityScores = listOf(95, 92, 90, 88))
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+        )
         advanceTimeBy(1_000)
         harness.dwsm.proceedFromSummary()
         advanceUntilIdle()
@@ -101,7 +116,10 @@ class WeightRecommendationIntegrationTest {
     fun dismissRecommendationClearsState() = runTest {
         val harness = readyActiveRoutineHarness()
         seedCompletedSet(harness, actualReps = 10, qualityScores = listOf(95, 92, 90, 88))
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+        )
         advanceTimeBy(1_000)
         assertTrue(harness.coordinator.weightAdjustmentRecommendation.value != null)
 
@@ -122,7 +140,13 @@ class WeightRecommendationIntegrationTest {
         )
         seedCompletedSet(harness, actualReps = 10, qualityScores = listOf(95, 92, 90, 88))
 
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+        )
         advanceTimeBy(1_000)
 
         assertNull(harness.coordinator.weightAdjustmentRecommendation.value)
@@ -133,7 +157,10 @@ class WeightRecommendationIntegrationTest {
     fun activeSetCannotApplyRecommendationMidSet() = runTest {
         val harness = readyActiveRoutineHarness()
         seedCompletedSet(harness, actualReps = 10, qualityScores = listOf(95, 92, 90, 88))
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+        )
         advanceTimeBy(1_000)
         assertTrue(harness.coordinator.weightAdjustmentRecommendation.value != null)
 
@@ -167,14 +194,16 @@ class WeightRecommendationIntegrationTest {
                 ),
             ),
         )
-        val harness = readyActiveRoutineHarness(
-            routine = routine,
-            startSet = false,
-            expectActive = false,
-        )
+        val harness = readyActiveRoutineHarness(routine = routine, expectActive = false)
         seedCompletedSet(harness, actualReps = 10, qualityScores = listOf(95, 92, 90, 88))
 
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+        )
         advanceTimeBy(1_000)
 
         assertNull(harness.coordinator.weightAdjustmentRecommendation.value)

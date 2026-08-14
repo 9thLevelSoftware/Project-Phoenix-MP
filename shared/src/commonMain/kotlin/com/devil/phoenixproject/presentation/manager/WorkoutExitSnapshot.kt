@@ -6,14 +6,131 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ForceCurveResult
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SingleExerciseDefaultsDocument
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.util.withPlatformLock
+import kotlinx.atomicfu.atomic
+
+internal data class SetExecutionCompletion(
+    val lease: ExecutionLease,
+    val reason: SetEndReason,
+)
+
+private sealed interface BodyweightCompletionState {
+    data object Empty : BodyweightCompletionState
+    data class Available(val lease: ExecutionLease) : BodyweightCompletionState
+    data class Pending(val completion: SetExecutionCompletion) : BodyweightCompletionState
+    data class Consuming(val completion: SetExecutionCompletion) : BodyweightCompletionState
+    data class Invalidated(val lease: ExecutionLease) : BodyweightCompletionState
+}
+
+internal class BodyweightCompletionGate {
+    private val state = atomic<BodyweightCompletionState>(BodyweightCompletionState.Empty)
+
+    fun beginExecution(lease: ExecutionLease) {
+        while (true) {
+            val current = state.value
+            val currentExecutionId = when (current) {
+                is BodyweightCompletionState.Available -> current.lease.executionId
+                is BodyweightCompletionState.Pending -> current.completion.lease.executionId
+                is BodyweightCompletionState.Consuming -> current.completion.lease.executionId
+                is BodyweightCompletionState.Invalidated -> current.lease.executionId
+                BodyweightCompletionState.Empty -> Long.MIN_VALUE
+            }
+            if (currentExecutionId >= lease.executionId) return
+            if (state.compareAndSet(current, BodyweightCompletionState.Available(lease))) return
+        }
+    }
+
+    fun tryPublish(completion: SetExecutionCompletion): Boolean {
+        while (true) {
+            val current = state.value as? BodyweightCompletionState.Available ?: return false
+            if (!current.lease.sameExecutionAs(completion.lease)) return false
+            if (state.compareAndSet(current, BodyweightCompletionState.Pending(completion))) return true
+        }
+    }
+
+    fun pendingFor(lease: ExecutionLease): SetExecutionCompletion? = (state.value as? BodyweightCompletionState.Pending)
+        ?.completion
+        ?.takeIf { it.lease.sameExecutionAs(lease) }
+
+    fun hasClaimedCompletion(lease: ExecutionLease): Boolean = when (val current = state.value) {
+        is BodyweightCompletionState.Pending -> current.completion.lease.sameExecutionAs(lease)
+        is BodyweightCompletionState.Consuming -> current.completion.lease.sameExecutionAs(lease)
+        else -> false
+    }
+
+    fun tryConsume(completion: SetExecutionCompletion): Boolean {
+        while (true) {
+            val current = state.value as? BodyweightCompletionState.Pending ?: return false
+            if (current.completion != completion) return false
+            if (state.compareAndSet(current, BodyweightCompletionState.Consuming(completion))) return true
+        }
+    }
+
+    fun invalidate(lease: ExecutionLease) {
+        while (true) {
+            val current = state.value
+            val ownsState = when (current) {
+                is BodyweightCompletionState.Available -> current.lease.sameExecutionAs(lease)
+                is BodyweightCompletionState.Pending -> current.completion.lease.sameExecutionAs(lease)
+                is BodyweightCompletionState.Consuming -> current.completion.lease.sameExecutionAs(lease)
+                is BodyweightCompletionState.Invalidated -> current.lease.sameExecutionAs(lease)
+                BodyweightCompletionState.Empty -> false
+            }
+            if (!ownsState || current is BodyweightCompletionState.Invalidated) return
+            if (state.compareAndSet(current, BodyweightCompletionState.Invalidated(lease))) return
+        }
+    }
+
+    private fun ExecutionLease.sameExecutionAs(other: ExecutionLease): Boolean = executionId == other.executionId && sessionId == other.sessionId
+}
+
+private data class DangerZoneCountdownClaim(
+    val lease: ExecutionLease,
+    val startTimeMs: Long,
+)
+
+internal class DangerZoneCountdownGate {
+    private val claim = atomic<DangerZoneCountdownClaim?>(null)
+
+    fun tryPrime(lease: ExecutionLease, startTimeMs: Long): Boolean {
+        val candidate = DangerZoneCountdownClaim(lease, startTimeMs)
+        while (true) {
+            val current = claim.value
+            if (current != null && current.lease.executionId > lease.executionId) return false
+            if (current != null && current.lease.executionId == lease.executionId && current.lease.sessionId != lease.sessionId) {
+                return false
+            }
+            if (claim.compareAndSet(current, candidate)) return true
+        }
+    }
+
+    fun consume(lease: ExecutionLease): Long? {
+        while (true) {
+            val current = claim.value ?: return null
+            if (!current.lease.sameExecutionAs(lease)) return null
+            if (claim.compareAndSet(current, null)) return current.startTimeMs
+        }
+    }
+
+    fun clear(lease: ExecutionLease) {
+        while (true) {
+            val current = claim.value ?: return
+            if (!current.lease.sameExecutionAs(lease)) return
+            if (claim.compareAndSet(current, null)) return
+        }
+    }
+
+    private fun ExecutionLease.sameExecutionAs(other: ExecutionLease): Boolean = executionId == other.executionId && sessionId == other.sessionId
+}
 
 internal data class WorkoutExitSnapshot(
     val lease: ExecutionLease,
+    val completion: SetExecutionCompletion,
     val terminalPath: TerminalPath,
     val session: WorkoutSession,
     val completedSet: CompletedSet?,
@@ -73,18 +190,22 @@ internal class WorkoutExitSnapshotStore {
     private val snapshots = LinkedHashMap<WorkoutExitSnapshotKey, WorkoutExitSnapshot>()
 
     fun getOrCapture(
-        lease: ExecutionLease,
+        completion: SetExecutionCompletion,
         terminalPath: TerminalPath,
         onInstalled: (WorkoutExitSnapshot) -> Unit = {},
         capture: () -> WorkoutExitSnapshot,
     ): WorkoutExitSnapshot {
-        val key = lease.snapshotKey()
+        val key = completion.lease.snapshotKey()
         withPlatformLock(lock) {
             snapshots[key]?.let { return it.copy(terminalPath = terminalPath) }
         }
 
         val candidate = capture()
-        require(candidate.lease.snapshotKey() == key && candidate.session.id == lease.sessionId) {
+        require(
+            candidate.lease.snapshotKey() == key &&
+                candidate.completion == completion &&
+                candidate.session.id == completion.lease.sessionId,
+        ) {
             "Captured workout exit snapshot must match its execution lease"
         }
 

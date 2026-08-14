@@ -115,6 +115,35 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `completed set heal supplies UNKNOWN default`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE CompletedSet (id TEXT PRIMARY KEY, session_id TEXT NOT NULL)",
+            0,
+        )
+
+        val result = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "CompletedSet" && it.column == "set_end_reason" },
+        )
+        driver.execute(null, "INSERT INTO CompletedSet(id, session_id) VALUES ('set-1', 'session-1')", 0)
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        var persistedReason: String? = null
+        driver.executeQuery(
+            null,
+            "SELECT set_end_reason FROM CompletedSet WHERE id = 'set-1'",
+            { cursor ->
+                if (cursor.next().value) persistedReason = cursor.getString(0)
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        assertEquals("UNKNOWN", persistedReason)
+    }
+
+    @Test
     fun `applyColumnHeal returns TABLE_MISSING when table does not exist`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
 

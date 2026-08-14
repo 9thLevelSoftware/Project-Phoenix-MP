@@ -72,7 +72,7 @@ class Schema42FixtureContractTest {
             entryText(document, "string", "equipment_rack_items_v1").contains("fixture-vest"),
         )
 
-        val guide = guideFile.readText()
+        val guide = guideFile.readText().replace("\r\n", "\n")
         assertTrue(
             "Guide must pin the full pre-profile commit SHA",
             guide.contains("ac84d9bb8e156002833ad526bf324a8f12710da0"),

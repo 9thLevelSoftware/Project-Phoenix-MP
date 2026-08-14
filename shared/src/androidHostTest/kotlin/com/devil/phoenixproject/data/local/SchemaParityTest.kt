@@ -638,10 +638,69 @@ class SchemaParityTest {
         assertEquals(true, getTables(driver).contains("PendingProfileContextRecovery"))
     }
 
+    @Test
+    fun `migration 43 to 44 adds set_end_reason column and preserves historical rows as UNKNOWN`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 43)
+
+        // Create prerequisite rows using columns available at schema v43,
+        // before migration 43 adds the reason column.
+        driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
+        driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)", 0)
+        driver.execute(null, "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('s1',1,'OldSchool',10,40.0)", 0)
+
+        // Insert a CompletedSet before the new column exists.
+        driver.execute(
+            null,
+            """
+            INSERT INTO CompletedSet (id, session_id, set_number, set_type, actual_reps, actual_weight_kg, is_pr, completed_at)
+            VALUES ('cs-pre-mig', 's1', 1, 'STANDARD', 8, 40.0, 0, 1000)
+            """.trimIndent(),
+            0,
+        )
+
+        // This test proves generated migration 43.sqm itself; resilient recovery
+        // behavior is covered separately below.
+        VitruvianDatabase.Schema.migrate(driver, 43, 44)
+
+        assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "set_end_reason"))
+
+        // Pre-existing row must have the default value
+        assertEquals("UNKNOWN", queryScalar(driver, "SELECT set_end_reason FROM CompletedSet WHERE id = 'cs-pre-mig'"))
+    }
+
+    @Test
+    fun `resilient migration 43 fallback preserves an already-healed set_end_reason`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 43)
+
+        // Simulate schema drift: column already added by heal
+        driver.execute(null, "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'", 0)
+
+        driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
+        driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)", 0)
+        driver.execute(null, "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('s1',1,'OldSchool',10,40.0)", 0)
+        driver.execute(
+            null,
+            """
+            INSERT INTO CompletedSet (id, session_id, set_number, set_type, actual_reps, actual_weight_kg, is_pr, completed_at, set_end_reason)
+            VALUES ('cs-resilient', 's1', 1, 'STANDARD', 8, 40.0, 0, 1000, 'STALL_FAILURE')
+            """.trimIndent(),
+            0,
+        )
+
+        // Resilient fallback should succeed even though the column already exists.
+        applyMigrationResilient(driver, 43)
+
+        assertEquals("STALL_FAILURE", queryScalar(driver, "SELECT set_end_reason FROM CompletedSet WHERE id = 'cs-resilient'"))
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 43L
+        private const val EXPECTED_SCHEMA_VERSION = 44L
         private val CANONICAL_UUID_REGEX = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
         /**

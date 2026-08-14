@@ -1016,5 +1016,12 @@ WHERE gs.rowid = (
     SELECT id FROM UserProfile""",
     )
 
+    // Migration 43: Add set_end_reason to CompletedSet (Issue #673 PR 1)
+    // Records why a set ended for workout history analytics.
+    // Mirrors 43.sqm exactly.
+    43 -> listOf(
+        "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'",
+    )
+
     else -> emptyList()
 }

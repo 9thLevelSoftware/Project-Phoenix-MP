@@ -3,7 +3,9 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.PlannedSet
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -71,6 +73,121 @@ class SqlDelightCompletedSetRepositoryTest {
         assertEquals(2, sets.size)
     }
 
+    @Test
+    fun `saveCompletedSet round-trips setEndReason STALL_FAILURE`() = runTest {
+        val completed = completedSet("cset-stall", "session-1", setNumber = 1, setEndReason = SetEndReason.STALL_FAILURE)
+        repository.saveCompletedSet(completed)
+
+        val loaded = repository.getCompletedSets("session-1").first { it.id == "cset-stall" }
+        assertEquals(SetEndReason.STALL_FAILURE, loaded.setEndReason)
+    }
+
+    @Test
+    fun `saveCompletedSet round-trips setEndReason TARGET_REPS_REACHED default`() = runTest {
+        val completed = completedSet("cset-default", "session-1", setNumber = 1)
+        repository.saveCompletedSet(completed)
+
+        val loaded = repository.getCompletedSets("session-1").first { it.id == "cset-default" }
+        assertEquals(SetEndReason.TARGET_REPS_REACHED, loaded.setEndReason)
+    }
+
+    @Test
+    fun `saveCompletedSet round-trips all SetEndReason values`() = runTest {
+        for ((index, reason) in SetEndReason.entries.withIndex()) {
+            repository.saveCompletedSet(completedSet("cset-$index", "session-1", setNumber = index + 1, setEndReason = reason))
+        }
+
+        val loaded = repository.getCompletedSets("session-1")
+        assertEquals(SetEndReason.entries.size, loaded.size)
+        for ((index, reason) in SetEndReason.entries.withIndex()) {
+            assertEquals(reason, loaded[index].setEndReason, "Mismatch at index $index")
+        }
+    }
+
+    @Test
+    fun `saveCompletedSets preserves distinct non-default end reasons`() = runTest {
+        repository.saveCompletedSets(
+            listOf(
+                completedSet("cset-bulk-stall", "session-1", setNumber = 1, setEndReason = SetEndReason.STALL_FAILURE),
+                completedSet("cset-bulk-timer", "session-1", setNumber = 2, setEndReason = SetEndReason.TIMER_EXPIRED),
+            ),
+        )
+
+        val reasonsById = repository.getCompletedSets("session-1").associate { it.id to it.setEndReason }
+        assertEquals(SetEndReason.STALL_FAILURE, reasonsById["cset-bulk-stall"])
+        assertEquals(SetEndReason.TIMER_EXPIRED, reasonsById["cset-bulk-timer"])
+    }
+
+    @Test
+    fun `unknown persisted end reason reads as UNKNOWN`() = runTest {
+        database.vitruvianDatabaseQueries.insertCompletedSet(
+            id = "cset-future",
+            session_id = "session-1",
+            planned_set_id = null,
+            set_number = 1L,
+            set_type = "STANDARD",
+            actual_reps = 8L,
+            actual_weight_kg = 40.0,
+            logged_rpe = null,
+            is_pr = 0L,
+            completed_at = 1001L,
+            set_end_reason = "FUTURE_REASON",
+        )
+
+        assertEquals(SetEndReason.UNKNOWN, repository.getCompletedSets("session-1").single().setEndReason)
+    }
+
+    @Test
+    fun `tagged Just Lift updates existing set without overwriting captured end reason`() = runTest {
+        insertWorkoutSession(
+            id = "captured-untagged-just-lift",
+            exerciseId = null,
+            totalReps = 7,
+            workingReps = 7,
+            isJustLift = 1L,
+        )
+        repository.saveCompletedSet(
+            completedSet(
+                id = "cset-captured-stall",
+                sessionId = "captured-untagged-just-lift",
+                setNumber = 1,
+                setEndReason = SetEndReason.STALL_FAILURE,
+            ),
+        )
+
+        repository.ensureCompletedSetForTaggedJustLift(
+            justLiftSession("captured-untagged-just-lift", exerciseId = "deadlift"),
+            isAmrap = false,
+        )
+
+        val persisted = repository.getCompletedSets("captured-untagged-just-lift").single()
+        assertEquals("cset-captured-stall", persisted.id)
+        assertEquals(SetEndReason.STALL_FAILURE, persisted.setEndReason)
+    }
+
+    @Test
+    fun `tagged historical Just Lift session without completed set uses UNKNOWN reason`() = runTest {
+        insertWorkoutSession(
+            id = "historical-tagged-just-lift",
+            exerciseId = "deadlift",
+            totalReps = 7,
+            workingReps = 7,
+            isJustLift = 1L,
+        )
+
+        repository.ensureCompletedSetForTaggedJustLift(
+            justLiftSession("historical-tagged-just-lift", exerciseId = "deadlift"),
+            isAmrap = false,
+        )
+
+        val persisted = repository.getCompletedSets("historical-tagged-just-lift").single()
+        assertEquals(SetEndReason.UNKNOWN, persisted.setEndReason)
+        assertEquals(
+            "UNKNOWN",
+            database.vitruvianDatabaseQueries.selectCompletedSetById(persisted.id).executeAsOne().set_end_reason,
+        )
+    }
+
     private fun plannedSet(
         id: String,
         routineExerciseId: String,
@@ -89,7 +206,7 @@ class SqlDelightCompletedSetRepositoryTest {
         restSeconds = restSeconds,
     )
 
-    private fun completedSet(id: String, sessionId: String, setNumber: Int) = CompletedSet(
+    private fun completedSet(id: String, sessionId: String, setNumber: Int, setEndReason: SetEndReason = SetEndReason.TARGET_REPS_REACHED) = CompletedSet(
         id = id,
         sessionId = sessionId,
         plannedSetId = null,
@@ -100,6 +217,20 @@ class SqlDelightCompletedSetRepositoryTest {
         loggedRpe = null,
         isPr = false,
         completedAt = 1000L + setNumber,
+        setEndReason = setEndReason,
+    )
+
+    private fun justLiftSession(id: String, exerciseId: String) = WorkoutSession(
+        id = id,
+        timestamp = 1_000L,
+        mode = "OldSchool",
+        reps = 0,
+        weightPerCableKg = 40f,
+        duration = 10_000L,
+        totalReps = 7,
+        workingReps = 7,
+        isJustLift = true,
+        exerciseId = exerciseId,
     )
 
     private fun insertRoutine(id: String) {
@@ -156,7 +287,13 @@ class SqlDelightCompletedSetRepositoryTest {
         )
     }
 
-    private fun insertWorkoutSession(id: String, exerciseId: String) {
+    private fun insertWorkoutSession(
+        id: String,
+        exerciseId: String?,
+        totalReps: Long = 0L,
+        workingReps: Long = 0L,
+        isJustLift: Long = 0L,
+    ) {
         database.vitruvianDatabaseQueries.insertSession(
             id = id,
             timestamp = 0L,
@@ -165,10 +302,10 @@ class SqlDelightCompletedSetRepositoryTest {
             weightPerCableKg = 40.0,
             progressionKg = 0.0,
             duration = 0L,
-            totalReps = 0L,
+            totalReps = totalReps,
             warmupReps = 0L,
-            workingReps = 0L,
-            isJustLift = 0L,
+            workingReps = workingReps,
+            isJustLift = isJustLift,
             stopAtTop = 0L,
             eccentricLoad = 100L,
             echoLevel = 1L,

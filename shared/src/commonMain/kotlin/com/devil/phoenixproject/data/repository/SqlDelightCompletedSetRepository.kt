@@ -5,6 +5,7 @@ import app.cash.sqldelight.coroutines.mapToList
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.PlannedSet
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
@@ -54,6 +55,7 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
         loggedRpe: Long?,
         isPr: Long,
         completedAt: Long,
+        setEndReason: String,
     ): CompletedSet = CompletedSet(
         id = id,
         sessionId = sessionId,
@@ -65,6 +67,7 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
         loggedRpe = loggedRpe?.toInt(),
         isPr = isPr == 1L,
         completedAt = completedAt,
+        setEndReason = SetEndReason.fromPersisted(setEndReason),
     )
 
     // ==================== Planned Sets ====================
@@ -178,6 +181,7 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
                 logged_rpe = set.loggedRpe?.toLong(),
                 is_pr = if (set.isPr) 1L else 0L,
                 completed_at = set.completedAt,
+                set_end_reason = set.setEndReason.name,
             )
         }
     }
@@ -233,6 +237,7 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
             logged_rpe = completedSet.loggedRpe?.toLong(),
             is_pr = if (completedSet.isPr) 1L else 0L,
             completed_at = completedSet.completedAt,
+            set_end_reason = completedSet.setEndReason.name,
         )
 
         completedSet
@@ -252,6 +257,7 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
                     logged_rpe = set.loggedRpe?.toLong(),
                     is_pr = if (set.isPr) 1L else 0L,
                     completed_at = set.completedAt,
+                    set_end_reason = set.setEndReason.name,
                 )
             }
         }

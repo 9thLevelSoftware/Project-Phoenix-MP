@@ -1836,6 +1836,7 @@ CREATE TABLE CompletedSet (
     logged_rpe INTEGER,
     is_pr INTEGER NOT NULL DEFAULT 0,
     completed_at INTEGER NOT NULL,
+    set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN',
     FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE,
     FOREIGN KEY (planned_set_id) REFERENCES PlannedSet(id) ON DELETE SET NULL
 );
@@ -2023,8 +2024,8 @@ ORDER BY cs.completed_at DESC
 LIMIT ?;
 
 insertCompletedSet:
-INSERT INTO CompletedSet (id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO CompletedSet (id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at, set_end_reason)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateCompletedSetRpe:
 UPDATE CompletedSet SET logged_rpe = ? WHERE id = ?;
@@ -2161,8 +2162,8 @@ INSERT OR IGNORE INTO PlannedSet (id, routine_exercise_id, set_number, set_type,
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 insertCompletedSetIgnore:
-INSERT OR IGNORE INTO CompletedSet (id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO CompletedSet (id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at, set_end_reason)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 insertProgressionEventIgnore:
 INSERT OR IGNORE INTO ProgressionEvent (id, exercise_id, suggested_weight_kg, previous_weight_kg, reason, user_response, actual_weight_kg, timestamp, profile_id)

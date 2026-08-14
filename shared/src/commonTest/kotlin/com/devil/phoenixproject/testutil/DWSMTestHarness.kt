@@ -1,10 +1,13 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
+import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
@@ -12,14 +15,18 @@ import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.presentation.manager.BiomechanicsRepProcessor
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.manager.GamificationManager
 import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceSnapshot
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -61,6 +68,21 @@ class FakeWorkoutServiceController : WorkoutServiceController {
 
 class DWSMTestHarness(
     val testScope: TestScope,
+    workoutRepositoryOverride: WorkoutRepository? = null,
+    completedSetRepositoryOverride: CompletedSetRepository? = null,
+    biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
+    beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    afterCompletionClaim: (executionId: Long, sessionId: String, reason: SetEndReason) -> Unit = { _, _, _ -> },
+    beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    afterResetInvalidation: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    afterExecutionBegin: (outgoingExecutionId: Long?, executionId: Long) -> Unit = { _, _ -> },
+    hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
+        extraBufferCapacity = 32,
+        onBufferOverflow = BufferOverflow.SUSPEND,
+    ),
     onPostSaveComputed: suspend (exerciseId: String, profileId: String, sessionMcvMmS: Float?) -> Unit = { _, _, _ -> },
 ) {
     companion object {
@@ -82,6 +104,8 @@ class DWSMTestHarness(
     val fakeBiomechanicsRepo = FakeBiomechanicsRepository()
     val fakeWorkoutServiceController = FakeWorkoutServiceController()
     val fakeUserProfileRepo = FakeUserProfileRepository().apply { setActiveProfileForTest() }
+    private val workoutRepository = workoutRepositoryOverride ?: fakeWorkoutRepo
+    private val completedSetRepository = completedSetRepositoryOverride ?: fakeCompletedSetRepo
 
     val repCounter = RepCounterFromMachine()
     val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeExerciseRepo, FakeVelocityOneRepMaxRepository())
@@ -113,14 +137,14 @@ class DWSMTestHarness(
 
     val dwsm = DefaultWorkoutSessionManager(
         bleRepository = fakeBleRepo,
-        workoutRepository = fakeWorkoutRepo,
+        workoutRepository = workoutRepository,
         exerciseRepository = fakeExerciseRepo,
         personalRecordRepository = fakePRRepo,
         repCounter = repCounter,
         preferencesManager = fakePrefsManager,
         gamificationManager = gamificationManager,
         trainingCycleRepository = fakeTrainingCycleRepo,
-        completedSetRepository = fakeCompletedSetRepo,
+        completedSetRepository = completedSetRepository,
         syncTriggerManager = null,
         repMetricRepository = fakeRepMetricRepo,
         biomechanicsRepository = fakeBiomechanicsRepo,
@@ -133,6 +157,16 @@ class DWSMTestHarness(
         userProfileRepository = fakeUserProfileRepo,
         workoutServiceController = fakeWorkoutServiceController,
         scope = dwsmScope,
+        biomechanicsDispatcher = biomechanicsDispatcher,
+        biomechanicsRepProcessor = biomechanicsRepProcessor,
+        beforeVbtCommit = beforeVbtCommit,
+        afterVbtDecisionCommit = afterVbtDecisionCommit,
+        afterCompletionClaim = afterCompletionClaim,
+        beforeBodyweightCompletionClaim = beforeBodyweightCompletionClaim,
+        afterBodyweightCompletionConsume = afterBodyweightCompletionConsume,
+        afterResetInvalidation = afterResetInvalidation,
+        afterExecutionBegin = afterExecutionBegin,
+        _hapticEvents = hapticEvents,
         elapsedRealtimeProvider = { testScope.testScheduler.currentTime },
         wallClockMillisProvider = { nowMs },
     )

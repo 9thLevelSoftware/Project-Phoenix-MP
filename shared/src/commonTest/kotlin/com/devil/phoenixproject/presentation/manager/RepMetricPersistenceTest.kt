@@ -69,7 +69,10 @@ class RepMetricPersistenceTest {
         )
 
         // Trigger set completion
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+        )
         advanceUntilIdle()
 
         // Verify rep metrics were persisted to the fake repository
@@ -97,7 +100,10 @@ class RepMetricPersistenceTest {
         assertTrue(coordinator.setRepMetrics.value.isEmpty())
 
         // Trigger set completion
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+        )
         advanceUntilIdle()
 
         // No metrics should be saved
@@ -126,7 +132,10 @@ class RepMetricPersistenceTest {
         val expectedCount = coordinator.setRepMetrics.value.size
 
         // Trigger set completion
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+        )
         advanceUntilIdle()
 
         // Verify count matches
