@@ -650,6 +650,73 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `buffered completed set import canonicalizes negative attempt to one`() = runTest {
+        assertBufferedInvalidAttemptCanonicalized(-4)
+    }
+
+    @Test
+    fun `streaming completed set import canonicalizes zero attempt to one`() = runTest {
+        assertStreamingInvalidAttemptCanonicalized(0)
+    }
+
+    private fun invalidAttemptPayload(sessionId: String, setId: String, invalidAttempt: Int): String =
+        testJson.encodeToString(
+            BackupData(
+                version = CURRENT_BACKUP_VERSION,
+                exportedAt = "2026-08-14T00:00:00Z",
+                appVersion = "test",
+                data = BackupContent(
+                    workoutSessions = listOf(
+                        WorkoutSessionBackup(
+                            id = sessionId,
+                            timestamp = 1L,
+                            mode = "OldSchool",
+                            targetReps = 8,
+                            weightPerCableKg = 40f,
+                            progressionKg = 0f,
+                            duration = 0L,
+                            totalReps = 8,
+                            warmupReps = 0,
+                            workingReps = 8,
+                            isJustLift = false,
+                            stopAtTop = false,
+                        ),
+                    ),
+                    completedSets = listOf(
+                        CompletedSetBackup(
+                            id = setId,
+                            sessionId = sessionId,
+                            setNumber = 0,
+                            actualReps = 8,
+                            actualWeightKg = 40f,
+                            completedAt = 2L,
+                            routineExerciseId = "invalid-import-occurrence",
+                            attemptNumber = invalidAttempt,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    private suspend fun assertBufferedInvalidAttemptCanonicalized(invalidAttempt: Int) {
+        assertTrue(backupManager.importFromJson(invalidAttemptPayload("buffered-invalid-session", "buffered-invalid-set", invalidAttempt)).isSuccess)
+        assertEquals(
+            1L,
+            database.vitruvianDatabaseQueries.selectCompletedSetById("buffered-invalid-set").executeAsOne().attempt_number,
+        )
+    }
+
+    private suspend fun assertStreamingInvalidAttemptCanonicalized(invalidAttempt: Int) {
+        val streamingDatabase = createTestDatabase()
+        val streamingManager = TestDataBackupManager(streamingDatabase)
+        assertTrue(streamingManager.importFromStringStreaming(invalidAttemptPayload("streaming-invalid-session", "streaming-invalid-set", invalidAttempt)).isSuccess)
+        assertEquals(
+            1L,
+            streamingDatabase.vitruvianDatabaseQueries.selectCompletedSetById("streaming-invalid-set").executeAsOne().attempt_number,
+        )
+    }
+
+    @Test
     fun `buffered and streaming completed set exports canonicalize unknown end reasons`() = runTest {
         workoutRepository.saveSession(
             WorkoutSession(

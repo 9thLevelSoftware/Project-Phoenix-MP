@@ -122,33 +122,64 @@ class SqlDelightCompletedSetRepositoryTest {
 
     @Test
     fun `single and bulk saves round-trip routine occurrence and attempts without changing zero-based set index`() = runTest {
+        val key = LogicalSetKey(
+            routineSessionId = "routine-session-cross-model",
+            routineExerciseId = "exercise-1",
+            setIndex = 4,
+            setKind = SetType.AMRAP,
+        )
         repository.saveCompletedSet(
             completedSet(
                 id = "cset-single-attempt-2",
                 sessionId = "session-1",
-                setNumber = 4,
-                routineExerciseId = "exercise-1",
+                setNumber = key.setIndex,
+                setType = key.setKind,
+                routineExerciseId = key.routineExerciseId,
                 attemptNumber = 2,
             ),
         )
         repository.saveCompletedSets(
             listOf(
-                completedSet("cset-bulk-attempt-1", "session-1", 4, routineExerciseId = "exercise-1", attemptNumber = 1),
-                completedSet("cset-bulk-attempt-3", "session-1", 4, routineExerciseId = "exercise-1", attemptNumber = 3),
+                completedSet("cset-bulk-attempt-1", "session-1", key.setIndex, setType = key.setKind, routineExerciseId = key.routineExerciseId, attemptNumber = 1),
+                completedSet("cset-bulk-attempt-3", "session-1", key.setIndex, setType = key.setKind, routineExerciseId = key.routineExerciseId, attemptNumber = 3),
                 completedSet("cset-bulk-legacy", "session-1", 7),
             ),
         )
 
         val byId = repository.getCompletedSets("session-1").associateBy { it.id }
-        assertEquals(4, byId.getValue("cset-single-attempt-2").setNumber)
-        assertEquals("exercise-1", byId.getValue("cset-single-attempt-2").routineExerciseId)
-        assertEquals(2, byId.getValue("cset-single-attempt-2").attemptNumber)
-        assertEquals(4, byId.getValue("cset-bulk-attempt-1").setNumber)
-        assertEquals(1, byId.getValue("cset-bulk-attempt-1").attemptNumber)
-        assertEquals(4, byId.getValue("cset-bulk-attempt-3").setNumber)
-        assertEquals(3, byId.getValue("cset-bulk-attempt-3").attemptNumber)
+        val attempts = listOf(
+            byId.getValue("cset-bulk-attempt-1"),
+            byId.getValue("cset-single-attempt-2"),
+            byId.getValue("cset-bulk-attempt-3"),
+        )
+        assertEquals(listOf(1, 2, 3), attempts.map { it.attemptNumber })
+        attempts.forEach { completedSet ->
+            assertEquals(key.routineExerciseId, completedSet.routineExerciseId)
+            assertEquals(key.setIndex, completedSet.setNumber)
+            assertEquals(key.setKind, completedSet.setType)
+        }
         assertEquals(null, byId.getValue("cset-bulk-legacy").routineExerciseId)
         assertEquals(1, byId.getValue("cset-bulk-legacy").attemptNumber)
+    }
+
+    @Test
+    fun `ordinary save canonicalizes negative attempt number to one`() = runTest {
+        repository.saveCompletedSet(
+            completedSet("invalid-ordinary", "session-1", 0, routineExerciseId = "exercise-1", attemptNumber = -4),
+        )
+
+        assertEquals(1L, database.vitruvianDatabaseQueries.selectCompletedSetById("invalid-ordinary").executeAsOne().attempt_number)
+        assertEquals(1, repository.getCompletedSets("session-1").single().attemptNumber)
+    }
+
+    @Test
+    fun `bulk save canonicalizes zero attempt number to one`() = runTest {
+        repository.saveCompletedSets(
+            listOf(completedSet("invalid-bulk", "session-1", 1, routineExerciseId = "exercise-1", attemptNumber = 0)),
+        )
+
+        assertEquals(1L, database.vitruvianDatabaseQueries.selectCompletedSetById("invalid-bulk").executeAsOne().attempt_number)
+        assertEquals(1, repository.getCompletedSets("session-1").single().attemptNumber)
     }
 
     @Test
@@ -172,6 +203,47 @@ class SqlDelightCompletedSetRepositoryTest {
         }
 
         assertEquals(listOf(1, 1), repository.getCompletedSets("session-1").map { it.attemptNumber })
+    }
+
+    @Test
+    fun `durable attempt APIs canonicalize negative stored attempt without accepting negative caller`() = runTest {
+        assertInvalidStoredAttemptApiPolicy(-4L)
+    }
+
+    @Test
+    fun `durable attempt APIs canonicalize zero stored attempt without accepting zero caller`() = runTest {
+        assertInvalidStoredAttemptApiPolicy(0L)
+    }
+
+    private suspend fun assertInvalidStoredAttemptApiPolicy(invalidAttempt: Long) {
+        val suffix = if (invalidAttempt < 0) "negative" else "zero"
+        val sessionId = "invalid-api-session-$suffix"
+        val key = LogicalSetKey(
+            routineSessionId = "invalid-api-routine-$suffix",
+            routineExerciseId = "invalid-api-occurrence-$suffix",
+            setIndex = 2,
+            setKind = SetType.STANDARD,
+        )
+        insertWorkoutSession(sessionId, "bench", routineSessionId = key.routineSessionId)
+        database.vitruvianDatabaseQueries.insertCompletedSet(
+            id = "invalid-api-attempt-$suffix",
+            session_id = sessionId,
+            planned_set_id = null,
+            routine_exercise_id = key.routineExerciseId,
+            set_number = key.setIndex.toLong(),
+            set_type = key.setKind.name,
+            attempt_number = invalidAttempt,
+            actual_reps = 8L,
+            actual_weight_kg = 40.0,
+            logged_rpe = null,
+            is_pr = 0L,
+            completed_at = 2000L,
+            set_end_reason = "TARGET_REPS_REACHED",
+        )
+
+        assertEquals(2, repository.nextAttemptNumber(key))
+        assertTrue(repository.isAttemptDurable(sessionId, key, 1))
+        assertFalse(repository.isAttemptDurable(sessionId, key, invalidAttempt.toInt()))
     }
 
     @Test

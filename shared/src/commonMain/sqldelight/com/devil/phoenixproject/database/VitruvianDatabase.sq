@@ -2030,7 +2030,7 @@ INSERT INTO CompletedSet (id, session_id, planned_set_id, routine_exercise_id, s
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 selectNextCompletedSetAttemptNumber:
-SELECT COALESCE(MAX(cs.attempt_number), 0) + 1
+SELECT COALESCE(MAX(CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END), 0) + 1
 FROM CompletedSet cs
 INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
 WHERE ws.routineSessionId = :routineSessionId
@@ -2049,7 +2049,7 @@ WHERE cs.session_id = :stableSessionId
   AND cs.routine_exercise_id = :routineExerciseId
   AND cs.set_number = :setIndex
   AND cs.set_type = :setKind
-  AND cs.attempt_number = :attemptNumber;
+  AND CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END = :attemptNumber;
 
 updateCompletedSetRpe:
 UPDATE CompletedSet SET logged_rpe = ? WHERE id = ?;

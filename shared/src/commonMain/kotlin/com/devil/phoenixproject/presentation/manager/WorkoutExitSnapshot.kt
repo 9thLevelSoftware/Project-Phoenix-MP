@@ -4,6 +4,7 @@ import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ForceCurveResult
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.SetEndReason
@@ -163,7 +164,7 @@ internal data class WorkoutExecutionContext(
     val routineName: String?,
     val cycleId: String?,
     val cycleDayNumber: Int?,
-    val routineExerciseId: String? = null,
+    val logicalSetKey: LogicalSetKey? = null,
     val attemptNumber: Int = 1,
 )
 

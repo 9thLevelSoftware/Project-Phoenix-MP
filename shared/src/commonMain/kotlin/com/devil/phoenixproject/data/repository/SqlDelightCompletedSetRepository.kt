@@ -182,7 +182,7 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
                 routine_exercise_id = set.routineExerciseId,
                 set_number = set.setNumber.toLong(),
                 set_type = set.setType.name,
-                attempt_number = set.attemptNumber.toLong(),
+                attempt_number = set.attemptNumber.coerceAtLeast(1).toLong(),
                 actual_reps = set.actualReps.toLong(),
                 actual_weight_kg = set.actualWeightKg.toDouble(),
                 logged_rpe = set.loggedRpe?.toLong(),
@@ -240,7 +240,7 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
             routine_exercise_id = completedSet.routineExerciseId,
             set_number = completedSet.setNumber.toLong(),
             set_type = completedSet.setType.name,
-            attempt_number = completedSet.attemptNumber.toLong(),
+            attempt_number = completedSet.attemptNumber.coerceAtLeast(1).toLong(),
             actual_reps = completedSet.actualReps.toLong(),
             actual_weight_kg = completedSet.actualWeightKg.toDouble(),
             logged_rpe = completedSet.loggedRpe?.toLong(),
@@ -262,7 +262,7 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
                     routine_exercise_id = set.routineExerciseId,
                     set_number = set.setNumber.toLong(),
                     set_type = set.setType.name,
-                    attempt_number = set.attemptNumber.toLong(),
+                    attempt_number = set.attemptNumber.coerceAtLeast(1).toLong(),
                     actual_reps = set.actualReps.toLong(),
                     actual_weight_kg = set.actualWeightKg.toDouble(),
                     logged_rpe = set.loggedRpe?.toLong(),
@@ -288,6 +288,7 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
         key: LogicalSetKey,
         attemptNumber: Int,
     ): Boolean = withContext(Dispatchers.IO) {
+        if (attemptNumber < 1) return@withContext false
         queries.countDurableCompletedSetAttempt(
             stableSessionId = stableSessionId,
             routineSessionId = key.routineSessionId,

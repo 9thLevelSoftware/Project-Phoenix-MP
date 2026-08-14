@@ -119,14 +119,15 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> = getCompletedSetsForExercise(exerciseId).take(limit)
 
     override suspend fun saveCompletedSet(set: CompletedSet) {
-        saveCompletedSetAttempts += set
-        beforeSaveCompletedSet(set)
-        completedSets[set.id] = set
-        completedSetsBySession.getOrPut(set.sessionId) { mutableListOf() }
-            .apply { if (!contains(set.id)) add(set.id) }
-        updateCompletedFlow(set.sessionId)
-        saved += set
-        afterSaveCompletedSet(set)
+        val canonicalSet = set.copy(attemptNumber = set.attemptNumber.coerceAtLeast(1))
+        saveCompletedSetAttempts += canonicalSet
+        beforeSaveCompletedSet(canonicalSet)
+        completedSets[canonicalSet.id] = canonicalSet
+        completedSetsBySession.getOrPut(canonicalSet.sessionId) { mutableListOf() }
+            .apply { if (!contains(canonicalSet.id)) add(canonicalSet.id) }
+        updateCompletedFlow(canonicalSet.sessionId)
+        saved += canonicalSet
+        afterSaveCompletedSet(canonicalSet)
     }
 
     override suspend fun ensureCompletedSetForTaggedJustLift(session: WorkoutSession, isAmrap: Boolean): CompletedSet? {
@@ -167,7 +168,7 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         .filter { it.routineExerciseId == key.routineExerciseId }
         .filter { it.setNumber == key.setIndex }
         .filter { it.setType == key.setKind }
-        .maxOfOrNull { it.attemptNumber }
+        .maxOfOrNull { it.attemptNumber.coerceAtLeast(1) }
         ?.plus(1)
         ?: 1
 
@@ -175,14 +176,15 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         stableSessionId: String,
         key: LogicalSetKey,
         attemptNumber: Int,
-    ): Boolean = stableSessionId !in deletedSessionIds &&
+    ): Boolean = attemptNumber >= 1 &&
+        stableSessionId !in deletedSessionIds &&
         sessionRoutineIds[stableSessionId] == key.routineSessionId &&
         completedSets.values.any {
             it.sessionId == stableSessionId &&
                 it.routineExerciseId == key.routineExerciseId &&
                 it.setNumber == key.setIndex &&
                 it.setType == key.setKind &&
-                it.attemptNumber == attemptNumber
+                it.attemptNumber.coerceAtLeast(1) == attemptNumber
         }
 
     override suspend fun updateRpe(setId: String, rpe: Int) {

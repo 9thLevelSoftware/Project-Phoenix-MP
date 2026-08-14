@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.QualityTrend
 import com.devil.phoenixproject.domain.model.RepCount
@@ -32,6 +33,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -41,7 +43,19 @@ import kotlinx.coroutines.withContext
 class WorkoutExitPersistenceTest {
 
     @Test
-    fun `routine completion persists attempt identity captured before coordinator mutation`() = runTest {
+    fun `routine completion preserves start key after set index mutation`() = runTest {
+        assertRoutineAttemptIdentityAfterMutation(mutateSetIndex = true, mutateSetKind = false)
+    }
+
+    @Test
+    fun `routine completion preserves start key after set kind mutation`() = runTest {
+        assertRoutineAttemptIdentityAfterMutation(mutateSetIndex = false, mutateSetKind = true)
+    }
+
+    private suspend fun TestScope.assertRoutineAttemptIdentityAfterMutation(
+        mutateSetIndex: Boolean,
+        mutateSetKind: Boolean,
+    ) {
         val harness = DWSMTestHarness(this)
         try {
             val routine = WorkoutStateFixtures.createTestRoutine(
@@ -57,7 +71,12 @@ class WorkoutExitPersistenceTest {
             harness.coordinator.currentRoutineSessionId = routineSessionId
             harness.coordinator.currentRoutineId = routine.id
             harness.coordinator.currentRoutineName = routine.name
-            val routineExerciseId = routine.exercises.single().id
+            val originalKey = LogicalSetKey(
+                routineSessionId = routineSessionId,
+                routineExerciseId = routine.exercises.single().id,
+                setIndex = 0,
+                setKind = SetType.STANDARD,
+            )
             listOf(1, 2).forEach { attempt ->
                 val sessionId = "historical-attempt-$attempt"
                 harness.fakeCompletedSetRepo.setSessionRoutine(sessionId, routineSessionId)
@@ -66,14 +85,14 @@ class WorkoutExitPersistenceTest {
                         id = "historical-set-$attempt",
                         sessionId = sessionId,
                         plannedSetId = null,
-                        setNumber = 0,
-                        setType = SetType.STANDARD,
+                        setNumber = originalKey.setIndex,
+                        setType = originalKey.setKind,
                         actualReps = 3,
                         actualWeightKg = 25f,
                         loggedRpe = null,
                         isPr = false,
                         completedAt = attempt.toLong(),
-                        routineExerciseId = routineExerciseId,
+                        routineExerciseId = originalKey.routineExerciseId,
                         attemptNumber = attempt,
                     ),
                 )
@@ -83,18 +102,27 @@ class WorkoutExitPersistenceTest {
             harness.dwsm.startWorkout(skipCountdown = true)
             advanceUntilIdle()
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeCompletedSetRepo.setSessionRoutine(lease.sessionId, routineSessionId)
             harness.coordinator._loadedRoutine.value = routine.copy(
                 exercises = listOf(routine.exercises.single().copy(id = "mutated-occurrence")),
             )
+            if (mutateSetIndex) harness.coordinator._currentSetIndex.value = 1
+            if (mutateSetKind) {
+                harness.coordinator._workoutParameters.value = harness.coordinator._workoutParameters.value.copy(
+                    isAMRAP = true,
+                )
+            }
             harness.coordinator._repCount.value = RepCount(workingReps = 2)
 
             harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
             advanceUntilIdle()
 
             val persisted = harness.fakeCompletedSetRepo.saved.single { it.sessionId == lease.sessionId }
-            assertEquals(routineExerciseId, persisted.routineExerciseId)
+            assertEquals(originalKey.routineExerciseId, persisted.routineExerciseId)
+            assertEquals(originalKey.setIndex, persisted.setNumber)
+            assertEquals(originalKey.setKind, persisted.setType)
             assertEquals(3, persisted.attemptNumber)
-            assertEquals(0, persisted.setNumber)
+            assertTrue(harness.fakeCompletedSetRepo.isAttemptDurable(lease.sessionId, originalKey, 3))
         } finally {
             harness.cleanup()
         }
