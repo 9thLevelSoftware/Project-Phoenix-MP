@@ -1,5 +1,10 @@
 package com.devil.phoenixproject.presentation.manager
 
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -103,14 +108,17 @@ class WorkoutExecutionGuardTest {
     fun `only one terminal path claims a stable session id`() {
         val guard = WorkoutExecutionGuard()
 
+        assertEquals(PersistenceClaimStatus.UNCLAIMED, guard.persistenceClaimStatus("session-a"))
         assertIs<PersistenceClaimResult.Claimed>(
             guard.claimPersistence("session-a", TerminalPath.AUTO_COMPLETE),
         )
+        assertEquals(PersistenceClaimStatus.IN_PROGRESS, guard.persistenceClaimStatus("session-a"))
         assertIs<PersistenceClaimResult.DuplicateInProgress>(
             guard.claimPersistence("session-a", TerminalPath.END_WORKOUT),
         )
 
         guard.markPersistenceSucceeded("session-a")
+        assertEquals(PersistenceClaimStatus.PERSISTED, guard.persistenceClaimStatus("session-a"))
         assertIs<PersistenceClaimResult.AlreadyPersisted>(
             guard.claimPersistence("session-a", TerminalPath.END_WORKOUT),
         )
@@ -122,9 +130,46 @@ class WorkoutExecutionGuardTest {
         guard.claimPersistence("session-a", TerminalPath.MANUAL_STOP)
         guard.markPersistenceFailed("session-a")
 
+        assertEquals(PersistenceClaimStatus.FAILED, guard.persistenceClaimStatus("session-a"))
         assertIs<PersistenceClaimResult.Claimed>(
             guard.claimPersistence("session-a", TerminalPath.END_WORKOUT),
         )
+        assertEquals(PersistenceClaimStatus.IN_PROGRESS, guard.persistenceClaimStatus("session-a"))
+    }
+
+    @Test
+    fun `failed persistence claim has exactly one atomic reclaimer`() = kotlinx.coroutines.test.runTest {
+        val guard = WorkoutExecutionGuard()
+        guard.claimPersistence("session-a", TerminalPath.AUTO_COMPLETE)
+        guard.markPersistenceFailed("session-a")
+        val start = CompletableDeferred<Unit>()
+
+        val claims = coroutineScope {
+            List(16) {
+                async(Dispatchers.Default) {
+                    start.await()
+                    guard.claimPersistence("session-a", TerminalPath.END_WORKOUT)
+                }
+            }.also { start.complete(Unit) }.awaitAll()
+        }
+
+        assertEquals(1, claims.count { it is PersistenceClaimResult.Claimed })
+        assertEquals(15, claims.count { it is PersistenceClaimResult.DuplicateInProgress })
+        assertEquals(PersistenceClaimStatus.IN_PROGRESS, guard.persistenceClaimStatus("session-a"))
+    }
+
+    @Test
+    fun `persistence status is isolated by stable session id`() {
+        val guard = WorkoutExecutionGuard()
+
+        guard.claimPersistence("session-a", TerminalPath.AUTO_COMPLETE)
+        guard.markPersistenceFailed("session-a")
+        guard.claimPersistence("session-b", TerminalPath.END_WORKOUT)
+        guard.markPersistenceSucceeded("session-b")
+
+        assertEquals(PersistenceClaimStatus.FAILED, guard.persistenceClaimStatus("session-a"))
+        assertEquals(PersistenceClaimStatus.PERSISTED, guard.persistenceClaimStatus("session-b"))
+        assertEquals(PersistenceClaimStatus.UNCLAIMED, guard.persistenceClaimStatus("session-c"))
     }
 
     @Test

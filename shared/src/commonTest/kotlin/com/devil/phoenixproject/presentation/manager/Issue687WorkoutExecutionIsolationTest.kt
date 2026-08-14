@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -229,7 +230,13 @@ class Issue687WorkoutExecutionIsolationTest {
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
             harness.fakeWorkoutRepo.beforeSaveSession = { releasePersistence.await() }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
 
@@ -260,7 +267,10 @@ class Issue687WorkoutExecutionIsolationTest {
             runCurrent()
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
 
-            harness.activeSessionEngine.handleSetCompletion(lease)
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+            )
             runCurrent()
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
 
@@ -270,6 +280,85 @@ class Issue687WorkoutExecutionIsolationTest {
             assertEquals(1, harness.fakeCompletedSetRepo.saved.count { it.sessionId == lease.sessionId })
         } finally {
             releasePersistence.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `auto completion A reason cannot bleed into B while A persistence is suspended`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releasePersistenceA = CompletableDeferred<Unit>()
+        try {
+            startCableSet(harness, targetReps = 8, completedReps = 2)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeWorkoutRepo.beforeSaveSession = { session ->
+                if (session.id == leaseA.sessionId) releasePersistenceA.await()
+            }
+
+            harness.activeSessionEngine.handleSetCompletion(leaseA, SetEndReason.STALL_FAILURE)
+            runCurrent()
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+            assertEquals(MachineTeardownState.Ready, harness.dwsm.machineTeardownState.value)
+
+            startCableSet(harness, targetReps = 8, completedReps = 2)
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(leaseB, SetEndReason.VBT_AUTO_END)
+            runCurrent()
+
+            releasePersistenceA.complete(Unit)
+            advanceUntilIdle()
+
+            assertNotEquals(leaseA.sessionId, leaseB.sessionId)
+            assertEquals(
+                SetEndReason.STALL_FAILURE,
+                harness.fakeCompletedSetRepo.getCompletedSets(leaseA.sessionId).single().setEndReason,
+            )
+            assertEquals(
+                SetEndReason.VBT_AUTO_END,
+                harness.fakeCompletedSetRepo.getCompletedSets(leaseB.sessionId).single().setEndReason,
+            )
+        } finally {
+            releasePersistenceA.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `End Workout A reason cannot bleed into B while A persistence is suspended`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releasePersistenceA = CompletableDeferred<Unit>()
+        try {
+            startCableSet(harness, targetReps = 8, completedReps = 2)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeWorkoutRepo.beforeSaveSession = { session ->
+                if (session.id == leaseA.sessionId) releasePersistenceA.await()
+            }
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+            assertEquals(MachineTeardownState.Ready, harness.dwsm.machineTeardownState.value)
+
+            startCableSet(harness, targetReps = 8, completedReps = 2)
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(leaseA, SetEndReason.STALL_FAILURE)
+            harness.activeSessionEngine.handleSetCompletion(leaseB, SetEndReason.TARGET_REPS_REACHED)
+            runCurrent()
+
+            releasePersistenceA.complete(Unit)
+            advanceUntilIdle()
+
+            assertNotEquals(leaseA.sessionId, leaseB.sessionId)
+            assertEquals(
+                SetEndReason.USER_STOPPED,
+                harness.fakeCompletedSetRepo.getCompletedSets(leaseA.sessionId).single().setEndReason,
+            )
+            assertEquals(
+                SetEndReason.TARGET_REPS_REACHED,
+                harness.fakeCompletedSetRepo.getCompletedSets(leaseB.sessionId).single().setEndReason,
+            )
+        } finally {
+            releasePersistenceA.complete(Unit)
             harness.cleanup()
         }
     }

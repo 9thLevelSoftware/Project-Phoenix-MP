@@ -76,6 +76,7 @@ import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.WorkoutCommandValidator
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.roundToInt
+import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
@@ -155,6 +156,7 @@ class ActiveSessionEngine(
     private val connectionLogRepository = ConnectionLogRepository.instance
     internal val executionGuard = WorkoutExecutionGuard(::logExecutionEvent)
     private var executionContext: WorkoutExecutionContext? = null
+    private val pendingBodyweightCompletion = atomic<SetExecutionCompletion?>(null)
     private val exitSnapshotStore = WorkoutExitSnapshotStore()
     private val repFreshnessGate: RepNotificationFreshnessGate
         get() = executionGuard.repFreshnessGate
@@ -165,6 +167,9 @@ class ActiveSessionEngine(
     internal fun currentExecutionLeaseForTest(): ExecutionLease = requireNotNull(executionGuard.currentLease)
 
     internal fun currentExecutionLeaseOrNull(): ExecutionLease? = executionGuard.currentLease
+
+    // Test-only seam for reaching the existing danger-zone terminal after its preceding reset.
+    internal var dangerZoneCountdownStartTimeForTest: Long? = null
 
     internal fun isCurrentExecution(lease: ExecutionLease): Boolean = executionGuard.isCurrent(lease)
 
@@ -658,14 +663,12 @@ class ActiveSessionEngine(
                             coordinator.stallStartTime = currentTimeMillis()
                             coordinator.isCurrentlyStalled = true
                             coordinator.stallArmedByDeload = true
-                            coordinator.autoStopReason = SetEndReason.CABLE_RELEASED
                             Logger.d("Auto-stop stall timer STARTED via DELOAD_OCCURRED flag")
                         } else if (coordinator.stallStartTime != null && !inGrace) {
                             // F4: a real deload is the stronger signal — upgrade a
                             // velocity-armed countdown so the retracting cables
                             // (position -> 0) don't cancel it via the racked-handles check.
                             coordinator.stallArmedByDeload = true
-                            coordinator.autoStopReason = SetEndReason.CABLE_RELEASED
                         } else if (inGrace) {
                             Logger.d("DELOAD_OCCURRED ignored - in AMRAP startup grace period")
                         }
@@ -1122,6 +1125,10 @@ class ActiveSessionEngine(
 
     fun confirmBodyweightSetResult(reps: Int, variant: BodyweightVariantOption) {
         val entry = coordinator._workoutState.value as? WorkoutState.BodyweightRepEntry ?: return
+        val completion = pendingBodyweightCompletion.value
+            ?.takeIf { executionGuard.isCurrent(it.lease) }
+            ?: return
+        if (!pendingBodyweightCompletion.compareAndSet(completion, null)) return
         val coercedReps = reps.coerceAtLeast(0)
         selectBodyweightVariant(entry.exerciseKey, variant)
         coordinator.bodyweightCompletionVariantOverride = variant
@@ -1130,10 +1137,7 @@ class ActiveSessionEngine(
             totalReps = coercedReps,
             isWarmupComplete = true,
         )
-        val preservedReason = coordinator.lastSetEndReason.takeIf {
-            it != SetEndReason.TARGET_REPS_REACHED
-        } ?: SetEndReason.TARGET_REPS_REACHED
-        handleSetCompletion(preservedReason)
+        handleSetCompletion(completion, TeardownReason.AUTO_COMPLETE)
     }
 
     private suspend fun showBodyweightRepEntry(currentExercise: RoutineExercise) {
@@ -1189,7 +1193,6 @@ class ActiveSessionEngine(
         coordinator.stallStartTime = null
         coordinator.isCurrentlyStalled = false
         coordinator.stallArmedByDeload = false
-        coordinator.autoStopReason = SetEndReason.STALL_FAILURE
         if (coordinator.autoStopStartTime == null && !coordinator.autoStopTriggered) {
             coordinator._autoStopState.value = AutoStopUiState()
         }
@@ -1255,16 +1258,18 @@ class ActiveSessionEngine(
     /**
      * Request auto-stop (thread-safe, only triggers once).
      */
-    private fun requestAutoStop() {
+    private fun requestAutoStop(lease: ExecutionLease, reason: SetEndReason) {
+        if (!executionGuard.isCurrent(lease)) return
         if (coordinator.autoStopStopRequested) return
         coordinator.autoStopStopRequested = true
-        triggerAutoStop()
+        triggerAutoStop(lease, reason)
     }
 
     /**
      * Trigger auto-stop and handle set completion.
      */
-    private fun triggerAutoStop() {
+    private fun triggerAutoStop(lease: ExecutionLease, reason: SetEndReason) {
+        if (!executionGuard.isCurrent(lease)) return
         Logger.d("triggerAutoStop() called")
         coordinator.autoStopTriggered = true
 
@@ -1278,7 +1283,7 @@ class ActiveSessionEngine(
             coordinator._autoStopState.value = AutoStopUiState()
         }
 
-        handleSetCompletion(coordinator.autoStopReason)
+        handleSetCompletion(lease, reason)
     }
 
     // ===== Rep Processing =====
@@ -1638,7 +1643,9 @@ class ActiveSessionEngine(
 
             if (consecutiveThresholdReps >= 2 && runtime.autoEndOnVelocityLoss) {
                 Logger.i { "VBT: Auto-ending set — $consecutiveThresholdReps consecutive reps above threshold" }
-                handleSetCompletion(SetEndReason.VBT_AUTO_END)
+                executionGuard.currentLease?.let { lease ->
+                    handleSetCompletion(lease, SetEndReason.VBT_AUTO_END)
+                }
             }
         } else {
             consecutiveThresholdReps = 0
@@ -1680,14 +1687,16 @@ class ActiveSessionEngine(
 
             if (shouldEnableAutoStop(params)) {
                 Logger.d { "Issue203 DEBUG: checkAutoStop called - isJustLift=${params.isJustLift}, isAMRAP=${params.isAMRAP}, isTimedCable=$coordinator.isCurrentTimedCableExercise, setIndex=${coordinator._currentSetIndex.value}" }
-                checkAutoStop(metric)
+                executionGuard.currentLease?.let { lease -> checkAutoStop(lease, metric) }
             } else {
                 resetAutoStopTimer()
                 resetStallTimer()
             }
 
             if (repCounter.shouldStopWorkout()) {
-                handleSetCompletion(SetEndReason.TARGET_REPS_REACHED)
+                executionGuard.currentLease?.let { lease ->
+                    handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+                }
             }
         } else {
             resetAutoStopTimer()
@@ -1697,7 +1706,8 @@ class ActiveSessionEngine(
     /**
      * Check if auto-stop should be triggered based on velocity stall detection OR position-based detection.
      */
-    private fun checkAutoStop(metric: WorkoutMetric) {
+    private fun checkAutoStop(lease: ExecutionLease, metric: WorkoutMetric) {
+        if (!executionGuard.isCurrent(lease)) return
         if (coordinator._workoutState.value !is WorkoutState.Active) {
             resetAutoStopTimer()
             resetStallTimer()
@@ -1767,7 +1777,12 @@ class ActiveSessionEngine(
                 val stallElapsed = (currentTimeMillis() - startTime) / 1000f
 
                 if (stallElapsed >= WorkoutCoordinator.STALL_DURATION_SECONDS && !coordinator.autoStopTriggered) {
-                    requestAutoStop()
+                    val terminalReason = if (coordinator.stallArmedByDeload) {
+                        SetEndReason.CABLE_RELEASED
+                    } else {
+                        SetEndReason.STALL_FAILURE
+                    }
+                    requestAutoStop(lease, terminalReason)
                     return
                 }
 
@@ -1816,7 +1831,7 @@ class ActiveSessionEngine(
             }
 
             if (elapsed >= WorkoutCoordinator.AUTO_STOP_DURATION_SECONDS && !coordinator.autoStopTriggered) {
-                requestAutoStop()
+                requestAutoStop(lease, SetEndReason.CABLE_RELEASED)
             }
             return
         } else if (handlesCompletelyAtRest && inGraceForPositionBased) {
@@ -1826,6 +1841,10 @@ class ActiveSessionEngine(
             resetAutoStopTimer()
         }
 
+        dangerZoneCountdownStartTimeForTest?.let { startTime ->
+            coordinator.autoStopStartTime = startTime
+            dangerZoneCountdownStartTimeForTest = null
+        }
         val inDangerZone = repCounter.isInDangerZone(metric.positionA, metric.positionB, WorkoutCoordinator.MIN_RANGE_THRESHOLD)
         val repRanges = repCounter.getRepRanges()
 
@@ -1883,7 +1902,7 @@ class ActiveSessionEngine(
             }
 
             if (elapsed >= WorkoutCoordinator.AUTO_STOP_DURATION_SECONDS && !coordinator.autoStopTriggered) {
-                requestAutoStop()
+                requestAutoStop(lease, SetEndReason.CABLE_RELEASED)
             }
         } else {
             resetAutoStopTimer()
@@ -2343,6 +2362,7 @@ class ActiveSessionEngine(
         cancelJustLiftEggTimer()
         interruptedSetRecovery = null
         pendingStartOverride = null
+        pendingBodyweightCompletion.value = null
         coordinator.currentSessionId = null
         coordinator.workoutStartTime = 0
         coordinator.collectedMetrics.value = emptyList()
@@ -2809,6 +2829,9 @@ class ActiveSessionEngine(
 
     private fun failStart(lease: ExecutionLease, priorWorkoutState: WorkoutState) {
         if (!executionGuard.invalidate(lease, ExecutionInvalidationReason.START_FAILED)) return
+        if (pendingBodyweightCompletion.value?.lease == lease) {
+            pendingBodyweightCompletion.value = null
+        }
         executionGuard.cancelPresentationJobsFor(lease)
         repFreshnessGate.invalidate(lease)
         if (coordinator.currentSessionId == lease.sessionId) {
@@ -2890,6 +2913,7 @@ class ActiveSessionEngine(
         }
         if (outgoingLease != null) {
             executionGuard.cancelPresentationJobsFor(outgoingLease)
+            pendingBodyweightCompletion.value = null
         }
         retryRetainedWorkoutExitPersistence()
         executionContext = null
@@ -2911,7 +2935,7 @@ class ActiveSessionEngine(
         coordinator._latestRepQuality.value = null
         // F3 (stall-detection audit): a set start must never inherit the previous
         // set's biomech/VBT state. The Phase 35C variable warm-up fast path in
-        // handleSetCompletion() returns early — before its biomech/VBT reset block —
+        // handleSetCompletion returns early — before its biomech/VBT reset block —
         // so a warm-up set's firstRepMcv (at a fraction of working weight) and the
         // one-shot VBT alert flags leaked into the first working set. Resetting here
         // covers every set-start path; the handleSetCompletion resets remain (they
@@ -3426,20 +3450,21 @@ class ActiveSessionEngine(
     }
 
     private fun captureExitSnapshot(
-        lease: ExecutionLease,
+        completion: SetExecutionCompletion,
         terminalPath: TerminalPath,
     ): WorkoutExitSnapshot = exitSnapshotStore.getOrCapture(
-        lease = lease,
+        completion = completion,
         terminalPath = terminalPath,
         onInstalled = ::applyRoutineBookkeepingAtCapture,
     ) {
-        buildExitSnapshot(lease, terminalPath)
+        buildExitSnapshot(completion, terminalPath)
     }
 
     private fun buildExitSnapshot(
-        lease: ExecutionLease,
+        completion: SetExecutionCompletion,
         terminalPath: TerminalPath,
     ): WorkoutExitSnapshot {
+        val lease = completion.lease
         val params = coordinator._workoutParameters.value
         val repCount = coordinator._repCount.value
         val metrics = coordinator.collectedMetrics.value.toList()
@@ -3556,7 +3581,7 @@ class ActiveSessionEngine(
                 loggedRpe = coordinator._currentSetRpe.value,
                 isPr = false,
                 completedAt = wallClockMillisProvider(),
-                setEndReason = coordinator.lastSetEndReason,
+                setEndReason = completion.reason,
             )
         } else {
             null
@@ -3576,6 +3601,7 @@ class ActiveSessionEngine(
         )
         return WorkoutExitSnapshot(
             lease = lease,
+            completion = completion,
             terminalPath = terminalPath,
             session = session,
             completedSet = completedSet,
@@ -3623,7 +3649,8 @@ class ActiveSessionEngine(
     }
 
     private fun launchSnapshotPersistence(snapshot: WorkoutExitSnapshot) {
-        when (executionGuard.claimPersistence(snapshot.session.id, snapshot.terminalPath)) {
+        val stableSessionId = snapshot.completion.lease.sessionId
+        when (executionGuard.claimPersistence(stableSessionId, snapshot.terminalPath)) {
             PersistenceClaimResult.Claimed -> scope.launch { persistSnapshot(snapshot) }
 
             PersistenceClaimResult.DuplicateInProgress,
@@ -3640,7 +3667,8 @@ class ActiveSessionEngine(
 
     internal fun retryWorkoutExitPersistence(sessionId: String): Boolean {
         val snapshot = exitSnapshotStore.findBySessionId(sessionId) ?: return false
-        return when (executionGuard.claimPersistence(sessionId, snapshot.terminalPath)) {
+        val stableSessionId = snapshot.completion.lease.sessionId
+        return when (executionGuard.claimPersistence(stableSessionId, snapshot.terminalPath)) {
             PersistenceClaimResult.Claimed -> {
                 scope.launch { persistSnapshot(snapshot) }
                 true
@@ -3653,7 +3681,10 @@ class ActiveSessionEngine(
     }
 
     private suspend fun persistSnapshot(snapshot: WorkoutExitSnapshot) {
-        val sessionId = snapshot.session.id
+        val sessionId = snapshot.completion.lease.sessionId
+        require(snapshot.session.id == sessionId) {
+            "Workout exit snapshot session must match its completion lease"
+        }
         try {
             if (workoutRepository.getSession(sessionId) == null) {
                 workoutRepository.saveSession(snapshot.session)
@@ -3783,22 +3814,22 @@ class ActiveSessionEngine(
         // C1: Atomic compareAndSet prevents TOCTOU race — only the first caller proceeds
         if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
 
-        coordinator.lastSetEndReason = SetEndReason.USER_STOPPED
-
         val lease = executionGuard.currentLease
-        if (exitingWorkout && lease != null) {
-            val snapshot = captureExitSnapshot(lease, TerminalPath.END_WORKOUT)
+        val completion = lease?.let { SetExecutionCompletion(it, SetEndReason.USER_STOPPED) }
+        pendingBodyweightCompletion.value = null
+        if (exitingWorkout && completion != null) {
+            val snapshot = captureExitSnapshot(completion, TerminalPath.END_WORKOUT)
             executionGuard.invalidateCurrent(ExecutionInvalidationReason.END_WORKOUT)
-            cancelSetOwnedPresentationJobs(lease)
+            cancelSetOwnedPresentationJobs(completion.lease)
             detachEndedRoutineFromCoordinator()
             coordinator._workoutState.value = WorkoutState.Idle
             coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
             launchSnapshotPersistence(snapshot)
-            beginMachineTeardown(lease, TeardownReason.END_WORKOUT)
+            beginMachineTeardown(completion.lease, TeardownReason.END_WORKOUT)
             return
         }
 
-        val manualSnapshot = lease?.let { captureExitSnapshot(it, TerminalPath.MANUAL_STOP) }
+        val manualSnapshot = completion?.let { captureExitSnapshot(it, TerminalPath.MANUAL_STOP) }
         manualSnapshot?.let(::launchSnapshotPersistence)
         val shouldExitToIdle = exitingWorkout
         coordinator._weightAdjustmentRecommendation.value = null
@@ -3978,7 +4009,7 @@ class ActiveSessionEngine(
                         loggedRpe = coordinator._currentSetRpe.value,
                         isPr = false,
                         completedAt = currentTimeMillis(),
-                        setEndReason = coordinator.lastSetEndReason,
+                        setEndReason = SetEndReason.USER_STOPPED,
                     )
                     completedSetRepository.saveCompletedSet(completedSet)
                     Logger.d("Saved CompletedSet (manual stop): set #$setIndex, ${repCount.workingReps} reps${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
@@ -3998,7 +4029,7 @@ class ActiveSessionEngine(
                     sessionMcvMmS = session.avgMcvMmS,
                 )
 
-                // Reset biomechanics engine after manual-stop — mirrors handleSetCompletion() (~line 3821).
+                // Reset biomechanics engine after manual-stop — mirrors handleSetCompletion (~line 3821).
                 // Safe: processPostSaveEvents() is the last consumer of bioSummary/session.avgMcvMmS;
                 // nothing below this point reads bioSummary or calls getSetSummary().
                 coordinator.biomechanicsEngine.reset()
@@ -4079,7 +4110,9 @@ class ActiveSessionEngine(
             Logger.d { "stopAndReturnToSetReady: Issue #320 - workingReps=${coordinator._repCount.value.workingReps} > 0, routing through handleSetCompletion to save reps and advance" }
             // Release stop guard before delegating — handleSetCompletion uses its own atomic guard (setCompletionInProgress)
             coordinator.stopWorkoutInProgress.value = false
-            handleSetCompletion(SetEndReason.USER_STOPPED)
+            executionGuard.currentLease?.let { lease ->
+                handleSetCompletion(lease, SetEndReason.USER_STOPPED)
+            }
             return
         }
 
@@ -4094,6 +4127,7 @@ class ActiveSessionEngine(
         cancelJustLiftEggTimer()
 
         val lease = executionGuard.currentLease
+        pendingBodyweightCompletion.value = null
         // Leave this armed after a successful Stop Set so Idle routing cannot race the
         // SetReady observer; startWorkout() releases it when the user retries the set.
         var returnedToSetReady = false
@@ -4147,6 +4181,7 @@ class ActiveSessionEngine(
     fun stopAndSkipCurrentExercise() {
         // C1: Atomic compareAndSet prevents TOCTOU race
         if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
+        pendingBodyweightCompletion.value = null
 
         val skippedExerciseIndex = coordinator._currentExerciseIndex.value
         val skippedSetIndex = coordinator._currentSetIndex.value
@@ -4456,7 +4491,7 @@ class ActiveSessionEngine(
     /**
      * Save workout session to database and check for personal records.
      */
-    private suspend fun saveWorkoutSession() {
+    private suspend fun saveWorkoutSession(completion: SetExecutionCompletion) {
         val sessionId = coordinator.currentSessionId
         if (sessionId == null) {
             Logger.e {
@@ -4617,7 +4652,7 @@ class ActiveSessionEngine(
                 loggedRpe = coordinator._currentSetRpe.value,
                 isPr = false,
                 completedAt = currentTimeMillis(),
-                setEndReason = coordinator.lastSetEndReason,
+                setEndReason = completion.reason,
             )
             completedSetRepository.saveCompletedSet(completedSet)
             Logger.d("Saved CompletedSet: set #$setIndex, $working reps @ ${savedWeightKg}kg${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
@@ -4685,30 +4720,24 @@ class ActiveSessionEngine(
      */
     internal fun handleSetCompletion(
         lease: ExecutionLease,
-        endReason: SetEndReason = SetEndReason.TARGET_REPS_REACHED,
+        endReason: SetEndReason,
     ) {
         if (!executionGuard.isCurrent(lease)) return
-        handleSetCompletion(lease, TeardownReason.AUTO_COMPLETE, endReason)
-    }
-
-    internal fun handleSetCompletion(endReason: SetEndReason = SetEndReason.TARGET_REPS_REACHED) {
-        val lease = executionGuard.currentLease ?: return
-        handleSetCompletion(lease, TeardownReason.AUTO_COMPLETE, endReason)
+        if (pendingBodyweightCompletion.value?.let { executionGuard.isCurrent(it.lease) } == true) return
+        handleSetCompletion(SetExecutionCompletion(lease, endReason), TeardownReason.AUTO_COMPLETE)
     }
 
     private fun handleSetCompletion(
-        lease: ExecutionLease,
+        completion: SetExecutionCompletion,
         reason: TeardownReason,
-        endReason: SetEndReason,
     ) {
+        val lease = completion.lease
         if (!executionGuard.isCurrent(lease)) return
         // 1.2: Atomic compareAndSet prevents duplicate set completion across dispatchers
         if (!coordinator.setCompletionInProgress.compareAndSet(expect = false, update = true)) {
             Logger.d("handleSetCompletion: already in progress - ignoring")
             return
         }
-
-        coordinator.lastSetEndReason = endReason
 
         // Issue #319: Log full context at entry so we can diagnose what the pipeline receives
         val repCount = coordinator._repCount.value
@@ -4743,9 +4772,12 @@ class ActiveSessionEngine(
         val isWarmupTransition = coordinator._currentWarmupSetIndex.value >= 0 &&
             currentExerciseAtCapture != null
         val terminalSnapshot = if (shouldPromptBodyweightAtCapture || isWarmupTransition) {
+            if (shouldPromptBodyweightAtCapture) {
+                pendingBodyweightCompletion.compareAndSet(null, completion)
+            }
             null
         } else {
-            captureExitSnapshot(lease, TerminalPath.AUTO_COMPLETE).also(::launchSnapshotPersistence)
+            captureExitSnapshot(completion, TerminalPath.AUTO_COMPLETE).also(::launchSnapshotPersistence)
         }
         beginMachineTeardown(lease, teardownReason) {
             launchCompletionJob(lease) {
@@ -4764,7 +4796,7 @@ class ActiveSessionEngine(
                 // Issue #593: gate on "any routine bodyweight set whose reps have not been
                 // confirmed via the rep-entry dialog". The pre-#593 check `currentExercise.duration
                 // > 0` caused every default-reps-mode routine (duration == null) to fall through
-                // `handleSetCompletion()` to `saveWorkoutSession()` with `workingReps=0`. The
+                // `handleSetCompletion` to `saveWorkoutSession()` with `workingReps=0`. The
                 // user had no UI path to enter their actual rep count, so PR #592's
                 // history-visible filter then dropped the entire routine from Analytics while
                 // Home Recent Activity surfaced the misleading "0 reps · <load>" rows.
@@ -4855,7 +4887,7 @@ class ActiveSessionEngine(
                 coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
                 if (!hasCurrentAuthority(lease, "completion_after_workout_end_haptic")) return@launchCompletionJob
                 val snapshot = terminalSnapshot
-                    ?: captureExitSnapshot(lease, TerminalPath.AUTO_COMPLETE)
+                    ?: captureExitSnapshot(completion, TerminalPath.AUTO_COMPLETE)
                 coordinator.setRepMetrics.value = emptyList()
                 val biomechanicsSummary = snapshot.presentationSummary.biomechanicsSummary
                 val qualitySummary = snapshot.presentationSummary.qualitySummary
@@ -4967,13 +4999,13 @@ class ActiveSessionEngine(
 
                     if (skipSummary) {
                         Logger.d("AMRAP: Summary OFF - skipping summary, proceeding to rest timer")
-                        startRestTimer(lease)
+                        startRestTimer(completion)
                     } else if (summaryDelayMs > 0) {
                         delay(summaryDelayMs)
                         if (!hasCurrentAuthority(lease, "amrap_summary_delay")) return@launchCompletionJob
 
                         if (coordinator._workoutState.value is WorkoutState.SetSummary) {
-                            startRestTimer(lease)
+                            startRestTimer(completion)
                         }
                     } else {
                         Logger.d("AMRAP: Summary Unlimited - waiting for user action")
@@ -4988,7 +5020,7 @@ class ActiveSessionEngine(
 
                         Logger.d("Routine mode: Parent-aligned - no polling restart/auto-start during rest")
 
-                        startRestTimer(lease)
+                        startRestTimer(completion)
                     } else if (summaryDelayMs > 0 && !isSingleExerciseMode(coordinator)) {
                         // Issue #320: Auto-advance from summary via proceedFromSummary() which handles
                         // full bookkeeping: clearing RPE, marking exercises completed, checking routine
@@ -5003,7 +5035,7 @@ class ActiveSessionEngine(
                                     Logger.w("Issue #320: flowDelegate null, falling back to direct startRestTimer")
                                     repCounter.reset()
                                     resetAutoStopState()
-                                    startRestTimer(lease)
+                                    startRestTimer(completion)
                                 }
                         }
                     } else {
@@ -5120,6 +5152,10 @@ class ActiveSessionEngine(
 
     internal fun startRestTimer(lease: ExecutionLease) {
         startRestTimerFor(lease)
+    }
+
+    private fun startRestTimer(completion: SetExecutionCompletion) {
+        startRestTimerFor(completion.lease)
     }
 
     private fun startRestTimerFor(lease: ExecutionLease?) {
@@ -6001,6 +6037,7 @@ class ActiveSessionEngine(
     // ===== Cleanup =====
 
     fun cleanup() {
+        pendingBodyweightCompletion.value = null
         val lease = executionGuard.invalidateCurrent(ExecutionInvalidationReason.CLEANUP)
         if (lease != null) {
             repFreshnessGate.invalidate(lease)

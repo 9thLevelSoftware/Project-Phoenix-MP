@@ -1925,7 +1925,13 @@ class DWSMWorkoutLifecycleTest {
             ),
         )
 
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+        )
         advanceUntilIdle()
 
         val prUpdate = harness.fakePRRepo.updateCalls.single()
@@ -1993,7 +1999,13 @@ class DWSMWorkoutLifecycleTest {
             ),
         )
 
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+        )
         advanceUntilIdle()
 
         val session = harness.fakeWorkoutRepo.getAllSessions("default").first().first()
@@ -2063,7 +2075,13 @@ class DWSMWorkoutLifecycleTest {
             ),
         )
 
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+        )
         advanceUntilIdle()
 
         val prUpdate = harness.fakePRRepo.updateCalls.single()
@@ -2301,7 +2319,7 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `Issue 427 - untimed bodyweight set prompts for manual reps after 30s fallback timer - Fixes 593`() = runTest {
         // Issue #593 regression: pre-fix, an untimed routine-bodyweight
-        // set fell through `handleSetCompletion()` to `saveWorkoutSession()`
+        // set fell through `handleSetCompletion` to `saveWorkoutSession()`
         // with `workingReps=0`, causing Analytics to drop the entire
         // routine while Recent Activity showed misleading "0 reps" rows.
         // The fix extends the rep-entry gate to any routine-bodyweight
@@ -2623,7 +2641,10 @@ class DWSMWorkoutLifecycleTest {
         )
 
         // Trigger handleSetCompletion (stall auto-stop path)
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.STALL_FAILURE,
+        )
         // Use advanceTimeBy (not advanceUntilIdle) — the handleSetCompletion coroutine
         // does delay(summaryDelayMs) then startRestTimer() which has an infinite tick loop.
         // 1s is enough for BLE stop + session save + summary state transition.

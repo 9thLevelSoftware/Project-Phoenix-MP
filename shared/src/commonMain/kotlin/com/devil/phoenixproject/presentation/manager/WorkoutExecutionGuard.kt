@@ -75,6 +75,13 @@ internal sealed interface PersistenceClaimResult {
     data object AlreadyPersisted : PersistenceClaimResult
 }
 
+internal enum class PersistenceClaimStatus {
+    UNCLAIMED,
+    IN_PROGRESS,
+    PERSISTED,
+    FAILED,
+}
+
 internal data class RecoveryAttempt(
     val lease: ExecutionLease,
     val attempt: Int,
@@ -89,7 +96,7 @@ internal class WorkoutExecutionGuard(
     private val invalidatedLeaseRef = atomic<ExecutionLease?>(null)
     private val teardownLock = Any()
     private val persistenceLock = Any()
-    private val persistedClaims = LinkedHashMap<String, PersistenceClaimState>()
+    private val persistedClaims = LinkedHashMap<String, PersistenceClaimStatus>()
 
     private var teardownLease: ExecutionLease? = null
     private var teardownAttempt = 0
@@ -304,33 +311,37 @@ internal class WorkoutExecutionGuard(
 
     fun claimPersistence(sessionId: String, path: TerminalPath): PersistenceClaimResult = withPlatformLock(persistenceLock) {
         when (persistedClaims[sessionId]) {
-            null -> {
-                persistedClaims[sessionId] = PersistenceClaimState.InProgress
+            null, PersistenceClaimStatus.UNCLAIMED, PersistenceClaimStatus.FAILED -> {
+                persistedClaims[sessionId] = PersistenceClaimStatus.IN_PROGRESS
                 log(LogEventType.WORKOUT_PERSISTENCE, "sessionId=$sessionId,transition=claimed,path=$path")
                 PersistenceClaimResult.Claimed
             }
-            PersistenceClaimState.InProgress -> PersistenceClaimResult.DuplicateInProgress
-            PersistenceClaimState.Persisted -> PersistenceClaimResult.AlreadyPersisted
+            PersistenceClaimStatus.IN_PROGRESS -> PersistenceClaimResult.DuplicateInProgress
+            PersistenceClaimStatus.PERSISTED -> PersistenceClaimResult.AlreadyPersisted
         }
     }
 
+    fun persistenceClaimStatus(sessionId: String): PersistenceClaimStatus = withPlatformLock(persistenceLock) {
+        persistedClaims[sessionId] ?: PersistenceClaimStatus.UNCLAIMED
+    }
+
     fun markPersistenceSucceeded(sessionId: String) = withPlatformLock(persistenceLock) {
-        if (persistedClaims[sessionId] == PersistenceClaimState.InProgress) {
+        if (persistedClaims[sessionId] == PersistenceClaimStatus.IN_PROGRESS) {
             persistedClaims.remove(sessionId)
-            persistedClaims[sessionId] = PersistenceClaimState.Persisted
+            persistedClaims[sessionId] = PersistenceClaimStatus.PERSISTED
             log(LogEventType.WORKOUT_PERSISTENCE, "sessionId=$sessionId,transition=persisted")
         }
     }
 
     fun markPersistenceFailed(sessionId: String) = withPlatformLock(persistenceLock) {
-        if (persistedClaims[sessionId] == PersistenceClaimState.InProgress) {
-            persistedClaims.remove(sessionId)
+        if (persistedClaims[sessionId] == PersistenceClaimStatus.IN_PROGRESS) {
+            persistedClaims[sessionId] = PersistenceClaimStatus.FAILED
             log(LogEventType.WORKOUT_PERSISTENCE, "sessionId=$sessionId,transition=failed")
         }
     }
 
     fun prunePersistedClaims(retainNewest: Int = 32) = withPlatformLock(persistenceLock) {
-        val persistedSessionIds = persistedClaims.filterValues { it == PersistenceClaimState.Persisted }.keys
+        val persistedSessionIds = persistedClaims.filterValues { it == PersistenceClaimStatus.PERSISTED }.keys
         val toRemove = (persistedSessionIds.size - retainNewest.coerceAtLeast(0)).coerceAtLeast(0)
         persistedSessionIds.take(toRemove).forEach(persistedClaims::remove)
     }
@@ -346,8 +357,4 @@ internal class WorkoutExecutionGuard(
         }
     }
 
-    private enum class PersistenceClaimState {
-        InProgress,
-        Persisted,
-    }
 }

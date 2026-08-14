@@ -352,7 +352,10 @@ class WorkoutMachineTeardownTest {
             harness.fakeBleRepo.commandsReceived.clear()
             harness.fakeBleRepo.stopWorkoutBlock = { resetResult.await() }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+            )
             runCurrent()
 
             assertEquals(0, harness.coordinator.currentWarmupSetIndex.value)

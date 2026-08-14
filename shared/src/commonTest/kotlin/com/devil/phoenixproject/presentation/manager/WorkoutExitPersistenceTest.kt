@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepQualityScore
 import com.devil.phoenixproject.domain.model.SetQualitySummary
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutMetric
@@ -86,7 +87,10 @@ class WorkoutExitPersistenceTest {
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
             harness.fakeBleRepo.stopWorkoutBlock = { Result.failure(IllegalStateException("reset failed")) }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                SetEndReason.TARGET_REPS_REACHED,
+            )
             advanceUntilIdle()
 
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
@@ -106,7 +110,13 @@ class WorkoutExitPersistenceTest {
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
             harness.fakeBleRepo.stopWorkoutBlock = { neverReset.await() }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
 
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
@@ -127,7 +137,13 @@ class WorkoutExitPersistenceTest {
             startTrackedCableSet(harness)
             harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
 
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.size)
@@ -161,7 +177,10 @@ class WorkoutExitPersistenceTest {
             val saved = harness.fakeWorkoutRepo.saveSessionAttempts.single()
             assertEquals(lease.sessionId, saved.id)
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                SetEndReason.TARGET_REPS_REACHED,
+            )
             advanceUntilIdle()
 
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
@@ -215,7 +234,13 @@ class WorkoutExitPersistenceTest {
             harness.fakeGamificationRepo.badgeLookupProfileIds.clear()
             harness.fakeGamificationRepo.updateStatsProfileIds.clear()
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
             harness.fakeUserProfileRepo.seedReadyProfileForTest("profile-b")
             harness.setActiveSummaryCountdownSeconds(5)
@@ -255,7 +280,13 @@ class WorkoutExitPersistenceTest {
             harness.fakeGamificationRepo.badgeLookupProfileIds.clear()
             harness.fakeBleRepo.stopWorkoutBlock = { releaseReset.await() }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
             harness.dwsm.stopWorkout(exitingWorkout = true)
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
@@ -501,7 +532,13 @@ class WorkoutExitPersistenceTest {
                 }
             }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             advanceUntilIdle()
             harness.dwsm.stopWorkout(exitingWorkout = true)
             advanceUntilIdle()
@@ -533,14 +570,18 @@ class WorkoutExitPersistenceTest {
         val readyBuilders = atomic(0)
 
         val snapshots = withContext(Dispatchers.Default) {
-            listOf(TerminalPath.AUTO_COMPLETE, TerminalPath.END_WORKOUT).mapIndexed { index, path ->
+            listOf(
+                TerminalPath.AUTO_COMPLETE to SetEndReason.STALL_FAILURE,
+                TerminalPath.END_WORKOUT to SetEndReason.USER_STOPPED,
+            ).mapIndexed { index, (path, reason) ->
                 async {
-                    snapshotStore.getOrCapture(lease, path) {
+                    val completion = SetExecutionCompletion(lease, reason)
+                    snapshotStore.getOrCapture(completion, path) {
                         readyBuilders.incrementAndGet()
                         while (readyBuilders.value < 2) {
                             // Force both terminal paths to build before either can install.
                         }
-                        exitSnapshot(lease, path, completedSetId = "set-${index + 1}")
+                        exitSnapshot(completion, path, completedSetId = "set-${index + 1}")
                     }
                 }
             }.awaitAll()
@@ -548,6 +589,8 @@ class WorkoutExitPersistenceTest {
 
         assertEquals(setOf(lease.sessionId), snapshots.map { it.session.id }.toSet())
         assertEquals(1, snapshots.mapNotNull { it.completedSet?.id }.distinct().size)
+        assertEquals(1, snapshots.map { it.completion.reason }.distinct().size)
+        assertEquals(1, snapshots.mapNotNull { it.completedSet?.setEndReason }.distinct().size)
     }
 
     @Test
@@ -667,7 +710,13 @@ class WorkoutExitPersistenceTest {
                 }
             }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             advanceUntilIdle()
 
             assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
@@ -813,16 +862,17 @@ class WorkoutExitPersistenceTest {
     )
 
     private fun exitSnapshot(
-        lease: ExecutionLease,
+        completion: SetExecutionCompletion,
         terminalPath: TerminalPath,
         completedSetId: String,
     ) = WorkoutExitSnapshot(
-        lease = lease,
+        completion = completion,
+        lease = completion.lease,
         terminalPath = terminalPath,
-        session = TestFixtures.createWorkoutSession(id = lease.sessionId),
+        session = TestFixtures.createWorkoutSession(id = completion.lease.sessionId),
         completedSet = CompletedSet(
             id = completedSetId,
-            sessionId = lease.sessionId,
+            sessionId = completion.lease.sessionId,
             plannedSetId = null,
             setNumber = 0,
             setType = SetType.STANDARD,
@@ -831,6 +881,7 @@ class WorkoutExitPersistenceTest {
             loggedRpe = null,
             isPr = false,
             completedAt = 100L,
+            setEndReason = completion.reason,
         ),
         metrics = emptyList(),
         repMetrics = emptyList(),
@@ -851,7 +902,7 @@ class WorkoutExitPersistenceTest {
         cycleId = null,
         cycleDayNumber = null,
         postSaveInput = PostSaveWorkoutInput(
-            profileId = lease.profileId,
+            profileId = completion.lease.profileId,
             exerciseId = TestFixtures.benchPress.id,
             workingReps = 2,
             achievedWeightKg = 25f,

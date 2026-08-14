@@ -6,14 +6,21 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ForceCurveResult
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SingleExerciseDefaultsDocument
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.util.withPlatformLock
 
+internal data class SetExecutionCompletion(
+    val lease: ExecutionLease,
+    val reason: SetEndReason,
+)
+
 internal data class WorkoutExitSnapshot(
     val lease: ExecutionLease,
+    val completion: SetExecutionCompletion,
     val terminalPath: TerminalPath,
     val session: WorkoutSession,
     val completedSet: CompletedSet?,
@@ -73,18 +80,22 @@ internal class WorkoutExitSnapshotStore {
     private val snapshots = LinkedHashMap<WorkoutExitSnapshotKey, WorkoutExitSnapshot>()
 
     fun getOrCapture(
-        lease: ExecutionLease,
+        completion: SetExecutionCompletion,
         terminalPath: TerminalPath,
         onInstalled: (WorkoutExitSnapshot) -> Unit = {},
         capture: () -> WorkoutExitSnapshot,
     ): WorkoutExitSnapshot {
-        val key = lease.snapshotKey()
+        val key = completion.lease.snapshotKey()
         withPlatformLock(lock) {
             snapshots[key]?.let { return it.copy(terminalPath = terminalPath) }
         }
 
         val candidate = capture()
-        require(candidate.lease.snapshotKey() == key && candidate.session.id == lease.sessionId) {
+        require(
+            candidate.lease.snapshotKey() == key &&
+                candidate.completion == completion &&
+                candidate.session.id == completion.lease.sessionId
+        ) {
             "Captured workout exit snapshot must match its execution lease"
         }
 
