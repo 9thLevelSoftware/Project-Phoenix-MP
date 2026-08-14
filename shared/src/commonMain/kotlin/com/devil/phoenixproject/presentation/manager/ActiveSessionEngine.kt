@@ -220,7 +220,9 @@ class ActiveSessionEngine(
     ) {
         val lease = executionGuard.currentLease
         if (lease == null) {
-            afterReady()
+            if (executionGuard.machineTeardownState.value is MachineTeardownState.Ready) {
+                afterReady()
+            }
             return
         }
         beginMachineTeardown(lease, reason, afterReady = afterReady)

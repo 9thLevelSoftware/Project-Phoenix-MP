@@ -315,6 +315,77 @@ class WorkoutMachineTeardownTest {
     }
 
     @Test
+    fun `end invalidated teardown drops exercise jump successor while reset is in flight`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val resetResult = CompletableDeferred<Result<Unit>>()
+        try {
+            val routine = cableToBodyweightRoutine()
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            advanceUntilIdle()
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.coordinator._workoutState.value = WorkoutState.Idle
+            harness.fakeBleRepo.stopWorkoutBlock = { resetResult.await() }
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+
+            assertNull(harness.activeSessionEngine.executionGuard.currentLease)
+            assertIs<MachineTeardownState.TearingDown>(
+                harness.activeSessionEngine.machineTeardownState.value,
+            )
+
+            harness.dwsm.jumpToExercise(1)
+
+            assertEquals(0, harness.coordinator.currentExerciseIndex.value)
+            assertNull(harness.activeSessionEngine.executionGuard.currentLease)
+
+            resetResult.complete(Result.success(Unit))
+            advanceUntilIdle()
+
+            assertEquals(0, harness.coordinator.currentExerciseIndex.value)
+            assertNull(harness.activeSessionEngine.executionGuard.currentLease)
+            assertEquals(
+                MachineTeardownState.Ready,
+                harness.activeSessionEngine.machineTeardownState.value,
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `lease null transition request does not run successor in recovery required`() = runTest {
+        val harness = DWSMTestHarness(this)
+        var successorCalls = 0
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.startCableSet(targetReps = 3)
+            harness.fakeBleRepo.stopWorkoutBlock = {
+                Result.failure(IllegalStateException("RESET write failed"))
+            }
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertNull(harness.activeSessionEngine.executionGuard.currentLease)
+            assertIs<MachineTeardownState.RecoveryRequired>(
+                harness.activeSessionEngine.machineTeardownState.value,
+            )
+
+            harness.activeSessionEngine.requestTeardownForTransition(TeardownReason.EXERCISE_JUMP) {
+                successorCalls++
+            }
+
+            assertEquals(0, successorCalls)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `exit reset calls are centralized with pause as documented non-exit exception`() {
         val activeSessionSource = requireNotNull(
             readProjectFile(
@@ -354,6 +425,36 @@ class WorkoutMachineTeardownTest {
                     id = "teardown-bodyweight-set",
                     exercise = exercise,
                     orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 0f,
+                ),
+            ),
+        )
+    }
+
+    private fun cableToBodyweightRoutine(): Routine {
+        val bodyweightExercise = Exercise(
+            name = "Push Up",
+            muscleGroup = "Chest",
+            muscleGroups = "Chest,Triceps,Shoulders",
+            equipment = "",
+            id = "teardown-transition-push-up",
+        )
+        return Routine(
+            id = "teardown-transition-routine",
+            name = "Cable to bodyweight teardown",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "teardown-transition-cable",
+                    exercise = TestFixtures.benchPress,
+                    orderIndex = 0,
+                    setReps = listOf(8),
+                    weightPerCableKg = 40f,
+                ),
+                RoutineExercise(
+                    id = "teardown-transition-bodyweight",
+                    exercise = bodyweightExercise,
+                    orderIndex = 1,
                     setReps = listOf(10),
                     weightPerCableKg = 0f,
                 ),
