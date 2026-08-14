@@ -29,8 +29,8 @@ open class VitruvianApp :
     private val migrationManager: MigrationManager by inject()
 
     override fun attachBaseContext(base: Context) {
-        applyPersistedApplicationNightMode(base)
         super.attachBaseContext(base)
+        applyPersistedApplicationNightMode(this)
     }
 
     override fun onCreate() {
