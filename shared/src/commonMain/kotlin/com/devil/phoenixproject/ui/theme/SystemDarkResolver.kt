@@ -6,10 +6,15 @@ enum class NightSample {
     UNDEFINED,
 }
 
-/** Android Configuration.UI_MODE_NIGHT_* mapped without an Android import. */
+/** Android `Configuration.UI_MODE_NIGHT_YES` — kept as a hex so common code needs no Android import. */
+const val UI_MODE_NIGHT_YES_MASK = 0x20
+
+/** Android `Configuration.UI_MODE_NIGHT_NO`. */
+const val UI_MODE_NIGHT_NO_MASK = 0x10
+
 fun nightSampleFromMask(nightMask: Int): NightSample = when (nightMask) {
-    0x20 -> NightSample.YES
-    0x10 -> NightSample.NO
+    UI_MODE_NIGHT_YES_MASK -> NightSample.YES
+    UI_MODE_NIGHT_NO_MASK -> NightSample.NO
     else -> NightSample.UNDEFINED
 }
 
@@ -18,17 +23,12 @@ fun resolveSystemDark(
     applicationNight: NightSample,
     activityNight: NightSample,
     composeNight: Boolean,
-): Boolean {
-    when (applicationNight) {
-        NightSample.YES -> return true
-        NightSample.NO -> return false
-        NightSample.UNDEFINED -> Unit
-    }
-    return when (activityNight) {
-        NightSample.YES -> true
-        NightSample.NO -> if (composeNight) previous else false
-        NightSample.UNDEFINED -> previous
-    }
+): Boolean = when {
+    applicationNight == NightSample.YES -> true
+    applicationNight == NightSample.NO -> false
+    activityNight == NightSample.YES -> true
+    activityNight == NightSample.NO -> if (composeNight) previous else false
+    else -> previous
 }
 
 fun resolveUseDarkColors(themeMode: ThemeMode, systemDark: Boolean): Boolean = when (themeMode) {

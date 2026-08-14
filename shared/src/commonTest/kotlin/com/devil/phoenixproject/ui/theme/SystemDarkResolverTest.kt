@@ -9,10 +9,10 @@ class SystemDarkResolverTest {
 
     @Test
     fun nightSampleFromMask_mapsAndroidConstants() {
-        assertEquals(NightSample.YES, nightSampleFromMask(0x20))
-        assertEquals(NightSample.NO, nightSampleFromMask(0x10))
+        assertEquals(NightSample.YES, nightSampleFromMask(UI_MODE_NIGHT_YES_MASK))
+        assertEquals(NightSample.NO, nightSampleFromMask(UI_MODE_NIGHT_NO_MASK))
         assertEquals(NightSample.UNDEFINED, nightSampleFromMask(0x00))
-        assertEquals(NightSample.UNDEFINED, nightSampleFromMask(0x30 and 0x00))
+        assertEquals(NightSample.UNDEFINED, nightSampleFromMask(0x55))
     }
 
     @Test

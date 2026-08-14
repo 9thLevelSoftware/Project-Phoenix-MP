@@ -129,7 +129,6 @@ class RoutinesChromeLuminanceContractTest {
             "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutTab.kt",
         ).readText()
         val repBlock = workoutTab.substringAfter("fun RepCounterCard").substringBefore("fun LiveMetricsCard")
-            .ifBlank { workoutTab.substringAfter("fun RepCounterCard").substringBefore("Live Metrics Card") }
         assertTrue(
             repBlock.contains("phoenixStructuralContainerColor"),
             "RepCounterCard must call phoenixStructuralContainerColor.",

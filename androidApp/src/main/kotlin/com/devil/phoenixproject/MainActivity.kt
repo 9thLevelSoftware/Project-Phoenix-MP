@@ -1,6 +1,7 @@
 package com.devil.phoenixproject
 
 import android.content.Context
+import android.graphics.drawable.ColorDrawable
 import android.media.AudioManager
 import android.os.Build
 import android.os.Bundle
@@ -11,6 +12,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.presentation.components.RequireBlePermissions
+import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.NightSample
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.nightSampleFromMask
@@ -29,7 +31,7 @@ class MainActivity : ComponentActivity() {
 
         volumeControlStream = AudioManager.STREAM_MUSIC
 
-        val systemBarStyle = systemBarStyleForPersistedTheme()
+        val systemBarStyle = applyPersistedThemeWindow()
         enableEdgeToEdge(
             statusBarStyle = systemBarStyle,
             navigationBarStyle = systemBarStyle,
@@ -43,15 +45,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun systemBarStyleForPersistedTheme(): SystemBarStyle {
-        val prefs = getSharedPreferences("vitruvian_preferences", Context.MODE_PRIVATE)
+    private fun applyPersistedThemeWindow(): SystemBarStyle {
+        val prefs = getSharedPreferences(ThemeViewModel.THEME_PREFS_FILE, Context.MODE_PRIVATE)
         val themeMode = runCatching {
-            ThemeMode.valueOf(prefs.getString("theme_mode", "SYSTEM") ?: "SYSTEM")
+            ThemeMode.valueOf(prefs.getString(ThemeViewModel.THEME_MODE_KEY, "SYSTEM") ?: "SYSTEM")
         }.getOrDefault(ThemeMode.SYSTEM)
         val applicationNight = nightSampleFromMask(
             applicationContext.resources.configuration.uiMode and
                 android.content.res.Configuration.UI_MODE_NIGHT_MASK,
         )
+        // Cold-start seed prefers dark so a missing/undefined night sample cannot flash light.
         val systemDark = resolveSystemDark(
             previous = true,
             applicationNight = applicationNight,
@@ -59,6 +62,8 @@ class MainActivity : ComponentActivity() {
             composeNight = applicationNight == NightSample.YES,
         )
         val useDark = resolveUseDarkColors(themeMode, systemDark)
+        val windowColor = if (useDark) WINDOW_BACKGROUND_DARK else WINDOW_BACKGROUND_LIGHT
+        window.setBackgroundDrawable(ColorDrawable(windowColor))
         return if (useDark) {
             SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
         } else {
@@ -76,7 +81,7 @@ class MainActivity : ComponentActivity() {
      */
     private fun applyStoredLocaleBeforeComposition() {
         try {
-            val prefs = getSharedPreferences("vitruvian_preferences", Context.MODE_PRIVATE)
+            val prefs = getSharedPreferences(ThemeViewModel.THEME_PREFS_FILE, Context.MODE_PRIVATE)
             val langCode = prefs.getString("language", null)
             if (!langCode.isNullOrBlank()) {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -95,5 +100,10 @@ class MainActivity : ComponentActivity() {
         } catch (e: Exception) {
             Logger.w(tag = "MainActivity") { "Failed to apply locale before composition: ${e.message}" }
         }
+    }
+
+    private companion object {
+        const val WINDOW_BACKGROUND_DARK = 0xFF0F172A.toInt()
+        const val WINDOW_BACKGROUND_LIGHT = 0xFFF8FAFC.toInt()
     }
 }

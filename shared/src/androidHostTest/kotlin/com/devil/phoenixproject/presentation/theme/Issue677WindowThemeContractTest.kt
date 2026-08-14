@@ -40,11 +40,16 @@ class Issue677WindowThemeContractTest {
     }
 
     @Test
-    fun windowBackgroundColor_isSlate900() {
-        val colors = read("androidApp/src/main/res/values/colors.xml")
+    fun windowBackgroundColor_dayIsSlate50_nightIsSlate900() {
+        val day = read("androidApp/src/main/res/values/colors.xml")
         assertTrue(
-            colors.contains("#FF0F172A") || colors.contains("#0F172A"),
-            "phoenix_window_background must be Slate900 (#FF0F172A), matching Color.kt.",
+            day.contains("#FFF8FAFC") || day.contains("#F8FAFC"),
+            "Day phoenix_window_background must be Slate50 so LIGHT / SYSTEM+light does not flash Slate900.",
+        )
+        val night = read("androidApp/src/main/res/values-night/colors.xml")
+        assertTrue(
+            night.contains("#FF0F172A") || night.contains("#0F172A"),
+            "Night phoenix_window_background must be Slate900 so SYSTEM+dark cannot inherit a light window.",
         )
     }
 
@@ -63,8 +68,10 @@ class Issue677WindowThemeContractTest {
     fun mainActivity_enableEdgeToEdgeUsesPersistedThemeAndApplicationNight() {
         val source = read("androidApp/src/main/kotlin/com/devil/phoenixproject/MainActivity.kt")
         assertTrue(source.contains("SystemBarStyle"))
-        assertTrue(source.contains("theme_mode"))
+        assertTrue(source.contains("THEME_MODE_KEY"))
         assertTrue(source.contains("applicationContext.resources.configuration"))
         assertTrue(source.contains("enableEdgeToEdge("))
+        assertTrue(source.contains("setBackgroundDrawable"))
+        assertTrue(source.contains("ApplyStatusBarAppearance").not())
     }
 }
