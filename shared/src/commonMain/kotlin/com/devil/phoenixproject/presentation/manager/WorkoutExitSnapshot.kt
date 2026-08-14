@@ -53,10 +53,9 @@ internal class BodyweightCompletionGate {
         }
     }
 
-    fun pendingFor(lease: ExecutionLease): SetExecutionCompletion? =
-        (state.value as? BodyweightCompletionState.Pending)
-            ?.completion
-            ?.takeIf { it.lease.sameExecutionAs(lease) }
+    fun pendingFor(lease: ExecutionLease): SetExecutionCompletion? = (state.value as? BodyweightCompletionState.Pending)
+        ?.completion
+        ?.takeIf { it.lease.sameExecutionAs(lease) }
 
     fun hasClaimedCompletion(lease: ExecutionLease): Boolean = when (val current = state.value) {
         is BodyweightCompletionState.Pending -> current.completion.lease.sameExecutionAs(lease)
@@ -87,8 +86,7 @@ internal class BodyweightCompletionGate {
         }
     }
 
-    private fun ExecutionLease.sameExecutionAs(other: ExecutionLease): Boolean =
-        executionId == other.executionId && sessionId == other.sessionId
+    private fun ExecutionLease.sameExecutionAs(other: ExecutionLease): Boolean = executionId == other.executionId && sessionId == other.sessionId
 }
 
 private data class DangerZoneCountdownClaim(
@@ -127,8 +125,7 @@ internal class DangerZoneCountdownGate {
         }
     }
 
-    private fun ExecutionLease.sameExecutionAs(other: ExecutionLease): Boolean =
-        executionId == other.executionId && sessionId == other.sessionId
+    private fun ExecutionLease.sameExecutionAs(other: ExecutionLease): Boolean = executionId == other.executionId && sessionId == other.sessionId
 }
 
 internal data class WorkoutExitSnapshot(
@@ -207,7 +204,7 @@ internal class WorkoutExitSnapshotStore {
         require(
             candidate.lease.snapshotKey() == key &&
                 candidate.completion == completion &&
-                candidate.session.id == completion.lease.sessionId
+                candidate.session.id == completion.lease.sessionId,
         ) {
             "Captured workout exit snapshot must match its execution lease"
         }

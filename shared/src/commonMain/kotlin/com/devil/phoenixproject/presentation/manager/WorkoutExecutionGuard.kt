@@ -427,7 +427,9 @@ internal class WorkoutExecutionGuard(
                 log(LogEventType.WORKOUT_PERSISTENCE, "sessionId=$sessionId,transition=claimed,path=$path")
                 PersistenceClaimResult.Claimed
             }
+
             PersistenceClaimStatus.IN_PROGRESS -> PersistenceClaimResult.DuplicateInProgress
+
             PersistenceClaimStatus.PERSISTED -> PersistenceClaimResult.AlreadyPersisted
         }
     }
@@ -457,8 +459,7 @@ internal class WorkoutExecutionGuard(
         persistedSessionIds.take(toRemove).forEach(persistedClaims::remove)
     }
 
-    private fun sameIdentity(first: ExecutionLease?, second: ExecutionLease): Boolean =
-        first?.executionId == second.executionId && first.sessionId == second.sessionId
+    private fun sameIdentity(first: ExecutionLease?, second: ExecutionLease): Boolean = first?.executionId == second.executionId && first.sessionId == second.sessionId
 
     private fun log(eventType: String, details: String) {
         try {
@@ -467,5 +468,4 @@ internal class WorkoutExecutionGuard(
             // Diagnostics must never alter completed authority transitions.
         }
     }
-
 }

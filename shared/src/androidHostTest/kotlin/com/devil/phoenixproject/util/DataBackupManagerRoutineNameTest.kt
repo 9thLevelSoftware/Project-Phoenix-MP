@@ -2051,7 +2051,9 @@ class DataBackupManagerRoutineNameTest {
     private class StringBackupStreamSource(private val value: String) : BackupStreamSource {
         private var index = 0
 
-        override fun open() { index = 0 }
+        override fun open() {
+            index = 0
+        }
         override fun close() = Unit
         override fun read(): Int = if (index < value.length) value[index++].code else -1
         override fun read(buffer: CharArray, offset: Int, length: Int): Int {

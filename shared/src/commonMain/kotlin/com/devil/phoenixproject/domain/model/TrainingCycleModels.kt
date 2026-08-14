@@ -382,18 +382,26 @@ data class PlannedSet(
 enum class SetEndReason {
     /** Rep target reached or WORKOUT_COMPLETE machine event */
     TARGET_REPS_REACHED,
+
     /** Stall detection auto-stop fired (velocity/deload threshold) */
     STALL_FAILURE,
+
     /** VBT auto-end: consecutive reps above velocity-loss threshold */
     VBT_AUTO_END,
+
     /** User manually stopped the set */
     USER_STOPPED,
+
     /** Cable released detected by machine */
     CABLE_RELEASED,
+
     /** Timed exercise countdown reached zero */
     TIMER_EXPIRED,
+
     /** Persisted reason is absent, malformed, or not supported by this app version */
-    UNKNOWN;
+    UNKNOWN,
+
+    ;
 
     companion object {
         fun fromPersisted(value: String?): SetEndReason = entries.firstOrNull { it.name == value } ?: UNKNOWN

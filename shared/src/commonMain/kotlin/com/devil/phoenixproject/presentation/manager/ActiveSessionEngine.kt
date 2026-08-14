@@ -48,8 +48,8 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
-import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.SetEndReason
+import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.SingleExerciseDefaultsDocument
 import com.devil.phoenixproject.domain.model.TrainingCycle
@@ -62,8 +62,8 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
-import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
+import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
@@ -222,15 +222,13 @@ class ActiveSessionEngine(
         }
     }
 
-    private fun consumeDangerZoneCountdownOverride(lease: ExecutionLease): Long? =
-        dangerZoneCountdownGate.consume(lease)
+    private fun consumeDangerZoneCountdownOverride(lease: ExecutionLease): Long? = dangerZoneCountdownGate.consume(lease)
 
     private fun clearDangerZoneCountdownOverride(lease: ExecutionLease) {
         dangerZoneCountdownGate.clear(lease)
     }
 
-    private fun ExecutionLease.sameExecutionAs(other: ExecutionLease): Boolean =
-        executionId == other.executionId && sessionId == other.sessionId
+    private fun ExecutionLease.sameExecutionAs(other: ExecutionLease): Boolean = executionId == other.executionId && sessionId == other.sessionId
 
     private fun installBiomechanicsContext(lease: ExecutionLease): Boolean {
         val context = ExecutionBiomechanicsContext(
@@ -245,8 +243,7 @@ class ActiveSessionEngine(
         }
     }
 
-    private fun biomechanicsContextFor(lease: ExecutionLease): ExecutionBiomechanicsContext? =
-        biomechanicsContext.value?.takeIf { it.lease.sameExecutionAs(lease) }
+    private fun biomechanicsContextFor(lease: ExecutionLease): ExecutionBiomechanicsContext? = biomechanicsContext.value?.takeIf { it.lease.sameExecutionAs(lease) }
 
     private fun resetBiomechanicsContext(lease: ExecutionLease) {
         val context = biomechanicsContextFor(lease) ?: return

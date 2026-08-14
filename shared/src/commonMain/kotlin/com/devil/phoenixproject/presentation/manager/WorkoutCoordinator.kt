@@ -585,13 +585,12 @@ class WorkoutCoordinator(
         true
     }
 
-    internal fun resetBiomechanicsEngine(engine: BiomechanicsEngine = biomechanicsEngine): Boolean =
-        withPlatformLock(biomechanicsLock) {
-            if (biomechanicsEngine !== engine) return@withPlatformLock false
-            engine.reset()
-            _latestBiomechanicsResult.value = null
-            true
-        }
+    internal fun resetBiomechanicsEngine(engine: BiomechanicsEngine = biomechanicsEngine): Boolean = withPlatformLock(biomechanicsLock) {
+        if (biomechanicsEngine !== engine) return@withPlatformLock false
+        engine.reset()
+        _latestBiomechanicsResult.value = null
+        true
+    }
 
     internal fun detachBiomechanicsEngine(
         expected: BiomechanicsEngine,
