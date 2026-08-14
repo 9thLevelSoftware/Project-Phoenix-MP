@@ -179,7 +179,9 @@ class ActiveSessionEngine(
     private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
     private val beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    private val afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
     private val beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    private val afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     private val regenerateFiveThreeOneUseCase: RegenerateFiveThreeOneRoutinesUseCase? = null,
     private val dataBackupManager: DataBackupManager? = null,
     private val healthIntegration: HealthIntegration? = null,
@@ -259,6 +261,17 @@ class ActiveSessionEngine(
             context.consecutiveThresholdReps = 0
             coordinator.resetBiomechanicsEngine(context.engine)
         }
+    }
+
+    private fun detachBiomechanicsContext(lease: ExecutionLease) {
+        val context = biomechanicsContextFor(lease) ?: return
+        if (!biomechanicsContext.compareAndSet(context, null)) return
+        coordinator.detachBiomechanicsEngine(
+            expected = context.engine,
+            replacement = BiomechanicsEngine(
+                coordinator.vbtRuntimeSettings.value.velocityLossThresholdPercent,
+            ),
+        )
     }
 
     internal fun isCurrentExecution(lease: ExecutionLease): Boolean = executionGuard.isCurrent(lease)
@@ -1219,14 +1232,21 @@ class ActiveSessionEngine(
             executionGuard.releaseCompletionClaim(lease)
             return
         }
+        afterBodyweightCompletionConsume(lease.executionId, lease.sessionId)
         val coercedReps = reps.coerceAtLeast(0)
-        selectBodyweightVariant(entry.exerciseKey, variant)
-        coordinator.bodyweightCompletionVariantOverride = variant
-        coordinator._repCount.value = RepCount(
-            workingReps = coercedReps,
-            totalReps = coercedReps,
-            isWarmupComplete = true,
-        )
+        val committed = executionGuard.commitIfCurrent(lease) {
+            selectBodyweightVariant(entry.exerciseKey, variant)
+            coordinator.bodyweightCompletionVariantOverride = variant
+            coordinator._repCount.value = RepCount(
+                workingReps = coercedReps,
+                totalReps = coercedReps,
+                isWarmupComplete = true,
+            )
+        }
+        if (!committed) {
+            executionGuard.releaseCompletionClaim(lease)
+            return
+        }
         handleSetCompletion(
             completion = completion,
             reason = TeardownReason.AUTO_COMPLETE,
@@ -1710,7 +1730,7 @@ class ActiveSessionEngine(
         evaluateLatestVbtResult(lease, context, latestResult)
     }
 
-    private fun evaluateLatestVbtResult(
+    private suspend fun evaluateLatestVbtResult(
         lease: ExecutionLease,
         context: ExecutionBiomechanicsContext,
         latestResult: BiomechanicsRepResult,
@@ -1720,6 +1740,7 @@ class ActiveSessionEngine(
         var verbalEmitted = false
         var shouldComplete = false
         var consecutiveReps = 0
+        val alertEvents = mutableListOf<HapticEvent>()
         val committed = executionGuard.commitIfCurrent(
             lease = lease,
             beforeCommit = {
@@ -1736,10 +1757,10 @@ class ActiveSessionEngine(
                 context.consecutiveThresholdReps++
                 if (!context.velocityThresholdAlertEmitted) {
                     context.velocityThresholdAlertEmitted = true
-                    coordinator._hapticEvents.tryEmit(HapticEvent.VELOCITY_THRESHOLD_REACHED)
+                    alertEvents += HapticEvent.VELOCITY_THRESHOLD_REACHED
                     alertEmitted = true
                     if (verbalEvent != null) {
-                        coordinator._hapticEvents.tryEmit(verbalEvent)
+                        alertEvents += verbalEvent
                         verbalEmitted = true
                         if (!runtime.autoEndOnVelocityLoss && coordinator._workoutState.value is WorkoutState.Active) {
                             coordinator.deferAutoStopDeadlineMs = currentTimeMillis() + VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS
@@ -1755,6 +1776,8 @@ class ActiveSessionEngine(
             }
         }
         if (!committed || biomechanicsContext.value !== context) return
+        afterVbtDecisionCommit(lease.executionId, lease.sessionId, latestResult.repNumber)
+        if (!emitVbtAlerts(lease, context, alertEvents)) return
         if (alertEmitted) {
             Logger.i { "VBT: Velocity loss threshold reached (${latestResult.velocity.velocityLossPercent?.roundToInt()}%). Alert emitted." }
         }
@@ -1765,6 +1788,39 @@ class ActiveSessionEngine(
             Logger.i { "VBT: Auto-ending set — $consecutiveReps consecutive reps above threshold" }
             handleSetCompletion(lease, SetEndReason.VBT_AUTO_END)
         }
+    }
+
+    private suspend fun emitVbtAlerts(
+        lease: ExecutionLease,
+        context: ExecutionBiomechanicsContext,
+        events: List<HapticEvent>,
+    ): Boolean {
+        if (events.isEmpty()) {
+            return executionGuard.isCurrent(lease) && biomechanicsContext.value === context
+        }
+
+        lateinit var deliveryJob: Job
+        deliveryJob = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                events.forEach { event ->
+                    if (!executionGuard.isCurrent(lease) || biomechanicsContext.value !== context) {
+                        return@launch
+                    }
+                    coordinator._hapticEvents.emit(event)
+                }
+            } finally {
+                executionGuard.clearAlertDeliveryJobIfOwned(lease, deliveryJob)
+            }
+        }
+        if (!executionGuard.attachAlertDeliveryJob(lease, deliveryJob)) {
+            deliveryJob.cancel()
+            return false
+        }
+        deliveryJob.start()
+        deliveryJob.join()
+        return !deliveryJob.isCancelled &&
+            executionGuard.isCurrent(lease) &&
+            biomechanicsContext.value === context
     }
 
     // ===== Auto-Stop Detection =====
@@ -2475,8 +2531,18 @@ class ActiveSessionEngine(
     fun resetForNewWorkout() {
         val lease = executionGuard.currentLease
         lease?.let(bodyweightCompletionGate::invalidate)
-        lease?.let(executionGuard::releaseCompletionClaim)
         lease?.let(::clearDangerZoneCountdownOverride)
+        val invalidatedLease = lease?.takeIf {
+            executionGuard.invalidate(it, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
+        }
+        if (invalidatedLease != null) {
+            repFreshnessGate.invalidate(invalidatedLease)
+            executionGuard.cancelPresentationJobsFor(invalidatedLease)
+            detachBiomechanicsContext(invalidatedLease)
+            if (executionContext?.lease?.sameExecutionAs(invalidatedLease) == true) {
+                executionContext = null
+            }
+        }
         cancelJustLiftEggTimer()
         interruptedSetRecovery = null
         pendingStartOverride = null
@@ -2492,8 +2558,11 @@ class ActiveSessionEngine(
         coordinator._repCount.value = RepCount()
         coordinator._repRanges.value = null
         coordinator.setRepMetrics.value = emptyList()
-        // Reset biomechanics engine and rep boundary timestamps
-        lease?.let(::resetBiomechanicsContext)
+        // Reset biomechanics HUD and rep boundary timestamps. The detached engine prevents
+        // suspended work from the invalidated execution from republishing into this idle state.
+        if (invalidatedLease == null) {
+            lease?.let(::resetBiomechanicsContext)
+        }
         coordinator.deferAutoStopDeadlineMs = 0L
         coordinator.repBoundaryTimestamps.value = emptyList()
         coordinator.warmupCompleteTimeMs = 0
@@ -5049,7 +5118,10 @@ class ActiveSessionEngine(
 
                 if (!effectiveSkipSummary) {
                     Logger.d("handleSetCompletion: Setting state to SetSummary (effectiveSkipSummary=false)")
-                    coordinator._workoutState.value = summary
+                    val summaryPublished = executionGuard.commitIfCurrent(lease) {
+                        coordinator._workoutState.value = summary
+                    }
+                    if (!summaryPublished) return@launchCompletionJob
                 } else {
                     Logger.d("handleSetCompletion: Skipping SetSummary state (effectiveSkipSummary=true, wasBodyweight=$wasBodyweight)")
                 }

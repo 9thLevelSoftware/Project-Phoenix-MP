@@ -232,3 +232,48 @@ Result: zero matches. `git diff --check` remains clean.
 - Verified direct reset invalidates pending bodyweight origin before a delayed confirmation can observe it, without changing the existing gate's first-origin/consume-once semantics.
 - Verified stale/lower danger primes and clears cannot overwrite B and the existing real danger-branch origin/mutation evidence remains unchanged.
 - Verified the final diff contains only Task 5 production files, deterministic Task 5/#687 tests, the narrow manager/harness injection adapters, and this report; no BLE/protocol/schema/migration files were touched.
+
+## Controller rework round 3
+
+### Review findings addressed
+
+- Bodyweight confirmation now crosses a second execution-guard commit boundary after consuming its immutable origin. Variant selection, completion override, and entered rep count are published together only while the originating lease remains current; a stale confirmation releases only its own claim and cannot mutate or block a replacement execution. The later `SetSummary` publication is also an atomic current-lease commit.
+- `resetForNewWorkout()` now invalidates the current execution with `RESET_FOR_NEW_WORKOUT`, invalidates rep/bodyweight/danger authority, cancels execution-owned presentation work, clears the matching execution context, and CAS-detaches the matching biomechanics engine to a fresh HUD engine. Suspended computation can finish only into the detached A engine, and a VBT decision already committed for A cannot perform a terminal effect after reset.
+- VBT threshold alerts again use suspending `emit`. Delivery occurs outside the execution-guard lock in a lease-owned lazy job; start/reset/cleanup cancellation owns that job alongside completion presentation work. Valid alerts wait for buffer capacity, while invalidated A alerts are canceled before stale delivery.
+- The detector predicates, thresholds, countdown durations, stall/auto-stop timers, and end-reason classifications were not changed.
+
+### Round-3 RED evidence
+
+The first behavior-level run compiled both lifecycle classes and completed 45 tests with exactly three assertion failures:
+
+1. `post consume stale A confirmation cannot overwrite or block B` started real execution B after A consumed its pending origin. Expected B's retained `Standard Push-Up` selection; stale A replaced it with `Incline (hands elevated)` before its terminal request was rejected.
+2. `direct reset revokes a suspended A biomechanics publication` suspended A's injected real processor, reset, released A, and observed that the old implementation still exposed A's non-null execution lease (with HUD-isolation assertions behind it).
+3. `direct reset after a VBT decision commit prevents its terminal effect` reset between the guarded VBT state commit and terminal request and likewise observed that A remained authorized.
+
+After those fixes, `valid VBT alert waits for backpressure and is delivered` produced a separate behavior-level RED: a one-slot `BufferOverflow.SUSPEND` flow was filled behind a blocked real subscriber, and the old `tryEmit` path delivered zero threshold alerts after capacity reopened instead of one.
+
+Environment-only preflight failures for an unset `JAVA_HOME` and undiscovered Android SDK occurred before the valid RED run. The recorded behavior REDs used Microsoft JDK 17, the local Android SDK, and `-Pskip.supabase.check=true`.
+
+### Round-3 GREEN evidence
+
+The consolidated focused gate completed 165 tests with zero failures or errors:
+
+- `Issue673SetEndReasonLifecycleTest`: 20
+- `Issue687WorkoutExecutionIsolationTest`: 27
+- `WorkoutExitPersistenceTest`: 23
+- `WorkoutExecutionGuardTest`: 16
+- `VbtEnabledRuntimeTest`: 4
+- `DWSMWorkoutLifecycleTest`: 75
+
+The unchanged broader ten-class lifecycle/integration/teardown gate completed 151 tests with zero failures or errors. Production and host-test compilation completed in these runs.
+
+The alert cancellation proof is mutation-sensitive: temporarily removing the alert job from `cancelPresentationJobsFor` made `direct reset cancels a backpressured A VBT alert` fail because A's threshold event arrived after reset and buffer release. Restoring lease-owned cancellation made the same test pass.
+
+### Round-3 self-review
+
+- Verified no execution lock is held across biomechanics computation, `SharedFlow.emit`, coroutine join, teardown, or persistence.
+- Verified the bodyweight post-consume barrier uses real B startup and asserts B's selection map, completion override, rep count, active lifecycle, and ability to claim its own completion.
+- Verified engine detach is identity-checked at both the atomic execution context and coordinator engine, so stale reset work cannot replace a newer engine.
+- Verified reset suppresses both paused-processor HUD publication and post-VBT-commit terminal/persistence effects.
+- Verified valid VBT alert ordering and suspending delivery are preserved, and invalidation cancels only the matching execution's alert job.
+- Verified the round-3 diff remains inside Task 5 manager/lifecycle/#687 test ownership plus the narrow test harness and this report.

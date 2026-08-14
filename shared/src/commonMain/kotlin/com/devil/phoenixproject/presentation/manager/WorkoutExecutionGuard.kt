@@ -37,6 +37,7 @@ internal enum class ExecutionInvalidationReason {
     SKIP_EXERCISE,
     CLEANUP,
     START_FAILED,
+    RESET_FOR_NEW_WORKOUT,
 }
 
 internal enum class TerminalPath {
@@ -103,6 +104,8 @@ internal class WorkoutExecutionGuard(
     private var teardownFailureReason: TeardownFailureReason? = null
     private var completionJob: Job? = null
     private var completionJobLease: ExecutionLease? = null
+    private var alertDeliveryJob: Job? = null
+    private var alertDeliveryJobLease: ExecutionLease? = null
     private var teardownJob: Job? = null
     private var teardownJobLease: ExecutionLease? = null
     private var completionClaimLease: ExecutionLease? = null
@@ -224,23 +227,48 @@ internal class WorkoutExecutionGuard(
         }
     }
 
-    fun cancelPresentationJobsFor(lease: ExecutionLease) {
-        val ownedJob = withPlatformLock(teardownLock) {
-            if (!sameIdentity(completionJobLease, lease)) {
-                return@withPlatformLock null
-            }
-            completionJobLease = null
-            completionJob.also { completionJob = null }
+    fun attachAlertDeliveryJob(lease: ExecutionLease, job: Job): Boolean = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed || !sameIdentity(currentLeaseRef.value, lease) || alertDeliveryJob != null) {
+            return@withPlatformLock false
         }
-        ownedJob?.cancel()
+        alertDeliveryJob = job
+        alertDeliveryJobLease = lease
+        true
+    }
+
+    fun clearAlertDeliveryJobIfOwned(lease: ExecutionLease, job: Job) = withPlatformLock(teardownLock) {
+        if (sameIdentity(alertDeliveryJobLease, lease) && alertDeliveryJob === job) {
+            alertDeliveryJob = null
+            alertDeliveryJobLease = null
+        }
+    }
+
+    fun cancelPresentationJobsFor(lease: ExecutionLease) {
+        val ownedJobs = withPlatformLock(teardownLock) {
+            buildList {
+                if (sameIdentity(completionJobLease, lease)) {
+                    completionJobLease = null
+                    completionJob?.let(::add)
+                    completionJob = null
+                }
+                if (sameIdentity(alertDeliveryJobLease, lease)) {
+                    alertDeliveryJobLease = null
+                    alertDeliveryJob?.let(::add)
+                    alertDeliveryJob = null
+                }
+            }
+        }
+        ownedJobs.forEach(Job::cancel)
     }
 
     fun cancelAllOwnedJobs() {
         val ownedJobs = withPlatformLock(teardownLock) {
             jobOwnershipClosed = true
-            val jobs = listOfNotNull(completionJob, teardownJob)
+            val jobs = listOfNotNull(completionJob, alertDeliveryJob, teardownJob)
             completionJob = null
             completionJobLease = null
+            alertDeliveryJob = null
+            alertDeliveryJobLease = null
             teardownJob = null
             teardownJobLease = null
             jobs

@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -71,7 +72,13 @@ class DWSMTestHarness(
     biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
     biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
     beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
     beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
+        extraBufferCapacity = 32,
+        onBufferOverflow = BufferOverflow.SUSPEND,
+    ),
     onPostSaveComputed: suspend (exerciseId: String, profileId: String, sessionMcvMmS: Float?) -> Unit = { _, _, _ -> },
 ) {
     companion object {
@@ -149,7 +156,10 @@ class DWSMTestHarness(
         biomechanicsDispatcher = biomechanicsDispatcher,
         biomechanicsRepProcessor = biomechanicsRepProcessor,
         beforeVbtCommit = beforeVbtCommit,
+        afterVbtDecisionCommit = afterVbtDecisionCommit,
         beforeBodyweightCompletionClaim = beforeBodyweightCompletionClaim,
+        afterBodyweightCompletionConsume = afterBodyweightCompletionConsume,
+        _hapticEvents = hapticEvents,
         elapsedRealtimeProvider = { testScope.testScheduler.currentTime },
         wallClockMillisProvider = { nowMs },
     )

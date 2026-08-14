@@ -593,6 +593,16 @@ class WorkoutCoordinator(
             true
         }
 
+    internal fun detachBiomechanicsEngine(
+        expected: BiomechanicsEngine,
+        replacement: BiomechanicsEngine,
+    ): Boolean = withPlatformLock(biomechanicsLock) {
+        if (biomechanicsEngine !== expected) return@withPlatformLock false
+        biomechanicsEngine = replacement
+        _latestBiomechanicsResult.value = null
+        true
+    }
+
     internal fun updateVbtSettings(
         vbtEnabled: Boolean,
         thresholdPercent: Float,

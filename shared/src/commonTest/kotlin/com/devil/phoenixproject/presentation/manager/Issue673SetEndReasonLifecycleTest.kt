@@ -483,6 +483,57 @@ class Issue673SetEndReasonLifecycleTest {
     }
 
     @Test
+    fun `post consume stale A confirmation cannot overwrite or block B`() = runTest {
+        lateinit var harness: DWSMTestHarness
+        lateinit var leaseB: ExecutionLease
+        var replaceExecutionAfterConsume = false
+        harness = DWSMTestHarness(
+            testScope = this,
+            afterBodyweightCompletionConsume = { _, _ ->
+                if (replaceExecutionAfterConsume) {
+                    replaceExecutionAfterConsume = false
+                    harness.dwsm.startWorkout(skipCountdown = true)
+                    leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+                }
+            },
+        )
+        try {
+            val routine = bodyweightRoutine(durationSeconds = 60)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(leaseA, SetEndReason.USER_STOPPED)
+            advanceUntilIdle()
+            val staleEntry = assertIs<WorkoutState.BodyweightRepEntry>(harness.coordinator.workoutState.value)
+            val staleVariant = staleEntry.variants.first { it != staleEntry.selectedVariant }
+            val expectedSelections = harness.coordinator.selectedBodyweightVariants.value
+            val expectedRepCount = harness.coordinator.repCount.value
+
+            replaceExecutionAfterConsume = true
+            harness.dwsm.confirmBodyweightSetResult(reps = 17, variant = staleVariant)
+
+            assertNotEquals(leaseA, leaseB)
+            assertEquals(leaseB, harness.activeSessionEngine.currentExecutionLeaseForTest())
+            assertEquals(expectedSelections, harness.coordinator.selectedBodyweightVariants.value)
+            assertNull(harness.coordinator.bodyweightCompletionVariantOverride)
+            assertEquals(expectedRepCount, harness.coordinator.repCount.value)
+
+            runCurrent()
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            harness.activeSessionEngine.handleSetCompletion(leaseB, SetEndReason.USER_STOPPED)
+            advanceUntilIdle()
+            assertIs<WorkoutState.BodyweightRepEntry>(harness.coordinator.workoutState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `direct reset invalidates pending bodyweight confirmation`() = runTest {
         val harness = DWSMTestHarness(this)
         try {

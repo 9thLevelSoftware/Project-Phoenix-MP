@@ -181,7 +181,9 @@ class DefaultWorkoutSessionManager(
     private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
     private val beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    private val afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
     private val beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    private val afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
@@ -273,7 +275,9 @@ class DefaultWorkoutSessionManager(
         biomechanicsDispatcher = biomechanicsDispatcher,
         biomechanicsRepProcessor = biomechanicsRepProcessor,
         beforeVbtCommit = beforeVbtCommit,
+        afterVbtDecisionCommit = afterVbtDecisionCommit,
         beforeBodyweightCompletionClaim = beforeBodyweightCompletionClaim,
+        afterBodyweightCompletionConsume = afterBodyweightCompletionConsume,
         regenerateFiveThreeOneUseCase = RegenerateFiveThreeOneRoutinesUseCase(
             trainingCycleRepository = trainingCycleRepository,
             workoutRepository = workoutRepository,
