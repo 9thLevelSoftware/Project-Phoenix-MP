@@ -29,9 +29,10 @@ class MainActivity : ComponentActivity() {
 
         volumeControlStream = AudioManager.STREAM_MUSIC
 
+        val systemBarStyle = systemBarStyleForPersistedTheme()
         enableEdgeToEdge(
-            statusBarStyle = systemBarStyleForPersistedTheme(),
-            navigationBarStyle = systemBarStyleForPersistedTheme(),
+            statusBarStyle = systemBarStyle,
+            navigationBarStyle = systemBarStyle,
         )
         setContent {
             // Require BLE permissions before showing the app

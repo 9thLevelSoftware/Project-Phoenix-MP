@@ -16,7 +16,9 @@ actual fun ApplyStatusBarAppearance(isDark: Boolean) {
     if (!view.isInEditMode) {
         SideEffect {
             val window = (view.context as Activity).window
-            WindowCompat.getInsetsController(window, view).isAppearanceLightStatusBars = !isDark
+            val insets = WindowCompat.getInsetsController(window, view)
+            insets.isAppearanceLightStatusBars = !isDark
+            insets.isAppearanceLightNavigationBars = !isDark
         }
     }
 }
