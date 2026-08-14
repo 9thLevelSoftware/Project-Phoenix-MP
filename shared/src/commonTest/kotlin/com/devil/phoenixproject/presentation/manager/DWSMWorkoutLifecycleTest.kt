@@ -12,7 +12,9 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.MachineStatusEvent
 import com.devil.phoenixproject.domain.model.PRType
+import com.devil.phoenixproject.domain.model.SampleStatus
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
@@ -965,6 +967,132 @@ class DWSMWorkoutLifecycleTest {
         val autoStop = harness.dwsm.coordinator.autoStopState.value
         assertNotNull(autoStop, "autoStopState should be reset after startWorkout")
         harness.cleanup()
+    }
+
+    @Test
+    fun `Issue 673 warmup status samples calibrate ROM before stall arming`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    warmupReps = 0,
+                    weightPerCableKg = 35f,
+                    stallDetectionEnabled = true,
+                    isAMRAP = false,
+                    isJustLift = false,
+                ),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+            assertFalse(harness.dwsm.coordinator.repCount.value.isWarmupComplete)
+
+            // These arrive before the warmup gate opens: they must calibrate ROM,
+            // but must not arm an auto-stop stall timer yet.
+            harness.fakeBleRepo.emitMachineStatusEvent(
+                MachineStatusEvent(harness.nowMs, SampleStatus(0), position = 0f, velocity = 5f),
+            )
+            harness.fakeBleRepo.emitMachineStatusEvent(
+                MachineStatusEvent(harness.nowMs + 1L, SampleStatus(0), position = 100f, velocity = 5f),
+            )
+            advanceUntilIdle()
+            assertEquals(null, harness.dwsm.coordinator.stallStartTime)
+
+            completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+            completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
+            advanceUntilIdle()
+            assertTrue(harness.dwsm.coordinator.repCount.value.isWarmupComplete)
+            assertEquals(1, harness.dwsm.coordinator.repCount.value.workingReps)
+
+            // With the 0–100 mm warmup calibration retained, 50 mm is mid-ROM
+            // and 5 mm/s is inside the stall dead band, so the real engine arms.
+            harness.fakeBleRepo.emitMachineStatusEvent(
+                MachineStatusEvent(harness.nowMs + 2L, SampleStatus(0), position = 50f, velocity = 5f),
+            )
+            advanceUntilIdle()
+
+            assertNotNull(
+                harness.dwsm.coordinator.stallStartTime,
+                "Warmup status samples must calibrate ROM so a later mid-ROM dead-band event can arm the stall timer",
+            )
+            assertEquals(100f, harness.dwsm.coordinator.romRangeTop)
+            assertEquals(0f, harness.dwsm.coordinator.romRangeBottom)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Issue 673 ROM fraction ignores events outside mid ROM or dead band`() = runTest {
+        val ignoredEvents = listOf(
+            Triple(90f, 5f, "outside the 30 to 80 percent mid-ROM band"),
+            Triple(50f, 10.1f, "outside the 2.5 to 10 mm per second dead band"),
+        )
+        for ((position, velocity, description) in ignoredEvents) {
+            val harness = DWSMTestHarness(this)
+            try {
+                prepareRomFractionStallHarness(harness) { advanceUntilIdle() }
+                assertTrue(harness.dwsm.coordinator.repCount.value.isWarmupComplete)
+                assertEquals(1, harness.dwsm.coordinator.repCount.value.workingReps)
+
+                harness.fakeBleRepo.emitMachineStatusEvent(
+                    MachineStatusEvent(harness.nowMs + 2L, SampleStatus(0), position, velocity),
+                )
+                advanceUntilIdle()
+
+                assertEquals(
+                    null,
+                    harness.dwsm.coordinator.stallStartTime,
+                    "ROM-fraction event $description must not arm the stall timer",
+                )
+            } finally {
+                harness.cleanup()
+            }
+        }
+    }
+
+    @Test
+    fun `Issue 673 completed working rep cancels ROM fraction stall timer`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepareRomFractionStallHarness(harness) { advanceUntilIdle() }
+            assertEquals(1, harness.dwsm.coordinator.repCount.value.workingReps)
+
+            harness.fakeBleRepo.emitMachineStatusEvent(
+                MachineStatusEvent(harness.nowMs + 2L, SampleStatus(0), position = 50f, velocity = 5f),
+            )
+            advanceUntilIdle()
+            assertNotNull(harness.dwsm.coordinator.stallStartTime)
+
+            harness.fakeBleRepo.emitRepNotification(
+                RepNotification(
+                    topCounter = 5,
+                    completeCounter = 5,
+                    repsRomCount = 3,
+                    repsRomTotal = 3,
+                    repsSetCount = 2,
+                    repsSetTotal = 8,
+                    rangeTop = 800f,
+                    rangeBottom = 0f,
+                    rawData = ByteArray(24),
+                    timestamp = harness.nowMs + 3L,
+                ),
+            )
+            advanceUntilIdle()
+
+            assertEquals(2, harness.dwsm.coordinator.repCount.value.workingReps)
+            assertEquals(
+                null,
+                harness.dwsm.coordinator.stallStartTime,
+                "A completed working rep must cancel a ROM-fraction-armed stall timer",
+            )
+            assertFalse(harness.dwsm.coordinator.isCurrentlyStalled)
+        } finally {
+            harness.cleanup()
+        }
     }
 
     @Test
@@ -2234,6 +2362,38 @@ class DWSMWorkoutLifecycleTest {
         assertEquals(1, harness.fakeGamificationRepo.updateStatsCallCount, "Valid untagged completions should update gamification stats")
         assertEquals(1, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount, "Valid untagged completions should award stat badges")
         harness.cleanup()
+    }
+
+    private suspend fun prepareRomFractionStallHarness(
+        harness: DWSMTestHarness,
+        advance: suspend () -> Unit,
+    ) {
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 35f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = false,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advance()
+
+        harness.fakeBleRepo.emitMachineStatusEvent(
+            MachineStatusEvent(harness.nowMs, SampleStatus(0), position = 0f, velocity = 5f),
+        )
+        harness.fakeBleRepo.emitMachineStatusEvent(
+            MachineStatusEvent(harness.nowMs + 1L, SampleStatus(0), position = 100f, velocity = 5f),
+        )
+        advance()
+
+        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
+        advance()
     }
 
     private suspend fun completeWarmupReps(harness: DWSMTestHarness, warmupTarget: Int = 3, workingTarget: Int = 8) {

@@ -1,8 +1,8 @@
 package com.devil.phoenixproject.domain.model
 
 /**
- * Carries the full machine status-word, position, and velocity from every BLE monitor
- * sample that has a non-zero status word. Supersedes the narrow [Unit]-typed
+ * Carries the full machine status-word, position, and velocity from every processed BLE monitor
+ * sample, including packets whose status word is zero. Supersedes the narrow [Unit]-typed
  * `deloadOccurredEvents` flow for downstream consumers that need richer context
  * (e.g. ROM-fraction stall detection in Issue #673 PR 2).
  *

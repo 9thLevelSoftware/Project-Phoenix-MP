@@ -684,7 +684,6 @@ class ActiveSessionEngine(
 
                     if (!params.stallDetectionEnabled || currentState !is WorkoutState.Active) return@collect
                     if (params.isEchoMode) return@collect
-                    if (!shouldEnableAutoStop(params)) return@collect
 
                     // Track ROM range from position observations (even during warmup,
                     // so the detector has a calibrated range when warmup ends)
@@ -694,8 +693,8 @@ class ActiveSessionEngine(
                     if (currentTop == null || pos > currentTop) coordinator.romRangeTop = pos
                     if (currentBottom == null || pos < currentBottom) coordinator.romRangeBottom = pos
 
-                    // Gate timer arming until warmup is complete
-                    if (!isWarmupGateOpenForAutoStop()) return@collect
+                    // Gate timer arming until warmup is complete and auto-stop is enabled.
+                    if (!shouldEnableAutoStop(params)) return@collect
 
                     val top = coordinator.romRangeTop ?: return@collect
                     val bottom = coordinator.romRangeBottom ?: return@collect
