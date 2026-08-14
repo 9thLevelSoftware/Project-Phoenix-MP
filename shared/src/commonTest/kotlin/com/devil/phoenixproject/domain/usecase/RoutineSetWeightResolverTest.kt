@@ -73,6 +73,25 @@ class RoutineSetWeightResolverTest {
         }
     }
 
+    @Test
+    fun `uses base absolute weight when a valid PR has a disabled selected set percentage`() {
+        val routineExercise = routineExercise(
+            weightPerCableKg = 19.25f,
+            setWeightsPerCableKg = listOf(20.3f, 21.7f),
+            usePercentOfPR = true,
+        ).copy(setWeightsPercentOfPR = listOf(80, 0))
+
+        val actualKg = RoutineSetWeightResolver(
+            RoutineSetWeightRequest(
+                exercise = routineExercise,
+                setIndex = 1,
+                currentPrKg = 47f,
+            ),
+        )
+
+        assertEquals(19.25f, actualKg)
+    }
+
     private fun routineExercise(
         weightPerCableKg: Float,
         setWeightsPerCableKg: List<Float> = emptyList(),

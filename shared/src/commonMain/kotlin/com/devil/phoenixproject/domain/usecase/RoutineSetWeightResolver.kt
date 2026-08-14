@@ -26,18 +26,18 @@ object RoutineSetWeightResolver {
         val exercise = request.exercise
         val percent = exercise.setWeightsPercentOfPR.getOrNull(request.setIndex)
             ?: exercise.weightPercentOfPR
-        val usesPr = exercise.usePercentOfPR &&
+        val hasValidPr = exercise.usePercentOfPR &&
             request.currentPrKg != null &&
-            request.currentPrKg > 0f &&
-            percent > 0
+            request.currentPrKg > 0f
+        val usesPrPercentage = hasValidPr && percent > 0
 
-        val programmedWeight = if (usesPr) {
-            request.currentPrKg!! * percent / 100f
-        } else {
-            exercise.setWeightsPerCableKg.getOrNull(request.setIndex) ?: exercise.weightPerCableKg
+        val programmedWeight = when {
+            usesPrPercentage -> request.currentPrKg!! * percent / 100f
+            hasValidPr -> exercise.weightPerCableKg
+            else -> exercise.setWeightsPerCableKg.getOrNull(request.setIndex) ?: exercise.weightPerCableKg
         }
         val occurrenceWeight = programmedWeight * request.occurrenceMultiplier
-        val roundedWeight = if (usesPr) occurrenceWeight.roundToHalfKg() else occurrenceWeight
+        val roundedWeight = if (usesPrPercentage) occurrenceWeight.roundToHalfKg() else occurrenceWeight
 
         return roundedWeight + (request.manualAdjustmentPerCableKg ?: 0f)
     }
