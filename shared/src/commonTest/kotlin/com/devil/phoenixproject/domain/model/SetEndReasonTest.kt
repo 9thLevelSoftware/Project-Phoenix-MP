@@ -6,10 +6,37 @@ import kotlin.test.assertEquals
 class SetEndReasonTest {
 
     @Test
-    fun `fromPersisted round-trips every declared durable reason`() {
-        // Catches a codec mutation that rejects or maps any persisted enum name to another reason.
-        SetEndReason.entries.forEach { reason ->
-            assertEquals(reason, SetEndReason.fromPersisted(reason.name))
+    fun `SetEndReason declares exactly the seven persisted values`() {
+        // Catches a durable-schema mutation that adds, removes, renames, or reorders a persisted reason.
+        assertEquals(
+            listOf(
+                "TARGET_REPS_REACHED",
+                "STALL_FAILURE",
+                "VBT_AUTO_END",
+                "USER_STOPPED",
+                "CABLE_RELEASED",
+                "TIMER_EXPIRED",
+                "UNKNOWN",
+            ),
+            SetEndReason.entries.map { it.name },
+        )
+    }
+
+    @Test
+    fun `fromPersisted round-trips each canonical persisted reason`() {
+        // Catches a codec mutation that rejects or maps any canonical persisted name to another reason.
+        val canonicalReasons = listOf(
+            "TARGET_REPS_REACHED" to SetEndReason.TARGET_REPS_REACHED,
+            "STALL_FAILURE" to SetEndReason.STALL_FAILURE,
+            "VBT_AUTO_END" to SetEndReason.VBT_AUTO_END,
+            "USER_STOPPED" to SetEndReason.USER_STOPPED,
+            "CABLE_RELEASED" to SetEndReason.CABLE_RELEASED,
+            "TIMER_EXPIRED" to SetEndReason.TIMER_EXPIRED,
+            "UNKNOWN" to SetEndReason.UNKNOWN,
+        )
+
+        canonicalReasons.forEach { (persisted, reason) ->
+            assertEquals(reason, SetEndReason.fromPersisted(persisted), "value=$persisted")
         }
     }
 
@@ -31,6 +58,25 @@ class SetEndReasonTest {
             setNumber = 1,
             actualReps = 5,
             actualWeightKg = 100f,
+        )
+
+        assertEquals(SetEndReason.UNKNOWN, completedSet.setEndReason)
+    }
+
+    @Test
+    fun `CompletedSet constructor defaults an unspecified end reason to UNKNOWN`() {
+        // Catches a constructor default mutation that assigns a historical completion reason to direct callers.
+        val completedSet = CompletedSet(
+            id = "set-1",
+            sessionId = "session-1",
+            plannedSetId = null,
+            setNumber = 1,
+            setType = SetType.STANDARD,
+            actualReps = 5,
+            actualWeightKg = 100f,
+            loggedRpe = null,
+            isPr = false,
+            completedAt = 0L,
         )
 
         assertEquals(SetEndReason.UNKNOWN, completedSet.setEndReason)
