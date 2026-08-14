@@ -2,6 +2,7 @@
 
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.domain.model.SetEndReason
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -230,19 +231,48 @@ class WorkoutExecutionGuardTest {
             assertTrue(guard.isCurrent(leaseA))
             validatedA.complete(Unit)
             releaseA.await()
-            guard.tryClaimCompletion(leaseA)
+            guard.tryClaimCompletion(SetExecutionCompletion(leaseA, SetEndReason.TARGET_REPS_REACHED))
         }
 
         validatedA.await()
         val leaseB = guard.beginExecution(seed("session-b")).getOrThrow()
-        assertTrue(guard.tryClaimCompletion(leaseB))
+        val completionB = SetExecutionCompletion(leaseB, SetEndReason.TARGET_REPS_REACHED)
+        assertTrue(guard.tryClaimCompletion(completionB))
         releaseA.complete(Unit)
 
         assertFalse(staleClaim.await())
         guard.releaseCompletionClaim(leaseA)
-        assertFalse(guard.tryClaimCompletion(leaseB))
+        assertFalse(guard.tryClaimCompletion(completionB))
         guard.releaseCompletionClaim(leaseB)
-        assertTrue(guard.tryClaimCompletion(leaseB))
+        assertTrue(guard.tryClaimCompletion(completionB))
+    }
+
+    @Test
+    fun `first immutable completion remains authoritative until matching release`() {
+        val guard = WorkoutExecutionGuard()
+        val lease = guard.beginExecution(seed("session-a")).getOrThrow()
+        val vbtCompletion = SetExecutionCompletion(lease, SetEndReason.VBT_AUTO_END)
+        val manualCompletion = SetExecutionCompletion(lease, SetEndReason.USER_STOPPED)
+
+        assertEquals(
+            CompletionClaimResult.Claimed(vbtCompletion),
+            guard.claimCompletion(vbtCompletion),
+        )
+        assertEquals(
+            CompletionClaimResult.AlreadyClaimed(vbtCompletion),
+            guard.claimCompletion(manualCompletion),
+        )
+        assertEquals(vbtCompletion, guard.claimedCompletion(lease))
+
+        guard.releaseCompletionClaim(lease)
+
+        assertNull(guard.claimedCompletion(lease))
+        assertEquals(
+            CompletionClaimResult.Claimed(manualCompletion),
+            guard.claimCompletion(manualCompletion),
+        )
+        assertTrue(guard.invalidate(lease, ExecutionInvalidationReason.END_WORKOUT))
+        assertNull(guard.claimedCompletion(lease))
     }
 
     @Test

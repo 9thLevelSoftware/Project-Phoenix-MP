@@ -31,6 +31,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.SessionBodyweightAction
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -182,6 +183,7 @@ class DefaultWorkoutSessionManager(
     private val biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
     private val beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
     private val afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    private val afterCompletionClaim: (executionId: Long, sessionId: String, reason: SetEndReason) -> Unit = { _, _, _ -> },
     private val beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     private val afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     private val afterResetInvalidation: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
@@ -278,6 +280,7 @@ class DefaultWorkoutSessionManager(
         biomechanicsRepProcessor = biomechanicsRepProcessor,
         beforeVbtCommit = beforeVbtCommit,
         afterVbtDecisionCommit = afterVbtDecisionCommit,
+        afterCompletionClaim = afterCompletionClaim,
         beforeBodyweightCompletionClaim = beforeBodyweightCompletionClaim,
         afterBodyweightCompletionConsume = afterBodyweightCompletionConsume,
         afterResetInvalidation = afterResetInvalidation,

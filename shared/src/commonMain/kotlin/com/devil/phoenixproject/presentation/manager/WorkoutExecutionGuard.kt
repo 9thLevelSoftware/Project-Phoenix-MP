@@ -76,6 +76,12 @@ internal sealed interface PersistenceClaimResult {
     data object AlreadyPersisted : PersistenceClaimResult
 }
 
+internal sealed interface CompletionClaimResult {
+    data class Claimed(val completion: SetExecutionCompletion) : CompletionClaimResult
+    data class AlreadyClaimed(val completion: SetExecutionCompletion) : CompletionClaimResult
+    data object Rejected : CompletionClaimResult
+}
+
 internal enum class PersistenceClaimStatus {
     UNCLAIMED,
     IN_PROGRESS,
@@ -113,7 +119,7 @@ internal class WorkoutExecutionGuard(
     private var alertDeliveryJobLease: ExecutionLease? = null
     private var teardownJob: Job? = null
     private var teardownJobLease: ExecutionLease? = null
-    private var completionClaimLease: ExecutionLease? = null
+    private var completionClaim: SetExecutionCompletion? = null
     private var jobOwnershipClosed = false
     private val _machineTeardownState = MutableStateFlow<MachineTeardownState>(MachineTeardownState.Ready)
 
@@ -147,15 +153,15 @@ internal class WorkoutExecutionGuard(
             isTimedCable = seed.isTimedCable,
         )
         currentLeaseRef.value?.let { outgoingLease ->
-            if (sameIdentity(completionClaimLease, outgoingLease)) {
-                completionClaimLease = null
+            if (sameIdentity(completionClaim?.lease, outgoingLease)) {
+                completionClaim = null
             }
             cancelPresentationJobsLocked(outgoingLease)
             currentLeaseRef.value = null
         }
         invalidatedLeaseRef.value = null
         currentLeaseRef.value = lease
-        completionClaimLease = null
+        completionClaim = null
         log(LogEventType.WORKOUT_EXECUTION, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=begun")
         Result.success(lease)
     }
@@ -177,8 +183,8 @@ internal class WorkoutExecutionGuard(
         val invalidated = currentLeaseRef.value ?: return null
         cancelPresentationJobsLocked(invalidated)
         currentLeaseRef.value = null
-        if (sameIdentity(completionClaimLease, invalidated)) {
-            completionClaimLease = null
+        if (sameIdentity(completionClaim?.lease, invalidated)) {
+            completionClaim = null
         }
         invalidatedLeaseRef.value = invalidated
         log(
@@ -193,8 +199,8 @@ internal class WorkoutExecutionGuard(
         if (!sameIdentity(current, lease)) return@withPlatformLock false
         cancelPresentationJobsLocked(current)
         currentLeaseRef.value = null
-        if (sameIdentity(completionClaimLease, current)) {
-            completionClaimLease = null
+        if (sameIdentity(completionClaim?.lease, current)) {
+            completionClaim = null
         }
         invalidatedLeaseRef.value = current
         log(
@@ -231,17 +237,30 @@ internal class WorkoutExecutionGuard(
         true
     }
 
-    fun tryClaimCompletion(lease: ExecutionLease): Boolean = withPlatformLock(teardownLock) {
-        if (!sameIdentity(currentLeaseRef.value, lease) || completionClaimLease != null) {
-            return@withPlatformLock false
+    fun claimCompletion(completion: SetExecutionCompletion): CompletionClaimResult = withPlatformLock(teardownLock) {
+        if (!sameIdentity(currentLeaseRef.value, completion.lease)) {
+            return@withPlatformLock CompletionClaimResult.Rejected
         }
-        completionClaimLease = lease
-        true
+        completionClaim?.let { claimed ->
+            return@withPlatformLock if (sameIdentity(claimed.lease, completion.lease)) {
+                CompletionClaimResult.AlreadyClaimed(claimed)
+            } else {
+                CompletionClaimResult.Rejected
+            }
+        }
+        completionClaim = completion
+        CompletionClaimResult.Claimed(completion)
+    }
+
+    fun tryClaimCompletion(completion: SetExecutionCompletion): Boolean = claimCompletion(completion) is CompletionClaimResult.Claimed
+
+    fun claimedCompletion(lease: ExecutionLease): SetExecutionCompletion? = withPlatformLock(teardownLock) {
+        completionClaim?.takeIf { claimed -> sameIdentity(claimed.lease, lease) }
     }
 
     fun releaseCompletionClaim(lease: ExecutionLease) = withPlatformLock(teardownLock) {
-        if (sameIdentity(completionClaimLease, lease)) {
-            completionClaimLease = null
+        if (sameIdentity(completionClaim?.lease, lease)) {
+            completionClaim = null
         }
     }
 

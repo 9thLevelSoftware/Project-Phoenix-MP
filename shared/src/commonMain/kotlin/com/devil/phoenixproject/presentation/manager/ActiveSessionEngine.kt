@@ -180,6 +180,7 @@ class ActiveSessionEngine(
     private val biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
     private val beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
     private val afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    private val afterCompletionClaim: (executionId: Long, sessionId: String, reason: SetEndReason) -> Unit = { _, _, _ -> },
     private val beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     private val afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     private val afterResetInvalidation: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
@@ -1226,7 +1227,7 @@ class ActiveSessionEngine(
         val lease = executionGuard.currentLease ?: return
         val completion = bodyweightCompletionGate.pendingFor(lease) ?: return
         beforeBodyweightCompletionClaim(lease.executionId, lease.sessionId)
-        if (!executionGuard.tryClaimCompletion(lease)) return
+        if (!executionGuard.tryClaimCompletion(completion)) return
         if (!bodyweightCompletionGate.tryConsume(completion)) {
             executionGuard.releaseCompletionClaim(lease)
             return
@@ -3993,7 +3994,24 @@ class ActiveSessionEngine(
         if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
 
         val lease = executionGuard.currentLease
-        val completion = lease?.let { SetExecutionCompletion(it, SetEndReason.USER_STOPPED) }
+        val requestedCompletion = lease?.let { currentLease ->
+            bodyweightCompletionGate.pendingFor(currentLease)
+                ?: SetExecutionCompletion(currentLease, SetEndReason.USER_STOPPED)
+        }
+        val completion = when (val claim = requestedCompletion?.let(executionGuard::claimCompletion)) {
+            is CompletionClaimResult.Claimed -> claim.completion.also { claimed ->
+                afterCompletionClaim(claimed.lease.executionId, claimed.lease.sessionId, claimed.reason)
+            }
+
+            is CompletionClaimResult.AlreadyClaimed -> claim.completion
+
+            CompletionClaimResult.Rejected -> {
+                coordinator.stopWorkoutInProgress.value = false
+                return
+            }
+
+            null -> null
+        }
         lease?.let(bodyweightCompletionGate::invalidate)
         lease?.let(::clearDangerZoneCountdownOverride)
         if (exitingWorkout && completion != null) {
@@ -4916,8 +4934,20 @@ class ActiveSessionEngine(
         val lease = completion.lease
         if (!executionGuard.isCurrent(lease)) return
         // Lease-scoped claim prevents both duplicate completion and stale execution ownership.
-        if (!completionClaimed && !executionGuard.tryClaimCompletion(lease)) {
-            Logger.d("handleSetCompletion: already in progress - ignoring")
+        if (!completionClaimed) {
+            when (executionGuard.claimCompletion(completion)) {
+                is CompletionClaimResult.Claimed ->
+                    afterCompletionClaim(lease.executionId, lease.sessionId, completion.reason)
+
+                is CompletionClaimResult.AlreadyClaimed,
+                CompletionClaimResult.Rejected,
+                -> {
+                    Logger.d("handleSetCompletion: already in progress - ignoring")
+                    return
+                }
+            }
+        } else if (executionGuard.claimedCompletion(lease) != completion) {
+            Logger.d("handleSetCompletion: claimed completion changed - ignoring")
             return
         }
 

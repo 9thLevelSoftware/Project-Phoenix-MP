@@ -18,6 +18,7 @@ import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.createTestRoutine
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
@@ -246,6 +247,84 @@ class Issue673SetEndReasonLifecycleTest {
     }
 
     @Test
+    fun `End Workout after VBT claims completion preserves VBT auto end`() = runTest {
+        lateinit var harness: DWSMTestHarness
+        var endWorkoutAfterVbtClaim = false
+        harness = DWSMTestHarness(
+            testScope = this,
+            afterCompletionClaim = { _, _, reason ->
+                if (endWorkoutAfterVbtClaim && reason == SetEndReason.VBT_AUTO_END) {
+                    endWorkoutAfterVbtClaim = false
+                    harness.dwsm.stopWorkout(exitingWorkout = true)
+                }
+            },
+        )
+        try {
+            harness.setActiveProfilePreferences(
+                UserPreferences(
+                    vbtEnabled = true,
+                    velocityLossThresholdPercent = 20,
+                    autoEndOnVelocityLoss = true,
+                ),
+            )
+            advanceUntilIdle()
+            val lease = startTrackedCableSet(harness, targetReps = 10)
+            harness.coordinator._repCount.value = RepCount(
+                workingReps = 4,
+                totalReps = 4,
+                isWarmupComplete = true,
+            )
+
+            processVbtRep(harness, repNumber = 1, velocityMmS = 100.0)
+            processVbtRep(harness, repNumber = 2, velocityMmS = 70.0)
+            endWorkoutAfterVbtClaim = true
+            processVbtRep(harness, repNumber = 3, velocityMmS = 60.0)
+            advanceUntilIdle()
+
+            assertFalse(endWorkoutAfterVbtClaim, "fixture must invoke End Workout after VBT claims")
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            val completedSets = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId)
+            assertEquals(1, completedSets.size)
+            assertEquals(SetEndReason.VBT_AUTO_END, completedSets.single().setEndReason)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `End Workout from bodyweight rep prompt preserves timer expired origin`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = bodyweightRoutine(durationSeconds = 60)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TIMER_EXPIRED)
+            advanceUntilIdle()
+            assertIs<WorkoutState.BodyweightRepEntry>(harness.coordinator.workoutState.value)
+            harness.coordinator._repCount.value = RepCount(
+                workingReps = 5,
+                totalReps = 5,
+                isWarmupComplete = true,
+            )
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            val completedSets = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId)
+            assertEquals(1, completedSets.size)
+            assertEquals(SetEndReason.TIMER_EXPIRED, completedSets.single().setEndReason)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `End Workout persists user stopped`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
@@ -394,7 +473,9 @@ class Issue673SetEndReasonLifecycleTest {
             advanceUntilIdle()
             val entry = assertIs<WorkoutState.BodyweightRepEntry>(harness.coordinator.workoutState.value)
 
-            harness.activeSessionEngine.executionGuard.tryClaimCompletion(lease)
+            harness.activeSessionEngine.executionGuard.tryClaimCompletion(
+                SetExecutionCompletion(lease, SetEndReason.TARGET_REPS_REACHED),
+            )
             harness.dwsm.confirmBodyweightSetResult(reps = 6, variant = entry.selectedVariant)
             harness.activeSessionEngine.executionGuard.releaseCompletionClaim(lease)
             harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)

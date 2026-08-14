@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
@@ -73,6 +74,7 @@ class DWSMTestHarness(
     biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
     beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
     afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    afterCompletionClaim: (executionId: Long, sessionId: String, reason: SetEndReason) -> Unit = { _, _, _ -> },
     beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     afterResetInvalidation: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
@@ -159,6 +161,7 @@ class DWSMTestHarness(
         biomechanicsRepProcessor = biomechanicsRepProcessor,
         beforeVbtCommit = beforeVbtCommit,
         afterVbtDecisionCommit = afterVbtDecisionCommit,
+        afterCompletionClaim = afterCompletionClaim,
         beforeBodyweightCompletionClaim = beforeBodyweightCompletionClaim,
         afterBodyweightCompletionConsume = afterBodyweightCompletionConsume,
         afterResetInvalidation = afterResetInvalidation,
