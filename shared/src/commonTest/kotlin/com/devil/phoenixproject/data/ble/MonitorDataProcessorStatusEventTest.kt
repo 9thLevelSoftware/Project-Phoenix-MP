@@ -21,10 +21,10 @@ class MonitorDataProcessorStatusEventTest {
         val events = mutableListOf<MachineStatusEvent>()
         val processor = MonitorDataProcessor(
             onStatusEvent = { events.add(it) },
-            timeProvider = { 1000L },
+            timeProvider = { 3000L }, // > DELOAD_EVENT_DEBOUNCE_MS so debounce never blocks
         )
 
-        // Build a packet with DELOAD_OCCURRED flag (bit 7 = 0x80)
+        // Build a packet with DELOAD_OCCURRED flag (bit 15 = 0x8000)
         val packet = MonitorPacket(
             ticks = 0L,
             posA = 200.0f,
@@ -33,14 +33,14 @@ class MonitorDataProcessorStatusEventTest {
             loadB = 10.0f,
             firmwareVelA = 50,  // 5.0 mm/s
             firmwareVelB = 50,
-            status = 0x80, // DELOAD_OCCURRED
+            status = 0x8000, // DELOAD_OCCURRED
         )
 
         processor.process(packet)
 
         assertEquals(1, events.size)
         val event = events[0]
-        assertEquals(0x80, event.sampleStatus.raw)
+        assertEquals(0x8000, event.sampleStatus.raw)
         assertTrue(event.sampleStatus.isDeloadOccurred())
         assertEquals(200.0f, event.position) // max(200, 200)
         // Velocity is max(smoothedA, smoothedB) — first sample seeds EMA
@@ -103,7 +103,7 @@ class MonitorDataProcessorStatusEventTest {
         val processor = MonitorDataProcessor(
             onDeloadOccurred = { deloadFired = true },
             onStatusEvent = { events.add(it) },
-            timeProvider = { 1000L },
+            timeProvider = { 3000L }, // > DELOAD_EVENT_DEBOUNCE_MS so debounce never blocks
         )
 
         val packet = MonitorPacket(
@@ -114,7 +114,7 @@ class MonitorDataProcessorStatusEventTest {
             loadB = 10.0f,
             firmwareVelA = 50,
             firmwareVelB = 50,
-            status = 0x80, // DELOAD_OCCURRED
+            status = 0x8000, // DELOAD_OCCURRED
         )
 
         processor.process(packet)
