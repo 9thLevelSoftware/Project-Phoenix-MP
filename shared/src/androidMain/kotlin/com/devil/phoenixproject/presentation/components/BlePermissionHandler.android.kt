@@ -29,6 +29,7 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import com.devil.phoenixproject.ui.theme.ApplyStatusBarAppearance
 
 /**
  * BLE and notification permissions required for the app.
@@ -184,6 +185,7 @@ fun RequireBlePermissions(content: @Composable () -> Unit) {
 @Composable
 private fun PermissionScreenTheme(content: @Composable () -> Unit) {
     val isDark = isSystemInDarkTheme()
+    ApplyStatusBarAppearance(isDark = isDark)
     val colorScheme = if (isDark) darkColorScheme() else lightColorScheme()
     MaterialTheme(colorScheme = colorScheme, content = content)
 }

@@ -2,6 +2,7 @@ package com.devil.phoenixproject
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.os.Bundle
 import co.touchlab.kermit.Logger
 import co.touchlab.kermit.Severity
@@ -13,6 +14,7 @@ import coil3.util.DebugLogger
 import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.di.initKoin
+import com.devil.phoenixproject.ui.theme.applyPersistedApplicationNightMode
 import com.devil.phoenixproject.util.ActivityHolder
 import com.devil.phoenixproject.util.DeviceInfo
 import org.koin.android.ext.android.inject
@@ -25,6 +27,11 @@ open class VitruvianApp :
     SingletonImageLoader.Factory {
 
     private val migrationManager: MigrationManager by inject()
+
+    override fun attachBaseContext(base: Context) {
+        super.attachBaseContext(base)
+        applyPersistedApplicationNightMode(this)
+    }
 
     override fun onCreate() {
         super.onCreate()
