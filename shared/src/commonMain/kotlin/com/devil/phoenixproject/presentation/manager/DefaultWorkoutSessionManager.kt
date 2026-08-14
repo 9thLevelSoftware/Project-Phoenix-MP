@@ -227,10 +227,11 @@ class DefaultWorkoutSessionManager(
                 this@DefaultWorkoutSessionManager.startWorkout(skipCountdown = skipCountdown)
             }
             override fun requestTeardownForTransition(
+                expectedLease: ExecutionLease?,
                 reason: TeardownReason,
                 afterReady: () -> Unit,
             ) {
-                activeSessionEngine.requestTeardownForTransition(reason, afterReady)
+                activeSessionEngine.requestTeardownForTransition(expectedLease, reason, afterReady)
             }
             override fun currentExecutionLeaseOrNull(): ExecutionLease? =
                 activeSessionEngine.currentExecutionLeaseOrNull()

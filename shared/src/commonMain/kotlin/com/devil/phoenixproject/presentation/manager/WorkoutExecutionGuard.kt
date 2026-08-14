@@ -96,6 +96,7 @@ internal class WorkoutExecutionGuard(
     private var completionJobLease: ExecutionLease? = null
     private var teardownJob: Job? = null
     private var teardownJobLease: ExecutionLease? = null
+    private var jobOwnershipClosed = false
     private val _machineTeardownState = MutableStateFlow<MachineTeardownState>(MachineTeardownState.Ready)
 
     val machineTeardownState: StateFlow<MachineTeardownState> = _machineTeardownState.asStateFlow()
@@ -168,6 +169,9 @@ internal class WorkoutExecutionGuard(
     }
 
     fun attachCompletionJob(lease: ExecutionLease, job: Job): Boolean = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed) {
+            return@withPlatformLock false
+        }
         if (!isCurrent(lease) || completionJob != null) {
             return@withPlatformLock false
         }
@@ -196,6 +200,7 @@ internal class WorkoutExecutionGuard(
 
     fun cancelAllOwnedJobs() {
         val ownedJobs = withPlatformLock(teardownLock) {
+            jobOwnershipClosed = true
             val jobs = listOfNotNull(completionJob, teardownJob)
             completionJob = null
             completionJobLease = null
@@ -207,6 +212,7 @@ internal class WorkoutExecutionGuard(
     }
 
     fun beginTeardown(lease: ExecutionLease, attempt: Int = 1): Boolean = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed) return@withPlatformLock false
         val ownsExecution = isCurrent(lease) || sameIdentity(invalidatedLeaseRef.value, lease)
         if (attempt < 1 || _machineTeardownState.value !is MachineTeardownState.Ready || !ownsExecution) {
             return@withPlatformLock false
@@ -224,6 +230,9 @@ internal class WorkoutExecutionGuard(
     }
 
     fun attachTeardownJob(lease: ExecutionLease, job: Job): Boolean = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed) {
+            return@withPlatformLock false
+        }
         val state = _machineTeardownState.value
         if (state !is MachineTeardownState.TearingDown || !sameIdentity(teardownLease, lease)) {
             return@withPlatformLock false
@@ -272,6 +281,7 @@ internal class WorkoutExecutionGuard(
     }
 
     fun beginRecoveryAttempt(): RecoveryAttempt? = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed) return@withPlatformLock null
         val lease = teardownLease ?: return@withPlatformLock null
         val state = _machineTeardownState.value
         if (state !is MachineTeardownState.RecoveryRequired || state.executionId != lease.executionId) {

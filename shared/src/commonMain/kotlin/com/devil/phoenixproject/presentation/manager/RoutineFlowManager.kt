@@ -90,6 +90,7 @@ class RoutineFlowManager(
 
         /** Complete machine teardown before a transition may navigate or start. */
         fun requestTeardownForTransition(
+            expectedLease: ExecutionLease?,
             reason: TeardownReason,
             afterReady: () -> Unit,
         )
@@ -1507,7 +1508,7 @@ class RoutineFlowManager(
         resetAutoStopState()
 
         val transitionLease = lifecycleDelegate.currentExecutionLeaseOrNull()
-        lifecycleDelegate.requestTeardownForTransition(TeardownReason.EXERCISE_JUMP) transition@{
+        lifecycleDelegate.requestTeardownForTransition(transitionLease, TeardownReason.EXERCISE_JUMP) transition@{
             if (transitionLease != null && !lifecycleDelegate.isCurrentExecution(transitionLease)) {
                 return@transition
             }

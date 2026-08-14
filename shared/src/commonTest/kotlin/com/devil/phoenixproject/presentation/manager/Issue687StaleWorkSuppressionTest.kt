@@ -2,12 +2,14 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import kotlin.test.Test
@@ -17,8 +19,10 @@ import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -28,6 +32,27 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 class Issue687StaleWorkSuppressionTest {
+    @Test
+    fun `cleanup closes guard before a delayed teardown job can attach`() = runTest {
+        val guard = WorkoutExecutionGuard()
+        val lease = guard.beginExecution(executionSeed("cleanup-race")).getOrThrow()
+        assertTrue(guard.beginTeardown(lease))
+        var delayedJobRan = false
+        val delayedJob = backgroundScope.launch(start = CoroutineStart.LAZY) {
+            delayedJobRan = true
+        }
+
+        guard.cancelAllOwnedJobs()
+
+        val attached = guard.attachTeardownJob(lease, delayedJob)
+        if (attached) delayedJob.start() else delayedJob.cancel()
+        runCurrent()
+
+        assertFalse(attached)
+        assertTrue(delayedJob.isCancelled)
+        assertFalse(delayedJobRan)
+    }
+
     @Test
     fun `guard cancels only the exact lease completion job`() {
         val guard = WorkoutExecutionGuard()
@@ -61,28 +86,147 @@ class Issue687StaleWorkSuppressionTest {
     }
 
     @Test
-    fun `delayed A completion cannot publish summary after B starts`() = runTest {
+    fun `End A cancels haptic-suspended completion before B starts`() = runTest {
         val harness = DWSMTestHarness(this)
-        val releaseReset = CompletableDeferred<Result<Unit>>()
+        var hapticBlock: HapticBlock? = null
         try {
             harness.setActiveSummaryCountdownSeconds(10)
             startExecution(harness, routine("completion-a", restSeconds = 5))
-            harness.fakeBleRepo.stopWorkoutBlock = { releaseReset.await() }
+            hapticBlock = blockHapticEmissions(harness)
 
             harness.activeSessionEngine.handleSetCompletion()
             runCurrent()
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
             harness.dwsm.stopWorkout(exitingWorkout = true)
-
-            releaseReset.complete(Result.success(Unit))
             runCurrent()
             val leaseB = startExecution(harness, routine("completion-b", restSeconds = 5))
+            val observed = observeReleasedStates(harness)
 
-            advanceTimeBy(10_000)
+            hapticBlock.release.complete(Unit)
             runCurrent()
 
             assertExecutionBStillActive(harness, leaseB)
+            assertNoTerminalAState(observed.states)
+            observed.job.cancel()
         } finally {
-            releaseReset.complete(Result.success(Unit))
+            hapticBlock?.release?.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `final A countdown delay cannot clean motion state or send config under B`() = runTest {
+        val harness = DWSMTestHarness(this)
+        var detachedCountdownJob: Job? = null
+        try {
+            loadRoutineNow(harness, routine("countdown-a"))
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.fakeBleRepo.commandsReceived.clear()
+            harness.dwsm.startWorkout(skipCountdown = false)
+            runCurrent()
+            assertEquals(WorkoutState.Countdown(5), harness.coordinator.workoutState.value)
+
+            advanceTimeBy(4_000)
+            runCurrent()
+            assertEquals(WorkoutState.Countdown(1), harness.coordinator.workoutState.value)
+            detachedCountdownJob = harness.coordinator.workoutJob
+            harness.coordinator.workoutJob = null
+
+            endExecution(harness)
+            loadRoutineNow(harness, routine("countdown-b", exerciseCount = 2))
+            harness.fakeBleRepo.commandsReceived.clear()
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val commandsBeforeARelease = harness.fakeBleRepo.commandsReceived.size
+            harness.coordinator._motionStartHoldProgress.value = 0.75f
+
+            advanceTimeBy(1_000)
+            runCurrent()
+
+            assertExecutionBStillActive(harness, leaseB)
+            assertEquals(commandsBeforeARelease, harness.fakeBleRepo.commandsReceived.size)
+            assertEquals(0.75f, harness.coordinator.motionStartHoldProgress.value)
+        } finally {
+            detachedCountdownJob?.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `rest haptic suspended under A cannot publish Resting under B`() = runTest {
+        val harness = DWSMTestHarness(this)
+        var hapticBlock: HapticBlock? = null
+        try {
+            harness.setActiveSummaryCountdownSeconds(-1)
+            harness.setActiveCountdownBeepsEnabled(true)
+            startExecution(harness, routine("rest-haptic-a", setCount = 2, restSeconds = 10))
+            harness.activeSessionEngine.handleSetCompletion()
+            runCurrent()
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+
+            hapticBlock = blockHapticEmissions(harness)
+            advanceTimeBy(1_000)
+            runCurrent()
+
+            loadRoutineNow(harness, routine("rest-haptic-b", exerciseCount = 2))
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val observed = observeReleasedStates(harness)
+
+            hapticBlock.release.complete(Unit)
+            runCurrent()
+
+            assertExecutionBStillActive(harness, leaseB)
+            assertNoTerminalAState(observed.states)
+            observed.job.cancel()
+        } finally {
+            hapticBlock?.release?.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `cable startup haptic cannot resume A baseline writes under bodyweight B`() = runTest {
+        val harness = DWSMTestHarness(this)
+        var hapticBlock: HapticBlock? = null
+        var detachedCableJob: Job? = null
+        try {
+            loadRoutineNow(harness, routine("cable-haptic-a"))
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.coordinator._currentMetric.value = WorkoutMetric(
+                positionA = 10f,
+                positionB = 20f,
+                velocityA = 0.0,
+                velocityB = 0.0,
+                loadA = 31f,
+                loadB = 32f,
+            )
+            hapticBlock = blockHapticEmissions(harness)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+            detachedCableJob = harness.coordinator.workoutJob
+            harness.coordinator.workoutJob = null
+
+            val bodyweightB = bodyweightRoutine("cable-haptic-b", durationSeconds = 30)
+            bodyweightB.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.coordinator._loadedRoutine.value = bodyweightB
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._loadBaselineA.value = 777f
+            harness.coordinator._loadBaselineB.value = 778f
+
+            hapticBlock.release.complete(Unit)
+            runCurrent()
+
+            assertExecutionBStillActive(harness, leaseB)
+            assertEquals(777f, harness.coordinator.loadBaselineA.value)
+            assertEquals(778f, harness.coordinator.loadBaselineB.value)
+        } finally {
+            detachedCableJob?.cancel()
+            hapticBlock?.release?.complete(Unit)
             harness.cleanup()
         }
     }
@@ -213,26 +357,125 @@ class Issue687StaleWorkSuppressionTest {
     }
 
     @Test
-    fun `stale warmup successor cannot start after B replaces A`() = runTest {
+    fun `manual stop continuation suspended after Ready cannot publish A summary under B`() = runTest {
         val harness = DWSMTestHarness(this)
-        val releaseReset = CompletableDeferred<Result<Unit>>()
+        var hapticBlock: HapticBlock? = null
         try {
-            startExecution(harness, warmupRoutine("warmup-a"))
-            harness.fakeBleRepo.stopWorkoutBlock = { releaseReset.await() }
+            startExecution(harness, routine("manual-stop-a"))
+            hapticBlock = blockHapticEmissions(harness)
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.dwsm.stopWorkout(exitingWorkout = false)
             runCurrent()
-            harness.dwsm.stopWorkout(exitingWorkout = true)
-            releaseReset.complete(Result.success(Unit))
-            runCurrent()
+            assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
 
-            val leaseB = startExecution(harness, routine("warmup-b", exerciseCount = 2))
+            val leaseB = startExecution(harness, routine("manual-stop-b", exerciseCount = 2))
+            val observed = observeReleasedStates(harness)
+
+            hapticBlock.release.complete(Unit)
             runCurrent()
 
             assertExecutionBStillActive(harness, leaseB)
-            assertEquals(1, harness.fakeBleRepo.commandsReceived.size)
+            assertNoTerminalAState(observed.states)
+            observed.job.cancel()
         } finally {
-            releaseReset.complete(Result.success(Unit))
+            hapticBlock?.release?.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Stop Set continuation queued after Ready cannot enter SetReady under B`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startExecution(harness, routine("stop-set-a", exerciseCount = 2))
+            val replacement = startReplacementWhenTeardownReady(harness)
+            val statesAfterB = observeRoutineStatesAfter(replacement, harness)
+
+            harness.dwsm.stopAndReturnToSetReady()
+            runCurrent()
+            val leaseB = replacement.await()
+
+            assertExecutionBStillActive(harness, leaseB)
+            assertTrue(statesAfterB.states.none { it is RoutineFlowState.SetReady })
+            statesAfterB.job.cancel()
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Skip Exercise continuation queued after Ready cannot advance B`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startExecution(harness, routine("skip-a", exerciseCount = 2))
+            val replacement = startReplacementWhenTeardownReady(harness)
+            val statesAfterB = observeRoutineStatesAfter(replacement, harness)
+
+            harness.dwsm.stopAndSkipCurrentExercise()
+            runCurrent()
+            val leaseB = replacement.await()
+
+            assertExecutionBStillActive(harness, leaseB)
+            assertTrue(statesAfterB.states.none { it is RoutineFlowState.SetReady })
+            assertTrue(statesAfterB.states.none { it is RoutineFlowState.Complete })
+            statesAfterB.job.cancel()
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `exercise jump request with captured A lease cannot teardown or navigate B`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val leaseA = startExecution(harness, routine("jump-captured-a", exerciseCount = 2))
+            endExecution(harness)
+            val leaseB = startExecution(harness, routine("jump-captured-b", exerciseCount = 2))
+            val stopCallsBeforeStaleRequest = harness.fakeBleRepo.stopWorkoutCallCount
+            var navigated = false
+
+            harness.activeSessionEngine.requestTeardownForTransition(
+                expectedLease = leaseA,
+                reason = TeardownReason.EXERCISE_JUMP,
+            ) {
+                navigated = true
+                harness.coordinator._currentExerciseIndex.value = 1
+            }
+            runCurrent()
+
+            assertExecutionBStillActive(harness, leaseB)
+            assertFalse(navigated)
+            assertEquals(stopCallsBeforeStaleRequest, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `End A cancels haptic-suspended warmup successor before B starts`() = runTest {
+        val harness = DWSMTestHarness(this)
+        var hapticBlock: HapticBlock? = null
+        try {
+            startExecution(harness, warmupRoutine("warmup-a"))
+            hapticBlock = blockHapticEmissions(harness)
+
+            harness.activeSessionEngine.handleSetCompletion()
+            runCurrent()
+            assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+            val leaseB = startExecution(harness, routine("warmup-b", exerciseCount = 2))
+            val commandsBeforeARelease = harness.fakeBleRepo.commandsReceived.size
+
+            hapticBlock.release.complete(Unit)
+            runCurrent()
+
+            assertExecutionBStillActive(harness, leaseB)
+            assertEquals(commandsBeforeARelease, harness.fakeBleRepo.commandsReceived.size)
+        } finally {
+            hapticBlock?.release?.complete(Unit)
             harness.cleanup()
         }
     }
@@ -283,15 +526,24 @@ class Issue687StaleWorkSuppressionTest {
         harness: DWSMTestHarness,
         routine: Routine,
     ): ExecutionLease {
-        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        loadRoutineNow(harness, routine)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
-        harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
         harness.fakeBleRepo.commandsReceived.clear()
         harness.dwsm.startWorkout(skipCountdown = true)
         runCurrent()
         assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
         return harness.activeSessionEngine.currentExecutionLeaseForTest()
+    }
+
+    private fun TestScope.loadRoutineNow(
+        harness: DWSMTestHarness,
+        routine: Routine,
+    ) {
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.dwsm.loadRoutine(routine)
+        runCurrent()
+        assertEquals(routine.id, harness.coordinator.loadedRoutine.value?.id)
     }
 
     private fun TestScope.endExecution(harness: DWSMTestHarness) {
@@ -308,13 +560,60 @@ class Issue687StaleWorkSuppressionTest {
         return ObservedStates(states, job)
     }
 
+    private fun TestScope.blockHapticEmissions(harness: DWSMTestHarness): HapticBlock {
+        val release = CompletableDeferred<Unit>()
+        val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.hapticEvents.collect {
+                release.await()
+            }
+        }
+        runCurrent()
+        assertTrue(harness.coordinator._hapticEvents.tryEmit(HapticEvent.WORKOUT_END))
+        repeat(32) {
+            assertTrue(harness.coordinator._hapticEvents.tryEmit(HapticEvent.WORKOUT_END))
+        }
+        assertFalse(harness.coordinator._hapticEvents.tryEmit(HapticEvent.WORKOUT_END))
+        return HapticBlock(release, collector)
+    }
+
+    private fun TestScope.startReplacementWhenTeardownReady(
+        harness: DWSMTestHarness,
+    ): CompletableDeferred<ExecutionLease> {
+        val replacement = CompletableDeferred<ExecutionLease>()
+        backgroundScope.launch {
+            harness.activeSessionEngine.machineTeardownState.drop(1).first {
+                it is MachineTeardownState.Ready
+            }
+            harness.dwsm.startWorkout(skipCountdown = true)
+            replacement.complete(harness.activeSessionEngine.currentExecutionLeaseForTest())
+        }
+        runCurrent()
+        return replacement
+    }
+
+    private fun TestScope.observeRoutineStatesAfter(
+        replacement: CompletableDeferred<ExecutionLease>,
+        harness: DWSMTestHarness,
+    ): ObservedRoutineStates {
+        val states = mutableListOf<RoutineFlowState>()
+        val job = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.routineFlowState.collect { state ->
+                if (replacement.isCompleted) states += state
+            }
+        }
+        return ObservedRoutineStates(states, job)
+    }
+
     private fun assertExecutionBStillActive(
         harness: DWSMTestHarness,
         leaseB: ExecutionLease,
     ) {
         assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
         assertFalse(harness.coordinator.routineFlowState.value is RoutineFlowState.Complete)
-        assertEquals(leaseB, harness.activeSessionEngine.currentExecutionLeaseForTest())
+        val currentLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+        assertEquals(leaseB.executionId, currentLease.executionId)
+        assertEquals(leaseB.sessionId, currentLease.sessionId)
+        assertEquals(leaseB.profileId, currentLease.profileId)
         assertEquals(0, harness.coordinator.currentExerciseIndex.value)
         assertEquals(0, harness.coordinator.currentSetIndex.value)
     }
@@ -416,5 +715,15 @@ class Issue687StaleWorkSuppressionTest {
     private data class ObservedStates(
         val states: MutableList<WorkoutState>,
         val job: Job,
+    )
+
+    private data class ObservedRoutineStates(
+        val states: MutableList<RoutineFlowState>,
+        val job: Job,
+    )
+
+    private data class HapticBlock(
+        val release: CompletableDeferred<Unit>,
+        val collector: Job,
     )
 }
