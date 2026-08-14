@@ -400,6 +400,12 @@ fun WorkoutTab(
                 )
             }
 
+            WorkoutStartGateNotice(
+                state = machineTeardownState,
+                onRetry = onRetryWorkoutTeardown,
+                onReconnect = onReconnectWorkoutTeardown,
+            )
+
             if (connectionState is ConnectionState.Connected) {
                 // Show setup button when in Idle state, otherwise show workout controls
                 when (workoutState) {
@@ -422,8 +428,6 @@ fun WorkoutTab(
                             onStartNextExercise = onStartNextExercise,
                             onResetForNewWorkout = onResetForNewWorkout,
                             machineTeardownState = machineTeardownState,
-                            onRetryWorkoutTeardown = onRetryWorkoutTeardown,
-                            onReconnectWorkoutTeardown = onReconnectWorkoutTeardown,
                         )
                     }
 
@@ -1010,8 +1014,6 @@ private fun CompletedCard(
     onStartNextExercise: () -> Unit,
     onResetForNewWorkout: () -> Unit,
     machineTeardownState: MachineTeardownState,
-    onRetryWorkoutTeardown: () -> Unit,
-    onReconnectWorkoutTeardown: () -> Unit,
 ) {
     // workout-setup-16: spring scaleIn entrance on the CheckCircle icon.
     // reduceMotion: EnterTransition.None — icon appears instantly (complete static final state).
@@ -1094,12 +1096,6 @@ private fun CompletedCard(
 
                         Spacer(Modifier.height(Spacing.medium))
 
-                        WorkoutStartGateNotice(
-                            state = machineTeardownState,
-                            onRetry = onRetryWorkoutTeardown,
-                            onReconnect = onReconnectWorkoutTeardown,
-                        )
-
                         Button(
                             onClick = onStartNextExercise,
                             modifier = Modifier
@@ -1126,11 +1122,6 @@ private fun CompletedCard(
                 }
             } else {
                 // Last exercise or not a routine - show "Start New Workout"
-                WorkoutStartGateNotice(
-                    state = machineTeardownState,
-                    onRetry = onRetryWorkoutTeardown,
-                    onReconnect = onReconnectWorkoutTeardown,
-                )
                 Button(
                     onClick = onResetForNewWorkout,
                     modifier = Modifier

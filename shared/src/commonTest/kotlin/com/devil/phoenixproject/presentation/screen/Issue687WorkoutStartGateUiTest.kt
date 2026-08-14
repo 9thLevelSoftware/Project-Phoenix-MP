@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.screen
 
+import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
@@ -42,6 +43,16 @@ class Issue687WorkoutStartGateUiTest {
         assertFalse(presentation.startEnabled)
         assertEquals(StartGateLabel.START, presentation.label)
         assertTrue(presentation.showRecoveryActions)
+    }
+
+    @Test
+    fun `recovery actions remain available while disconnected`() {
+        assertRecoveryAvailableOutsideConnectedOnlyContent(ConnectionState.Disconnected)
+    }
+
+    @Test
+    fun `recovery actions remain available while reconnecting`() {
+        assertRecoveryAvailableOutsideConnectedOnlyContent(ConnectionState.Connecting)
     }
 
     @Test
@@ -148,6 +159,38 @@ class Issue687WorkoutStartGateUiTest {
         val source = readProjectFile("src/commonMain/kotlin/com/devil/phoenixproject/$relativePath")
         assertNotNull(source, "Could not read $relativePath")
         return source
+    }
+
+    private fun assertRecoveryAvailableOutsideConnectedOnlyContent(connectionState: ConnectionState) {
+        assertFalse(
+            connectionState is ConnectionState.Connected,
+            "This regression case must exercise a non-connected state: $connectionState",
+        )
+        val presentation = MachineTeardownState.RecoveryRequired(
+            executionId = 19L,
+        ).toStartGatePresentation()
+        assertFalse(presentation.startEnabled)
+        assertTrue(presentation.showRecoveryActions)
+
+        val workoutTab = source("presentation/screen/WorkoutTab.kt")
+        val connectedOnlyBranch = workoutTab.indexOf(
+            "if (connectionState is ConnectionState.Connected)",
+        )
+        val recoveryNotice = workoutTab.indexOf("WorkoutStartGateNotice(")
+        assertTrue(connectedOnlyBranch >= 0, "WorkoutTab connected-only content branch is missing")
+        assertTrue(recoveryNotice >= 0, "WorkoutTab recovery notice is missing")
+        assertTrue(
+            recoveryNotice < connectedOnlyBranch,
+            "RecoveryRequired must keep Retry/Reconnect visible while $connectionState; " +
+                "WorkoutStartGateNotice is currently nested under connected-only content",
+        )
+
+        val alwaysAvailableRecoveryBlock = workoutTab.substring(recoveryNotice, connectedOnlyBranch)
+        assertContainsAll(
+            alwaysAvailableRecoveryBlock,
+            "onRetry = onRetryWorkoutTeardown",
+            "onReconnect = onReconnectWorkoutTeardown",
+        )
     }
 
     private fun assertContainsAll(source: String, vararg contracts: String) {
