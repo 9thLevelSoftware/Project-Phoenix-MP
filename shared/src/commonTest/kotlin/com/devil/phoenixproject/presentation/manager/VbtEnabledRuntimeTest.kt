@@ -40,15 +40,13 @@ class VbtEnabledRuntimeTest {
                 ),
             )
             advanceUntilIdle()
+            val lease = startCableExecution(harness)
 
             harness.coordinator._repCount.value = RepCount(
                 workingReps = 3,
                 totalReps = 3,
                 isWarmupComplete = true,
             )
-            harness.coordinator._workoutState.value = WorkoutState.Active
-            harness.coordinator.currentSessionId = "disabled-vbt-session"
-
             processRep(harness, repNumber = 1, velocityMmS = 100.0)
             processRep(harness, repNumber = 2, velocityMmS = 70.0)
             processRep(harness, repNumber = 3, velocityMmS = 60.0)
@@ -79,7 +77,7 @@ class VbtEnabledRuntimeTest {
 
             assertEquals(
                 3,
-                harness.fakeBiomechanicsRepo.savedBiomechanics["disabled-vbt-session"]?.size,
+                harness.fakeBiomechanicsRepo.savedBiomechanics[lease.sessionId]?.size,
                 "Completing a disabled-VBT set must still persist every biomechanics result.",
             )
         } finally {
@@ -106,9 +104,8 @@ class VbtEnabledRuntimeTest {
                 ),
             )
             advanceUntilIdle()
+            startCableExecution(harness)
             harness.coordinator._repCount.value = RepCount(isWarmupComplete = true)
-            harness.coordinator._workoutState.value = WorkoutState.Active
-            harness.coordinator.currentSessionId = "re-enabled-vbt-session"
 
             processRep(harness, repNumber = 1, velocityMmS = 100.0)
             processRep(harness, repNumber = 2, velocityMmS = 70.0)
@@ -215,8 +212,8 @@ class VbtEnabledRuntimeTest {
                 ),
             )
             advanceUntilIdle()
+            startCableExecution(harness)
             harness.coordinator._repCount.value = RepCount(isWarmupComplete = true)
-            harness.coordinator._workoutState.value = WorkoutState.Active
 
             processRep(harness, repNumber = 1, velocityMmS = 100.0)
             processRep(harness, repNumber = 2, velocityMmS = 70.0)
@@ -259,6 +256,12 @@ class VbtEnabledRuntimeTest {
             timestamp = repNumber * 1_000L,
         )
         harness.activeSessionEngine.evaluateLatestVbtResult()
+    }
+
+    private fun startCableExecution(harness: DWSMTestHarness): ExecutionLease {
+        harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        harness.startCableSet(targetReps = 10)
+        return requireNotNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
     }
 }
 
@@ -369,6 +372,7 @@ class VbtUiWiringTest {
         for (index in openingBrace until source.length) {
             when (source[index]) {
                 '{' -> depth++
+
                 '}' -> {
                     depth--
                     if (depth == 0) return source.substring(headerStart, index + 1)

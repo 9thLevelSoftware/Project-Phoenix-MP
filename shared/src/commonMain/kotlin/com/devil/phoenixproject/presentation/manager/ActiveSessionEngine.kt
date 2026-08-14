@@ -49,6 +49,7 @@ import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.SingleExerciseDefaultsDocument
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightAdjustmentInput
@@ -62,8 +63,8 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
-import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
+import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.BleConstants
@@ -80,9 +81,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -158,8 +159,7 @@ class ActiveSessionEngine(
     val machineTeardownState: StateFlow<MachineTeardownState>
         get() = executionGuard.machineTeardownState
 
-    internal fun currentExecutionLeaseForTest(): ExecutionLease =
-        requireNotNull(executionGuard.currentLease)
+    internal fun currentExecutionLeaseForTest(): ExecutionLease = requireNotNull(executionGuard.currentLease)
 
     internal fun currentExecutionLeaseOrNull(): ExecutionLease? = executionGuard.currentLease
 
@@ -183,8 +183,7 @@ class ActiveSessionEngine(
         return current
     }
 
-    private fun hasExpectedAuthority(lease: ExecutionLease?, transition: String): Boolean =
-        lease == null || hasCurrentAuthority(lease, transition)
+    private fun hasExpectedAuthority(lease: ExecutionLease?, transition: String): Boolean = lease == null || hasCurrentAuthority(lease, transition)
 
     private fun hasAutoStartAuthority(expectedLease: ExecutionLease?, transition: String): Boolean {
         if (expectedLease != null) return hasCurrentAuthority(expectedLease, transition)
@@ -1284,7 +1283,15 @@ class ActiveSessionEngine(
 
         when (val decision = repFreshnessGate.evaluate(lease, notification)) {
             RepFreshnessDecision.Process -> handleRepNotification(lease, notification)
-            RepFreshnessDecision.BaselineOnly -> logRepDrop(lease, "legacy-baseline", notification)
+
+            RepFreshnessDecision.BaselineOnly -> {
+                repCounter.establishLegacyCounterBaseline(
+                    topCounter = notification.topCounter,
+                    completeCounter = notification.completeCounter,
+                )
+                logRepDrop(lease, "legacy-baseline", notification)
+            }
+
             is RepFreshnessDecision.Drop -> logRepDrop(lease, decision.reason.name, notification)
         }
     }
@@ -2025,9 +2032,7 @@ class ActiveSessionEngine(
         }
     }
 
-    suspend fun getJustLiftDefaults(): JustLiftDefaults {
-        return settingsManager.getJustLiftDefaultsDocument().toRuntimeJustLiftDefaults()
-    }
+    suspend fun getJustLiftDefaults(): JustLiftDefaults = settingsManager.getJustLiftDefaultsDocument().toRuntimeJustLiftDefaults()
 
     fun saveJustLiftDefaults(defaults: JustLiftDefaults) {
         settingsManager.saveJustLiftDefaultsDocument(defaults.toDocument())
@@ -2083,59 +2088,64 @@ class ActiveSessionEngine(
 
     suspend fun getSingleExerciseDefaults(
         exerciseId: String,
-    ): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? =
-        settingsManager.getSingleExerciseDefaultsDocument(exerciseId)?.toLegacySingleExerciseDefaults()
+    ): com.devil.phoenixproject.data.preferences.SingleExerciseDefaults? = settingsManager.getSingleExerciseDefaultsDocument(exerciseId)?.toLegacySingleExerciseDefaults()
 
     fun saveSingleExerciseDefaults(defaults: com.devil.phoenixproject.data.preferences.SingleExerciseDefaults) {
         settingsManager.saveSingleExerciseDefaultsDocument(defaults.toDocument())
         Logger.d("saveSingleExerciseDefaults: exerciseId=${defaults.exerciseId}")
     }
 
-    private suspend fun saveSingleExerciseDefaultsFromWorkout() {
-        val routine = coordinator._loadedRoutine.value ?: return
+    private fun captureSingleExerciseDefaultsFromWorkout(): SingleExerciseDefaultsDocument? {
+        val routine = coordinator._loadedRoutine.value ?: return null
 
-        if (!routine.id.startsWith(DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX)) return
+        if (!routine.id.startsWith(DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX)) return null
 
-        val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value) ?: return
-        val exerciseId = currentExercise.exercise.id ?: return
+        val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value) ?: return null
+        val exerciseId = currentExercise.exercise.id ?: return null
 
         val isEchoExercise = currentExercise.programMode == ProgramMode.Echo
         val eccentricLoadPct = if (isEchoExercise) currentExercise.eccentricLoad.percentage else 100
         val echoLevelVal = if (isEchoExercise) currentExercise.echoLevel.levelValue else 0
 
+        val setReps = currentExercise.setReps.ifEmpty { listOf(10) }
+        val numSets = setReps.size
+
+        val normalizedSetWeights = when {
+            currentExercise.setWeightsPerCableKg.isEmpty() -> emptyList()
+            currentExercise.setWeightsPerCableKg.size == numSets -> currentExercise.setWeightsPerCableKg
+            else -> emptyList()
+        }
+
+        val normalizedSetRest = when {
+            currentExercise.setRestSeconds.isEmpty() -> emptyList()
+            currentExercise.setRestSeconds.size == numSets -> currentExercise.setRestSeconds
+            else -> emptyList()
+        }
+
+        return com.devil.phoenixproject.data.preferences.SingleExerciseDefaults(
+            exerciseId = exerciseId,
+            setReps = setReps.toList(),
+            weightPerCableKg = currentExercise.weightPerCableKg.coerceAtLeast(0f),
+            setWeightsPerCableKg = normalizedSetWeights.toList(),
+            progressionKg = currentExercise.progressionKg.coerceIn(-50f, 50f),
+            setRestSeconds = normalizedSetRest.toList(),
+            workoutModeId = currentExercise.programMode.modeValue,
+            eccentricLoadPercentage = eccentricLoadPct,
+            echoLevelValue = echoLevelVal,
+            duration = currentExercise.duration?.takeIf { it > 0 } ?: 0,
+            isAMRAP = currentExercise.isAMRAP,
+            perSetRestTime = currentExercise.perSetRestTime,
+            defaultRackItemIds = currentExercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct(),
+        ).toDocument()
+    }
+
+    private suspend fun saveSingleExerciseDefaultsFromWorkout() {
+        val defaults = captureSingleExerciseDefaultsFromWorkout() ?: return
         try {
-            val setReps = currentExercise.setReps.ifEmpty { listOf(10) }
-            val numSets = setReps.size
-
-            val normalizedSetWeights = when {
-                currentExercise.setWeightsPerCableKg.isEmpty() -> emptyList()
-                currentExercise.setWeightsPerCableKg.size == numSets -> currentExercise.setWeightsPerCableKg
-                else -> emptyList()
-            }
-
-            val normalizedSetRest = when {
-                currentExercise.setRestSeconds.isEmpty() -> emptyList()
-                currentExercise.setRestSeconds.size == numSets -> currentExercise.setRestSeconds
-                else -> emptyList()
-            }
-
-            val defaults = com.devil.phoenixproject.data.preferences.SingleExerciseDefaults(
-                exerciseId = exerciseId,
-                setReps = setReps,
-                weightPerCableKg = currentExercise.weightPerCableKg.coerceAtLeast(0f),
-                setWeightsPerCableKg = normalizedSetWeights,
-                progressionKg = currentExercise.progressionKg.coerceIn(-50f, 50f),
-                setRestSeconds = normalizedSetRest,
-                workoutModeId = currentExercise.programMode.modeValue,
-                eccentricLoadPercentage = eccentricLoadPct,
-                echoLevelValue = echoLevelVal,
-                duration = currentExercise.duration?.takeIf { it > 0 } ?: 0,
-                isAMRAP = currentExercise.isAMRAP,
-                perSetRestTime = currentExercise.perSetRestTime,
-                defaultRackItemIds = currentExercise.defaultRackItemIds.filter { it.isNotBlank() }.distinct(),
-            )
-            settingsManager.saveSingleExerciseDefaultsDocument(defaults.toDocument())
-            Logger.d { "Saved Single Exercise defaults for ${currentExercise.exercise.name}" }
+            settingsManager.saveSingleExerciseDefaultsDocument(defaults)
+            Logger.d { "Saved Single Exercise defaults for ${defaults.exerciseId}" }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: IllegalArgumentException) {
             Logger.e(e) { "Failed to save Single Exercise defaults - validation error" }
         } catch (e: Exception) {
@@ -2825,10 +2835,12 @@ class ActiveSessionEngine(
                     rejectStart(StartRejectionReason.TEARING_DOWN)
                     return
                 }
+
                 is MachineTeardownState.RecoveryRequired -> {
                     rejectStart(StartRejectionReason.RECOVERY_REQUIRED)
                     return
                 }
+
                 MachineTeardownState.Ready -> Unit
             }
         }
@@ -3561,6 +3573,7 @@ class ActiveSessionEngine(
             repMetrics = coordinator.setRepMetrics.value.map(RepMetricData::deepCopyForExitSnapshot),
             biomechanicsRepResults = biomechanicsSummary?.repResults.orEmpty()
                 .map { it.deepCopyForExitSnapshot() },
+            singleExerciseDefaults = captureSingleExerciseDefaultsFromWorkout(),
             presentationSummary = presentationSummary,
             exerciseIndex = exerciseIndex,
             setIndex = setIndex,
@@ -3602,6 +3615,7 @@ class ActiveSessionEngine(
     private fun launchSnapshotPersistence(snapshot: WorkoutExitSnapshot) {
         when (executionGuard.claimPersistence(snapshot.session.id, snapshot.terminalPath)) {
             PersistenceClaimResult.Claimed -> scope.launch { persistSnapshot(snapshot) }
+
             PersistenceClaimResult.DuplicateInProgress,
             PersistenceClaimResult.AlreadyPersisted,
             -> logPersistenceDeduplicated(snapshot)
@@ -3621,6 +3635,7 @@ class ActiveSessionEngine(
                 scope.launch { persistSnapshot(snapshot) }
                 true
             }
+
             PersistenceClaimResult.DuplicateInProgress,
             PersistenceClaimResult.AlreadyPersisted,
             -> false
@@ -3650,6 +3665,19 @@ class ActiveSessionEngine(
             biomechanicsRepository.deleteRepBiomechanics(sessionId)
             if (snapshot.biomechanicsRepResults.isNotEmpty()) {
                 biomechanicsRepository.saveRepBiomechanics(sessionId, snapshot.biomechanicsRepResults)
+            }
+            snapshot.singleExerciseDefaults?.let { defaults ->
+                val workoutPreferences = userProfileRepository
+                    .observePreferences(snapshot.lease.profileId)
+                    .first()
+                    .workout.value
+                userProfileRepository.updateWorkout(
+                    snapshot.lease.profileId,
+                    workoutPreferences.copy(
+                        singleExerciseDefaults = workoutPreferences.singleExerciseDefaults +
+                            (defaults.exerciseId to defaults),
+                    ),
+                )
             }
 
             val postSave = snapshot.postSaveInput
@@ -3808,8 +3836,6 @@ class ActiveSessionEngine(
                         coordinator._workoutParameters.update { params ->
                             params.copy(selectedExerciseId = null)
                         }
-                    } else if (isSingleExerciseMode(coordinator)) {
-                        saveSingleExerciseDefaultsFromWorkout()
                     }
 
                     if (!hasCurrentAuthority(manualSnapshot.lease, "manual_stop_summary")) {
@@ -5976,6 +6002,7 @@ class ActiveSessionEngine(
 
     private companion object {
         const val TEMPLATE_531_ID = "template_531"
+
         // Issue #649: verbal cues are typically <30s; this ceiling covers the cue
         // plus a short post-cue transition window. Exceeding it releases the defer
         // so a racked mid-set handle can end the set normally.

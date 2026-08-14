@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ForceCurveResult
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.SingleExerciseDefaultsDocument
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -19,6 +20,7 @@ internal data class WorkoutExitSnapshot(
     val metrics: List<WorkoutMetric>,
     val repMetrics: List<RepMetricData>,
     val biomechanicsRepResults: List<BiomechanicsRepResult>,
+    val singleExerciseDefaults: SingleExerciseDefaultsDocument? = null,
     val presentationSummary: WorkoutState.SetSummary,
     val exerciseIndex: Int,
     val setIndex: Int,

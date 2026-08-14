@@ -3,8 +3,8 @@ package com.devil.phoenixproject.presentation.manager
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
-import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
@@ -689,6 +689,67 @@ class DWSMRoutineFlowTest {
             "Starting from Set Ready must not mutate the saved routine default.",
         )
         harness.cleanup()
+    }
+
+    @Test
+    fun `Issue687 routine Set Ready start creates one guarded routine execution`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 1, setsPerExercise = 1)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            advanceUntilIdle()
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            advanceUntilIdle()
+
+            harness.dwsm.startSetFromReady()
+            runCurrent()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(lease.requiresMachine)
+            assertFalse(lease.isBodyweight)
+            assertFalse(lease.isJustLift)
+            assertFalse(lease.isTimedCable)
+            assertEquals(routine.exercises.single().setReps.single(), lease.workingRepTarget)
+            assertEquals(routine.id, harness.coordinator.currentRoutineId)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Issue687 temporary single Set Ready start creates one guarded nonroutine execution`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val tempRoutine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 1, setsPerExercise = 1).copy(
+                id = "${DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX}issue-687",
+            )
+            tempRoutine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            advanceUntilIdle()
+            harness.dwsm.loadRoutine(tempRoutine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            advanceUntilIdle()
+
+            harness.dwsm.startSetFromReady()
+            runCurrent()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(lease.requiresMachine)
+            assertFalse(lease.isBodyweight)
+            assertFalse(lease.isJustLift)
+            assertFalse(lease.isTimedCable)
+            assertEquals(tempRoutine.exercises.single().setReps.single(), lease.workingRepTarget)
+            assertEquals(null, harness.coordinator.currentRoutineId)
+            assertEquals(null, harness.coordinator.currentRoutineSessionId)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+        } finally {
+            harness.cleanup()
+        }
     }
 
     // ===== C. Navigation =====

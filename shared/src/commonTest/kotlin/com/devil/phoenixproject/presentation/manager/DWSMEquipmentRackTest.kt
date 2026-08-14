@@ -14,9 +14,12 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.util.BleConstants
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 class DWSMEquipmentRackTest {
@@ -336,20 +339,22 @@ class DWSMEquipmentRackTest {
         val routine = Routine(
             id = "${DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX}rack-defaults",
             name = "Single Exercise",
-            exercises = listOf(routineExercise("single-rex", "Single Cable Row", listOf("vest"), exerciseId = exerciseId).copy(
-                exercise = com.devil.phoenixproject.domain.model.Exercise(
-                    id = exerciseId,
-                    name = "Single Cable Row",
-                    muscleGroup = "Back",
-                    muscleGroups = "Back",
-                    // "BAR" is in CABLE_ACCESSORIES, so this routine
-                    // stays on the cable save path. The pre-#593 "Cable"
-                    // string was treated as bodyweight by the codebase,
-                    // which would now require a rep-entry dialog and
-                    // break this rack-defaults test.
-                    equipment = "BAR",
+            exercises = listOf(
+                routineExercise("single-rex", "Single Cable Row", listOf("vest"), exerciseId = exerciseId).copy(
+                    exercise = com.devil.phoenixproject.domain.model.Exercise(
+                        id = exerciseId,
+                        name = "Single Cable Row",
+                        muscleGroup = "Back",
+                        muscleGroups = "Back",
+                        // "BAR" is in CABLE_ACCESSORIES, so this routine
+                        // stays on the cable save path. The pre-#593 "Cable"
+                        // string was treated as bodyweight by the codebase,
+                        // which would now require a rep-entry dialog and
+                        // break this rack-defaults test.
+                        equipment = "BAR",
+                    ),
                 ),
-            )),
+            ),
         )
 
         assertTrue(harness.dwsm.loadRoutineAsync(routine))
@@ -382,6 +387,67 @@ class DWSMEquipmentRackTest {
         val defaults = harness.activeSessionEngine.getSingleExerciseDefaults(exerciseId)
         assertEquals(listOf("vest"), defaults?.defaultRackItemIds)
         harness.cleanup()
+    }
+
+    @Test
+    fun `single exercise defaults persist to the captured profile after an immediate switch`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releasePersistence = CompletableDeferred<Unit>()
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.fakeEquipmentRackRepo.saveItems(
+                listOf(rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE)),
+            )
+            val exerciseId = "profile-bound-rack-defaults"
+            val routine = Routine(
+                id = "${DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX}profile-bound-rack-defaults",
+                name = "Profile-bound Single Exercise",
+                exercises = listOf(
+                    routineExercise("profile-bound-rex", "Profile-bound Row", listOf("vest"), exerciseId = exerciseId).copy(
+                        exercise = com.devil.phoenixproject.domain.model.Exercise(
+                            id = exerciseId,
+                            name = "Profile-bound Row",
+                            muscleGroup = "Back",
+                            muscleGroups = "Back",
+                            equipment = "BAR",
+                        ),
+                    ),
+                ),
+            )
+
+            assertTrue(harness.dwsm.loadRoutineAsync(routine))
+            advanceUntilIdle()
+            harness.dwsm.updateActiveRackSelection(listOf("vest"))
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = requireNotNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
+            harness.dwsm.coordinator._repCount.value = RepCount(
+                workingReps = 8,
+                totalReps = 8,
+                isWarmupComplete = true,
+            )
+            harness.fakeWorkoutRepo.beforeSaveSession = { releasePersistence.await() }
+
+            harness.activeSessionEngine.handleSetCompletion()
+            runCurrent()
+            assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.size)
+
+            harness.fakeUserProfileRepo.setActiveProfileForTest(id = "profile-b")
+            releasePersistence.complete(Unit)
+            advanceUntilIdle()
+
+            assertNull(harness.activeSessionEngine.getSingleExerciseDefaults(exerciseId))
+            harness.fakeUserProfileRepo.setActiveProfileForTest(id = "default")
+            assertTrue(harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId))
+            advanceUntilIdle()
+            assertEquals(
+                listOf("vest"),
+                harness.activeSessionEngine.getSingleExerciseDefaults(exerciseId)?.defaultRackItemIds,
+            )
+        } finally {
+            releasePersistence.complete(Unit)
+            harness.cleanup()
+        }
     }
 
     private fun rackItem(id: String, weightKg: Float, behavior: RackItemBehavior): RackItem = RackItem(

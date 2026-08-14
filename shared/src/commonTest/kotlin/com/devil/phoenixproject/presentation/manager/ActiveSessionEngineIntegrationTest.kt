@@ -11,17 +11,17 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.UserPreferences
-import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.testutil.DWSMTestHarness
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
-import kotlin.test.assertNotNull
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
-import kotlin.test.assertIs
-import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
@@ -47,9 +47,7 @@ class ActiveSessionEngineIntegrationTest {
     fun configSendCatchRethrowsCancellationBeforePublishingFailures() = runTest {
         val harness = DWSMTestHarness(this)
         val cancellingBleRepository = object : BleRepository by harness.fakeBleRepo {
-            override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
-                throw CancellationException("execution superseded during config send")
-            }
+            override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> = throw CancellationException("execution superseded during config send")
         }
         val engine = createEngine(harness, cancellingBleRepository)
         val bleErrors = mutableListOf<String>()
@@ -629,7 +627,7 @@ class ActiveSessionEngineIntegrationTest {
     ) {
         harness.dwsm.enterSetReady(exerciseIndex, setIndex)
         harness.testScope.advanceUntilIdle()
-        harness.dwsm.startWorkout(skipCountdown = true)
+        engine.startWorkout(skipCountdown = true)
         harness.testScope.advanceUntilIdle()
 
         harness.coordinator._repCount.value = RepCount(
@@ -730,8 +728,7 @@ class ActiveSessionEngineIntegrationTest {
         setWeightsPercentOfPR = setWeightsPercentOfPR,
     )
 
-    private fun orderedExercises(vararg exercises: RoutineExercise): List<RoutineExercise> =
-        exercises.mapIndexed { index, exercise -> exercise.copy(orderIndex = index) }
+    private fun orderedExercises(vararg exercises: RoutineExercise): List<RoutineExercise> = exercises.mapIndexed { index, exercise -> exercise.copy(orderIndex = index) }
 
     private companion object {
         const val BENCH_ID = "ZZ92N8QsBdp6HCh3"
