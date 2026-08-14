@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -136,6 +137,32 @@ class SqlDelightCompletedSetRepositoryTest {
         assertEquals(SetEndReason.UNKNOWN, repository.getCompletedSets("session-1").single().setEndReason)
     }
 
+    @Test
+    fun `tagged Just Lift updates existing set without overwriting captured end reason`() = runTest {
+        repository.saveCompletedSet(
+            completedSet(
+                id = "cset-captured-stall",
+                sessionId = "session-1",
+                setNumber = 1,
+                setEndReason = SetEndReason.STALL_FAILURE,
+            ),
+        )
+
+        repository.ensureCompletedSetForTaggedJustLift(justLiftSession("session-1"), isAmrap = false)
+
+        val persisted = repository.getCompletedSets("session-1").single()
+        assertEquals("cset-captured-stall", persisted.id)
+        assertEquals(SetEndReason.STALL_FAILURE, persisted.setEndReason)
+    }
+
+    @Test
+    fun `tagged historical Just Lift session without completed set uses UNKNOWN reason`() = runTest {
+        repository.ensureCompletedSetForTaggedJustLift(justLiftSession("session-1"), isAmrap = false)
+
+        val persisted = repository.getCompletedSets("session-1").single()
+        assertEquals(SetEndReason.UNKNOWN, persisted.setEndReason)
+    }
+
     private fun plannedSet(
         id: String,
         routineExerciseId: String,
@@ -166,6 +193,18 @@ class SqlDelightCompletedSetRepositoryTest {
         isPr = false,
         completedAt = 1000L + setNumber,
         setEndReason = setEndReason,
+    )
+
+    private fun justLiftSession(id: String) = WorkoutSession(
+        id = id,
+        timestamp = 1_000L,
+        mode = "OldSchool",
+        reps = 0,
+        weightPerCableKg = 40f,
+        duration = 10_000L,
+        totalReps = 7,
+        workingReps = 7,
+        isJustLift = true,
     )
 
     private fun insertRoutine(id: String) {

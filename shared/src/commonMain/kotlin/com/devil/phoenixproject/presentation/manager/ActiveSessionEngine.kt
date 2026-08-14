@@ -3544,7 +3544,7 @@ class ActiveSessionEngine(
             strengthProfile = biomechanicsSummary?.strengthProfile?.name,
             profileId = lease.profileId,
         )
-        val completedSet = if (params.selectedExerciseId != null && repCount.workingReps > 0) {
+        val completedSet = if (repCount.workingReps > 0 && (params.selectedExerciseId != null || params.isJustLift)) {
             CompletedSet(
                 id = generateUUID(),
                 sessionId = lease.sessionId,
