@@ -232,17 +232,6 @@ object BlePacketFactory {
             }
         }
 
-        // Issue #673: Signed protocol contract — softMax must not exceed 100.0f.
-        // The firmware's signed 8-bit protocol field limits the maximum to 100kg.
-        // Constants.MAX_WEIGHT_PER_CABLE_KG (110) is the UI/display maximum but
-        // must not be sent over BLE as softMax.
-        require(params.weightPerCableKg <= 100.0f) {
-            "weightPerCableKg=${params.weightPerCableKg} exceeds signed protocol softMax bound (100.0f)"
-        }
-        require(kotlin.math.abs(params.progressionRegressionKg) <= 10.0f) {
-            "progressionRegressionKg=${params.progressionRegressionKg} exceeds firmware increment bound (10.0f)"
-        }
-
         if (effectiveVariant == ForceConfigVariant.OVERLAP) {
             // Legacy Phoenix behavior: overwrite the profile tail with softMax
             // and increment. Production uses NON_OVERLAP to match the official app.

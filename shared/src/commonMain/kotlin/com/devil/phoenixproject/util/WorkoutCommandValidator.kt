@@ -35,15 +35,6 @@ object WorkoutCommandValidator {
         validateFiniteWeight(params.weightPerCableKg).onFailure { return Result.failure(it) }
         validateFiniteWeight(params.progressionRegressionKg, field = "progressionRegressionKg")
             .onFailure { return Result.failure(it) }
-        // Issue #673: Validate firmware increment bound early (±10kg)
-        // so invalid imported/synced values are rejected before reaching
-        // BlePacketFactory.createProgramParams() which enforces the same
-        // bound via require().
-        if (kotlin.math.abs(params.progressionRegressionKg) > 10.0f) {
-            return failure(
-                "progressionRegressionKg must be within ±10.0f (firmware increment bound), got ${params.progressionRegressionKg}",
-            )
-        }
 
         if (params.isJustLift && params.weightPerCableKg < Constants.JUST_LIFT_MIN_VALID_WEIGHT_KG) {
             return failure(
@@ -108,18 +99,13 @@ object WorkoutCommandValidator {
 
     private fun isFinite(value: Float): Boolean = !value.isNaN() && !value.isInfinite()
 
-    // Signed protocol softMax bound: the firmware's BLE activation packet limits
-    // the maximum weight to 100.0f. Constants.MAX_WEIGHT_PER_CABLE_KG (110) is the
-    // UI/display maximum but must not be sent as softMax over BLE.
-    private const val SIGNED_PROTOCOL_SOFT_MAX_KG = 100.0f
-
     private fun validateWeightRange(weightPerCableKg: Float, allowZero: Boolean): Result<Unit> {
         if (!allowZero && weightPerCableKg <= Constants.MIN_WEIGHT_KG) {
             return failure("weightPerCableKg must be greater than ${Constants.MIN_WEIGHT_KG}kg, got $weightPerCableKg")
         }
-        if (weightPerCableKg < Constants.MIN_WEIGHT_KG || weightPerCableKg > SIGNED_PROTOCOL_SOFT_MAX_KG) {
+        if (weightPerCableKg < Constants.MIN_WEIGHT_KG || weightPerCableKg > Constants.MAX_WEIGHT_PER_CABLE_KG) {
             return failure(
-                "weightPerCableKg must be ${Constants.MIN_WEIGHT_KG}..${SIGNED_PROTOCOL_SOFT_MAX_KG}kg, got $weightPerCableKg",
+                "weightPerCableKg must be ${Constants.MIN_WEIGHT_KG}..${Constants.MAX_WEIGHT_PER_CABLE_KG}kg, got $weightPerCableKg",
             )
         }
         return Result.success(Unit)

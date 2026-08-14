@@ -4079,7 +4079,7 @@ class ActiveSessionEngine(
             Logger.d { "stopAndReturnToSetReady: Issue #320 - workingReps=${coordinator._repCount.value.workingReps} > 0, routing through handleSetCompletion to save reps and advance" }
             // Release stop guard before delegating — handleSetCompletion uses its own atomic guard (setCompletionInProgress)
             coordinator.stopWorkoutInProgress.value = false
-            handleSetCompletion()
+            handleSetCompletion(SetEndReason.USER_STOPPED)
             return
         }
 

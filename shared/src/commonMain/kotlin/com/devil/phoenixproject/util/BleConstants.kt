@@ -95,8 +95,8 @@ object BleConstants {
         // Force config block
         const val OFFSET_FORCE_MIN = 0x50 // 0.0f in activation packets
         const val OFFSET_FORCE_MAX = 0x54 // adjustedWeight + 10.0f (force ceiling)
-        const val OFFSET_TARGET_WEIGHT = 0x58 // official: softMax — adjustedWeight (actual operating weight)
-        const val OFFSET_PROGRESSION = 0x5C // official: increment — progressionRegressionKg (per-rep progression)
+        const val OFFSET_TARGET_WEIGHT = 0x58 // adjustedWeight (actual operating weight)
+        const val OFFSET_PROGRESSION = 0x5C // progressionRegressionKg
     }
 
     // Legacy aliases for backward compatibility
