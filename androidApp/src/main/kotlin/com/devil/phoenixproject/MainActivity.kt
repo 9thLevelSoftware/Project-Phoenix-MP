@@ -6,10 +6,16 @@ import android.os.Build
 import android.os.Bundle
 import android.os.LocaleList
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.presentation.components.RequireBlePermissions
+import com.devil.phoenixproject.ui.theme.NightSample
+import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.ui.theme.nightSampleFromMask
+import com.devil.phoenixproject.ui.theme.resolveSystemDark
+import com.devil.phoenixproject.ui.theme.resolveUseDarkColors
 import java.util.Locale
 
 class MainActivity : ComponentActivity() {
@@ -23,13 +29,42 @@ class MainActivity : ComponentActivity() {
 
         volumeControlStream = AudioManager.STREAM_MUSIC
 
-        enableEdgeToEdge()
+        enableEdgeToEdge(
+            statusBarStyle = systemBarStyleForPersistedTheme(),
+            navigationBarStyle = systemBarStyleForPersistedTheme(),
+        )
         setContent {
             // Require BLE permissions before showing the app
             // Permission screens have their own theme, App provides its own theme
             RequireBlePermissions {
                 AndroidAppHost()
             }
+        }
+    }
+
+    private fun systemBarStyleForPersistedTheme(): SystemBarStyle {
+        val prefs = getSharedPreferences("vitruvian_preferences", Context.MODE_PRIVATE)
+        val themeMode = runCatching {
+            ThemeMode.valueOf(prefs.getString("theme_mode", "SYSTEM") ?: "SYSTEM")
+        }.getOrDefault(ThemeMode.SYSTEM)
+        val applicationNight = nightSampleFromMask(
+            applicationContext.resources.configuration.uiMode and
+                android.content.res.Configuration.UI_MODE_NIGHT_MASK,
+        )
+        val systemDark = resolveSystemDark(
+            previous = true,
+            applicationNight = applicationNight,
+            activityNight = NightSample.UNDEFINED,
+            composeNight = applicationNight == NightSample.YES,
+        )
+        val useDark = resolveUseDarkColors(themeMode, systemDark)
+        return if (useDark) {
+            SystemBarStyle.dark(android.graphics.Color.TRANSPARENT)
+        } else {
+            SystemBarStyle.light(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+            )
         }
     }
 
