@@ -146,7 +146,7 @@ class ActiveSessionEngine(
         encodeDefaults = true
     }
     private val connectionLogRepository = ConnectionLogRepository.instance
-    private val executionGuard = WorkoutExecutionGuard(::logExecutionEvent)
+    internal val executionGuard = WorkoutExecutionGuard(::logExecutionEvent)
     private val repFreshnessGate: RepNotificationFreshnessGate
         get() = executionGuard.repFreshnessGate
 
@@ -2633,16 +2633,18 @@ class ActiveSessionEngine(
         val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
         val isBodyweightAtStart = isBodyweightExercise(currentExercise)
         val requiresMachine = !isBodyweightAtStart
-        when (executionGuard.machineTeardownState.value) {
-            is MachineTeardownState.TearingDown -> {
-                rejectStart(StartRejectionReason.TEARING_DOWN)
-                return
+        if (requiresMachine) {
+            when (executionGuard.machineTeardownState.value) {
+                is MachineTeardownState.TearingDown -> {
+                    rejectStart(StartRejectionReason.TEARING_DOWN)
+                    return
+                }
+                is MachineTeardownState.RecoveryRequired -> {
+                    rejectStart(StartRejectionReason.RECOVERY_REQUIRED)
+                    return
+                }
+                MachineTeardownState.Ready -> Unit
             }
-            is MachineTeardownState.RecoveryRequired -> {
-                rejectStart(StartRejectionReason.RECOVERY_REQUIRED)
-                return
-            }
-            MachineTeardownState.Ready -> Unit
         }
         if (requiresMachine && bleRepository.connectionState.value !is ConnectionState.Connected) {
             rejectStart(StartRejectionReason.NOT_CONNECTED)
@@ -3074,6 +3076,7 @@ class ActiveSessionEngine(
                         }
                     }
                 } catch (e: Exception) {
+                    if (e is CancellationException) throw e
                     Logger.e(e) { "Failed to send config command" }
                     coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
                     failStart(lease, priorWorkoutState)

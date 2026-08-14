@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.repository.HandleState
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import kotlinx.coroutines.test.runCurrent
@@ -8,8 +11,35 @@ import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 
 class Issue687RepIsolationTest {
+    @Test
+    fun `bodyweight start does not consult machine teardown state while disconnected`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.startCableSet(targetReps = 3)
+            val cableLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(harness.activeSessionEngine.executionGuard.beginTeardown(cableLease))
+
+            harness.fakeBleRepo.simulateDisconnect()
+            harness.fakeBleRepo.commandsReceived.clear()
+            harness.coordinator._loadedRoutine.value = bodyweightRoutine()
+            harness.coordinator._currentExerciseIndex.value = 0
+
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+
+            assertIs<MachineTeardownState.TearingDown>(harness.activeSessionEngine.machineTeardownState.value)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(false, harness.activeSessionEngine.currentExecutionLeaseForTest().requiresMachine)
+            assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty())
+        } finally {
+            harness.cleanup()
+        }
+    }
+
     @Test
     fun `issue 687 delayed terminal packet cannot complete the new execution`() = runTest {
         val harness = DWSMTestHarness(this)
@@ -140,5 +170,30 @@ class Issue687RepIsolationTest {
         } finally {
             harness.cleanup()
         }
+    }
+
+    private fun bodyweightRoutine(): Routine {
+        val pushUp = Exercise(
+            name = "Push Up",
+            muscleGroup = "Chest",
+            muscleGroups = "Chest,Triceps,Shoulders",
+            equipment = "",
+            id = "issue-687-push-up",
+        )
+        return Routine(
+            id = "issue-687-bodyweight-routine",
+            name = "Bodyweight Routine",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "issue-687-bodyweight-set",
+                    exercise = pushUp,
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 0f,
+                    duration = 30,
+                    setRestSeconds = listOf(0),
+                ),
+            ),
+        )
     }
 }

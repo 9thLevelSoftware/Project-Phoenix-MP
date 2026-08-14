@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -20,7 +21,13 @@ import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.test.assertIs
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 /**
@@ -35,6 +42,40 @@ import kotlinx.coroutines.test.runTest
  * Uses DWSMTestHarness which wires all 22+ dependencies of ActiveSessionEngine.
  */
 class ActiveSessionEngineIntegrationTest {
+
+    @Test
+    fun configSendCatchRethrowsCancellationBeforePublishingFailures() = runTest {
+        val harness = DWSMTestHarness(this)
+        val cancellingBleRepository = object : BleRepository by harness.fakeBleRepo {
+            override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
+                throw CancellationException("execution superseded during config send")
+            }
+        }
+        val engine = createEngine(harness, cancellingBleRepository)
+        val bleErrors = mutableListOf<String>()
+        val userErrors = mutableListOf<String>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.bleErrorEvents.collect(bleErrors::add)
+        }
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.userFeedbackEvents.collect(userErrors::add)
+        }
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+            engine.startWorkout(skipCountdown = true)
+            val completion = CompletableDeferred<Throwable?>()
+            requireNotNull(harness.coordinator.workoutJob).invokeOnCompletion(completion::complete)
+            runCurrent()
+
+            assertIs<CancellationException>(completion.await())
+            assertTrue(bleErrors.isEmpty(), "Cancellation must not emit a global BLE failure")
+            assertTrue(userErrors.isEmpty(), "Cancellation must not emit stale user feedback")
+        } finally {
+            engine.cleanup()
+            harness.cleanup()
+        }
+    }
 
     @Test
     fun workoutStartIsRejectedWhileProfileContextIsSwitching() = runTest {
@@ -620,6 +661,30 @@ class ActiveSessionEngineIntegrationTest {
         muscleGroups = "Strength",
         equipment = "BAR",
         oneRepMaxKg = oneRepMaxKg,
+    )
+
+    private fun createEngine(harness: DWSMTestHarness, bleRepository: BleRepository) = ActiveSessionEngine(
+        coordinator = harness.coordinator,
+        bleRepository = bleRepository,
+        workoutRepository = harness.fakeWorkoutRepo,
+        exerciseRepository = harness.fakeExerciseRepo,
+        personalRecordRepository = harness.fakePRRepo,
+        repCounter = harness.repCounter,
+        preferencesManager = harness.fakePrefsManager,
+        gamificationManager = harness.gamificationManager,
+        trainingCycleRepository = harness.fakeTrainingCycleRepo,
+        completedSetRepository = harness.fakeCompletedSetRepo,
+        syncTriggerManager = null,
+        repMetricRepository = harness.fakeRepMetricRepo,
+        biomechanicsRepository = harness.fakeBiomechanicsRepo,
+        recommendWeightAdjustmentUseCase = harness.recommendWeightAdjustmentUseCase,
+        equipmentRackRepository = harness.fakeEquipmentRackRepo,
+        applyEquipmentRackLoadUseCase = harness.applyEquipmentRackLoadUseCase,
+        settingsManager = harness.settingsManager,
+        userProfileRepository = harness.fakeUserProfileRepo,
+        scope = harness.workoutScope,
+        elapsedRealtimeProvider = { harness.testScope.testScheduler.currentTime },
+        wallClockMillisProvider = { harness.nowMs },
     )
 
     private fun accessoryExercise(id: String, name: String): Exercise = Exercise(

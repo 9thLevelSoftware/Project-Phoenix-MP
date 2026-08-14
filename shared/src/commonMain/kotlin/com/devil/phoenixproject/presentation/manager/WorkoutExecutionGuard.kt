@@ -87,7 +87,7 @@ internal class WorkoutExecutionGuard(
         get() = currentLeaseRef.value
 
     fun beginExecution(seed: ExecutionSeed): Result<ExecutionLease> = withPlatformLock(teardownLock) {
-        if (_machineTeardownState.value !is MachineTeardownState.Ready) {
+        if (seed.requiresMachine && _machineTeardownState.value !is MachineTeardownState.Ready) {
             return@withPlatformLock Result.failure(
                 IllegalStateException("Machine teardown must be ready before beginning an execution"),
             )
