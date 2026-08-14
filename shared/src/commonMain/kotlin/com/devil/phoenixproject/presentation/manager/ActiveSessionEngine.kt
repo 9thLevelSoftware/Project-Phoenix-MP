@@ -256,29 +256,39 @@ class ActiveSessionEngine(
         }
         if (!executionGuard.beginTeardown(lease, attempt)) return
 
+        launchMachineTeardownReset(lease, reason, afterReady)
+    }
+
+    private fun launchMachineTeardownReset(
+        lease: ExecutionLease,
+        reason: TeardownReason,
+        afterReady: (() -> Unit)? = null,
+    ) {
         val job = scope.launch(start = CoroutineStart.LAZY) {
             val startedAt = elapsedRealtimeProvider()
+            var failureReason: TeardownFailureReason? = null
             try {
                 withTimeout(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
                     bleRepository.stopWorkout().getOrThrow()
                 }
                 if (bleRepository.connectionState.value !is ConnectionState.Connected) {
-                    executionGuard.markRecoveryRequired(lease, TeardownFailureReason.DISCONNECTED)
-                    return@launch
-                }
-                if (executionGuard.markTeardownReady(lease) && executionGuard.isCurrent(lease)) {
-                    afterReady?.invoke()
+                    failureReason = TeardownFailureReason.DISCONNECTED
                 }
             } catch (error: TimeoutCancellationException) {
-                executionGuard.markRecoveryRequired(lease, TeardownFailureReason.TIMED_OUT)
+                failureReason = TeardownFailureReason.TIMED_OUT
             } catch (error: CancellationException) {
                 throw error
             } catch (error: Exception) {
-                executionGuard.markRecoveryRequired(lease, TeardownFailureReason.RESET_FAILED)
+                failureReason = TeardownFailureReason.RESET_FAILED
             } finally {
                 bleRepository.stopPolling()
                 executionGuard.clearTeardownJobIfOwned(lease)
                 logTeardownElapsed(lease, reason, elapsedRealtimeProvider() - startedAt)
+            }
+            if (failureReason != null) {
+                executionGuard.markRecoveryRequired(lease, failureReason)
+            } else if (executionGuard.markTeardownReady(lease) && executionGuard.isCurrent(lease)) {
+                afterReady?.invoke()
             }
         }
         if (executionGuard.attachTeardownJob(lease, job)) {
@@ -286,6 +296,15 @@ class ActiveSessionEngine(
         } else {
             job.cancel()
         }
+    }
+
+    fun retryMachineTeardown() {
+        if (bleRepository.connectionState.value !is ConnectionState.Connected) return
+        val recoveryAttempt = executionGuard.beginRecoveryAttempt() ?: return
+        launchMachineTeardownReset(
+            lease = recoveryAttempt.lease,
+            reason = TeardownReason.RECOVERY,
+        )
     }
 
     internal fun requestTeardownForTransition(

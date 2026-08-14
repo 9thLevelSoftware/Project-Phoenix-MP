@@ -68,6 +68,7 @@ import com.devil.phoenixproject.presentation.manager.GamificationManager
 import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.presentation.manager.HistoryManager
 import com.devil.phoenixproject.presentation.manager.JustLiftDefaults
+import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
@@ -278,6 +279,8 @@ class MainViewModel constructor(
     // ===== Workout State Delegation =====
 
     val workoutState: StateFlow<WorkoutState> get() = workoutSessionManager.coordinator.workoutState
+    val machineTeardownState: StateFlow<MachineTeardownState>
+        get() = workoutSessionManager.machineTeardownState
     val isWorkoutActive: Boolean get() = workoutSessionManager.coordinator.isWorkoutActive
     val routineFlowState: StateFlow<RoutineFlowState> get() = workoutSessionManager.coordinator.routineFlowState
 
@@ -480,6 +483,11 @@ class MainViewModel constructor(
 
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = workoutSessionManager.startWorkout(skipCountdown, isJustLiftMode)
     fun stopWorkout(exitingWorkout: Boolean = false) = workoutSessionManager.stopWorkout(exitingWorkout)
+    fun retryWorkoutTeardown() = workoutSessionManager.retryMachineTeardown()
+    fun reconnectWorkoutTeardown() = bleConnectionManager.reconnectForWorkoutRecovery(
+        onConnected = workoutSessionManager::retryMachineTeardown,
+        onFailed = {},
+    )
 
     // Issue #627: Delegates read-only stop-in-progress flag to suppress resume-bounce.
     fun isStoppingWorkout(): Boolean = workoutSessionManager.isStoppingWorkout

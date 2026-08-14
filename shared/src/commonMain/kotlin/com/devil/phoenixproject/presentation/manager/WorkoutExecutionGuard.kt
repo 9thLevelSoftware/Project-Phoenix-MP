@@ -28,6 +28,7 @@ internal enum class TeardownReason {
     END_WORKOUT,
     WARMUP_TRANSITION,
     EXERCISE_JUMP,
+    RECOVERY,
 }
 
 internal enum class ExecutionInvalidationReason {
@@ -92,6 +93,7 @@ internal class WorkoutExecutionGuard(
 
     private var teardownLease: ExecutionLease? = null
     private var teardownAttempt = 0
+    private var teardownFailureReason: TeardownFailureReason? = null
     private var completionJob: Job? = null
     private var completionJobLease: ExecutionLease? = null
     private var teardownJob: Job? = null
@@ -222,6 +224,7 @@ internal class WorkoutExecutionGuard(
         }
         teardownLease = lease
         teardownAttempt = attempt
+        teardownFailureReason = null
         teardownJob = null
         teardownJobLease = null
         _machineTeardownState.value = MachineTeardownState.TearingDown(lease.executionId, attempt)
@@ -259,6 +262,7 @@ internal class WorkoutExecutionGuard(
         }
         teardownLease = null
         teardownAttempt = 0
+        teardownFailureReason = null
         if (sameIdentity(invalidatedLeaseRef.value, lease)) {
             invalidatedLeaseRef.value = null
         }
@@ -272,6 +276,7 @@ internal class WorkoutExecutionGuard(
         if (state !is MachineTeardownState.TearingDown || !sameIdentity(teardownLease, lease)) {
             return@withPlatformLock false
         }
+        teardownFailureReason = reason
         _machineTeardownState.value = MachineTeardownState.RecoveryRequired(lease.executionId)
         log(
             LogEventType.WORKOUT_TEARDOWN,
@@ -290,7 +295,10 @@ internal class WorkoutExecutionGuard(
         val attempt = teardownAttempt + 1
         teardownAttempt = attempt
         _machineTeardownState.value = MachineTeardownState.TearingDown(lease.executionId, attempt)
-        log(LogEventType.WORKOUT_TEARDOWN, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=recovery_attempt,attempt=$attempt")
+        log(
+            LogEventType.WORKOUT_TEARDOWN,
+            "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=recovery_attempt,attempt=$attempt,previousReason=$teardownFailureReason",
+        )
         RecoveryAttempt(lease, attempt)
     }
 

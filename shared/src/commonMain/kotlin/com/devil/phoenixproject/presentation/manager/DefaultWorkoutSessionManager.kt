@@ -714,6 +714,9 @@ class DefaultWorkoutSessionManager(
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = activeSessionEngine.startWorkout(skipCountdown, isJustLiftMode)
     fun skipCountdown() = activeSessionEngine.skipCountdown()
     fun stopWorkout(exitingWorkout: Boolean = false) = activeSessionEngine.stopWorkout(exitingWorkout)
+    val machineTeardownState: StateFlow<MachineTeardownState>
+        get() = activeSessionEngine.machineTeardownState
+    fun retryMachineTeardown() = activeSessionEngine.retryMachineTeardown()
 
     // Issue #627: Read-only exposure of the stop guard. It is armed by stop entry points.
     // A successful Stop Set deliberately keeps it armed until startWorkout() begins the retry,
