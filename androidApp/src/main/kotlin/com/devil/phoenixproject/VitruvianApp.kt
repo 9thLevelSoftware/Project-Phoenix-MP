@@ -2,6 +2,7 @@ package com.devil.phoenixproject
 
 import android.app.Activity
 import android.app.Application
+import android.content.Context
 import android.os.Bundle
 import co.touchlab.kermit.Logger
 import co.touchlab.kermit.Severity
@@ -25,6 +26,11 @@ open class VitruvianApp :
     SingletonImageLoader.Factory {
 
     private val migrationManager: MigrationManager by inject()
+
+    override fun attachBaseContext(base: Context) {
+        applyPersistedApplicationNightMode(base)
+        super.attachBaseContext(base)
+    }
 
     override fun onCreate() {
         super.onCreate()

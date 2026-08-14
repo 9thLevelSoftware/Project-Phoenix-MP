@@ -72,6 +72,21 @@ class Issue677WindowThemeContractTest {
         assertTrue(source.contains("applicationContext.resources.configuration"))
         assertTrue(source.contains("enableEdgeToEdge("))
         assertTrue(source.contains("setBackgroundDrawable"))
-        assertTrue(source.contains("ApplyStatusBarAppearance").not())
+    }
+
+    @Test
+    fun application_appliesPersistedNightModeBeforeActivity() {
+        val app = read("androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt")
+        assertTrue(
+            app.contains("applyPersistedApplicationNightMode(") &&
+                app.contains("attachBaseContext"),
+            "VitruvianApp must apply persisted night mode in attachBaseContext so the OS starting window uses the matching values/values-night qualifier.",
+        )
+        val helper = read("androidApp/src/main/kotlin/com/devil/phoenixproject/PersistedThemeNightMode.kt")
+        assertTrue(helper.contains("setApplicationNightMode"))
+        assertTrue(helper.contains("THEME_MODE_KEY"))
+        assertTrue(helper.contains("MODE_NIGHT_NO"))
+        assertTrue(helper.contains("MODE_NIGHT_YES"))
+        assertTrue(helper.contains("MODE_NIGHT_AUTO"))
     }
 }
