@@ -107,6 +107,10 @@ class Issue687StaleWorkSuppressionTest {
 
             assertExecutionBStillActive(harness, leaseB)
             assertNoTerminalAState(observed.states)
+            assertTrue(
+                HapticEvent.WORKOUT_END !in hapticBlock.eventsDeliveredAfterRelease,
+                "stale A completion haptic was delivered after B started",
+            )
             observed.job.cancel()
         } finally {
             hapticBlock?.release?.complete(Unit)
@@ -474,6 +478,10 @@ class Issue687StaleWorkSuppressionTest {
 
             assertExecutionBStillActive(harness, leaseB)
             assertEquals(commandsBeforeARelease, harness.fakeBleRepo.commandsReceived.size)
+            assertTrue(
+                HapticEvent.WORKOUT_END !in hapticBlock.eventsDeliveredAfterRelease,
+                "stale A warm-up haptic was delivered after B started",
+            )
         } finally {
             hapticBlock?.release?.complete(Unit)
             harness.cleanup()
@@ -562,18 +570,21 @@ class Issue687StaleWorkSuppressionTest {
 
     private fun TestScope.blockHapticEmissions(harness: DWSMTestHarness): HapticBlock {
         val release = CompletableDeferred<Unit>()
+        val eventsDeliveredAfterRelease = mutableListOf<HapticEvent>()
         val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
-            harness.coordinator.hapticEvents.collect {
+            harness.coordinator.hapticEvents.collect { event ->
                 release.await()
+                eventsDeliveredAfterRelease += event
             }
         }
         runCurrent()
-        assertTrue(harness.coordinator._hapticEvents.tryEmit(HapticEvent.WORKOUT_END))
+        val bufferSentinel = HapticEvent.COUNTDOWN_TICK(Int.MIN_VALUE)
+        assertTrue(harness.coordinator._hapticEvents.tryEmit(bufferSentinel))
         repeat(32) {
-            assertTrue(harness.coordinator._hapticEvents.tryEmit(HapticEvent.WORKOUT_END))
+            assertTrue(harness.coordinator._hapticEvents.tryEmit(bufferSentinel))
         }
-        assertFalse(harness.coordinator._hapticEvents.tryEmit(HapticEvent.WORKOUT_END))
-        return HapticBlock(release, collector)
+        assertFalse(harness.coordinator._hapticEvents.tryEmit(bufferSentinel))
+        return HapticBlock(release, eventsDeliveredAfterRelease, collector)
     }
 
     private fun TestScope.startReplacementWhenTeardownReady(
@@ -724,6 +735,7 @@ class Issue687StaleWorkSuppressionTest {
 
     private data class HapticBlock(
         val release: CompletableDeferred<Unit>,
+        val eventsDeliveredAfterRelease: MutableList<HapticEvent>,
         val collector: Job,
     )
 }
