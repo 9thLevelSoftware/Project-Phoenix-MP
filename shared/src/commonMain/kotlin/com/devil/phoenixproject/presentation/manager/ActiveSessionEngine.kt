@@ -27,6 +27,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.ActiveRackSelection
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.CompletedSet
@@ -62,6 +63,7 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
+import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
@@ -108,6 +110,38 @@ internal fun UserPreferences.verbalEncouragementEventOrNull(): HapticEvent.VERBA
     )
 }
 
+data class BiomechanicsRepInput(
+    val repNumber: Int,
+    val concentricMetrics: List<WorkoutMetric>,
+    val allRepMetrics: List<WorkoutMetric>,
+    val timestamp: Long,
+)
+
+fun interface BiomechanicsRepProcessor {
+    suspend fun process(
+        engine: BiomechanicsEngine,
+        input: BiomechanicsRepInput,
+    ): BiomechanicsRepResult
+
+    companion object {
+        val Default = BiomechanicsRepProcessor { engine, input ->
+            engine.processRep(
+                repNumber = input.repNumber,
+                concentricMetrics = input.concentricMetrics,
+                allRepMetrics = input.allRepMetrics,
+                timestamp = input.timestamp,
+            )
+        }
+    }
+}
+
+private class ExecutionBiomechanicsContext(
+    val lease: ExecutionLease,
+    val engine: BiomechanicsEngine,
+    var velocityThresholdAlertEmitted: Boolean = false,
+    var consecutiveThresholdReps: Int = 0,
+)
+
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
  * BLE commands, rest timer, session persistence, weight adjustment, Just Lift,
@@ -143,6 +177,9 @@ class ActiveSessionEngine(
     private val userProfileRepository: UserProfileRepository,
     private val scope: CoroutineScope,
     private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
+    private val beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    private val beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     private val regenerateFiveThreeOneUseCase: RegenerateFiveThreeOneRoutinesUseCase? = null,
     private val dataBackupManager: DataBackupManager? = null,
     private val healthIntegration: HealthIntegration? = null,
@@ -159,6 +196,7 @@ class ActiveSessionEngine(
     internal val executionGuard = WorkoutExecutionGuard(::logExecutionEvent)
     private var executionContext: WorkoutExecutionContext? = null
     private val bodyweightCompletionGate = BodyweightCompletionGate()
+    private val biomechanicsContext = atomic<ExecutionBiomechanicsContext?>(null)
     private val exitSnapshotStore = WorkoutExitSnapshotStore()
     private val repFreshnessGate: RepNotificationFreshnessGate
         get() = executionGuard.repFreshnessGate
@@ -170,40 +208,58 @@ class ActiveSessionEngine(
 
     internal fun currentExecutionLeaseOrNull(): ExecutionLease? = executionGuard.currentLease
 
-    private data class DangerZoneCountdownOverride(
-        val lease: ExecutionLease,
-        val startTimeMs: Long,
-    )
-
-    private val dangerZoneCountdownOverride = atomic<DangerZoneCountdownOverride?>(null)
+    private val dangerZoneCountdownGate = DangerZoneCountdownGate()
 
     internal fun primeDangerZoneCountdownForTest(lease: ExecutionLease, startTimeMs: Long) {
         if (!executionGuard.isCurrent(lease)) return
-        val override = DangerZoneCountdownOverride(lease, startTimeMs)
-        dangerZoneCountdownOverride.value = override
+        dangerZoneCountdownGate.tryPrime(lease, startTimeMs)
         if (!executionGuard.isCurrent(lease)) {
-            dangerZoneCountdownOverride.compareAndSet(override, null)
+            dangerZoneCountdownGate.clear(lease)
         }
     }
 
-    private fun consumeDangerZoneCountdownOverride(lease: ExecutionLease): Long? {
-        while (true) {
-            val current = dangerZoneCountdownOverride.value ?: return null
-            if (!current.lease.sameExecutionAs(lease)) return null
-            if (dangerZoneCountdownOverride.compareAndSet(current, null)) return current.startTimeMs
-        }
-    }
+    private fun consumeDangerZoneCountdownOverride(lease: ExecutionLease): Long? =
+        dangerZoneCountdownGate.consume(lease)
 
     private fun clearDangerZoneCountdownOverride(lease: ExecutionLease) {
-        while (true) {
-            val current = dangerZoneCountdownOverride.value ?: return
-            if (!current.lease.sameExecutionAs(lease)) return
-            if (dangerZoneCountdownOverride.compareAndSet(current, null)) return
-        }
+        dangerZoneCountdownGate.clear(lease)
     }
 
     private fun ExecutionLease.sameExecutionAs(other: ExecutionLease): Boolean =
         executionId == other.executionId && sessionId == other.sessionId
+
+    private fun installBiomechanicsContext(lease: ExecutionLease): Boolean {
+        val context = ExecutionBiomechanicsContext(
+            lease = lease,
+            engine = BiomechanicsEngine(
+                coordinator.vbtRuntimeSettings.value.velocityLossThresholdPercent,
+            ),
+        )
+        return executionGuard.commitIfCurrent(lease) {
+            biomechanicsContext.value = context
+            coordinator.installBiomechanicsEngine(context.engine)
+        }
+    }
+
+    private fun biomechanicsContextFor(lease: ExecutionLease): ExecutionBiomechanicsContext? =
+        biomechanicsContext.value?.takeIf { it.lease.sameExecutionAs(lease) }
+
+    private fun resetBiomechanicsContext(lease: ExecutionLease) {
+        val context = biomechanicsContextFor(lease) ?: return
+        val resetWhileCurrent = executionGuard.commitIfCurrent(lease) {
+            if (biomechanicsContext.value === context) {
+                context.velocityThresholdAlertEmitted = false
+                context.consecutiveThresholdReps = 0
+                coordinator.resetBiomechanicsEngine(context.engine)
+            }
+        }
+        if (!resetWhileCurrent) {
+            // The engine is execution-local. An identity-checked reset cannot touch a newer engine.
+            context.velocityThresholdAlertEmitted = false
+            context.consecutiveThresholdReps = 0
+            coordinator.resetBiomechanicsEngine(context.engine)
+        }
+    }
 
     internal fun isCurrentExecution(lease: ExecutionLease): Boolean = executionGuard.isCurrent(lease)
 
@@ -486,10 +542,6 @@ class ActiveSessionEngine(
     /** Issue #237: Motion-triggered set start detector (reused across sets) */
     private val motionStartDetector = MotionStartDetector()
     private var motionStartListenerJob: Job? = null
-
-    // VBT auto-end state (Issue #313)
-    private var velocityThresholdAlertEmitted = false
-    private var consecutiveThresholdReps = 0
 
     // Issue #649 defer deadline: moved to WorkoutCoordinator (F7, stall-detection
     // audit) so RoutineFlowManager reset paths can clear it too.
@@ -1161,11 +1213,10 @@ class ActiveSessionEngine(
         val entry = coordinator._workoutState.value as? WorkoutState.BodyweightRepEntry ?: return
         val lease = executionGuard.currentLease ?: return
         val completion = bodyweightCompletionGate.pendingFor(lease) ?: return
-        if (!coordinator.setCompletionInProgress.compareAndSet(expect = false, update = true)) return
+        beforeBodyweightCompletionClaim(lease.executionId, lease.sessionId)
+        if (!executionGuard.tryClaimCompletion(lease)) return
         if (!bodyweightCompletionGate.tryConsume(completion)) {
-            if (executionGuard.isCurrent(lease)) {
-                coordinator.setCompletionInProgress.compareAndSet(expect = true, update = false)
-            }
+            executionGuard.releaseCompletionClaim(lease)
             return
         }
         val coercedReps = reps.coerceAtLeast(0)
@@ -1245,7 +1296,7 @@ class ActiveSessionEngine(
      * Fully reset auto-stop state for a new workout/set.
      */
     internal fun resetAutoStopState() {
-        dangerZoneCountdownOverride.value = null
+        executionGuard.currentLease?.let(dangerZoneCountdownGate::clear)
         coordinator.resetAutoStopState()
     }
 
@@ -1591,6 +1642,7 @@ class ActiveSessionEngine(
         timestamp: Long,
     ) {
         if (!executionGuard.isCurrent(lease)) return
+        val context = biomechanicsContextFor(lease) ?: return
         val allMetrics = coordinator.collectedMetrics.value
         val boundaries = coordinator.repBoundaryTimestamps.value
         if (boundaries.isEmpty()) {
@@ -1623,92 +1675,95 @@ class ActiveSessionEngine(
                 }
 
                 if (!executionGuard.isCurrent(lease)) return@launch
-                coordinator.biomechanicsEngine.processRep(
-                    repNumber = repNumber,
-                    concentricMetrics = concentricMetrics,
-                    allRepMetrics = repMetrics,
-                    timestamp = timestamp,
+                val result = biomechanicsRepProcessor.process(
+                    engine = context.engine,
+                    input = BiomechanicsRepInput(
+                        repNumber = repNumber,
+                        concentricMetrics = concentricMetrics,
+                        allRepMetrics = repMetrics,
+                        timestamp = timestamp,
+                    ),
                 )
 
+                val published = executionGuard.commitIfCurrent(lease) {
+                    if (biomechanicsContext.value === context) {
+                        coordinator.publishBiomechanicsResult(context.engine, result)
+                    }
+                }
+                if (!published || biomechanicsContext.value !== context) return@launch
+
                 Logger.d { "Biomechanics processed: rep=$repNumber, metrics=${repMetrics.size}, concentric=${concentricMetrics.size}" }
+
+                // Issue #313: Check velocity threshold for alert and auto-end.
+                evaluateLatestVbtResult(lease, context, result)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Logger.e(e) { "Biomechanics processing failed for rep $repNumber" }
             }
-
-            // Issue #313: Check velocity threshold for alert and auto-end.
-            // The evaluator owns the working-rep guard so production and tests exercise
-            // the exact same decision seam.
-            if (!executionGuard.isCurrent(lease)) return@launch
-            evaluateLatestVbtResult(lease)
         }
     }
 
     internal suspend fun evaluateLatestVbtResult(lease: ExecutionLease) {
-        if (!executionGuard.isCurrent(lease)) return
-        if (!coordinator._repCount.value.isWarmupComplete) return
-        val runtime = coordinator.vbtRuntimeSettings.value
-        if (!runtime.enabled) return
-        val latestResult = coordinator.biomechanicsEngine.latestRepResult.value ?: return
-        val velocity = latestResult.velocity
+        val context = biomechanicsContextFor(lease) ?: return
+        val latestResult = context.engine.latestRepResult.value ?: return
+        evaluateLatestVbtResult(lease, context, latestResult)
+    }
 
-        if (velocity.shouldStopSet) {
-            if (!executionGuard.isCurrent(lease)) return
-            consecutiveThresholdReps++
-
-            if (!velocityThresholdAlertEmitted) {
-                if (!executionGuard.isCurrent(lease)) return
-                velocityThresholdAlertEmitted = true
-                coordinator._hapticEvents.emit(HapticEvent.VELOCITY_THRESHOLD_REACHED)
-                if (!executionGuard.isCurrent(lease)) return
-                Logger.i { "VBT: Velocity loss threshold reached (${velocity.velocityLossPercent?.roundToInt()}%). Alert emitted." }
-
-                // Issue #611: Verbal encouragement (gated on its master + global audio toggle).
-                // Emitted alongside VELOCITY_THRESHOLD_REACHED so both events share one-shot
-                // semantics per set. Local adult confirmation neutralizes vulgar/dominatrix
-                // routing without rewriting the active profile's persisted intent.
-                val verbalEvent = settingsManager.userPreferences.value
-                    .verbalEncouragementEventOrNull()
-                if (verbalEvent != null) {
-                    coordinator._hapticEvents.emit(verbalEvent)
-                    if (!executionGuard.isCurrent(lease)) return
-                    Logger.i { "VBT: VERBAL_ENCOURAGEMENT emitted (tier=${verbalEvent.vulgarTier}, dominatrix=${verbalEvent.dominatrixMode}, vulgar=${verbalEvent.vulgarMode})" }
-
-                    // Issue #649: when the user has VBT auto-end OFF, the verbal cue is
-                    // the only velocity signal — don't let AMRAP position / velocity-stall
-                    // timers end the set while the cue is still audible. Defer both timers
-                    // until the deadline (cue + short transition window) elapses
-                    // or a completed working rep clears it. The deadline field
-                    // alone is the source of truth — no derived flag to keep in
-                    // sync.
-                    //
-                    // Issue #649 (Codex P2, race-window): checkVelocityThreshold runs
-                    // on Dispatchers.Default; a stale callback resumed after a set
-                    // transition could publish a fresh deadline into the next set.
-                    // Same race characteristic as velocityThresholdAlertEmitted above.
-                    // Narrow the window for this fix by re-checking the active state
-                    // before writing; if the workout has already left Active (manual
-                    // stop / reset / next set started), drop the arm silently.
-                    if (!runtime.autoEndOnVelocityLoss &&
-                        executionGuard.isCurrent(lease) &&
-                        coordinator._workoutState.value is WorkoutState.Active
-                    ) {
-                        coordinator.deferAutoStopDeadlineMs = currentTimeMillis() + VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS
-                        resetStallTimer()
-                        resetAutoStopTimer()
+    private fun evaluateLatestVbtResult(
+        lease: ExecutionLease,
+        context: ExecutionBiomechanicsContext,
+        latestResult: BiomechanicsRepResult,
+    ) {
+        val verbalEvent = settingsManager.userPreferences.value.verbalEncouragementEventOrNull()
+        var alertEmitted = false
+        var verbalEmitted = false
+        var shouldComplete = false
+        var consecutiveReps = 0
+        val committed = executionGuard.commitIfCurrent(
+            lease = lease,
+            beforeCommit = {
+                beforeVbtCommit(lease.executionId, lease.sessionId, latestResult.repNumber)
+            },
+        ) {
+            if (biomechanicsContext.value !== context || !coordinator._repCount.value.isWarmupComplete) {
+                return@commitIfCurrent
+            }
+            val runtime = coordinator.vbtRuntimeSettings.value
+            if (!runtime.enabled) return@commitIfCurrent
+            val velocity = latestResult.velocity
+            if (velocity.shouldStopSet) {
+                context.consecutiveThresholdReps++
+                if (!context.velocityThresholdAlertEmitted) {
+                    context.velocityThresholdAlertEmitted = true
+                    coordinator._hapticEvents.tryEmit(HapticEvent.VELOCITY_THRESHOLD_REACHED)
+                    alertEmitted = true
+                    if (verbalEvent != null) {
+                        coordinator._hapticEvents.tryEmit(verbalEvent)
+                        verbalEmitted = true
+                        if (!runtime.autoEndOnVelocityLoss && coordinator._workoutState.value is WorkoutState.Active) {
+                            coordinator.deferAutoStopDeadlineMs = currentTimeMillis() + VERBAL_ENCOURAGEMENT_DEFER_WINDOW_MS
+                            resetStallTimer()
+                            resetAutoStopTimer()
+                        }
                     }
                 }
+                consecutiveReps = context.consecutiveThresholdReps
+                shouldComplete = consecutiveReps >= 2 && runtime.autoEndOnVelocityLoss
+            } else {
+                context.consecutiveThresholdReps = 0
             }
-
-            if (consecutiveThresholdReps >= 2 && runtime.autoEndOnVelocityLoss) {
-                Logger.i { "VBT: Auto-ending set — $consecutiveThresholdReps consecutive reps above threshold" }
-                handleSetCompletion(lease, SetEndReason.VBT_AUTO_END)
-            }
-        } else {
-            if (executionGuard.isCurrent(lease)) {
-                consecutiveThresholdReps = 0
-            }
+        }
+        if (!committed || biomechanicsContext.value !== context) return
+        if (alertEmitted) {
+            Logger.i { "VBT: Velocity loss threshold reached (${latestResult.velocity.velocityLossPercent?.roundToInt()}%). Alert emitted." }
+        }
+        if (verbalEmitted && verbalEvent != null) {
+            Logger.i { "VBT: VERBAL_ENCOURAGEMENT emitted (tier=${verbalEvent.vulgarTier}, dominatrix=${verbalEvent.dominatrixMode}, vulgar=${verbalEvent.vulgarMode})" }
+        }
+        if (shouldComplete) {
+            Logger.i { "VBT: Auto-ending set — $consecutiveReps consecutive reps above threshold" }
+            handleSetCompletion(lease, SetEndReason.VBT_AUTO_END)
         }
     }
 
@@ -2418,10 +2473,13 @@ class ActiveSessionEngine(
     // ===== Core Workout Lifecycle =====
 
     fun resetForNewWorkout() {
+        val lease = executionGuard.currentLease
+        lease?.let(bodyweightCompletionGate::invalidate)
+        lease?.let(executionGuard::releaseCompletionClaim)
+        lease?.let(::clearDangerZoneCountdownOverride)
         cancelJustLiftEggTimer()
         interruptedSetRecovery = null
         pendingStartOverride = null
-        dangerZoneCountdownOverride.value = null
         coordinator.currentSessionId = null
         coordinator.workoutStartTime = 0
         coordinator.collectedMetrics.value = emptyList()
@@ -2435,9 +2493,7 @@ class ActiveSessionEngine(
         coordinator._repRanges.value = null
         coordinator.setRepMetrics.value = emptyList()
         // Reset biomechanics engine and rep boundary timestamps
-        coordinator.biomechanicsEngine.reset()
-        velocityThresholdAlertEmitted = false
-        consecutiveThresholdReps = 0
+        lease?.let(::resetBiomechanicsContext)
         coordinator.deferAutoStopDeadlineMs = 0L
         coordinator.repBoundaryTimestamps.value = emptyList()
         coordinator.warmupCompleteTimeMs = 0
@@ -2858,9 +2914,7 @@ class ActiveSessionEngine(
         coordinator.collectedMetrics.value = emptyList()
         coordinator.setRepMetrics.value = emptyList()
         coordinator.repBoundaryTimestamps.value = emptyList()
-        coordinator.biomechanicsEngine.reset()
-        velocityThresholdAlertEmitted = false
-        consecutiveThresholdReps = 0
+        executionGuard.currentLease?.let(::resetBiomechanicsContext)
         coordinator.repQualityScorer.reset()
         coordinator._latestRepQuality.value = null
         coordinator._loadBaselineA.value = 0f
@@ -2970,6 +3024,7 @@ class ActiveSessionEngine(
             return
         }
         bodyweightCompletionGate.beginExecution(lease)
+        if (!installBiomechanicsContext(lease)) return
         if (outgoingLease != null) {
             executionGuard.cancelPresentationJobsFor(outgoingLease)
         }
@@ -2982,7 +3037,6 @@ class ActiveSessionEngine(
 
         cancelJustLiftEggTimer()
         coordinator.stopWorkoutInProgress.value = false
-        coordinator.setCompletionInProgress.value = false
         coordinator._weightAdjustmentRecommendation.value = null
         resetAutoStopState()
         coordinator.skipCountdownRequested = skipCountdown
@@ -2998,9 +3052,6 @@ class ActiveSessionEngine(
         // one-shot VBT alert flags leaked into the first working set. Resetting here
         // covers every set-start path; the handleSetCompletion resets remain (they
         // must run before the summary is displayed) and are idempotent with these.
-        coordinator.biomechanicsEngine.reset()
-        velocityThresholdAlertEmitted = false
-        consecutiveThresholdReps = 0
         coordinator.repBoundaryTimestamps.value = emptyList()
         // Reset quality streak only at actual workout start, not between sets.
         // skipCountdown=true indicates a set-to-set transition within the same workout.
@@ -3851,7 +3902,7 @@ class ActiveSessionEngine(
         stopMotionStartDetection()
         repFreshnessGate.invalidate(lease)
         coordinator.setRepMetrics.value = emptyList()
-        coordinator.biomechanicsEngine.reset()
+        resetBiomechanicsContext(lease)
         coordinator.repQualityScorer.reset()
         coordinator._latestRepQuality.value = null
         coordinator.repBoundaryTimestamps.value = emptyList()
@@ -3922,7 +3973,7 @@ class ActiveSessionEngine(
                         return@launchPresentationContinuation
                     }
                     coordinator.setRepMetrics.value = emptyList()
-                    coordinator.biomechanicsEngine.reset()
+                    resetBiomechanicsContext(manualSnapshot.lease)
                     coordinator.repQualityScorer.reset()
                     coordinator._latestRepQuality.value = null
                     coordinator.repBoundaryTimestamps.value = emptyList()
@@ -4091,7 +4142,7 @@ class ActiveSessionEngine(
                 // Reset biomechanics engine after manual-stop — mirrors handleSetCompletion (~line 3821).
                 // Safe: processPostSaveEvents() is the last consumer of bioSummary/session.avgMcvMmS;
                 // nothing below this point reads bioSummary or calls getSetSummary().
-                coordinator.biomechanicsEngine.reset()
+                lease?.let(::resetBiomechanicsContext)
 
                 if (hasPR && completedSetId != null) {
                     completedSetRepository.markAsPr(completedSetId)
@@ -4167,7 +4218,7 @@ class ActiveSessionEngine(
 
         if (isActiveSet && hasCompletedReps && isRealRoutine) {
             Logger.d { "stopAndReturnToSetReady: Issue #320 - workingReps=${coordinator._repCount.value.workingReps} > 0, routing through handleSetCompletion to save reps and advance" }
-            // Release stop guard before delegating — handleSetCompletion uses its own atomic guard (setCompletionInProgress)
+            // Release stop guard before delegating — handleSetCompletion owns its lease-scoped claim.
             coordinator.stopWorkoutInProgress.value = false
             executionGuard.currentLease?.let { lease ->
                 handleSetCompletion(lease, SetEndReason.USER_STOPPED)
@@ -4795,8 +4846,8 @@ class ActiveSessionEngine(
     ) {
         val lease = completion.lease
         if (!executionGuard.isCurrent(lease)) return
-        // 1.2: Atomic compareAndSet prevents duplicate set completion across dispatchers
-        if (!completionClaimed && !coordinator.setCompletionInProgress.compareAndSet(expect = false, update = true)) {
+        // Lease-scoped claim prevents both duplicate completion and stale execution ownership.
+        if (!completionClaimed && !executionGuard.tryClaimCompletion(lease)) {
             Logger.d("handleSetCompletion: already in progress - ignoring")
             return
         }
@@ -4836,9 +4887,7 @@ class ActiveSessionEngine(
         if (!executionGuard.isCurrent(lease)) return
         val terminalSnapshot = if (shouldPromptBodyweightAtCapture || isWarmupTransition) {
             if (shouldPromptBodyweightAtCapture && !bodyweightCompletionGate.tryPublish(completion)) {
-                if (executionGuard.isCurrent(lease)) {
-                    coordinator.setCompletionInProgress.compareAndSet(expect = true, update = false)
-                }
+                executionGuard.releaseCompletionClaim(lease)
                 return
             }
             null
@@ -4880,7 +4929,7 @@ class ActiveSessionEngine(
                             "hasDuration=${currentExercise.duration?.let { it > 0 } == true})"
                     }
                     showBodyweightRepEntry(currentExercise)
-                    coordinator.setCompletionInProgress.value = false
+                    executionGuard.releaseCompletionClaim(lease)
                     return@launchCompletionJob
                 }
 
@@ -4908,7 +4957,7 @@ class ActiveSessionEngine(
                         // Reset for next warm-up set
                         repCounter.resetCountsOnly()
                         resetAutoStopState()
-                        coordinator.setCompletionInProgress.value = false
+                        executionGuard.releaseCompletionClaim(lease)
                         coordinator.stopWorkoutInProgress.value = false
                         // Restore working weight in params before startWorkout overrides it
                         val workingWeight = currentExercise.setWeightsPerCableKg.getOrNull(0)
@@ -4930,7 +4979,7 @@ class ActiveSessionEngine(
                         // Reset for first working set
                         repCounter.reset()
                         resetAutoStopState()
-                        coordinator.setCompletionInProgress.value = false
+                        executionGuard.releaseCompletionClaim(lease)
                         coordinator.stopWorkoutInProgress.value = false
                         // Restore working weight/reps
                         val workingWeight = currentExercise.setWeightsPerCableKg.getOrNull(0)
@@ -4966,9 +5015,7 @@ class ActiveSessionEngine(
                 // biomechanicsSummary is already captured and engine hasn't been reset yet
 
                 // Reset biomechanics engine and rep boundary timestamps for next set
-                coordinator.biomechanicsEngine.reset()
-                velocityThresholdAlertEmitted = false
-                consecutiveThresholdReps = 0
+                resetBiomechanicsContext(lease)
                 coordinator.deferAutoStopDeadlineMs = 0L
                 coordinator.repBoundaryTimestamps.value = emptyList()
 

@@ -15,6 +15,7 @@ import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
+import com.devil.phoenixproject.presentation.manager.BiomechanicsRepProcessor
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.manager.GamificationManager
 import com.devil.phoenixproject.presentation.manager.SettingsManager
@@ -68,6 +69,9 @@ class DWSMTestHarness(
     workoutRepositoryOverride: WorkoutRepository? = null,
     completedSetRepositoryOverride: CompletedSetRepository? = null,
     biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
+    beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     onPostSaveComputed: suspend (exerciseId: String, profileId: String, sessionMcvMmS: Float?) -> Unit = { _, _, _ -> },
 ) {
     companion object {
@@ -143,6 +147,9 @@ class DWSMTestHarness(
         workoutServiceController = fakeWorkoutServiceController,
         scope = dwsmScope,
         biomechanicsDispatcher = biomechanicsDispatcher,
+        biomechanicsRepProcessor = biomechanicsRepProcessor,
+        beforeVbtCommit = beforeVbtCommit,
+        beforeBodyweightCompletionClaim = beforeBodyweightCompletionClaim,
         elapsedRealtimeProvider = { testScope.testScheduler.currentTime },
         wallClockMillisProvider = { nowMs },
     )

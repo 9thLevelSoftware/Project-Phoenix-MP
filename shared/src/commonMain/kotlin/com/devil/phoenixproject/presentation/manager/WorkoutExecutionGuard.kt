@@ -105,6 +105,7 @@ internal class WorkoutExecutionGuard(
     private var completionJobLease: ExecutionLease? = null
     private var teardownJob: Job? = null
     private var teardownJobLease: ExecutionLease? = null
+    private var completionClaimLease: ExecutionLease? = null
     private var jobOwnershipClosed = false
     private val _machineTeardownState = MutableStateFlow<MachineTeardownState>(MachineTeardownState.Ready)
 
@@ -132,48 +133,75 @@ internal class WorkoutExecutionGuard(
         )
         invalidatedLeaseRef.value = null
         currentLeaseRef.value = lease
+        completionClaimLease = null
         log(LogEventType.WORKOUT_EXECUTION, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=begun")
         Result.success(lease)
     }
 
-    fun activate(lease: ExecutionLease, cutoverTimestampMs: Long): ExecutionLease? {
-        while (true) {
-            val current = currentLeaseRef.value ?: return null
-            if (!sameIdentity(current, lease)) return null
-            val activated = current.copy(activationCutoverTimestampMs = cutoverTimestampMs)
-            if (currentLeaseRef.compareAndSet(current, activated)) {
-                log(LogEventType.WORKOUT_EXECUTION, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=activated")
-                return activated
-            }
-        }
+    fun activate(lease: ExecutionLease, cutoverTimestampMs: Long): ExecutionLease? = withPlatformLock(teardownLock) {
+        val current = currentLeaseRef.value ?: return@withPlatformLock null
+        if (!sameIdentity(current, lease)) return@withPlatformLock null
+        val activated = current.copy(activationCutoverTimestampMs = cutoverTimestampMs)
+        currentLeaseRef.value = activated
+        log(LogEventType.WORKOUT_EXECUTION, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=activated")
+        activated
     }
 
     fun isCurrent(lease: ExecutionLease): Boolean = currentLeaseRef.value?.let { current ->
         sameIdentity(current, lease)
     } == true
 
-    fun invalidateCurrent(reason: ExecutionInvalidationReason): ExecutionLease? {
+    fun invalidateCurrent(reason: ExecutionInvalidationReason): ExecutionLease? = withPlatformLock(teardownLock) {
         val invalidated = currentLeaseRef.getAndSet(null) ?: return null
+        if (sameIdentity(completionClaimLease, invalidated)) {
+            completionClaimLease = null
+        }
         invalidatedLeaseRef.value = invalidated
         log(
             LogEventType.WORKOUT_EXECUTION,
             "executionId=${invalidated.executionId},sessionId=${invalidated.sessionId},transition=invalidated,reason=$reason",
         )
-        return invalidated
+        invalidated
     }
 
-    fun invalidate(lease: ExecutionLease, reason: ExecutionInvalidationReason): Boolean {
-        while (true) {
-            val current = currentLeaseRef.value ?: return false
-            if (!sameIdentity(current, lease)) return false
-            if (currentLeaseRef.compareAndSet(current, null)) {
-                invalidatedLeaseRef.value = current
-                log(
-                    LogEventType.WORKOUT_EXECUTION,
-                    "executionId=${current.executionId},sessionId=${current.sessionId},transition=invalidated,reason=$reason",
-                )
-                return true
-            }
+    fun invalidate(lease: ExecutionLease, reason: ExecutionInvalidationReason): Boolean = withPlatformLock(teardownLock) {
+        val current = currentLeaseRef.value ?: return@withPlatformLock false
+        if (!sameIdentity(current, lease)) return@withPlatformLock false
+        currentLeaseRef.value = null
+        if (sameIdentity(completionClaimLease, current)) {
+            completionClaimLease = null
+        }
+        invalidatedLeaseRef.value = current
+        log(
+            LogEventType.WORKOUT_EXECUTION,
+            "executionId=${current.executionId},sessionId=${current.sessionId},transition=invalidated,reason=$reason",
+        )
+        true
+    }
+
+    fun commitIfCurrent(
+        lease: ExecutionLease,
+        beforeCommit: () -> Unit = {},
+        block: () -> Unit,
+    ): Boolean = withPlatformLock(teardownLock) {
+        if (!sameIdentity(currentLeaseRef.value, lease)) return@withPlatformLock false
+        beforeCommit()
+        if (!sameIdentity(currentLeaseRef.value, lease)) return@withPlatformLock false
+        block()
+        true
+    }
+
+    fun tryClaimCompletion(lease: ExecutionLease): Boolean = withPlatformLock(teardownLock) {
+        if (!sameIdentity(currentLeaseRef.value, lease) || completionClaimLease != null) {
+            return@withPlatformLock false
+        }
+        completionClaimLease = lease
+        true
+    }
+
+    fun releaseCompletionClaim(lease: ExecutionLease) = withPlatformLock(teardownLock) {
+        if (sameIdentity(completionClaimLease, lease)) {
+            completionClaimLease = null
         }
     }
 

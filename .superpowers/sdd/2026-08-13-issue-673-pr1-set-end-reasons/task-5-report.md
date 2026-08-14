@@ -181,3 +181,54 @@ The broader 10-class lifecycle/integration/teardown gate was rerun unchanged and
 - Verified every bodyweight terminal invalidation is lease-scoped and occurs before the corresponding execution invalidation/continuation.
 - Verified the danger override is lease-bound, one-shot, reset across executions, and the existing behavior-sensitive danger-origin mutation proof remains valid against the actual branch.
 - Verified the existing #687 teardown/persistence/retry behavior remained green and the dispatcher default keeps production scheduling unchanged.
+
+## Controller rework round 2
+
+### Review findings addressed
+
+- Biomechanics computation is now execution-local. Every execution installs a fresh `BiomechanicsEngine` and lease-scoped VBT context; suspended A work can finish only into A's detached engine. The coordinator exposes a stable HUD result flow and identity-checks engine installation, publication, and reset, so A cannot append into B's summary or publish over B's result.
+- VBT counters and the one-shot alert flag moved into the execution context. Result publication, counter/alert/defer mutation, and terminal decisions cross `WorkoutExecutionGuard.commitIfCurrent`, which validates the lease on both sides of the deterministic commit seam. No expensive or suspending biomechanics work is performed while the guard lock is held.
+- The global `setCompletionInProgress` flag was removed. Completion ownership is now claimed and released by stable execution identity inside `WorkoutExecutionGuard`; beginning or invalidating an execution clears only the matching ownership. Stale A cannot arm or release B's claim.
+- Bodyweight confirmation claims completion authority before consuming its immutable pending origin. `resetForNewWorkout()` invalidates the current bodyweight gate and releases its lease claim before resetting presentation state, so delayed UI confirmation cannot persist after the reset.
+- The danger countdown override is stored in a monotonic CAS gate. A lower execution ID cannot replace B, and A's identity-scoped clear cannot erase B. Reset paths clear only the current execution's claim.
+
+### Round-2 RED evidence
+
+1. The initial four-race compile produced expected scaffolding REDs for the missing atomic commit, completion-claim, danger gate, and injected biomechanics processor seams.
+2. `suspended A biomechanics after validation cannot publish a result into B` then reached a behavior-level RED with only processor plumbing present: expected B's biomechanics summary to be null, but A's completed computation appeared in the shared B engine.
+3. `stale A confirmation crossing B start cannot block B completion` invoked real `startWorkout()` for B between A's pending lookup and completion claim. It failed because B remained `Active` after its terminal request instead of entering bodyweight rep entry, proving stale A had armed the old global flag.
+4. `direct reset invalidates pending bodyweight confirmation` replayed a delayed UI confirmation through the production API after `resetForNewWorkout()`. It failed because a `USER_STOPPED` CompletedSet was persisted instead of no record.
+5. `A crossing the VBT commit boundary cannot mutate B counters alerts or terminal state` has a behavior-sensitive mutation proof. Removing both the post-seam lease validation and execution-context identity check made the no-stale-alert assertion fail. Restoring them made the same test pass; B's first threshold result remains nonterminal and emits exactly its own one alert.
+
+The bodyweight production RED run completed two tests with two assertion failures. The initial deterministic race run completed four tests with the three primitive tests green and the shared-biomechanics assertion red. No detector predicate, threshold, duration, timer, classification, or reset ordering was changed.
+
+### Round-2 GREEN evidence
+
+The focused lifecycle/execution-isolation/guard/persistence/VBT gate completed 160 tests with zero failures or errors:
+
+- `Issue673SetEndReasonLifecycleTest`: 19
+- `Issue687WorkoutExecutionIsolationTest`: 23
+- `WorkoutExecutionGuardTest`: 16
+- `WorkoutExitPersistenceTest`: 23
+- `VbtEnabledRuntimeTest`: 4
+- `DWSMWorkoutLifecycleTest`: 75
+
+The broader lifecycle/integration/teardown gate was rerun after the final commit-boundary proof and passed all 151 tests across the same ten classes listed above. Both runs completed `:shared:compileAndroidMain` and `:shared:compileAndroidHostTest` successfully.
+
+The exact forbidden-pattern scan now includes the removed global completion flag:
+
+```powershell
+rg -n "lastSetEndReason|autoStopReason|handleSetCompletion\(\)|setCompletionInProgress" shared/src
+```
+
+Result: zero matches. `git diff --check` remains clean.
+
+### Round-2 self-review
+
+- Verified result computation uses the captured A engine outside locks, while only short identity-checked publication/state commits execute inside the guard boundary.
+- Verified the stable HUD flow is cleared on B installation and cannot be stranded on a detached A engine.
+- Verified VBT counter, alert, verbal-event, defer timer, and terminal mutations are either committed while A remains current or discarded; the terminal still carries A's immutable lease/reason into the existing completion path.
+- Verified normal, bodyweight-confirmed, warm-up, reset, invalidation, and successor-start completion ownership transitions are lease-scoped and the old global flag has no remaining source/test reference.
+- Verified direct reset invalidates pending bodyweight origin before a delayed confirmation can observe it, without changing the existing gate's first-origin/consume-once semantics.
+- Verified stale/lower danger primes and clears cannot overwrite B and the existing real danger-branch origin/mutation evidence remains unchanged.
+- Verified the final diff contains only Task 5 production files, deterministic Task 5/#687 tests, the narrow manager/harness injection adapters, and this report; no BLE/protocol/schema/migration files were touched.

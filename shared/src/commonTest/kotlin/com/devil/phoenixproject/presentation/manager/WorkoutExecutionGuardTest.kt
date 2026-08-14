@@ -5,6 +5,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -63,6 +64,63 @@ class WorkoutExecutionGuardTest {
         guard.beginExecution(seed("session-b")).getOrThrow()
 
         assertNull(guard.activate(leaseA, cutoverTimestampMs = 42L))
+    }
+
+    @Test
+    fun `current commit discards A mutation after B begins despite optimistic A validation`() = runTest {
+        val guard = WorkoutExecutionGuard()
+        val leaseA = guard.beginExecution(seed("session-a")).getOrThrow()
+        val validatedA = CompletableDeferred<Unit>()
+        val releaseA = CompletableDeferred<Unit>()
+        var mutationOwner: String? = null
+
+        val aCommit = async(Dispatchers.Default) {
+            assertTrue(guard.isCurrent(leaseA))
+            validatedA.complete(Unit)
+            releaseA.await()
+            guard.commitIfCurrent(leaseA) {
+                mutationOwner = leaseA.sessionId
+            }
+        }
+
+        validatedA.await()
+        val leaseB = guard.beginExecution(seed("session-b")).getOrThrow()
+        releaseA.complete(Unit)
+
+        assertFalse(aCommit.await())
+        assertNull(mutationOwner)
+        assertTrue(
+            guard.commitIfCurrent(leaseB) {
+                mutationOwner = leaseB.sessionId
+            },
+        )
+        assertEquals("session-b", mutationOwner)
+    }
+
+    @Test
+    fun `stale A completion claim cannot arm or release B ownership`() = runTest {
+        val guard = WorkoutExecutionGuard()
+        val leaseA = guard.beginExecution(seed("session-a")).getOrThrow()
+        val validatedA = CompletableDeferred<Unit>()
+        val releaseA = CompletableDeferred<Unit>()
+
+        val staleClaim = async(Dispatchers.Default) {
+            assertTrue(guard.isCurrent(leaseA))
+            validatedA.complete(Unit)
+            releaseA.await()
+            guard.tryClaimCompletion(leaseA)
+        }
+
+        validatedA.await()
+        val leaseB = guard.beginExecution(seed("session-b")).getOrThrow()
+        assertTrue(guard.tryClaimCompletion(leaseB))
+        releaseA.complete(Unit)
+
+        assertFalse(staleClaim.await())
+        guard.releaseCompletionClaim(leaseA)
+        assertFalse(guard.tryClaimCompletion(leaseB))
+        guard.releaseCompletionClaim(leaseB)
+        assertTrue(guard.tryClaimCompletion(leaseB))
     }
 
     @Test

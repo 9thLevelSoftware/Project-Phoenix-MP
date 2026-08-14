@@ -91,6 +91,46 @@ internal class BodyweightCompletionGate {
         executionId == other.executionId && sessionId == other.sessionId
 }
 
+private data class DangerZoneCountdownClaim(
+    val lease: ExecutionLease,
+    val startTimeMs: Long,
+)
+
+internal class DangerZoneCountdownGate {
+    private val claim = atomic<DangerZoneCountdownClaim?>(null)
+
+    fun tryPrime(lease: ExecutionLease, startTimeMs: Long): Boolean {
+        val candidate = DangerZoneCountdownClaim(lease, startTimeMs)
+        while (true) {
+            val current = claim.value
+            if (current != null && current.lease.executionId > lease.executionId) return false
+            if (current != null && current.lease.executionId == lease.executionId && current.lease.sessionId != lease.sessionId) {
+                return false
+            }
+            if (claim.compareAndSet(current, candidate)) return true
+        }
+    }
+
+    fun consume(lease: ExecutionLease): Long? {
+        while (true) {
+            val current = claim.value ?: return null
+            if (!current.lease.sameExecutionAs(lease)) return null
+            if (claim.compareAndSet(current, null)) return current.startTimeMs
+        }
+    }
+
+    fun clear(lease: ExecutionLease) {
+        while (true) {
+            val current = claim.value ?: return
+            if (!current.lease.sameExecutionAs(lease)) return
+            if (claim.compareAndSet(current, null)) return
+        }
+    }
+
+    private fun ExecutionLease.sameExecutionAs(other: ExecutionLease): Boolean =
+        executionId == other.executionId && sessionId == other.sessionId
+}
+
 internal data class WorkoutExitSnapshot(
     val lease: ExecutionLease,
     val completion: SetExecutionCompletion,

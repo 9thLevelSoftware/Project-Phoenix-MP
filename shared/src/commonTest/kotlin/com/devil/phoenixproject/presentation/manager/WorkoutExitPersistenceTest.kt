@@ -617,6 +617,21 @@ class WorkoutExitPersistenceTest {
     }
 
     @Test
+    fun `danger countdown gate preserves newer B against delayed A prime and clear`() {
+        val leaseA = executionLease(executionId = 1L, sessionId = "danger-a")
+        val leaseB = executionLease(executionId = 2L, sessionId = "danger-b")
+        val gate = DangerZoneCountdownGate()
+
+        assertTrue(gate.tryPrime(leaseA, startTimeMs = 100L))
+        assertTrue(gate.tryPrime(leaseB, startTimeMs = 200L))
+        assertFalse(gate.tryPrime(leaseA, startTimeMs = 300L))
+        gate.clear(leaseA)
+
+        assertEquals(200L, gate.consume(leaseB))
+        assertNull(gate.consume(leaseB))
+    }
+
+    @Test
     fun `starting B automatically retries failed A with its stable identities`() = runTest {
         val harness = DWSMTestHarness(this)
         var failedCompletedSetId: String? = null
