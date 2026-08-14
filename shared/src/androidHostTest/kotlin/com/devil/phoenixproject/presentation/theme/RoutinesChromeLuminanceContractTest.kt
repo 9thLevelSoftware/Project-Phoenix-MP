@@ -3,9 +3,12 @@ package com.devil.phoenixproject.presentation.theme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.ui.graphics.Color
+import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 
 /**
  * Behavior contract guarding the rendered chrome luminance invariant under
@@ -93,5 +96,52 @@ class RoutinesChromeLuminanceContractTest {
                     "bypass the issue #640 dark-surface clamp.",
             )
         }
+    }
+
+    @Test
+    fun structuralContainer_readsSurfaceContainerHighest() {
+        val scheme = chromeScheme().copy(surfaceContainerHighest = Color(0xFF345678))
+        assertEquals(
+            scheme.surfaceContainerHighest,
+            phoenixStructuralContainerColor(scheme),
+            "Large workout chrome must read surfaceContainerHighest so the #640 clamp applies.",
+        )
+    }
+
+    @Test
+    fun structuralContent_readsOnSurface() {
+        val scheme = chromeScheme().copy(onSurface = Color(0xFFABCDEF))
+        assertEquals(
+            scheme.onSurface,
+            phoenixStructuralContentColor(scheme),
+            "Structural chrome content must read onSurface, not onPrimaryContainer.",
+        )
+    }
+
+    @Test
+    fun workoutTab_repCounterAndNextExerciseUseStructuralHelpers() {
+        var dir = File(System.getProperty("user.dir") ?: ".")
+        while (!File(dir, "shared/src/commonMain").exists()) {
+            dir = dir.parentFile ?: break
+        }
+        val workoutTab = File(
+            dir,
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutTab.kt",
+        ).readText()
+        val repBlock = workoutTab.substringAfter("fun RepCounterCard").substringBefore("fun LiveMetricsCard")
+            .ifBlank { workoutTab.substringAfter("fun RepCounterCard").substringBefore("Live Metrics Card") }
+        assertTrue(
+            repBlock.contains("phoenixStructuralContainerColor"),
+            "RepCounterCard must call phoenixStructuralContainerColor.",
+        )
+        assertFalse(
+            repBlock.contains("colorScheme.primaryContainer"),
+            "RepCounterCard must not fill from primaryContainer. That role is unclamped wallpaper chrome.",
+        )
+        val nextPreview = workoutTab.substringAfter("Show next exercise preview").substringBefore("hasMoreExercises && nextExercise == null")
+        assertTrue(
+            nextPreview.contains("phoenixStructuralContainerColor"),
+            "Next-exercise preview card must call phoenixStructuralContainerColor.",
+        )
     }
 }

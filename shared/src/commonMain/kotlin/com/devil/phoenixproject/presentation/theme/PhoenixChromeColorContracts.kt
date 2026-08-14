@@ -30,5 +30,11 @@ internal fun routineCardContainerColor(
     colorScheme.surfaceContainerHighest
 }
 
+internal fun phoenixStructuralContainerColor(colorScheme: ColorScheme): Color =
+    colorScheme.surfaceContainerHighest
+
+internal fun phoenixStructuralContentColor(colorScheme: ColorScheme): Color =
+    colorScheme.onSurface
+
 internal fun routineCardDefaultElevation(expanded: Boolean): Dp =
     if (expanded) 8.dp else 2.dp

@@ -99,6 +99,8 @@ import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
 import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
+import com.devil.phoenixproject.presentation.theme.phoenixStructuralContainerColor
+import com.devil.phoenixproject.presentation.theme.phoenixStructuralContentColor
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
@@ -1071,7 +1073,8 @@ private fun CompletedCard(
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        containerColor = phoenixStructuralContainerColor(MaterialTheme.colorScheme),
+                        contentColor = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                     ),
                     shape = MaterialTheme.shapes.small,
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -1081,7 +1084,7 @@ private fun CompletedCard(
                             "Next Exercise",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                         )
 
                         Spacer(Modifier.height(Spacing.small))
@@ -1089,13 +1092,13 @@ private fun CompletedCard(
                         Text(
                             nextExercise.exercise.name,
                             style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                         )
 
                         Text(
                             formatReps(nextExercise.setReps),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                         )
 
                         Spacer(Modifier.height(Spacing.medium))
@@ -1473,7 +1476,10 @@ fun ConnectionCard(connectionState: ConnectionState, onScan: () -> Unit, onCance
 fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        colors = CardDefaults.cardColors(
+            containerColor = phoenixStructuralContainerColor(MaterialTheme.colorScheme),
+            contentColor = phoenixStructuralContentColor(MaterialTheme.colorScheme),
+        ),
         shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
         border = BorderStroke(3.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
@@ -1525,7 +1531,7 @@ fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
                 text = labelText,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
             )
             Spacer(modifier = Modifier.height(Spacing.medium))
 
@@ -1536,10 +1542,10 @@ fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
                 fontWeight = FontWeight.Bold,
                 color = if (isPending) {
                     // Grey color for pending rep (at TOP, waiting for eccentric)
-                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.4f)
+                    phoenixStructuralContentColor(MaterialTheme.colorScheme).copy(alpha = 0.4f)
                 } else {
                     // Full color for confirmed rep (at BOTTOM, completed)
-                    MaterialTheme.colorScheme.onPrimaryContainer
+                    phoenixStructuralContentColor(MaterialTheme.colorScheme)
                 },
             )
         }
