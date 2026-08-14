@@ -392,6 +392,12 @@ enum class SetEndReason {
     CABLE_RELEASED,
     /** Timed exercise countdown reached zero */
     TIMER_EXPIRED,
+    /** Persisted reason is absent, malformed, or not supported by this app version */
+    UNKNOWN;
+
+    companion object {
+        fun fromPersisted(value: String?): SetEndReason = entries.firstOrNull { it.name == value } ?: UNKNOWN
+    }
 }
 
 /**
@@ -409,7 +415,7 @@ data class CompletedSet(
     val loggedRpe: Int?,
     val isPr: Boolean,
     val completedAt: Long,
-    val setEndReason: SetEndReason = SetEndReason.TARGET_REPS_REACHED,
+    val setEndReason: SetEndReason = SetEndReason.UNKNOWN,
 ) {
     /**
      * Calculate estimated 1RM using canonical hybrid formula (Brzycki ≤10 reps, Epley >10 reps).
@@ -432,7 +438,7 @@ data class CompletedSet(
             actualWeightKg: Float,
             loggedRpe: Int? = null,
             isPr: Boolean = false,
-            setEndReason: SetEndReason = SetEndReason.TARGET_REPS_REACHED,
+            setEndReason: SetEndReason = SetEndReason.UNKNOWN,
         ) = CompletedSet(
             id = id,
             sessionId = sessionId,
