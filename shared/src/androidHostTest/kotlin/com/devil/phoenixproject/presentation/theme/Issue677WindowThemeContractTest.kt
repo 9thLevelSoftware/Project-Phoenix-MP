@@ -82,11 +82,16 @@ class Issue677WindowThemeContractTest {
                 app.contains("attachBaseContext"),
             "VitruvianApp must apply persisted night mode in attachBaseContext so the OS starting window uses the matching values/values-night qualifier.",
         )
-        val helper = read("androidApp/src/main/kotlin/com/devil/phoenixproject/PersistedThemeNightMode.kt")
+        val helper = read("shared/src/androidMain/kotlin/com/devil/phoenixproject/ui/theme/PlatformNightMode.android.kt")
         assertTrue(helper.contains("setApplicationNightMode"))
         assertTrue(helper.contains("THEME_MODE_KEY"))
         assertTrue(helper.contains("MODE_NIGHT_NO"))
         assertTrue(helper.contains("MODE_NIGHT_YES"))
         assertTrue(helper.contains("MODE_NIGHT_AUTO"))
+        val viewModel = read("shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ThemeViewModel.kt")
+        assertTrue(
+            viewModel.contains("applyPlatformNightMode("),
+            "ThemeViewModel.setThemeMode must reapply application night mode so SYSTEM can follow the device after LIGHT/DARK.",
+        )
     }
 }

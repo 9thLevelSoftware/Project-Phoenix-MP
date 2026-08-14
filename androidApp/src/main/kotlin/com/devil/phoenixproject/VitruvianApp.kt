@@ -14,6 +14,7 @@ import coil3.util.DebugLogger
 import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.di.initKoin
+import com.devil.phoenixproject.ui.theme.applyPersistedApplicationNightMode
 import com.devil.phoenixproject.util.ActivityHolder
 import com.devil.phoenixproject.util.DeviceInfo
 import org.koin.android.ext.android.inject
