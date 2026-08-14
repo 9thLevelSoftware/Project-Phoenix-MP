@@ -390,6 +390,77 @@ class DWSMEquipmentRackTest {
     }
 
     @Test
+    fun `single exercise defaults preserve a concurrent workout preference mutation`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val snapshotMutationEntered = CompletableDeferred<Unit>()
+        val releaseSnapshotMutation = CompletableDeferred<Unit>()
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.fakeEquipmentRackRepo.saveItems(
+                listOf(rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE)),
+            )
+            val exerciseId = "atomic-rack-defaults"
+            val routine = Routine(
+                id = "${DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX}atomic-rack-defaults",
+                name = "Atomic Single Exercise",
+                exercises = listOf(
+                    routineExercise("atomic-rack-rex", "Atomic Row", listOf("vest"), exerciseId).copy(
+                        exercise = com.devil.phoenixproject.domain.model.Exercise(
+                            id = exerciseId,
+                            name = "Atomic Row",
+                            muscleGroup = "Back",
+                            muscleGroups = "Back",
+                            equipment = "BAR",
+                        ),
+                    ),
+                ),
+            )
+
+            assertTrue(harness.dwsm.loadRoutineAsync(routine))
+            advanceUntilIdle()
+            harness.dwsm.updateActiveRackSelection(listOf("vest"))
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.dwsm.coordinator._repCount.value = RepCount(
+                workingReps = 8,
+                totalReps = 8,
+                isWarmupComplete = true,
+            )
+
+            var workoutMutationCount = 0
+            harness.fakeUserProfileRepo.beforeWorkoutMutation = {
+                workoutMutationCount += 1
+                if (workoutMutationCount == 1) {
+                    snapshotMutationEntered.complete(Unit)
+                    releaseSnapshotMutation.await()
+                }
+            }
+
+            harness.activeSessionEngine.handleSetCompletion()
+            snapshotMutationEntered.await()
+
+            harness.settingsManager.setStopAtTop(true)
+            runCurrent()
+            releaseSnapshotMutation.complete(Unit)
+            advanceUntilIdle()
+
+            val workoutPreferences = harness.fakeUserProfileRepo
+                .observePreferences("default")
+                .first()
+                .workout
+                .value
+            assertTrue(workoutPreferences.stopAtTop)
+            assertEquals(
+                listOf("vest"),
+                workoutPreferences.singleExerciseDefaults[exerciseId]?.defaultRackItemIds,
+            )
+        } finally {
+            releaseSnapshotMutation.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `single exercise defaults persist to the captured profile after an immediate switch`() = runTest {
         val harness = DWSMTestHarness(this)
         val releasePersistence = CompletableDeferred<Unit>()

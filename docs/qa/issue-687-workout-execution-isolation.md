@@ -12,7 +12,7 @@
 | --- | --- |
 | Source base before Task 9 | `047090bc78cccd721cccdec7906c1ac15488bf9b` |
 | Task 9 implementation commit | `2623302f003d5948069ceb65abd9d419e3dcb33c` |
-| Android application ID | `com.devil.phoenixproject` |
+| Android application ID | `com.devil.phoenixproject.debug` |
 | Android app version | `0.9.6-DEBUG` (`versionCode` fallback `5`; no injected CI version) |
 | Android device/model | NOT AVAILABLE |
 | Android OS/build | NOT AVAILABLE |

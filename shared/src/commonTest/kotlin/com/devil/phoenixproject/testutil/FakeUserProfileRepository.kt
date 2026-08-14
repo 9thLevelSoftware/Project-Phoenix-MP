@@ -91,6 +91,7 @@ class FakeUserProfileRepository : UserProfileRepository {
     var beforeUpdateProfileMutation: (suspend (UpdateProfileRequest) -> Unit)? = null
     var beforeDeleteActiveProfileMutation: (suspend (String) -> Unit)? = null
     var beforePreferenceUpdate: (suspend (PreferenceUpdateRequest) -> Unit)? = null
+    var beforeWorkoutMutation: (suspend (String) -> Unit)? = null
     var updateCoreFailure: Throwable? = null
     var updateRackFailure: Throwable? = null
     var updateWorkoutFailure: Throwable? = null
@@ -134,10 +135,9 @@ class FakeUserProfileRepository : UserProfileRepository {
     override val activeProfileContext: StateFlow<ActiveProfileContext> =
         _activeProfileContext.asStateFlow()
 
-    override fun observePreferences(profileId: String): Flow<UserProfilePreferences> =
-        preferenceFlows[profileId]?.asStateFlow() ?: flow {
-            error("Unknown profile preferences: $profileId")
-        }
+    override fun observePreferences(profileId: String): Flow<UserProfilePreferences> = preferenceFlows[profileId]?.asStateFlow() ?: flow {
+        error("Unknown profile preferences: $profileId")
+    }
 
     fun seedReadyProfileForTest(
         profileId: String,
@@ -183,10 +183,9 @@ class FakeUserProfileRepository : UserProfileRepository {
         publishReady(id)
     }
 
-    override suspend fun createProfile(name: String, colorIndex: Int): UserProfile =
-        mutex.withLock {
-            createProfileLocked(name, colorIndex)
-        }
+    override suspend fun createProfile(name: String, colorIndex: Int): UserProfile = mutex.withLock {
+        createProfileLocked(name, colorIndex)
+    }
 
     override suspend fun createAndActivateProfile(
         name: String,
@@ -388,12 +387,34 @@ class FakeUserProfileRepository : UserProfileRepository {
     }
 
     override suspend fun updateWorkout(profileId: String, value: WorkoutPreferences) {
+        beforeWorkoutMutation?.invoke(profileId)
         val request = PreferenceUpdateRequest.Workout(profileId, value)
         preferenceUpdateRequests += request
         beforePreferenceUpdate?.invoke(request)
         updateWorkoutFailure?.let { throw it }
         require(ProfilePreferencesValidator.workout(value).isEmpty())
         mutateActiveProfile(profileId) { current, now ->
+            current.copy(
+                workout = current.workout.copy(
+                    value = value,
+                    raw = ProfilePreferencesCodec.encodeWorkout(value),
+                    validity = ProfilePreferenceValidity.Valid,
+                    metadata = current.workout.metadata.advanced(now),
+                ),
+            )
+        }
+    }
+
+    override suspend fun mutateWorkout(
+        profileId: String,
+        transform: (WorkoutPreferences) -> WorkoutPreferences,
+    ) {
+        beforeWorkoutMutation?.invoke(profileId)
+        updateWorkoutFailure?.let { throw it }
+        mutateActiveProfile(profileId) { current, now ->
+            val value = transform(current.workout.value)
+            preferenceUpdateRequests += PreferenceUpdateRequest.Workout(profileId, value)
+            require(ProfilePreferencesValidator.workout(value).isEmpty())
             current.copy(
                 workout = current.workout.copy(
                     value = value,
@@ -527,11 +548,9 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
     }
 
-    override suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile? =
-        profiles.values.firstOrNull { it.supabaseUserId == supabaseUserId }
+    override suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile? = profiles.values.firstOrNull { it.supabaseUserId == supabaseUserId }
 
-    override fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus> =
-        flowOf(activeProfile.value?.subscriptionStatus ?: SubscriptionStatus.FREE)
+    override fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus> = flowOf(activeProfile.value?.subscriptionStatus ?: SubscriptionStatus.FREE)
 
     private fun createProfileLocked(
         name: String,
@@ -633,10 +652,9 @@ class FakeUserProfileRepository : UserProfileRepository {
     private fun ensurePreferenceFlow(
         profileId: String,
         legacyMigrationVersion: Int = 1,
-    ): MutableStateFlow<UserProfilePreferences> =
-        preferenceFlows.getOrPut(profileId) {
-            MutableStateFlow(defaultPreferences(profileId, legacyMigrationVersion))
-        }
+    ): MutableStateFlow<UserProfilePreferences> = preferenceFlows.getOrPut(profileId) {
+        MutableStateFlow(defaultPreferences(profileId, legacyMigrationVersion))
+    }
 
     private fun requirePreferenceFlow(
         profileId: String,

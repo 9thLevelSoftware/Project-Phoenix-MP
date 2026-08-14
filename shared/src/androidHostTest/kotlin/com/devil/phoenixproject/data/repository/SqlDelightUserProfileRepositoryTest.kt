@@ -18,6 +18,9 @@ import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
@@ -28,16 +31,15 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
-import kotlin.coroutines.cancellation.CancellationException
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.take
 import kotlinx.coroutines.flow.toList
 import kotlinx.coroutines.launch
@@ -46,8 +48,6 @@ import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
-import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class SqlDelightUserProfileRepositoryTest {
@@ -255,6 +255,22 @@ class SqlDelightUserProfileRepositoryTest {
         assertEquals(ledB, readyB.preferences.led.value)
         assertEquals(vbtB, readyB.preferences.vbt.value)
         assertEquals(safetyB, readyB.localSafety)
+    }
+
+    @Test
+    fun mutateWorkoutTransformsTheLatestWorkoutSection() = runTest {
+        ready()
+        val profileId = repository.activeProfile.value!!.id
+        repository.updateWorkout(profileId, WorkoutPreferences(stopAtTop = true))
+
+        repository.mutateWorkout(profileId) { workout ->
+            workout.copy(beepsEnabled = false)
+        }
+
+        val workout = assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value)
+            .preferences.workout.value
+        assertTrue(workout.stopAtTop)
+        assertFalse(workout.beepsEnabled)
     }
 
     @Test
@@ -663,75 +679,73 @@ class SqlDelightUserProfileRepositoryTest {
     }
 
     @Test
-    fun activeDeletionCancellationDuringPostCommitPublicationRecoversReadyAndPropagatesOriginal() =
-        runTest {
-            ready()
-            val source = repository.createAndActivateProfile("Source", 1)
-            val cancellation = CancellationException("cancel post-commit publication")
-            preferenceStore.cancelNextGetWith = cancellation
-            var propagatedByRepository: CancellationException? = null
+    fun activeDeletionCancellationDuringPostCommitPublicationRecoversReadyAndPropagatesOriginal() = runTest {
+        ready()
+        val source = repository.createAndActivateProfile("Source", 1)
+        val cancellation = CancellationException("cancel post-commit publication")
+        preferenceStore.cancelNextGetWith = cancellation
+        var propagatedByRepository: CancellationException? = null
 
+        val deletion = async {
+            try {
+                repository.deleteActiveProfile(source.id)
+            } catch (error: CancellationException) {
+                propagatedByRepository = error
+                throw error
+            }
+        }
+        val thrown = assertFailsWith<CancellationException> { deletion.await() }
+
+        assertEquals(cancellation.message, thrown.message)
+        assertSame(cancellation, propagatedByRepository)
+        assertNull(database.vitruvianDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
+        assertEquals(
+            "default",
+            database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+        )
+        assertEquals(
+            "default",
+            assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value).profile.id,
+        )
+    }
+
+    @Test
+    fun activeDeletionCancellationPreservesRecoveryExceptionWhenReconciliationTrulyFails() = runTest {
+        ready()
+        val source = repository.createAndActivateProfile("Source", 1)
+        val cancellation = CancellationException("cancel post-commit publication")
+        preferenceStore.cancelNextGetWith = cancellation
+        preferenceStore.failNextGet = true
+        var propagatedByRepository: Throwable? = null
+
+        val thrown = supervisorScope {
             val deletion = async {
                 try {
                     repository.deleteActiveProfile(source.id)
-                } catch (error: CancellationException) {
+                } catch (error: Throwable) {
                     propagatedByRepository = error
                     throw error
                 }
             }
-            val thrown = assertFailsWith<CancellationException> { deletion.await() }
-
-            assertEquals(cancellation.message, thrown.message)
-            assertSame(cancellation, propagatedByRepository)
-            assertNull(database.vitruvianDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
-            assertEquals(
-                "default",
-                database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
-            )
-            assertEquals(
-                "default",
-                assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value).profile.id,
-            )
+            assertFailsWith<ProfileContextRecoveryException> { deletion.await() }
         }
-
-    @Test
-    fun activeDeletionCancellationPreservesRecoveryExceptionWhenReconciliationTrulyFails() =
-        runTest {
-            ready()
-            val source = repository.createAndActivateProfile("Source", 1)
-            val cancellation = CancellationException("cancel post-commit publication")
-            preferenceStore.cancelNextGetWith = cancellation
-            preferenceStore.failNextGet = true
-            var propagatedByRepository: Throwable? = null
-
-            val thrown = supervisorScope {
-                val deletion = async {
-                    try {
-                        repository.deleteActiveProfile(source.id)
-                    } catch (error: Throwable) {
-                        propagatedByRepository = error
-                        throw error
-                    }
-                }
-                assertFailsWith<ProfileContextRecoveryException> { deletion.await() }
-            }
-            val recovery = assertIs<ProfileContextRecoveryException>(propagatedByRepository)
-            assertEquals(recovery.message, thrown.message)
-            assertSame(cancellation, recovery.cause)
-            assertEquals(1, cancellation.suppressed.size)
-            assertIs<InjectedTransitionFailure>(cancellation.suppressed.single())
-            assertNull(database.vitruvianDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
-            assertEquals(
-                "default",
-                database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
-            )
-            assertEquals(
-                "default",
-                assertIs<ActiveProfileContext.Switching>(
-                    repository.activeProfileContext.value,
-                ).targetProfileId,
-            )
-        }
+        val recovery = assertIs<ProfileContextRecoveryException>(propagatedByRepository)
+        assertEquals(recovery.message, thrown.message)
+        assertSame(cancellation, recovery.cause)
+        assertEquals(1, cancellation.suppressed.size)
+        assertIs<InjectedTransitionFailure>(cancellation.suppressed.single())
+        assertNull(database.vitruvianDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
+        assertEquals(
+            "default",
+            database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+        )
+        assertEquals(
+            "default",
+            assertIs<ActiveProfileContext.Switching>(
+                repository.activeProfileContext.value,
+            ).targetProfileId,
+        )
+    }
 
     @Test
     fun inactiveDeletionTargetsCurrentReadyProfileWithoutSwitching() = runTest {
@@ -804,27 +818,44 @@ class SqlDelightUserProfileRepositoryTest {
         val source = repository.createProfile("Source", 1)
         executeSql(
             "INSERT INTO ExternalRoutine(id, externalId, provider, title, syncedAt, rawData, profileId) VALUES (?, ?, 'hevy', ?, 1, ?, ?)",
-            "target-routine", "shared", "Target", "target-bytes", "default",
+            "target-routine",
+            "shared",
+            "Target",
+            "target-bytes",
+            "default",
         )
         executeSql(
             "INSERT INTO ExternalRoutine(id, externalId, provider, title, syncedAt, rawData, profileId) VALUES (?, ?, 'hevy', ?, 1, ?, ?)",
-            "source-conflict", "shared", "Source", "source-bytes", source.id,
+            "source-conflict",
+            "shared",
+            "Source",
+            "source-bytes",
+            source.id,
         )
         executeSql(
             "INSERT INTO ExternalRoutineExercise(id, externalRoutineId, title) VALUES (?, ?, ?)",
-            "source-conflict-exercise", "source-conflict", "Delete me",
+            "source-conflict-exercise",
+            "source-conflict",
+            "Delete me",
         )
         executeSql(
             "INSERT INTO ExternalRoutineSet(id, externalRoutineExerciseId, setIndex) VALUES (?, ?, 0)",
-            "source-conflict-set", "source-conflict-exercise",
+            "source-conflict-set",
+            "source-conflict-exercise",
         )
         executeSql(
             "INSERT INTO ExternalRoutine(id, externalId, provider, title, syncedAt, rawData, profileId) VALUES (?, ?, 'hevy', ?, 1, ?, ?)",
-            "source-only", "source-only", "Move", "source-only-bytes", source.id,
+            "source-only",
+            "source-only",
+            "Move",
+            "source-only-bytes",
+            source.id,
         )
         executeSql(
             "INSERT INTO ExternalRoutineExercise(id, externalRoutineId, title) VALUES (?, ?, ?)",
-            "source-only-exercise", "source-only", "Retain me",
+            "source-only-exercise",
+            "source-only",
+            "Retain me",
         )
 
         assertTrue(repository.deleteProfile(source.id))
@@ -1169,8 +1200,7 @@ class SqlDelightUserProfileRepositoryTest {
         }
     }
 
-    private fun countRows(table: String, column: String, value: String): Int =
-        countRowsWhere(table, "$column = '$value'")
+    private fun countRows(table: String, column: String, value: String): Int = countRowsWhere(table, "$column = '$value'")
 
     private fun countRowsWhere(table: String, where: String): Int {
         var count = 0

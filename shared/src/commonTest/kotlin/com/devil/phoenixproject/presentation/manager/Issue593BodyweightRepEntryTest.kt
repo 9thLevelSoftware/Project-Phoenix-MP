@@ -141,11 +141,9 @@ class Issue593BodyweightRepEntryTest {
 
             // Critical: no zero-rep session should have been written. The
             // gate fires before saveWorkoutSession() runs, so the analytics
-            // filter cannot drop the routine. Without startWorkout(),
-            // currentSessionId is null, so even if the gate had not
-            // fired, saveWorkoutSession() would have early-returned.
-            // We assert zero sessions all the same so the contract is
-            // explicit.
+            // filter cannot drop the routine. startWorkout() established
+            // the session above, so the zero-session assertion specifically
+            // proves the rep-entry gate prevented premature persistence.
             assertEquals(
                 0,
                 harness.fakeWorkoutRepo.allSessions().size,

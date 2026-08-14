@@ -3667,17 +3667,12 @@ class ActiveSessionEngine(
                 biomechanicsRepository.saveRepBiomechanics(sessionId, snapshot.biomechanicsRepResults)
             }
             snapshot.singleExerciseDefaults?.let { defaults ->
-                val workoutPreferences = userProfileRepository
-                    .observePreferences(snapshot.lease.profileId)
-                    .first()
-                    .workout.value
-                userProfileRepository.updateWorkout(
-                    snapshot.lease.profileId,
+                settingsManager.mutateWorkout(snapshot.lease.profileId) { workoutPreferences ->
                     workoutPreferences.copy(
                         singleExerciseDefaults = workoutPreferences.singleExerciseDefaults +
                             (defaults.exerciseId to defaults),
-                    ),
-                )
+                    )
+                }
             }
 
             val postSave = snapshot.postSaveInput
