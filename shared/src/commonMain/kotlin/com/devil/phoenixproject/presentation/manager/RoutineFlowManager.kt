@@ -32,6 +32,8 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.domain.usecase.RoutineSetWeightRequest
+import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -828,9 +830,9 @@ class RoutineFlowManager(
         applyDefaultRackSelectionForExercise(firstExercise)
 
         val firstSetReps = firstExercise.setReps.firstOrNull() // Can be null for AMRAP sets
-        // Get per-set weight for first set, falling back to exercise default
-        val firstSetWeight = firstExercise.setWeightsPerCableKg.getOrNull(0)
-            ?: firstExercise.weightPerCableKg
+        val firstSetWeight = RoutineSetWeightResolver(
+            RoutineSetWeightRequest(exercise = firstExercise, setIndex = 0, currentPrKg = null),
+        )
 
         // Only bodyweight exercises should have warmupReps = 0
         val isFirstBodyweight = firstExercise.exercise.isBodyweight
@@ -1048,9 +1050,9 @@ class RoutineFlowManager(
         // Issue #534: recompute rack load adjustment for the body-weight effective load formula
         applyDefaultRackSelectionForExercise(exercise)
 
-        // Get weight for this set
-        val setWeight = exercise.setWeightsPerCableKg.getOrNull(setIndex)
-            ?: exercise.weightPerCableKg
+        val setWeight = RoutineSetWeightResolver(
+            RoutineSetWeightRequest(exercise = exercise, setIndex = setIndex, currentPrKg = null),
+        )
         // Issue #129: Check raw value for AMRAP before fallback
         val rawSetReps = exercise.setReps.getOrNull(setIndex)
         val setReps = rawSetReps ?: exercise.reps
@@ -1408,7 +1410,9 @@ class RoutineFlowManager(
 
         val exercise = routine.exercises[index]
         val setReps = exercise.setReps.getOrNull(0)
-        val setWeight = exercise.setWeightsPerCableKg.getOrNull(0) ?: exercise.weightPerCableKg
+        val setWeight = RoutineSetWeightResolver(
+            RoutineSetWeightRequest(exercise = exercise, setIndex = 0, currentPrKg = null),
+        )
 
         // Issue #536: seed the new exercise's defaults (which clears any previous
         // selection when the new exercise has no defaults; otherwise overwrites

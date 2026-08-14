@@ -43,6 +43,8 @@ import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUse
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.domain.usecase.RoutineSetWeightRequest
+import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.DataBackupManager
 import kotlinx.coroutines.CancellationException
@@ -992,8 +994,9 @@ class DefaultWorkoutSessionManager(
 
                         // Get next exercise and update parameters
                         val nextExercise = routine.exercises[nextExIdx]
-                        val nextSetWeight = nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
-                            ?: nextExercise.weightPerCableKg
+                        val nextSetWeight = RoutineSetWeightResolver(
+                            RoutineSetWeightRequest(exercise = nextExercise, setIndex = nextSetIdx, currentPrKg = null),
+                        )
                         val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
                         val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
                         val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)

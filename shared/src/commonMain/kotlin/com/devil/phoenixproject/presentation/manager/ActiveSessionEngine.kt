@@ -69,6 +69,8 @@ import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
+import com.devil.phoenixproject.domain.usecase.RoutineSetWeightRequest
+import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
@@ -2894,7 +2896,9 @@ class ActiveSessionEngine(
         val resolvedSetReps = rawSetReps ?: exercise.reps
         return coordinator._workoutParameters.value.copy(
             programMode = exercise.programMode,
-            weightPerCableKg = exercise.setWeightsPerCableKg.getOrNull(setIndex) ?: exercise.weightPerCableKg,
+            weightPerCableKg = RoutineSetWeightResolver(
+                RoutineSetWeightRequest(exercise = exercise, setIndex = setIndex, currentPrKg = null),
+            ),
             reps = resolvedSetReps,
             warmupReps = Constants.DEFAULT_WARMUP_REPS,
             echoLevel = exercise.getEchoLevelForSet(setIndex),
@@ -5059,8 +5063,9 @@ class ActiveSessionEngine(
                         executionGuard.releaseCompletionClaim(lease)
                         coordinator.stopWorkoutInProgress.value = false
                         // Restore working weight in params before startWorkout overrides it
-                        val workingWeight = currentExercise.setWeightsPerCableKg.getOrNull(0)
-                            ?: currentExercise.weightPerCableKg
+                        val workingWeight = RoutineSetWeightResolver(
+                            RoutineSetWeightRequest(exercise = currentExercise, setIndex = 0, currentPrKg = null),
+                        )
                         coordinator._workoutParameters.update { p ->
                             p.copy(weightPerCableKg = workingWeight, reps = currentExercise.setReps.firstOrNull() ?: 10)
                         }
@@ -5081,8 +5086,9 @@ class ActiveSessionEngine(
                         executionGuard.releaseCompletionClaim(lease)
                         coordinator.stopWorkoutInProgress.value = false
                         // Restore working weight/reps
-                        val workingWeight = currentExercise.setWeightsPerCableKg.getOrNull(0)
-                            ?: currentExercise.weightPerCableKg
+                        val workingWeight = RoutineSetWeightResolver(
+                            RoutineSetWeightRequest(exercise = currentExercise, setIndex = 0, currentPrKg = null),
+                        )
                         coordinator._workoutParameters.update { p ->
                             p.copy(
                                 weightPerCableKg = workingWeight,
@@ -5442,8 +5448,9 @@ class ActiveSessionEngine(
                 val hasNextSet = nextSetIdx < exerciseForNextSet.setReps.size
                 if (hasNextSet) {
                     val nextSetReps = exerciseForNextSet.setReps.getOrNull(nextSetIdx)
-                    val nextSetWeight = exerciseForNextSet.setWeightsPerCableKg.getOrNull(nextSetIdx)
-                        ?: exerciseForNextSet.weightPerCableKg
+                    val nextSetWeight = RoutineSetWeightResolver(
+                        RoutineSetWeightRequest(exercise = exerciseForNextSet, setIndex = nextSetIdx, currentPrKg = null),
+                    )
                     val isNextSetLastSet = nextSetIdx >= exerciseForNextSet.setReps.size - 1
                     val nextIsAMRAP = nextSetReps == null || (exerciseForNextSet.isAMRAP && isNextSetLastSet)
 
@@ -5689,8 +5696,13 @@ class ActiveSessionEngine(
             val setWeight = if (coordinator._userAdjustedWeightDuringRest) {
                 currentParams.weightPerCableKg
             } else {
-                currentExercise.setWeightsPerCableKg.getOrNull(coordinator._currentSetIndex.value)
-                    ?: currentExercise.weightPerCableKg
+                RoutineSetWeightResolver(
+                    RoutineSetWeightRequest(
+                        exercise = currentExercise,
+                        setIndex = coordinator._currentSetIndex.value,
+                        currentPrKg = null,
+                    ),
+                )
             }
             val setReps = if (coordinator._userAdjustedWeightDuringRest) {
                 currentParams.reps
@@ -5823,8 +5835,13 @@ class ActiveSessionEngine(
             val nextSetWeight = if (preserveRestEdits) {
                 currentParams.weightPerCableKg
             } else {
-                nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
-                    ?: nextExercise.weightPerCableKg
+                RoutineSetWeightResolver(
+                    RoutineSetWeightRequest(
+                        exercise = nextExercise,
+                        setIndex = nextSetIdx,
+                        currentPrKg = null,
+                    ),
+                )
             }
             val nextReps = if (preserveRestEdits) {
                 currentParams.reps
