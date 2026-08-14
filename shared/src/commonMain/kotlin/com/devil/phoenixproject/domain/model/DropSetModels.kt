@@ -21,7 +21,13 @@ data class PlannedSetAttemptState(
     val logicalSetKey: LogicalSetKey,
     val nextAttemptNumber: Int = 1,
     val acceptedDropCount: Int = 0,
-)
+) {
+    init {
+        require(acceptedDropCount in 0..MAX_ACCEPTED_DROPS) {
+            "acceptedDropCount must be between 0 and $MAX_ACCEPTED_DROPS"
+        }
+    }
+}
 
 /** The attempt number consumed by a repeat and the resulting immutable state. */
 @Serializable

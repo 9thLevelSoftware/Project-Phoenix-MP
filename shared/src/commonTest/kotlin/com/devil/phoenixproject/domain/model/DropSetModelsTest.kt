@@ -78,6 +78,27 @@ class DropSetModelsTest {
     }
 
     @Test
+    fun `attempt state rejects accepted drop counts outside the supported range`() {
+        val key = logicalSetKey("routine-session-41", "routine-exercise-row-a", 0, SetType.STANDARD)
+
+        assertFailsWith<IllegalArgumentException> {
+            PlannedSetAttemptState(logicalSetKey = key, acceptedDropCount = -1)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            PlannedSetAttemptState(logicalSetKey = key, acceptedDropCount = 3)
+        }
+    }
+
+    @Test
+    fun `attempt state decoding rejects an out of range accepted drop count`() {
+        val corrupt = "{\"logicalSetKey\":{\"routineSessionId\":\"routine-session-41\",\"routineExerciseId\":\"routine-exercise-row-a\",\"setIndex\":0,\"setKind\":\"STANDARD\"},\"nextAttemptNumber\":2,\"acceptedDropCount\":3}"
+
+        assertFailsWith<IllegalArgumentException> {
+            json.decodeFromString<PlannedSetAttemptState>(corrupt)
+        }
+    }
+
+    @Test
     fun `occurrence load overlays compose geometrically without affecting another occurrence`() {
         val overlays = listOf(
             ExerciseLoadOverlay(routineExerciseId = "routine-exercise-press-a", multiplier = 0.8f),
