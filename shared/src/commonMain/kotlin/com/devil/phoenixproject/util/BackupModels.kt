@@ -316,6 +316,8 @@ data class CompletedSetBackup(
     val isPr: Boolean = false,
     val completedAt: Long,
     val setEndReason: String = "UNKNOWN",
+    val routineExerciseId: String? = null,
+    val attemptNumber: Int = 1,
 )
 
 /**

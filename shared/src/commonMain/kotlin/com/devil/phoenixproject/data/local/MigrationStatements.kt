@@ -1023,5 +1023,12 @@ WHERE gs.rowid = (
         "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'",
     )
 
+    // Migration 44: Persist routine occurrence and logical attempt identity (Issue #673 PR 2)
+    // Mirrors 44.sqm exactly.
+    44 -> listOf(
+        "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT",
+        "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1",
+    )
+
     else -> emptyList()
 }

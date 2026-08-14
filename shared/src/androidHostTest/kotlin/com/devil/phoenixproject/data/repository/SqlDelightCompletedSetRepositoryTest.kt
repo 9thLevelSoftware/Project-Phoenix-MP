@@ -2,12 +2,14 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -119,13 +121,119 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     @Test
+    fun `single and bulk saves round-trip routine occurrence and attempts without changing zero-based set index`() = runTest {
+        repository.saveCompletedSet(
+            completedSet(
+                id = "cset-single-attempt-2",
+                sessionId = "session-1",
+                setNumber = 4,
+                routineExerciseId = "exercise-1",
+                attemptNumber = 2,
+            ),
+        )
+        repository.saveCompletedSets(
+            listOf(
+                completedSet("cset-bulk-attempt-1", "session-1", 4, routineExerciseId = "exercise-1", attemptNumber = 1),
+                completedSet("cset-bulk-attempt-3", "session-1", 4, routineExerciseId = "exercise-1", attemptNumber = 3),
+                completedSet("cset-bulk-legacy", "session-1", 7),
+            ),
+        )
+
+        val byId = repository.getCompletedSets("session-1").associateBy { it.id }
+        assertEquals(4, byId.getValue("cset-single-attempt-2").setNumber)
+        assertEquals("exercise-1", byId.getValue("cset-single-attempt-2").routineExerciseId)
+        assertEquals(2, byId.getValue("cset-single-attempt-2").attemptNumber)
+        assertEquals(4, byId.getValue("cset-bulk-attempt-1").setNumber)
+        assertEquals(1, byId.getValue("cset-bulk-attempt-1").attemptNumber)
+        assertEquals(4, byId.getValue("cset-bulk-attempt-3").setNumber)
+        assertEquals(3, byId.getValue("cset-bulk-attempt-3").attemptNumber)
+        assertEquals(null, byId.getValue("cset-bulk-legacy").routineExerciseId)
+        assertEquals(1, byId.getValue("cset-bulk-legacy").attemptNumber)
+    }
+
+    @Test
+    fun `invalid stored attempt numbers are coerced to one on read`() = runTest {
+        listOf(0L, -4L).forEachIndexed { index, invalidAttempt ->
+            database.vitruvianDatabaseQueries.insertCompletedSet(
+                id = "cset-invalid-attempt-$index",
+                session_id = "session-1",
+                planned_set_id = null,
+                routine_exercise_id = "exercise-1",
+                set_number = index.toLong(),
+                set_type = "STANDARD",
+                attempt_number = invalidAttempt,
+                actual_reps = 8L,
+                actual_weight_kg = 40.0,
+                logged_rpe = null,
+                is_pr = 0L,
+                completed_at = 1001L + index,
+                set_end_reason = "TARGET_REPS_REACHED",
+            )
+        }
+
+        assertEquals(listOf(1, 1), repository.getCompletedSets("session-1").map { it.attemptNumber })
+    }
+
+    @Test
+    fun `nextAttemptNumber isolates every logical key dimension and ignores soft-deleted sessions`() = runTest {
+        val key = LogicalSetKey("routine-session-a", "exercise-1", 0, SetType.STANDARD)
+        assertEquals(1, repository.nextAttemptNumber(key))
+
+        insertWorkoutSession("attempt-session-1", "bench", routineSessionId = "routine-session-a")
+        insertWorkoutSession("attempt-session-2", "bench", routineSessionId = "routine-session-a")
+        insertWorkoutSession("other-routine-session", "bench", routineSessionId = "routine-session-b")
+        insertWorkoutSession("deleted-attempt-session", "bench", routineSessionId = "routine-session-a")
+        repository.saveCompletedSets(
+            listOf(
+                completedSet("attempt-1", "attempt-session-1", 0, routineExerciseId = "exercise-1", attemptNumber = 1),
+                completedSet("attempt-2", "attempt-session-2", 0, routineExerciseId = "exercise-1", attemptNumber = 2),
+                completedSet("wrong-occurrence", "attempt-session-1", 0, routineExerciseId = "exercise-other", attemptNumber = 20),
+                completedSet("wrong-set", "attempt-session-1", 1, routineExerciseId = "exercise-1", attemptNumber = 21),
+                completedSet("wrong-kind", "attempt-session-1", 0, setType = SetType.AMRAP, routineExerciseId = "exercise-1", attemptNumber = 22),
+                completedSet("wrong-routine-session", "other-routine-session", 0, routineExerciseId = "exercise-1", attemptNumber = 23),
+                completedSet("soft-deleted", "deleted-attempt-session", 0, routineExerciseId = "exercise-1", attemptNumber = 24),
+            ),
+        )
+        database.vitruvianDatabaseQueries.softDeleteSession(123L, 123L, "deleted-attempt-session")
+
+        assertEquals(3, repository.nextAttemptNumber(key))
+    }
+
+    @Test
+    fun `isAttemptDurable requires exact stable session logical key and attempt on authoritative session`() = runTest {
+        insertWorkoutSession("durable-session", "bench", routineSessionId = "routine-session-a")
+        insertWorkoutSession("other-stable-session", "bench", routineSessionId = "routine-session-a")
+        insertWorkoutSession("soft-deleted-durable", "bench", routineSessionId = "routine-session-a")
+        repository.saveCompletedSets(
+            listOf(
+                completedSet("durable", "durable-session", 0, routineExerciseId = "exercise-1", attemptNumber = 3),
+                completedSet("other-stable", "other-stable-session", 0, routineExerciseId = "exercise-1", attemptNumber = 3),
+                completedSet("deleted-durable", "soft-deleted-durable", 0, routineExerciseId = "exercise-1", attemptNumber = 3),
+            ),
+        )
+        database.vitruvianDatabaseQueries.softDeleteSession(123L, 123L, "soft-deleted-durable")
+        val key = LogicalSetKey("routine-session-a", "exercise-1", 0, SetType.STANDARD)
+
+        assertTrue(repository.isAttemptDurable("durable-session", key, 3))
+        assertFalse(repository.isAttemptDurable("missing-session", key, 3))
+        assertFalse(repository.isAttemptDurable("other-stable-session", key, 2))
+        assertFalse(repository.isAttemptDurable("durable-session", key.copy(routineSessionId = "routine-session-b"), 3))
+        assertFalse(repository.isAttemptDurable("durable-session", key.copy(routineExerciseId = "exercise-other"), 3))
+        assertFalse(repository.isAttemptDurable("durable-session", key.copy(setIndex = 1), 3))
+        assertFalse(repository.isAttemptDurable("durable-session", key.copy(setKind = SetType.AMRAP), 3))
+        assertFalse(repository.isAttemptDurable("soft-deleted-durable", key, 3))
+    }
+
+    @Test
     fun `unknown persisted end reason reads as UNKNOWN`() = runTest {
         database.vitruvianDatabaseQueries.insertCompletedSet(
             id = "cset-future",
             session_id = "session-1",
             planned_set_id = null,
+            routine_exercise_id = null,
             set_number = 1L,
             set_type = "STANDARD",
+            attempt_number = 1L,
             actual_reps = 8L,
             actual_weight_kg = 40.0,
             logged_rpe = null,
@@ -206,18 +314,28 @@ class SqlDelightCompletedSetRepositoryTest {
         restSeconds = restSeconds,
     )
 
-    private fun completedSet(id: String, sessionId: String, setNumber: Int, setEndReason: SetEndReason = SetEndReason.TARGET_REPS_REACHED) = CompletedSet(
+    private fun completedSet(
+        id: String,
+        sessionId: String,
+        setNumber: Int,
+        setEndReason: SetEndReason = SetEndReason.TARGET_REPS_REACHED,
+        setType: SetType = SetType.STANDARD,
+        routineExerciseId: String? = null,
+        attemptNumber: Int = 1,
+    ) = CompletedSet(
         id = id,
         sessionId = sessionId,
         plannedSetId = null,
         setNumber = setNumber,
-        setType = SetType.STANDARD,
+        setType = setType,
         actualReps = 8,
         actualWeightKg = 40f,
         loggedRpe = null,
         isPr = false,
         completedAt = 1000L + setNumber,
         setEndReason = setEndReason,
+        routineExerciseId = routineExerciseId,
+        attemptNumber = attemptNumber,
     )
 
     private fun justLiftSession(id: String, exerciseId: String) = WorkoutSession(
@@ -293,6 +411,7 @@ class SqlDelightCompletedSetRepositoryTest {
         totalReps: Long = 0L,
         workingReps: Long = 0L,
         isJustLift: Long = 0L,
+        routineSessionId: String? = null,
     ) {
         database.vitruvianDatabaseQueries.insertSession(
             id = id,
@@ -311,7 +430,7 @@ class SqlDelightCompletedSetRepositoryTest {
             echoLevel = 1L,
             exerciseId = exerciseId,
             exerciseName = "Bench Press",
-            routineSessionId = null,
+            routineSessionId = routineSessionId,
             routineName = null,
             safetyFlags = 0L,
             deloadWarningCount = 0L,

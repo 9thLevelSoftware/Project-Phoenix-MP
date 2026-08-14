@@ -37,6 +37,7 @@ import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
@@ -3137,6 +3138,19 @@ class ActiveSessionEngine(
 
         coordinator._workoutState.value = WorkoutState.Initializing
         syncRoutineSessionContext()
+        val routineSessionIdAtStart = coordinator.currentRoutineSessionId
+        val setIndexAtStart = coordinator._currentSetIndex.value
+        val setKindAtStart = if (seedParams.isAMRAP) SetType.AMRAP else SetType.STANDARD
+        val logicalSetKeyAtStart = if (routineSessionIdAtStart != null && currentExercise != null) {
+            LogicalSetKey(
+                routineSessionId = routineSessionIdAtStart,
+                routineExerciseId = currentExercise.id,
+                setIndex = setIndexAtStart,
+                setKind = setKindAtStart,
+            )
+        } else {
+            null
+        }
 
         coordinator.workoutJob = scope.launch {
             try {
@@ -3152,18 +3166,26 @@ class ActiveSessionEngine(
                 val bodyweightDuration = if (isBodyweight) exerciseDuration else null
 
                 val selectedExerciseAtStart = currentExercise?.exercise ?: resolveSelectedExercise(params)
+                // startWorkout is intentionally non-suspending. The durable seed is resolved
+                // inside its existing start job, before activation or any machine command,
+                // from the immutable key captured above rather than mutable coordinator state.
+                val attemptNumberAtStart = logicalSetKeyAtStart
+                    ?.let { completedSetRepository.nextAttemptNumber(it) }
+                    ?: 1
                 val startedContext = WorkoutExecutionContext(
                     lease = lease,
                     exerciseName = selectedExerciseAtStart?.name,
                     preferredCableCount = selectedExerciseAtStart?.preferredCableCount,
                     displayMultiplier = selectedExerciseAtStart?.displayMultiplier,
-                    plannedSetId = findPlannedSetId(coordinator._currentSetIndex.value),
+                    plannedSetId = findPlannedSetId(setIndexAtStart),
                     sessionBodyWeightKg = resolvedSessionBodyWeightKg(),
-                    routineSessionId = coordinator.currentRoutineSessionId,
+                    routineSessionId = routineSessionIdAtStart,
                     routineId = coordinator.currentRoutineId,
                     routineName = coordinator.currentRoutineName,
                     cycleId = coordinator.activeCycleId,
                     cycleDayNumber = coordinator.activeCycleDayNumber,
+                    routineExerciseId = logicalSetKeyAtStart?.routineExerciseId,
+                    attemptNumber = attemptNumberAtStart,
                 )
                 if (!executionGuard.isCurrent(lease)) return@launch
                 executionContext = startedContext
@@ -3668,6 +3690,8 @@ class ActiveSessionEngine(
                 routineName = coordinator.currentRoutineName,
                 cycleId = coordinator.activeCycleId,
                 cycleDayNumber = coordinator.activeCycleDayNumber,
+                routineExerciseId = currentExercise?.id.takeIf { coordinator.currentRoutineSessionId != null },
+                attemptNumber = 1,
             )
         val summary = calculateSetSummaryMetrics(
             metrics = metrics,
@@ -3765,6 +3789,8 @@ class ActiveSessionEngine(
                 isPr = false,
                 completedAt = wallClockMillisProvider(),
                 setEndReason = completion.reason,
+                routineExerciseId = context.routineExerciseId,
+                attemptNumber = context.attemptNumber,
             )
         } else {
             null
@@ -4090,6 +4116,15 @@ class ActiveSessionEngine(
                 coordinator._isCurrentExerciseBodyweight.value = false
 
                 val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
+                val legacyContext = lease?.let { stoppedLease ->
+                    executionContext?.takeIf {
+                        it.lease.executionId == stoppedLease.executionId &&
+                            it.lease.sessionId == stoppedLease.sessionId
+                    }
+                }
+                val legacyRoutineExerciseId = legacyContext?.routineExerciseId
+                    ?: currentExercise?.id.takeIf { coordinator.currentRoutineSessionId != null }
+                val legacyAttemptNumber = legacyContext?.attemptNumber ?: 1
                 Logger.d("ActiveSessionEngine") { "Manual stop continuation: exitingWorkout=$shouldExitToIdle" }
                 coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
 
@@ -4211,6 +4246,8 @@ class ActiveSessionEngine(
                         isPr = false,
                         completedAt = currentTimeMillis(),
                         setEndReason = SetEndReason.USER_STOPPED,
+                        routineExerciseId = legacyRoutineExerciseId,
+                        attemptNumber = legacyAttemptNumber,
                     )
                     completedSetRepository.saveCompletedSet(completedSet)
                     Logger.d("Saved CompletedSet (manual stop): set #$setIndex, ${repCount.workingReps} reps${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
@@ -4695,6 +4732,10 @@ class ActiveSessionEngine(
      * Save workout session to database and check for personal records.
      */
     private suspend fun saveWorkoutSession(completion: SetExecutionCompletion) {
+        val completionContext = executionContext?.takeIf {
+            it.lease.executionId == completion.lease.executionId &&
+                it.lease.sessionId == completion.lease.sessionId
+        }
         val sessionId = coordinator.currentSessionId
         if (sessionId == null) {
             Logger.e {
@@ -4856,6 +4897,8 @@ class ActiveSessionEngine(
                 isPr = false,
                 completedAt = currentTimeMillis(),
                 setEndReason = completion.reason,
+                routineExerciseId = completionContext?.routineExerciseId,
+                attemptNumber = completionContext?.attemptNumber ?: 1,
             )
             completedSetRepository.saveCompletedSet(completedSet)
             Logger.d("Saved CompletedSet: set #$setIndex, $working reps @ ${savedWeightKg}kg${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")

@@ -1141,7 +1141,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // CompletedSet -- migration 10, columns added by later migrations: set_end_reason (m43)
+    // CompletedSet -- migration 10, columns added later: set_end_reason (m43), attempt identity (m44)
     SchemaTableOperation(
         table = "CompletedSet",
         createSql = """
@@ -1149,8 +1149,10 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 id TEXT PRIMARY KEY NOT NULL,
                 session_id TEXT NOT NULL,
                 planned_set_id TEXT,
+                routine_exercise_id TEXT,
                 set_number INTEGER NOT NULL,
                 set_type TEXT NOT NULL DEFAULT 'STANDARD',
+                attempt_number INTEGER NOT NULL DEFAULT 1,
                 actual_reps INTEGER NOT NULL,
                 actual_weight_kg REAL NOT NULL,
                 logged_rpe INTEGER,
@@ -1439,9 +1441,12 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 31: provider tombstone handling
     SchemaHealOperation("ExternalActivity", "deletedAt", "ALTER TABLE ExternalActivity ADD COLUMN deletedAt INTEGER"),
 
-    // ── CompletedSet (1 column, migration 43) ──────────────────────────
+    // ── CompletedSet (3 columns, migrations 43-44) ─────────────────────
     // Migration 43: set-end reason for workout history analytics (Issue #673 PR 1)
     SchemaHealOperation("CompletedSet", "set_end_reason", "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'"),
+    // Migration 44: stable logical-set attempt identity (Issue #673 PR 2)
+    SchemaHealOperation("CompletedSet", "routine_exercise_id", "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT"),
+    SchemaHealOperation("CompletedSet", "attempt_number", "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1"),
 )
 
 // ============================================================

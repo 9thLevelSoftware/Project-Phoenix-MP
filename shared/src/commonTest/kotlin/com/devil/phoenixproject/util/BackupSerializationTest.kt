@@ -339,4 +339,28 @@ class BackupSerializationTest {
         assertEquals("UNKNOWN", legacy.setEndReason)
         assertEquals("FUTURE_REASON", future.setEndReason)
     }
+
+    @Test
+    fun completedSetAttemptIdentityRoundTripsAndLegacyJsonUsesSafeDefaults() {
+        val original = CompletedSetBackup(
+            id = "attempt-3",
+            sessionId = "session-1",
+            setNumber = 0,
+            actualReps = 8,
+            actualWeightKg = 40f,
+            completedAt = 1000L,
+            routineExerciseId = "routine-exercise-7",
+            attemptNumber = 3,
+        )
+
+        val restored = json.decodeFromString<CompletedSetBackup>(json.encodeToString(original))
+        val legacy = json.decodeFromString<CompletedSetBackup>(
+            """{"id":"legacy","sessionId":"s","setNumber":0,"actualReps":8,"actualWeightKg":40.0,"completedAt":1000}""",
+        )
+
+        assertEquals("routine-exercise-7", restored.routineExerciseId)
+        assertEquals(3, restored.attemptNumber)
+        assertEquals(null, legacy.routineExerciseId)
+        assertEquals(1, legacy.attemptNumber)
+    }
 }

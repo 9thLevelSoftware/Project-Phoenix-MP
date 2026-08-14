@@ -697,10 +697,35 @@ class SchemaParityTest {
         assertEquals("STALL_FAILURE", queryScalar(driver, "SELECT set_end_reason FROM CompletedSet WHERE id = 'cs-resilient'"))
     }
 
+    @Test
+    fun `migration 44 to 45 adds logical attempt identity and preserves historical rows with null occurrence and attempt one`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 44)
+        driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
+        driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)", 0)
+        driver.execute(null, "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('s1',1,'OldSchool',10,40.0)", 0)
+        driver.execute(
+            null,
+            """
+            INSERT INTO CompletedSet (id, session_id, set_number, set_type, actual_reps, actual_weight_kg, is_pr, completed_at, set_end_reason)
+            VALUES ('cs-pre-attempt-identity', 's1', 0, 'STANDARD', 8, 40.0, 0, 1000, 'TARGET_REPS_REACHED')
+            """.trimIndent(),
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 44, 45)
+
+        assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "routine_exercise_id"))
+        assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "attempt_number"))
+        assertEquals(null, queryScalar(driver, "SELECT routine_exercise_id FROM CompletedSet WHERE id = 'cs-pre-attempt-identity'"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(attempt_number AS TEXT) FROM CompletedSet WHERE id = 'cs-pre-attempt-identity'"))
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 44L
+        private const val EXPECTED_SCHEMA_VERSION = 45L
         private val CANONICAL_UUID_REGEX = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
         /**

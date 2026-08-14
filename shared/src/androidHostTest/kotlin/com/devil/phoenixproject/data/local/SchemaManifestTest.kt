@@ -144,6 +144,41 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `completed set identity heals are distinct and attempt defaults to one`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE CompletedSet (id TEXT PRIMARY KEY, session_id TEXT NOT NULL)",
+            0,
+        )
+
+        val occurrenceResult = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "CompletedSet" && it.column == "routine_exercise_id" },
+        )
+        val attemptResult = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "CompletedSet" && it.column == "attempt_number" },
+        )
+        driver.execute(null, "INSERT INTO CompletedSet(id, session_id) VALUES ('set-identity', 'session-1')", 0)
+
+        assertEquals(ReconciliationStatus.CREATED, occurrenceResult.status)
+        assertEquals(ReconciliationStatus.CREATED, attemptResult.status)
+        assertEquals(listOf("id", "session_id", "routine_exercise_id", "attempt_number"), columnNames(driver, "CompletedSet"))
+        var attemptNumber: Long? = null
+        driver.executeQuery(
+            null,
+            "SELECT attempt_number FROM CompletedSet WHERE id = 'set-identity'",
+            { cursor ->
+                if (cursor.next().value) attemptNumber = cursor.getLong(0)
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        assertEquals(1L, attemptNumber)
+    }
+
+    @Test
     fun `applyColumnHeal returns TABLE_MISSING when table does not exist`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
 

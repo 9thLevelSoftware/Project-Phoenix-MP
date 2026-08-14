@@ -163,6 +163,8 @@ internal data class WorkoutExecutionContext(
     val routineName: String?,
     val cycleId: String?,
     val cycleDayNumber: Int?,
+    val routineExerciseId: String? = null,
+    val attemptNumber: Int = 1,
 )
 
 internal data class PostSaveWorkoutInput(

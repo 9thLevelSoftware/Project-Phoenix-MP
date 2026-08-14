@@ -2,6 +2,7 @@ package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -26,12 +27,22 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     private val plannedSetsByExercise = mutableMapOf<String, MutableList<String>>()
     private val completedSetsBySession = mutableMapOf<String, MutableList<String>>()
     private val sessionExerciseIds = mutableMapOf<String, String>()
+    private val sessionRoutineIds = mutableMapOf<String, String>()
+    private val deletedSessionIds = mutableSetOf<String>()
 
     private val completedSetsFlows =
         mutableMapOf<String, MutableStateFlow<List<CompletedSet>>>()
 
     fun setSessionExercise(sessionId: String, exerciseId: String) {
         sessionExerciseIds[sessionId] = exerciseId
+    }
+
+    fun setSessionRoutine(sessionId: String, routineSessionId: String) {
+        sessionRoutineIds[sessionId] = routineSessionId
+    }
+
+    fun softDeleteSession(sessionId: String) {
+        deletedSessionIds += sessionId
     }
 
     fun reset() {
@@ -44,6 +55,8 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         plannedSetsByExercise.clear()
         completedSetsBySession.clear()
         sessionExerciseIds.clear()
+        sessionRoutineIds.clear()
+        deletedSessionIds.clear()
         completedSetsFlows.clear()
     }
 
@@ -146,6 +159,31 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     override suspend fun saveCompletedSets(sets: List<CompletedSet>) {
         sets.forEach { saveCompletedSet(it) }
     }
+
+    override suspend fun nextAttemptNumber(key: LogicalSetKey): Int = completedSets.values
+        .asSequence()
+        .filter { it.sessionId !in deletedSessionIds }
+        .filter { sessionRoutineIds[it.sessionId] == key.routineSessionId }
+        .filter { it.routineExerciseId == key.routineExerciseId }
+        .filter { it.setNumber == key.setIndex }
+        .filter { it.setType == key.setKind }
+        .maxOfOrNull { it.attemptNumber }
+        ?.plus(1)
+        ?: 1
+
+    override suspend fun isAttemptDurable(
+        stableSessionId: String,
+        key: LogicalSetKey,
+        attemptNumber: Int,
+    ): Boolean = stableSessionId !in deletedSessionIds &&
+        sessionRoutineIds[stableSessionId] == key.routineSessionId &&
+        completedSets.values.any {
+            it.sessionId == stableSessionId &&
+                it.routineExerciseId == key.routineExerciseId &&
+                it.setNumber == key.setIndex &&
+                it.setType == key.setKind &&
+                it.attemptNumber == attemptNumber
+        }
 
     override suspend fun updateRpe(setId: String, rpe: Int) {
         val current = completedSets[setId] ?: return

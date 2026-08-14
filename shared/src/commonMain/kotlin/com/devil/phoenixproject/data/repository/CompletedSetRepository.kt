@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlinx.coroutines.flow.Flow
@@ -88,6 +89,15 @@ interface CompletedSetRepository {
      * Save multiple completed sets at once.
      */
     suspend fun saveCompletedSets(sets: List<CompletedSet>)
+
+    /** Return the next durable attempt number for this exact logical routine set. */
+    suspend fun nextAttemptNumber(key: LogicalSetKey): Int
+
+    /**
+     * Whether the exact attempt is durably stored under the stable workout-session id.
+     * Soft-deleted workout sessions are not authoritative.
+     */
+    suspend fun isAttemptDurable(stableSessionId: String, key: LogicalSetKey, attemptNumber: Int): Boolean
 
     /**
      * Update RPE for a completed set (user logs after the fact).

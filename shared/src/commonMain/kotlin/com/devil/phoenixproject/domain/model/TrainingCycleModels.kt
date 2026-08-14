@@ -426,6 +426,8 @@ data class CompletedSet(
     val isPr: Boolean,
     val completedAt: Long,
     val setEndReason: SetEndReason = SetEndReason.UNKNOWN,
+    val routineExerciseId: String? = null,
+    val attemptNumber: Int = 1,
 ) {
     /**
      * Calculate estimated 1RM using canonical hybrid formula (Brzycki ≤10 reps, Epley >10 reps).
@@ -449,6 +451,8 @@ data class CompletedSet(
             loggedRpe: Int? = null,
             isPr: Boolean = false,
             setEndReason: SetEndReason = SetEndReason.UNKNOWN,
+            routineExerciseId: String? = null,
+            attemptNumber: Int = 1,
         ) = CompletedSet(
             id = id,
             sessionId = sessionId,
@@ -461,6 +465,8 @@ data class CompletedSet(
             isPr = isPr,
             completedAt = currentTimeMillis(),
             setEndReason = setEndReason,
+            routineExerciseId = routineExerciseId,
+            attemptNumber = attemptNumber,
         )
     }
 }

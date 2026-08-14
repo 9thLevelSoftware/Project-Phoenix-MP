@@ -535,8 +535,10 @@ class DataBackupManagerRoutineNameTest {
             id = "cs-1",
             session_id = "session-export-test",
             planned_set_id = null,
+            routine_exercise_id = "routine-exercise-export",
             set_number = 1,
             set_type = "STANDARD",
+            attempt_number = 3,
             actual_reps = 10,
             actual_weight_kg = 50.0,
             logged_rpe = null,
@@ -562,6 +564,8 @@ class DataBackupManagerRoutineNameTest {
         assertEquals(1, backupData.data.completedSets.size, "Should include completedSets for the session")
         assertEquals("cs-1", backupData.data.completedSets[0].id)
         assertEquals("session-export-test", backupData.data.completedSets[0].sessionId)
+        assertEquals("routine-exercise-export", backupData.data.completedSets[0].routineExerciseId)
+        assertEquals(3, backupData.data.completedSets[0].attemptNumber)
 
         // Verify it can be re-imported (import compatibility)
         // First delete the session so import has room
@@ -572,6 +576,9 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(importResult.isSuccess, "Should be importable")
         assertEquals(1, importResult.getOrThrow().sessionsImported)
         assertEquals(1, importResult.getOrThrow().completedSetsImported)
+        val reimported = database.vitruvianDatabaseQueries.selectCompletedSetById("cs-1").executeAsOne()
+        assertEquals("routine-exercise-export", reimported.routine_exercise_id)
+        assertEquals(3L, reimported.attempt_number)
 
         // Clean up
         File(filePath).delete()
@@ -609,6 +616,8 @@ class DataBackupManagerRoutineNameTest {
                         actualWeightKg = 40f,
                         completedAt = 2L,
                         setEndReason = "FUTURE_REASON",
+                        routineExerciseId = "routine-exercise-import",
+                        attemptNumber = 2,
                     ),
                 ),
             ),
@@ -620,6 +629,11 @@ class DataBackupManagerRoutineNameTest {
             "UNKNOWN",
             database.vitruvianDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne().set_end_reason,
         )
+        assertEquals(
+            "routine-exercise-import" to 2L,
+            database.vitruvianDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne()
+                .let { it.routine_exercise_id to it.attempt_number },
+        )
 
         val streamingDatabase = createTestDatabase()
         val streamingManager = TestDataBackupManager(streamingDatabase)
@@ -627,6 +641,11 @@ class DataBackupManagerRoutineNameTest {
         assertEquals(
             "UNKNOWN",
             streamingDatabase.vitruvianDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne().set_end_reason,
+        )
+        assertEquals(
+            "routine-exercise-import" to 2L,
+            streamingDatabase.vitruvianDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne()
+                .let { it.routine_exercise_id to it.attempt_number },
         )
     }
 
@@ -647,8 +666,10 @@ class DataBackupManagerRoutineNameTest {
             id = "set-export-future-reason",
             session_id = "session-export-future-reason",
             planned_set_id = null,
+            routine_exercise_id = "routine-exercise-export",
             set_number = 1L,
             set_type = "STANDARD",
+            attempt_number = 3L,
             actual_reps = 8L,
             actual_weight_kg = 40.0,
             logged_rpe = null,
@@ -663,6 +684,10 @@ class DataBackupManagerRoutineNameTest {
 
         assertEquals("UNKNOWN", buffered.data.completedSets.single().setEndReason)
         assertEquals("UNKNOWN", streaming.data.completedSets.single().setEndReason)
+        assertEquals("routine-exercise-export", buffered.data.completedSets.single().routineExerciseId)
+        assertEquals(3, buffered.data.completedSets.single().attemptNumber)
+        assertEquals("routine-exercise-export", streaming.data.completedSets.single().routineExerciseId)
+        assertEquals(3, streaming.data.completedSets.single().attemptNumber)
         File(streamingPath).delete()
     }
 
@@ -733,8 +758,10 @@ class DataBackupManagerRoutineNameTest {
             id = "cs-bench",
             session_id = "routine-bench",
             planned_set_id = null,
+            routine_exercise_id = null,
             set_number = 1,
             set_type = "STANDARD",
+            attempt_number = 1,
             actual_reps = 10,
             actual_weight_kg = 50.0,
             logged_rpe = null,
@@ -746,8 +773,10 @@ class DataBackupManagerRoutineNameTest {
             id = "cs-row",
             session_id = "routine-row",
             planned_set_id = null,
+            routine_exercise_id = null,
             set_number = 1,
             set_type = "STANDARD",
+            attempt_number = 1,
             actual_reps = 10,
             actual_weight_kg = 40.0,
             logged_rpe = null,

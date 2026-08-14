@@ -1829,8 +1829,10 @@ CREATE TABLE CompletedSet (
     id TEXT PRIMARY KEY NOT NULL,
     session_id TEXT NOT NULL,
     planned_set_id TEXT,
+    routine_exercise_id TEXT,
     set_number INTEGER NOT NULL,
     set_type TEXT NOT NULL DEFAULT 'STANDARD',
+    attempt_number INTEGER NOT NULL DEFAULT 1,
     actual_reps INTEGER NOT NULL,
     actual_weight_kg REAL NOT NULL,
     logged_rpe INTEGER,
@@ -2024,8 +2026,30 @@ ORDER BY cs.completed_at DESC
 LIMIT ?;
 
 insertCompletedSet:
-INSERT INTO CompletedSet (id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at, set_end_reason)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO CompletedSet (id, session_id, planned_set_id, routine_exercise_id, set_number, set_type, attempt_number, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at, set_end_reason)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectNextCompletedSetAttemptNumber:
+SELECT COALESCE(MAX(cs.attempt_number), 0) + 1
+FROM CompletedSet cs
+INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+WHERE ws.routineSessionId = :routineSessionId
+  AND ws.deletedAt IS NULL
+  AND cs.routine_exercise_id = :routineExerciseId
+  AND cs.set_number = :setIndex
+  AND cs.set_type = :setKind;
+
+countDurableCompletedSetAttempt:
+SELECT COUNT(*)
+FROM CompletedSet cs
+INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+WHERE cs.session_id = :stableSessionId
+  AND ws.routineSessionId = :routineSessionId
+  AND ws.deletedAt IS NULL
+  AND cs.routine_exercise_id = :routineExerciseId
+  AND cs.set_number = :setIndex
+  AND cs.set_type = :setKind
+  AND cs.attempt_number = :attemptNumber;
 
 updateCompletedSetRpe:
 UPDATE CompletedSet SET logged_rpe = ? WHERE id = ?;
@@ -2162,8 +2186,8 @@ INSERT OR IGNORE INTO PlannedSet (id, routine_exercise_id, set_number, set_type,
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 insertCompletedSetIgnore:
-INSERT OR IGNORE INTO CompletedSet (id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at, set_end_reason)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO CompletedSet (id, session_id, planned_set_id, routine_exercise_id, set_number, set_type, attempt_number, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at, set_end_reason)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 insertProgressionEventIgnore:
 INSERT OR IGNORE INTO ProgressionEvent (id, exercise_id, suggested_weight_kg, previous_weight_kg, reason, user_response, actual_weight_kg, timestamp, profile_id)

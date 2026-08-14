@@ -41,6 +41,66 @@ import kotlinx.coroutines.withContext
 class WorkoutExitPersistenceTest {
 
     @Test
+    fun `routine completion persists attempt identity captured before coordinator mutation`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = WorkoutStateFixtures.createTestRoutine(
+                exerciseCount = 1,
+                setsPerExercise = 1,
+                repsPerSet = 3,
+            ).copy(id = "attempt-routine", name = "attempt-routine")
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            val routineSessionId = "routine-session-attempt"
+            harness.coordinator.currentRoutineSessionId = routineSessionId
+            harness.coordinator.currentRoutineId = routine.id
+            harness.coordinator.currentRoutineName = routine.name
+            val routineExerciseId = routine.exercises.single().id
+            listOf(1, 2).forEach { attempt ->
+                val sessionId = "historical-attempt-$attempt"
+                harness.fakeCompletedSetRepo.setSessionRoutine(sessionId, routineSessionId)
+                harness.fakeCompletedSetRepo.saveCompletedSet(
+                    CompletedSet(
+                        id = "historical-set-$attempt",
+                        sessionId = sessionId,
+                        plannedSetId = null,
+                        setNumber = 0,
+                        setType = SetType.STANDARD,
+                        actualReps = 3,
+                        actualWeightKg = 25f,
+                        loggedRpe = null,
+                        isPr = false,
+                        completedAt = attempt.toLong(),
+                        routineExerciseId = routineExerciseId,
+                        attemptNumber = attempt,
+                    ),
+                )
+            }
+
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._loadedRoutine.value = routine.copy(
+                exercises = listOf(routine.exercises.single().copy(id = "mutated-occurrence")),
+            )
+            harness.coordinator._repCount.value = RepCount(workingReps = 2)
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceUntilIdle()
+
+            val persisted = harness.fakeCompletedSetRepo.saved.single { it.sessionId == lease.sessionId }
+            assertEquals(routineExerciseId, persisted.routineExerciseId)
+            assertEquals(3, persisted.attemptNumber)
+            assertEquals(0, persisted.setNumber)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `manual stop persists immutable snapshot when RESET fails`() = runTest {
         val harness = DWSMTestHarness(this)
         try {

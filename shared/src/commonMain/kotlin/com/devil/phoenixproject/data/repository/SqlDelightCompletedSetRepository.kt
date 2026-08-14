@@ -4,6 +4,7 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
@@ -48,8 +49,10 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
         id: String,
         sessionId: String,
         plannedSetId: String?,
+        routineExerciseId: String?,
         setNumber: Long,
         setType: String,
+        attemptNumber: Long,
         actualReps: Long,
         actualWeightKg: Double,
         loggedRpe: Long?,
@@ -60,8 +63,10 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
         id = id,
         sessionId = sessionId,
         plannedSetId = plannedSetId,
+        routineExerciseId = routineExerciseId,
         setNumber = setNumber.toInt(),
         setType = SetType.valueOf(setType),
+        attemptNumber = attemptNumber.toInt().coerceAtLeast(1),
         actualReps = actualReps.toInt(),
         actualWeightKg = actualWeightKg.toFloat(),
         loggedRpe = loggedRpe?.toInt(),
@@ -174,8 +179,10 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
                 id = set.id,
                 session_id = set.sessionId,
                 planned_set_id = set.plannedSetId,
+                routine_exercise_id = set.routineExerciseId,
                 set_number = set.setNumber.toLong(),
                 set_type = set.setType.name,
+                attempt_number = set.attemptNumber.toLong(),
                 actual_reps = set.actualReps.toLong(),
                 actual_weight_kg = set.actualWeightKg.toDouble(),
                 logged_rpe = set.loggedRpe?.toLong(),
@@ -230,8 +237,10 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
             id = completedSet.id,
             session_id = completedSet.sessionId,
             planned_set_id = completedSet.plannedSetId,
+            routine_exercise_id = completedSet.routineExerciseId,
             set_number = completedSet.setNumber.toLong(),
             set_type = completedSet.setType.name,
+            attempt_number = completedSet.attemptNumber.toLong(),
             actual_reps = completedSet.actualReps.toLong(),
             actual_weight_kg = completedSet.actualWeightKg.toDouble(),
             logged_rpe = completedSet.loggedRpe?.toLong(),
@@ -250,8 +259,10 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
                     id = set.id,
                     session_id = set.sessionId,
                     planned_set_id = set.plannedSetId,
+                    routine_exercise_id = set.routineExerciseId,
                     set_number = set.setNumber.toLong(),
                     set_type = set.setType.name,
+                    attempt_number = set.attemptNumber.toLong(),
                     actual_reps = set.actualReps.toLong(),
                     actual_weight_kg = set.actualWeightKg.toDouble(),
                     logged_rpe = set.loggedRpe?.toLong(),
@@ -261,6 +272,30 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
                 )
             }
         }
+    }
+
+    override suspend fun nextAttemptNumber(key: LogicalSetKey): Int = withContext(Dispatchers.IO) {
+        queries.selectNextCompletedSetAttemptNumber(
+            routineSessionId = key.routineSessionId,
+            routineExerciseId = key.routineExerciseId,
+            setIndex = key.setIndex.toLong(),
+            setKind = key.setKind.name,
+        ).executeAsOne().toInt()
+    }
+
+    override suspend fun isAttemptDurable(
+        stableSessionId: String,
+        key: LogicalSetKey,
+        attemptNumber: Int,
+    ): Boolean = withContext(Dispatchers.IO) {
+        queries.countDurableCompletedSetAttempt(
+            stableSessionId = stableSessionId,
+            routineSessionId = key.routineSessionId,
+            routineExerciseId = key.routineExerciseId,
+            setIndex = key.setIndex.toLong(),
+            setKind = key.setKind.name,
+            attemptNumber = attemptNumber.toLong(),
+        ).executeAsOne() > 0L
     }
 
     override suspend fun updateRpe(setId: String, rpe: Int) {
