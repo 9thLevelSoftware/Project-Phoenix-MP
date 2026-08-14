@@ -62,34 +62,39 @@ class ThemeModeUiContractGuardTest {
     }
 
     @Test
-    fun commonTheme_mapsSystemToLifecycleSafePlatformDark() {
+    fun commonTheme_mapsSystemThroughResolver() {
         val source = read("shared/src/commonMain/kotlin/com/devil/phoenixproject/ui/theme/Theme.kt")
-
         assertTrue(
-            source.contains("ThemeMode.SYSTEM -> rememberPlatformSystemDark()"),
-            "System theme mode must use the lifecycle-safe platform dark signal (Configuration.uiMode on Android) rather than the transient isSystemInDarkTheme().",
+            source.contains("resolveUseDarkColors(") &&
+                source.contains("rememberPlatformSystemDark()"),
+            "SYSTEM must go through resolveUseDarkColors + rememberPlatformSystemDark, not a raw isSystemInDarkTheme() call.",
         )
         assertFalse(
             source.contains("isSystemInDarkTheme()"),
-            "Theme.kt must not directly call isSystemInDarkTheme(); use rememberPlatformSystemDark() for lifecycle-safe resume reconciliation.",
+            "Theme.kt must not call isSystemInDarkTheme() directly.",
         )
     }
 
     @Test
-    fun androidSystemDarkDiagnostic_readsTheLatestComposeSignalOnResume() {
-        val source = read("shared/src/androidMain/kotlin/com/devil/phoenixproject/ui/theme/PlatformSystemDark.android.kt")
-
-        assertTrue(
-            source.contains("Lifecycle.Event.ON_RESUME") && source.contains("isDark = refreshed"),
-            "The Android-owned theme source must reconcile its state from Configuration.uiMode on every lifecycle resume so lock/unlock can repair a stale system appearance.",
+    fun androidSystemDark_usesResolverAndApplicationConfiguration() {
+        val source = read(
+            "shared/src/androidMain/kotlin/com/devil/phoenixproject/ui/theme/PlatformSystemDark.android.kt",
         )
         assertTrue(
-            source.contains("val currentComposeSignal by rememberUpdatedState(composeSignal)"),
-            "The lifecycle observer must bridge a recomposed isSystemInDarkTheme() value with rememberUpdatedState so ON_RESUME does not compare Configuration.uiMode with the first composition's stale Compose signal.",
+            source.contains("resolveSystemDark("),
+            "Android SYSTEM appearance must call resolveSystemDark so UNDEFINED cannot latch light.",
         )
         assertTrue(
-            source.contains("currentComposeSignal != refreshed"),
-            "The resume mismatch diagnostic must compare Configuration.uiMode with the current Compose signal rather than the observer's initial captured value.",
+            source.contains("applicationContext.resources.configuration"),
+            "Android SYSTEM appearance must read application configuration, not only Activity resources.",
+        )
+        assertTrue(
+            source.contains("Lifecycle.Event.ON_RESUME"),
+            "Resume must still re-sample, but through the resolver.",
+        )
+        assertFalse(
+            Regex("""isDark\s*=\s*refreshed""").containsMatchIn(source),
+            "Do not assign a raw Activity uiMode boolean on resume. That is the #691 latch.",
         )
     }
 

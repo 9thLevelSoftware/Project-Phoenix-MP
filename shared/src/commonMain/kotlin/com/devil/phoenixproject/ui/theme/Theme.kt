@@ -105,11 +105,10 @@ fun VitruvianTheme(
     dynamicColorEnabled: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val useDarkColors = when (themeMode) {
-        ThemeMode.SYSTEM -> rememberPlatformSystemDark()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
+    val useDarkColors = resolveUseDarkColors(
+        themeMode = themeMode,
+        systemDark = rememberPlatformSystemDark(),
+    )
     val colorScheme = if (dynamicColorEnabled) {
         // Material You path. In dark mode, clamp the dynamic dark scheme so the
         // surface family never resolves to high-luminance values; see

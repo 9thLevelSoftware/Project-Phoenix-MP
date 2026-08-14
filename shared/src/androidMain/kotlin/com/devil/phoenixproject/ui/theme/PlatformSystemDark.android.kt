@@ -4,6 +4,7 @@ import android.content.res.Configuration
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -17,57 +18,63 @@ import co.touchlab.kermit.Logger
 
 private val log = Logger.withTag("PlatformSystemDark")
 
-/**
- * Android-owned lifecycle-safe system appearance source.
- *
- * Seeds from `Configuration.uiMode` on first composition and refreshes on every
- * `ON_RESUME` event so lock/unlock, display-mode changes, and other configuration
- * transitions are captured.  Logs a mismatch when the Compose
- * `isSystemInDarkTheme()` signal disagrees with the Android-owned value — this
- * telemetry is the first diagnostic that would have caught issue #677.
- */
 @Composable
 actual fun rememberPlatformSystemDark(): Boolean {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+    val composeNight = isSystemInDarkTheme()
+    val currentComposeNight by rememberUpdatedState(composeNight)
 
-    fun readUiModeDark(): Boolean {
-        val nightMask = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK
-        return nightMask == Configuration.UI_MODE_NIGHT_YES
+    fun applicationNight(): NightSample = nightSampleFromMask(
+        context.applicationContext.resources.configuration.uiMode and
+            Configuration.UI_MODE_NIGHT_MASK,
+    )
+
+    fun activityNight(): NightSample = nightSampleFromMask(
+        context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK,
+    )
+
+    var previous by remember {
+        mutableStateOf(
+            resolveSystemDark(
+                previous = true,
+                applicationNight = applicationNight(),
+                activityNight = activityNight(),
+                composeNight = composeNight,
+            ),
+        )
     }
 
-    var isDark by remember { mutableStateOf(readUiModeDark()) }
-
-    // Capture the Compose system-dark signal during composition and bridge its latest
-    // value into the long-lived lifecycle observer for each resume diagnostic.
-    val composeSignal = isSystemInDarkTheme()
-    val currentComposeSignal by rememberUpdatedState(composeSignal)
+    val resolved = resolveSystemDark(
+        previous = previous,
+        applicationNight = applicationNight(),
+        activityNight = activityNight(),
+        composeNight = composeNight,
+    )
+    SideEffect { previous = resolved }
 
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                val refreshed = readUiModeDark()
-                if (refreshed != isDark) {
-                    log.i { "System dark mode changed on resume: $isDark -> $refreshed" }
-                }
-                isDark = refreshed
-
-                // Diagnostic: log mismatch between Android-owned value and the latest
-                // recomposed Compose signal. `rememberUpdatedState` keeps this observer
-                // current without re-registering it on every recomposition.
-                if (currentComposeSignal != refreshed) {
-                    log.w {
-                        "MISMATCH: Configuration.uiMode says dark=$refreshed " +
-                            "but Compose isSystemInDarkTheme() says dark=$currentComposeSignal"
+                val next = resolveSystemDark(
+                    previous = previous,
+                    applicationNight = applicationNight(),
+                    activityNight = activityNight(),
+                    composeNight = currentComposeNight,
+                )
+                if (next != previous) {
+                    log.i {
+                        "System dark reconciled on resume: $previous -> $next " +
+                            "app=${applicationNight()} activity=${activityNight()} " +
+                            "compose=$currentComposeNight"
                     }
                 }
+                previous = next
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose {
-            lifecycleOwner.lifecycle.removeObserver(observer)
-        }
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    return isDark
+    return resolved
 }
