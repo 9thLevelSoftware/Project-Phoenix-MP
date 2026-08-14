@@ -94,7 +94,11 @@ import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
 import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.components.StartGateLabel
+import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
+import com.devil.phoenixproject.presentation.components.toStartGatePresentation
+import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
@@ -139,6 +143,7 @@ import vitruvianprojectphoenix.shared.generated.resources.scanning_for_devices
 import vitruvianprojectphoenix.shared.generated.resources.stop_workout
 import vitruvianprojectphoenix.shared.generated.resources.tag_lift_message
 import vitruvianprojectphoenix.shared.generated.resources.tag_lift_title
+import vitruvianprojectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * WorkoutTab with State Holder Pattern (2025 Material Expressive).
@@ -172,6 +177,7 @@ fun WorkoutTab(
         enableVideoPlayback = state.enableVideoPlayback,
         exerciseRepository = exerciseRepository,
         isWorkoutSetupDialogVisible = state.isWorkoutSetupDialogVisible,
+        machineTeardownState = state.machineTeardownState,
         hapticEvents = hapticEvents,
         loadedRoutine = state.loadedRoutine,
         currentExerciseIndex = state.currentExerciseIndex,
@@ -190,6 +196,8 @@ fun WorkoutTab(
         onCancelScan = actions::onCancelScan,
         onDisconnect = actions::onDisconnect,
         onStartWorkout = actions::onStartWorkout,
+        onRetryWorkoutTeardown = actions::onRetryWorkoutTeardown,
+        onReconnectWorkoutTeardown = actions::onReconnectWorkoutTeardown,
         onStopWorkout = actions::onStopWorkout,
         onSkipRest = actions::onSkipRest,
         onExtendRest = actions::onExtendRest,
@@ -249,6 +257,7 @@ fun WorkoutTab(
     enableVideoPlayback: Boolean,
     exerciseRepository: ExerciseRepository,
     isWorkoutSetupDialogVisible: Boolean = false,
+    machineTeardownState: MachineTeardownState = MachineTeardownState.Ready,
     hapticEvents: SharedFlow<HapticEvent>? = null,
     loadedRoutine: Routine? = null,
     currentExerciseIndex: Int = 0,
@@ -267,6 +276,8 @@ fun WorkoutTab(
     onCancelScan: () -> Unit,
     onDisconnect: () -> Unit,
     onStartWorkout: () -> Unit,
+    onRetryWorkoutTeardown: () -> Unit = {},
+    onReconnectWorkoutTeardown: () -> Unit = {},
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
     onExtendRest: (Int) -> Unit = {},
@@ -410,6 +421,9 @@ fun WorkoutTab(
                             currentExerciseIndex = currentExerciseIndex,
                             onStartNextExercise = onStartNextExercise,
                             onResetForNewWorkout = onResetForNewWorkout,
+                            machineTeardownState = machineTeardownState,
+                            onRetryWorkoutTeardown = onRetryWorkoutTeardown,
+                            onReconnectWorkoutTeardown = onReconnectWorkoutTeardown,
                         )
                     }
 
@@ -764,6 +778,9 @@ fun WorkoutTab(
                 onHideWorkoutSetupDialog()
             },
             onDismiss = onHideWorkoutSetupDialog,
+            machineTeardownState = machineTeardownState,
+            onRetryWorkoutTeardown = onRetryWorkoutTeardown,
+            onReconnectWorkoutTeardown = onReconnectWorkoutTeardown,
         )
     }
 }
@@ -992,6 +1009,9 @@ private fun CompletedCard(
     currentExerciseIndex: Int,
     onStartNextExercise: () -> Unit,
     onResetForNewWorkout: () -> Unit,
+    machineTeardownState: MachineTeardownState,
+    onRetryWorkoutTeardown: () -> Unit,
+    onReconnectWorkoutTeardown: () -> Unit,
 ) {
     // workout-setup-16: spring scaleIn entrance on the CheckCircle icon.
     // reduceMotion: EnterTransition.None — icon appears instantly (complete static final state).
@@ -1037,6 +1057,7 @@ private fun CompletedCard(
             val hasMoreExercises = loadedRoutine != null &&
                 currentExerciseIndex < (loadedRoutine.exercises.size - 1)
 
+            val startGate = machineTeardownState.toStartGatePresentation()
             if (hasMoreExercises && loadedRoutine != null) { // null check for smart-cast
                 // Show next exercise preview
                 val nextExercise = loadedRoutine.exercises[currentExerciseIndex + 1]
@@ -1073,11 +1094,18 @@ private fun CompletedCard(
 
                         Spacer(Modifier.height(Spacing.medium))
 
+                        WorkoutStartGateNotice(
+                            state = machineTeardownState,
+                            onRetry = onRetryWorkoutTeardown,
+                            onReconnect = onReconnectWorkoutTeardown,
+                        )
+
                         Button(
                             onClick = onStartNextExercise,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp),
+                            enabled = startGate.startEnabled,
                             shape = MaterialTheme.shapes.medium,
                             elevation = ButtonDefaults.buttonElevation(
                                 defaultElevation = 4.dp,
@@ -1085,7 +1113,11 @@ private fun CompletedCard(
                             ),
                         ) {
                             Text(
-                                "Start Next Exercise",
+                                if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                                    stringResource(Res.string.workout_teardown_finishing)
+                                } else {
+                                    "Start Next Exercise"
+                                },
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                             )
@@ -1094,11 +1126,17 @@ private fun CompletedCard(
                 }
             } else {
                 // Last exercise or not a routine - show "Start New Workout"
+                WorkoutStartGateNotice(
+                    state = machineTeardownState,
+                    onRetry = onRetryWorkoutTeardown,
+                    onReconnect = onReconnectWorkoutTeardown,
+                )
                 Button(
                     onClick = onResetForNewWorkout,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
+                    enabled = startGate.startEnabled,
                     shape = MaterialTheme.shapes.medium,
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
@@ -1108,7 +1146,11 @@ private fun CompletedCard(
                     Icon(Icons.Default.Refresh, contentDescription = stringResource(Res.string.cd_start_new_workout))
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        "Start New Workout",
+                        if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                            stringResource(Res.string.workout_teardown_finishing)
+                        } else {
+                            "Start New Workout"
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )

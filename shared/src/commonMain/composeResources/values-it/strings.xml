@@ -74,6 +74,9 @@
     <string name="set_type_warmup">Warm-up Set %1$d</string>
     <string name="set_type_working">Working Set</string>
 
+    <string name="workout_teardown_finishing">Completamento dell’allenamento precedente…</string>
+    <string name="workout_teardown_failed">Il ripristino dell’attrezzo non è stato completato</string>
+    <string name="workout_teardown_retry">Riprova</string>
     <string name="label_previously_completed">Completati in precedenza</string>
     <string name="cd_filter_previously_completed">Filtra gli esercizi completati in precedenza</string>
 </resources>

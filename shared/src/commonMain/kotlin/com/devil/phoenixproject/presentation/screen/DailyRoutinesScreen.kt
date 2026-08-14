@@ -11,6 +11,9 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
+import com.devil.phoenixproject.presentation.components.StartGateLabel
+import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
+import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
@@ -35,6 +38,8 @@ fun DailyRoutinesScreen(
     val routineGroups by viewModel.routineGroups.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
+    val machineTeardownState by viewModel.machineTeardownState.collectAsState()
+    val startGate = machineTeardownState.toStartGatePresentation()
 
     val connectionError by viewModel.connectionError.collectAsState()
 
@@ -157,6 +162,19 @@ fun DailyRoutinesScreen(
                         }
                     },
                     onDismiss = { showResumeDialog = false },
+                    confirmEnabled = startGate.startEnabled,
+                    confirmLabel = if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                        stringResource(Res.string.workout_teardown_finishing)
+                    } else {
+                        null
+                    },
+                    supportingContent = {
+                        WorkoutStartGateNotice(
+                            state = machineTeardownState,
+                            onRetry = { viewModel.retryWorkoutTeardown() },
+                            onReconnect = { viewModel.reconnectWorkoutTeardown() },
+                        )
+                    },
                 )
             }
         }

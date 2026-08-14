@@ -87,6 +87,9 @@
     <string name="stop_label">STOPP</string>
     <string name="waiting_for_data">Warte auf Daten…</string>
     <string name="reconnect">Erneut verbinden</string>
+    <string name="workout_teardown_finishing">Vorheriges Training wird beendet…</string>
+    <string name="workout_teardown_failed">Das Zurücksetzen des Trainers wurde nicht abgeschlossen</string>
+    <string name="workout_teardown_retry">Erneut versuchen</string>
 
     <string name="stop_current_set_title">Aktuellen Satz stoppen?</string>
     <string name="stop_current_set_message">Stoppe diesen Satz, überspringe diese Übung oder beende das gesamte Training.</string>

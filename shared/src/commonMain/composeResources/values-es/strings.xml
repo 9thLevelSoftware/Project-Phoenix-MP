@@ -87,6 +87,9 @@
     <string name="stop_label">PARAR</string>
     <string name="waiting_for_data">Esperando datos…</string>
     <string name="reconnect">Reconectar</string>
+    <string name="workout_teardown_finishing">Finalizando el entrenamiento anterior…</string>
+    <string name="workout_teardown_failed">El restablecimiento de la máquina no se completó</string>
+    <string name="workout_teardown_retry">Reintentar</string>
 
     <string name="stop_current_set_title">¿Detener serie actual?</string>
     <string name="stop_current_set_message">Detén esta serie, omite este ejercicio o finaliza todo el entrenamiento.</string>

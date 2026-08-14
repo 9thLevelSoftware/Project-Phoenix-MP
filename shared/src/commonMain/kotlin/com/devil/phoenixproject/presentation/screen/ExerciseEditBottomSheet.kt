@@ -122,6 +122,8 @@ fun ExerciseEditBottomSheet(
     onDismiss: () -> Unit,
     buttonText: String = "Save",
     weightStepOverride: Float = 0f, // Issue #266/#410: 0 = use default for unit
+    primaryActionEnabled: Boolean = true,
+    primaryActionSupportingContent: (@Composable () -> Unit)? = null,
 ) {
     // Create local ViewModel instance with repositories for PR and velocity-1RM lookups
     val velocityOneRepMaxRepository: VelocityOneRepMaxRepository = koinInject()
@@ -718,6 +720,8 @@ fun ExerciseEditBottomSheet(
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
+            primaryActionSupportingContent?.invoke()
+
             // Bottom actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -741,7 +745,7 @@ fun ExerciseEditBottomSheet(
                     modifier = Modifier
                         .weight(1f)
                         .height(56.dp),
-                    enabled = sets.isNotEmpty(),
+                    enabled = sets.isNotEmpty() && primaryActionEnabled,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,

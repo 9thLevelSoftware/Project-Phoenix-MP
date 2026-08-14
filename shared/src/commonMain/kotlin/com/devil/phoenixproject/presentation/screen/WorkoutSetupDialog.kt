@@ -19,6 +19,10 @@ import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.presentation.components.ConfirmEditTextField
 import com.devil.phoenixproject.presentation.components.ExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
+import com.devil.phoenixproject.presentation.components.StartGateLabel
+import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
+import com.devil.phoenixproject.presentation.components.toStartGatePresentation
+import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -42,6 +46,9 @@ fun WorkoutSetupDialog(
     onUpdateParameters: (WorkoutParameters) -> Unit,
     onStartWorkout: () -> Unit,
     onDismiss: () -> Unit,
+    machineTeardownState: MachineTeardownState,
+    onRetryWorkoutTeardown: () -> Unit,
+    onReconnectWorkoutTeardown: () -> Unit,
 ) {
     // State for exercise selection
     var selectedExercise by remember { mutableStateOf<Exercise?>(null) }
@@ -59,6 +66,7 @@ fun WorkoutSetupDialog(
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
+    val startGate = machineTeardownState.toStartGatePresentation()
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,
@@ -440,20 +448,33 @@ fun WorkoutSetupDialog(
 
             Spacer(modifier = Modifier.height(Spacing.medium))
 
+            WorkoutStartGateNotice(
+                state = machineTeardownState,
+                onRetry = onRetryWorkoutTeardown,
+                onReconnect = onReconnectWorkoutTeardown,
+            )
+
             // Bottom action buttons — full-width per finding rec (confirm = filled Button, cancel = TextButton)
             Button(
                 onClick = {
+                    if (!startGate.startEnabled) return@Button
                     onStartWorkout()
                     scope.launch { sheetState.hide() }.invokeOnCompletion {
                         if (!sheetState.isVisible) onDismiss()
                     }
                 },
-                enabled = selectedExercise != null,
+                enabled = selectedExercise != null && startGate.startEnabled,
                 modifier = Modifier.fillMaxWidth(),
             ) {
                 Icon(Icons.Default.PlayArrow, contentDescription = stringResource(Res.string.cd_start_workout))
                 Spacer(modifier = Modifier.width(Spacing.small))
-                Text(stringResource(Res.string.start_workout))
+                Text(
+                    if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                        stringResource(Res.string.workout_teardown_finishing)
+                    } else {
+                        stringResource(Res.string.start_workout)
+                    },
+                )
             }
             TextButton(
                 onClick = {

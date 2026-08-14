@@ -82,11 +82,14 @@ import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCa
 import com.devil.phoenixproject.presentation.components.ExerciseQuickHistoryCard
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
+import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
 import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
+import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
+import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
@@ -113,6 +116,7 @@ import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
 import vitruvianprojectphoenix.shared.generated.resources.set_type_warmup
 import vitruvianprojectphoenix.shared.generated.resources.set_type_working
 import vitruvianprojectphoenix.shared.generated.resources.target_reps
+import vitruvianprojectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * Set Ready Screen - Focused view for a single exercise/set.
@@ -126,6 +130,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     val loadedRoutine by viewModel.loadedRoutine.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
+    val machineTeardownState by viewModel.machineTeardownState.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
     val weightRecommendation by viewModel.weightAdjustmentRecommendation.collectAsState()
     val rackItems by viewModel.rackItems.collectAsState()
@@ -133,6 +138,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     // Issue #646: drive set-type badge in SetReady header
     val currentWarmupSetIndex by viewModel.currentWarmupSetIndex.collectAsState()
     val repCount by viewModel.repCount.collectAsState()
+    val startGate = machineTeardownState.toStartGatePresentation()
 
     // Get current state
     val setReadyState = routineFlowState as? RoutineFlowState.SetReady
@@ -264,78 +270,92 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 tonalElevation = 3.dp,
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // PREV button - compact icon button
-                    FilledTonalIconButton(
-                        onClick = { viewModel.setReadyPrev() },
-                        enabled = canGoPrev,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                            contentDescription = stringResource(Res.string.cd_previous),
-                        )
-                    }
-
-                    // START SET button - primary action, takes most space
-                    Button(
-                        onClick = {
-                            viewModel.ensureConnection(
-                                onConnected = { viewModel.startSetFromReady() },
-                                onFailed = {},
-                            )
-                        },
+                Column {
+                    WorkoutStartGateNotice(
+                        state = machineTeardownState,
+                        onRetry = { viewModel.retryWorkoutTeardown() },
+                        onReconnect = { viewModel.reconnectWorkoutTeardown() },
+                        modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp),
+                    )
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        enabled = connectionState is ConnectionState.Connected && !bodyweightPromptPending,
-                        shape = MaterialTheme.shapes.small,
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "START",
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                        )
-                    }
+                        // PREV button - compact icon button
+                        FilledTonalIconButton(
+                            onClick = { viewModel.setReadyPrev() },
+                            enabled = canGoPrev,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                contentDescription = stringResource(Res.string.cd_previous),
+                            )
+                        }
 
-                    // NEXT button - compact icon button
-                    FilledTonalIconButton(
-                        onClick = { viewModel.setReadySkip() },
-                        enabled = canSkip,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = stringResource(Res.string.cd_next),
-                        )
-                    }
+                        // START SET button - primary action, takes most space
+                        Button(
+                            onClick = {
+                                if (!startGate.startEnabled) return@Button
+                                viewModel.ensureConnection(
+                                    onConnected = { viewModel.startSetFromReady() },
+                                    onFailed = {},
+                                )
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            enabled = connectionState is ConnectionState.Connected && !bodyweightPromptPending &&
+                                startGate.startEnabled,
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                                    stringResource(Res.string.workout_teardown_finishing)
+                                } else {
+                                    "START"
+                                },
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                            )
+                        }
 
-                    // STOP button - destructive action
-                    FilledTonalIconButton(
-                        onClick = { showStopConfirmation = true },
-                        modifier = Modifier.size(48.dp),
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                        ),
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = stringResource(Res.string.cd_stop),
-                        )
+                        // NEXT button - compact icon button
+                        FilledTonalIconButton(
+                            onClick = { viewModel.setReadySkip() },
+                            enabled = canSkip,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = stringResource(Res.string.cd_next),
+                            )
+                        }
+
+                        // STOP button - destructive action
+                        FilledTonalIconButton(
+                            onClick = { showStopConfirmation = true },
+                            modifier = Modifier.size(48.dp),
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            ),
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = stringResource(Res.string.cd_stop),
+                            )
+                        }
                     }
                 }
             }
