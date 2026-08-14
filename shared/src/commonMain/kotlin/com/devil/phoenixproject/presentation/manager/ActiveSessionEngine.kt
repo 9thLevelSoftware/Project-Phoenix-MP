@@ -684,15 +684,18 @@ class ActiveSessionEngine(
 
                     if (!params.stallDetectionEnabled || currentState !is WorkoutState.Active) return@collect
                     if (params.isEchoMode) return@collect
-                    if (!isWarmupGateOpenForAutoStop()) return@collect
                     if (!shouldEnableAutoStop(params)) return@collect
 
-                    // Track ROM range from position observations
+                    // Track ROM range from position observations (even during warmup,
+                    // so the detector has a calibrated range when warmup ends)
                     val pos = event.position
                     val currentTop = coordinator.romRangeTop
                     val currentBottom = coordinator.romRangeBottom
                     if (currentTop == null || pos > currentTop) coordinator.romRangeTop = pos
                     if (currentBottom == null || pos < currentBottom) coordinator.romRangeBottom = pos
+
+                    // Gate timer arming until warmup is complete
+                    if (!isWarmupGateOpenForAutoStop()) return@collect
 
                     val top = coordinator.romRangeTop ?: return@collect
                     val bottom = coordinator.romRangeBottom ?: return@collect
@@ -700,7 +703,6 @@ class ActiveSessionEngine(
                     if (range < WorkoutCoordinator.MIN_RANGE_THRESHOLD) return@collect
 
                     val fraction = (pos - bottom) / range
-                    coordinator.romFraction = fraction
 
                     val velocity = event.velocity.toDouble()
 
@@ -719,7 +721,6 @@ class ActiveSessionEngine(
                         if (coordinator.stallStartTime == null) {
                             coordinator.stallStartTime = currentTimeMillis()
                             coordinator.isCurrentlyStalled = true
-                            coordinator.stallArmedByRomFraction = true
                             Logger.d("Auto-stop stall timer STARTED via ROM-fraction signal (fraction=$fraction, velocity=$velocity)")
                         }
                     }

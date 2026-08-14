@@ -442,14 +442,6 @@ class WorkoutCoordinator(
     @Volatile
     internal var romRangeBottom: Float? = null
 
-    @Volatile
-    internal var romFraction: Float? = null
-
-    // True when the stall countdown was armed by the ROM-fraction geometric
-    // signal (velocity dead band + mid-ROM position). Rep events cancel it.
-    @Volatile
-    internal var stallArmedByRomFraction = false
-
     // Issue #649: defer position/stall auto-stop until the verbal-cue + short
     // transition window elapses, or a completed working rep clears it. The
     // deadline (@Volatile Long) is the single source of truth — 0L means no
@@ -480,8 +472,6 @@ class WorkoutCoordinator(
         // Issue #673 PR 2: clear ROM-fraction stall state on set start/reset
         romRangeTop = null
         romRangeBottom = null
-        romFraction = null
-        stallArmedByRomFraction = false
         deferAutoStopDeadlineMs = 0L
         _autoStopState.value = AutoStopUiState()
     }

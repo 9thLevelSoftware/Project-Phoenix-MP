@@ -226,17 +226,16 @@ class MonitorDataProcessor(
         // ===== STAGE 6B: STATUS EVENT EMISSION =====
         // Issue #673 PR 2: emit MachineStatusEvent carrying the full SampleStatus +
         // position + velocity for downstream ROM-fraction stall detection.
-        // Only fires on packets that carry a non-zero status word.
-        if (packet.status != 0) {
-            onStatusEvent(
-                MachineStatusEvent(
-                    timestamp = currentTime,
-                    sampleStatus = SampleStatus(packet.status),
-                    position = max(posA, posB),
-                    velocity = max(smoothedVelocityA, smoothedVelocityB).toFloat(),
-                ),
-            )
-        }
+        // Fires on EVERY processed packet (including status=0) so the ROM-fraction
+        // collector gets continuous position/velocity data, not just edge events.
+        onStatusEvent(
+            MachineStatusEvent(
+                timestamp = currentTime,
+                sampleStatus = SampleStatus(packet.status),
+                position = max(posA, posB),
+                velocity = max(abs(smoothedVelocityA), abs(smoothedVelocityB)).toFloat(),
+            ),
+        )
 
         // ===== STAGE 7: BUILD METRIC =====
         return WorkoutMetric(

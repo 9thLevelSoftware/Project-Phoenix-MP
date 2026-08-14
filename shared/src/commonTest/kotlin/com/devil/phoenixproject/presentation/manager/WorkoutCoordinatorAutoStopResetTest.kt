@@ -27,8 +27,6 @@ class WorkoutCoordinatorAutoStopResetTest {
         // Issue #673 PR 2: ROM-fraction stall state
         coordinator.romRangeTop = 500.0f
         coordinator.romRangeBottom = 100.0f
-        coordinator.romFraction = 0.6f
-        coordinator.stallArmedByRomFraction = true
         coordinator.deferAutoStopDeadlineMs = 99_999L
         coordinator._autoStopState.value = AutoStopUiState(
             isActive = true,
@@ -47,8 +45,6 @@ class WorkoutCoordinatorAutoStopResetTest {
         // Issue #673 PR 2: ROM-fraction state must also be cleared
         assertEquals(null, coordinator.romRangeTop)
         assertEquals(null, coordinator.romRangeBottom)
-        assertEquals(null, coordinator.romFraction)
-        assertFalse(coordinator.stallArmedByRomFraction)
         assertEquals(0L, coordinator.deferAutoStopDeadlineMs)
         assertEquals(AutoStopUiState(), coordinator._autoStopState.value)
     }

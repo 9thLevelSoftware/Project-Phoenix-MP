@@ -48,7 +48,7 @@ class MonitorDataProcessorStatusEventTest {
     }
 
     @Test
-    fun `onStatusEvent does not fire for zero status`() {
+    fun `onStatusEvent fires for zero status with SampleStatus(0)`() {
         val events = mutableListOf<MachineStatusEvent>()
         val processor = MonitorDataProcessor(
             onStatusEvent = { events.add(it) },
@@ -68,7 +68,9 @@ class MonitorDataProcessorStatusEventTest {
 
         processor.process(packet)
 
-        assertEquals(0, events.size)
+        // Now fires for every processed packet (ROM-fraction collector needs continuous data)
+        assertEquals(1, events.size)
+        assertEquals(0, events[0].sampleStatus.raw)
     }
 
     @Test
