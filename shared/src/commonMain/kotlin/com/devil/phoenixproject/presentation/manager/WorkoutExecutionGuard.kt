@@ -147,11 +147,11 @@ internal class WorkoutExecutionGuard(
             isTimedCable = seed.isTimedCable,
         )
         currentLeaseRef.value?.let { outgoingLease ->
-            currentLeaseRef.value = null
             if (sameIdentity(completionClaimLease, outgoingLease)) {
                 completionClaimLease = null
             }
             cancelPresentationJobsLocked(outgoingLease)
+            currentLeaseRef.value = null
         }
         invalidatedLeaseRef.value = null
         currentLeaseRef.value = lease
@@ -175,8 +175,8 @@ internal class WorkoutExecutionGuard(
 
     fun invalidateCurrent(reason: ExecutionInvalidationReason): ExecutionLease? = withPlatformLock(teardownLock) {
         val invalidated = currentLeaseRef.value ?: return null
-        currentLeaseRef.value = null
         cancelPresentationJobsLocked(invalidated)
+        currentLeaseRef.value = null
         if (sameIdentity(completionClaimLease, invalidated)) {
             completionClaimLease = null
         }
@@ -191,8 +191,8 @@ internal class WorkoutExecutionGuard(
     fun invalidate(lease: ExecutionLease, reason: ExecutionInvalidationReason): Boolean = withPlatformLock(teardownLock) {
         val current = currentLeaseRef.value ?: return@withPlatformLock false
         if (!sameIdentity(current, lease)) return@withPlatformLock false
-        currentLeaseRef.value = null
         cancelPresentationJobsLocked(current)
+        currentLeaseRef.value = null
         if (sameIdentity(completionClaimLease, current)) {
             completionClaimLease = null
         }
@@ -213,9 +213,6 @@ internal class WorkoutExecutionGuard(
         if (executionSequence.value != token.executionGeneration) return@withPlatformLock false
         if (token.lease == null && invalidatedLease != null) return@withPlatformLock false
         if (token.lease != null && (invalidatedLease == null || !sameIdentity(token.lease, invalidatedLease))) {
-            return@withPlatformLock false
-        }
-        if (invalidatedLease != null && !sameIdentity(invalidatedLeaseRef.value, invalidatedLease)) {
             return@withPlatformLock false
         }
         block()

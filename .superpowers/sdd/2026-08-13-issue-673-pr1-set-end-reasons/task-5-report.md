@@ -316,3 +316,43 @@ The unchanged broader ten-class lifecycle/integration/teardown gate completed 15
 - Confirmed the guard holds no lock across `emit`, `join`, biomechanics computation, BLE work, persistence, teardown, or other suspension/expensive work. The guarded reset block contains only immediate state updates and non-suspending job cancellation.
 - Confirmed Android's monitor and iOS's recursive platform lock cannot form a new cross-lock cycle in these paths: the replacement helper does not acquire the biomechanics lock, while identity-checked biomechanics detach/install remains outside the execution guard.
 - Confirmed the round-4 diff is limited to Task 5 manager sources, focused guard/execution-isolation tests, the narrowly adapted #687 stale-work guard assertion, the test harness, and this report.
+
+## Controller rework round 5
+
+### Review findings addressed
+
+- Reset cleanup now depends only on the captured reset generation, current-execution absence, and the token's stable lease identity. It no longer depends on `invalidatedLeaseRef`, which teardown legitimately clears when A reaches `Ready`; a real A teardown-ready transition therefore cannot suppress cleanup when no successor exists.
+- `beginExecution`, `invalidateCurrent`, and identity-scoped `invalidate` now cancel the outgoing lease's registered completion/alert jobs under the execution guard before publishing authority loss or a successor. Job registration uses the same guard. The cancellation call is non-suspending and identity-scoped; no `emit`, `join`, BLE, teardown, persistence, or biomechanics work runs under the guard.
+- The existing reset-generation tests still prove that B start, including B start/end, blocks stale A cleanup. Detector predicates, timing, classification, and alert delivery remain unchanged.
+
+### Round-5 RED and mutation evidence
+
+Four focused behavior tests were introduced before the production change. The valid old-code run compiled and executed all four groups and failed at assertion level:
+
+- `reset token commits cleanup after A teardown becomes ready without a successor` showed the guard rejecting cleanup after `markTeardownReady(A)` cleared the teardown-owned invalidated lease.
+- `reset cleanup survives A teardown becoming ready after invalidation` reproduced the same race through the real engine, deferred BLE stop, real `requestTeardownForTransition`, and reset invalidation barrier.
+- `invalidation cancels a backpressured alert before publishing authority loss` released a saturated real `MutableSharedFlow` at the exact cancellation boundary and observed alert delivery only after A was no longer current under the old ordering.
+- `current invalidation and replacement cancel jobs while A remains authoritative` covered both `invalidateCurrent` and real replacement and observed cancellation after authority publication under the old ordering.
+
+Both fixes were then independently mutation-checked after GREEN. Restoring the `invalidatedLeaseRef` dependency failed the two reset tests (2/2). Restoring null-before-cancel ordering failed the exact backpressure and invalidation/replacement tests (2/2). Both mutations were reverted before the final gates.
+
+### Round-5 GREEN evidence
+
+The final consolidated focused gate completed 172 tests with zero failures or errors:
+
+- `Issue673SetEndReasonLifecycleTest`: 20
+- `Issue687WorkoutExecutionIsolationTest`: 30
+- `WorkoutExitPersistenceTest`: 23
+- `WorkoutExecutionGuardTest`: 20
+- `VbtEnabledRuntimeTest`: 4
+- `DWSMWorkoutLifecycleTest`: 75
+
+The unchanged broader ten-class lifecycle/integration/teardown gate completed 151 tests with zero failures or errors. Production and host-test sources compiled in the focused run. The expanded mandatory absence scan
+`rg -n "lastSetEndReason|autoStopReason|handleSetCompletion\(\)|setCompletionInProgress" shared/src` returned zero matches, and `git diff --check` was clean.
+
+### Round-5 self-review
+
+- Verified reset cleanup remains allowed after A teardown becomes ready when no successor exists, while the generation token still rejects cleanup after B starts or starts and ends.
+- Verified job cancellation and job registration are serialized by the same guard, cancellation precedes authority publication, and cancellation cannot affect a different execution identity.
+- Verified only non-suspending `Job.cancel()` and immediate reference/generation updates run under the guard. The deterministic test-only cancellation wrappers do not reenter the guard lock; they only release flow capacity or sample the lock-free current lease.
+- Verified the round-5 diff is limited to `WorkoutExecutionGuard`, focused guard/execution-isolation tests, and this report.

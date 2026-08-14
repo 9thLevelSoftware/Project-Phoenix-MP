@@ -304,6 +304,54 @@ class Issue687WorkoutExecutionIsolationTest {
     }
 
     @Test
+    fun `reset cleanup survives A teardown becoming ready after invalidation`() = runTest {
+        val releaseTeardown = CompletableDeferred<Result<Unit>>()
+        lateinit var harness: DWSMTestHarness
+        var finishTeardownDuringReset = false
+        harness = DWSMTestHarness(
+            testScope = this,
+            afterResetInvalidation = { _, _ ->
+                if (finishTeardownDuringReset) {
+                    finishTeardownDuringReset = false
+                    releaseTeardown.complete(Result.success(Unit))
+                    testScheduler.runCurrent()
+                }
+            },
+        )
+        val expectedSelections = mapOf(
+            "reset-selection" to BodyweightVariantOption(label = "Reset", percentage = 0.75f),
+        )
+        try {
+            startCableSet(harness, targetReps = 10)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeBleRepo.stopWorkoutBlock = { releaseTeardown.await() }
+            harness.activeSessionEngine.requestTeardownForTransition(
+                expectedLease = leaseA,
+                reason = TeardownReason.EXERCISE_JUMP,
+            ) {
+                error("Invalidated A must not resume its teardown continuation")
+            }
+            runCurrent()
+            assertIs<MachineTeardownState.TearingDown>(harness.dwsm.machineTeardownState.value)
+            harness.coordinator._repCount.value = RepCount(workingReps = 4, isWarmupComplete = true)
+            harness.coordinator._selectedBodyweightVariants.value = expectedSelections
+
+            finishTeardownDuringReset = true
+            harness.activeSessionEngine.resetForNewWorkout()
+
+            assertEquals(MachineTeardownState.Ready, harness.dwsm.machineTeardownState.value)
+            assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
+            assertNull(harness.coordinator.currentSessionId)
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertEquals(RepCount(), harness.coordinator.repCount.value)
+            assertEquals(emptyMap(), harness.coordinator.selectedBodyweightVariants.value)
+        } finally {
+            releaseTeardown.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `direct reset after a VBT decision commit prevents its terminal effect`() = runTest {
         lateinit var harness: DWSMTestHarness
         var resetAfterDecision = false

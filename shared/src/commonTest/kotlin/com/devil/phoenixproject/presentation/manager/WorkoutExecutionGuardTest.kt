@@ -1,10 +1,21 @@
+@file:OptIn(kotlinx.coroutines.InternalForInheritanceCoroutinesApi::class)
+
 package com.devil.phoenixproject.presentation.manager
 
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -80,6 +91,100 @@ class WorkoutExecutionGuardTest {
 
         assertFalse(committed)
         assertFalse(cleanupRan)
+    }
+
+    @Test
+    fun `reset token commits cleanup after A teardown becomes ready without a successor`() {
+        val guard = WorkoutExecutionGuard()
+        val leaseA = guard.beginExecution(seed("session-a")).getOrThrow()
+        assertTrue(guard.beginTeardown(leaseA))
+        val resetToken = guard.captureResetCleanupToken()
+        assertTrue(guard.invalidate(leaseA, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT))
+        assertTrue(guard.markTeardownReady(leaseA))
+        var cleanupRan = false
+
+        val committed = guard.commitResetCleanupIfNoSuccessor(resetToken, leaseA) {
+            cleanupRan = true
+        }
+
+        assertTrue(committed)
+        assertTrue(cleanupRan)
+    }
+
+    @Test
+    fun `invalidation cancels a backpressured alert before publishing authority loss`() = runTest {
+        val guard = WorkoutExecutionGuard()
+        val leaseA = guard.beginExecution(seed("session-a")).getOrThrow()
+        val flow = MutableSharedFlow<Int>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.SUSPEND,
+        )
+        val firstEventReceived = CompletableDeferred<Unit>()
+        val releaseCollector = CompletableDeferred<Unit>()
+        val deliveryAuthority = mutableListOf<Boolean>()
+        val collectorJob = launch(UnconfinedTestDispatcher(testScheduler)) {
+            flow.collect { event ->
+                when (event) {
+                    1 -> {
+                        firstEventReceived.complete(Unit)
+                        releaseCollector.await()
+                    }
+                    3 -> deliveryAuthority += guard.isCurrent(leaseA)
+                }
+            }
+        }
+        try {
+            flow.emit(1)
+            firstEventReceived.await()
+            flow.emit(2)
+            assertFalse(flow.tryEmit(4), "fixture must hold the flow at capacity")
+
+            val alertJob = launch(UnconfinedTestDispatcher(testScheduler), start = CoroutineStart.LAZY) {
+                flow.emit(3)
+            }
+            val releaseBeforeCancelJob = object : Job by alertJob {
+                override fun cancel(cause: CancellationException?) {
+                    releaseCollector.complete(Unit)
+                    alertJob.cancel(cause)
+                }
+            }
+            assertTrue(guard.attachAlertDeliveryJob(leaseA, releaseBeforeCancelJob))
+            alertJob.start()
+            runCurrent()
+
+            assertTrue(guard.invalidate(leaseA, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT))
+            runCurrent()
+
+            assertEquals(listOf(true), deliveryAuthority)
+            assertFalse(guard.isCurrent(leaseA))
+        } finally {
+            releaseCollector.complete(Unit)
+            collectorJob.cancel()
+        }
+    }
+
+    @Test
+    fun `current invalidation and replacement cancel jobs while A remains authoritative`() {
+        listOf<(WorkoutExecutionGuard, ExecutionLease) -> Unit>(
+            { guard, _ -> guard.invalidateCurrent(ExecutionInvalidationReason.END_WORKOUT) },
+            { guard, _ -> guard.beginExecution(seed("session-b")).getOrThrow() },
+        ).forEach { transition ->
+            val guard = WorkoutExecutionGuard()
+            val leaseA = guard.beginExecution(seed("session-a")).getOrThrow()
+            val delegate = Job()
+            var authorityAtCancellation = false
+            val observingJob = object : Job by delegate {
+                override fun cancel(cause: CancellationException?) {
+                    authorityAtCancellation = guard.isCurrent(leaseA)
+                    delegate.cancel(cause)
+                }
+            }
+            assertTrue(guard.attachAlertDeliveryJob(leaseA, observingJob))
+
+            transition(guard, leaseA)
+
+            assertTrue(authorityAtCancellation)
+        }
     }
 
     @Test
