@@ -1240,8 +1240,6 @@ class ActiveSessionEngine(
         coordinator.stallStartTime = null
         coordinator.isCurrentlyStalled = false
         coordinator.stallArmedByDeload = false
-        // Issue #673 PR 2: also clear ROM-fraction stall arm
-        coordinator.stallArmedByRomFraction = false
         if (coordinator.autoStopStartTime == null && !coordinator.autoStopTriggered) {
             coordinator._autoStopState.value = AutoStopUiState()
         }
