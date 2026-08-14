@@ -42,8 +42,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import com.devil.phoenixproject.presentation.components.LoadingIndicator
-import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -91,10 +89,12 @@ import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
-import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.StartGateLabel
+import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
 import com.devil.phoenixproject.presentation.components.toStartGatePresentation
@@ -1006,7 +1006,6 @@ private fun WorkoutPausedCard(onScan: () -> Unit, workoutState: WorkoutState, re
 /**
  * Completed Card - shown when workout/exercise is complete
  */
-@Suppress("SENSELESS_COMPARISON") // Smart-cast helper: null check needed for non-null usage below
 @Composable
 private fun CompletedCard(
     loadedRoutine: Routine?,
@@ -1037,8 +1036,11 @@ private fun CompletedCard(
         ) {
             AnimatedVisibility(
                 visible = iconVisible,
-                enter = if (reduceMotion) EnterTransition.None
-                        else scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn(),
+                enter = if (reduceMotion) {
+                    EnterTransition.None
+                } else {
+                    scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn()
+                },
             ) {
                 Icon(
                     Icons.Default.CheckCircle,
@@ -1060,10 +1062,12 @@ private fun CompletedCard(
                 currentExerciseIndex < (loadedRoutine.exercises.size - 1)
 
             val startGate = machineTeardownState.toStartGatePresentation()
-            if (hasMoreExercises && loadedRoutine != null) { // null check for smart-cast
+            val nextExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex + 1)
+            val nextExerciseStartGate = machineTeardownState.toStartGatePresentation(
+                requiresMachine = nextExercise?.exercise?.isBodyweight != true,
+            )
+            if (hasMoreExercises && nextExercise != null) {
                 // Show next exercise preview
-                val nextExercise = loadedRoutine.exercises[currentExerciseIndex + 1]
-
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
@@ -1101,7 +1105,7 @@ private fun CompletedCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp),
-                            enabled = startGate.startEnabled,
+                            enabled = nextExerciseStartGate.startEnabled,
                             shape = MaterialTheme.shapes.medium,
                             elevation = ButtonDefaults.buttonElevation(
                                 defaultElevation = 4.dp,
@@ -1109,7 +1113,7 @@ private fun CompletedCard(
                             ),
                         ) {
                             Text(
-                                if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                                if (nextExerciseStartGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
                                     stringResource(Res.string.workout_teardown_finishing)
                                 } else {
                                     "Start Next Exercise"
@@ -1170,10 +1174,11 @@ private fun BodyweightRepEntryDialog(
 
     val reps = repsText.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val effectiveWeightKg = if (entry.bodyWeightKg > 0f && selectedVariant.percentage > 0f) {
-        (entry.bodyWeightKg * selectedVariant.percentage +
-            rackLoadAdjustment.externalAddedLoadKg -
-            rackLoadAdjustment.counterweightKg
-        ).coerceAtLeast(0f)
+        (
+            entry.bodyWeightKg * selectedVariant.percentage +
+                rackLoadAdjustment.externalAddedLoadKg -
+                rackLoadAdjustment.counterweightKg
+            ).coerceAtLeast(0f)
     } else {
         0f
     }

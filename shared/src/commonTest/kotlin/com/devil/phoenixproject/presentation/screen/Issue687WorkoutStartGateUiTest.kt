@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.presentation.screen
 
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
@@ -66,6 +68,86 @@ class Issue687WorkoutStartGateUiTest {
         assertTrue(presentation.startEnabled)
         assertEquals(StartGateLabel.START, presentation.label)
         assertTrue(presentation.showRecoveryActions)
+    }
+
+    @Test
+    fun `post completion bodyweight successor remains enabled through cable teardown states`() {
+        val nextExercise = successor(isBodyweight = true)
+        val states = listOf(
+            MachineTeardownState.TearingDown(executionId = 7L, attempt = 1) to false,
+            MachineTeardownState.RecoveryRequired(executionId = 7L) to true,
+        )
+
+        states.forEach { (state, expectsRecoveryActions) ->
+            val presentation = state.toStartGatePresentation(
+                requiresMachine = !nextExercise.exercise.isBodyweight,
+            )
+
+            assertTrue(presentation.startEnabled)
+            assertEquals(StartGateLabel.START, presentation.label)
+            assertEquals(expectsRecoveryActions, presentation.showRecoveryActions)
+        }
+    }
+
+    @Test
+    fun `post completion machine successor remains disabled through cable teardown states`() {
+        val nextExercise = successor(isBodyweight = false)
+
+        val tearingDown = MachineTeardownState.TearingDown(
+            executionId = 7L,
+            attempt = 1,
+        ).toStartGatePresentation(
+            requiresMachine = !nextExercise.exercise.isBodyweight,
+        )
+        assertFalse(tearingDown.startEnabled)
+        assertEquals(StartGateLabel.FINISHING_PREVIOUS_WORKOUT, tearingDown.label)
+        assertFalse(tearingDown.showRecoveryActions)
+
+        val recoveryRequired = MachineTeardownState.RecoveryRequired(
+            executionId = 7L,
+        ).toStartGatePresentation(
+            requiresMachine = !nextExercise.exercise.isBodyweight,
+        )
+        assertFalse(recoveryRequired.startEnabled)
+        assertEquals(StartGateLabel.START, recoveryRequired.label)
+        assertTrue(recoveryRequired.showRecoveryActions)
+    }
+
+    @Test
+    fun `post completion missing successor keeps the machine safe default`() {
+        val nextExercise: RoutineExercise? = null
+        val states = listOf(
+            MachineTeardownState.TearingDown(executionId = 7L, attempt = 1),
+            MachineTeardownState.RecoveryRequired(executionId = 7L),
+        )
+
+        states.forEach { state ->
+            val presentation = state.toStartGatePresentation(
+                requiresMachine = nextExercise?.exercise?.isBodyweight != true,
+            )
+
+            assertFalse(presentation.startEnabled)
+        }
+        assertTrue(
+            states.last().toStartGatePresentation(
+                requiresMachine = nextExercise?.exercise?.isBodyweight != true,
+            ).showRecoveryActions,
+        )
+    }
+
+    @Test
+    fun `workout tab post completion button derives its gate from the actual successor`() {
+        val completedCard = source("presentation/screen/WorkoutTab.kt")
+            .substringAfter("private fun CompletedCard(")
+            .substringBefore("private fun BodyweightRepEntryDialog(")
+
+        assertContainsAll(
+            completedCard,
+            "val nextExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex + 1)",
+            "val nextExerciseStartGate = machineTeardownState.toStartGatePresentation(",
+            "requiresMachine = nextExercise?.exercise?.isBodyweight != true",
+            "enabled = nextExerciseStartGate.startEnabled",
+        )
     }
 
     @Test
@@ -220,6 +302,19 @@ class Issue687WorkoutStartGateUiTest {
             "onReconnect = onReconnectWorkoutTeardown",
         )
     }
+
+    private fun successor(isBodyweight: Boolean): RoutineExercise = RoutineExercise(
+        id = "post-completion-successor-${if (isBodyweight) "bodyweight" else "machine"}",
+        exercise = Exercise(
+            name = if (isBodyweight) "Push Up" else "Cable Row",
+            muscleGroup = "Test",
+            equipment = if (isBodyweight) "" else "HANDLES",
+            id = "post-completion-exercise-${if (isBodyweight) "bodyweight" else "machine"}",
+            isBodyweightOverride = isBodyweight,
+        ),
+        orderIndex = 1,
+        weightPerCableKg = if (isBodyweight) 0f else 10f,
+    )
 
     private fun assertContainsAll(source: String, vararg contracts: String) {
         contracts.forEach { contract ->
