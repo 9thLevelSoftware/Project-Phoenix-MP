@@ -39,7 +39,6 @@ fun DailyRoutinesScreen(
     val weightUnit by viewModel.weightUnit.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
     val machineTeardownState by viewModel.machineTeardownState.collectAsState()
-    val startGate = machineTeardownState.toStartGatePresentation()
 
     val connectionError by viewModel.connectionError.collectAsState()
 
@@ -141,6 +140,11 @@ fun DailyRoutinesScreen(
         // Resume/Restart Dialog (Issue #101)
         if (showResumeDialog) {
             viewModel.getResumableProgressInfo()?.let { info ->
+                val startGate = machineTeardownState.toStartGatePresentation(
+                    requiresMachine = pendingRoutine?.exercises
+                        ?.getOrNull(info.currentExercise - 1)
+                        ?.exercise?.isBodyweight != true,
+                )
                 ResumeRoutineDialog(
                     progressInfo = info,
                     onResume = {

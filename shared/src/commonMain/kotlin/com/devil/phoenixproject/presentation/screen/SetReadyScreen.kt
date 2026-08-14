@@ -51,10 +51,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import com.devil.phoenixproject.domain.model.RepCount
-import com.devil.phoenixproject.presentation.util.SetTypeLabel
-import com.devil.phoenixproject.presentation.util.setTypeLabel
-import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -73,40 +69,44 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
+import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ExerciseQuickHistoryCard
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.VideoPlayer
-import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
-import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
+import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
 import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
 import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
+import com.devil.phoenixproject.presentation.util.SetTypeLabel
+import com.devil.phoenixproject.presentation.util.setTypeLabel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import vitruvianprojectphoenix.shared.generated.resources.Res
 import vitruvianprojectphoenix.shared.generated.resources.action_cancel
 import vitruvianprojectphoenix.shared.generated.resources.action_exit
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_includes
+import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_more
 import vitruvianprojectphoenix.shared.generated.resources.cd_next
 import vitruvianprojectphoenix.shared.generated.resources.cd_previous
 import vitruvianprojectphoenix.shared.generated.resources.cd_stop
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_includes
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_more
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_confirm
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_dismiss
 import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_message
@@ -138,7 +138,6 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     // Issue #646: drive set-type badge in SetReady header
     val currentWarmupSetIndex by viewModel.currentWarmupSetIndex.collectAsState()
     val repCount by viewModel.repCount.collectAsState()
-    val startGate = machineTeardownState.toStartGatePresentation()
 
     // Get current state
     val setReadyState = routineFlowState as? RoutineFlowState.SetReady
@@ -174,6 +173,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
     // #635: explicit stored flag with equipment-derivation fallback
     val isBodyweight = currentExercise.exercise.isBodyweight
+    val startGate = machineTeardownState.toStartGatePresentation(requiresMachine = !isBodyweight)
     val matchingWeightRecommendation = weightRecommendation?.takeIf { recommendation ->
         !isBodyweight &&
             recommendation.targetExerciseId == currentExercise.exercise.id &&

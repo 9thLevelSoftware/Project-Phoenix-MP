@@ -66,7 +66,7 @@ fun WorkoutSetupDialog(
 
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
-    val startGate = machineTeardownState.toStartGatePresentation()
+    val startGate = machineTeardownState.toStartGatePresentation(requiresMachine = selectedExercise?.isBodyweight != true)
 
     ModalBottomSheet(
         onDismissRequest = onDismiss,

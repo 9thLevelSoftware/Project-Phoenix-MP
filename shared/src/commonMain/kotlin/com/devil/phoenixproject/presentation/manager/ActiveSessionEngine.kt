@@ -80,7 +80,9 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
@@ -246,10 +248,6 @@ class ActiveSessionEngine(
         afterReady: (() -> Unit)? = null,
     ) {
         if (!lease.requiresMachine) {
-            if (executionGuard.machineTeardownState.value !is MachineTeardownState.Ready) {
-                logSuppressedStateWrite(lease, "bodyweight_successor_while_teardown_not_ready")
-                return
-            }
             if (executionGuard.isCurrent(lease)) afterReady?.invoke()
             return
         }
@@ -326,6 +324,10 @@ class ActiveSessionEngine(
             return
         }
         if (!hasCurrentAuthority(expectedLease, "transition_request_$reason")) return
+        if (!expectedLease.requiresMachine) {
+            beginMachineTeardown(expectedLease, reason, afterReady = afterReady)
+            return
+        }
         if (executionGuard.machineTeardownState.value !is MachineTeardownState.Ready) {
             logSuppressedStateWrite(expectedLease, "transition_successor_$reason")
             return
@@ -3703,6 +3705,7 @@ class ActiveSessionEngine(
             }
             updateCycleProgressFromSnapshot(snapshot)
             scope.launch { syncTriggerManager?.onWorkoutCompleted() }
+            currentCoroutineContext().ensureActive()
             executionGuard.markPersistenceSucceeded(sessionId)
             exitSnapshotStore.remove(snapshot)
             executionGuard.prunePersistedClaims(retainNewest = 32)

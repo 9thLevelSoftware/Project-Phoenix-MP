@@ -76,12 +76,6 @@ fun SingleExerciseScreen(
     val activeProfileId by viewModel.activeProfileId.collectAsState()
     val completedExerciseIdsState by viewModel.completedExerciseIdsState.collectAsState()
     val machineTeardownState by viewModel.machineTeardownState.collectAsState()
-    val startGate = machineTeardownState.toStartGatePresentation()
-    val startButtonText = if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
-        stringResource(Res.string.workout_teardown_finishing)
-    } else {
-        "Start Workout"
-    }
     val pickerCompletedExerciseIds = completedExerciseIdsState.ids.takeIf {
         completedExerciseIdsState.profileId == activeProfileId
     } ?: emptySet()
@@ -89,6 +83,14 @@ fun SingleExerciseScreen(
     val connectionError by viewModel.connectionError.collectAsState()
 
     var exerciseToConfig by remember { mutableStateOf<RoutineExercise?>(null) }
+    val startGate = machineTeardownState.toStartGatePresentation(
+        requiresMachine = exerciseToConfig?.exercise?.isBodyweight != true,
+    )
+    val startButtonText = if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+        stringResource(Res.string.workout_teardown_finishing)
+    } else {
+        "Start Workout"
+    }
     var isLoadingDefaults by remember { mutableStateOf(false) }
     var missingInitialExerciseMessage by remember { mutableStateOf<String?>(null) }
     var initialExerciseHandled by remember(initialExerciseId) { mutableStateOf(false) }

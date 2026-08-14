@@ -1,11 +1,11 @@
 package com.devil.phoenixproject.testutil
 
-import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
+import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.UserPreferences
-import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
@@ -59,7 +59,10 @@ class FakeWorkoutServiceController : WorkoutServiceController {
     }
 }
 
-class DWSMTestHarness(val testScope: TestScope) {
+class DWSMTestHarness(
+    val testScope: TestScope,
+    onPostSaveComputed: suspend (exerciseId: String, profileId: String, sessionMcvMmS: Float?) -> Unit = { _, _, _ -> },
+) {
     companion object {
         const val TEST_WALL_CLOCK_EPOCH_MS = 1_800_000_000_000L
     }
@@ -105,6 +108,7 @@ class DWSMTestHarness(val testScope: TestScope) {
         MutableSharedFlow<HapticEvent>(extraBufferCapacity = 10),
         dwsmScope,
         settingsManager.gamificationEnabled,
+        onPostSaveComputed,
     )
 
     val dwsm = DefaultWorkoutSessionManager(
@@ -201,8 +205,7 @@ class DWSMTestHarness(val testScope: TestScope) {
         isLegacyFormat = true,
     )
 
-    private fun readyProfile(): ActiveProfileContext.Ready =
-        fakeUserProfileRepo.activeProfileContext.value as ActiveProfileContext.Ready
+    private fun readyProfile(): ActiveProfileContext.Ready = fakeUserProfileRepo.activeProfileContext.value as ActiveProfileContext.Ready
 
     suspend fun setActiveBodyWeightKg(value: Float) {
         val ready = readyProfile()

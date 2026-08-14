@@ -70,15 +70,29 @@ class RepNotificationFreshnessGateTest {
     }
 
     @Test
-    fun `armed execution processes later packet even when firmware target changes`() {
+    fun `armed execution rejects a later modern packet when target changes`() {
         val gate = RepNotificationFreshnessGate()
         val lease = activeLease(target = 3, cutover = 1_000L)
         gate.evaluate(lease, modernPacket(timestamp = 1_001L))
 
         assertEquals(
-            RepFreshnessDecision.Process,
+            RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH),
             gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 4, timestamp = 1_002L)),
         )
+        assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
+    }
+
+    @Test
+    fun `armed timed cable execution continues to accept modern target zero packets`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 0, cutover = 1_000L).copy(isTimedCable = true)
+        gate.evaluate(lease, modernPacket(timestamp = 1_001L))
+
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 0, timestamp = 1_002L)),
+        )
+        assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
     }
 
     @Test
@@ -157,9 +171,7 @@ class RepNotificationFreshnessGateTest {
         activationCutoverTimestampMs = null,
     )
 
-    private fun modernPacket(repsSetCount: Int = 0, repsSetTotal: Int = 0, timestamp: Long): RepNotification =
-        RepNotification(0, 0, 0, 0, repsSetCount, repsSetTotal, rawData = byteArrayOf(), timestamp = timestamp)
+    private fun modernPacket(repsSetCount: Int = 0, repsSetTotal: Int = 0, timestamp: Long): RepNotification = RepNotification(0, 0, 0, 0, repsSetCount, repsSetTotal, rawData = byteArrayOf(), timestamp = timestamp)
 
-    private fun legacyPacket(topCounter: Int, completeCounter: Int, timestamp: Long): RepNotification =
-        RepNotification(topCounter, completeCounter, 0, 0, 0, 0, rawData = byteArrayOf(), timestamp = timestamp, isLegacyFormat = true)
+    private fun legacyPacket(topCounter: Int, completeCounter: Int, timestamp: Long): RepNotification = RepNotification(topCounter, completeCounter, 0, 0, 0, 0, rawData = byteArrayOf(), timestamp = timestamp, isLegacyFormat = true)
 }

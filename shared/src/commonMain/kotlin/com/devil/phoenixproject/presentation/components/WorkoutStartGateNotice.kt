@@ -33,24 +33,36 @@ data class WorkoutStartGatePresentation(
     val showRecoveryActions: Boolean,
 )
 
-fun MachineTeardownState.toStartGatePresentation(): WorkoutStartGatePresentation = when (this) {
-    MachineTeardownState.Ready -> WorkoutStartGatePresentation(
-        startEnabled = true,
-        label = StartGateLabel.START,
-        showRecoveryActions = false,
-    )
+fun MachineTeardownState.toStartGatePresentation(
+    requiresMachine: Boolean = true,
+): WorkoutStartGatePresentation {
+    val machinePresentation = when (this) {
+        MachineTeardownState.Ready -> WorkoutStartGatePresentation(
+            startEnabled = true,
+            label = StartGateLabel.START,
+            showRecoveryActions = false,
+        )
 
-    is MachineTeardownState.TearingDown -> WorkoutStartGatePresentation(
-        startEnabled = false,
-        label = StartGateLabel.FINISHING_PREVIOUS_WORKOUT,
-        showRecoveryActions = false,
-    )
+        is MachineTeardownState.TearingDown -> WorkoutStartGatePresentation(
+            startEnabled = false,
+            label = StartGateLabel.FINISHING_PREVIOUS_WORKOUT,
+            showRecoveryActions = false,
+        )
 
-    is MachineTeardownState.RecoveryRequired -> WorkoutStartGatePresentation(
-        startEnabled = false,
-        label = StartGateLabel.START,
-        showRecoveryActions = true,
-    )
+        is MachineTeardownState.RecoveryRequired -> WorkoutStartGatePresentation(
+            startEnabled = false,
+            label = StartGateLabel.START,
+            showRecoveryActions = true,
+        )
+    }
+    return if (requiresMachine) {
+        machinePresentation
+    } else {
+        machinePresentation.copy(
+            startEnabled = true,
+            label = StartGateLabel.START,
+        )
+    }
 }
 
 @Composable
@@ -62,6 +74,7 @@ fun WorkoutStartGateNotice(
 ) {
     when (state) {
         MachineTeardownState.Ready -> Unit
+
         is MachineTeardownState.TearingDown -> {
             Text(
                 text = stringResource(Res.string.workout_teardown_finishing),

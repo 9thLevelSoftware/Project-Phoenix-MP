@@ -30,6 +30,97 @@ import kotlinx.coroutines.test.runTest
 class WorkoutMachineTeardownTest {
 
     @Test
+    fun `bodyweight completes and jumps while prior cable reset remains suspended`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val cableReset = CompletableDeferred<Result<Unit>>()
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.startCableSet(targetReps = 3)
+            val cableLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeBleRepo.stopWorkoutBlock = { cableReset.await() }
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertIs<MachineTeardownState.TearingDown>(
+                harness.activeSessionEngine.machineTeardownState.value,
+            )
+
+            val routine = twoExerciseBodyweightRoutine()
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.setActiveBodyWeightKg(80f)
+            harness.coordinator._loadedRoutine.value = routine
+            harness.coordinator._currentExerciseIndex.value = 0
+            harness.coordinator._currentSetIndex.value = 0
+            harness.fakeBleRepo.commandsReceived.clear()
+
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+            val bodyweightLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertFalse(bodyweightLease.requiresMachine)
+            assertIs<MachineTeardownState.TearingDown>(
+                harness.activeSessionEngine.machineTeardownState.value,
+            )
+
+            advanceTimeBy(1_100)
+            runCurrent()
+            val repEntry = assertIs<WorkoutState.BodyweightRepEntry>(
+                harness.coordinator.workoutState.value,
+            )
+
+            harness.dwsm.confirmBodyweightSetResult(
+                reps = 10,
+                variant = repEntry.selectedVariant,
+            )
+            advanceTimeBy(1_000)
+            runCurrent()
+
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+            assertEquals(
+                1,
+                harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == bodyweightLease.sessionId },
+            )
+
+            harness.dwsm.jumpToExercise(1)
+            runCurrent()
+            val successorLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            assertEquals(1, harness.coordinator.currentExerciseIndex.value)
+            assertIs<WorkoutState.Countdown>(harness.coordinator.workoutState.value)
+            assertFalse(successorLease.requiresMachine)
+            assertTrue(successorLease.executionId > bodyweightLease.executionId)
+            assertTrue(successorLease.executionId > cableLease.executionId)
+            assertIs<MachineTeardownState.TearingDown>(
+                harness.activeSessionEngine.machineTeardownState.value,
+            )
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty())
+
+            cableReset.complete(Result.success(Unit))
+            runCurrent()
+
+            assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
+            assertEquals(successorLease, harness.activeSessionEngine.currentExecutionLeaseForTest())
+            assertEquals(1, harness.coordinator.currentExerciseIndex.value)
+            assertIs<WorkoutState.Countdown>(harness.coordinator.workoutState.value)
+            advanceTimeBy(5_100)
+            runCurrent()
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(
+                1,
+                harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == bodyweightLease.sessionId },
+            )
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty())
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `same teardown attempt cannot replace its owned job before clear`() {
         val guard = WorkoutExecutionGuard()
         val lease = guard.beginExecution(
@@ -427,6 +518,47 @@ class WorkoutMachineTeardownTest {
                     orderIndex = 0,
                     setReps = listOf(10),
                     weightPerCableKg = 0f,
+                ),
+            ),
+        )
+    }
+
+    private fun twoExerciseBodyweightRoutine(): Routine {
+        val pushUp = Exercise(
+            name = "Push Up",
+            muscleGroup = "Chest",
+            muscleGroups = "Chest,Triceps,Shoulders",
+            equipment = "",
+            id = "teardown-bodyweight-push-up-first",
+        )
+        val squat = Exercise(
+            name = "Bodyweight Squat",
+            muscleGroup = "Legs",
+            muscleGroups = "Quadriceps,Glutes",
+            equipment = "",
+            id = "teardown-bodyweight-squat-second",
+        )
+        return Routine(
+            id = "teardown-two-bodyweight-routine",
+            name = "Bodyweight while cable reset is pending",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "teardown-bodyweight-first",
+                    exercise = pushUp,
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 0f,
+                    duration = 1,
+                    setRestSeconds = listOf(0),
+                ),
+                RoutineExercise(
+                    id = "teardown-bodyweight-second",
+                    exercise = squat,
+                    orderIndex = 1,
+                    setReps = listOf(12),
+                    weightPerCableKg = 0f,
+                    duration = 30,
+                    setRestSeconds = listOf(0),
                 ),
             ),
         )

@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.QualityTrend
 import com.devil.phoenixproject.domain.model.RepCount
@@ -8,7 +9,6 @@ import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepQualityScore
 import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.SetType
-import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -413,6 +413,74 @@ class WorkoutExitPersistenceTest {
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
             assertEquals(1, harness.fakeCompletedSetRepo.saved.count { it.sessionId == lease.sessionId })
         } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `post save hook cancellation reopens non cycle snapshot claim for stable retry`() = runTest {
+        val hookEntered = CompletableDeferred<Unit>()
+        val releaseCancellation = CompletableDeferred<Unit>()
+        val hookInputs = mutableListOf<Pair<String, String>>()
+        var hookAttempts = 0
+        val harness = DWSMTestHarness(this) { exerciseId, profileId, _ ->
+            hookAttempts++
+            hookInputs += exerciseId to profileId
+            if (hookAttempts == 1) {
+                hookEntered.complete(Unit)
+                releaseCancellation.await()
+                throw CancellationException("cancel suspended post-save hook")
+            }
+        }
+        try {
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+
+            assertTrue(hookEntered.isCompleted)
+            val savedSession = harness.fakeWorkoutRepo.saveSessionAttempts.single {
+                it.id == lease.sessionId
+            }
+            val savedCompletedSet = harness.fakeCompletedSetRepo.saved.single {
+                it.sessionId == lease.sessionId
+            }
+
+            releaseCancellation.complete(Unit)
+            runCurrent()
+
+            harness.coordinator._workoutParameters.value = WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 99,
+                weightPerCableKg = 99f,
+                selectedExerciseId = "replacement-exercise",
+            )
+            assertTrue(
+                harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId),
+                "Cancellation must reopen the persistence claim and retain its snapshot",
+            )
+            advanceUntilIdle()
+
+            assertEquals(2, hookAttempts)
+            assertEquals(
+                listOf(
+                    TestFixtures.benchPress.id to lease.profileId,
+                    TestFixtures.benchPress.id to lease.profileId,
+                ),
+                hookInputs,
+            )
+            assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
+            assertEquals(savedSession, harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId })
+            assertEquals(
+                1,
+                harness.fakeCompletedSetRepo.saveCompletedSetAttempts.count {
+                    it.sessionId == lease.sessionId && it.id == savedCompletedSet.id
+                },
+            )
+            assertTrue(!harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId))
+        } finally {
+            releaseCancellation.complete(Unit)
             harness.cleanup()
         }
     }

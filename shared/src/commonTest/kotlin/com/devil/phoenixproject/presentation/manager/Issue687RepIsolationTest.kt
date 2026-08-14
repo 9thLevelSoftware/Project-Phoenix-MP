@@ -2,16 +2,18 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 
 class Issue687RepIsolationTest {
     @Test
@@ -167,6 +169,60 @@ class Issue687RepIsolationTest {
 
             assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
             assertEquals(0, harness.coordinator.repCount.value.workingReps)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `armed B rejects a delayed terminal packet with A target without side effects`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.startCableSet(targetReps = 3)
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val cutoverB = leaseB.activationCutoverTimestampMs
+                ?: error("execution B was not activated")
+
+            harness.fakeBleRepo.emitRepNotification(
+                harness.modernRepPacket(
+                    repsSetCount = 1,
+                    repsSetTotal = 3,
+                    timestamp = cutoverB + 1,
+                ),
+            )
+            runCurrent()
+            assertEquals(1, harness.coordinator.repCount.value.workingReps)
+            assertEquals(
+                RepFreshnessState.Armed,
+                harness.activeSessionEngine.executionGuard.repFreshnessGate.stateFor(leaseB),
+            )
+
+            val haptics = mutableListOf<HapticEvent>()
+            harness.workoutScope.launch {
+                harness.coordinator.hapticEvents.collect { haptics += it }
+            }
+            runCurrent()
+            val savedSessionsBefore = harness.fakeWorkoutRepo.saveSessionAttempts.size
+            val savedSetsBefore = harness.fakeCompletedSetRepo.saved.size
+            val resetCallsBefore = harness.fakeBleRepo.stopWorkoutCallCount
+
+            harness.fakeBleRepo.emitRepNotification(
+                harness.modernRepPacket(
+                    repsSetCount = 4,
+                    repsSetTotal = 4,
+                    timestamp = cutoverB + 2,
+                ),
+            )
+            runCurrent()
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(1, harness.coordinator.repCount.value.workingReps)
+            assertEquals(leaseB, harness.activeSessionEngine.currentExecutionLeaseForTest())
+            assertTrue(haptics.isEmpty())
+            assertEquals(savedSessionsBefore, harness.fakeWorkoutRepo.saveSessionAttempts.size)
+            assertEquals(savedSetsBefore, harness.fakeCompletedSetRepo.saved.size)
+            assertEquals(resetCallsBefore, harness.fakeBleRepo.stopWorkoutCallCount)
         } finally {
             harness.cleanup()
         }

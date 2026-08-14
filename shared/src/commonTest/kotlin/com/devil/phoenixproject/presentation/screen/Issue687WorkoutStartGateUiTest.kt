@@ -46,6 +46,29 @@ class Issue687WorkoutStartGateUiTest {
     }
 
     @Test
+    fun `bodyweight start remains enabled while cable teardown is in progress`() {
+        val presentation = MachineTeardownState.TearingDown(
+            executionId = 7L,
+            attempt = 1,
+        ).toStartGatePresentation(requiresMachine = false)
+
+        assertTrue(presentation.startEnabled)
+        assertEquals(StartGateLabel.START, presentation.label)
+        assertFalse(presentation.showRecoveryActions)
+    }
+
+    @Test
+    fun `bodyweight start remains enabled while recovery actions stay visible`() {
+        val presentation = MachineTeardownState.RecoveryRequired(
+            executionId = 7L,
+        ).toStartGatePresentation(requiresMachine = false)
+
+        assertTrue(presentation.startEnabled)
+        assertEquals(StartGateLabel.START, presentation.label)
+        assertTrue(presentation.showRecoveryActions)
+    }
+
+    @Test
     fun `recovery actions remain available while disconnected`() {
         assertRecoveryAvailableOutsideConnectedOnlyContent(ConnectionState.Disconnected)
     }
@@ -92,14 +115,14 @@ class Issue687WorkoutStartGateUiTest {
         assertContainsAll(
             setup,
             "machineTeardownState: MachineTeardownState",
-            "machineTeardownState.toStartGatePresentation()",
+            "machineTeardownState.toStartGatePresentation(requiresMachine = selectedExercise?.isBodyweight != true)",
             "WorkoutStartGateNotice(",
             "enabled = selectedExercise != null && startGate.startEnabled",
         )
         assertContainsAll(
             setReady,
             "viewModel.machineTeardownState.collectAsState()",
-            "machineTeardownState.toStartGatePresentation()",
+            "machineTeardownState.toStartGatePresentation(requiresMachine = !isBodyweight)",
             "WorkoutStartGateNotice(",
             "viewModel.retryWorkoutTeardown()",
             "viewModel.reconnectWorkoutTeardown()",
@@ -115,6 +138,8 @@ class Issue687WorkoutStartGateUiTest {
         assertContainsAll(
             singleExercise,
             "viewModel.machineTeardownState.collectAsState()",
+            "machineTeardownState.toStartGatePresentation(",
+            "requiresMachine = exerciseToConfig?.exercise?.isBodyweight != true",
             "primaryActionEnabled = startGate.startEnabled",
             "primaryActionSupportingContent =",
             "WorkoutStartGateNotice(",
@@ -138,6 +163,9 @@ class Issue687WorkoutStartGateUiTest {
         assertContainsAll(
             daily,
             "viewModel.machineTeardownState.collectAsState()",
+            "requiresMachine = pendingRoutine?.exercises",
+            "?.getOrNull(info.currentExercise - 1)",
+            "?.exercise?.isBodyweight != true",
             "confirmEnabled = startGate.startEnabled",
             "confirmLabel =",
             "supportingContent =",

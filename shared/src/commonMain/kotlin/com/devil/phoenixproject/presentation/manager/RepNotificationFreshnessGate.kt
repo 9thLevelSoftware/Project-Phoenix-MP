@@ -43,8 +43,7 @@ internal class RepNotificationFreshnessGate {
         return true
     }
 
-    fun stateFor(lease: ExecutionLease): RepFreshnessState =
-        states[lease.identity()] ?: RepFreshnessState.AwaitingEvidence
+    fun stateFor(lease: ExecutionLease): RepFreshnessState = states[lease.identity()] ?: RepFreshnessState.AwaitingEvidence
 
     fun evaluate(lease: ExecutionLease, notification: RepNotification): RepFreshnessDecision {
         if (!isActive(lease)) return RepFreshnessDecision.Drop(RepDropReason.LEASE_NOT_ACTIVE)
@@ -55,12 +54,13 @@ internal class RepNotificationFreshnessGate {
         }
 
         val identity = lease.identity()
-        if (stateFor(lease) is RepFreshnessState.Armed) return RepFreshnessDecision.Process
-
         if (notification.isLegacyFormat) return evaluateLegacy(identity, notification)
 
         val targetMatches = notification.repsSetTotal == 0 ||
             notification.repsSetTotal == lease.workingRepTarget
+        if (!targetMatches) return RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH)
+        if (stateFor(lease) is RepFreshnessState.Armed) return RepFreshnessDecision.Process
+
         val terminal = lease.workingRepTarget > 0 &&
             notification.repsSetCount >= lease.workingRepTarget
         val allZero = notification.topCounter == 0 &&
@@ -74,7 +74,6 @@ internal class RepNotificationFreshnessGate {
                 notification.repsSetCount > 0
             )
 
-        if (!targetMatches) return RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH)
         if (allZero) {
             states[identity] = RepFreshnessState.Armed
             return RepFreshnessDecision.BaselineOnly
@@ -101,8 +100,7 @@ internal class RepNotificationFreshnessGate {
         return RepFreshnessDecision.Process
     }
 
-    private fun isActive(lease: ExecutionLease): Boolean =
-        lease.activationCutoverTimestampMs != null && lease.identity() !in invalidatedLeases
+    private fun isActive(lease: ExecutionLease): Boolean = lease.activationCutoverTimestampMs != null && lease.identity() !in invalidatedLeases
 
     private fun ExecutionLease.identity() = LeaseIdentity(executionId, sessionId)
 
