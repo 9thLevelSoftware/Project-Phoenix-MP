@@ -94,6 +94,12 @@ class RoutineFlowManager(
             afterReady: () -> Unit,
         )
 
+        /** Lease captured by an asynchronous routine transition, if a set owns it. */
+        fun currentExecutionLeaseOrNull(): ExecutionLease?
+
+        /** Renew authority before an asynchronous routine transition mutates navigation. */
+        fun isCurrentExecution(lease: ExecutionLease): Boolean
+
         /** Update workout parameters for internal manager transitions (no user-adjusted side-effects) */
         fun setWorkoutParametersInternal(params: WorkoutParameters)
     }
@@ -1500,7 +1506,14 @@ class RoutineFlowManager(
         coordinator._timedExerciseRemainingSeconds.value = null
         resetAutoStopState()
 
-        lifecycleDelegate.requestTeardownForTransition(TeardownReason.EXERCISE_JUMP) {
+        val transitionLease = lifecycleDelegate.currentExecutionLeaseOrNull()
+        lifecycleDelegate.requestTeardownForTransition(TeardownReason.EXERCISE_JUMP) transition@{
+            if (transitionLease != null && !lifecycleDelegate.isCurrentExecution(transitionLease)) {
+                return@transition
+            }
+            if (transitionLease == null && lifecycleDelegate.currentExecutionLeaseOrNull() != null) {
+                return@transition
+            }
             Logger.d("RoutineFlowManager") { "Machine teardown complete before navigation to exercise $index" }
             navigateToExerciseInternal(routine, index)
             // Auto-start the next exercise with countdown

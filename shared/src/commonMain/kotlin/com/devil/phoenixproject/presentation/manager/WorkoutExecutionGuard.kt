@@ -92,6 +92,8 @@ internal class WorkoutExecutionGuard(
 
     private var teardownLease: ExecutionLease? = null
     private var teardownAttempt = 0
+    private var completionJob: Job? = null
+    private var completionJobLease: ExecutionLease? = null
     private var teardownJob: Job? = null
     private var teardownJobLease: ExecutionLease? = null
     private val _machineTeardownState = MutableStateFlow<MachineTeardownState>(MachineTeardownState.Ready)
@@ -163,6 +165,45 @@ internal class WorkoutExecutionGuard(
                 return true
             }
         }
+    }
+
+    fun attachCompletionJob(lease: ExecutionLease, job: Job): Boolean = withPlatformLock(teardownLock) {
+        if (!isCurrent(lease) || completionJob != null) {
+            return@withPlatformLock false
+        }
+        completionJob = job
+        completionJobLease = lease
+        true
+    }
+
+    fun clearCompletionJobIfOwned(lease: ExecutionLease) = withPlatformLock(teardownLock) {
+        if (sameIdentity(completionJobLease, lease)) {
+            completionJob = null
+            completionJobLease = null
+        }
+    }
+
+    fun cancelPresentationJobsFor(lease: ExecutionLease) {
+        val ownedJob = withPlatformLock(teardownLock) {
+            if (!sameIdentity(completionJobLease, lease)) {
+                return@withPlatformLock null
+            }
+            completionJobLease = null
+            completionJob.also { completionJob = null }
+        }
+        ownedJob?.cancel()
+    }
+
+    fun cancelAllOwnedJobs() {
+        val ownedJobs = withPlatformLock(teardownLock) {
+            val jobs = listOfNotNull(completionJob, teardownJob)
+            completionJob = null
+            completionJobLease = null
+            teardownJob = null
+            teardownJobLease = null
+            jobs
+        }
+        ownedJobs.forEach(Job::cancel)
     }
 
     fun beginTeardown(lease: ExecutionLease, attempt: Int = 1): Boolean = withPlatformLock(teardownLock) {

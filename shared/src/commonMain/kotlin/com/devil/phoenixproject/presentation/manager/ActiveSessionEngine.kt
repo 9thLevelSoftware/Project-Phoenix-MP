@@ -161,6 +161,63 @@ class ActiveSessionEngine(
     internal fun currentExecutionLeaseForTest(): ExecutionLease =
         requireNotNull(executionGuard.currentLease)
 
+    internal fun currentExecutionLeaseOrNull(): ExecutionLease? = executionGuard.currentLease
+
+    internal fun isCurrentExecution(lease: ExecutionLease): Boolean = executionGuard.isCurrent(lease)
+
+    private inline fun ifCurrent(
+        lease: ExecutionLease,
+        transition: String,
+        block: () -> Unit,
+    ) {
+        if (executionGuard.isCurrent(lease)) {
+            block()
+        } else {
+            logSuppressedStateWrite(lease, transition)
+        }
+    }
+
+    private fun hasCurrentAuthority(lease: ExecutionLease, transition: String): Boolean {
+        var current = false
+        ifCurrent(lease, transition) { current = true }
+        return current
+    }
+
+    private fun hasExpectedAuthority(lease: ExecutionLease?, transition: String): Boolean =
+        lease == null || hasCurrentAuthority(lease, transition)
+
+    private fun hasAutoStartAuthority(expectedLease: ExecutionLease?, transition: String): Boolean {
+        if (expectedLease != null) return hasCurrentAuthority(expectedLease, transition)
+        return executionGuard.currentLease == null
+    }
+
+    private fun logSuppressedStateWrite(lease: ExecutionLease, transition: String) {
+        logExecutionEvent(
+            LogEventType.WORKOUT_EXECUTION,
+            "executionId=${lease.executionId},sessionId=${lease.sessionId}," +
+                "transition=suppressed,attempted=$transition",
+        )
+    }
+
+    private fun launchCompletionJob(
+        lease: ExecutionLease,
+        block: suspend CoroutineScope.() -> Unit,
+    ) {
+        if (!hasCurrentAuthority(lease, "completion_job_attach")) return
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                block()
+            } finally {
+                executionGuard.clearCompletionJobIfOwned(lease)
+            }
+        }
+        if (executionGuard.attachCompletionJob(lease, job)) {
+            job.start()
+        } else {
+            job.cancel()
+        }
+    }
+
     private fun logExecutionEvent(eventType: String, details: String) {
         connectionLogRepository.info(eventType, "Workout execution transition", details = details)
     }
@@ -179,6 +236,10 @@ class ActiveSessionEngine(
         afterReady: (() -> Unit)? = null,
     ) {
         if (!lease.requiresMachine) {
+            if (executionGuard.machineTeardownState.value !is MachineTeardownState.Ready) {
+                logSuppressedStateWrite(lease, "bodyweight_successor_while_teardown_not_ready")
+                return
+            }
             if (executionGuard.isCurrent(lease)) afterReady?.invoke()
             return
         }
@@ -221,10 +282,12 @@ class ActiveSessionEngine(
         afterReady: () -> Unit,
     ) {
         val lease = executionGuard.currentLease
+        if (executionGuard.machineTeardownState.value !is MachineTeardownState.Ready) {
+            lease?.let { logSuppressedStateWrite(it, "transition_successor_$reason") }
+            return
+        }
         if (lease == null) {
-            if (executionGuard.machineTeardownState.value is MachineTeardownState.Ready) {
-                afterReady()
-            }
+            afterReady()
             return
         }
         beginMachineTeardown(lease, reason, afterReady = afterReady)
@@ -234,7 +297,7 @@ class ActiveSessionEngine(
      * Delegate interface for operations that require routine navigation or
      * cross-cutting orchestration from DWSM.
      */
-    interface WorkoutFlowDelegate {
+    internal interface WorkoutFlowDelegate {
         /** Load a routine by object (delegates to RoutineFlowManager) */
         fun loadRoutine(routine: Routine)
 
@@ -290,14 +353,14 @@ class ActiveSessionEngine(
         fun seedRackSelectionForExercise(exerciseIndex: Int)
 
         /** Proceed from summary with full bookkeeping (RPE clear, exercise completion, routine check) */
-        fun proceedFromSummary()
+        fun proceedFromSummary(lease: ExecutionLease)
     }
 
     /**
      * Flow delegate for operations that need routine navigation.
      * Set by DWSM after construction.
      */
-    var flowDelegate: WorkoutFlowDelegate? = null
+    internal var flowDelegate: WorkoutFlowDelegate? = null
 
     private data class InterruptedSetRecoverySnapshot(
         val routineId: String,
@@ -456,7 +519,7 @@ class ActiveSessionEngine(
                         when (activityState) {
                             HandleState.Grabbed -> {
                                 Logger.d("Handles grabbed! Starting auto-start timer (State: ${coordinator._workoutState.value})")
-                                startAutoStartTimer()
+                                startAutoStartTimer(currentLease)
                             }
 
                             HandleState.Moving -> {
@@ -2686,6 +2749,7 @@ class ActiveSessionEngine(
 
     private fun failStart(lease: ExecutionLease, priorWorkoutState: WorkoutState) {
         if (!executionGuard.invalidate(lease, ExecutionInvalidationReason.START_FAILED)) return
+        executionGuard.cancelPresentationJobsFor(lease)
         repFreshnessGate.invalidate(lease)
         if (coordinator.currentSessionId == lease.sessionId) {
             coordinator.currentSessionId = null
@@ -2743,6 +2807,7 @@ class ActiveSessionEngine(
         } else {
             variableWarmupTarget ?: seedParams.reps
         }
+        val outgoingLease = executionGuard.currentLease
         val lease = executionGuard.beginExecution(
             ExecutionSeed(
                 sessionId = KmpUtils.randomUUID(),
@@ -2760,6 +2825,9 @@ class ActiveSessionEngine(
                 else -> rejectStart(StartRejectionReason.TEARING_DOWN)
             }
             return
+        }
+        if (outgoingLease != null) {
+            executionGuard.cancelPresentationJobsFor(outgoingLease)
         }
         retryRetainedWorkoutExitPersistence()
         executionContext = null
@@ -2863,7 +2931,7 @@ class ActiveSessionEngine(
                     coordinator.warmupCompleteTimeMs = 0
 
                     if (!coordinator.skipCountdownRequested) {
-                        startMotionStartDetection()
+                        startMotionStartDetection(lease)
                         for (i in 5 downTo 1) {
                             if (coordinator.skipCountdownRequested) break
                             if (!executionGuard.isCurrent(lease)) return@launch
@@ -2885,44 +2953,7 @@ class ActiveSessionEngine(
                     coordinator.collectedMetrics.value = emptyList()
                     coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
 
-                    coordinator.bodyweightTimerJob?.cancel()
-                    coordinator.exerciseTimerOriginalDuration = effectiveDuration
-                    coordinator._isExerciseTimerPaused.value = false
-                    coordinator.bodyweightTimerJob = scope.launch {
-                        coordinator._timedExerciseRemainingSeconds.value = effectiveDuration
-                        var lastObservedRemaining = effectiveDuration
-                        var lastTickedSecond = emitExerciseCountdownTickIfNeeded(
-                            remainingSeconds = effectiveDuration,
-                            lastTickedSecond = -1,
-                        )
-                        while ((coordinator._timedExerciseRemainingSeconds.value ?: 0) > 0) {
-                            if (coordinator._isExerciseTimerPaused.value) {
-                                delay(100L)
-                                continue
-                            }
-                            delay(1000L)
-                            // Re-check pause after delay — if paused during the 1s wait, don't decrement
-                            if (!coordinator._isExerciseTimerPaused.value) {
-                                var remaining = 0
-                                coordinator._timedExerciseRemainingSeconds.update { current ->
-                                    remaining = ((current ?: 0) - 1).coerceAtLeast(0)
-                                    remaining
-                                }
-                                lastTickedSecond = ExerciseCountdownCuePolicy.lastTickedSecondAfterRemainingChange(
-                                    previousRemainingSeconds = lastObservedRemaining,
-                                    currentRemainingSeconds = remaining,
-                                    lastTickedSecond = lastTickedSecond,
-                                )
-                                lastObservedRemaining = remaining
-                                lastTickedSecond = emitExerciseCountdownTickIfNeeded(
-                                    remainingSeconds = remaining,
-                                    lastTickedSecond = lastTickedSecond,
-                                )
-                            }
-                        }
-                        coordinator._timedExerciseRemainingSeconds.value = 0
-                        handleSetCompletion()
-                    }
+                    startBodyweightTimer(activeLease, effectiveDuration)
 
                     return@launch
                 }
@@ -3133,7 +3164,7 @@ class ActiveSessionEngine(
                 }
 
                 if (!coordinator.skipCountdownRequested && !isJustLiftMode) {
-                    startMotionStartDetection()
+                    startMotionStartDetection(lease)
                     for (i in 5 downTo 1) {
                         if (coordinator.skipCountdownRequested) break
                         if (!executionGuard.isCurrent(lease)) return@launch
@@ -3201,50 +3232,7 @@ class ActiveSessionEngine(
                 // but required for Kotlin smart-cast so exerciseDuration can be used as non-null below
                 @Suppress("SENSELESS_COMPARISON")
                 if (isTimedCableExercise && exerciseDuration != null) {
-                    val timedExerciseDuration: Int = requireNotNull(exerciseDuration)
-                    coordinator.bodyweightTimerJob?.cancel()
-                    coordinator.exerciseTimerOriginalDuration = timedExerciseDuration
-                    coordinator._isExerciseTimerPaused.value = false
-                    coordinator.bodyweightTimerJob = scope.launch {
-                        if (effectiveParams.warmupReps > 0) {
-                            Logger.d { "Duration cable: waiting for ${effectiveParams.warmupReps} warmup reps before starting ${timedExerciseDuration}s timer" }
-                            coordinator._repCount.first { it.isWarmupComplete }
-                            Logger.d { "Duration cable: warmup complete, starting ${timedExerciseDuration}s duration timer" }
-                        }
-
-                        coordinator._timedExerciseRemainingSeconds.value = timedExerciseDuration
-                        var lastObservedRemaining = timedExerciseDuration
-                        var lastTickedSecond = emitExerciseCountdownTickIfNeeded(
-                            remainingSeconds = timedExerciseDuration,
-                            lastTickedSecond = -1,
-                        )
-                        while ((coordinator._timedExerciseRemainingSeconds.value ?: 0) > 0) {
-                            if (coordinator._isExerciseTimerPaused.value) {
-                                delay(100L)
-                                continue
-                            }
-                            delay(1000L)
-                            if (!coordinator._isExerciseTimerPaused.value) {
-                                var remaining = 0
-                                coordinator._timedExerciseRemainingSeconds.update { current ->
-                                    remaining = ((current ?: 0) - 1).coerceAtLeast(0)
-                                    remaining
-                                }
-                                lastTickedSecond = ExerciseCountdownCuePolicy.lastTickedSecondAfterRemainingChange(
-                                    previousRemainingSeconds = lastObservedRemaining,
-                                    currentRemainingSeconds = remaining,
-                                    lastTickedSecond = lastTickedSecond,
-                                )
-                                lastObservedRemaining = remaining
-                                lastTickedSecond = emitExerciseCountdownTickIfNeeded(
-                                    remainingSeconds = remaining,
-                                    lastTickedSecond = lastTickedSecond,
-                                )
-                            }
-                        }
-                        coordinator._timedExerciseRemainingSeconds.value = 0
-                        handleSetCompletion()
-                    }
+                    startTimedCableTimer(activeLease, requireNotNull(exerciseDuration))
                 }
 
                 coordinator._currentMetric.value?.let { metric ->
@@ -3310,7 +3298,8 @@ class ActiveSessionEngine(
      * On [MotionStartEvent.CountdownTick], updates hold progress for the ring-fill UI.
      * On [MotionStartEvent.Cancelled], resets progress.
      */
-    private fun startMotionStartDetection() {
+    private fun startMotionStartDetection(lease: ExecutionLease) {
+        if (!hasCurrentAuthority(lease, "motion_start_detection")) return
         val prefs = settingsManager.userPreferences.value
         if (!prefs.motionStartEnabled) return
 
@@ -3323,6 +3312,7 @@ class ActiveSessionEngine(
             // Event listener coroutine
             launch {
                 motionStartDetector.events.collect { event ->
+                    if (!hasCurrentAuthority(lease, "motion_start_event")) return@collect
                     when (event) {
                         is MotionStartEvent.Started -> {
                             coordinator._motionStartHoldProgress.value = 1f
@@ -3344,8 +3334,12 @@ class ActiveSessionEngine(
             // Metric feeder coroutine
             launch {
                 bleRepository.metricsFlow
-                    .catch { e -> Logger.e(e) { "metricsFlow collector error (motionStart)" } }
+                    .catch { e ->
+                        if (e is CancellationException) throw e
+                        Logger.e(e) { "metricsFlow collector error (motionStart)" }
+                    }
                     .collect { metric ->
+                        if (!hasCurrentAuthority(lease, "motion_start_metric")) return@collect
                         // Use average of both cables for load detection
                         val load = (metric.loadA + metric.loadB) / 2f
                         motionStartDetector.onMetricReceived(load, metric.timestamp)
@@ -3667,6 +3661,7 @@ class ActiveSessionEngine(
     }
 
     private fun cancelSetOwnedPresentationJobs(lease: ExecutionLease) {
+        executionGuard.cancelPresentationJobsFor(lease)
         coordinator._weightAdjustmentRecommendation.value = null
         coordinator.isCurrentWorkoutTimed = false
         coordinator.isCurrentTimedCableExercise = false
@@ -3680,6 +3675,7 @@ class ActiveSessionEngine(
         coordinator.restTimerJob?.cancel()
         coordinator.restTimerJob = null
         coordinator.restDeadlineElapsedRealtimeMs = null
+        cancelAutoStartTimer()
         cancelJustLiftEggTimer()
         stopMotionStartDetection()
         repFreshnessGate.invalidate(lease)
@@ -4011,6 +4007,7 @@ class ActiveSessionEngine(
                 try {
                     if (lease != null) {
                         executionGuard.invalidate(lease, ExecutionInvalidationReason.STOP_SET)
+                        executionGuard.cancelPresentationJobsFor(lease)
                         repFreshnessGate.invalidate(lease)
                     }
                     repCounter.reset()
@@ -4065,6 +4062,7 @@ class ActiveSessionEngine(
                 try {
                     if (lease != null) {
                         executionGuard.invalidate(lease, ExecutionInvalidationReason.SKIP_EXERCISE)
+                        executionGuard.cancelPresentationJobsFor(lease)
                         repFreshnessGate.invalidate(lease)
                     }
                     repCounter.reset()
@@ -4566,7 +4564,7 @@ class ActiveSessionEngine(
      * Phase A: Stop BLE, save session, emit haptics, show summary.
      * Phase B: Rest timer, navigation advancement (delegated back to DWSM via startRestTimer).
      */
-    private fun handleSetCompletion(lease: ExecutionLease) {
+    internal fun handleSetCompletion(lease: ExecutionLease) {
         if (!executionGuard.isCurrent(lease)) return
         handleSetCompletion(lease, TeardownReason.AUTO_COMPLETE)
     }
@@ -4622,8 +4620,8 @@ class ActiveSessionEngine(
             captureExitSnapshot(lease, TerminalPath.AUTO_COMPLETE).also(::launchSnapshotPersistence)
         }
         beginMachineTeardown(lease, teardownReason) {
-            scope.launch {
-                if (!executionGuard.isCurrent(lease)) return@launch
+            launchCompletionJob(lease) {
+                if (!hasCurrentAuthority(lease, "completion_resume_after_teardown")) return@launchCompletionJob
                 val params = coordinator._workoutParameters.value
                 val isJustLift = params.isJustLift
 
@@ -4657,7 +4655,7 @@ class ActiveSessionEngine(
                     }
                     showBodyweightRepEntry(currentExercise)
                     coordinator.setCompletionInProgress.value = false
-                    return@launch
+                    return@launchCompletionJob
                 }
 
                 if (wasBodyweight) {
@@ -4678,8 +4676,9 @@ class ActiveSessionEngine(
                         // More warm-up sets remaining
                         Logger.d { "Phase 35C: Warm-up set ${warmupSetIdx + 1}/${currentExercise.warmupSets.size} complete, advancing to warm-up ${nextWarmupIdx + 1}" }
                         coordinator._currentWarmupSetIndex.value = nextWarmupIdx
+                        if (!hasCurrentAuthority(lease, "warmup_successor_haptic")) return@launchCompletionJob
                         coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
-                        if (!executionGuard.isCurrent(lease)) return@launch
+                        if (!hasCurrentAuthority(lease, "warmup_successor_after_haptic")) return@launchCompletionJob
                         // Reset for next warm-up set
                         repCounter.resetCountsOnly()
                         resetAutoStopState()
@@ -4691,14 +4690,17 @@ class ActiveSessionEngine(
                         coordinator._workoutParameters.update { p ->
                             p.copy(weightPerCableKg = workingWeight, reps = currentExercise.setReps.firstOrNull() ?: 10)
                         }
-                        startWorkout(skipCountdown = true)
-                        return@launch
+                        ifCurrent(lease, "warmup_successor_start") {
+                            startWorkout(skipCountdown = true)
+                        }
+                        return@launchCompletionJob
                     } else {
                         // All warm-up sets done — transition to working phase
                         Logger.d { "Phase 35C: All ${currentExercise.warmupSets.size} warm-up sets complete, transitioning to working sets" }
                         coordinator._currentWarmupSetIndex.value = -1
+                        if (!hasCurrentAuthority(lease, "working_successor_haptic")) return@launchCompletionJob
                         coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
-                        if (!executionGuard.isCurrent(lease)) return@launch
+                        if (!hasCurrentAuthority(lease, "working_successor_after_haptic")) return@launchCompletionJob
                         // Reset for first working set
                         repCounter.reset()
                         resetAutoStopState()
@@ -4714,13 +4716,16 @@ class ActiveSessionEngine(
                                 warmupReps = Constants.DEFAULT_WARMUP_REPS,
                             )
                         }
-                        startWorkout(skipCountdown = true)
-                        return@launch
+                        ifCurrent(lease, "working_successor_start") {
+                            startWorkout(skipCountdown = true)
+                        }
+                        return@launchCompletionJob
                     }
                 }
 
+                if (!hasCurrentAuthority(lease, "completion_workout_end_haptic")) return@launchCompletionJob
                 coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
-                if (!executionGuard.isCurrent(lease)) return@launch
+                if (!hasCurrentAuthority(lease, "completion_after_workout_end_haptic")) return@launchCompletionJob
                 val snapshot = terminalSnapshot
                     ?: captureExitSnapshot(lease, TerminalPath.AUTO_COMPLETE)
                 coordinator.setRepMetrics.value = emptyList()
@@ -4757,7 +4762,7 @@ class ActiveSessionEngine(
                 qualitySummary?.let { qs ->
                     gamificationManager.processSetQualityEvent(qs.averageScore, snapshot.lease.profileId)
                 }
-                if (!executionGuard.isCurrent(lease)) return@launch
+                if (!hasCurrentAuthority(lease, "completion_after_quality_processing")) return@launchCompletionJob
 
                 Logger.d("Set summary: heaviest=${summary.heaviestLiftKgPerCable}kg, reps=$completedReps, duration=${summary.durationMs}ms")
 
@@ -4803,7 +4808,7 @@ class ActiveSessionEngine(
                         }
                     } else if (summaryDelayMs > 0) {
                         delay(summaryDelayMs)
-                        if (!executionGuard.isCurrent(lease)) return@launch
+                        if (!hasCurrentAuthority(lease, "just_lift_summary_delay")) return@launchCompletionJob
 
                         if (coordinator._workoutState.value is WorkoutState.SetSummary) {
                             Logger.d("Just Lift: Summary complete, transitioning to Idle")
@@ -4834,13 +4839,13 @@ class ActiveSessionEngine(
 
                     if (skipSummary) {
                         Logger.d("AMRAP: Summary OFF - skipping summary, proceeding to rest timer")
-                        startRestTimer()
+                        startRestTimer(lease)
                     } else if (summaryDelayMs > 0) {
                         delay(summaryDelayMs)
-                        if (!executionGuard.isCurrent(lease)) return@launch
+                        if (!hasCurrentAuthority(lease, "amrap_summary_delay")) return@launchCompletionJob
 
                         if (coordinator._workoutState.value is WorkoutState.SetSummary) {
-                            startRestTimer()
+                            startRestTimer(lease)
                         }
                     } else {
                         Logger.d("AMRAP: Summary Unlimited - waiting for user action")
@@ -4855,22 +4860,22 @@ class ActiveSessionEngine(
 
                         Logger.d("Routine mode: Parent-aligned - no polling restart/auto-start during rest")
 
-                        startRestTimer()
+                        startRestTimer(lease)
                     } else if (summaryDelayMs > 0 && !isSingleExerciseMode(coordinator)) {
                         // Issue #320: Auto-advance from summary via proceedFromSummary() which handles
                         // full bookkeeping: clearing RPE, marking exercises completed, checking routine
                         // completion, and starting rest timer. Direct startRestTimer() would bypass this.
                         Logger.d("Routine mode: Auto-advancing from summary after ${summaryDelayMs}ms (Issue #320)")
                         delay(summaryDelayMs)
-                        if (!executionGuard.isCurrent(lease)) return@launch
+                        if (!hasCurrentAuthority(lease, "routine_summary_delay")) return@launchCompletionJob
                         if (coordinator._workoutState.value is WorkoutState.SetSummary) {
-                            flowDelegate?.proceedFromSummary()
+                            flowDelegate?.proceedFromSummary(lease)
                                 ?: run {
                                     // Fallback if delegate not wired (shouldn't happen in production)
                                     Logger.w("Issue #320: flowDelegate null, falling back to direct startRestTimer")
                                     repCounter.reset()
                                     resetAutoStopState()
-                                    startRestTimer()
+                                    startRestTimer(lease)
                                 }
                         }
                     } else {
@@ -4982,9 +4987,19 @@ class ActiveSessionEngine(
      * Start the rest timer between sets.
      */
     internal fun startRestTimer() {
+        startRestTimerFor(executionGuard.currentLease)
+    }
+
+    internal fun startRestTimer(lease: ExecutionLease) {
+        startRestTimerFor(lease)
+    }
+
+    private fun startRestTimerFor(lease: ExecutionLease?) {
+        if (!hasExpectedAuthority(lease, "rest_timer_start")) return
         coordinator.restTimerJob?.cancel()
 
         coordinator.restTimerJob = scope.launch {
+            if (!hasExpectedAuthority(lease, "rest_timer_launch")) return@launch
             val timerJob = coroutineContext[kotlinx.coroutines.Job]
             val routine = coordinator._loadedRoutine.value
             val currentExercise = routine?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
@@ -5015,10 +5030,11 @@ class ActiveSessionEngine(
 
             if (restDuration == 0) {
                 Logger.d { "Rest duration is 0 - skipping rest timer, advancing immediately (no BLE stop - already sent at set end)" }
+                if (!hasExpectedAuthority(lease, "zero_rest_successor")) return@launch
                 if (isSingleExerciseMode(coordinator)) {
-                    advanceToNextSetInSingleExercise()
+                    advanceToNextSetInSingleExercise(lease)
                 } else {
-                    startNextSetOrExercise()
+                    startNextSetOrExerciseFor(lease)
                 }
                 return@launch
             }
@@ -5089,24 +5105,30 @@ class ActiveSessionEngine(
                 nextExercise?.supersetId == currentExercise?.supersetId
 
             // Emit Resting immediately so the UI timer starts without waiting on repository lookups.
-            coordinator._workoutState.value = WorkoutState.Resting(
-                restSecondsRemaining = restDuration,
-                nextExerciseName = initialNextName,
-                isLastExercise = isLastExerciseOverall,
-                currentSet = displaySetIndex,
-                totalSets = displayTotalSets,
-                isSupersetTransition = isSupersetTransition,
-                supersetLabel = supersetLabel,
-            )
+            if (hasExpectedAuthority(lease, "rest_timer_initial_state")) {
+                coordinator._workoutState.value = WorkoutState.Resting(
+                    restSecondsRemaining = restDuration,
+                    nextExerciseName = initialNextName,
+                    isLastExercise = isLastExerciseOverall,
+                    currentSet = displaySetIndex,
+                    totalSets = displayTotalSets,
+                    isSupersetTransition = isSupersetTransition,
+                    supersetLabel = supersetLabel,
+                )
+            } else {
+                return@launch
+            }
 
             if (exerciseId != null) {
                 launch {
                     val lastWeight = getLastWeightForExercise(exerciseId)
                     val prWeight = getPrWeightForExercise(exerciseId)
-                    coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
-                        lastUsedWeightKg = lastWeight,
-                        prWeightKg = prWeight,
-                    )
+                    if (hasExpectedAuthority(lease, "rest_timer_weight_lookup")) {
+                        coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+                            lastUsedWeightKg = lastWeight,
+                            prWeightKg = prWeight,
+                        )
+                    }
                 }
             }
 
@@ -5117,6 +5139,7 @@ class ActiveSessionEngine(
             try {
                 // Issue #339: Deadline-based loop so timers catch up after background suspension.
                 while (isActive) {
+                    if (!hasExpectedAuthority(lease, "rest_timer_tick")) return@launch
                     val remainingSeconds = currentRestRemainingSeconds()
 
                     if (remainingSeconds != coordinator._restSecondsRemaining.value) {
@@ -5180,10 +5203,11 @@ class ActiveSessionEngine(
 
             if (autoplay) {
                 Logger.d("ActiveSessionEngine") { "autoplay rest complete: advancing to next set (no BLE stop - already sent at set end)" }
+                if (!hasExpectedAuthority(lease, "rest_timer_successor")) return@launch
                 if (isSingleExercise) {
-                    advanceToNextSetInSingleExercise()
+                    advanceToNextSetInSingleExercise(lease)
                 } else {
-                    startNextSetOrExercise()
+                    startNextSetOrExerciseFor(lease)
                 }
             }
         }
@@ -5263,7 +5287,8 @@ class ActiveSessionEngine(
     /**
      * Advance to the next set within a single exercise (non-routine mode).
      */
-    private fun advanceToNextSetInSingleExercise() {
+    private fun advanceToNextSetInSingleExercise(lease: ExecutionLease?) {
+        if (!hasExpectedAuthority(lease, "single_exercise_successor")) return
         val routine = coordinator._loadedRoutine.value
         if (routine == null) {
             coordinator._workoutState.value = WorkoutState.Completed
@@ -5312,7 +5337,9 @@ class ActiveSessionEngine(
 
             repCounter.resetCountsOnly()
             resetAutoStopState()
-            startWorkout(skipCountdown = true)
+            if (hasExpectedAuthority(lease, "single_exercise_start")) {
+                startWorkout(skipCountdown = true)
+            }
         } else {
             coordinator._workoutState.value = WorkoutState.Completed
             coordinator._loadedRoutine.value = null
@@ -5327,7 +5354,8 @@ class ActiveSessionEngine(
     /**
      * Start workout or enter SetReady based on autoplay preference.
      */
-    private fun startWorkoutOrSetReady() {
+    private fun startWorkoutOrSetReady(lease: ExecutionLease?) {
+        if (!hasExpectedAuthority(lease, "workout_or_set_ready")) return
         val autoplay = settingsManager.autoplayEnabled.value
         if (autoplay) {
             startWorkout(skipCountdown = true)
@@ -5355,7 +5383,12 @@ class ActiveSessionEngine(
     /**
      * Progress to the next set or exercise in a routine.
      */
-    private fun startNextSetOrExercise() {
+    private fun startNextSetOrExercise(lease: ExecutionLease) {
+        startNextSetOrExerciseFor(lease)
+    }
+
+    private fun startNextSetOrExerciseFor(lease: ExecutionLease?) {
+        if (!hasExpectedAuthority(lease, "next_set_or_exercise")) return
         val currentState = coordinator._workoutState.value
         if (currentState is WorkoutState.Completed) return
         if (currentState !is WorkoutState.Resting &&
@@ -5496,7 +5529,7 @@ class ActiveSessionEngine(
                     coordinator._totalWarmupSets.value = 0
                 }
                 resetAutoStopState()
-                startWorkoutOrSetReady()
+                startWorkoutOrSetReady(lease)
             } else if (isSameExerciseContinuation) {
                 // Issue #572: same-exercise continuation across entries. We do NOT call
                 // startWorkout() here even when autoplay is on, because that would send
@@ -5521,7 +5554,7 @@ class ActiveSessionEngine(
                 // startWorkoutOrSetReady() runs.
                 repCounter.resetCountsOnly()
                 resetAutoStopState()
-                startWorkoutOrSetReady()
+                startWorkoutOrSetReady(lease)
             }
             coordinator._userAdjustedWeightDuringRest = false
         } else {
@@ -5559,9 +5592,10 @@ class ActiveSessionEngine(
                 // Just Lift rest returns to Idle (ready for next auto-start set), not Completed
                 coordinator._workoutState.value = WorkoutState.Idle
             } else if (isSingleExerciseMode(coordinator)) {
-                advanceToNextSetInSingleExercise()
+                advanceToNextSetInSingleExercise(executionGuard.currentLease)
             } else {
-                startNextSetOrExercise()
+                val lease = executionGuard.currentLease
+                if (lease != null) startNextSetOrExercise(lease) else startNextSetOrExerciseFor(null)
             }
         }
     }
@@ -5618,10 +5652,82 @@ class ActiveSessionEngine(
         Logger.d("ActiveSessionEngine") { "resetRestTimer: reset to ${coordinator._restOriginalDuration.value}s" }
     }
 
+    private fun startTimedCableTimer(lease: ExecutionLease, durationSeconds: Int) {
+        val warmupReps = coordinator._workoutParameters.value.warmupReps
+        startExerciseTimer(lease, durationSeconds, warmupReps)
+    }
+
+    private fun startBodyweightTimer(lease: ExecutionLease, durationSeconds: Int) {
+        startExerciseTimer(lease, durationSeconds, warmupReps = 0)
+    }
+
+    private fun startExerciseTimer(
+        lease: ExecutionLease,
+        durationSeconds: Int,
+        warmupReps: Int,
+    ) {
+        if (!hasCurrentAuthority(lease, "exercise_timer_start")) return
+        coordinator.bodyweightTimerJob?.cancel()
+        coordinator.exerciseTimerOriginalDuration = durationSeconds
+        coordinator._isExerciseTimerPaused.value = false
+
+        val timerJob = scope.launch(start = CoroutineStart.LAZY) {
+            if (warmupReps > 0) {
+                Logger.d { "Duration cable: waiting for $warmupReps warmup reps before starting ${durationSeconds}s timer" }
+                coordinator._repCount.first { it.isWarmupComplete }
+                if (!hasCurrentAuthority(lease, "timed_cable_warmup_complete")) return@launch
+                Logger.d { "Duration cable: warmup complete, starting ${durationSeconds}s duration timer" }
+            }
+
+            if (!hasCurrentAuthority(lease, "exercise_timer_initial_state")) return@launch
+            coordinator._timedExerciseRemainingSeconds.value = durationSeconds
+            var lastObservedRemaining = durationSeconds
+            var lastTickedSecond = emitExerciseCountdownTickIfNeeded(
+                lease = lease,
+                remainingSeconds = durationSeconds,
+                lastTickedSecond = -1,
+            )
+            while ((coordinator._timedExerciseRemainingSeconds.value ?: 0) > 0) {
+                if (!hasCurrentAuthority(lease, "exercise_timer_tick")) return@launch
+                if (coordinator._isExerciseTimerPaused.value) {
+                    delay(100L)
+                    continue
+                }
+                delay(1000L)
+                if (!hasCurrentAuthority(lease, "exercise_timer_after_delay")) return@launch
+                if (!coordinator._isExerciseTimerPaused.value) {
+                    var remaining = 0
+                    coordinator._timedExerciseRemainingSeconds.update { current ->
+                        remaining = ((current ?: 0) - 1).coerceAtLeast(0)
+                        remaining
+                    }
+                    lastTickedSecond = ExerciseCountdownCuePolicy.lastTickedSecondAfterRemainingChange(
+                        previousRemainingSeconds = lastObservedRemaining,
+                        currentRemainingSeconds = remaining,
+                        lastTickedSecond = lastTickedSecond,
+                    )
+                    lastObservedRemaining = remaining
+                    lastTickedSecond = emitExerciseCountdownTickIfNeeded(
+                        lease = lease,
+                        remainingSeconds = remaining,
+                        lastTickedSecond = lastTickedSecond,
+                    )
+                }
+            }
+            if (!hasCurrentAuthority(lease, "exercise_timer_completion")) return@launch
+            coordinator._timedExerciseRemainingSeconds.value = 0
+            handleSetCompletion(lease)
+        }
+        coordinator.bodyweightTimerJob = timerJob
+        timerJob.start()
+    }
+
     private suspend fun emitExerciseCountdownTickIfNeeded(
+        lease: ExecutionLease,
         remainingSeconds: Int,
         lastTickedSecond: Int,
     ): Int {
+        if (!hasCurrentAuthority(lease, "exercise_countdown_haptic")) return lastTickedSecond
         val prefs = settingsManager.userPreferences.value
         if (ExerciseCountdownCuePolicy.shouldEmitTick(
                 remainingSeconds = remainingSeconds,
@@ -5677,61 +5783,82 @@ class ActiveSessionEngine(
             Logger.d("ActiveSessionEngine") { "startNextSet: advancing (no BLE stop - already sent at set end)" }
 
             if (isSingleExerciseMode(coordinator)) {
-                advanceToNextSetInSingleExercise()
+                advanceToNextSetInSingleExercise(executionGuard.currentLease)
             } else {
-                startNextSetOrExercise()
+                val lease = executionGuard.currentLease
+                if (lease != null) startNextSetOrExercise(lease) else startNextSetOrExerciseFor(null)
             }
         }
     }
 
     // ===== Auto-Start Timer =====
 
-    private fun startAutoStartTimer() {
+    private fun startAutoStartTimer(expectedLease: ExecutionLease?) {
         if (coordinator.autoStartJob != null) return
+        if (executionGuard.machineTeardownState.value !is MachineTeardownState.Ready) return
+        if (!hasAutoStartAuthority(expectedLease, "auto_start_timer_start")) return
         val currentState = coordinator._workoutState.value
         if (currentState !is WorkoutState.Idle && currentState !is WorkoutState.SetSummary) {
             return
         }
 
         coordinator.autoStartJob = scope.launch {
-            val countdownSeconds = settingsManager.userPreferences.value.autoStartCountdownSeconds
-            for (i in countdownSeconds downTo 1) {
-                coordinator._autoStartCountdown.value = i
-                delay(1000)
-            }
-            coordinator._autoStartCountdown.value = null
+            val timerJob = coroutineContext[kotlinx.coroutines.Job]
+            try {
+                val countdownSeconds = settingsManager.userPreferences.value.autoStartCountdownSeconds
+                for (i in countdownSeconds downTo 1) {
+                    if (!hasAutoStartAuthority(expectedLease, "auto_start_countdown")) return@launch
+                    if (executionGuard.machineTeardownState.value !is MachineTeardownState.Ready) return@launch
+                    coordinator._autoStartCountdown.value = i
+                    delay(1000)
+                }
+                if (!hasAutoStartAuthority(expectedLease, "auto_start_countdown_complete")) return@launch
+                coordinator._autoStartCountdown.value = null
 
-            if (coordinator.autoStartJob?.isActive != true) {
-                Logger.d("Auto-start aborted: job cancelled during countdown")
-                return@launch
-            }
+                if (coordinator.autoStartJob?.isActive != true) {
+                    Logger.d("Auto-start aborted: job cancelled during countdown")
+                    return@launch
+                }
 
-            val currentHandle = bleRepository.handleState.value
-            if (currentHandle != HandleState.Grabbed && currentHandle != HandleState.Moving) {
-                Logger.d("Auto-start aborted: handles no longer grabbed (state=$currentHandle)")
-                return@launch
-            }
+                val currentHandle = bleRepository.handleState.value
+                if (currentHandle != HandleState.Grabbed && currentHandle != HandleState.Moving) {
+                    Logger.d("Auto-start aborted: handles no longer grabbed (state=$currentHandle)")
+                    return@launch
+                }
 
-            val params = coordinator._workoutParameters.value
-            if (!params.useAutoStart) {
-                Logger.d("Auto-start aborted: autoStart disabled in parameters")
-                return@launch
-            }
+                val params = coordinator._workoutParameters.value
+                if (!params.useAutoStart) {
+                    Logger.d("Auto-start aborted: autoStart disabled in parameters")
+                    return@launch
+                }
 
-            val state = coordinator._workoutState.value
-            if (state !is WorkoutState.Idle && state !is WorkoutState.SetSummary) {
-                Logger.d("Auto-start aborted: workout state changed (state=$state)")
-                return@launch
-            }
+                val state = coordinator._workoutState.value
+                if (state !is WorkoutState.Idle && state !is WorkoutState.SetSummary) {
+                    Logger.d("Auto-start aborted: workout state changed (state=$state)")
+                    return@launch
+                }
 
-            // Cancel Just Lift egg timer when user grabs handles to start next set
-            if (params.isJustLift) {
-                cancelJustLiftEggTimer()
-            }
+                if (executionGuard.machineTeardownState.value !is MachineTeardownState.Ready) {
+                    Logger.d("Auto-start aborted: machine teardown is not ready")
+                    return@launch
+                }
 
-            Logger.d { "Issue221: Auto-start timer complete - params.isJustLift=${params.isJustLift}, params.useAutoStart=${params.useAutoStart}" }
-            Logger.d { "Issue221: Starting workout with isJustLiftMode=true (auto-start implies Just Lift mode)" }
-            startWorkout(skipCountdown = true, isJustLiftMode = true)
+                // Cancel Just Lift egg timer when user grabs handles to start next set
+                if (params.isJustLift) {
+                    cancelJustLiftEggTimer()
+                }
+
+                Logger.d { "Issue221: Auto-start timer complete - params.isJustLift=${params.isJustLift}, params.useAutoStart=${params.useAutoStart}" }
+                Logger.d { "Issue221: Starting workout with isJustLiftMode=true (auto-start implies Just Lift mode)" }
+                if (hasAutoStartAuthority(expectedLease, "auto_start_successor")) {
+                    startWorkout(skipCountdown = true, isJustLiftMode = true)
+                }
+            } finally {
+                if (coordinator.autoStartJob === timerJob) {
+                    coordinator.autoStartJob = null
+                    coordinator._autoStartCountdown.value = null
+                }
+            }
         }
     }
 
@@ -5744,15 +5871,22 @@ class ActiveSessionEngine(
     // ===== Cleanup =====
 
     fun cleanup() {
+        val lease = executionGuard.invalidateCurrent(ExecutionInvalidationReason.CLEANUP)
+        if (lease != null) {
+            repFreshnessGate.invalidate(lease)
+            executionGuard.cancelPresentationJobsFor(lease)
+        }
         coordinator._weightAdjustmentRecommendation.value = null
         coordinator.monitorDataCollectionJob?.cancel()
-        coordinator.autoStartJob?.cancel()
+        cancelAutoStartTimer()
         coordinator.restTimerJob?.cancel()
         coordinator.restDeadlineElapsedRealtimeMs = null
         cancelJustLiftEggTimer()
         coordinator.bodyweightTimerJob?.cancel()
         coordinator.repEventsCollectionJob?.cancel()
         coordinator.workoutJob?.cancel()
+        stopMotionStartDetection()
+        executionGuard.cancelAllOwnedJobs()
     }
 
     private companion object {
