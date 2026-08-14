@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.manager
 import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.util.withPlatformLock
 import kotlinx.atomicfu.atomic
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -17,6 +18,16 @@ internal enum class TeardownFailureReason {
     RESET_FAILED,
     TIMED_OUT,
     DISCONNECTED,
+}
+
+internal enum class TeardownReason {
+    AUTO_COMPLETE,
+    MANUAL_STOP,
+    STOP_SET,
+    SKIP_EXERCISE,
+    END_WORKOUT,
+    WARMUP_TRANSITION,
+    EXERCISE_JUMP,
 }
 
 internal enum class ExecutionInvalidationReason {
@@ -80,6 +91,8 @@ internal class WorkoutExecutionGuard(
 
     private var teardownLease: ExecutionLease? = null
     private var teardownAttempt = 0
+    private var teardownJob: Job? = null
+    private var teardownJobLease: ExecutionLease? = null
     private val _machineTeardownState = MutableStateFlow<MachineTeardownState>(MachineTeardownState.Ready)
 
     val machineTeardownState: StateFlow<MachineTeardownState> = _machineTeardownState.asStateFlow()
@@ -154,9 +167,31 @@ internal class WorkoutExecutionGuard(
         }
         teardownLease = lease
         teardownAttempt = attempt
+        teardownJob = null
+        teardownJobLease = null
         _machineTeardownState.value = MachineTeardownState.TearingDown(lease.executionId, attempt)
         log(LogEventType.WORKOUT_TEARDOWN, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=begun,attempt=$attempt")
         true
+    }
+
+    fun attachTeardownJob(lease: ExecutionLease, job: Job): Boolean = withPlatformLock(teardownLock) {
+        val state = _machineTeardownState.value
+        if (state !is MachineTeardownState.TearingDown || !sameIdentity(teardownLease, lease)) {
+            return@withPlatformLock false
+        }
+        if (teardownJob != null) {
+            return@withPlatformLock false
+        }
+        teardownJob = job
+        teardownJobLease = lease
+        true
+    }
+
+    fun clearTeardownJobIfOwned(lease: ExecutionLease) = withPlatformLock(teardownLock) {
+        if (sameIdentity(teardownJobLease, lease)) {
+            teardownJob = null
+            teardownJobLease = null
+        }
     }
 
     fun markTeardownReady(lease: ExecutionLease): Boolean = withPlatformLock(teardownLock) {

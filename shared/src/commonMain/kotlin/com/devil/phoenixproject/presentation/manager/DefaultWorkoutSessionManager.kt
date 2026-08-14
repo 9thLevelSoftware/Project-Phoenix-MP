@@ -226,11 +226,11 @@ class DefaultWorkoutSessionManager(
             override fun startWorkout(skipCountdown: Boolean) {
                 this@DefaultWorkoutSessionManager.startWorkout(skipCountdown = skipCountdown)
             }
-            override suspend fun sendStopCommand() {
-                bleRepository.sendStopCommand()
-            }
-            override suspend fun stopMachineWorkout() {
-                bleRepository.stopWorkout()
+            override fun requestTeardownForTransition(
+                reason: TeardownReason,
+                afterReady: () -> Unit,
+            ) {
+                activeSessionEngine.requestTeardownForTransition(reason, afterReady)
             }
             override fun setWorkoutParametersInternal(params: WorkoutParameters) {
                 this@DefaultWorkoutSessionManager.setWorkoutParametersInternal(params)

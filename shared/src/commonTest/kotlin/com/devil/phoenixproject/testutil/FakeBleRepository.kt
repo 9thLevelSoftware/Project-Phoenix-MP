@@ -69,6 +69,12 @@ class FakeBleRepository : BleRepository {
     var workoutCommandResult: Result<Unit> = Result.success(Unit)
     var shouldFailConnect = false
     var connectDelay: Long = 0L
+    var stopWorkoutBlock: suspend () -> Result<Unit> = { Result.success(Unit) }
+    var stopWorkoutCallCount = 0
+    var stopPacketCallCount = 0
+    var stopPollingCallCount = 0
+    var disconnectCallCount = 0
+    var reconnectCallCount = 0
 
     // ========== Test control methods ==========
 
@@ -160,6 +166,12 @@ class FakeBleRepository : BleRepository {
         workoutCommandResult = Result.success(Unit)
         shouldFailConnect = false
         connectDelay = 0L
+        stopWorkoutBlock = { Result.success(Unit) }
+        stopWorkoutCallCount = 0
+        stopPacketCallCount = 0
+        stopPollingCallCount = 0
+        disconnectCallCount = 0
+        reconnectCallCount = 0
     }
 
     // ========== BleRepository interface implementation ==========
@@ -208,6 +220,7 @@ class FakeBleRepository : BleRepository {
     }
 
     override suspend fun disconnect() {
+        disconnectCallCount++
         setConnectionState(ConnectionState.Disconnected)
     }
 
@@ -216,6 +229,7 @@ class FakeBleRepository : BleRepository {
     }
 
     override suspend fun scanAndConnect(timeoutMs: Long): Result<Unit> {
+        reconnectCallCount++
         setConnectionState(ConnectionState.Scanning)
 
         val devices = _scannedDevices.value
@@ -248,9 +262,15 @@ class FakeBleRepository : BleRepository {
         return Result.success(Unit)
     }
 
-    override suspend fun stopWorkout(): Result<Unit> = Result.success(Unit)
+    override suspend fun stopWorkout(): Result<Unit> {
+        stopWorkoutCallCount++
+        return stopWorkoutBlock()
+    }
 
-    override suspend fun sendStopCommand(): Result<Unit> = Result.success(Unit)
+    override suspend fun sendStopCommand(): Result<Unit> {
+        stopPacketCallCount++
+        return Result.success(Unit)
+    }
 
     override fun enableHandleDetection(enabled: Boolean) {
         if (enabled) {
@@ -275,7 +295,7 @@ class FakeBleRepository : BleRepository {
     }
 
     override fun stopPolling() {
-        // No-op in fake
+        stopPollingCallCount++
     }
 
     override fun stopMonitorPollingOnly() {
