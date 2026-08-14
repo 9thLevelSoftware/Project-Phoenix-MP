@@ -39,6 +39,7 @@ class FakeWorkoutRepository : WorkoutRepository {
 
     val recentCompletedRequests = mutableListOf<RecentCompletedRequest>()
     val saveSessionAttempts = mutableListOf<WorkoutSession>()
+    val saveMetricsAttempts = mutableListOf<Pair<String, List<WorkoutMetric>>>()
     var beforeSaveSession: suspend (WorkoutSession) -> Unit = {}
     var afterSaveSession: suspend (WorkoutSession) -> Unit = {}
     var recentCompletedFailure: Throwable? = null
@@ -77,6 +78,7 @@ class FakeWorkoutRepository : WorkoutRepository {
         phaseStatistics.clear()
         recentCompletedRequests.clear()
         saveSessionAttempts.clear()
+        saveMetricsAttempts.clear()
         beforeSaveSession = {}
         afterSaveSession = {}
         recentCompletedFailure = null
@@ -288,7 +290,8 @@ class FakeWorkoutRepository : WorkoutRepository {
     }
 
     override suspend fun saveMetrics(sessionId: String, metrics: List<WorkoutMetric>) {
-        this.metrics[sessionId] = metrics
+        saveMetricsAttempts += sessionId to metrics.toList()
+        this.metrics[sessionId] = metrics.toList()
     }
 
     override fun getMetricsForSession(sessionId: String): Flow<List<WorkoutMetric>> = MutableStateFlow(metrics[sessionId] ?: emptyList())

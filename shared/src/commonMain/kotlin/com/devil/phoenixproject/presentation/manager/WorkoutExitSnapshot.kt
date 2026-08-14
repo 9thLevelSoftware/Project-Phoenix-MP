@@ -9,6 +9,7 @@ import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.util.withPlatformLock
 
 internal data class WorkoutExitSnapshot(
     val lease: ExecutionLease,
@@ -26,6 +27,8 @@ internal data class WorkoutExitSnapshot(
     val shouldExportIndividualHealthSession: Boolean,
     val shouldExportIndividualBackup: Boolean,
     val shouldUpdateCycleProgress: Boolean,
+    val cycleId: String?,
+    val cycleDayNumber: Int?,
     val postSaveInput: PostSaveWorkoutInput,
 )
 
@@ -39,6 +42,8 @@ internal data class WorkoutExecutionContext(
     val routineSessionId: String?,
     val routineId: String?,
     val routineName: String?,
+    val cycleId: String?,
+    val cycleDayNumber: Int?,
 )
 
 internal data class PostSaveWorkoutInput(
@@ -54,6 +59,58 @@ internal data class PostSaveWorkoutInput(
     val peakEccentricForceKg: Float,
     val sessionMcvMmS: Float?,
 )
+
+private data class WorkoutExitSnapshotKey(
+    val executionId: Long,
+    val sessionId: String,
+    val profileId: String,
+)
+
+internal class WorkoutExitSnapshotStore {
+    private val lock = Any()
+    private val snapshots = LinkedHashMap<WorkoutExitSnapshotKey, WorkoutExitSnapshot>()
+
+    fun getOrCapture(
+        lease: ExecutionLease,
+        terminalPath: TerminalPath,
+        onInstalled: (WorkoutExitSnapshot) -> Unit = {},
+        capture: () -> WorkoutExitSnapshot,
+    ): WorkoutExitSnapshot {
+        val key = lease.snapshotKey()
+        withPlatformLock(lock) {
+            snapshots[key]?.let { return it.copy(terminalPath = terminalPath) }
+        }
+
+        val candidate = capture()
+        require(candidate.lease.snapshotKey() == key && candidate.session.id == lease.sessionId) {
+            "Captured workout exit snapshot must match its execution lease"
+        }
+
+        return withPlatformLock(lock) {
+            snapshots[key]?.copy(terminalPath = terminalPath) ?: candidate.also { installed ->
+                snapshots[key] = installed
+                onInstalled(installed)
+                while (snapshots.size > MAX_RETAINED_SNAPSHOTS) {
+                    snapshots.remove(snapshots.keys.first())
+                }
+            }
+        }
+    }
+
+    fun findBySessionId(sessionId: String): WorkoutExitSnapshot? = withPlatformLock(lock) {
+        snapshots.values.lastOrNull { it.session.id == sessionId }
+    }
+
+    private fun ExecutionLease.snapshotKey() = WorkoutExitSnapshotKey(
+        executionId = executionId,
+        sessionId = sessionId,
+        profileId = profileId,
+    )
+
+    private companion object {
+        const val MAX_RETAINED_SNAPSHOTS = 32
+    }
+}
 
 internal fun RepMetricData.deepCopyForExitSnapshot() = copy(
     concentricPositions = concentricPositions.copyOf(),

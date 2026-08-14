@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
@@ -31,6 +32,36 @@ class SqlDelightWorkoutRepositoryTest {
     }
 
     // ========== Session CRUD Tests ==========
+
+    @Test
+    fun `saving raw metrics again replaces rows for the stable session id`() = runTest {
+        val firstAttempt = listOf(
+            WorkoutMetric(
+                timestamp = 10L,
+                loadA = 20f,
+                loadB = 21f,
+                positionA = 100f,
+                positionB = 101f,
+                velocityA = 1.0,
+                velocityB = 1.1,
+            ),
+            WorkoutMetric(
+                timestamp = 20L,
+                loadA = 22f,
+                loadB = 23f,
+                positionA = 110f,
+                positionB = 111f,
+                velocityA = 1.2,
+                velocityB = 1.3,
+            ),
+        )
+        val retrySnapshot = listOf(firstAttempt.single { it.timestamp == 20L })
+
+        repository.saveMetrics("stable-session", firstAttempt)
+        repository.saveMetrics("stable-session", retrySnapshot)
+
+        assertEquals(retrySnapshot, repository.getMetricsForSessionSync("stable-session"))
+    }
 
     @Test
     fun `saveSession persists session to database`() = runTest {

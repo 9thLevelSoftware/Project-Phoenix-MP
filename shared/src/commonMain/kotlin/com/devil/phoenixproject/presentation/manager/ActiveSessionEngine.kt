@@ -151,7 +151,7 @@ class ActiveSessionEngine(
     private val connectionLogRepository = ConnectionLogRepository.instance
     internal val executionGuard = WorkoutExecutionGuard(::logExecutionEvent)
     private var executionContext: WorkoutExecutionContext? = null
-    private var capturedExitSnapshot: WorkoutExitSnapshot? = null
+    private val exitSnapshotStore = WorkoutExitSnapshotStore()
     private val repFreshnessGate: RepNotificationFreshnessGate
         get() = executionGuard.repFreshnessGate
 
@@ -2095,8 +2095,11 @@ class ActiveSessionEngine(
         flowDelegate?.clearCycleContext()
     }
 
-    private fun shouldUpdateCycleProgressAfterSavedSet(): Boolean {
-        if (coordinator.activeCycleId == null || coordinator.activeCycleDayNumber == null) {
+    private fun shouldUpdateCycleProgressAfterSavedSet(
+        cycleId: String? = coordinator.activeCycleId,
+        dayNumber: Int? = coordinator.activeCycleDayNumber,
+    ): Boolean {
+        if (cycleId == null || dayNumber == null) {
             return false
         }
 
@@ -2755,7 +2758,6 @@ class ActiveSessionEngine(
             return
         }
         executionContext = null
-        capturedExitSnapshot = null
         val priorWorkoutState = coordinator._workoutState.value
 
         Logger.d { "startWorkout called: skipCountdown=$skipCountdown, isJustLiftMode=$isJustLiftMode" }
@@ -2818,6 +2820,8 @@ class ActiveSessionEngine(
                     routineSessionId = coordinator.currentRoutineSessionId,
                     routineId = coordinator.currentRoutineId,
                     routineName = coordinator.currentRoutineName,
+                    cycleId = coordinator.activeCycleId,
+                    cycleDayNumber = coordinator.activeCycleDayNumber,
                 )
                 if (!executionGuard.isCurrent(lease)) return@launch
                 executionContext = startedContext
@@ -3356,11 +3360,18 @@ class ActiveSessionEngine(
     private fun captureExitSnapshot(
         lease: ExecutionLease,
         terminalPath: TerminalPath,
-    ): WorkoutExitSnapshot {
-        capturedExitSnapshot
-            ?.takeIf { it.lease.executionId == lease.executionId && it.lease.sessionId == lease.sessionId }
-            ?.let { return it.copy(terminalPath = terminalPath) }
+    ): WorkoutExitSnapshot = exitSnapshotStore.getOrCapture(
+        lease = lease,
+        terminalPath = terminalPath,
+        onInstalled = ::applyRoutineBookkeepingAtCapture,
+    ) {
+        buildExitSnapshot(lease, terminalPath)
+    }
 
+    private fun buildExitSnapshot(
+        lease: ExecutionLease,
+        terminalPath: TerminalPath,
+    ): WorkoutExitSnapshot {
         val params = coordinator._workoutParameters.value
         val repCount = coordinator._repCount.value
         val metrics = coordinator.collectedMetrics.value.toList()
@@ -3379,6 +3390,8 @@ class ActiveSessionEngine(
                 routineSessionId = coordinator.currentRoutineSessionId,
                 routineId = coordinator.currentRoutineId,
                 routineName = coordinator.currentRoutineName,
+                cycleId = coordinator.activeCycleId,
+                cycleDayNumber = coordinator.activeCycleDayNumber,
             )
         val summary = calculateSetSummaryMetrics(
             metrics = metrics,
@@ -3488,7 +3501,11 @@ class ActiveSessionEngine(
             isAmrap = params.isAMRAP,
         ).deepCopyForExitSnapshot()
         val isRoutineSet = context.routineSessionId != null
-        val snapshot = WorkoutExitSnapshot(
+        val shouldUpdateCycleProgress = shouldUpdateCycleProgressAfterSavedSet(
+            cycleId = context.cycleId,
+            dayNumber = context.cycleDayNumber,
+        )
+        return WorkoutExitSnapshot(
             lease = lease,
             terminalPath = terminalPath,
             session = session,
@@ -3506,7 +3523,9 @@ class ActiveSessionEngine(
             shouldExportIndividualBackup = !isRoutineSet &&
                 preferencesManager.preferencesFlow.value.autoBackupEnabled &&
                 dataBackupManager != null,
-            shouldUpdateCycleProgress = shouldUpdateCycleProgressAfterSavedSet(),
+            shouldUpdateCycleProgress = shouldUpdateCycleProgress,
+            cycleId = context.cycleId.takeIf { shouldUpdateCycleProgress },
+            cycleDayNumber = context.cycleDayNumber.takeIf { shouldUpdateCycleProgress },
             postSaveInput = PostSaveWorkoutInput(
                 profileId = lease.profileId,
                 exerciseId = params.selectedExerciseId,
@@ -3521,8 +3540,16 @@ class ActiveSessionEngine(
                 sessionMcvMmS = session.avgMcvMmS,
             ),
         )
-        capturedExitSnapshot = snapshot
-        return snapshot
+    }
+
+    private fun applyRoutineBookkeepingAtCapture(snapshot: WorkoutExitSnapshot) {
+        if (!snapshot.shouldAccumulateRoutineCalories || !executionGuard.isCurrent(snapshot.lease)) return
+        snapshot.session.estimatedCalories?.takeIf { it > 0f }?.let { calories ->
+            coordinator.routineAccumulatedCalories += calories
+        }
+        coordinator._completedRoutineSetKeys.update {
+            it + (snapshot.exerciseIndex to snapshot.setIndex)
+        }
     }
 
     private fun launchSnapshotPersistence(snapshot: WorkoutExitSnapshot) {
@@ -3531,6 +3558,19 @@ class ActiveSessionEngine(
             PersistenceClaimResult.DuplicateInProgress,
             PersistenceClaimResult.AlreadyPersisted,
             -> logPersistenceDeduplicated(snapshot)
+        }
+    }
+
+    internal fun retryWorkoutExitPersistence(sessionId: String): Boolean {
+        val snapshot = exitSnapshotStore.findBySessionId(sessionId) ?: return false
+        return when (executionGuard.claimPersistence(sessionId, snapshot.terminalPath)) {
+            PersistenceClaimResult.Claimed -> {
+                scope.launch { persistSnapshot(snapshot) }
+                true
+            }
+            PersistenceClaimResult.DuplicateInProgress,
+            PersistenceClaimResult.AlreadyPersisted,
+            -> false
         }
     }
 
@@ -3576,14 +3616,6 @@ class ActiveSessionEngine(
             if (hasPR) {
                 snapshot.completedSet?.let { completedSetRepository.markAsPr(it.id) }
             }
-            if (snapshot.shouldAccumulateRoutineCalories) {
-                snapshot.session.estimatedCalories?.takeIf { it > 0f }?.let { calories ->
-                    coordinator.routineAccumulatedCalories += calories
-                }
-                coordinator._completedRoutineSetKeys.update {
-                    it + (snapshot.exerciseIndex to snapshot.setIndex)
-                }
-            }
             if (snapshot.shouldExportIndividualHealthSession) {
                 enqueueWorkoutHealthPush(snapshot.session)
             }
@@ -3608,9 +3640,9 @@ class ActiveSessionEngine(
 
     private suspend fun updateCycleProgressFromSnapshot(snapshot: WorkoutExitSnapshot) {
         if (!snapshot.shouldUpdateCycleProgress) return
-        val cycle = trainingCycleRepository.getActiveCycle(snapshot.lease.profileId).first() ?: return
-        val progress = trainingCycleRepository.getCycleProgress(cycle.id) ?: return
-        updateCycleProgress(cycle.id, progress.currentDayNumber)
+        val cycleId = snapshot.cycleId ?: return
+        val dayNumber = snapshot.cycleDayNumber ?: return
+        updateCycleProgress(cycleId, dayNumber)
     }
 
     private fun logPersistenceDeduplicated(snapshot: WorkoutExitSnapshot) {
@@ -3674,6 +3706,7 @@ class ActiveSessionEngine(
         }
 
         val manualSnapshot = lease?.let { captureExitSnapshot(it, TerminalPath.MANUAL_STOP) }
+        manualSnapshot?.let(::launchSnapshotPersistence)
         val shouldExitToIdle = exitingWorkout
         coordinator._weightAdjustmentRecommendation.value = null
 
@@ -3696,7 +3729,6 @@ class ActiveSessionEngine(
                     coordinator.isCurrentTimedCableExercise = false
                     coordinator._isCurrentExerciseBodyweight.value = false
                     coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
-                    launchSnapshotPersistence(manualSnapshot)
                     coordinator.setRepMetrics.value = emptyList()
                     coordinator.biomechanicsEngine.reset()
                     coordinator.repQualityScorer.reset()
@@ -4562,8 +4594,23 @@ class ActiveSessionEngine(
         } else {
             reason
         }
+        val currentExerciseAtCapture = coordinator._loadedRoutine.value
+            ?.exercises
+            ?.getOrNull(coordinator._currentExerciseIndex.value)
+        val shouldPromptBodyweightAtCapture = isBodyweightExercise(currentExerciseAtCapture) &&
+            currentExerciseAtCapture != null &&
+            coordinator.bodyweightCompletionVariantOverride == null &&
+            coordinator._loadedRoutine.value != null
+        val isWarmupTransition = coordinator._currentWarmupSetIndex.value >= 0 &&
+            currentExerciseAtCapture != null
+        val terminalSnapshot = if (shouldPromptBodyweightAtCapture || isWarmupTransition) {
+            null
+        } else {
+            captureExitSnapshot(lease, TerminalPath.AUTO_COMPLETE).also(::launchSnapshotPersistence)
+        }
         beginMachineTeardown(lease, teardownReason) {
             scope.launch {
+                if (!executionGuard.isCurrent(lease)) return@launch
                 val params = coordinator._workoutParameters.value
                 val isJustLift = params.isJustLift
 
@@ -4619,6 +4666,7 @@ class ActiveSessionEngine(
                         Logger.d { "Phase 35C: Warm-up set ${warmupSetIdx + 1}/${currentExercise.warmupSets.size} complete, advancing to warm-up ${nextWarmupIdx + 1}" }
                         coordinator._currentWarmupSetIndex.value = nextWarmupIdx
                         coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
+                        if (!executionGuard.isCurrent(lease)) return@launch
                         // Reset for next warm-up set
                         repCounter.resetCountsOnly()
                         resetAutoStopState()
@@ -4637,6 +4685,7 @@ class ActiveSessionEngine(
                         Logger.d { "Phase 35C: All ${currentExercise.warmupSets.size} warm-up sets complete, transitioning to working sets" }
                         coordinator._currentWarmupSetIndex.value = -1
                         coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
+                        if (!executionGuard.isCurrent(lease)) return@launch
                         // Reset for first working set
                         repCounter.reset()
                         resetAutoStopState()
@@ -4658,8 +4707,9 @@ class ActiveSessionEngine(
                 }
 
                 coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
-                val snapshot = captureExitSnapshot(lease, TerminalPath.AUTO_COMPLETE)
-                launchSnapshotPersistence(snapshot)
+                if (!executionGuard.isCurrent(lease)) return@launch
+                val snapshot = terminalSnapshot
+                    ?: captureExitSnapshot(lease, TerminalPath.AUTO_COMPLETE)
                 coordinator.setRepMetrics.value = emptyList()
                 val biomechanicsSummary = snapshot.presentationSummary.biomechanicsSummary
                 val qualitySummary = snapshot.presentationSummary.qualitySummary
@@ -4692,8 +4742,9 @@ class ActiveSessionEngine(
 
                 // Process quality event for Form Master badge tracking
                 qualitySummary?.let { qs ->
-                    gamificationManager.processSetQualityEvent(qs.averageScore, userProfileRepository.activeProfile.value?.id ?: "default")
+                    gamificationManager.processSetQualityEvent(qs.averageScore, snapshot.lease.profileId)
                 }
+                if (!executionGuard.isCurrent(lease)) return@launch
 
                 Logger.d("Set summary: heaviest=${summary.heaviestLiftKgPerCable}kg, reps=$completedReps, duration=${summary.durationMs}ms")
 
@@ -4739,6 +4790,7 @@ class ActiveSessionEngine(
                         }
                     } else if (summaryDelayMs > 0) {
                         delay(summaryDelayMs)
+                        if (!executionGuard.isCurrent(lease)) return@launch
 
                         if (coordinator._workoutState.value is WorkoutState.SetSummary) {
                             Logger.d("Just Lift: Summary complete, transitioning to Idle")
@@ -4772,6 +4824,7 @@ class ActiveSessionEngine(
                         startRestTimer()
                     } else if (summaryDelayMs > 0) {
                         delay(summaryDelayMs)
+                        if (!executionGuard.isCurrent(lease)) return@launch
 
                         if (coordinator._workoutState.value is WorkoutState.SetSummary) {
                             startRestTimer()
@@ -4796,6 +4849,7 @@ class ActiveSessionEngine(
                         // completion, and starting rest timer. Direct startRestTimer() would bypass this.
                         Logger.d("Routine mode: Auto-advancing from summary after ${summaryDelayMs}ms (Issue #320)")
                         delay(summaryDelayMs)
+                        if (!executionGuard.isCurrent(lease)) return@launch
                         if (coordinator._workoutState.value is WorkoutState.SetSummary) {
                             flowDelegate?.proceedFromSummary()
                                 ?: run {

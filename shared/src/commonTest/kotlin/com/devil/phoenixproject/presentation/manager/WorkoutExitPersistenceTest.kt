@@ -1,28 +1,122 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.QualityTrend
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepQualityScore
 import com.devil.phoenixproject.domain.model.SetQualitySummary
+import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
+import com.devil.phoenixproject.testutil.WorkoutStateFixtures
+import com.devil.phoenixproject.util.BleConstants
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
+import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
 
 class WorkoutExitPersistenceTest {
+
+    @Test
+    fun `manual stop persists immutable snapshot when RESET fails`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeBleRepo.stopWorkoutBlock = { Result.failure(IllegalStateException("reset failed")) }
+
+            harness.dwsm.stopWorkout(exitingWorkout = false)
+            advanceUntilIdle()
+
+            assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
+            assertEquals(1, harness.fakeCompletedSetRepo.saved.count { it.sessionId == lease.sessionId })
+            assertIs<MachineTeardownState.RecoveryRequired>(harness.activeSessionEngine.machineTeardownState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `manual stop persists immutable snapshot when RESET times out`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val neverReset = CompletableDeferred<Result<Unit>>()
+        try {
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeBleRepo.stopWorkoutBlock = { neverReset.await() }
+
+            harness.dwsm.stopWorkout(exitingWorkout = false)
+            runCurrent()
+
+            assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
+            advanceTimeBy(BleConstants.GATT_OPERATION_TIMEOUT_MS)
+            runCurrent()
+            assertIs<MachineTeardownState.RecoveryRequired>(harness.activeSessionEngine.machineTeardownState.value)
+        } finally {
+            neverReset.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `automatic completion persists immutable snapshot when RESET fails`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeBleRepo.stopWorkoutBlock = { Result.failure(IllegalStateException("reset failed")) }
+
+            harness.activeSessionEngine.handleSetCompletion()
+            advanceUntilIdle()
+
+            assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
+            assertEquals(1, harness.fakeCompletedSetRepo.saved.count { it.sessionId == lease.sessionId })
+            assertIs<MachineTeardownState.RecoveryRequired>(harness.activeSessionEngine.machineTeardownState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `automatic completion persists immutable snapshot when RESET times out`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val neverReset = CompletableDeferred<Result<Unit>>()
+        try {
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeBleRepo.stopWorkoutBlock = { neverReset.await() }
+
+            harness.activeSessionEngine.handleSetCompletion()
+            runCurrent()
+
+            assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
+            advanceTimeBy(BleConstants.GATT_OPERATION_TIMEOUT_MS)
+            runCurrent()
+            assertIs<MachineTeardownState.RecoveryRequired>(harness.activeSessionEngine.machineTeardownState.value)
+        } finally {
+            neverReset.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
 
     @Test
     fun `automatic completion claiming first prevents End Workout duplicate writes`() = runTest {
@@ -56,15 +150,9 @@ class WorkoutExitPersistenceTest {
     @Test
     fun `End Workout claiming first suppresses suspended automatic completion persistence`() = runTest {
         val harness = DWSMTestHarness(this)
-        val releaseReset = CompletableDeferred<Result<Unit>>()
         try {
             startTrackedCableSet(harness)
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
-            harness.fakeBleRepo.stopWorkoutBlock = { releaseReset.await() }
-
-            harness.activeSessionEngine.handleSetCompletion()
-            runCurrent()
-            assertTrue(harness.fakeWorkoutRepo.saveSessionAttempts.isEmpty())
 
             harness.dwsm.stopWorkout(exitingWorkout = true)
             runCurrent()
@@ -72,13 +160,12 @@ class WorkoutExitPersistenceTest {
             val saved = harness.fakeWorkoutRepo.saveSessionAttempts.single()
             assertEquals(lease.sessionId, saved.id)
 
-            releaseReset.complete(Result.success(Unit))
+            harness.activeSessionEngine.handleSetCompletion()
             advanceUntilIdle()
 
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
             assertEquals(1, harness.fakeCompletedSetRepo.saved.count { it.sessionId == lease.sessionId })
         } finally {
-            releaseReset.complete(Result.success(Unit))
             harness.cleanup()
         }
     }
@@ -111,11 +198,117 @@ class WorkoutExitPersistenceTest {
     }
 
     @Test
+    fun `automatic completion keeps A attribution and cannot overwrite B after profile switch`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releaseReset = CompletableDeferred<Result<Unit>>()
+        val releaseSave = CompletableDeferred<Unit>()
+        try {
+            harness.fakeUserProfileRepo.seedReadyProfileForTest("profile-a")
+            harness.setActiveSummaryCountdownSeconds(5)
+            startTrackedCableSet(harness)
+            harness.coordinator.repQualityScorer.scoreRep(repMetric())
+            harness.gamificationManager.processSetQualityEvent(90, "profile-a")
+            harness.gamificationManager.processSetQualityEvent(90, "profile-a")
+            harness.fakeBleRepo.stopWorkoutBlock = { releaseReset.await() }
+            harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
+            harness.fakeGamificationRepo.badgeLookupProfileIds.clear()
+            harness.fakeGamificationRepo.updateStatsProfileIds.clear()
+
+            harness.activeSessionEngine.handleSetCompletion()
+            runCurrent()
+            harness.fakeUserProfileRepo.seedReadyProfileForTest("profile-b")
+            harness.setActiveSummaryCountdownSeconds(5)
+            releaseSave.complete(Unit)
+            runCurrent()
+            releaseReset.complete(Result.success(Unit))
+            runCurrent()
+
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+            startTrackedCableSet(harness)
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            advanceUntilIdle()
+
+            assertEquals("profile-b", leaseB.profileId)
+            assertEquals(leaseB, harness.activeSessionEngine.currentExecutionLeaseForTest())
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertTrue(harness.fakeGamificationRepo.badgeLookupProfileIds.isNotEmpty())
+            assertTrue(harness.fakeGamificationRepo.badgeLookupProfileIds.all { it == "profile-a" })
+            assertTrue(harness.fakeGamificationRepo.updateStatsProfileIds.isNotEmpty())
+            assertTrue(harness.fakeGamificationRepo.updateStatsProfileIds.all { it == "profile-a" })
+        } finally {
+            releaseReset.complete(Result.success(Unit))
+            releaseSave.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `End Workout invalidation suppresses delayed automatic presentation`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releaseReset = CompletableDeferred<Result<Unit>>()
+        try {
+            startTrackedCableSet(harness)
+            harness.coordinator.repQualityScorer.scoreRep(repMetric())
+            harness.gamificationManager.processSetQualityEvent(90, "default")
+            harness.gamificationManager.processSetQualityEvent(90, "default")
+            harness.fakeGamificationRepo.badgeLookupProfileIds.clear()
+            harness.fakeBleRepo.stopWorkoutBlock = { releaseReset.await() }
+
+            harness.activeSessionEngine.handleSetCompletion()
+            runCurrent()
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+
+            releaseReset.complete(Result.success(Unit))
+            advanceUntilIdle()
+
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertTrue(harness.fakeGamificationRepo.badgeLookupProfileIds.isEmpty())
+        } finally {
+            releaseReset.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `delayed routine A persistence cannot mutate active routine B bookkeeping`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releaseSave = CompletableDeferred<Unit>()
+        try {
+            startTrackedRoutineSet(harness, routineId = "routine-a")
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+            assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
+
+            startTrackedRoutineSet(harness, routineId = "routine-b")
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator.routineAccumulatedCalories = 77f
+            harness.coordinator._completedRoutineSetKeys.value = setOf(4 to 5)
+
+            releaseSave.complete(Unit)
+            advanceUntilIdle()
+
+            assertNotEquals(leaseA.sessionId, leaseB.sessionId)
+            assertEquals(77f, harness.coordinator.routineAccumulatedCalories)
+            assertEquals(setOf(4 to 5), harness.coordinator._completedRoutineSetKeys.value)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+        } finally {
+            releaseSave.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `persistence for execution A remains claimed while safe execution B starts`() = runTest {
         val harness = DWSMTestHarness(this)
         val releaseSave = CompletableDeferred<Unit>()
         try {
-            startTrackedCableSet(harness)
+            startTrackedRoutineCableSet(harness, "routine-a")
+            advanceTimeBy(1_000)
+            harness.coordinator.collectedMetrics.value = biomechanicsMetrics()
             val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
             harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
 
@@ -130,14 +323,24 @@ class WorkoutExitPersistenceTest {
                 ),
             )
 
-            startTrackedCableSet(harness)
+            startTrackedRoutineCableSet(harness, "routine-b")
             val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val bCompletedKeys = setOf(7 to 9)
+            harness.coordinator.routineAccumulatedCalories = 42f
+            harness.coordinator._completedRoutineSetKeys.value = bCompletedKeys
+            harness.coordinator.activeCycleId = "cycle-b"
+            harness.coordinator.activeCycleDayNumber = 4
 
             assertNotEquals(leaseA.sessionId, leaseB.sessionId)
             assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
 
             releaseSave.complete(Unit)
             advanceUntilIdle()
+
+            assertEquals(42f, harness.coordinator.routineAccumulatedCalories)
+            assertEquals(bCompletedKeys, harness.coordinator._completedRoutineSetKeys.value)
+            assertEquals("cycle-b", harness.coordinator.activeCycleId)
+            assertEquals(4, harness.coordinator.activeCycleDayNumber)
         } finally {
             releaseSave.complete(Unit)
             harness.cleanup()
@@ -145,7 +348,106 @@ class WorkoutExitPersistenceTest {
     }
 
     @Test
-    fun `failed save leaves ready trainer startable and reopens only A persistence claim`() = runTest {
+    fun `cycle update uses capture-time cycle and day after active cycle changes`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releaseSave = CompletableDeferred<Unit>()
+        try {
+            val cycleA = trainingCycle("cycle-a")
+            val cycleB = trainingCycle("cycle-b")
+            harness.fakeTrainingCycleRepo.addCycle(cycleA)
+            harness.fakeTrainingCycleRepo.addCycle(cycleB)
+            harness.fakeTrainingCycleRepo.setActiveCycle(cycleA.id, "default")
+            harness.coordinator.activeCycleId = cycleA.id
+            harness.coordinator.activeCycleDayNumber = 1
+            startTrackedCableSet(harness)
+            harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+
+            harness.fakeTrainingCycleRepo.setActiveCycle(cycleB.id, "default")
+            harness.coordinator.activeCycleId = cycleB.id
+            harness.coordinator.activeCycleDayNumber = 2
+            releaseSave.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(setOf(1), harness.fakeTrainingCycleRepo.getCycleProgress(cycleA.id)?.completedDays)
+            assertTrue(harness.fakeTrainingCycleRepo.getCycleProgress(cycleB.id)?.completedDays.orEmpty().isEmpty())
+            assertEquals(cycleB.id, harness.coordinator.activeCycleId)
+            assertEquals(2, harness.coordinator.activeCycleDayNumber)
+        } finally {
+            releaseSave.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `retry after later failure does not duplicate raw workout metrics`() = runTest {
+        val harness = DWSMTestHarness(this)
+        var failOnce = true
+        try {
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val rawMetrics = biomechanicsMetrics()
+            harness.coordinator.collectedMetrics.value = rawMetrics
+            harness.fakeCompletedSetRepo.afterSaveCompletedSet = {
+                if (failOnce) {
+                    failOnce = false
+                    error("forced failure after raw metrics write")
+                }
+            }
+
+            harness.activeSessionEngine.handleSetCompletion()
+            advanceUntilIdle()
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertEquals(rawMetrics, harness.fakeWorkoutRepo.getMetricsForSessionSync(lease.sessionId))
+            assertEquals(
+                2,
+                harness.fakeWorkoutRepo.saveMetricsAttempts.count { it.first == lease.sessionId },
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `racing terminal captures install one stable CompletedSet identity`() = runTest {
+        val lease = ExecutionLease(
+            executionId = 1L,
+            sessionId = "stable-session",
+            profileId = "profile-a",
+            requiresMachine = true,
+            workingRepTarget = 3,
+            isBodyweight = false,
+            isJustLift = false,
+            isAmrap = false,
+            isTimedCable = false,
+        )
+        val snapshotStore = WorkoutExitSnapshotStore()
+        val readyBuilders = atomic(0)
+
+        val snapshots = withContext(Dispatchers.Default) {
+            listOf(TerminalPath.AUTO_COMPLETE, TerminalPath.END_WORKOUT).mapIndexed { index, path ->
+                async {
+                    snapshotStore.getOrCapture(lease, path) {
+                        readyBuilders.incrementAndGet()
+                        while (readyBuilders.value < 2) {
+                            // Force both terminal paths to build before either can install.
+                        }
+                        exitSnapshot(lease, path, completedSetId = "set-${index + 1}")
+                    }
+                }
+            }.awaitAll()
+        }
+
+        assertEquals(setOf(lease.sessionId), snapshots.map { it.session.id }.toSet())
+        assertEquals(1, snapshots.mapNotNull { it.completedSet?.id }.distinct().size)
+    }
+
+    @Test
+    fun `failed A snapshot remains retryable through engine after B starts`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
             startTrackedCableSet(harness)
@@ -156,16 +458,20 @@ class WorkoutExitPersistenceTest {
             advanceUntilIdle()
 
             assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
-            assertIs<PersistenceClaimResult.Claimed>(
-                harness.activeSessionEngine.executionGuard.claimPersistence(
-                    leaseA.sessionId,
-                    TerminalPath.AUTO_COMPLETE,
-                ),
-            )
 
             harness.fakeWorkoutRepo.beforeSaveSession = {}
             startTrackedCableSet(harness)
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
             assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+
+            assertTrue(harness.activeSessionEngine.retryWorkoutExitPersistence(leaseA.sessionId))
+            advanceUntilIdle()
+
+            assertNotEquals(leaseA.sessionId, leaseB.sessionId)
+            assertEquals(1, harness.fakeWorkoutRepo.allSessions().count { it.id == leaseA.sessionId })
+            assertEquals(1, harness.fakeCompletedSetRepo.saved.count { it.sessionId == leaseA.sessionId })
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(leaseB, harness.activeSessionEngine.currentExecutionLeaseForTest())
         } finally {
             harness.cleanup()
         }
@@ -190,7 +496,7 @@ class WorkoutExitPersistenceTest {
 
             assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
 
-            harness.dwsm.stopWorkout(exitingWorkout = true)
+            assertTrue(harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId))
             advanceUntilIdle()
 
             assertEquals(1, harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId })
@@ -293,6 +599,96 @@ class WorkoutExitPersistenceTest {
         harness.coordinator._repCount.value = RepCount(workingReps = 2)
     }
 
+    private fun startTrackedRoutineSet(harness: DWSMTestHarness, routineId: String) {
+        val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 1, setsPerExercise = 1)
+            .copy(id = routineId, name = routineId)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.loadRoutine(routine)
+        harness.testScope.testScheduler.advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        harness.testScope.testScheduler.advanceUntilIdle()
+        harness.coordinator._repCount.value = RepCount(workingReps = 2)
+    }
+
+    private fun startTrackedRoutineCableSet(harness: DWSMTestHarness, routineId: String) {
+        val routine = WorkoutStateFixtures.createTestRoutine(
+            exerciseCount = 1,
+            setsPerExercise = 1,
+            repsPerSet = 3,
+        ).copy(id = routineId, name = routineId)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.dwsm.loadRoutine(routine)
+        harness.testScope.testScheduler.advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.dwsm.startWorkout(skipCountdown = true)
+        harness.testScope.testScheduler.advanceUntilIdle()
+        harness.coordinator._repCount.value = RepCount(workingReps = 2)
+    }
+
+    private fun trainingCycle(id: String) = TrainingCycle.create(
+        id = id,
+        name = id,
+        days = listOf(
+            CycleDay.create(id = "$id-day-1", cycleId = id, dayNumber = 1, routineId = "routine-1"),
+            CycleDay.create(id = "$id-day-2", cycleId = id, dayNumber = 2, routineId = "routine-2"),
+        ),
+    )
+
+    private fun exitSnapshot(
+        lease: ExecutionLease,
+        terminalPath: TerminalPath,
+        completedSetId: String,
+    ) = WorkoutExitSnapshot(
+        lease = lease,
+        terminalPath = terminalPath,
+        session = TestFixtures.createWorkoutSession(id = lease.sessionId),
+        completedSet = CompletedSet(
+            id = completedSetId,
+            sessionId = lease.sessionId,
+            plannedSetId = null,
+            setNumber = 0,
+            setType = SetType.STANDARD,
+            actualReps = 2,
+            actualWeightKg = 25f,
+            loggedRpe = null,
+            isPr = false,
+            completedAt = 100L,
+        ),
+        metrics = emptyList(),
+        repMetrics = emptyList(),
+        biomechanicsRepResults = emptyList(),
+        presentationSummary = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 25f,
+            avgLoadKgPerCable = 25f,
+            repCount = 2,
+        ),
+        exerciseIndex = 0,
+        setIndex = 0,
+        isRoutineSet = false,
+        shouldAccumulateRoutineCalories = false,
+        shouldExportIndividualHealthSession = true,
+        shouldExportIndividualBackup = false,
+        shouldUpdateCycleProgress = false,
+        cycleId = null,
+        cycleDayNumber = null,
+        postSaveInput = PostSaveWorkoutInput(
+            profileId = lease.profileId,
+            exerciseId = TestFixtures.benchPress.id,
+            workingReps = 2,
+            achievedWeightKg = 25f,
+            volumeWeightKg = 25f,
+            programMode = ProgramMode.OldSchool,
+            isJustLift = false,
+            isEchoMode = false,
+            peakConcentricForceKg = 0f,
+            peakEccentricForceKg = 0f,
+            sessionMcvMmS = null,
+        ),
+    )
+
     private fun repMetric() = RepMetricData(
         repNumber = 1,
         isWarmup = false,
@@ -303,9 +699,9 @@ class WorkoutExitPersistenceTest {
         concentricPositions = floatArrayOf(10f, 20f),
         concentricLoadsA = floatArrayOf(21f, 22f),
         concentricLoadsB = floatArrayOf(23f, 24f),
-        concentricVelocities = floatArrayOf(100f, 200f),
+        concentricVelocities = floatArrayOf(150f, 150f),
         concentricTimestamps = longArrayOf(1L, 2L),
-        eccentricDurationMs = 6L,
+        eccentricDurationMs = 8L,
         eccentricPositions = floatArrayOf(20f, 10f),
         eccentricLoadsA = floatArrayOf(22f, 21f),
         eccentricLoadsB = floatArrayOf(24f, 23f),
