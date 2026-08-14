@@ -134,6 +134,20 @@ internal class WorkoutExecutionGuard(
         return invalidated
     }
 
+    fun invalidate(lease: ExecutionLease, reason: ExecutionInvalidationReason): Boolean {
+        while (true) {
+            val current = currentLeaseRef.value ?: return false
+            if (!sameIdentity(current, lease)) return false
+            if (currentLeaseRef.compareAndSet(current, null)) {
+                log(
+                    LogEventType.WORKOUT_EXECUTION,
+                    "executionId=${current.executionId},sessionId=${current.sessionId},transition=invalidated,reason=$reason",
+                )
+                return true
+            }
+        }
+    }
+
     fun beginTeardown(lease: ExecutionLease, attempt: Int = 1): Boolean = withPlatformLock(teardownLock) {
         if (attempt < 1 || _machineTeardownState.value !is MachineTeardownState.Ready || !isCurrent(lease)) {
             return@withPlatformLock false

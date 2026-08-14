@@ -177,6 +177,7 @@ class DefaultWorkoutSessionManager(
     private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val scope: CoroutineScope,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
+    private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 32,
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.SUSPEND,
@@ -268,6 +269,7 @@ class DefaultWorkoutSessionManager(
         externalActivityRepository = externalActivityRepository,
         healthExportCursorRepository = healthExportCursorRepository,
         elapsedRealtimeProvider = elapsedRealtimeProvider,
+        wallClockMillisProvider = wallClockMillisProvider,
     )
 
     companion object {

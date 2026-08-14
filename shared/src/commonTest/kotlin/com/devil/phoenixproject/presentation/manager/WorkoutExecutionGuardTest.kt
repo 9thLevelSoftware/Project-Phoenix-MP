@@ -38,6 +38,19 @@ class WorkoutExecutionGuardTest {
     }
 
     @Test
+    fun `stale exact lease invalidation cannot clear a newer execution`() {
+        val guard = WorkoutExecutionGuard()
+        val leaseA = guard.beginExecution(seed("session-a")).getOrThrow()
+        guard.invalidateCurrent(ExecutionInvalidationReason.STOP_SET)
+        val leaseB = guard.beginExecution(seed("session-b")).getOrThrow()
+
+        assertFalse(guard.invalidate(leaseA, ExecutionInvalidationReason.START_FAILED))
+        assertTrue(guard.isCurrent(leaseB))
+        assertTrue(guard.invalidate(leaseB, ExecutionInvalidationReason.START_FAILED))
+        assertFalse(guard.isCurrent(leaseB))
+    }
+
+    @Test
     fun `activation rejects a lease that is no longer current`() {
         val guard = WorkoutExecutionGuard()
         val leaseA = guard.beginExecution(seed("session-a")).getOrThrow()

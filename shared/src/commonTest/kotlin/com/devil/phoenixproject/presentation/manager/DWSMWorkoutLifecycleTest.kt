@@ -335,7 +335,7 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.coordinator.workoutStartTime = 1700000000000L
         harness.dwsm.coordinator.collectedMetrics.value = listOf(
             WorkoutMetric(
-                timestamp = 100L,
+                timestamp = harness.nowMs + 100L,
                 loadA = 25f,
                 loadB = 25f,
                 positionA = 120f,
@@ -1119,7 +1119,7 @@ class DWSMWorkoutLifecycleTest {
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = 100L,
+                timestamp = harness.nowMs + 100L,
             ),
         )
         advanceUntilIdle()
@@ -1175,7 +1175,7 @@ class DWSMWorkoutLifecycleTest {
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = 100L,
+                timestamp = harness.nowMs + 100L,
             ),
         )
         advanceUntilIdle()
@@ -1325,7 +1325,7 @@ class DWSMWorkoutLifecycleTest {
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = 5L,
+                timestamp = harness.nowMs + 5L,
             ),
         )
         advanceUntilIdle()
@@ -2184,7 +2184,7 @@ class DWSMWorkoutLifecycleTest {
                     rangeTop = 800f,
                     rangeBottom = 0f,
                     rawData = ByteArray(24),
-                    timestamp = warmupRep.toLong(),
+                    timestamp = harness.nowMs + warmupRep,
                 ),
             )
         }
@@ -2690,7 +2690,7 @@ class DWSMWorkoutLifecycleTest {
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = (warmupTarget + 1).toLong(),
+                timestamp = harness.nowMs + warmupTarget + 1L,
             ),
         )
     }

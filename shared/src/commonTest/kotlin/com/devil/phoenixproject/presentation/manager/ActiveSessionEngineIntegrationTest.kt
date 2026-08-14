@@ -411,6 +411,7 @@ class ActiveSessionEngineIntegrationTest {
                 scope = harness.workoutScope,
                 regenerateFiveThreeOneUseCase = null,
                 elapsedRealtimeProvider = { testScheduler.currentTime },
+                wallClockMillisProvider = { harness.nowMs },
             )
             nullUseCaseEngine.flowDelegate = harness.activeSessionEngine.flowDelegate
 

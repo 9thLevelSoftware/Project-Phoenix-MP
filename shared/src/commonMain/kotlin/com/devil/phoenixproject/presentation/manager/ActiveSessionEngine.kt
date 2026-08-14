@@ -30,6 +30,7 @@ import com.devil.phoenixproject.domain.model.ActiveRackSelection
 import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.ConnectionStatus
 import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
 import com.devil.phoenixproject.domain.model.HapticEvent
@@ -79,6 +80,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
@@ -137,12 +139,26 @@ class ActiveSessionEngine(
     private val externalActivityRepository: ExternalActivityRepository? = null,
     private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
+    private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
 ) {
     private val rackJson = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
     }
     private val connectionLogRepository = ConnectionLogRepository.instance
+    private val executionGuard = WorkoutExecutionGuard(::logExecutionEvent)
+    private val repFreshnessGate: RepNotificationFreshnessGate
+        get() = executionGuard.repFreshnessGate
+
+    val machineTeardownState: StateFlow<MachineTeardownState>
+        get() = executionGuard.machineTeardownState
+
+    internal fun currentExecutionLeaseForTest(): ExecutionLease =
+        requireNotNull(executionGuard.currentLease)
+
+    private fun logExecutionEvent(eventType: String, details: String) {
+        connectionLogRepository.info(eventType, "Workout execution transition", details = details)
+    }
 
     /**
      * Delegate interface for operations that require routine navigation or
@@ -270,8 +286,10 @@ class ActiveSessionEngine(
         // Collectors #1-2 are in RoutineFlowManager (constructed before ActiveSessionEngine).
 
         // #3: Hook up RepCounter
-        repCounter.onRepEvent = { event ->
+        repCounter.onRepEvent = repEvent@{ event ->
+            val eventLease = executionGuard.currentLease ?: return@repEvent
             scope.launch {
+                if (!executionGuard.isCurrent(eventLease)) return@launch
                 val timing = coordinator._workoutParameters.value.repCountTiming
                 val params = coordinator._workoutParameters.value
                 when (event.type) {
@@ -336,9 +354,9 @@ class ActiveSessionEngine(
                         // provides sufficient feedback, and celebration sounds (PR/badge) may also play.
                         // Playing both was causing multiple sounds to fire at once (sound stacking bug).
                         // Issue #182: Trigger set completion immediately on WORKOUT_COMPLETE event.
-                        if (coordinator._workoutState.value is WorkoutState.Active) {
+                        if (executionGuard.isCurrent(eventLease) && coordinator._workoutState.value is WorkoutState.Active) {
                             Logger.d("WORKOUT_COMPLETE event received - triggering immediate set completion")
-                            handleSetCompletion()
+                            handleSetCompletion(eventLease)
                         }
                     }
                 }
@@ -352,6 +370,13 @@ class ActiveSessionEngine(
                 try {
                     val params = coordinator._workoutParameters.value
                     val currentState = coordinator._workoutState.value
+                    val currentLease = executionGuard.currentLease
+                    if (activityState == HandleState.Moving &&
+                        currentLease?.activationCutoverTimestampMs != null &&
+                        executionGuard.isCurrent(currentLease)
+                    ) {
+                        repFreshnessGate.observeMovement(currentLease)
+                    }
                     val isIdle = currentState is WorkoutState.Idle
                     val isSummaryAndJustLift = currentState is WorkoutState.SetSummary && params.isJustLift
 
@@ -474,12 +499,7 @@ class ActiveSessionEngine(
         coordinator.repEventsCollectionJob = scope.launch {
             bleRepository.repEvents
                 .catch { e -> Logger.e(e) { "repEvents collector error" } }
-                .collect { notification ->
-                    val state = coordinator._workoutState.value
-                    if (state is WorkoutState.Active) {
-                        handleRepNotification(notification)
-                    }
-                }
+                .collect(::acceptRepNotification)
         }
 
         // #7: CRITICAL: Global metricsFlow collection (matches parent repo)
@@ -1084,7 +1104,19 @@ class ActiveSessionEngine(
     /**
      * Handle rep notification from the machine.
      */
-    private fun handleRepNotification(notification: RepNotification) {
+    private fun acceptRepNotification(notification: RepNotification) {
+        val lease = executionGuard.currentLease ?: return
+        if (coordinator._workoutState.value !is WorkoutState.Active) return
+
+        when (val decision = repFreshnessGate.evaluate(lease, notification)) {
+            RepFreshnessDecision.Process -> handleRepNotification(lease, notification)
+            RepFreshnessDecision.BaselineOnly -> logRepDrop(lease, "legacy-baseline", notification)
+            is RepFreshnessDecision.Drop -> logRepDrop(lease, decision.reason.name, notification)
+        }
+    }
+
+    private fun handleRepNotification(lease: ExecutionLease, notification: RepNotification) {
+        if (!executionGuard.isCurrent(lease)) return
         if (coordinator._isCurrentExerciseBodyweight.value) {
             return
         }
@@ -1115,6 +1147,7 @@ class ActiveSessionEngine(
 
         repCounter.updatePhaseFromPosition(rawPosA, rawPosB)
 
+        if (!executionGuard.isCurrent(lease)) return
         coordinator._repCount.value = repCounter.getRepCount()
         coordinator._repRanges.value = repCounter.getRepRanges()
 
@@ -1142,6 +1175,16 @@ class ActiveSessionEngine(
             // Segment metrics for this rep and process biomechanics (GATE-04: unconditional capture)
             processBiomechanicsForRep(repCountAfter, now)
         }
+    }
+
+    private fun logRepDrop(lease: ExecutionLease, reason: String, notification: RepNotification) {
+        connectionLogRepository.debug(
+            LogEventType.WORKOUT_REP_REJECTED,
+            "Rep event rejected by execution freshness gate",
+            details = "executionId=${lease.executionId},sessionId=${lease.sessionId},reason=$reason," +
+                "timestamp=${notification.timestamp},repsSetCount=${notification.repsSetCount}," +
+                "repsSetTotal=${notification.repsSetTotal},legacy=${notification.isLegacyFormat}",
+        )
     }
 
     private fun logRepNotificationReceipt(notification: RepNotification, repCountBefore: Int) {
@@ -2545,11 +2588,98 @@ class ActiveSessionEngine(
         coordinator.bodyweightTimerJob = null
     }
 
+    private fun rejectStart(reason: StartRejectionReason) {
+        val message = when (reason) {
+            StartRejectionReason.TEARING_DOWN -> "Finishing previous workout…"
+            StartRejectionReason.RECOVERY_REQUIRED -> "Trainer reset didn't complete"
+            StartRejectionReason.PROFILE_SWITCHING -> "Profile switch in progress"
+            StartRejectionReason.NOT_CONNECTED -> "Connect to your trainer first"
+        }
+        coordinator._userFeedbackEvents.tryEmit(message)
+        connectionLogRepository.info(
+            LogEventType.WORKOUT_EXECUTION,
+            "Workout start rejected",
+            details = "reason=${reason.name}",
+        )
+    }
+
+    private fun failStart(lease: ExecutionLease, priorWorkoutState: WorkoutState) {
+        if (!executionGuard.invalidate(lease, ExecutionInvalidationReason.START_FAILED)) return
+        repFreshnessGate.invalidate(lease)
+        if (coordinator.currentSessionId == lease.sessionId) {
+            coordinator.currentSessionId = null
+        }
+        coordinator._workoutState.value = if (priorWorkoutState is WorkoutState.Idle) {
+            priorWorkoutState
+        } else {
+            WorkoutState.Idle
+        }
+    }
+
+    private enum class StartRejectionReason {
+        TEARING_DOWN,
+        RECOVERY_REQUIRED,
+        PROFILE_SWITCHING,
+        NOT_CONNECTED,
+    }
+
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) {
-        if (userProfileRepository.activeProfileContext.value !is ActiveProfileContext.Ready) {
+        val readyProfile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+        if (readyProfile == null) {
             Logger.w { "Workout start ignored while profile context is switching" }
+            rejectStart(StartRejectionReason.PROFILE_SWITCHING)
             return
         }
+        val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
+        val isBodyweightAtStart = isBodyweightExercise(currentExercise)
+        val requiresMachine = !isBodyweightAtStart
+        when (executionGuard.machineTeardownState.value) {
+            is MachineTeardownState.TearingDown -> {
+                rejectStart(StartRejectionReason.TEARING_DOWN)
+                return
+            }
+            is MachineTeardownState.RecoveryRequired -> {
+                rejectStart(StartRejectionReason.RECOVERY_REQUIRED)
+                return
+            }
+            MachineTeardownState.Ready -> Unit
+        }
+        if (requiresMachine && bleRepository.connectionState.value !is ConnectionState.Connected) {
+            rejectStart(StartRejectionReason.NOT_CONNECTED)
+            return
+        }
+
+        val seedParams = pendingStartOverride?.params ?: coordinator._workoutParameters.value
+        val durationSeconds = currentExercise?.duration?.takeIf { it > 0 }
+        val isTimedCableAtStart = requiresMachine && durationSeconds != null
+        val variableWarmupTarget = coordinator._currentWarmupSetIndex.value
+            .takeIf { it >= 0 }
+            ?.let { currentExercise?.warmupSets?.getOrNull(it)?.reps }
+        val leaseTarget = if (isBodyweightAtStart || isTimedCableAtStart) {
+            0
+        } else {
+            variableWarmupTarget ?: seedParams.reps
+        }
+        val lease = executionGuard.beginExecution(
+            ExecutionSeed(
+                sessionId = KmpUtils.randomUUID(),
+                profileId = readyProfile.profile.id,
+                requiresMachine = requiresMachine,
+                workingRepTarget = leaseTarget,
+                isBodyweight = isBodyweightAtStart,
+                isJustLift = isJustLiftMode || seedParams.isJustLift,
+                isAmrap = seedParams.isAMRAP,
+                isTimedCable = isTimedCableAtStart,
+            ),
+        ).getOrElse {
+            when (executionGuard.machineTeardownState.value) {
+                is MachineTeardownState.RecoveryRequired -> rejectStart(StartRejectionReason.RECOVERY_REQUIRED)
+                else -> rejectStart(StartRejectionReason.TEARING_DOWN)
+            }
+            return
+        }
+        val priorWorkoutState = coordinator._workoutState.value
+
         Logger.d { "startWorkout called: skipCountdown=$skipCountdown, isJustLiftMode=$isJustLiftMode" }
         Logger.d { "startWorkout: loadedRoutine=${coordinator._loadedRoutine.value?.name}, params=${coordinator._workoutParameters.value}" }
 
@@ -2559,6 +2689,7 @@ class ActiveSessionEngine(
         coordinator._weightAdjustmentRecommendation.value = null
         resetAutoStopState()
         coordinator.skipCountdownRequested = skipCountdown
+        coordinator.currentSessionId = lease.sessionId
 
         // Reset rep quality scorer for fresh set
         coordinator.repQualityScorer.reset()
@@ -2593,7 +2724,6 @@ class ActiveSessionEngine(
                 }
                 val baseParams = startOverride?.params ?: coordinator._workoutParameters.value
 
-                val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
                 val params = captureRackLoadSnapshot(baseParams, currentExercise)
                 val isBodyweight = isBodyweightExercise(currentExercise)
                 val exerciseDuration = currentExercise?.duration?.takeIf { it > 0 }
@@ -2634,18 +2764,22 @@ class ActiveSessionEngine(
                         startMotionStartDetection()
                         for (i in 5 downTo 1) {
                             if (coordinator.skipCountdownRequested) break
+                            if (!executionGuard.isCurrent(lease)) return@launch
                             coordinator._workoutState.value = WorkoutState.Countdown(i)
                             delay(1000)
                         }
                         stopMotionStartDetection()
                     }
 
+                    val activeLease = executionGuard.activate(lease, wallClockMillisProvider())
+                        ?: return@launch
+                    repFreshnessGate.resetFor(activeLease)
+                    if (!executionGuard.isCurrent(activeLease)) return@launch
                     coordinator._workoutState.value = WorkoutState.Active
                     coordinator.workoutStartTime = currentTimeMillis()
                     if (coordinator._loadedRoutine.value != null && coordinator.routineStartTime == 0L) {
                         coordinator.routineStartTime = coordinator.workoutStartTime
                     }
-                    coordinator.currentSessionId = KmpUtils.randomUUID()
                     coordinator.collectedMetrics.value = emptyList()
                     coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
 
@@ -2846,6 +2980,7 @@ class ActiveSessionEngine(
                 commandValidation.onFailure { error ->
                     Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
                     coordinator._bleErrorEvents.tryEmit("Invalid BLE workout command: ${error.message}")
+                    failStart(lease, priorWorkoutState)
                     return@launch
                 }
 
@@ -2863,7 +2998,6 @@ class ActiveSessionEngine(
                 }
                 Logger.d { "Built ${command.size}-byte workout command for ${bleParams.programMode}" }
 
-                coordinator.currentSessionId = KmpUtils.randomUUID()
                 coordinator._repCount.value = RepCount()
                 coordinator.warmupCompleteTimeMs = 0
                 coordinator._currentHeuristicKgMax.value = 0f
@@ -2900,6 +3034,7 @@ class ActiveSessionEngine(
                     startMotionStartDetection()
                     for (i in 5 downTo 1) {
                         if (coordinator.skipCountdownRequested) break
+                        if (!executionGuard.isCurrent(lease)) return@launch
                         coordinator._workoutState.value = WorkoutState.Countdown(i)
                         delay(1000)
                     }
@@ -2941,11 +3076,16 @@ class ActiveSessionEngine(
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to send config command" }
                     coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
+                    failStart(lease, priorWorkoutState)
                     return@launch
                 }
 
+                val activeLease = executionGuard.activate(lease, wallClockMillisProvider())
+                    ?: return@launch
+                repFreshnessGate.resetFor(activeLease)
                 bleRepository.startActiveWorkoutPolling()
 
+                if (!executionGuard.isCurrent(activeLease)) return@launch
                 coordinator._workoutState.value = WorkoutState.Active
                 coordinator.workoutStartTime = currentTimeMillis()
                 if (coordinator._loadedRoutine.value != null && coordinator.routineStartTime == 0L) {
@@ -3018,7 +3158,7 @@ class ActiveSessionEngine(
             } catch (e: Exception) {
                 Logger.e(e) { "workoutJob: uncaught exception" }
                 coordinator._bleErrorEvents.tryEmit("Workout error: ${e.message}")
-                coordinator._workoutState.value = WorkoutState.Idle
+                failStart(lease, priorWorkoutState)
             }
         }
     }
@@ -3503,12 +3643,7 @@ class ActiveSessionEngine(
         coordinator.repEventsCollectionJob = scope.launch {
             bleRepository.repEvents
                 .catch { e -> Logger.e(e) { "repEvents collector error (restart)" } }
-                .collect { notification ->
-                    val state = coordinator._workoutState.value
-                    if (state is WorkoutState.Active) {
-                        handleRepNotification(notification)
-                    }
-                }
+                .collect(::acceptRepNotification)
         }
     }
 
@@ -3920,6 +4055,11 @@ class ActiveSessionEngine(
      * Phase A: Stop BLE, save session, emit haptics, show summary.
      * Phase B: Rest timer, navigation advancement (delegated back to DWSM via startRestTimer).
      */
+    private fun handleSetCompletion(lease: ExecutionLease) {
+        if (!executionGuard.isCurrent(lease)) return
+        handleSetCompletion()
+    }
+
     internal fun handleSetCompletion() {
         // 1.2: Atomic compareAndSet prevents duplicate set completion across dispatchers
         if (!coordinator.setCompletionInProgress.compareAndSet(expect = false, update = true)) {
