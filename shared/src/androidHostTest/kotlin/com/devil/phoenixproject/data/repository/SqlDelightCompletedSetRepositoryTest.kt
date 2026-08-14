@@ -139,28 +139,53 @@ class SqlDelightCompletedSetRepositoryTest {
 
     @Test
     fun `tagged Just Lift updates existing set without overwriting captured end reason`() = runTest {
+        insertWorkoutSession(
+            id = "captured-untagged-just-lift",
+            exerciseId = null,
+            totalReps = 7,
+            workingReps = 7,
+            isJustLift = 1L,
+        )
         repository.saveCompletedSet(
             completedSet(
                 id = "cset-captured-stall",
-                sessionId = "session-1",
+                sessionId = "captured-untagged-just-lift",
                 setNumber = 1,
                 setEndReason = SetEndReason.STALL_FAILURE,
             ),
         )
 
-        repository.ensureCompletedSetForTaggedJustLift(justLiftSession("session-1"), isAmrap = false)
+        repository.ensureCompletedSetForTaggedJustLift(
+            justLiftSession("captured-untagged-just-lift", exerciseId = "deadlift"),
+            isAmrap = false,
+        )
 
-        val persisted = repository.getCompletedSets("session-1").single()
+        val persisted = repository.getCompletedSets("captured-untagged-just-lift").single()
         assertEquals("cset-captured-stall", persisted.id)
         assertEquals(SetEndReason.STALL_FAILURE, persisted.setEndReason)
     }
 
     @Test
     fun `tagged historical Just Lift session without completed set uses UNKNOWN reason`() = runTest {
-        repository.ensureCompletedSetForTaggedJustLift(justLiftSession("session-1"), isAmrap = false)
+        insertWorkoutSession(
+            id = "historical-tagged-just-lift",
+            exerciseId = "deadlift",
+            totalReps = 7,
+            workingReps = 7,
+            isJustLift = 1L,
+        )
 
-        val persisted = repository.getCompletedSets("session-1").single()
+        repository.ensureCompletedSetForTaggedJustLift(
+            justLiftSession("historical-tagged-just-lift", exerciseId = "deadlift"),
+            isAmrap = false,
+        )
+
+        val persisted = repository.getCompletedSets("historical-tagged-just-lift").single()
         assertEquals(SetEndReason.UNKNOWN, persisted.setEndReason)
+        assertEquals(
+            "UNKNOWN",
+            database.vitruvianDatabaseQueries.selectCompletedSetById(persisted.id).executeAsOne().set_end_reason,
+        )
     }
 
     private fun plannedSet(
@@ -195,7 +220,7 @@ class SqlDelightCompletedSetRepositoryTest {
         setEndReason = setEndReason,
     )
 
-    private fun justLiftSession(id: String) = WorkoutSession(
+    private fun justLiftSession(id: String, exerciseId: String) = WorkoutSession(
         id = id,
         timestamp = 1_000L,
         mode = "OldSchool",
@@ -205,6 +230,7 @@ class SqlDelightCompletedSetRepositoryTest {
         totalReps = 7,
         workingReps = 7,
         isJustLift = true,
+        exerciseId = exerciseId,
     )
 
     private fun insertRoutine(id: String) {
@@ -261,7 +287,13 @@ class SqlDelightCompletedSetRepositoryTest {
         )
     }
 
-    private fun insertWorkoutSession(id: String, exerciseId: String) {
+    private fun insertWorkoutSession(
+        id: String,
+        exerciseId: String?,
+        totalReps: Long = 0L,
+        workingReps: Long = 0L,
+        isJustLift: Long = 0L,
+    ) {
         database.vitruvianDatabaseQueries.insertSession(
             id = id,
             timestamp = 0L,
@@ -270,10 +302,10 @@ class SqlDelightCompletedSetRepositoryTest {
             weightPerCableKg = 40.0,
             progressionKg = 0.0,
             duration = 0L,
-            totalReps = 0L,
+            totalReps = totalReps,
             warmupReps = 0L,
-            workingReps = 0L,
-            isJustLift = 0L,
+            workingReps = workingReps,
+            isJustLift = isJustLift,
             stopAtTop = 0L,
             eccentricLoad = 100L,
             echoLevel = 1L,

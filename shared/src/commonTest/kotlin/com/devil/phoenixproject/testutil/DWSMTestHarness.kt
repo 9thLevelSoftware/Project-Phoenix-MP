@@ -1,8 +1,10 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
+import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.UserPreferences
@@ -61,6 +63,8 @@ class FakeWorkoutServiceController : WorkoutServiceController {
 
 class DWSMTestHarness(
     val testScope: TestScope,
+    workoutRepositoryOverride: WorkoutRepository? = null,
+    completedSetRepositoryOverride: CompletedSetRepository? = null,
     onPostSaveComputed: suspend (exerciseId: String, profileId: String, sessionMcvMmS: Float?) -> Unit = { _, _, _ -> },
 ) {
     companion object {
@@ -82,6 +86,8 @@ class DWSMTestHarness(
     val fakeBiomechanicsRepo = FakeBiomechanicsRepository()
     val fakeWorkoutServiceController = FakeWorkoutServiceController()
     val fakeUserProfileRepo = FakeUserProfileRepository().apply { setActiveProfileForTest() }
+    private val workoutRepository = workoutRepositoryOverride ?: fakeWorkoutRepo
+    private val completedSetRepository = completedSetRepositoryOverride ?: fakeCompletedSetRepo
 
     val repCounter = RepCounterFromMachine()
     val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeExerciseRepo, FakeVelocityOneRepMaxRepository())
@@ -113,14 +119,14 @@ class DWSMTestHarness(
 
     val dwsm = DefaultWorkoutSessionManager(
         bleRepository = fakeBleRepo,
-        workoutRepository = fakeWorkoutRepo,
+        workoutRepository = workoutRepository,
         exerciseRepository = fakeExerciseRepo,
         personalRecordRepository = fakePRRepo,
         repCounter = repCounter,
         preferencesManager = fakePrefsManager,
         gamificationManager = gamificationManager,
         trainingCycleRepository = fakeTrainingCycleRepo,
-        completedSetRepository = fakeCompletedSetRepo,
+        completedSetRepository = completedSetRepository,
         syncTriggerManager = null,
         repMetricRepository = fakeRepMetricRepo,
         biomechanicsRepository = fakeBiomechanicsRepo,

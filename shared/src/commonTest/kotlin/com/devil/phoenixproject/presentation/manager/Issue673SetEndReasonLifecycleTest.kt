@@ -16,6 +16,36 @@ import kotlinx.coroutines.test.runTest
 class Issue673SetEndReasonLifecycleTest {
 
     @Test
+    fun `untagged positive-rep non Just Lift completion does not persist a completed set`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    warmupReps = 0,
+                    weightPerCableKg = 25f,
+                    isJustLift = false,
+                    selectedExerciseId = null,
+                ),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.coordinator._repCount.value = RepCount(workingReps = 3, totalReps = 3)
+
+            harness.dwsm.stopWorkout(exitingWorkout = false)
+            advanceUntilIdle()
+
+            val session = harness.fakeWorkoutRepo.getAllSessions("default").first().single()
+            assertNull(session.exerciseId)
+            assertEquals(emptyList(), harness.fakeCompletedSetRepo.getCompletedSets(session.id))
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `untagged positive-rep Just Lift completion persists completed set before later tagging`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
