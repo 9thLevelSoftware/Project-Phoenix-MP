@@ -6,8 +6,10 @@ import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.SetEndReason
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
@@ -87,6 +89,22 @@ class DWSMTestHarness(
 ) {
     companion object {
         const val TEST_WALL_CLOCK_EPOCH_MS = 1_800_000_000_000L
+        const val TEST_ROUTINE_SESSION_ID = "test-routine-session"
+        const val TEST_ROUTINE_EXERCISE_ID = "test-routine-exercise"
+        const val TEST_ROUTINE_SET_INDEX = 0
+
+        fun logicalSetKeyFixture(
+            routineSessionId: String = TEST_ROUTINE_SESSION_ID,
+            routineExerciseId: String = TEST_ROUTINE_EXERCISE_ID,
+            setIndex: Int = TEST_ROUTINE_SET_INDEX,
+            setKind: SetType = SetType.STANDARD,
+        ) = LogicalSetKey(
+            routineSessionId = routineSessionId,
+            routineExerciseId = routineExerciseId,
+            setIndex = setIndex,
+            setKind = setKind,
+        )
+
     }
 
     val nowMs: Long

@@ -4,11 +4,13 @@ import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlin.time.Instant
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
+import kotlinx.serialization.Serializable
 
 /**
  * Set types for workout tracking.
  * Each type has different rep handling behavior.
  */
+@Serializable
 enum class SetType {
     /** Fixed rep target - auto-stops at target reps */
     STANDARD,
