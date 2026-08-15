@@ -10,13 +10,15 @@ import com.devil.phoenixproject.domain.model.PlannedSetAttemptState
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertIs
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -27,7 +29,13 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
     private lateinit var driver: JdbcSqliteDriver
     private lateinit var database: VitruvianDatabase
     private lateinit var repository: ActiveWorkoutRuntimeRepository
-    private val json = Json { encodeDefaults = true }
+    private val json = Json {
+        ignoreUnknownKeys = false
+        isLenient = false
+        coerceInputValues = false
+        encodeDefaults = true
+        explicitNulls = true
+    }
 
     @Before
     fun setup() {
@@ -39,18 +47,26 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
 
     @Test
     fun everyTopLevelCurrentDocumentInvariantRejectsCorruptJsonByName() = runTest {
-        val source = documentJson(acceptedRetry())
+        val source = documentJson()
         val logicalKey = source.getValue("logicalSetKey").jsonObject
-        val overlays = source.getValue("exerciseLoadOverlays").jsonArray
-        val overlay = overlays.single().jsonObject
-        val attempts = source.getValue("attemptStates").jsonArray
-        val attempt = attempts.single().jsonObject
+        val overlay = json.encodeToJsonElement(ExerciseLoadOverlay("routine-exercise-a", 0.8f)).jsonObject
+        val attempt = json.encodeToJsonElement(PlannedSetAttemptState(logicalKey(), 3, 1)).jsonObject
         val attemptKey = attempt.getValue("logicalSetKey").jsonObject
         val cases = listOf(
             case("blank profileId", source.with("profileId", JsonPrimitive(" "))),
             case("blank routineId", source.with("routineId", JsonPrimitive(" "))),
-            case("blank routineSessionId", source.with("routineSessionId", JsonPrimitive(" "))),
-            case("blank routineExerciseId", source.with("routineExerciseId", JsonPrimitive(" "))),
+            case(
+                "blank routineSessionId",
+                source
+                    .with("routineSessionId", JsonPrimitive(" "))
+                    .with("logicalSetKey", logicalKey.with("routineSessionId", JsonPrimitive(" "))),
+            ),
+            case(
+                "blank routineExerciseId",
+                source
+                    .with("routineExerciseId", JsonPrimitive(" "))
+                    .with("logicalSetKey", logicalKey.with("routineExerciseId", JsonPrimitive(" "))),
+            ),
             case("blank sourceExecutionId", source.with("sourceExecutionId", JsonPrimitive(" "))),
             case("blank sourceStableSessionId", source.with("sourceStableSessionId", JsonPrimitive(" "))),
             case("non-positive sourceAttemptNumber", source.with("sourceAttemptNumber", JsonPrimitive(0))),
@@ -111,115 +127,120 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
                 source.with("attemptStates", JsonArray(listOf(attempt.with("acceptedDropCount", JsonPrimitive(3))))),
             ),
             case("negative original rest duration", source.with("originalRestDurationSeconds", JsonPrimitive(-1))),
-            case("deadline and paused seconds both present", source.with("pausedRestRemainingSeconds", JsonPrimitive(10))),
             case(
-                "paused state without paused seconds",
-                source.with("restDeadlineEpochMs", JsonNull).with("isRestPaused", JsonPrimitive(true)),
+                "deadline and paused seconds both present",
+                source
+                    .with("restDeadlineEpochMs", JsonPrimitive(1_700_000_060_123))
+                    .with("pausedRestRemainingSeconds", JsonPrimitive(10)),
             ),
+            case("paused state without paused seconds", source.with("isRestPaused", JsonPrimitive(true))),
             case(
                 "paused seconds exceed original duration",
                 source
-                    .with("restDeadlineEpochMs", JsonNull)
                     .with("pausedRestRemainingSeconds", JsonPrimitive(61))
                     .with("isRestPaused", JsonPrimitive(true)),
             ),
             case(
                 "paused seconds are negative",
                 source
-                    .with("restDeadlineEpochMs", JsonNull)
                     .with("pausedRestRemainingSeconds", JsonPrimitive(-1))
                     .with("isRestPaused", JsonPrimitive(true)),
             ),
             case(
                 "active state carries paused seconds",
-                source
-                    .with("restDeadlineEpochMs", JsonNull)
-                    .with("pausedRestRemainingSeconds", JsonPrimitive(10))
-                    .with("isRestPaused", JsonPrimitive(false)),
+                source.with("pausedRestRemainingSeconds", JsonPrimitive(10)),
             ),
         )
 
-        assertEveryCaseIsCorrupt(cases)
+        assertEveryDocumentCaseIsCorrupt(cases)
     }
 
     @Test
-    fun everyRestTransitionPlanVariantInvariantRejectsCorruptJsonByName() = runTest {
-        val normalDocument = documentJson(normalAdvance())
-        val unresolvedDocument = documentJson(unresolvedOffer())
-        val declinedDocument = documentJson(declined())
-        val acceptedDocument = documentJson(acceptedRetry())
+    fun everyRestTransitionPlanVariantInvariantRejectsDirectDecodeByName() {
+        val normal = planJson(normalAdvance())
+        val unresolved = planJson(unresolvedOffer())
+        val declined = planJson(declined())
+        val accepted = planJson(acceptedRetry())
         val cases = buildList {
-            add(planCase("normal blank transitionId", normalDocument) { it.with("transitionId", JsonPrimitive(" ")) })
-            add(planCase("normal blank sourceExecutionId", normalDocument) { it.with("sourceExecutionId", JsonPrimitive(" ")) })
-            add(planCase("normal blank plannedSetId", normalDocument) { it.with("plannedSetId", JsonPrimitive(" ")) })
-            add(planCase("normal blank logical key session", normalDocument) { it.withPlanKey("routineSessionId", JsonPrimitive(" ")) })
-            add(planCase("normal blank logical key occurrence", normalDocument) { it.withPlanKey("routineExerciseId", JsonPrimitive(" ")) })
-            add(planCase("normal negative logical key index", normalDocument) { it.withPlanKey("setIndex", JsonPrimitive(-1)) })
-            add(planCase("normal negative exercise coordinate", normalDocument) { it.withCoordinates(exerciseIndex = -1) })
-            add(planCase("normal negative set coordinate", normalDocument) { it.withCoordinates(setIndex = -1) })
-            add(planCase("normal coordinate and logical key mismatch", normalDocument) { it.withCoordinates(setIndex = 2) })
-            add(planCase("normal negative rest duration", normalDocument) { it.with("restDurationSeconds", JsonPrimitive(-1)) })
-            add(planCase("normal source differs from document", normalDocument) { it.with("sourceExecutionId", JsonPrimitive("other-source")) })
-            add(planCase("normal planned set differs from document", normalDocument) { it.with("plannedSetId", JsonPrimitive("other-planned")) })
-            add(planCase("normal coordinates differ from document", normalDocument) { it.withCoordinates(exerciseIndex = 4) })
+            add(planCase("normal blank transitionId", normal) { it.with("transitionId", JsonPrimitive(" ")) })
+            add(planCase("normal blank sourceExecutionId", normal) { it.with("sourceExecutionId", JsonPrimitive(" ")) })
+            add(planCase("normal blank plannedSetId", normal) { it.with("plannedSetId", JsonPrimitive(" ")) })
+            add(planCase("normal blank logical key session", normal) { it.withPlanKey("routineSessionId", JsonPrimitive(" ")) })
+            add(planCase("normal blank logical key occurrence", normal) { it.withPlanKey("routineExerciseId", JsonPrimitive(" ")) })
+            add(planCase("normal negative logical key index", normal) { it.withPlanKey("setIndex", JsonPrimitive(-1)) })
+            add(planCase("normal negative exercise coordinate", normal) { it.withCoordinates(exerciseIndex = -1) })
+            add(planCase("normal negative set coordinate", normal) { it.withCoordinates(setIndex = -1) })
+            add(planCase("normal coordinate and logical key mismatch", normal) { it.withCoordinates(setIndex = 2) })
+            add(planCase("normal negative rest duration", normal) { it.with("restDurationSeconds", JsonPrimitive(-1)) })
 
-            add(planCase("unresolved blank transitionId", unresolvedDocument) { it.with("transitionId", JsonPrimitive(" ")) })
-            add(planCase("unresolved blank sourceExecutionId", unresolvedDocument) { it.with("sourceExecutionId", JsonPrimitive(" ")) })
-            add(planCase("unresolved blank offerId", unresolvedDocument) { it.with("offerId", JsonPrimitive(" ")) })
-            add(planCase("unresolved blank plannedSetId", unresolvedDocument) { it.with("plannedSetId", JsonPrimitive(" ")) })
-            add(planCase("unresolved blank logical key session", unresolvedDocument) { it.withPlanKey("routineSessionId", JsonPrimitive(" ")) })
-            add(planCase("unresolved blank logical key occurrence", unresolvedDocument) { it.withPlanKey("routineExerciseId", JsonPrimitive(" ")) })
-            add(planCase("unresolved negative logical key index", unresolvedDocument) { it.withPlanKey("setIndex", JsonPrimitive(-1)) })
-            add(planCase("unresolved empty candidates", unresolvedDocument) { it.with("candidates", JsonArray(emptyList())) })
-            add(planCase("unresolved candidate non-positive weight", unresolvedDocument) { it.withCandidate("resolvedWeightPerCableKg", 0.0) })
-            add(planCase("unresolved candidate non-positive multiplier", unresolvedDocument) { it.withCandidate("resultingExerciseMultiplier", 0.0) })
-            add(planCase("unresolved nested normal transition mismatch", unresolvedDocument) { it.withNormal("transitionId", JsonPrimitive("other-transition")) })
-            add(planCase("unresolved nested normal source mismatch", unresolvedDocument) { it.withNormal("sourceExecutionId", JsonPrimitive("other-source")) })
-            add(planCase("unresolved nested normal key mismatch", unresolvedDocument) { it.withNormalKey("routineExerciseId", JsonPrimitive("other-occurrence")) })
-            add(planCase("unresolved nested normal planned mismatch", unresolvedDocument) { it.withNormal("plannedSetId", JsonPrimitive("other-planned")) })
-            add(planCase("unresolved nested normal negative coordinate", unresolvedDocument) { it.withNormalCoordinates(exerciseIndex = -1) })
-            add(planCase("unresolved nested normal negative set coordinate", unresolvedDocument) { it.withNormalCoordinates(setIndex = -1) })
-            add(planCase("unresolved nested normal coordinate and key mismatch", unresolvedDocument) { it.withNormalCoordinates(setIndex = 2) })
-            add(planCase("unresolved nested normal negative rest duration", unresolvedDocument) { it.withNormal("restDurationSeconds", JsonPrimitive(-1)) })
+            add(planCase("unresolved blank transitionId", unresolved) { it.with("transitionId", JsonPrimitive(" ")) })
+            add(planCase("unresolved blank sourceExecutionId", unresolved) { it.with("sourceExecutionId", JsonPrimitive(" ")) })
+            add(planCase("unresolved blank offerId", unresolved) { it.with("offerId", JsonPrimitive(" ")) })
+            add(planCase("unresolved blank plannedSetId", unresolved) { it.with("plannedSetId", JsonPrimitive(" ")) })
+            add(planCase("unresolved blank logical key session", unresolved) { it.withPlanKey("routineSessionId", JsonPrimitive(" ")) })
+            add(planCase("unresolved blank logical key occurrence", unresolved) { it.withPlanKey("routineExerciseId", JsonPrimitive(" ")) })
+            add(planCase("unresolved negative logical key index", unresolved) { it.withPlanKey("setIndex", JsonPrimitive(-1)) })
+            add(planCase("unresolved empty candidates", unresolved) { it.with("candidates", JsonArray(emptyList())) })
+            add(planCase("unresolved candidate non-positive weight", unresolved) { it.withCandidate("resolvedWeightPerCableKg", 0.0) })
+            add(planCase("unresolved candidate non-positive multiplier", unresolved) { it.withCandidate("resultingExerciseMultiplier", 0.0) })
+            add(planCase("unresolved nested normal blank transition", unresolved) { it.withNormal("transitionId", JsonPrimitive(" ")) })
+            add(planCase("unresolved nested normal blank source", unresolved) { it.withNormal("sourceExecutionId", JsonPrimitive(" ")) })
+            add(planCase("unresolved nested normal blank planned set", unresolved) { it.withNormal("plannedSetId", JsonPrimitive(" ")) })
+            add(planCase("unresolved nested normal blank key session", unresolved) { it.withNormalKey("routineSessionId", JsonPrimitive(" ")) })
+            add(planCase("unresolved nested normal blank key occurrence", unresolved) { it.withNormalKey("routineExerciseId", JsonPrimitive(" ")) })
+            add(planCase("unresolved nested normal negative key index", unresolved) { it.withNormalKey("setIndex", JsonPrimitive(-1)) })
+            add(planCase("unresolved nested normal transition mismatch", unresolved) { it.withNormal("transitionId", JsonPrimitive("other-transition")) })
+            add(planCase("unresolved nested normal source mismatch", unresolved) { it.withNormal("sourceExecutionId", JsonPrimitive("other-source")) })
+            add(planCase("unresolved nested normal key mismatch", unresolved) { it.withNormalKey("routineExerciseId", JsonPrimitive("other-occurrence")) })
+            add(planCase("unresolved nested normal planned mismatch", unresolved) { it.withNormal("plannedSetId", JsonPrimitive("other-planned")) })
+            add(planCase("unresolved nested normal negative exercise coordinate", unresolved) { it.withNormalCoordinates(exerciseIndex = -1) })
+            add(planCase("unresolved nested normal negative set coordinate", unresolved) { it.withNormalCoordinates(setIndex = -1) })
+            add(planCase("unresolved nested normal coordinate and key mismatch", unresolved) { it.withNormalCoordinates(setIndex = 2) })
+            add(planCase("unresolved nested normal negative rest duration", unresolved) { it.withNormal("restDurationSeconds", JsonPrimitive(-1)) })
 
-            add(planCase("declined blank transitionId", declinedDocument) { it.with("transitionId", JsonPrimitive(" ")) })
-            add(planCase("declined blank sourceExecutionId", declinedDocument) { it.with("sourceExecutionId", JsonPrimitive(" ")) })
-            add(planCase("declined blank offerId", declinedDocument) { it.with("offerId", JsonPrimitive(" ")) })
-            add(planCase("declined blank logical key session", declinedDocument) { it.withPlanKey("routineSessionId", JsonPrimitive(" ")) })
-            add(planCase("declined blank logical key occurrence", declinedDocument) { it.withPlanKey("routineExerciseId", JsonPrimitive(" ")) })
-            add(planCase("declined negative logical key index", declinedDocument) { it.withPlanKey("setIndex", JsonPrimitive(-1)) })
-            add(planCase("declined nested normal transition mismatch", declinedDocument) { it.withNormal("transitionId", JsonPrimitive("other-transition")) })
-            add(planCase("declined nested normal source mismatch", declinedDocument) { it.withNormal("sourceExecutionId", JsonPrimitive("other-source")) })
-            add(planCase("declined nested normal key mismatch", declinedDocument) { it.withNormalKey("routineExerciseId", JsonPrimitive("other-occurrence")) })
-            add(planCase("declined nested normal planned differs from document", declinedDocument) { it.withNormal("plannedSetId", JsonPrimitive("other-planned")) })
-            add(planCase("declined nested normal negative coordinate", declinedDocument) { it.withNormalCoordinates(setIndex = -1) })
-            add(planCase("declined nested normal negative exercise coordinate", declinedDocument) { it.withNormalCoordinates(exerciseIndex = -1) })
-            add(planCase("declined nested normal coordinate and key mismatch", declinedDocument) { it.withNormalCoordinates(setIndex = 2) })
-            add(planCase("declined nested normal negative rest duration", declinedDocument) { it.withNormal("restDurationSeconds", JsonPrimitive(-1)) })
+            add(planCase("declined blank transitionId", declined) { it.with("transitionId", JsonPrimitive(" ")) })
+            add(planCase("declined blank sourceExecutionId", declined) { it.with("sourceExecutionId", JsonPrimitive(" ")) })
+            add(planCase("declined blank offerId", declined) { it.with("offerId", JsonPrimitive(" ")) })
+            add(planCase("declined blank logical key session", declined) { it.withPlanKey("routineSessionId", JsonPrimitive(" ")) })
+            add(planCase("declined blank logical key occurrence", declined) { it.withPlanKey("routineExerciseId", JsonPrimitive(" ")) })
+            add(planCase("declined negative logical key index", declined) { it.withPlanKey("setIndex", JsonPrimitive(-1)) })
+            add(planCase("declined nested normal blank transition", declined) { it.withNormal("transitionId", JsonPrimitive(" ")) })
+            add(planCase("declined nested normal blank source", declined) { it.withNormal("sourceExecutionId", JsonPrimitive(" ")) })
+            add(planCase("declined nested normal blank planned set", declined) { it.withNormal("plannedSetId", JsonPrimitive(" ")) })
+            add(planCase("declined nested normal blank key session", declined) { it.withNormalKey("routineSessionId", JsonPrimitive(" ")) })
+            add(planCase("declined nested normal blank key occurrence", declined) { it.withNormalKey("routineExerciseId", JsonPrimitive(" ")) })
+            add(planCase("declined nested normal negative key index", declined) { it.withNormalKey("setIndex", JsonPrimitive(-1)) })
+            add(planCase("declined nested normal transition mismatch", declined) { it.withNormal("transitionId", JsonPrimitive("other-transition")) })
+            add(planCase("declined nested normal source mismatch", declined) { it.withNormal("sourceExecutionId", JsonPrimitive("other-source")) })
+            add(planCase("declined nested normal key mismatch", declined) { it.withNormalKey("routineExerciseId", JsonPrimitive("other-occurrence")) })
+            add(planCase("declined nested normal negative exercise coordinate", declined) { it.withNormalCoordinates(exerciseIndex = -1) })
+            add(planCase("declined nested normal negative set coordinate", declined) { it.withNormalCoordinates(setIndex = -1) })
+            add(planCase("declined nested normal coordinate and key mismatch", declined) { it.withNormalCoordinates(setIndex = 2) })
+            add(planCase("declined nested normal negative rest duration", declined) { it.withNormal("restDurationSeconds", JsonPrimitive(-1)) })
 
-            add(planCase("accepted blank transitionId", acceptedDocument) { it.with("transitionId", JsonPrimitive(" ")) })
-            add(planCase("accepted blank sourceExecutionId", acceptedDocument) { it.with("sourceExecutionId", JsonPrimitive(" ")) })
-            add(planCase("accepted blank offerId", acceptedDocument) { it.with("offerId", JsonPrimitive(" ")) })
-            add(planCase("accepted blank plannedSetId", acceptedDocument) { it.with("plannedSetId", JsonPrimitive(" ")) })
-            add(planCase("accepted blank logical key session", acceptedDocument) { it.withPlanKey("routineSessionId", JsonPrimitive(" ")) })
-            add(planCase("accepted blank logical key occurrence", acceptedDocument) { it.withPlanKey("routineExerciseId", JsonPrimitive(" ")) })
-            add(planCase("accepted negative logical key index", acceptedDocument) { it.withPlanKey("setIndex", JsonPrimitive(-1)) })
-            add(planCase("accepted negative exercise coordinate", acceptedDocument) { it.withCoordinates(exerciseIndex = -1) })
-            add(planCase("accepted negative set coordinate", acceptedDocument) { it.withCoordinates(setIndex = -1) })
-            add(planCase("accepted coordinate and logical key mismatch", acceptedDocument) { it.withCoordinates(setIndex = 2) })
-            add(planCase("accepted non-positive resolved weight", acceptedDocument) { it.with("resolvedWeightPerCableKg", JsonPrimitive(0.0)) })
-            add(planCase("accepted non-positive resulting multiplier", acceptedDocument) { it.with("resultingExerciseMultiplier", JsonPrimitive(0.0)) })
-            add(planCase("accepted non-positive next attempt", acceptedDocument) { it.with("nextAttemptNumber", JsonPrimitive(0)) })
-            add(planCase("accepted source differs from document", acceptedDocument) { it.with("sourceExecutionId", JsonPrimitive("other-source")) })
-            add(planCase("accepted key differs from document", acceptedDocument) { it.withPlanKey("routineExerciseId", JsonPrimitive("other-occurrence")) })
-            add(planCase("accepted planned set differs from document", acceptedDocument) { it.with("plannedSetId", JsonPrimitive("other-planned")) })
-            add(planCase("accepted coordinates differ from document", acceptedDocument) { it.withCoordinates(exerciseIndex = 4) })
+            add(planCase("accepted blank transitionId", accepted) { it.with("transitionId", JsonPrimitive(" ")) })
+            add(planCase("accepted blank sourceExecutionId", accepted) { it.with("sourceExecutionId", JsonPrimitive(" ")) })
+            add(planCase("accepted blank offerId", accepted) { it.with("offerId", JsonPrimitive(" ")) })
+            add(planCase("accepted blank plannedSetId", accepted) { it.with("plannedSetId", JsonPrimitive(" ")) })
+            add(planCase("accepted blank logical key session", accepted) { it.withPlanKey("routineSessionId", JsonPrimitive(" ")) })
+            add(planCase("accepted blank logical key occurrence", accepted) { it.withPlanKey("routineExerciseId", JsonPrimitive(" ")) })
+            add(planCase("accepted negative logical key index", accepted) { it.withPlanKey("setIndex", JsonPrimitive(-1)) })
+            add(planCase("accepted negative exercise coordinate", accepted) { it.withCoordinates(exerciseIndex = -1) })
+            add(planCase("accepted negative set coordinate", accepted) { it.withCoordinates(setIndex = -1) })
+            add(planCase("accepted coordinate and logical key mismatch", accepted) { it.withCoordinates(setIndex = 2) })
+            add(planCase("accepted non-positive resolved weight", accepted) { it.with("resolvedWeightPerCableKg", JsonPrimitive(0.0)) })
+            add(planCase("accepted non-positive resulting multiplier", accepted) { it.with("resultingExerciseMultiplier", JsonPrimitive(0.0)) })
+            add(planCase("accepted non-positive next attempt", accepted) { it.with("nextAttemptNumber", JsonPrimitive(0)) })
         }
 
-        assertEveryCaseIsCorrupt(cases)
+        cases.forEach { case ->
+            assertFails(case.name) {
+                json.decodeFromJsonElement(RestTransitionPlan.serializer(), case.payload)
+            }
+        }
     }
 
-    private suspend fun assertEveryCaseIsCorrupt(cases: List<NamedPayload>) {
+    private suspend fun assertEveryDocumentCaseIsCorrupt(cases: List<NamedPayload>) {
         cases.forEach { case ->
             insertRaw(case.payload)
             val rejected = assertIs<ActiveWorkoutRuntimeLoadResult.Rejected>(
@@ -230,29 +251,26 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
         }
     }
 
-    private fun documentJson(plan: RestTransitionPlan): JsonObject = json.encodeToJsonElement(runtime(plan)).jsonObject
+    private fun documentJson(): JsonObject = json.encodeToJsonElement(runtime()).jsonObject
 
-    private fun runtime(plan: RestTransitionPlan): ActiveWorkoutRuntimeDocument {
-        val key = logicalKey()
-        return ActiveWorkoutRuntimeDocument(
-            profileId = "profile-a",
-            routineId = "routine-a",
-            routineSessionId = "routine-session-a",
-            routineExerciseId = "routine-exercise-a",
-            sourceExecutionId = "execution-a",
-            sourceStableSessionId = "stable-session-a",
-            sourceAttemptNumber = 2,
-            logicalSetKey = key,
-            plannedSetId = "planned-set-a",
-            sourceExerciseIndex = 3,
-            sourceSetIndex = 1,
-            exerciseLoadOverlays = listOf(ExerciseLoadOverlay("routine-exercise-a", 0.8f)),
-            attemptStates = listOf(PlannedSetAttemptState(key, nextAttemptNumber = 3, acceptedDropCount = 1)),
-            restTransitionPlan = plan,
-            restDeadlineEpochMs = 1_700_000_060_123,
-            originalRestDurationSeconds = 60,
-        )
-    }
+    private fun runtime(): ActiveWorkoutRuntimeDocument = ActiveWorkoutRuntimeDocument(
+        profileId = "profile-a",
+        routineId = "routine-a",
+        routineSessionId = "routine-session-a",
+        routineExerciseId = "routine-exercise-a",
+        sourceExecutionId = "execution-a",
+        sourceStableSessionId = "stable-session-a",
+        sourceAttemptNumber = 2,
+        logicalSetKey = logicalKey(),
+        plannedSetId = "planned-set-a",
+        sourceExerciseIndex = 3,
+        sourceSetIndex = 1,
+        exerciseLoadOverlays = emptyList(),
+        attemptStates = emptyList(),
+        restTransitionPlan = null,
+        restDeadlineEpochMs = null,
+        originalRestDurationSeconds = 60,
+    )
 
     private fun logicalKey() = LogicalSetKey("routine-session-a", "routine-exercise-a", 1, SetType.AMRAP)
 
@@ -296,16 +314,15 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
         nextAttemptNumber = 3,
     )
 
+    private fun planJson(plan: RestTransitionPlan): JsonObject = json.encodeToJsonElement(RestTransitionPlan.serializer(), plan).jsonObject
+
     private fun planCase(
         name: String,
-        document: JsonObject,
+        plan: JsonObject,
         mutate: (JsonObject) -> JsonObject,
-    ): NamedPayload {
-        val plan = document.getValue("restTransitionPlan").jsonObject
-        return case(name, document.with("restTransitionPlan", mutate(plan)))
-    }
+    ) = case(name, mutate(plan))
 
-    private fun JsonObject.with(key: String, value: kotlinx.serialization.json.JsonElement): JsonObject = JsonObject(this + (key to value))
+    private fun JsonObject.with(key: String, value: JsonElement): JsonObject = JsonObject(this + (key to value))
 
     private fun JsonObject.withCoordinates(
         exerciseIndex: Int? = null,
@@ -317,11 +334,11 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
         return with("sourceCoordinates", coordinates)
     }
 
-    private fun JsonObject.withPlanKey(key: String, value: kotlinx.serialization.json.JsonElement): JsonObject = with("logicalSetKey", getValue("logicalSetKey").jsonObject.with(key, value))
+    private fun JsonObject.withPlanKey(key: String, value: JsonElement): JsonObject = with("logicalSetKey", getValue("logicalSetKey").jsonObject.with(key, value))
 
-    private fun JsonObject.withNormal(key: String, value: kotlinx.serialization.json.JsonElement): JsonObject = with("normalAdvance", getValue("normalAdvance").jsonObject.with(key, value))
+    private fun JsonObject.withNormal(key: String, value: JsonElement): JsonObject = with("normalAdvance", getValue("normalAdvance").jsonObject.with(key, value))
 
-    private fun JsonObject.withNormalKey(key: String, value: kotlinx.serialization.json.JsonElement): JsonObject {
+    private fun JsonObject.withNormalKey(key: String, value: JsonElement): JsonObject {
         val normal = getValue("normalAdvance").jsonObject
         return with("normalAdvance", normal.withPlanKey(key, value))
     }

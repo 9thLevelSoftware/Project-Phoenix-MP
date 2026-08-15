@@ -1151,10 +1151,23 @@ class SchemaParityTest {
             scenario,
         )
         assertEquals(
+            listOf(
+                "profile_id",
+                "routine_session_id",
+                "document_version",
+                "runtime_json",
+                "updated_at_epoch_ms",
+            ),
+            getNotNullColumns(driver, "ActiveWorkoutRuntime"),
+            scenario,
+        )
+        assertEquals(
             listOf("profile_id", "routine_session_id"),
             getPrimaryKeyColumns(driver, "ActiveWorkoutRuntime"),
             scenario,
         )
+        assertEquals(0, getForeignKeyCount(driver, "ActiveWorkoutRuntime"), scenario)
+        assertEquals(emptyList(), getUserIndexes(driver, "ActiveWorkoutRuntime"), scenario)
     }
 
     private data class PartialMigration44State(
