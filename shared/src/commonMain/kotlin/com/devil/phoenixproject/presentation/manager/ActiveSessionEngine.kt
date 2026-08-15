@@ -174,6 +174,27 @@ private data class PersistedRestTimerClaim(
     val previousJob: Job?,
 )
 
+private data class PersistedRestTimerActionAuthority(
+    val timerJob: Job,
+    val transitionId: String,
+    val sourceExecutionId: String,
+    val plan: RestTransitionPlan,
+    val documentVersion: Long,
+    val deadlineEpochMs: Long?,
+    val isPaused: Boolean,
+    val requiresExpiredDeadline: Boolean,
+)
+
+private data class AuthorizedPersistedRestTimerAction(
+    val command: RestTransitionCommand.SkipRest,
+    val authority: PersistedRestTimerActionAuthority,
+)
+
+private data class RestTransitionApplicationResult(
+    val reduction: RestTransitionReduction,
+    val normalTransitionConsumed: Boolean,
+)
+
 private data class PlanOwnedRestPresentation(
     val documentVersion: Long,
     val remainingSeconds: Int,
@@ -290,7 +311,12 @@ class ActiveSessionEngine(
     }
 
     /** Structured command seam for callers that need the reducer/persistence outcome. */
-    internal suspend fun applyRestTransitionAwait(command: RestTransitionCommand): RestTransitionReduction {
+    internal suspend fun applyRestTransitionAwait(command: RestTransitionCommand): RestTransitionReduction = applyRestTransitionAwait(command, timerAuthority = null).reduction
+
+    private suspend fun applyRestTransitionAwait(
+        command: RestTransitionCommand,
+        timerAuthority: PersistedRestTimerActionAuthority?,
+    ): RestTransitionApplicationResult {
         val reduction = restTransitionMutex.withLock {
             val lease = executionGuard.currentLease
                 ?: return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED)
@@ -298,6 +324,11 @@ class ActiveSessionEngine(
                 ?: return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.NO_CURRENT_PLAN)
             val document = activeRuntimeDocument
                 ?: return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED)
+            if (timerAuthority != null &&
+                !hasPersistedRestTimerActionAuthorityLocked(timerAuthority, document, plan, lease)
+            ) {
+                return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED)
+            }
             if (!hasRestTransitionAuthority(document, plan, lease)) {
                 return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.LIVE_IDENTITY_MISMATCH)
             }
@@ -339,58 +370,141 @@ class ActiveSessionEngine(
             changed
         }
 
-        when (reduction) {
+        val normalTransitionConsumed = when (reduction) {
             // A decline closes only the offer.  The captured normal transition stays
             // in rest until its timer or an identity-bearing Skip Rest dispatches it.
             is RestTransitionReduction.Changed -> {
                 (reduction.plan as? RestTransitionPlan.Declined)?.let { declined ->
                     resolveNavigationOnce(declined.normalAdvance)
                 }
+                false
             }
 
-            is RestTransitionReduction.DispatchNormal -> consumeNormalTransitionAndDispatch(reduction.plan)
+            is RestTransitionReduction.DispatchNormal -> if (timerAuthority == null) {
+                consumeNormalTransitionAndDispatch(reduction.plan)
+                false
+            } else {
+                consumeNormalTransitionAndDispatchAwait(reduction.plan, timerAuthority)
+            }
 
             is RestTransitionReduction.NoOp -> if (reduction.reason == RestTransitionNoOpReason.PERSISTENCE_FAILURE) {
                 coordinator._userFeedbackEvents.emit("Unable to update rest transition. Please try again.")
+                false
+            } else {
+                false
             }
 
-            is RestTransitionReduction.PendingAcceptedRetry -> Unit
+            is RestTransitionReduction.PendingAcceptedRetry -> false
         }
-        return reduction
+        return RestTransitionApplicationResult(
+            reduction = reduction,
+            normalTransitionConsumed = normalTransitionConsumed,
+        )
+    }
+
+    private fun hasPersistedRestTimerActionAuthorityLocked(
+        authority: PersistedRestTimerActionAuthority,
+        document: ActiveWorkoutRuntimeDocument,
+        plan: RestTransitionPlan,
+        lease: ExecutionLease,
+    ): Boolean {
+        val owner = persistedRestTimerOwner ?: return false
+        if (owner.job !== authority.timerJob ||
+            !owner.job.isActive ||
+            coordinator.restTimerJob !== authority.timerJob ||
+            owner.transitionId != authority.transitionId ||
+            owner.sourceExecutionId != authority.sourceExecutionId ||
+            activeRuntimeDocumentVersion != authority.documentVersion ||
+            plan != authority.plan ||
+            document.restDeadlineEpochMs != authority.deadlineEpochMs ||
+            document.isRestPaused != authority.isPaused ||
+            !hasRestTransitionAuthority(document, plan, lease)
+        ) {
+            return false
+        }
+        return !authority.requiresExpiredDeadline ||
+            (!document.isRestPaused && RestDeadlineCalculator.remainingSeconds(document, wallClockMillisProvider()) <= 0)
+    }
+
+    private fun hasPersistedRestTimerDispatchAuthorityLocked(
+        authority: PersistedRestTimerActionAuthority,
+        plan: RestTransitionPlan.NormalAdvance,
+        clearedDocumentVersion: Long,
+    ): Boolean {
+        val owner = persistedRestTimerOwner ?: return false
+        val lease = executionGuard.currentLease ?: return false
+        val document = activeRuntimeDocument ?: return false
+        return owner.job === authority.timerJob &&
+            owner.job.isActive &&
+            coordinator.restTimerJob === authority.timerJob &&
+            owner.transitionId == authority.transitionId &&
+            owner.sourceExecutionId == authority.sourceExecutionId &&
+            plan.transitionId == authority.transitionId &&
+            plan.sourceExecutionId == authority.sourceExecutionId &&
+            activeRuntimeDocumentVersion == clearedDocumentVersion &&
+            document.restTransitionPlan == null &&
+            executionGuard.isCurrent(lease) &&
+            lease.executionId.toString() == authority.sourceExecutionId &&
+            coordinator.currentRoutineId == document.routineId &&
+            coordinator.currentRoutineSessionId == document.routineSessionId &&
+            coordinator._currentExerciseIndex.value == document.sourceExerciseIndex &&
+            coordinator._currentSetIndex.value == document.sourceSetIndex
     }
 
     private fun consumeNormalTransitionAndDispatch(plan: RestTransitionPlan.NormalAdvance) {
         scope.launch {
-            val cachedNavigation = resolveNavigationOnce(plan) ?: return@launch
-            val consumed = restTransitionMutex.withLock {
-                val lease = executionGuard.currentLease ?: return@withLock false
-                val document = activeRuntimeDocument ?: return@withLock false
-                val currentPlan = coordinator._restTransitionPlan.value
-                if (currentPlan !is RestTransitionPlan.NormalAdvance && currentPlan !is RestTransitionPlan.Declined) {
-                    return@withLock false
-                }
-                if (currentPlan.transitionId != plan.transitionId || !hasRestTransitionAuthority(document, currentPlan, lease)) {
-                    return@withLock false
-                }
-                val cleared = document.copy(restTransitionPlan = null)
-                if (!replaceRuntimeDocument(cleared)) return@withLock false
-                if (!executionGuard.isCurrent(lease) ||
-                    coordinator.currentRoutineId != cleared.routineId ||
-                    coordinator.currentRoutineSessionId != cleared.routineSessionId ||
-                    coordinator._currentExerciseIndex.value != cleared.sourceExerciseIndex ||
-                    coordinator._currentSetIndex.value != cleared.sourceSetIndex
-                ) {
-                    return@withLock false
-                }
-                setActiveRuntimeDocument(cleared)
-                coordinator._restTransitionPlan.value = null
-                true
-            }
-            if (consumed) {
-                afterDurableRestPlanClearForTest?.invoke()
-                dispatchNormalAdvance(plan, cachedNavigation)
-            }
+            consumeNormalTransitionAndDispatchAwait(plan, timerAuthority = null)
         }
+    }
+
+    private suspend fun consumeNormalTransitionAndDispatchAwait(
+        plan: RestTransitionPlan.NormalAdvance,
+        timerAuthority: PersistedRestTimerActionAuthority?,
+    ): Boolean {
+        val cachedNavigation = resolveNavigationOnce(plan) ?: return false
+        val clearedDocumentVersion = restTransitionMutex.withLock {
+            val lease = executionGuard.currentLease ?: return@withLock null
+            val document = activeRuntimeDocument ?: return@withLock null
+            val currentPlan = coordinator._restTransitionPlan.value
+            if (currentPlan !is RestTransitionPlan.NormalAdvance && currentPlan !is RestTransitionPlan.Declined) {
+                return@withLock null
+            }
+            if (currentPlan.transitionId != plan.transitionId || !hasRestTransitionAuthority(document, currentPlan, lease)) {
+                return@withLock null
+            }
+            if (timerAuthority != null &&
+                !hasPersistedRestTimerActionAuthorityLocked(timerAuthority, document, currentPlan, lease)
+            ) {
+                return@withLock null
+            }
+            val cleared = document.copy(restTransitionPlan = null)
+            if (!replaceRuntimeDocument(cleared)) return@withLock null
+            if (timerAuthority != null &&
+                !hasPersistedRestTimerActionAuthorityLocked(timerAuthority, document, currentPlan, lease)
+            ) {
+                return@withLock null
+            }
+            if (!executionGuard.isCurrent(lease) ||
+                coordinator.currentRoutineId != cleared.routineId ||
+                coordinator.currentRoutineSessionId != cleared.routineSessionId ||
+                coordinator._currentExerciseIndex.value != cleared.sourceExerciseIndex ||
+                coordinator._currentSetIndex.value != cleared.sourceSetIndex
+            ) {
+                return@withLock null
+            }
+            setActiveRuntimeDocument(cleared)
+            coordinator._restTransitionPlan.value = null
+            activeRuntimeDocumentVersion
+        } ?: return false
+        afterDurableRestPlanClearForTest?.invoke()
+        if (timerAuthority != null) {
+            val canDispatch = restTransitionMutex.withLock {
+                hasPersistedRestTimerDispatchAuthorityLocked(timerAuthority, plan, clearedDocumentVersion)
+            }
+            if (!canDispatch) return false
+        }
+        dispatchNormalAdvance(plan, cachedNavigation)
+        return true
     }
 
     private fun dispatchNormalAdvance(
@@ -572,6 +686,9 @@ class ActiveSessionEngine(
     internal var onRestTransitionNavigationContextReadForTest: (() -> Unit)? = null
     internal var afterPersistedRestTimerClaimForTest: (suspend () -> Unit)? = null
     internal var beforePersistedRestTimerTickPublishForTest: (suspend () -> Unit)? = null
+    internal var beforePersistedRestTimerActionForTest: (suspend () -> Unit)? = null
+    internal var afterPersistedRestTimerActionAuthorizationForTest: (suspend () -> Unit)? = null
+    internal var afterResetCleanupTokenCaptureForTest: (() -> Unit)? = null
 
     internal suspend fun resolveRestTransitionNavigationForTest(plan: RestTransitionPlan.NormalAdvance): Boolean = resolveNavigationOnce(plan) != null
 
@@ -2938,14 +3055,14 @@ class ActiveSessionEngine(
     fun resetForNewWorkout() {
         val resetToken = executionGuard.captureResetCleanupToken()
         val lease = resetToken.lease
-        val pendingTeardownLease = pendingTeardownReadyContinuation.value?.lease
+        afterResetCleanupTokenCaptureForTest?.invoke()
         lease?.let(bodyweightCompletionGate::invalidate)
         lease?.let(::clearDangerZoneCountdownOverride)
         val invalidatedLease = lease?.takeIf {
             executionGuard.invalidate(it, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
         }
+        lease?.let(::discardTeardownReadyContinuation)
         if (invalidatedLease != null) {
-            discardTeardownReadyContinuation(invalidatedLease)
             afterResetInvalidation(invalidatedLease.executionId, invalidatedLease.sessionId)
             repFreshnessGate.invalidate(invalidatedLease)
             detachBiomechanicsContext(invalidatedLease)
@@ -2953,7 +3070,6 @@ class ActiveSessionEngine(
                 executionContext = null
             }
         }
-        pendingTeardownLease?.let(::discardTeardownReadyContinuation)
         if (lease != null && invalidatedLease == null) return
         executionGuard.commitResetCleanupIfNoSuccessor(resetToken, invalidatedLease) {
             clearSharedStateForNewWorkout()
@@ -6117,27 +6233,44 @@ class ActiveSessionEngine(
             Logger.d("startRestTimer: restDuration=$restDuration, autoplay=$autoplay, isSingleExercise=$isSingleExercise, summaryCountdownSeconds=${settingsManager.userPreferences.value.summaryCountdownSeconds}")
 
             if (restDuration == 0 && !deferredTransition) {
-                val zeroRestPlan = coordinator._restTransitionPlan.value
-                if (zeroRestPlan is RestTransitionPlan.NormalAdvance || zeroRestPlan is RestTransitionPlan.Declined) {
-                    applyRestTransition(RestTransitionCommand.SkipRest(zeroRestPlan.actionIdentity()))
+                val canAutomaticallyDispatchPersistedPlan =
+                    installedPlan is RestTransitionPlan.NormalAdvance || autoplay
+                if (installedPlan != null && canAutomaticallyDispatchPersistedPlan) {
+                    beforePersistedRestTimerActionForTest?.invoke()
+                    if (dispatchPersistedRestTimerAction(
+                            timerJob = timerJob,
+                            installedPlan = installedPlan,
+                            requiresExpiredDeadline = true,
+                        )
+                    ) {
+                        return@launch
+                    }
+                }
+                if (installedPlan == null) {
+                    Logger.d { "Rest duration is 0 - skipping rest timer, advancing immediately (no BLE stop - already sent at set end)" }
+                    if (!hasExpectedAuthority(lease, "zero_rest_successor")) return@launch
+                    if (isSingleExerciseMode(coordinator)) {
+                        advanceToNextSetInSingleExercise(lease)
+                    } else {
+                        startNextSetOrExerciseFor(lease)
+                    }
                     return@launch
                 }
-                Logger.d { "Rest duration is 0 - skipping rest timer, advancing immediately (no BLE stop - already sent at set end)" }
-                if (!hasExpectedAuthority(lease, "zero_rest_successor")) return@launch
-                if (isSingleExerciseMode(coordinator)) {
-                    advanceToNextSetInSingleExercise(lease)
-                } else {
-                    startNextSetOrExerciseFor(lease)
-                }
-                return@launch
             }
 
             // A manual routine progression still installs the immutable transition,
             // but a resolved normal plan must be durably consumed before publishing a
             // rest screen. Declined and deferred offers deliberately remain in rest.
-            if (!autoplay && installedPlan is RestTransitionPlan.NormalAdvance) {
-                applyRestTransition(RestTransitionCommand.SkipRest(installedPlan.actionIdentity()))
-                return@launch
+            if (restDuration != 0 && !autoplay && installedPlan is RestTransitionPlan.NormalAdvance) {
+                beforePersistedRestTimerActionForTest?.invoke()
+                if (dispatchPersistedRestTimerAction(
+                        timerJob = timerJob,
+                        installedPlan = installedPlan,
+                        requiresExpiredDeadline = false,
+                    )
+                ) {
+                    return@launch
+                }
             }
 
             // Show superset label during rest for user context (e.g., "Superset A")
@@ -6341,7 +6474,21 @@ class ActiveSessionEngine(
                     val currentPlan = coordinator._restTransitionPlan.value
                     val blocksAutomaticAdvance = currentPlan is RestTransitionPlan.UnresolvedDropOffer ||
                         currentPlan is RestTransitionPlan.AcceptedRetry
-                    if (remainingSeconds <= 0 && autoplay && !coordinator._isRestPaused.value && !blocksAutomaticAdvance) break
+                    if (remainingSeconds <= 0 && autoplay && !coordinator._isRestPaused.value && !blocksAutomaticAdvance) {
+                        if (installedPlan != null) {
+                            beforePersistedRestTimerActionForTest?.invoke()
+                            if (dispatchPersistedRestTimerAction(
+                                    timerJob = timerJob,
+                                    installedPlan = installedPlan,
+                                    requiresExpiredDeadline = true,
+                                )
+                            ) {
+                                return@launch
+                            }
+                        } else {
+                            break
+                        }
+                    }
 
                     delay(100)
                 }
@@ -6365,14 +6512,6 @@ class ActiveSessionEngine(
             }
 
             if (autoplay) {
-                val currentPlan = coordinator._restTransitionPlan.value
-                if (currentPlan is RestTransitionPlan.NormalAdvance || currentPlan is RestTransitionPlan.Declined) {
-                    applyRestTransition(RestTransitionCommand.SkipRest(currentPlan.actionIdentity()))
-                    return@launch
-                }
-                if (currentPlan is RestTransitionPlan.UnresolvedDropOffer || currentPlan is RestTransitionPlan.AcceptedRetry) {
-                    return@launch
-                }
                 Logger.d("ActiveSessionEngine") { "autoplay rest complete: advancing to next set (no BLE stop - already sent at set end)" }
                 if (!hasExpectedAuthority(lease, "rest_timer_successor")) return@launch
                 if (isSingleExercise) {
@@ -6387,6 +6526,62 @@ class ActiveSessionEngine(
             coordinator.restTimerJob = timerJob
         }
         timerJob.start()
+    }
+
+    private suspend fun dispatchPersistedRestTimerAction(
+        timerJob: Job,
+        installedPlan: RestTransitionPlan,
+        requiresExpiredDeadline: Boolean,
+    ): Boolean {
+        val authorized = authorizePersistedRestTimerAction(
+            timerJob = timerJob,
+            installedPlan = installedPlan,
+            requiresExpiredDeadline = requiresExpiredDeadline,
+        ) ?: return false
+        afterPersistedRestTimerActionAuthorizationForTest?.invoke()
+        return applyRestTransitionAwait(authorized.command, authorized.authority).normalTransitionConsumed
+    }
+
+    private suspend fun authorizePersistedRestTimerAction(
+        timerJob: Job,
+        installedPlan: RestTransitionPlan,
+        requiresExpiredDeadline: Boolean,
+    ): AuthorizedPersistedRestTimerAction? = restTransitionMutex.withLock {
+        val owner = persistedRestTimerOwner?.takeIf { it.job === timerJob } ?: return@withLock null
+        if (owner.transitionId != installedPlan.transitionId ||
+            owner.sourceExecutionId != installedPlan.sourceExecutionId
+        ) {
+            return@withLock null
+        }
+        val lease = executionGuard.currentLease ?: return@withLock null
+        val document = activeRuntimeDocument ?: return@withLock null
+        val plan = coordinator._restTransitionPlan.value ?: return@withLock null
+        if (plan.transitionId != owner.transitionId ||
+            plan.sourceExecutionId != owner.sourceExecutionId ||
+            (plan !is RestTransitionPlan.NormalAdvance && plan !is RestTransitionPlan.Declined) ||
+            !hasRestTransitionAuthority(document, plan, lease)
+        ) {
+            return@withLock null
+        }
+        if (requiresExpiredDeadline &&
+            (document.isRestPaused || RestDeadlineCalculator.remainingSeconds(document, wallClockMillisProvider()) > 0)
+        ) {
+            return@withLock null
+        }
+        val authority = PersistedRestTimerActionAuthority(
+            timerJob = timerJob,
+            transitionId = owner.transitionId,
+            sourceExecutionId = owner.sourceExecutionId,
+            plan = plan,
+            documentVersion = activeRuntimeDocumentVersion,
+            deadlineEpochMs = document.restDeadlineEpochMs,
+            isPaused = document.isRestPaused,
+            requiresExpiredDeadline = requiresExpiredDeadline,
+        )
+        AuthorizedPersistedRestTimerAction(
+            command = RestTransitionCommand.SkipRest(plan.actionIdentity()),
+            authority = authority,
+        )
     }
 
     private suspend fun claimPersistedRestTimer(

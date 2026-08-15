@@ -154,6 +154,10 @@ class MainViewModelTest {
             .getDeclaredField("elapsedRealtimeProvider")
             .apply { isAccessible = true }
             .set(viewModel.workoutSessionManager.activeSessionEngine, deterministicElapsedRealtime)
+        viewModel.workoutSessionManager.activeSessionEngine.javaClass
+            .getDeclaredField("wallClockMillisProvider")
+            .apply { isAccessible = true }
+            .set(viewModel.workoutSessionManager.activeSessionEngine, deterministicElapsedRealtime)
     }
 
     @After
@@ -760,6 +764,7 @@ class MainViewModelTest {
         // EnhancedMainScreen navigation ping-pong. advanceUntilIdle() runs past the
         // 10s summary countdown, so the visible end state is Idle, not SetSummary.
         assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
+        assertNull(viewModel.workoutSessionManager.activeSessionEngine.coordinator.restTimerJob)
         assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
     }
 
