@@ -22,6 +22,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
@@ -35,6 +36,8 @@ import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.ConnectionStatus
+import com.devil.phoenixproject.domain.model.DropPercentage
+import com.devil.phoenixproject.domain.model.DropSetCandidateResolution
 import com.devil.phoenixproject.domain.model.DropSetConfiguration
 import com.devil.phoenixproject.domain.model.ExerciseLoadOverlay
 import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
@@ -43,6 +46,7 @@ import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSetAttemptState
+import com.devil.phoenixproject.domain.model.ProfileSectionMetadata
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
@@ -73,6 +77,8 @@ import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
 import com.devil.phoenixproject.domain.replay.RepBoundaryDetector
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
+import com.devil.phoenixproject.domain.usecase.DropSetCandidateRequest
+import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
 import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.DropSetEligibilityRequest
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
@@ -88,6 +94,7 @@ import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.WorkoutCommandValidator
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CompletableDeferred
@@ -163,6 +170,53 @@ private data class PendingTeardownReadyContinuation(
     val callback: () -> Unit,
 )
 
+private data class ResetMachineTeardownOwner(
+    val id: Long,
+    val lease: ExecutionLease,
+)
+
+private data class ExternalCommandInputStamp(
+    val profileId: String,
+    val profileRackItems: List<RackItem>,
+    val profileRackMetadata: ProfileSectionMetadata,
+    val repositoryRackItems: List<RackItem>,
+)
+
+private data class QueuedStartCandidate(
+    val profileId: String,
+    val loadedRoutineId: String?,
+    val routineId: String?,
+    val routineSessionId: String?,
+    val routineName: String?,
+    val cycleId: String?,
+    val cycleDayNumber: Int?,
+    val routineExercise: RoutineExercise?,
+    val selectedExerciseId: String?,
+    val exerciseIndex: Int,
+    val setIndex: Int,
+    val warmupSetIndex: Int,
+    val requiresMachine: Boolean,
+    val workoutParameters: WorkoutParameters,
+    val activeRackItemIds: List<String>,
+    val activeRackBehaviorOverrides: Map<String, RackItemBehavior>,
+    val externalCommandInputStamp: ExternalCommandInputStamp,
+)
+
+private data class PendingResetStart(
+    val owner: ResetMachineTeardownOwner,
+    val successorToken: NoCurrentSuccessorToken,
+    val candidate: QueuedStartCandidate,
+    val skipCountdown: Boolean,
+    val isJustLiftMode: Boolean,
+)
+
+private data class DeferredMachineConfigurationTeardown(
+    val lease: ExecutionLease,
+    val reason: TeardownReason,
+    val attempt: Int,
+    val afterReady: (() -> Unit)?,
+)
+
 private data class PersistedRestTimerOwner(
     val transitionId: String,
     val sourceExecutionId: String,
@@ -203,6 +257,109 @@ private data class PlanOwnedRestPresentation(
     val restingState: WorkoutState.Resting,
     val navigationParameters: WorkoutParameters?,
 )
+
+private data class AcceptedRetryPermission(
+    val transitionId: String,
+    val sourceExecutionId: String,
+    val documentVersion: Long,
+    val source: AcceptedRetryPermissionSource,
+)
+
+private sealed interface AcceptedRetryPermissionSource {
+    data object Manual : AcceptedRetryPermissionSource
+
+    data class Timer(
+        val ownerJob: Job,
+        val deadlineEpochMs: Long?,
+    ) : AcceptedRetryPermissionSource
+}
+
+private data class AcceptedRetryGateSnapshot(
+    val gate: RetryPersistenceGate,
+    val document: ActiveWorkoutRuntimeDocument,
+    val documentVersion: Long,
+    val plan: RestTransitionPlan.AcceptedRetry,
+    val permission: AcceptedRetryPermission?,
+    val expectedSource: ExecutionLease?,
+    val completion: SetExecutionCompletion?,
+    val commandTemplate: WorkoutParameters,
+    val recoveryPublicationEpoch: Long,
+    val configurationInputEpoch: Long,
+    val externalCommandInputStamp: ExternalCommandInputStamp,
+)
+
+private data class AcceptedRetryStartClaim(
+    val token: String,
+    val transitionId: String,
+    val sourceStableSessionId: String,
+    val sourceExecutionId: String,
+    val attemptNumber: Int,
+)
+
+private data class RetryStartRequest(
+    val startClaim: AcceptedRetryStartClaim? = null,
+    val expectedSource: ExecutionLease?,
+    val sourceStableSessionId: String,
+    val sourceAttemptNumber: Int,
+    val requiresLivePersistedClaim: Boolean,
+    val runtimeDocumentVersion: Long,
+    val recoveryPublicationEpoch: Long,
+    val configurationInputEpoch: Long,
+    val externalCommandInputStamp: ExternalCommandInputStamp?,
+    val profileId: String,
+    val routineId: String,
+    val routineSessionId: String,
+    val routineExerciseId: String,
+    val logicalSetKey: LogicalSetKey,
+    val plannedSetId: String?,
+    val plannedTargetReps: Int?,
+    val plannedTargetWeightKg: Float?,
+    val exerciseIndex: Int,
+    val setIndex: Int,
+    val attemptNumber: Int,
+    val acceptedDropCount: Int,
+    val percentage: DropPercentage,
+    val sourceConfiguredStartWeightPerCableKg: Float,
+    val sourceCommandTemplate: WorkoutParameters,
+    val sourceIsTimed: Boolean,
+    val sourceIsBodyweight: Boolean,
+    val sourceIsCableExercise: Boolean,
+    val sourcePhysicalCableCount: Int?,
+    val occurrenceMultiplier: Float,
+    val expectedWeightPerCableKg: Float,
+    val programmedBaseWeightPerCableKg: Float,
+    val params: WorkoutParameters,
+    val rackBehaviorOverrides: Map<String, RackItemBehavior>,
+)
+
+private sealed interface RetryGateCapture {
+    data class Ready(val snapshot: AcceptedRetryGateSnapshot) : RetryGateCapture
+    data object Wait : RetryGateCapture
+    data class FailClosed(
+        val plan: RestTransitionPlan.AcceptedRetry,
+        val documentVersion: Long,
+        val authority: RetryFailClosedAuthority,
+    ) : RetryGateCapture
+}
+
+private sealed interface RetryFailClosedAuthority {
+    val recoveryPublicationEpoch: Long
+
+    data class Live(
+        val source: ExecutionLease,
+        override val recoveryPublicationEpoch: Long,
+    ) : RetryFailClosedAuthority
+
+    data class Restored(
+        override val recoveryPublicationEpoch: Long,
+    ) : RetryFailClosedAuthority
+}
+
+private sealed interface RetryRequestBuildResult {
+    data class Ready(val request: RetryStartRequest) : RetryRequestBuildResult
+    data class FailClosed(val recovery: RetryStartRequest?) : RetryRequestBuildResult
+    data object Wait : RetryRequestBuildResult
+}
 
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
@@ -270,6 +427,10 @@ class ActiveSessionEngine(
     private val bodyweightCompletionGate = BodyweightCompletionGate()
     private val biomechanicsContext = atomic<ExecutionBiomechanicsContext?>(null)
     private val pendingTeardownReadyContinuation = atomic<PendingTeardownReadyContinuation?>(null)
+    private val deferredMachineConfigurationTeardown = atomic<DeferredMachineConfigurationTeardown?>(null)
+    private val resetMachineTeardownOwnerSequence = atomic(0L)
+    private val resetMachineTeardownOwner = atomic<ResetMachineTeardownOwner?>(null)
+    private val pendingResetStart = atomic<PendingResetStart?>(null)
     private val exitSnapshotStore = WorkoutExitSnapshotStore()
     private val restTransitionMutex = Mutex()
     private var activeRuntimeDocument: ActiveWorkoutRuntimeDocument? = null
@@ -297,6 +458,9 @@ class ActiveSessionEngine(
     private var cachedTransitionNavigation: CachedTransitionNavigation? = null
     private var pendingTransitionNavigation: PendingTransitionNavigation? = null
     private var persistedRestTimerOwner: PersistedRestTimerOwner? = null
+    private var acceptedRetryPermission: AcceptedRetryPermission? = null
+    private val acceptedRetryStartClaim = atomic<AcceptedRetryStartClaim?>(null)
+    private val dropSetCandidateResolver = DropSetCandidateResolver()
 
     /**
      * Apply a UI rest action only after verifying the current lease, full routine
@@ -317,6 +481,8 @@ class ActiveSessionEngine(
         command: RestTransitionCommand,
         timerAuthority: PersistedRestTimerActionAuthority?,
     ): RestTransitionApplicationResult {
+        val recoveryPublicationEpoch = executionGuard.captureRecoveryPublicationEpoch()
+        var acceptedRetryToFailClosed: Triple<RestTransitionPlan.AcceptedRetry, Long, RetryFailClosedAuthority>? = null
         val reduction = restTransitionMutex.withLock {
             val lease = executionGuard.currentLease
                 ?: return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED)
@@ -330,7 +496,26 @@ class ActiveSessionEngine(
                 return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED)
             }
             if (!hasRestTransitionAuthority(document, plan, lease)) {
+                if (plan is RestTransitionPlan.AcceptedRetry &&
+                    command is RestTransitionCommand.SkipRest &&
+                    command.identity == plan.actionIdentity() &&
+                    leaseMatchesRetrySource(lease, document)
+                ) {
+                    acceptedRetryToFailClosed = Triple(
+                        plan,
+                        activeRuntimeDocumentVersion,
+                        RetryFailClosedAuthority.Live(lease, recoveryPublicationEpoch),
+                    )
+                }
                 return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.LIVE_IDENTITY_MISMATCH)
+            }
+            if (command is RestTransitionCommand.Accept &&
+                (
+                    document.attemptStates.groupingBy { it.logicalSetKey }.eachCount().values.any { it != 1 } ||
+                        document.exerciseLoadOverlays.groupingBy { it.routineExerciseId }.eachCount().values.any { it != 1 }
+                    )
+            ) {
+                return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED)
             }
 
             val reduced = reduceRestTransition(
@@ -341,6 +526,20 @@ class ActiveSessionEngine(
                 ),
                 command,
             )
+            if (reduced is RestTransitionReduction.PendingAcceptedRetry) {
+                acceptedRetryPermission = AcceptedRetryPermission(
+                    transitionId = plan.transitionId,
+                    sourceExecutionId = plan.sourceExecutionId,
+                    documentVersion = activeRuntimeDocumentVersion,
+                    source = timerAuthority?.let {
+                        AcceptedRetryPermissionSource.Timer(
+                            ownerJob = it.timerJob,
+                            deadlineEpochMs = it.deadlineEpochMs,
+                        )
+                    } ?: AcceptedRetryPermissionSource.Manual,
+                )
+                return@withLock reduced
+            }
             val changed = reduced as? RestTransitionReduction.Changed ?: return@withLock reduced
             val acceptedOverlay = (changed.plan as? RestTransitionPlan.AcceptedRetry)?.let {
                 ExerciseLoadOverlay(
@@ -367,7 +566,46 @@ class ActiveSessionEngine(
             }
             setActiveRuntimeDocument(updatedDocument)
             coordinator._restTransitionPlan.value = changed.plan
+            acceptedRetryPermission = if (
+                changed.plan is RestTransitionPlan.AcceptedRetry &&
+                settingsManager.autoplayEnabled.value &&
+                !updatedDocument.isRestPaused &&
+                RestDeadlineCalculator.remainingSeconds(updatedDocument, wallClockMillisProvider()) <= 0
+            ) {
+                persistedRestTimerOwner?.takeIf { owner ->
+                    owner.transitionId == changed.plan.transitionId &&
+                        owner.sourceExecutionId == changed.plan.sourceExecutionId &&
+                        owner.job.isActive &&
+                        coordinator.restTimerJob === owner.job
+                }?.let { owner ->
+                    AcceptedRetryPermission(
+                        transitionId = changed.plan.transitionId,
+                        sourceExecutionId = changed.plan.sourceExecutionId,
+                        documentVersion = activeRuntimeDocumentVersion,
+                        source = AcceptedRetryPermissionSource.Timer(
+                            ownerJob = owner.job,
+                            deadlineEpochMs = updatedDocument.restDeadlineEpochMs,
+                        ),
+                    )
+                }
+            } else {
+                null
+            }
             changed
+        }
+        acceptedRetryToFailClosed?.let { (plan, documentVersion, authority) ->
+            failAcceptedRetryClosed(plan, documentVersion, authority)
+        }
+
+        if (reduction is RestTransitionReduction.PendingAcceptedRetry) {
+            beforeAcceptedRetryGateCaptureForTest?.invoke()
+        }
+        val acceptedRetryStarted = when (reduction) {
+            is RestTransitionReduction.PendingAcceptedRetry,
+            is RestTransitionReduction.Changed,
+            -> tryStartCurrentAcceptedRetryLive()
+
+            else -> false
         }
 
         val normalTransitionConsumed = when (reduction) {
@@ -394,7 +632,7 @@ class ActiveSessionEngine(
                 false
             }
 
-            is RestTransitionReduction.PendingAcceptedRetry -> false
+            is RestTransitionReduction.PendingAcceptedRetry -> acceptedRetryStarted
         }
         return RestTransitionApplicationResult(
             reduction = reduction,
@@ -645,6 +883,1086 @@ class ActiveSessionEngine(
             sourceExercise.id == document.routineExerciseId
     }
 
+    private suspend fun tryStartCurrentAcceptedRetryLive(): Boolean {
+        val sourceStableSessionId = restTransitionMutex.withLock {
+            val plan = coordinator._restTransitionPlan.value as? RestTransitionPlan.AcceptedRetry
+                ?: return@withLock null
+            val document = activeRuntimeDocument ?: return@withLock null
+            if (document.restTransitionPlan != plan) return@withLock null
+            document.sourceStableSessionId
+        } ?: return false
+        return tryStartAcceptedRetry(RetryPersistenceGate.Live(sourceStableSessionId))
+    }
+
+    /**
+     * Runs the one idempotent durability/readiness gate used by live and restored
+     * accepted retries. Repository work deliberately happens outside the rest
+     * document mutex and outside [WorkoutExecutionGuard]'s platform locks.
+     */
+    internal suspend fun tryStartAcceptedRetry(gate: RetryPersistenceGate): Boolean {
+        val recoveryPublicationEpoch = executionGuard.captureRecoveryPublicationEpoch()
+        val configurationInputEpoch = executionGuard.captureConfigurationInputEpoch()
+        val externalCommandInputStamp = captureExternalCommandInputStamp() ?: return false
+        val capture = restTransitionMutex.withLock {
+            captureAcceptedRetryGateLocked(
+                gate,
+                recoveryPublicationEpoch,
+                configurationInputEpoch,
+                externalCommandInputStamp,
+            )
+        }
+        val snapshot = when (capture) {
+            is RetryGateCapture.Ready -> capture.snapshot
+
+            RetryGateCapture.Wait -> return false
+
+            is RetryGateCapture.FailClosed -> {
+                failAcceptedRetryClosed(capture.plan, capture.documentVersion, capture.authority)
+                return false
+            }
+        }
+
+        if (gate is RetryPersistenceGate.Live &&
+            executionGuard.persistenceClaimStatus(gate.sourceStableSessionId) != PersistenceClaimStatus.PERSISTED
+        ) {
+            return false
+        }
+        currentCoroutineContext().ensureActive()
+        val durable = try {
+            completedSetRepository.isAttemptDurable(
+                stableSessionId = gate.sourceStableSessionId,
+                key = snapshot.plan.logicalSetKey,
+                attemptNumber = snapshot.document.sourceAttemptNumber,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Logger.w(error) { "Accepted retry durable-source read failed before plan consumption" }
+            return false
+        }
+        currentCoroutineContext().ensureActive()
+        if (!durable) {
+            if (gate is RetryPersistenceGate.Restored ||
+                (
+                    gate is RetryPersistenceGate.Live &&
+                        executionGuard.persistenceClaimStatus(gate.sourceStableSessionId) == PersistenceClaimStatus.PERSISTED
+                    )
+            ) {
+                failAcceptedRetryClosed(snapshot.plan, snapshot.documentVersion, snapshot.failClosedAuthority())
+            }
+            return false
+        }
+
+        val plannedSets = try {
+            completedSetRepository.getPlannedSets(snapshot.document.routineExerciseId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Logger.w(error) { "Accepted retry planned-set read failed before plan consumption" }
+            return false
+        }
+        currentCoroutineContext().ensureActive()
+        beforeAcceptedRetryPlanConsumeForTest?.invoke()
+        currentCoroutineContext().ensureActive()
+        if (gate is RetryPersistenceGate.Live &&
+            executionGuard.persistenceClaimStatus(gate.sourceStableSessionId) != PersistenceClaimStatus.PERSISTED
+        ) {
+            return false
+        }
+        val durableBeforeConsume = try {
+            completedSetRepository.isAttemptDurable(
+                stableSessionId = gate.sourceStableSessionId,
+                key = snapshot.plan.logicalSetKey,
+                attemptNumber = snapshot.document.sourceAttemptNumber,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Logger.w(error) { "Accepted retry durable-source recheck failed before plan consumption" }
+            return false
+        }
+        currentCoroutineContext().ensureActive()
+        if (!durableBeforeConsume) {
+            failAcceptedRetryClosed(snapshot.plan, snapshot.documentVersion, snapshot.failClosedAuthority())
+            return false
+        }
+        if (gate is RetryPersistenceGate.Live &&
+            executionGuard.persistenceClaimStatus(gate.sourceStableSessionId) != PersistenceClaimStatus.PERSISTED
+        ) {
+            return false
+        }
+        val buildResult = try {
+            restTransitionMutex.withLock {
+                buildAndConsumeRetryStartRequestLocked(snapshot, plannedSets)
+            }
+        } catch (error: CancellationException) {
+            withContext(NonCancellable) {
+                val recovery = restTransitionMutex.withLock {
+                    failAcceptedRetryClosedLocked(
+                        snapshot.plan,
+                        snapshot.documentVersion,
+                        snapshot.failClosedAuthority(),
+                    )
+                }
+                recovery?.let { enterManualRetryRecovery(it, expectedLease = it.expectedSource) }
+            }
+            throw error
+        }
+        val request = when (buildResult) {
+            is RetryRequestBuildResult.Ready -> buildResult.request
+
+            is RetryRequestBuildResult.FailClosed -> {
+                buildResult.recovery?.let { enterManualRetryRecovery(it, expectedLease = it.expectedSource) }
+                return false
+            }
+
+            RetryRequestBuildResult.Wait -> return false
+        }
+        try {
+            afterAcceptedRetryPlanConsumedForTest?.invoke()
+            currentCoroutineContext().ensureActive()
+            if (!hasRetryPersistenceAuthority(request)) {
+                enterManualRetryRecovery(request, expectedLease = request.expectedSource)
+                return false
+            }
+        } catch (error: CancellationException) {
+            enterManualRetryRecovery(request, expectedLease = request.expectedSource)
+            throw error
+        } catch (error: Exception) {
+            Logger.e(error) { "Accepted retry dispatch failed after its plan was consumed" }
+            enterManualRetryRecovery(request, expectedLease = request.expectedSource)
+            return false
+        }
+
+        val lease = startWorkoutInternal(
+            skipCountdown = true,
+            isJustLiftMode = false,
+            retryRequest = request,
+        )
+        if (lease == null) {
+            enterManualRetryRecovery(request, expectedLease = request.expectedSource)
+            return false
+        }
+        return true
+    }
+
+    private fun captureAcceptedRetryGateLocked(
+        gate: RetryPersistenceGate,
+        recoveryPublicationEpoch: Long,
+        configurationInputEpoch: Long,
+        externalCommandInputStamp: ExternalCommandInputStamp,
+    ): RetryGateCapture {
+        if (acceptedRetryStartClaim.value != null) return RetryGateCapture.Wait
+        val plan = coordinator._restTransitionPlan.value as? RestTransitionPlan.AcceptedRetry
+            ?: return RetryGateCapture.Wait
+        val document = activeRuntimeDocument
+            ?: return RetryGateCapture.Wait
+        val permission = when (gate) {
+            is RetryPersistenceGate.Live -> {
+                val livePermission = acceptedRetryPermission ?: return RetryGateCapture.Wait
+                if (!hasAcceptedRetryPermissionAuthorityLocked(livePermission, document, plan)) {
+                    acceptedRetryPermission = null
+                    return RetryGateCapture.Wait
+                }
+                livePermission
+            }
+
+            is RetryPersistenceGate.Restored -> {
+                if (gate.actionIdentity != plan.actionIdentity()) return RetryGateCapture.Wait
+                null
+            }
+        }
+        val expectedSource = when (gate) {
+            is RetryPersistenceGate.Live ->
+                executionGuard.currentLease
+                    ?.takeIf { leaseMatchesRetrySource(it, document) }
+                    ?: return RetryGateCapture.Wait
+
+            is RetryPersistenceGate.Restored -> {
+                if (executionGuard.currentLease != null) return RetryGateCapture.Wait
+                null
+            }
+        }
+        val completion = expectedSource?.let(executionGuard::claimedCompletion)
+        val commandTemplate = when (gate) {
+            is RetryPersistenceGate.Live ->
+                completion?.logicalPreRackCommandTemplate
+                    ?: return RetryGateCapture.Wait
+
+            is RetryPersistenceGate.Restored -> gate.sourceContext.commandTemplate
+        }
+        val snapshot = AcceptedRetryGateSnapshot(
+            gate = gate,
+            document = document,
+            documentVersion = activeRuntimeDocumentVersion,
+            plan = plan,
+            permission = permission,
+            expectedSource = expectedSource,
+            completion = completion,
+            commandTemplate = commandTemplate,
+            recoveryPublicationEpoch = recoveryPublicationEpoch,
+            configurationInputEpoch = configurationInputEpoch,
+            externalCommandInputStamp = externalCommandInputStamp,
+        )
+        if (!hasAcceptedRetrySnapshotAuthorityLocked(snapshot, requireTeardownReady = false)) {
+            return RetryGateCapture.FailClosed(
+                plan,
+                activeRuntimeDocumentVersion,
+                snapshot.failClosedAuthority(),
+            )
+        }
+        if (executionGuard.machineTeardownState.value !is MachineTeardownState.Ready) {
+            return RetryGateCapture.Wait
+        }
+        return RetryGateCapture.Ready(snapshot)
+    }
+
+    private fun AcceptedRetryGateSnapshot.failClosedAuthority(): RetryFailClosedAuthority = when (gate) {
+        is RetryPersistenceGate.Live -> RetryFailClosedAuthority.Live(
+            requireNotNull(expectedSource),
+            recoveryPublicationEpoch,
+        )
+
+        is RetryPersistenceGate.Restored -> RetryFailClosedAuthority.Restored(recoveryPublicationEpoch)
+    }
+
+    private fun leaseMatchesRetrySource(
+        lease: ExecutionLease,
+        document: ActiveWorkoutRuntimeDocument,
+    ): Boolean = lease.sessionId == document.sourceStableSessionId &&
+        lease.executionId.toString() == document.sourceExecutionId &&
+        lease.profileId == document.profileId
+
+    private fun hasAcceptedRetryPermissionAuthorityLocked(
+        permission: AcceptedRetryPermission,
+        document: ActiveWorkoutRuntimeDocument,
+        plan: RestTransitionPlan.AcceptedRetry,
+    ): Boolean {
+        if (permission.documentVersion != activeRuntimeDocumentVersion ||
+            permission.transitionId != plan.transitionId ||
+            permission.sourceExecutionId != plan.sourceExecutionId
+        ) {
+            return false
+        }
+        return when (val permissionSource = permission.source) {
+            AcceptedRetryPermissionSource.Manual -> true
+
+            is AcceptedRetryPermissionSource.Timer -> {
+                val owner = persistedRestTimerOwner ?: return false
+                owner.job === permissionSource.ownerJob &&
+                    owner.job.isActive &&
+                    coordinator.restTimerJob === owner.job &&
+                    owner.transitionId == plan.transitionId &&
+                    owner.sourceExecutionId == plan.sourceExecutionId &&
+                    document.restDeadlineEpochMs == permissionSource.deadlineEpochMs &&
+                    !document.isRestPaused &&
+                    RestDeadlineCalculator.remainingSeconds(document, wallClockMillisProvider()) <= 0
+            }
+        }
+    }
+
+    private fun hasAcceptedRetrySnapshotAuthorityLocked(
+        snapshot: AcceptedRetryGateSnapshot,
+        requireTeardownReady: Boolean,
+    ): Boolean {
+        val document = activeRuntimeDocument ?: return false
+        val plan = coordinator._restTransitionPlan.value as? RestTransitionPlan.AcceptedRetry ?: return false
+        if (activeRuntimeDocumentVersion != snapshot.documentVersion ||
+            document != snapshot.document ||
+            plan != snapshot.plan ||
+            document.restTransitionPlan != plan ||
+            document.sourceStableSessionId != snapshot.gate.sourceStableSessionId ||
+            document.sourceExecutionId != plan.sourceExecutionId ||
+            document.sourceAttemptNumber + 1 != plan.nextAttemptNumber ||
+            document.logicalSetKey != plan.logicalSetKey ||
+            document.plannedSetId != plan.plannedSetId ||
+            document.sourceExerciseIndex != plan.sourceCoordinates.exerciseIndex ||
+            document.sourceSetIndex != plan.sourceCoordinates.setIndex ||
+            coordinator.currentRoutineId != document.routineId ||
+            coordinator.currentRoutineSessionId != document.routineSessionId ||
+            coordinator._currentExerciseIndex.value != document.sourceExerciseIndex ||
+            coordinator._currentSetIndex.value != document.sourceSetIndex ||
+            coordinator._workoutState.value !is WorkoutState.Resting
+        ) {
+            return false
+        }
+        val readyProfile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready ?: return false
+        if (readyProfile.profile.id != document.profileId ||
+            captureExternalCommandInputStamp() != snapshot.externalCommandInputStamp
+        ) {
+            return false
+        }
+        val routine = coordinator._loadedRoutine.value ?: return false
+        val routineExercise = routine.exercises.getOrNull(document.sourceExerciseIndex) ?: return false
+        if (routine.id != document.routineId || routineExercise.id != document.routineExerciseId) return false
+
+        val matchingStates = document.attemptStates.filter { it.logicalSetKey == plan.logicalSetKey }
+        if (matchingStates.size != 1 ||
+            document.attemptStates.groupingBy { it.logicalSetKey }.eachCount().values.any { it != 1 }
+        ) {
+            return false
+        }
+        val attemptState = matchingStates.single()
+        if (attemptState.nextAttemptNumber != plan.nextAttemptNumber + 1 ||
+            attemptState.acceptedDropCount !in 1..2
+        ) {
+            return false
+        }
+        val occurrenceOverlays = document.exerciseLoadOverlays.filter {
+            it.routineExerciseId == document.routineExerciseId
+        }
+        if (occurrenceOverlays.size != 1 ||
+            document.exerciseLoadOverlays.groupingBy { it.routineExerciseId }.eachCount().values.any { it != 1 } ||
+            !sameMachineWeight(occurrenceOverlays.single().multiplier, plan.resultingExerciseMultiplier)
+        ) {
+            return false
+        }
+
+        when (snapshot.gate) {
+            is RetryPersistenceGate.Live -> {
+                val permission = acceptedRetryPermission ?: return false
+                val source = snapshot.expectedSource ?: return false
+                val completion = snapshot.completion ?: return false
+                if (snapshot.permission != permission ||
+                    permission.documentVersion != snapshot.documentVersion ||
+                    permission.transitionId != plan.transitionId ||
+                    permission.sourceExecutionId != plan.sourceExecutionId ||
+                    !hasAcceptedRetryPermissionAuthorityLocked(permission, document, plan) ||
+                    !executionGuard.isCurrent(source) ||
+                    source.sessionId != document.sourceStableSessionId ||
+                    source.executionId.toString() != document.sourceExecutionId ||
+                    source.profileId != document.profileId ||
+                    completion.lease != source ||
+                    completion.reason != SetEndReason.STALL_FAILURE ||
+                    completion.routineIdentity != reconstructLiveRoutineIdentity(document, plan) ||
+                    completion.attemptNumber != document.sourceAttemptNumber ||
+                    plan.nextAttemptNumber != completion.attemptNumber + 1 ||
+                    attemptState.acceptedDropCount != completion.acceptedDropCount + 1
+                ) {
+                    return false
+                }
+            }
+
+            is RetryPersistenceGate.Restored -> {
+                val gate = snapshot.gate
+                val context = gate.sourceContext
+                if (snapshot.permission != null ||
+                    gate.actionIdentity != plan.actionIdentity() ||
+                    executionGuard.currentLease != null ||
+                    snapshot.expectedSource != null ||
+                    context.sourceStableSessionId != document.sourceStableSessionId ||
+                    context.sourceExecutionId != document.sourceExecutionId ||
+                    context.profileId != document.profileId ||
+                    context.routineIdentity != reconstructLiveRoutineIdentity(document, plan) ||
+                    context.reason != SetEndReason.STALL_FAILURE ||
+                    context.attemptNumber != document.sourceAttemptNumber ||
+                    plan.nextAttemptNumber != context.attemptNumber + 1 ||
+                    attemptState.acceptedDropCount != context.acceptedDropCount + 1 ||
+                    context.plannedSetType != plan.logicalSetKey.setKind
+                ) {
+                    return false
+                }
+            }
+        }
+        return !requireTeardownReady || executionGuard.machineTeardownState.value is MachineTeardownState.Ready
+    }
+
+    private fun reconstructLiveRoutineIdentity(
+        document: ActiveWorkoutRuntimeDocument,
+        plan: RestTransitionPlan.AcceptedRetry,
+    ): RoutineExecutionIdentity? {
+        val routine = coordinator._loadedRoutine.value ?: return null
+        val exercise = routine.exercises.getOrNull(document.sourceExerciseIndex) ?: return null
+        return RoutineExecutionIdentity(
+            profileId = document.profileId,
+            routineId = routine.id,
+            routineSessionId = requireNotNull(coordinator.currentRoutineSessionId),
+            routineExerciseId = exercise.id,
+            logicalSetKey = plan.logicalSetKey,
+            plannedSetId = plan.plannedSetId,
+            exerciseIndex = document.sourceExerciseIndex,
+            setIndex = document.sourceSetIndex,
+        )
+    }
+
+    private suspend fun buildAndConsumeRetryStartRequestLocked(
+        snapshot: AcceptedRetryGateSnapshot,
+        plannedSets: List<com.devil.phoenixproject.domain.model.PlannedSet>,
+    ): RetryRequestBuildResult {
+        if (!hasAcceptedRetrySnapshotAuthorityLocked(snapshot, requireTeardownReady = true)) {
+            return RetryRequestBuildResult.Wait
+        }
+        if (snapshot.gate is RetryPersistenceGate.Live &&
+            executionGuard.persistenceClaimStatus(snapshot.gate.sourceStableSessionId) != PersistenceClaimStatus.PERSISTED
+        ) {
+            return RetryRequestBuildResult.Wait
+        }
+        val document = snapshot.document
+        val plan = snapshot.plan
+        val routine = coordinator._loadedRoutine.value ?: return RetryRequestBuildResult.Wait
+        val exercise = routine.exercises.getOrNull(document.sourceExerciseIndex) ?: return RetryRequestBuildResult.Wait
+        val coordinatePlans = plannedSets.filter { it.setNumber == document.sourceSetIndex }
+        if (coordinatePlans.size > 1) {
+            return RetryRequestBuildResult.FailClosed(
+                failAcceptedRetryClosedLocked(plan, snapshot.documentVersion, snapshot.failClosedAuthority()),
+            )
+        }
+        val plannedSet = coordinatePlans.singleOrNull()
+        if (plannedSet?.id != plan.plannedSetId ||
+            plannedSet?.routineExerciseId?.let { it != document.routineExerciseId } == true ||
+            plannedSet?.setType?.let { it != plan.logicalSetKey.setKind } == true ||
+            (plannedSet == null && semanticSetType(exercise, document.sourceSetIndex) != plan.logicalSetKey.setKind)
+        ) {
+            return RetryRequestBuildResult.FailClosed(
+                failAcceptedRetryClosedLocked(plan, snapshot.documentVersion, snapshot.failClosedAuthority()),
+            )
+        }
+        val programmedBase = RoutineSetWeightResolver(
+            RoutineSetWeightRequest(
+                exercise = exercise,
+                setIndex = document.sourceSetIndex,
+                currentPrKg = null,
+                occurrenceMultiplier = 1f,
+                manualAdjustmentPerCableKg = null,
+            ),
+        )
+        val resolvedRetryWeight = RoutineSetWeightResolver(
+            RoutineSetWeightRequest(
+                exercise = exercise,
+                setIndex = document.sourceSetIndex,
+                currentPrKg = null,
+                occurrenceMultiplier = plan.resultingExerciseMultiplier,
+                manualAdjustmentPerCableKg = null,
+            ),
+        )
+        val capturedProgrammedBase = snapshot.completion?.programmedBaseWeightPerCableKg
+            ?: (snapshot.gate as? RetryPersistenceGate.Restored)
+                ?.sourceContext
+                ?.programmedBaseWeightPerCableKg
+            ?: return RetryRequestBuildResult.FailClosed(
+                failAcceptedRetryClosedLocked(plan, snapshot.documentVersion, snapshot.failClosedAuthority()),
+            )
+        val sourceTargetReps = snapshot.completion?.targetReps
+            ?: (snapshot.gate as? RetryPersistenceGate.Restored)?.sourceContext?.targetReps
+        if (plannedSet != null &&
+            (
+                plannedSet.targetReps != sourceTargetReps ||
+                    plannedSet.targetWeightKg == null ||
+                    !sameMachineWeight(plannedSet.targetWeightKg, capturedProgrammedBase)
+                )
+        ) {
+            return RetryRequestBuildResult.FailClosed(
+                failAcceptedRetryClosedLocked(plan, snapshot.documentVersion, snapshot.failClosedAuthority()),
+            )
+        }
+        val sourceConfiguredStart = snapshot.completion?.configuredStartWeightPerCableKg
+            ?: (snapshot.gate as? RetryPersistenceGate.Restored)
+                ?.sourceContext
+                ?.configuredStartWeightPerCableKg
+            ?: return RetryRequestBuildResult.FailClosed(
+                failAcceptedRetryClosedLocked(plan, snapshot.documentVersion, snapshot.failClosedAuthority()),
+            )
+        if (!sameMachineWeight(programmedBase, capturedProgrammedBase) ||
+            !sameMachineWeight(resolvedRetryWeight, plan.resolvedWeightPerCableKg) ||
+            !retryCandidateMatchesCurrentPolicy(
+                exercise = exercise,
+                percentage = plan.percentage,
+                sourceConfiguredStartWeightPerCableKg = sourceConfiguredStart,
+                programmedBaseWeightPerCableKg = capturedProgrammedBase,
+                sourceCommandTemplate = snapshot.commandTemplate,
+                expectedWeightPerCableKg = plan.resolvedWeightPerCableKg,
+                expectedMultiplier = plan.resultingExerciseMultiplier,
+            )
+        ) {
+            return RetryRequestBuildResult.FailClosed(
+                failAcceptedRetryClosedLocked(plan, snapshot.documentVersion, snapshot.failClosedAuthority()),
+            )
+        }
+        if (!capturedRetryCommandMatchesExercise(snapshot, exercise)) {
+            return RetryRequestBuildResult.FailClosed(
+                failAcceptedRetryClosedLocked(plan, snapshot.documentVersion, snapshot.failClosedAuthority()),
+            )
+        }
+        val params = snapshot.commandTemplate.copy(weightPerCableKg = resolvedRetryWeight)
+        if (validateWorkoutCommand(params).isFailure) {
+            return RetryRequestBuildResult.FailClosed(
+                failAcceptedRetryClosedLocked(plan, snapshot.documentVersion, snapshot.failClosedAuthority()),
+            )
+        }
+
+        val cleared = document.copy(restTransitionPlan = null)
+        if (!replaceRuntimeDocument(cleared)) return RetryRequestBuildResult.Wait
+        if (activeRuntimeDocumentVersion != snapshot.documentVersion ||
+            activeRuntimeDocument != document ||
+            coordinator._restTransitionPlan.value != plan
+        ) {
+            return RetryRequestBuildResult.Wait
+        }
+        val startClaim = AcceptedRetryStartClaim(
+            token = KmpUtils.randomUUID(),
+            transitionId = plan.transitionId,
+            sourceStableSessionId = document.sourceStableSessionId,
+            sourceExecutionId = document.sourceExecutionId,
+            attemptNumber = plan.nextAttemptNumber,
+        )
+        if (!acceptedRetryStartClaim.compareAndSet(null, startClaim)) {
+            return RetryRequestBuildResult.Wait
+        }
+        setActiveRuntimeDocument(cleared)
+        coordinator._restTransitionPlan.value = null
+        acceptedRetryPermission = null
+        persistedRestTimerOwner = null
+        coordinator.restTimerJob = null
+        return RetryRequestBuildResult.Ready(
+            RetryStartRequest(
+                startClaim = startClaim,
+                expectedSource = snapshot.expectedSource,
+                sourceStableSessionId = document.sourceStableSessionId,
+                sourceAttemptNumber = document.sourceAttemptNumber,
+                requiresLivePersistedClaim = snapshot.gate is RetryPersistenceGate.Live,
+                runtimeDocumentVersion = activeRuntimeDocumentVersion,
+                recoveryPublicationEpoch = snapshot.recoveryPublicationEpoch,
+                configurationInputEpoch = snapshot.configurationInputEpoch,
+                externalCommandInputStamp = snapshot.externalCommandInputStamp,
+                profileId = document.profileId,
+                routineId = document.routineId,
+                routineSessionId = document.routineSessionId,
+                routineExerciseId = document.routineExerciseId,
+                logicalSetKey = document.logicalSetKey,
+                plannedSetId = document.plannedSetId,
+                plannedTargetReps = plannedSet?.targetReps,
+                plannedTargetWeightKg = plannedSet?.targetWeightKg,
+                exerciseIndex = document.sourceExerciseIndex,
+                setIndex = document.sourceSetIndex,
+                attemptNumber = plan.nextAttemptNumber,
+                acceptedDropCount = document.attemptStates.single { it.logicalSetKey == plan.logicalSetKey }.acceptedDropCount,
+                percentage = plan.percentage,
+                sourceConfiguredStartWeightPerCableKg = sourceConfiguredStart,
+                sourceCommandTemplate = snapshot.commandTemplate,
+                sourceIsTimed = snapshot.completion?.isTimed
+                    ?: (snapshot.gate as RetryPersistenceGate.Restored).sourceContext.isTimed,
+                sourceIsBodyweight = snapshot.completion?.isBodyweight
+                    ?: (snapshot.gate as RetryPersistenceGate.Restored).sourceContext.isBodyweight,
+                sourceIsCableExercise = snapshot.completion?.isCableExercise
+                    ?: (snapshot.gate as RetryPersistenceGate.Restored).sourceContext.isCableExercise,
+                sourcePhysicalCableCount = snapshot.completion?.physicalCableCount
+                    ?: (snapshot.gate as? RetryPersistenceGate.Restored)?.sourceContext?.physicalCableCount,
+                occurrenceMultiplier = plan.resultingExerciseMultiplier,
+                expectedWeightPerCableKg = plan.resolvedWeightPerCableKg,
+                programmedBaseWeightPerCableKg = programmedBase,
+                params = params,
+                rackBehaviorOverrides = coordinator._activeRackBehaviorOverrides.value.toMap(),
+            ),
+        )
+    }
+
+    private fun capturedRetryCommandMatchesExercise(
+        snapshot: AcceptedRetryGateSnapshot,
+        exercise: RoutineExercise,
+    ): Boolean {
+        val template = snapshot.commandTemplate
+        val setIndex = snapshot.document.sourceSetIndex
+        val setKind = snapshot.plan.logicalSetKey.setKind
+        val expectedReps = exercise.setReps.getOrNull(setIndex) ?: exercise.reps
+        val expectedAmrap = semanticSetType(exercise, setIndex) == SetType.AMRAP
+        val isTimed = exercise.duration?.takeIf { it > 0 } != null
+        val isBodyweight = exercise.exercise.isBodyweight
+        val isCableExercise = !isBodyweight
+        if (template.programMode != exercise.programMode ||
+            template.reps != expectedReps ||
+            template.echoLevel != exercise.getEchoLevelForSet(setIndex) ||
+            template.eccentricLoad != exercise.eccentricLoad ||
+            !sameMachineWeight(template.progressionRegressionKg, exercise.progressionKg) ||
+            template.selectedExerciseId != exercise.exercise.id ||
+            template.stopAtTop != exercise.stopAtTop ||
+            template.stallDetectionEnabled != exercise.stallDetectionEnabled ||
+            template.repCountTiming != exercise.repCountTiming ||
+            template.isAMRAP != expectedAmrap ||
+            expectedAmrap != (setKind == SetType.AMRAP) ||
+            template.isJustLift ||
+            template.useAutoStart ||
+            template.warmupReps != Constants.DEFAULT_WARMUP_REPS
+        ) {
+            return false
+        }
+        val sourceMatches = snapshot.completion?.let { completion ->
+            completion.programMode == template.programMode &&
+                completion.plannedSetType == setKind &&
+                completion.targetReps == (if (expectedAmrap) null else template.reps) &&
+                !completion.isWarmup &&
+                !completion.isEcho &&
+                !completion.isJustLift &&
+                !completion.isBodyweight &&
+                completion.isBodyweight == isBodyweight &&
+                !completion.isTimed &&
+                completion.isTimed == isTimed &&
+                completion.isAmrap == expectedAmrap &&
+                completion.isCableExercise &&
+                completion.isCableExercise == isCableExercise &&
+                completion.physicalCableCount == exercise.exercise.preferredCableCount &&
+                sameMachineWeight(completion.configuredStartWeightPerCableKg, template.weightPerCableKg) &&
+                sameMachineWeight(completion.progressionKg, template.progressionRegressionKg)
+        } ?: (snapshot.gate as? RetryPersistenceGate.Restored)?.sourceContext?.let { context ->
+            context.commandTemplate == template &&
+                context.programMode == template.programMode &&
+                context.plannedSetType == setKind &&
+                context.targetReps == (if (expectedAmrap) null else template.reps) &&
+                !context.isWarmup &&
+                !context.isEcho &&
+                !context.isJustLift &&
+                !context.isBodyweight &&
+                context.isBodyweight == isBodyweight &&
+                !context.isTimed &&
+                context.isTimed == isTimed &&
+                context.isAmrap == expectedAmrap &&
+                context.isCableExercise &&
+                context.isCableExercise == isCableExercise &&
+                context.physicalCableCount == exercise.exercise.preferredCableCount &&
+                sameMachineWeight(context.configuredStartWeightPerCableKg, template.weightPerCableKg) &&
+                sameMachineWeight(context.progressionKg, template.progressionRegressionKg)
+        }
+        return sourceMatches == true
+    }
+
+    private fun retryCandidateMatchesCurrentPolicy(
+        exercise: RoutineExercise,
+        percentage: DropPercentage,
+        sourceConfiguredStartWeightPerCableKg: Float,
+        programmedBaseWeightPerCableKg: Float,
+        sourceCommandTemplate: WorkoutParameters,
+        expectedWeightPerCableKg: Float,
+        expectedMultiplier: Float,
+    ): Boolean {
+        if (sourceCommandTemplate.programMode != ProgramMode.OldSchool ||
+            sourceCommandTemplate.isJustLift ||
+            sourceCommandTemplate.useAutoStart ||
+            sourceCommandTemplate.isEchoMode ||
+            sourceCommandTemplate.warmupReps != Constants.DEFAULT_WARMUP_REPS
+        ) {
+            return false
+        }
+        val configuration = try {
+            dropSetConfigurationProvider(exercise)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return false
+        }
+        val minimum = configuration.minimumWeightPerCableKg
+        if (!configuration.enabled || minimum == null) return false
+        val resolution = dropSetCandidateResolver.resolve(
+            DropSetCandidateRequest(
+                percentage = percentage,
+                failedConfiguredStartWeightPerCableKg = sourceConfiguredStartWeightPerCableKg,
+                programmedBaseWeightPerCableKg = programmedBaseWeightPerCableKg,
+                minimumWeightPerCableKg = minimum,
+                commandTemplate = sourceCommandTemplate,
+            ),
+        ) as? DropSetCandidateResolution.Valid ?: return false
+        return sameMachineWeight(resolution.candidate.resolvedWeightPerCableKg, expectedWeightPerCableKg) &&
+            sameMachineWeight(resolution.candidate.resultingExerciseMultiplier, expectedMultiplier) &&
+            expectedWeightPerCableKg < sourceConfiguredStartWeightPerCableKg
+    }
+
+    private fun validateWorkoutCommand(params: WorkoutParameters): Result<Unit> = if (params.isEchoMode) {
+        WorkoutCommandValidator.validateEchoControl(
+            level = params.echoLevel,
+            warmupReps = params.warmupReps,
+            targetReps = params.reps,
+            isJustLift = params.isJustLift,
+            isAMRAP = params.isAMRAP,
+            eccentricPct = params.eccentricLoad.percentage,
+        )
+    } else {
+        WorkoutCommandValidator.validateProgramParams(params)
+    }
+
+    private suspend fun failAcceptedRetryClosed(
+        plan: RestTransitionPlan.AcceptedRetry,
+        documentVersion: Long,
+        authority: RetryFailClosedAuthority,
+    ) {
+        val request = restTransitionMutex.withLock {
+            failAcceptedRetryClosedLocked(plan, documentVersion, authority)
+        }
+        request?.let { enterManualRetryRecovery(it, expectedLease = it.expectedSource) }
+    }
+
+    private suspend fun failAcceptedRetryClosedLocked(
+        plan: RestTransitionPlan.AcceptedRetry,
+        documentVersion: Long,
+        authority: RetryFailClosedAuthority,
+    ): RetryStartRequest? {
+        val document = activeRuntimeDocument ?: return null
+        if (activeRuntimeDocumentVersion != documentVersion ||
+            coordinator._restTransitionPlan.value != plan ||
+            document.restTransitionPlan != plan
+        ) {
+            return null
+        }
+        val expectedSource = when (authority) {
+            is RetryFailClosedAuthority.Live -> authority.source.takeIf {
+                executionGuard.isCurrent(it) && leaseMatchesRetrySource(it, document)
+            } ?: return null
+
+            is RetryFailClosedAuthority.Restored -> {
+                if (executionGuard.currentLease != null) {
+                    return null
+                }
+                null
+            }
+        }
+        val cleared = document.copy(restTransitionPlan = null)
+        if (!replaceRuntimeDocument(cleared)) return null
+        setActiveRuntimeDocument(cleared)
+        coordinator._restTransitionPlan.value = null
+        acceptedRetryPermission = null
+        persistedRestTimerOwner = null
+        coordinator.restTimerJob = null
+        return RetryStartRequest(
+            expectedSource = expectedSource,
+            sourceStableSessionId = document.sourceStableSessionId,
+            sourceAttemptNumber = document.sourceAttemptNumber,
+            requiresLivePersistedClaim = authority is RetryFailClosedAuthority.Live,
+            runtimeDocumentVersion = activeRuntimeDocumentVersion,
+            recoveryPublicationEpoch = authority.recoveryPublicationEpoch,
+            configurationInputEpoch = -1L,
+            externalCommandInputStamp = captureExternalCommandInputStamp(),
+            profileId = document.profileId,
+            routineId = document.routineId,
+            routineSessionId = document.routineSessionId,
+            routineExerciseId = document.routineExerciseId,
+            logicalSetKey = document.logicalSetKey,
+            plannedSetId = document.plannedSetId,
+            plannedTargetReps = null,
+            plannedTargetWeightKg = null,
+            exerciseIndex = document.sourceExerciseIndex,
+            setIndex = document.sourceSetIndex,
+            attemptNumber = plan.nextAttemptNumber,
+            acceptedDropCount = document.attemptStates.firstOrNull { it.logicalSetKey == plan.logicalSetKey }?.acceptedDropCount ?: 0,
+            percentage = plan.percentage,
+            sourceConfiguredStartWeightPerCableKg = coordinator._workoutParameters.value.weightPerCableKg,
+            sourceCommandTemplate = coordinator._workoutParameters.value,
+            sourceIsTimed = false,
+            sourceIsBodyweight = false,
+            sourceIsCableExercise = true,
+            sourcePhysicalCableCount = coordinator._loadedRoutine.value
+                ?.exercises
+                ?.getOrNull(document.sourceExerciseIndex)
+                ?.exercise
+                ?.preferredCableCount,
+            occurrenceMultiplier = plan.resultingExerciseMultiplier,
+            expectedWeightPerCableKg = plan.resolvedWeightPerCableKg,
+            programmedBaseWeightPerCableKg = plan.resolvedWeightPerCableKg / plan.resultingExerciseMultiplier,
+            params = coordinator._workoutParameters.value.copy(weightPerCableKg = plan.resolvedWeightPerCableKg),
+            rackBehaviorOverrides = coordinator._activeRackBehaviorOverrides.value.toMap(),
+        )
+    }
+
+    private fun enterManualRetryRecovery(
+        request: RetryStartRequest,
+        expectedLease: ExecutionLease?,
+        allowNoCurrentAfterOwnedInvalidation: Boolean = false,
+    ) {
+        val current = executionGuard.currentLease
+        if (expectedLease == null && current != null) {
+            clearAcceptedRetryStartClaim(request)
+            return
+        }
+        if (expectedLease != null) {
+            if (current == null && !allowNoCurrentAfterOwnedInvalidation) {
+                clearAcceptedRetryStartClaim(request)
+                return
+            }
+            if (current != null && !current.sameExecutionAs(expectedLease)) {
+                clearAcceptedRetryStartClaim(request)
+                return
+            }
+        }
+        beforeManualRetryRecoveryPublishForTest?.invoke()
+        val publicationClaim = executionGuard.beginRecoveryPublication(
+            expectedLease = expectedLease,
+            expectedSupersessionEpoch = request.recoveryPublicationEpoch,
+            allowNoCurrentAfterOwnedInvalidation = allowNoCurrentAfterOwnedInvalidation,
+        )
+        if (publicationClaim == null) {
+            clearAcceptedRetryStartClaim(request)
+            return
+        }
+        try {
+            afterManualRetryRecoveryClaimForTest?.invoke()
+            executionGuard.commitRecoveryPublication(publicationClaim) {
+                coordinator._workoutParameters.value = request.params
+                coordinator._workoutState.value = WorkoutState.Idle
+                flowDelegate?.enterSetReady(request.exerciseIndex, request.setIndex)
+            }
+        } finally {
+            clearAcceptedRetryStartClaim(request)
+        }
+    }
+
+    private fun failRetryStartAndRecover(
+        request: RetryStartRequest,
+        lease: ExecutionLease,
+        priorWorkoutState: WorkoutState,
+    ) {
+        val invalidatedOwnedLease = failStart(lease, priorWorkoutState)
+        enterManualRetryRecovery(
+            request = request,
+            expectedLease = lease,
+            allowNoCurrentAfterOwnedInvalidation = invalidatedOwnedLease,
+        )
+    }
+
+    private fun abortRetryStartBeforeConfig(
+        request: RetryStartRequest,
+        lease: ExecutionLease,
+        priorWorkoutState: WorkoutState,
+    ) {
+        val teardown = executionGuard.machineTeardownState.value
+        val teardownOwnsLease = when (teardown) {
+            is MachineTeardownState.TearingDown -> teardown.executionId == lease.executionId
+            is MachineTeardownState.RecoveryRequired -> teardown.executionId == lease.executionId
+            MachineTeardownState.Ready -> false
+        }
+        if (teardownOwnsLease) {
+            clearAcceptedRetryStartClaim(request)
+        } else {
+            failRetryStartAndRecover(request, lease, priorWorkoutState)
+        }
+    }
+
+    private fun recoverRetryStartAfterConfigAttempt(
+        request: RetryStartRequest,
+        lease: ExecutionLease,
+        priorWorkoutState: WorkoutState,
+    ): Boolean {
+        val teardownStarted = requestTeardownForTransition(lease, TeardownReason.RECOVERY) {
+            failRetryStartAndRecover(request, lease, priorWorkoutState)
+        }
+        if (!teardownStarted) clearAcceptedRetryStartClaim(request)
+        return teardownStarted
+    }
+
+    private fun ownsAcceptedRetryStartClaim(request: RetryStartRequest): Boolean {
+        val claim = request.startClaim ?: return false
+        return acceptedRetryStartClaim.value === claim
+    }
+
+    private fun clearAcceptedRetryStartClaim(request: RetryStartRequest) {
+        request.startClaim?.let { acceptedRetryStartClaim.compareAndSet(it, null) }
+    }
+
+    private fun sameMachineWeight(first: Float, second: Float): Boolean = abs(first - second) < 0.001f
+
+    private fun semanticSetType(exercise: RoutineExercise, setIndex: Int): SetType = when {
+        exercise.setReps.getOrNull(setIndex) == null -> SetType.AMRAP
+        exercise.isAMRAP && setIndex == exercise.setReps.lastIndex -> SetType.AMRAP
+        else -> SetType.STANDARD
+    }
+
+    private fun retryRackCommandMatches(
+        request: RetryStartRequest,
+        capturedRackParams: WorkoutParameters,
+        bleParams: WorkoutParameters,
+        physicalCableCount: Int,
+    ): Boolean {
+        val activeIds = coordinator._activeRackItemIds.value
+        val behaviorOverrides = coordinator._activeRackBehaviorOverrides.value
+        if (activeIds != request.params.activeRackItemIds ||
+            behaviorOverrides != request.rackBehaviorOverrides
+        ) {
+            return false
+        }
+        val selectedItems = equipmentRackRepository.rackItems.value
+            .filter { it.enabled && it.id in activeIds }
+        if (capturedRackParams.activeRackItemIds != request.params.activeRackItemIds ||
+            !sameMachineWeight(capturedRackParams.externalAddedLoadKg, request.params.externalAddedLoadKg) ||
+            !sameMachineWeight(capturedRackParams.counterweightKg, request.params.counterweightKg)
+        ) {
+            return false
+        }
+        val expectedAdjustment = applyEquipmentRackLoadUseCase.calculate(
+            programmedWeightPerCableKg = request.expectedWeightPerCableKg,
+            physicalCableCount = physicalCableCount,
+            selectedItems = selectedItems,
+            isEchoMode = request.params.isEchoMode,
+            validatorMinimumPerCableKg = validatorSafeMinimum(request.params),
+            behaviorOverrides = behaviorOverrides,
+        )
+        val cableCount = physicalCableCount.coerceIn(1, 2)
+        val unclampedMachineWeight = request.expectedWeightPerCableKg -
+            (expectedAdjustment.counterweightKg / cableCount)
+        if (!request.params.isEchoMode &&
+            !sameMachineWeight(unclampedMachineWeight, expectedAdjustment.adjustedMachineWeightPerCableKg)
+        ) {
+            return false
+        }
+        val expectedMachineWeight = if (request.params.isEchoMode) {
+            request.expectedWeightPerCableKg
+        } else {
+            expectedAdjustment.adjustedMachineWeightPerCableKg
+        }
+        return bleParams.activeRackItemIds == request.params.activeRackItemIds &&
+            sameMachineWeight(bleParams.externalAddedLoadKg, expectedAdjustment.externalAddedLoadKg) &&
+            sameMachineWeight(bleParams.counterweightKg, expectedAdjustment.counterweightKg) &&
+            sameMachineWeight(bleParams.weightPerCableKg, expectedMachineWeight)
+    }
+
+    private fun retryStartStillAuthorizedLocked(
+        request: RetryStartRequest,
+        lease: ExecutionLease,
+        exercise: RoutineExercise?,
+        plannedSets: List<com.devil.phoenixproject.domain.model.PlannedSet>,
+    ): Boolean {
+        val document = activeRuntimeDocument ?: return false
+        val state = coordinator._workoutState.value
+        if (!ownsAcceptedRetryStartClaim(request) ||
+            !executionGuard.isCurrent(lease) ||
+            captureExternalCommandInputStamp() != request.externalCommandInputStamp ||
+            executionGuard.machineTeardownState.value !is MachineTeardownState.Ready ||
+            activeRuntimeDocumentVersion != request.runtimeDocumentVersion ||
+            document.restTransitionPlan != null ||
+            coordinator._restTransitionPlan.value != null ||
+            acceptedRetryPermission != null ||
+            document.profileId != request.profileId ||
+            document.routineId != request.routineId ||
+            document.routineSessionId != request.routineSessionId ||
+            document.routineExerciseId != request.routineExerciseId ||
+            document.sourceStableSessionId != request.sourceStableSessionId ||
+            document.logicalSetKey != request.logicalSetKey ||
+            document.plannedSetId != request.plannedSetId ||
+            document.sourceExerciseIndex != request.exerciseIndex ||
+            document.sourceSetIndex != request.setIndex ||
+            coordinator.currentRoutineId != request.routineId ||
+            coordinator.currentRoutineSessionId != request.routineSessionId ||
+            coordinator._currentExerciseIndex.value != request.exerciseIndex ||
+            coordinator._currentSetIndex.value != request.setIndex ||
+            coordinator._currentWarmupSetIndex.value >= 0 ||
+            (state !is WorkoutState.Initializing && state !is WorkoutState.Countdown)
+        ) {
+            return false
+        }
+        val readyProfile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready ?: return false
+        val routine = coordinator._loadedRoutine.value ?: return false
+        if (readyProfile.profile.id != request.profileId ||
+            routine.id != request.routineId ||
+            exercise == null ||
+            exercise.id != request.routineExerciseId ||
+            routine.exercises.getOrNull(request.exerciseIndex) !== exercise
+        ) {
+            return false
+        }
+        val coordinatePlans = plannedSets.filter { it.setNumber == request.setIndex }
+        if (coordinatePlans.size > 1) return false
+        val plannedSet = coordinatePlans.singleOrNull()
+        if (plannedSet?.id != request.plannedSetId ||
+            plannedSet?.routineExerciseId?.let { it != request.routineExerciseId } == true ||
+            plannedSet?.setType?.let { it != request.logicalSetKey.setKind } == true ||
+            plannedSet?.targetReps != request.plannedTargetReps ||
+            !sameNullableMachineWeight(plannedSet?.targetWeightKg, request.plannedTargetWeightKg) ||
+            (plannedSet == null && semanticSetType(exercise, request.setIndex) != request.logicalSetKey.setKind)
+        ) {
+            return false
+        }
+        val attemptStates = document.attemptStates.filter { it.logicalSetKey == request.logicalSetKey }
+        if (attemptStates.size != 1 ||
+            attemptStates.single().nextAttemptNumber != request.attemptNumber + 1 ||
+            attemptStates.single().acceptedDropCount != request.acceptedDropCount ||
+            document.attemptStates.groupingBy { it.logicalSetKey }.eachCount().values.any { it != 1 }
+        ) {
+            return false
+        }
+        val overlays = document.exerciseLoadOverlays.filter { it.routineExerciseId == request.routineExerciseId }
+        if (overlays.size != 1 ||
+            !sameMachineWeight(overlays.single().multiplier, request.occurrenceMultiplier) ||
+            document.exerciseLoadOverlays.groupingBy { it.routineExerciseId }.eachCount().values.any { it != 1 }
+        ) {
+            return false
+        }
+        val freshBase = RoutineSetWeightResolver(
+            RoutineSetWeightRequest(exercise, request.setIndex, currentPrKg = null),
+        )
+        val freshRetryWeight = RoutineSetWeightResolver(
+            RoutineSetWeightRequest(
+                exercise = exercise,
+                setIndex = request.setIndex,
+                currentPrKg = null,
+                occurrenceMultiplier = request.occurrenceMultiplier,
+            ),
+        )
+        return sameMachineWeight(freshBase, request.programmedBaseWeightPerCableKg) &&
+            sameMachineWeight(freshRetryWeight, request.expectedWeightPerCableKg) &&
+            sameMachineWeight(request.params.weightPerCableKg, request.expectedWeightPerCableKg) &&
+            retryCandidateMatchesCurrentPolicy(
+                exercise = exercise,
+                percentage = request.percentage,
+                sourceConfiguredStartWeightPerCableKg = request.sourceConfiguredStartWeightPerCableKg,
+                programmedBaseWeightPerCableKg = request.programmedBaseWeightPerCableKg,
+                sourceCommandTemplate = request.sourceCommandTemplate,
+                expectedWeightPerCableKg = request.expectedWeightPerCableKg,
+                expectedMultiplier = request.occurrenceMultiplier,
+            ) &&
+            retryCommandMatchesCurrentExercise(request, exercise)
+    }
+
+    private fun retryCommandMatchesCurrentExercise(
+        request: RetryStartRequest,
+        exercise: RoutineExercise,
+    ): Boolean {
+        val expectedAmrap = semanticSetType(exercise, request.setIndex) == SetType.AMRAP
+        val expectedReps = exercise.setReps.getOrNull(request.setIndex) ?: exercise.reps
+        val isTimed = exercise.duration?.takeIf { it > 0 } != null
+        val isBodyweight = exercise.exercise.isBodyweight
+        return request.sourceIsTimed == isTimed &&
+            request.sourceIsBodyweight == isBodyweight &&
+            request.sourceIsCableExercise == !isBodyweight &&
+            request.sourcePhysicalCableCount == exercise.exercise.preferredCableCount &&
+            request.params.programMode == exercise.programMode &&
+            request.params.reps == expectedReps &&
+            request.params.echoLevel == exercise.getEchoLevelForSet(request.setIndex) &&
+            request.params.eccentricLoad == exercise.eccentricLoad &&
+            sameMachineWeight(request.params.progressionRegressionKg, exercise.progressionKg) &&
+            request.params.selectedExerciseId == exercise.exercise.id &&
+            request.params.stopAtTop == exercise.stopAtTop &&
+            request.params.stallDetectionEnabled == exercise.stallDetectionEnabled &&
+            request.params.repCountTiming == exercise.repCountTiming &&
+            request.params.isAMRAP == expectedAmrap &&
+            request.params.isJustLift.not() &&
+            request.params.useAutoStart.not() &&
+            request.params.warmupReps == Constants.DEFAULT_WARMUP_REPS
+    }
+
+    private fun sameNullableMachineWeight(first: Float?, second: Float?): Boolean = when {
+        first == null -> second == null
+        second == null -> false
+        else -> sameMachineWeight(first, second)
+    }
+
+    private suspend fun hasRetryPersistenceAuthority(request: RetryStartRequest): Boolean {
+        if (!ownsAcceptedRetryStartClaim(request) ||
+            (
+                request.requiresLivePersistedClaim &&
+                    executionGuard.persistenceClaimStatus(request.sourceStableSessionId) != PersistenceClaimStatus.PERSISTED
+                )
+        ) {
+            return false
+        }
+        currentCoroutineContext().ensureActive()
+        val durable = completedSetRepository.isAttemptDurable(
+            stableSessionId = request.sourceStableSessionId,
+            key = request.logicalSetKey,
+            attemptNumber = request.sourceAttemptNumber,
+        )
+        currentCoroutineContext().ensureActive()
+        return ownsAcceptedRetryStartClaim(request) &&
+            durable &&
+            (
+                !request.requiresLivePersistedClaim ||
+                    executionGuard.persistenceClaimStatus(request.sourceStableSessionId) == PersistenceClaimStatus.PERSISTED
+                )
+    }
+
     private suspend fun replaceRuntimeDocument(document: ActiveWorkoutRuntimeDocument): Boolean = try {
         activeWorkoutRuntimeRepository.replace(document.profileId, document.routineSessionId, document)
         true
@@ -662,6 +1980,44 @@ class ActiveSessionEngine(
     private fun canonicalAttemptStates(states: List<PlannedSetAttemptState>): List<PlannedSetAttemptState> = states.associateBy { it.logicalSetKey }.values.toList()
 
     private fun canonicalOverlays(overlays: List<ExerciseLoadOverlay>): List<ExerciseLoadOverlay> = overlays.associateBy { it.routineExerciseId }.values.toList()
+
+    private fun ActiveWorkoutRuntimeDocument.matchesRoutineIdentity(
+        profileId: String,
+        routineId: String?,
+        routineSessionId: String?,
+    ): Boolean = this.profileId == profileId &&
+        this.routineId == routineId &&
+        this.routineSessionId == routineSessionId
+
+    internal fun occurrenceLoadMultiplier(routineExerciseId: String): Float {
+        val document = activeRuntimeDocument ?: return 1f
+        val profile = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)?.profile ?: return 1f
+        val routine = coordinator._loadedRoutine.value ?: return 1f
+        val routineId = coordinator.currentRoutineId ?: return 1f
+        val routineSessionId = coordinator.currentRoutineSessionId ?: return 1f
+        if (
+            !document.matchesRoutineIdentity(profile.id, routineId, routineSessionId) ||
+            routine.id != routineId ||
+            routine.exercises.count { it.id == routineExerciseId } != 1 ||
+            document.exerciseLoadOverlays.map { it.routineExerciseId }.distinct().size !=
+            document.exerciseLoadOverlays.size
+        ) {
+            return 1f
+        }
+        return document.exerciseLoadOverlays
+            .singleOrNull { it.routineExerciseId == routineExerciseId }
+            ?.multiplier
+            ?: 1f
+    }
+
+    internal fun resolveOccurrenceSetWeight(exercise: RoutineExercise, setIndex: Int): Float = RoutineSetWeightResolver(
+        RoutineSetWeightRequest(
+            exercise = exercise,
+            setIndex = setIndex,
+            currentPrKg = null,
+            occurrenceMultiplier = occurrenceLoadMultiplier(exercise.id),
+        ),
+    )
     private val repFreshnessGate: RepNotificationFreshnessGate
         get() = executionGuard.repFreshnessGate
 
@@ -679,6 +2035,19 @@ class ActiveSessionEngine(
     internal var lastInitialRestPlanInstallResultForTest: InitialRestPlanInstallResult? = null
         private set
     internal var afterDurableRestPlanClearForTest: (suspend () -> Unit)? = null
+    internal var afterAcceptedRetryPlanConsumedForTest: (suspend () -> Unit)? = null
+    internal var beforeAcceptedRetryGateCaptureForTest: (suspend () -> Unit)? = null
+    internal var beforeAcceptedRetryPlanConsumeForTest: (suspend () -> Unit)? = null
+    internal var beforeAcceptedRetryConfigAuthorityForTest: (suspend () -> Unit)? = null
+    internal var afterAcceptedRetryFinalAuthorityForTest: (suspend () -> Unit)? = null
+    internal var afterAcceptedRetryConfigSentForTest: (suspend () -> Unit)? = null
+    internal var afterAcceptedRetryActivatedForTest: (suspend () -> Unit)? = null
+    internal var beforeManualRetryRecoveryPublishForTest: (() -> Unit)? = null
+    internal var afterManualRetryRecoveryClaimForTest: (() -> Unit)? = null
+    internal var pendingResetStartInterceptorForTest: ((resume: () -> Unit) -> Unit)? = null
+    internal var beforeExecutionBeginForTest: (() -> Unit)? = null
+    internal var beforeQueuedSuccessorMachineConfigurationForTest: (() -> Unit)? = null
+    internal var beforeMachineConfigurationClaimForTest: (() -> Unit)? = null
     internal var beforeRestTransitionNavigationClaimForTest: (suspend () -> Unit)? = null
     internal var beforeRestTransitionNavigationResolutionForTest: (suspend () -> Unit)? = null
     internal var afterRestTransitionNavigationResolutionForTest: (suspend () -> Unit)? = null
@@ -694,7 +2063,43 @@ class ActiveSessionEngine(
 
     internal fun activeRuntimeDocumentForTest(): ActiveWorkoutRuntimeDocument? = activeRuntimeDocument
 
-    internal fun hasPendingTeardownReadyContinuationForTest(lease: ExecutionLease): Boolean = pendingTeardownReadyContinuation.value?.lease?.sameExecutionAs(lease) == true
+    internal fun mutateActiveRuntimeDocumentForTest(
+        transform: (ActiveWorkoutRuntimeDocument) -> ActiveWorkoutRuntimeDocument,
+    ) {
+        val updated = transform(requireNotNull(activeRuntimeDocument))
+        setActiveRuntimeDocument(updated)
+        coordinator._restTransitionPlan.value = updated.restTransitionPlan
+    }
+
+    internal fun installAcceptedRetryRuntimeForTest(document: ActiveWorkoutRuntimeDocument) {
+        val plan = requireNotNull(document.restTransitionPlan as? RestTransitionPlan.AcceptedRetry)
+        require(executionGuard.currentLease == null)
+        setActiveRuntimeDocument(document)
+        coordinator._restTransitionPlan.value = plan
+        coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = RestDeadlineCalculator.remainingSeconds(document, wallClockMillisProvider()),
+            nextExerciseName = coordinator._loadedRoutine.value
+                ?.exercises
+                ?.getOrNull(document.sourceExerciseIndex)
+                ?.exercise
+                ?.displayName
+                .orEmpty(),
+            isLastExercise = false,
+            currentSet = document.sourceSetIndex + 1,
+            totalSets = coordinator._loadedRoutine.value
+                ?.exercises
+                ?.getOrNull(document.sourceExerciseIndex)
+                ?.setReps
+                ?.size
+                ?: 0,
+        )
+        acceptedRetryPermission = null
+    }
+
+    internal fun hasRetainedWorkoutExitSnapshotForTest(sessionId: String): Boolean = exitSnapshotStore.findBySessionId(sessionId) != null
+
+    internal fun hasPendingTeardownReadyContinuationForTest(lease: ExecutionLease): Boolean = pendingTeardownReadyContinuation.value?.lease?.sameExecutionAs(lease) == true ||
+        pendingResetStart.value?.owner?.lease?.sameExecutionAs(lease) == true
 
     internal fun discardTeardownReadyContinuationForTest(lease: ExecutionLease) {
         discardTeardownReadyContinuation(lease)
@@ -843,20 +2248,54 @@ class ActiveSessionEngine(
         reason: TeardownReason,
         attempt: Int = 1,
         afterReady: (() -> Unit)? = null,
-    ) {
+    ): Boolean {
         if (!lease.requiresMachine) {
-            if (executionGuard.isCurrent(lease)) afterReady?.invoke()
-            return
+            if (!executionGuard.isCurrent(lease)) return false
+            executionGuard.releaseQueuedSuccessorSetup(lease)
+            afterReady?.invoke()
+            return true
         }
-        if (!executionGuard.beginTeardown(lease, attempt)) return
+        val request = DeferredMachineConfigurationTeardown(
+            lease = lease,
+            reason = reason,
+            attempt = attempt,
+            afterReady = afterReady,
+        )
+        if (!deferredMachineConfigurationTeardown.compareAndSet(null, request)) return false
+        return when (executionGuard.requestTeardown(lease, attempt)) {
+            MachineTeardownClaimResult.Begun -> {
+                deferredMachineConfigurationTeardown.compareAndSet(request, null)
+                launchClaimedMachineTeardown(request)
+                true
+            }
 
+            MachineTeardownClaimResult.DeferredUntilConfigurationCompletes -> true
+
+            MachineTeardownClaimResult.Rejected -> {
+                deferredMachineConfigurationTeardown.compareAndSet(request, null)
+                false
+            }
+        }
+    }
+
+    private fun launchClaimedMachineTeardown(request: DeferredMachineConfigurationTeardown) {
+        val afterReady = request.afterReady
         if (afterReady != null) {
-            pendingTeardownReadyContinuation.value = PendingTeardownReadyContinuation(lease, afterReady)
+            pendingTeardownReadyContinuation.value = PendingTeardownReadyContinuation(request.lease, afterReady)
         } else {
-            discardTeardownReadyContinuation(lease)
+            discardTeardownReadyContinuation(request.lease)
         }
+        launchMachineTeardownReset(request.lease, request.reason)
+    }
 
-        launchMachineTeardownReset(lease, reason)
+    private fun takeDeferredMachineConfigurationTeardown(
+        lease: ExecutionLease,
+    ): DeferredMachineConfigurationTeardown? {
+        while (true) {
+            val pending = deferredMachineConfigurationTeardown.value ?: return null
+            if (!pending.lease.sameExecutionAs(lease)) return null
+            if (deferredMachineConfigurationTeardown.compareAndSet(pending, null)) return pending
+        }
     }
 
     private fun launchMachineTeardownReset(
@@ -888,8 +2327,19 @@ class ActiveSessionEngine(
                 executionGuard.markRecoveryRequired(lease, failureReason)
             } else {
                 val ready = executionGuard.markTeardownReady(lease)
-                if (ready && executionGuard.isCurrent(lease)) {
+                if (ready) {
+                    val resetOwner = resetMachineTeardownOwner.value
+                        ?.takeIf { it.lease.sameExecutionAs(lease) }
+                    if (resetOwner != null && resetMachineTeardownOwner.compareAndSet(resetOwner, null)) {
+                        takePendingResetStart(resetOwner)?.let { pending ->
+                            val resume = { startPendingResetSuccessor(pending) }
+                            pendingResetStartInterceptorForTest?.invoke(resume) ?: resume()
+                        }
+                    }
                     takeTeardownReadyContinuation(lease)?.invoke()
+                    if (executionGuard.isCurrent(lease)) {
+                        scope.launch { tryStartCurrentAcceptedRetryLive() }
+                    }
                 } else {
                     discardTeardownReadyContinuation(lease)
                 }
@@ -918,6 +2368,106 @@ class ActiveSessionEngine(
         }
     }
 
+    private fun takePendingResetStart(owner: ResetMachineTeardownOwner): PendingResetStart? {
+        while (true) {
+            val pending = pendingResetStart.value ?: return null
+            if (pending.owner != owner) return null
+            if (pendingResetStart.compareAndSet(pending, null)) return pending
+        }
+    }
+
+    private fun supersedePendingResetStart() {
+        while (true) {
+            val pending = pendingResetStart.value ?: return
+            if (pendingResetStart.compareAndSet(pending, null)) return
+        }
+    }
+
+    private fun captureExternalCommandInputStamp(): ExternalCommandInputStamp? {
+        val contextBefore = userProfileRepository.activeProfileContext.value
+        val ready = contextBefore as? ActiveProfileContext.Ready
+            ?: return null
+        val profileBackedRack = equipmentRackRepository is ProfileEquipmentRackRepository
+        val profileRackItems = ready.preferences.rack.value.items.toList()
+        val repositoryRackItems = if (profileBackedRack) {
+            profileRackItems
+        } else {
+            equipmentRackRepository.rackItems.value.toList()
+        }
+        val contextAfter = userProfileRepository.activeProfileContext.value
+        val readyAfter = contextAfter as? ActiveProfileContext.Ready ?: return null
+        val repositoryRackItemsAfter = if (profileBackedRack) {
+            readyAfter.preferences.rack.value.items.toList()
+        } else {
+            equipmentRackRepository.rackItems.value.toList()
+        }
+        if (contextBefore != contextAfter || repositoryRackItems != repositoryRackItemsAfter) return null
+        return ExternalCommandInputStamp(
+            profileId = ready.profile.id,
+            profileRackItems = profileRackItems,
+            profileRackMetadata = ready.preferences.rack.metadata,
+            repositoryRackItems = repositoryRackItems,
+        )
+    }
+
+    private fun captureQueuedStartCandidate(): QueuedStartCandidate? {
+        val externalCommandInputStamp = captureExternalCommandInputStamp() ?: return null
+        val loadedRoutine = coordinator._loadedRoutine.value
+        val isTrackedRoutine = loadedRoutine != null &&
+            !loadedRoutine.id.startsWith(DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX)
+        val routineContextIsCoherent = if (isTrackedRoutine) {
+            loadedRoutine.profileId == externalCommandInputStamp.profileId &&
+                coordinator.currentRoutineId == loadedRoutine.id &&
+                coordinator.currentRoutineName == loadedRoutine.name &&
+                !coordinator.currentRoutineSessionId.isNullOrBlank()
+        } else {
+            coordinator.currentRoutineId == null &&
+                coordinator.currentRoutineName == null &&
+                coordinator.currentRoutineSessionId == null
+        }
+        if (!routineContextIsCoherent) return null
+        val exerciseIndex = coordinator._currentExerciseIndex.value
+        val exercise = loadedRoutine?.exercises?.getOrNull(exerciseIndex)
+        val startOverride = pendingStartOverride
+        val params = (startOverride?.params ?: coordinator._workoutParameters.value).let { current ->
+            current.copy(activeRackItemIds = current.activeRackItemIds.toList())
+        }
+        return QueuedStartCandidate(
+            profileId = externalCommandInputStamp.profileId,
+            loadedRoutineId = loadedRoutine?.id,
+            routineId = coordinator.currentRoutineId,
+            routineSessionId = coordinator.currentRoutineSessionId,
+            routineName = coordinator.currentRoutineName,
+            cycleId = coordinator.activeCycleId,
+            cycleDayNumber = coordinator.activeCycleDayNumber,
+            routineExercise = exercise,
+            selectedExerciseId = params.selectedExerciseId,
+            exerciseIndex = exerciseIndex,
+            setIndex = coordinator._currentSetIndex.value,
+            warmupSetIndex = coordinator._currentWarmupSetIndex.value,
+            requiresMachine = exercise?.exercise?.isBodyweight != true,
+            workoutParameters = params,
+            activeRackItemIds = coordinator._activeRackItemIds.value.toList(),
+            activeRackBehaviorOverrides = coordinator._activeRackBehaviorOverrides.value.toMap(),
+            externalCommandInputStamp = externalCommandInputStamp,
+        )
+    }
+
+    private fun queuedStartIdentityStillCurrent(candidate: QueuedStartCandidate): Boolean {
+        val current = captureQueuedStartCandidate() ?: return false
+        return current.copy(workoutParameters = candidate.workoutParameters) == candidate
+    }
+
+    private fun startPendingResetSuccessor(pending: PendingResetStart) {
+        startWorkoutInternal(
+            skipCountdown = pending.skipCountdown,
+            isJustLiftMode = pending.isJustLiftMode,
+            retryRequest = null,
+            queuedSuccessorToken = pending.successorToken,
+            queuedStartCandidate = pending.candidate,
+        )
+    }
+
     fun retryMachineTeardown() {
         if (bleRepository.connectionState.value !is ConnectionState.Connected) return
         val recoveryAttempt = executionGuard.beginRecoveryAttempt() ?: return
@@ -930,32 +2480,30 @@ class ActiveSessionEngine(
     internal fun requestTeardownForTransition(
         reason: TeardownReason,
         afterReady: () -> Unit,
-    ) {
-        requestTeardownForTransition(executionGuard.currentLease, reason, afterReady)
-    }
+    ): Boolean = requestTeardownForTransition(executionGuard.currentLease, reason, afterReady)
 
     internal fun requestTeardownForTransition(
         expectedLease: ExecutionLease?,
         reason: TeardownReason,
         afterReady: () -> Unit,
-    ) {
+    ): Boolean {
         if (expectedLease == null) {
-            if (executionGuard.currentLease != null) return
+            if (executionGuard.currentLease != null) return false
             if (executionGuard.machineTeardownState.value is MachineTeardownState.Ready) {
                 afterReady()
+                return true
             }
-            return
+            return false
         }
-        if (!hasCurrentAuthority(expectedLease, "transition_request_$reason")) return
+        if (!hasCurrentAuthority(expectedLease, "transition_request_$reason")) return false
         if (!expectedLease.requiresMachine) {
-            beginMachineTeardown(expectedLease, reason, afterReady = afterReady)
-            return
+            return beginMachineTeardown(expectedLease, reason, afterReady = afterReady)
         }
         if (executionGuard.machineTeardownState.value !is MachineTeardownState.Ready) {
             logSuppressedStateWrite(expectedLease, "transition_successor_$reason")
-            return
+            return false
         }
-        beginMachineTeardown(expectedLease, reason, afterReady = afterReady)
+        return beginMachineTeardown(expectedLease, reason, afterReady = afterReady)
     }
 
     /**
@@ -1341,9 +2889,11 @@ class ActiveSessionEngine(
     private suspend fun captureRackLoadSnapshot(
         params: WorkoutParameters,
         currentExercise: RoutineExercise?,
+        activeRackItemIds: List<String> = coordinator._activeRackItemIds.value,
+        behaviorOverrides: Map<String, RackItemBehavior> = coordinator._activeRackBehaviorOverrides.value,
     ): WorkoutParameters {
         val selectedItems = equipmentRackRepository.resolveActiveItems(
-            ActiveRackSelection(coordinator._activeRackItemIds.value),
+            ActiveRackSelection(activeRackItemIds),
         )
         val physicalCableCount = currentExercise?.exercise?.preferredCableCount
             ?: resolveSelectedExercise(params)?.preferredCableCount
@@ -1354,12 +2904,12 @@ class ActiveSessionEngine(
             selectedItems = selectedItems,
             isEchoMode = params.isEchoMode,
             validatorMinimumPerCableKg = validatorSafeMinimum(params),
-            behaviorOverrides = coordinator._activeRackBehaviorOverrides.value,
+            behaviorOverrides = behaviorOverrides,
         )
         coordinator._currentRackLoadAdjustment.value = adjustment
         coordinator.currentRackItemsJson = rackJson.encodeToString(selectedItems)
         val paramsWithRack = params.copy(
-            activeRackItemIds = coordinator._activeRackItemIds.value,
+            activeRackItemIds = activeRackItemIds,
             externalAddedLoadKg = adjustment.externalAddedLoadKg,
             counterweightKg = adjustment.counterweightKg,
         )
@@ -2647,23 +4197,33 @@ class ActiveSessionEngine(
 
         Logger.d("ActiveSessionEngine: Adjusting weight to $clampedWeight kg (sendToMachine=$sendToMachine)")
 
-        val currentState = coordinator._workoutState.value
-        if (currentState is WorkoutState.Idle ||
-            currentState is WorkoutState.Resting ||
-            currentState is WorkoutState.SetSummary
-        ) {
-            coordinator._userAdjustedWeightDuringRest = true
-            Logger.d("ActiveSessionEngine: User adjusted weight in ${currentState::class.simpleName} - will preserve on next set")
-        }
+        var transitionState: WorkoutState? = null
+        var deferredToSetBoundary = false
+        executionGuard.mutateConfigurationInputs {
+            val currentState = coordinator._workoutState.value
+            if (currentState is WorkoutState.Idle ||
+                currentState is WorkoutState.Resting ||
+                currentState is WorkoutState.SetSummary
+            ) {
+                coordinator._userAdjustedWeightDuringRest = true
+                transitionState = currentState
+            }
 
-        coordinator._workoutParameters.update { params ->
-            params.copy(weightPerCableKg = clampedWeight)
-        }
+            coordinator._workoutParameters.update { params ->
+                params.copy(weightPerCableKg = clampedWeight)
+            }
 
-        if (sendToMachine && coordinator._workoutState.value is WorkoutState.Active) {
-            // Defer BLE weight change to next set boundary. Sending a full workout
-            // command (REGULAR_COMMAND) mid-set would fault the machine.
-            coordinator.pendingWeightChangeKg = clampedWeight
+            if (sendToMachine && currentState is WorkoutState.Active) {
+                // Defer BLE weight change to next set boundary. Sending a full workout
+                // command (REGULAR_COMMAND) mid-set would fault the machine.
+                coordinator.pendingWeightChangeKg = clampedWeight
+                deferredToSetBoundary = true
+            }
+        }
+        transitionState?.let { state ->
+            Logger.d("ActiveSessionEngine: User adjusted weight in ${state::class.simpleName} - will preserve on next set")
+        }
+        if (deferredToSetBoundary) {
             Logger.d("ActiveSessionEngine: Deferred weight change to $clampedWeight kg (mid-set, will apply at next set start)")
         }
     }
@@ -2719,6 +4279,7 @@ class ActiveSessionEngine(
     }
 
     fun prepareForJustLift() {
+        supersedeConfigurationInputIntent()
         scope.launch {
             val currentState = coordinator._workoutState.value
             val currentWeight = coordinator._workoutParameters.value.weightPerCableKg
@@ -2727,18 +4288,19 @@ class ActiveSessionEngine(
             if (currentState !is WorkoutState.Idle) {
                 Logger.d("Preparing for Just Lift: Resetting from ${currentState::class.simpleName} to Idle")
                 resetForNewWorkout()
-                coordinator._workoutState.value = WorkoutState.Idle
             } else {
                 Logger.d("Just Lift already in Idle state, ensuring auto-start is enabled")
             }
-
-            coordinator.clearActiveRackSelection()
-
-            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+            val justLiftParams = coordinator._workoutParameters.value.copy(
                 isJustLift = true,
                 useAutoStart = true,
                 selectedExerciseId = null,
             )
+            executionGuard.mutateConfigurationInputs {
+                coordinator._workoutState.value = WorkoutState.Idle
+                coordinator.clearActiveRackSelection()
+                coordinator._workoutParameters.value = justLiftParams
+            }
 
             enableHandleDetection()
             val newWeight = coordinator._workoutParameters.value.weightPerCableKg
@@ -2871,13 +4433,16 @@ class ActiveSessionEngine(
     // ===== Training Cycles =====
 
     fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) {
+        supersedeConfigurationInputIntent()
         // Template-created cycle routines (id prefix "cycle_routine_") are intentionally
         // filtered out of coordinator._routines (Daily Routines UI hygiene), so a StateFlow
         // miss must fall back to a direct DB lookup. See issue #620.
         val routine = coordinator._routines.value.find { it.id == routineId }
         if (routine != null) {
-            coordinator.activeCycleId = cycleId
-            coordinator.activeCycleDayNumber = dayNumber
+            executionGuard.mutateConfigurationInputs {
+                coordinator.activeCycleId = cycleId
+                coordinator.activeCycleDayNumber = dayNumber
+            }
             Logger.d { "Loading routine from cycle: cycleId=$cycleId, dayNumber=$dayNumber" }
             // flowDelegate.loadRoutine sets DAILY_ROUTINES synchronously; overwrite to TRAINING_CYCLES after.
             flowDelegate?.loadRoutine(routine)
@@ -2889,8 +4454,10 @@ class ActiveSessionEngine(
                     Logger.w { "Routine not found for cycle load (StateFlow or DB): $routineId" }
                     return@launch
                 }
-                coordinator.activeCycleId = cycleId
-                coordinator.activeCycleDayNumber = dayNumber
+                executionGuard.mutateConfigurationInputs {
+                    coordinator.activeCycleId = cycleId
+                    coordinator.activeCycleDayNumber = dayNumber
+                }
                 Logger.d { "Loading routine from cycle via DB fallback: cycleId=$cycleId, dayNumber=$dayNumber" }
                 flowDelegate?.loadRoutine(dbRoutine)
                 coordinator.routineLaunchOrigin = RoutineLaunchOrigin.TRAINING_CYCLES
@@ -2903,6 +4470,7 @@ class ActiveSessionEngine(
      * weight resolution finishes. Callers must await this before enterSetReady/startWorkout.
      */
     suspend fun loadRoutineFromCycleAsync(routineId: String, cycleId: String, dayNumber: Int): Boolean {
+        supersedeConfigurationInputIntent()
         // DB fallback: template-created cycle routines ("cycle_routine_" prefix) are filtered
         // out of coordinator._routines, so they can only be found via direct lookup. Issue #620.
         val routine = coordinator._routines.value.find { it.id == routineId }
@@ -2911,8 +4479,10 @@ class ActiveSessionEngine(
                 Logger.w { "Routine not found for cycle load (StateFlow or DB): $routineId" }
                 return false
             }
-        coordinator.activeCycleId = cycleId
-        coordinator.activeCycleDayNumber = dayNumber
+        executionGuard.mutateConfigurationInputs {
+            coordinator.activeCycleId = cycleId
+            coordinator.activeCycleDayNumber = dayNumber
+        }
         Logger.d { "Loading routine from cycle (async): cycleId=$cycleId, dayNumber=$dayNumber" }
         // flowDelegate.loadRoutineAsync sets DAILY_ROUTINES; overwrite to TRAINING_CYCLES after it returns.
         val result = flowDelegate?.loadRoutineAsync(routine) ?: false
@@ -2947,11 +4517,13 @@ class ActiveSessionEngine(
         // A final transition may complete after a new routine has replaced the
         // coordinator context. Only clear the fields when they still name this
         // captured source; never consume a newer cycle's identity.
-        if (coordinator.activeCycleId == resolvedCycleId &&
-            coordinator.activeCycleDayNumber == resolvedDayNumber
-        ) {
-            coordinator.activeCycleId = null
-            coordinator.activeCycleDayNumber = null
+        executionGuard.mutateConfigurationInputs {
+            if (coordinator.activeCycleId == resolvedCycleId &&
+                coordinator.activeCycleDayNumber == resolvedDayNumber
+            ) {
+                coordinator.activeCycleId = null
+                coordinator.activeCycleDayNumber = null
+            }
         }
 
         updateCycleProgress(resolvedCycleId, resolvedDayNumber)
@@ -3053,11 +4625,31 @@ class ActiveSessionEngine(
     // ===== Core Workout Lifecycle =====
 
     fun resetForNewWorkout() {
+        executionGuard.supersedeRecoveryPublication()
+        executionGuard.supersedeQueuedSuccessors()
+        supersedePendingResetStart()
+        if (acceptedRetryStartClaim.value != null && coordinator.workoutJob?.isActive == true) {
+            coordinator.workoutJob?.cancel(CancellationException("Accepted retry reset requested"))
+            return
+        }
         val resetToken = executionGuard.captureResetCleanupToken()
         val lease = resetToken.lease
         afterResetCleanupTokenCaptureForTest?.invoke()
+        coordinator.workoutJob?.cancel(CancellationException("Workout reset requested"))
+        coordinator.workoutJob = null
         lease?.let(bodyweightCompletionGate::invalidate)
         lease?.let(::clearDangerZoneCountdownOverride)
+        if (lease?.requiresMachine == true) {
+            val resetOwner = ResetMachineTeardownOwner(
+                id = resetMachineTeardownOwnerSequence.incrementAndGet(),
+                lease = lease,
+            )
+            if (resetMachineTeardownOwner.compareAndSet(null, resetOwner) &&
+                !beginMachineTeardown(lease, TeardownReason.RECOVERY)
+            ) {
+                resetMachineTeardownOwner.compareAndSet(resetOwner, null)
+            }
+        }
         val invalidatedLease = lease?.takeIf {
             executionGuard.invalidate(it, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
         }
@@ -3120,6 +4712,7 @@ class ActiveSessionEngine(
     private fun clampUpcomingProgressionKg(valueKg: Float): Float = valueKg.coerceIn(-3f, 3f)
 
     fun updateWorkoutParameters(params: WorkoutParameters) {
+        supersedeConfigurationInputIntent()
         // Defense: reject near-zero weight writes in Just Lift mode.
         // The JustLiftScreen param-sync LaunchedEffect can fire before defaults
         // are loaded, writing the hardcoded initial value (0.453592f). Guard
@@ -3138,17 +4731,22 @@ class ActiveSessionEngine(
         }
 
         val currentState = coordinator._workoutState.value
-        if (currentState is WorkoutState.Idle ||
+        val preserveDuringTransition = currentState is WorkoutState.Idle ||
             currentState is WorkoutState.Resting ||
             currentState is WorkoutState.SetSummary
-        ) {
-            coordinator._userAdjustedWeightDuringRest = true
+        executionGuard.mutateConfigurationInputs {
+            if (preserveDuringTransition) {
+                coordinator._userAdjustedWeightDuringRest = true
+            }
+            coordinator._workoutParameters.value = safeParams
+        }
+        if (preserveDuringTransition) {
             Logger.d("updateWorkoutParameters: User edited params in ${currentState::class.simpleName} - will preserve on transition")
         }
-        coordinator._workoutParameters.value = safeParams
     }
 
     fun updateActiveRackSelection(itemIds: List<String>) {
+        supersedeConfigurationInputIntent()
         // Issue #534: For body-weight exercises, recompute _currentRackLoadAdjustment
         // synchronously when the user toggles a vest / counterweight on the live-set
         // screen, so that applyBodyweightVolume (called from confirmBodyweightSetResult)
@@ -3182,49 +4780,83 @@ class ActiveSessionEngine(
                 ListSerializer(RackItem.serializer()),
                 resolvedItems,
             )
-            coordinator.setActiveRackSelection(
-                itemIds = distinctIds,
-                precomputedAdjustment = adjustment,
-                precomputedItemsJson = itemsJson,
-            )
+            executionGuard.mutateConfigurationInputs {
+                coordinator.setActiveRackSelection(
+                    itemIds = distinctIds,
+                    precomputedAdjustment = adjustment,
+                    precomputedItemsJson = itemsJson,
+                )
+            }
         } else {
-            coordinator.setActiveRackSelection(distinctIds)
+            executionGuard.mutateConfigurationInputs {
+                coordinator.setActiveRackSelection(distinctIds)
+            }
         }
     }
 
     fun updateActiveRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) {
-        coordinator._activeRackBehaviorOverrides.value = overrides
-
-        val currentExercise = coordinator._loadedRoutine.value
-            ?.exercises
-            ?.getOrNull(coordinator._currentExerciseIndex.value)
-            ?: return
-
-        val activeIds = coordinator._activeRackItemIds.value
-        val resolvedItems = equipmentRackRepository.rackItems.value
-            .filter { it.enabled && it.id in activeIds }
-        val currentParams = coordinator._workoutParameters.value
-        val adjustment = applyEquipmentRackLoadUseCase.calculate(
-            programmedWeightPerCableKg = currentParams.weightPerCableKg,
-            physicalCableCount = currentExercise.exercise.preferredCableCount ?: 1,
-            selectedItems = resolvedItems,
-            isEchoMode = currentParams.isEchoMode,
-            validatorMinimumPerCableKg = validatorSafeMinimum(currentParams),
-            behaviorOverrides = overrides,
-        )
-        val itemsJson = rackJson.encodeToString(
-            ListSerializer(RackItem.serializer()),
-            resolvedItems,
-        )
-        coordinator.setActiveRackSelection(
-            itemIds = activeIds,
-            precomputedAdjustment = adjustment,
-            precomputedItemsJson = itemsJson,
+        publishLoadedRoutineRackBehaviorOverrides(
+            updatedRoutine = null,
+            overrides = overrides,
         )
     }
 
+    fun updateLoadedRoutineRackBehaviorOverrides(
+        updatedRoutine: Routine,
+        overrides: Map<String, RackItemBehavior>,
+    ) {
+        publishLoadedRoutineRackBehaviorOverrides(
+            updatedRoutine = updatedRoutine,
+            overrides = overrides,
+        )
+    }
+
+    private fun publishLoadedRoutineRackBehaviorOverrides(
+        updatedRoutine: Routine?,
+        overrides: Map<String, RackItemBehavior>,
+    ) {
+        supersedeConfigurationInputIntent()
+        val routine = updatedRoutine ?: coordinator._loadedRoutine.value
+        val currentExercise = routine
+            ?.exercises
+            ?.getOrNull(coordinator._currentExerciseIndex.value)
+        val activeIds = coordinator._activeRackItemIds.value.toList()
+        val rackUpdate = currentExercise?.let { exercise ->
+            val resolvedItems = equipmentRackRepository.rackItems.value
+                .filter { it.enabled && it.id in activeIds }
+            val currentParams = coordinator._workoutParameters.value
+            val adjustment = applyEquipmentRackLoadUseCase.calculate(
+                programmedWeightPerCableKg = currentParams.weightPerCableKg,
+                physicalCableCount = exercise.exercise.preferredCableCount ?: 1,
+                selectedItems = resolvedItems,
+                isEchoMode = currentParams.isEchoMode,
+                validatorMinimumPerCableKg = validatorSafeMinimum(currentParams),
+                behaviorOverrides = overrides,
+            )
+            adjustment to rackJson.encodeToString(
+                ListSerializer(RackItem.serializer()),
+                resolvedItems,
+            )
+        }
+        executionGuard.mutateConfigurationInputs {
+            if (updatedRoutine != null) {
+                coordinator._loadedRoutine.value = updatedRoutine
+            }
+            coordinator._activeRackBehaviorOverrides.value = overrides
+            rackUpdate?.let { (adjustment, itemsJson) ->
+                coordinator.setActiveRackSelection(
+                    itemIds = activeIds,
+                    precomputedAdjustment = adjustment,
+                    precomputedItemsJson = itemsJson,
+                )
+            }
+        }
+    }
+
     fun clearActiveRackSelection() {
-        coordinator.clearActiveRackSelection()
+        executionGuard.mutateConfigurationInputs {
+            coordinator.clearActiveRackSelection()
+        }
     }
 
     /**
@@ -3234,8 +4866,24 @@ class ActiveSessionEngine(
      * parameters as user-adjusted during rest.
      */
     fun setWorkoutParametersInternal(params: WorkoutParameters) {
-        coordinator._userAdjustedWeightDuringRest = false
-        coordinator._workoutParameters.value = params
+        executionGuard.mutateConfigurationInputs {
+            coordinator._userAdjustedWeightDuringRest = false
+            coordinator._workoutParameters.value = params
+        }
+    }
+
+    internal fun mutateConfigurationInputs(block: () -> Unit) {
+        executionGuard.mutateConfigurationInputs(block)
+    }
+
+    internal fun supersedeConfigurationInputIntent() {
+        executionGuard.mutateConfigurationInputs { }
+    }
+
+    internal fun beginConfigurationInputMutation(): ConfigurationInputMutationToken = executionGuard.beginConfigurationInputMutation()
+
+    internal fun endConfigurationInputMutation(token: ConfigurationInputMutationToken) {
+        executionGuard.endConfigurationInputMutation(token)
     }
 
     fun captureInterruptedWorkoutForRecovery() {
@@ -3260,6 +4908,7 @@ class ActiveSessionEngine(
     }
 
     fun reconnectInterruptedWorkout() {
+        supersedeConfigurationInputIntent()
         val plan = buildInterruptedWorkoutRecoveryPlan()
         applyInterruptedWorkoutRecoveryPlan(plan)
     }
@@ -3420,9 +5069,7 @@ class ActiveSessionEngine(
         val resolvedSetReps = rawSetReps ?: exercise.reps
         return coordinator._workoutParameters.value.copy(
             programMode = exercise.programMode,
-            weightPerCableKg = RoutineSetWeightResolver(
-                RoutineSetWeightRequest(exercise = exercise, setIndex = setIndex, currentPrKg = null),
-            ),
+            weightPerCableKg = resolveOccurrenceSetWeight(exercise, setIndex),
             reps = resolvedSetReps,
             warmupReps = Constants.DEFAULT_WARMUP_REPS,
             echoLevel = exercise.getEchoLevelForSet(setIndex),
@@ -3461,13 +5108,15 @@ class ActiveSessionEngine(
                         "setIndex=${coordinator._currentSetIndex.value}, warmupSetIndex=${plan.warmupSetIndex}, params=${plan.params}"
                 }
                 interruptedSetRecovery = null
-                pendingStartOverride = StartWorkoutOverride(
-                    params = plan.params,
-                    preserveWarmupReps = plan.preserveWarmupReps,
-                    skipVariableWarmupOverride = plan.skipVariableWarmupOverride,
-                )
-                coordinator._currentWarmupSetIndex.value = plan.warmupSetIndex
-                coordinator._workoutParameters.value = plan.params
+                executionGuard.mutateConfigurationInputs {
+                    pendingStartOverride = StartWorkoutOverride(
+                        params = plan.params,
+                        preserveWarmupReps = plan.preserveWarmupReps,
+                        skipVariableWarmupOverride = plan.skipVariableWarmupOverride,
+                    )
+                    coordinator._currentWarmupSetIndex.value = plan.warmupSetIndex
+                    coordinator._workoutParameters.value = plan.params
+                }
                 resetInterruptedWorkoutTrackingState()
                 startWorkout(skipCountdown = true)
             }
@@ -3540,10 +5189,10 @@ class ActiveSessionEngine(
         )
     }
 
-    private fun failStart(lease: ExecutionLease, priorWorkoutState: WorkoutState) {
+    private fun failStart(lease: ExecutionLease, priorWorkoutState: WorkoutState): Boolean {
         bodyweightCompletionGate.invalidate(lease)
         clearDangerZoneCountdownOverride(lease)
-        if (!executionGuard.invalidate(lease, ExecutionInvalidationReason.START_FAILED)) return
+        if (!executionGuard.invalidate(lease, ExecutionInvalidationReason.START_FAILED)) return false
         discardTeardownReadyContinuation(lease)
         executionGuard.cancelPresentationJobsFor(lease)
         repFreshnessGate.invalidate(lease)
@@ -3555,6 +5204,7 @@ class ActiveSessionEngine(
         } else {
             WorkoutState.Idle
         }
+        return true
     }
 
     private enum class StartRejectionReason {
@@ -3565,25 +5215,137 @@ class ActiveSessionEngine(
     }
 
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) {
+        when (coordinator._restTransitionPlan.value) {
+            is RestTransitionPlan.UnresolvedDropOffer,
+            is RestTransitionPlan.AcceptedRetry,
+            -> return
+
+            else -> Unit
+        }
+        if (acceptedRetryStartClaim.value != null) return
+        val exercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
+        if (!isBodyweightExercise(exercise) && deferStartUntilOwnedResetCompletes(skipCountdown, isJustLiftMode)) {
+            return
+        }
+        executionGuard.supersedeQueuedSuccessors()
+        supersedePendingResetStart()
+        startWorkoutInternal(
+            skipCountdown = skipCountdown,
+            isJustLiftMode = isJustLiftMode,
+            retryRequest = null,
+            queuedSuccessorToken = null,
+            queuedStartCandidate = null,
+        )
+    }
+
+    private fun deferStartUntilOwnedResetCompletes(
+        skipCountdown: Boolean,
+        isJustLiftMode: Boolean,
+    ): Boolean {
+        val resetOwner = resetMachineTeardownOwner.value ?: return false
+        val teardownLease = executionGuard.captureMachineTeardownLease()
+            ?.takeIf { it.sameExecutionAs(resetOwner.lease) }
+            ?: return false
+        val preparedSuccessor = executionGuard.prepareNoCurrentSuccessor {
+            syncRoutineSessionContext()
+            captureQueuedStartCandidate()
+        }
+        if (preparedSuccessor == null) {
+            rejectStart(StartRejectionReason.PROFILE_SWITCHING)
+            return true
+        }
+        val (successorToken, candidate) = preparedSuccessor
+        val pending = PendingResetStart(
+            owner = resetOwner,
+            successorToken = successorToken,
+            candidate = candidate,
+            skipCountdown = skipCountdown,
+            isJustLiftMode = isJustLiftMode,
+        )
+        while (true) {
+            val existing = pendingResetStart.value
+            if (existing != null && existing.owner != resetOwner) {
+                rejectStart(StartRejectionReason.TEARING_DOWN)
+                return true
+            }
+            if (pendingResetStart.compareAndSet(existing, pending)) break
+        }
+        if ((
+                resetMachineTeardownOwner.value != resetOwner ||
+                    executionGuard.captureMachineTeardownLease()?.sameExecutionAs(teardownLease) != true
+                ) &&
+            pendingResetStart.compareAndSet(pending, null)
+        ) {
+            startPendingResetSuccessor(pending)
+        }
+        return true
+    }
+
+    private fun startWorkoutInternal(
+        skipCountdown: Boolean,
+        isJustLiftMode: Boolean,
+        retryRequest: RetryStartRequest?,
+        queuedSuccessorToken: NoCurrentSuccessorToken? = null,
+        queuedStartCandidate: QueuedStartCandidate? = null,
+    ): ExecutionLease? {
+        if (retryRequest != null && !ownsAcceptedRetryStartClaim(retryRequest)) return null
+        if ((queuedSuccessorToken == null) != (queuedStartCandidate == null)) return null
+        val ordinaryConfigurationInputEpoch = if (retryRequest == null && queuedSuccessorToken == null) {
+            executionGuard.captureConfigurationInputEpoch()
+        } else {
+            null
+        }
+        val ordinaryExternalCommandInputStamp = if (retryRequest == null && queuedSuccessorToken == null) {
+            captureExternalCommandInputStamp()
+        } else {
+            null
+        }
+        val expectedExternalCommandInputStamp = retryRequest?.externalCommandInputStamp
+            ?: queuedStartCandidate?.externalCommandInputStamp
+            ?: ordinaryExternalCommandInputStamp
         val readyProfile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
         if (readyProfile == null) {
             Logger.w { "Workout start ignored while profile context is switching" }
             rejectStart(StartRejectionReason.PROFILE_SWITCHING)
-            return
+            return null
         }
-        val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
+        if (expectedExternalCommandInputStamp == null ||
+            readyProfile.profile.id != expectedExternalCommandInputStamp.profileId ||
+            captureExternalCommandInputStamp() != expectedExternalCommandInputStamp
+        ) {
+            return null
+        }
+        if (retryRequest != null && readyProfile.profile.id != retryRequest.profileId) {
+            return null
+        }
+        val coordinatorExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
+        if (queuedStartCandidate != null && captureQueuedStartCandidate() != queuedStartCandidate) {
+            return null
+        }
+        val currentExercise = queuedStartCandidate?.routineExercise ?: coordinatorExercise
+        if (retryRequest != null &&
+            (
+                coordinator._currentExerciseIndex.value != retryRequest.exerciseIndex ||
+                    coordinator._currentSetIndex.value != retryRequest.setIndex ||
+                    currentExercise == null ||
+                    currentExercise.id != retryRequest.routineExerciseId ||
+                    !retryCommandMatchesCurrentExercise(retryRequest, currentExercise)
+                )
+        ) {
+            return null
+        }
         val isBodyweightAtStart = isBodyweightExercise(currentExercise)
         val requiresMachine = !isBodyweightAtStart
         if (requiresMachine) {
             when (executionGuard.machineTeardownState.value) {
                 is MachineTeardownState.TearingDown -> {
                     rejectStart(StartRejectionReason.TEARING_DOWN)
-                    return
+                    return null
                 }
 
                 is MachineTeardownState.RecoveryRequired -> {
                     rejectStart(StartRejectionReason.RECOVERY_REQUIRED)
-                    return
+                    return null
                 }
 
                 MachineTeardownState.Ready -> Unit
@@ -3591,13 +5353,21 @@ class ActiveSessionEngine(
         }
         if (requiresMachine && bleRepository.connectionState.value !is ConnectionState.Connected) {
             rejectStart(StartRejectionReason.NOT_CONNECTED)
-            return
+            return null
         }
 
-        val seedParams = pendingStartOverride?.params ?: coordinator._workoutParameters.value
+        val capturedStartOverride = if (retryRequest == null) {
+            pendingStartOverride
+        } else {
+            null
+        }
+        val seedParams = retryRequest?.params
+            ?: capturedStartOverride?.params
+            ?: queuedStartCandidate?.workoutParameters
+            ?: coordinator._workoutParameters.value
         val durationSeconds = currentExercise?.duration?.takeIf { it > 0 }
         val isTimedCableAtStart = requiresMachine && durationSeconds != null
-        val variableWarmupTarget = coordinator._currentWarmupSetIndex.value
+        val variableWarmupTarget = (queuedStartCandidate?.warmupSetIndex ?: coordinator._currentWarmupSetIndex.value)
             .takeIf { it >= 0 }
             ?.let { currentExercise?.warmupSets?.getOrNull(it)?.reps }
         val leaseTarget = if (isBodyweightAtStart || isTimedCableAtStart) {
@@ -3606,28 +5376,50 @@ class ActiveSessionEngine(
             variableWarmupTarget ?: seedParams.reps
         }
         val outgoingLease = executionGuard.currentLease
-        val lease = executionGuard.beginExecution(
-            ExecutionSeed(
-                sessionId = KmpUtils.randomUUID(),
-                profileId = readyProfile.profile.id,
-                requiresMachine = requiresMachine,
-                workingRepTarget = leaseTarget,
-                isBodyweight = isBodyweightAtStart,
-                isJustLift = isJustLiftMode || seedParams.isJustLift,
-                isAmrap = seedParams.isAMRAP,
-                isTimedCable = isTimedCableAtStart,
-            ),
-        ).getOrElse {
+        val executionSeed = ExecutionSeed(
+            sessionId = KmpUtils.randomUUID(),
+            profileId = readyProfile.profile.id,
+            requiresMachine = requiresMachine,
+            workingRepTarget = leaseTarget,
+            isBodyweight = isBodyweightAtStart,
+            isJustLift = isJustLiftMode || seedParams.isJustLift,
+            isAmrap = seedParams.isAMRAP,
+            isTimedCable = isTimedCableAtStart,
+        )
+        beforeExecutionBeginForTest?.invoke()
+        val leaseResult = when {
+            retryRequest != null -> executionGuard.beginSuccessorExecution(retryRequest.expectedSource, executionSeed)
+
+            queuedSuccessorToken != null -> executionGuard.beginNoCurrentSuccessorExecution(
+                token = queuedSuccessorToken,
+                seed = executionSeed,
+                candidateStillCurrent = { captureQueuedStartCandidate() == queuedStartCandidate },
+            )
+
+            else -> executionGuard.beginExecution(executionSeed)
+        }
+        val lease = leaseResult.getOrElse {
             when (executionGuard.machineTeardownState.value) {
                 is MachineTeardownState.RecoveryRequired -> rejectStart(StartRejectionReason.RECOVERY_REQUIRED)
                 else -> rejectStart(StartRejectionReason.TEARING_DOWN)
             }
-            return
+            return null
+        }
+        if (queuedStartCandidate != null && captureQueuedStartCandidate() != queuedStartCandidate) {
+            executionGuard.invalidate(lease, ExecutionInvalidationReason.START_FAILED)
+            return null
+        }
+        if (retryRequest == null && pendingStartOverride === capturedStartOverride) {
+            pendingStartOverride = null
         }
         outgoingLease?.let(::discardTeardownReadyContinuation)
         afterExecutionBegin(outgoingLease?.executionId, lease.executionId)
+        if (queuedStartCandidate != null && !queuedStartIdentityStillCurrent(queuedStartCandidate)) {
+            executionGuard.invalidate(lease, ExecutionInvalidationReason.START_FAILED)
+            return null
+        }
         bodyweightCompletionGate.beginExecution(lease)
-        if (!installBiomechanicsContext(lease)) return
+        if (!installBiomechanicsContext(lease)) return null
         retryRetainedWorkoutExitPersistence()
         executionContext = null
         val priorWorkoutState = coordinator._workoutState.value
@@ -3662,41 +5454,83 @@ class ActiveSessionEngine(
         coordinator.workoutJob?.cancel()
 
         coordinator._workoutState.value = WorkoutState.Initializing
-        syncRoutineSessionContext()
-        val routineSessionIdAtStart = coordinator.currentRoutineSessionId
-        val routineIdAtStart = coordinator.currentRoutineId
-        val routineNameAtStart = coordinator.currentRoutineName
-        val exerciseIndexAtStart = coordinator._currentExerciseIndex.value
-        val setIndexAtStart = coordinator._currentSetIndex.value
-        val warmupSetIndexAtStart = coordinator._currentWarmupSetIndex.value
-        val cycleIdAtStart = coordinator.activeCycleId
-        val cycleDayNumberAtStart = coordinator.activeCycleDayNumber
+        if (retryRequest == null && queuedStartCandidate == null) syncRoutineSessionContext()
+        val routineSessionIdAtStart = retryRequest?.routineSessionId
+            ?: queuedStartCandidate?.routineSessionId
+            ?: coordinator.currentRoutineSessionId
+        val routineIdAtStart = retryRequest?.routineId
+            ?: queuedStartCandidate?.routineId
+            ?: coordinator.currentRoutineId
+        val routineNameAtStart = queuedStartCandidate?.routineName ?: coordinator.currentRoutineName
+        val exerciseIndexAtStart = queuedStartCandidate?.exerciseIndex ?: coordinator._currentExerciseIndex.value
+        val setIndexAtStart = queuedStartCandidate?.setIndex ?: coordinator._currentSetIndex.value
+        val warmupSetIndexAtStart = queuedStartCandidate?.warmupSetIndex ?: coordinator._currentWarmupSetIndex.value
+        val cycleIdAtStart = queuedStartCandidate?.cycleId ?: coordinator.activeCycleId
+        val cycleDayNumberAtStart = queuedStartCandidate?.cycleDayNumber ?: coordinator.activeCycleDayNumber
 
         coordinator.workoutJob = scope.launch {
+            var configMayHaveReachedMachine = false
+            var recoveryTeardownScheduled = false
+            var configurationTeardownHandedOff = false
+            var retryStartCommitted = false
             try {
-                val startOverride = pendingStartOverride.also { pendingStartOverride = null }
+                val startOverride = capturedStartOverride
                 if (startOverride != null) {
                     coordinator._workoutParameters.value = startOverride.params
                 }
-                val baseParams = startOverride?.params ?: coordinator._workoutParameters.value
+                if (queuedStartCandidate != null && captureQueuedStartCandidate() != queuedStartCandidate) {
+                    failStart(lease, priorWorkoutState)
+                    return@launch
+                }
+                val baseParams = retryRequest?.params
+                    ?: startOverride?.params
+                    ?: queuedStartCandidate?.workoutParameters
+                    ?: coordinator._workoutParameters.value
 
-                val params = captureRackLoadSnapshot(baseParams, currentExercise)
+                if (retryRequest != null && !hasRetryPersistenceAuthority(retryRequest)) {
+                    failRetryStartAndRecover(retryRequest, lease, priorWorkoutState)
+                    return@launch
+                }
+
                 val isBodyweight = isBodyweightExercise(currentExercise)
                 val exerciseDuration = currentExercise?.duration?.takeIf { it > 0 }
                 val bodyweightDuration = if (isBodyweight) exerciseDuration else null
 
-                val selectedExerciseAtStart = currentExercise?.exercise ?: resolveSelectedExercise(params)
-                val plannedSetAtStart = currentExercise?.let { exercise ->
-                    completedSetRepository.getPlannedSets(exercise.id).find { it.setNumber == setIndexAtStart }
+                val plannedSetsAtStart = currentExercise?.let { exercise ->
+                    completedSetRepository.getPlannedSets(exercise.id)
+                }.orEmpty()
+                val plannedSetAtStart = plannedSetsAtStart.singleOrNull { it.setNumber == setIndexAtStart }
+                if (retryRequest != null &&
+                    !restTransitionMutex.withLock {
+                        retryStartStillAuthorizedLocked(
+                            request = retryRequest,
+                            lease = lease,
+                            exercise = currentExercise,
+                            plannedSets = plannedSetsAtStart,
+                        )
+                    }
+                ) {
+                    failRetryStartAndRecover(retryRequest, lease, priorWorkoutState)
+                    return@launch
                 }
+                val params = captureRackLoadSnapshot(
+                    params = baseParams,
+                    currentExercise = currentExercise,
+                    activeRackItemIds = queuedStartCandidate?.activeRackItemIds
+                        ?: coordinator._activeRackItemIds.value,
+                    behaviorOverrides = queuedStartCandidate?.activeRackBehaviorOverrides
+                        ?: coordinator._activeRackBehaviorOverrides.value,
+                )
+                val selectedExerciseAtStart = currentExercise?.exercise ?: resolveSelectedExercise(params)
                 val semanticSetType = when {
+                    retryRequest != null -> retryRequest.logicalSetKey.setKind
                     currentExercise == null -> if (seedParams.isAMRAP) SetType.AMRAP else SetType.STANDARD
                     currentExercise.setReps.getOrNull(setIndexAtStart) == null -> SetType.AMRAP
                     currentExercise.isAMRAP && setIndexAtStart == currentExercise.setReps.lastIndex -> SetType.AMRAP
                     else -> SetType.STANDARD
                 }
                 val plannedSetTypeAtStart = plannedSetAtStart?.setType ?: semanticSetType
-                val logicalSetKeyAtStart = if (routineSessionIdAtStart != null && currentExercise != null) {
+                val logicalSetKeyAtStart = retryRequest?.logicalSetKey ?: if (routineSessionIdAtStart != null && currentExercise != null) {
                     LogicalSetKey(
                         routineSessionId = routineSessionIdAtStart,
                         routineExerciseId = currentExercise.id,
@@ -3709,9 +5543,45 @@ class ActiveSessionEngine(
                 // startWorkout is intentionally non-suspending. The durable seed is resolved
                 // inside its existing start job, before activation or any machine command,
                 // from the immutable key captured above rather than mutable coordinator state.
-                val attemptNumberAtStart = logicalSetKeyAtStart
+                val attemptNumberAtStart = retryRequest?.attemptNumber ?: logicalSetKeyAtStart
                     ?.let { completedSetRepository.nextAttemptNumber(it) }
                     ?: 1
+                val retainedManualAttemptState = if (retryRequest == null && logicalSetKeyAtStart != null) {
+                    activeRuntimeDocument
+                        ?.takeIf { document ->
+                            document.restTransitionPlan == null &&
+                                document.matchesRoutineIdentity(
+                                    lease.profileId,
+                                    routineIdAtStart,
+                                    routineSessionIdAtStart,
+                                )
+                        }
+                        ?.attemptStates
+                        ?.filter { it.logicalSetKey == logicalSetKeyAtStart }
+                        ?.let { matchingStates ->
+                            val state = matchingStates.singleOrNull()
+                            val expectedReservation = state?.nextAttemptNumber == attemptNumberAtStart
+                            val consumedRetryReservation = state?.nextAttemptNumber == attemptNumberAtStart + 1 &&
+                                activeRuntimeDocument?.sourceAttemptNumber == attemptNumberAtStart - 1 &&
+                                activeRuntimeDocument?.logicalSetKey == logicalSetKeyAtStart &&
+                                state.acceptedDropCount > 0
+                            if (matchingStates.size > 1 ||
+                                (
+                                    state != null &&
+                                        (
+                                            (!expectedReservation && !consumedRetryReservation) ||
+                                                state.acceptedDropCount !in 0..2
+                                            )
+                                    )
+                            ) {
+                                failStart(lease, priorWorkoutState)
+                                return@launch
+                            }
+                            state
+                        }
+                } else {
+                    null
+                }
                 val routineIdentityAtStart = if (
                     routineIdAtStart != null && routineSessionIdAtStart != null &&
                     currentExercise != null && logicalSetKeyAtStart != null
@@ -3722,14 +5592,14 @@ class ActiveSessionEngine(
                         routineSessionId = routineSessionIdAtStart,
                         routineExerciseId = currentExercise.id,
                         logicalSetKey = logicalSetKeyAtStart,
-                        plannedSetId = plannedSetAtStart?.id,
+                        plannedSetId = retryRequest?.plannedSetId ?: plannedSetAtStart?.id,
                         exerciseIndex = exerciseIndexAtStart,
                         setIndex = setIndexAtStart,
                     )
                 } else {
                     null
                 }
-                val programmedBaseWeight = currentExercise?.let { exercise ->
+                val programmedBaseWeight = retryRequest?.programmedBaseWeightPerCableKg ?: currentExercise?.let { exercise ->
                     RoutineSetWeightResolver(
                         RoutineSetWeightRequest(
                             exercise = exercise,
@@ -3755,11 +5625,13 @@ class ActiveSessionEngine(
                     completionFacts = SetExecutionActivationFacts(
                         routineIdentity = routineIdentityAtStart,
                         attemptNumber = attemptNumberAtStart,
-                        acceptedDropCount = 0,
+                        acceptedDropCount = retryRequest?.acceptedDropCount
+                            ?: retainedManualAttemptState?.acceptedDropCount
+                            ?: 0,
                         plannedSetType = plannedSetTypeAtStart,
                         programMode = baseParams.programMode,
                         programmedBaseWeightPerCableKg = programmedBaseWeight,
-                        configuredStartWeightPerCableKg = baseParams.weightPerCableKg,
+                        configuredStartWeightPerCableKg = retryRequest?.expectedWeightPerCableKg ?: baseParams.weightPerCableKg,
                         progressionKg = baseParams.progressionRegressionKg,
                         targetReps = if (semanticAmrap || isTimedCableAtStart || isBodyweightAtStart) null else leaseTarget,
                         isWarmup = warmupSetIndexAtStart >= 0,
@@ -3769,6 +5641,7 @@ class ActiveSessionEngine(
                         isTimed = durationSeconds != null,
                         isAmrap = semanticAmrap,
                         isCableExercise = requiresMachine,
+                        physicalCableCount = selectedExerciseAtStart?.preferredCableCount,
                         logicalPreRackCommandTemplate = params.copy(
                             // The command must retain the pre-rack programmed weight,
                             // while the remaining metadata is the resolved set-start
@@ -3825,8 +5698,28 @@ class ActiveSessionEngine(
                         stopMotionStartDetection()
                     }
 
-                    val activeLease = executionGuard.activate(lease, wallClockMillisProvider())
-                        ?: return@launch
+                    val activeLease = executionGuard.activate(
+                        lease = lease,
+                        cutoverTimestampMs = wallClockMillisProvider(),
+                        expectedConfigurationInputEpoch = retryRequest?.configurationInputEpoch
+                            ?: queuedSuccessorToken?.configurationInputEpoch
+                            ?: ordinaryConfigurationInputEpoch,
+                        inputAuthorityStillCurrent = {
+                            captureExternalCommandInputStamp() == expectedExternalCommandInputStamp &&
+                                (
+                                    queuedStartCandidate == null ||
+                                        captureQueuedStartCandidate() == queuedStartCandidate
+                                    )
+                        },
+                    )
+                    if (activeLease == null) {
+                        if (retryRequest != null) {
+                            failRetryStartAndRecover(retryRequest, lease, priorWorkoutState)
+                        } else {
+                            failStart(lease, priorWorkoutState)
+                        }
+                        return@launch
+                    }
                     repFreshnessGate.resetFor(activeLease)
                     if (!executionGuard.isCurrent(activeLease)) return@launch
                     coordinator._workoutState.value = WorkoutState.Active
@@ -3945,6 +5838,33 @@ class ActiveSessionEngine(
                     )
                 }
 
+                if (retryRequest != null) {
+                    currentCoroutineContext().ensureActive()
+                    val freshPlannedSets = currentExercise?.let { exercise ->
+                        completedSetRepository.getPlannedSets(exercise.id)
+                    }.orEmpty()
+                    currentCoroutineContext().ensureActive()
+                    val retryStillAuthorized = restTransitionMutex.withLock {
+                        retryStartStillAuthorizedLocked(
+                            request = retryRequest,
+                            lease = lease,
+                            exercise = currentExercise,
+                            plannedSets = freshPlannedSets,
+                        )
+                    }
+                    if (!retryStillAuthorized ||
+                        !retryRackCommandMatches(
+                            request = retryRequest,
+                            capturedRackParams = params,
+                            bleParams = bleParams,
+                            physicalCableCount = rackPhysicalCableCount,
+                        )
+                    ) {
+                        failRetryStartAndRecover(retryRequest, lease, priorWorkoutState)
+                        return@launch
+                    }
+                }
+
                 // Issue #390: Diagnostic logging for weight tracing from routine → BLE
                 val routineExercise = currentExercise
                 if (routineExercise != null) {
@@ -3998,7 +5918,11 @@ class ActiveSessionEngine(
                 commandValidation.onFailure { error ->
                     Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
                     coordinator._bleErrorEvents.tryEmit("Invalid BLE workout command: ${error.message}")
-                    failStart(lease, priorWorkoutState)
+                    if (retryRequest != null) {
+                        failRetryStartAndRecover(retryRequest, lease, priorWorkoutState)
+                    } else {
+                        failStart(lease, priorWorkoutState)
+                    }
                     return@launch
                 }
 
@@ -4061,9 +5985,80 @@ class ActiveSessionEngine(
                     stopMotionStartDetection()
                 }
 
-                if (!hasCurrentAuthority(lease, "cable_config_command")) return@launch
-                try {
+                if (retryRequest != null) {
+                    beforeAcceptedRetryConfigAuthorityForTest?.invoke()
+                    currentCoroutineContext().ensureActive()
+                    val finalPlannedSets = currentExercise?.let { exercise ->
+                        completedSetRepository.getPlannedSets(exercise.id)
+                    }.orEmpty()
+                    currentCoroutineContext().ensureActive()
+                    if (!hasRetryPersistenceAuthority(retryRequest)) {
+                        failRetryStartAndRecover(retryRequest, lease, priorWorkoutState)
+                        return@launch
+                    }
+                    val finalAuthority = restTransitionMutex.withLock {
+                        retryStartStillAuthorizedLocked(
+                            request = retryRequest,
+                            lease = lease,
+                            exercise = currentExercise,
+                            plannedSets = finalPlannedSets,
+                        )
+                    }
+                    if (!finalAuthority ||
+                        !retryRackCommandMatches(
+                            request = retryRequest,
+                            capturedRackParams = params,
+                            bleParams = bleParams,
+                            physicalCableCount = rackPhysicalCableCount,
+                        )
+                    ) {
+                        failRetryStartAndRecover(retryRequest, lease, priorWorkoutState)
+                        return@launch
+                    }
+                    afterAcceptedRetryFinalAuthorityForTest?.invoke()
+                    currentCoroutineContext().ensureActive()
+                }
+                if (queuedStartCandidate != null && !queuedStartIdentityStillCurrent(queuedStartCandidate)) {
+                    failStart(lease, priorWorkoutState)
+                    return@launch
+                }
+                if (queuedStartCandidate != null) {
+                    beforeQueuedSuccessorMachineConfigurationForTest?.invoke()
+                    currentCoroutineContext().ensureActive()
+                }
+                beforeMachineConfigurationClaimForTest?.invoke()
+                currentCoroutineContext().ensureActive()
+                val configurationClaim = executionGuard.claimMachineConfiguration(
+                    lease = lease,
+                    expectedConfigurationInputEpoch = retryRequest?.configurationInputEpoch
+                        ?: ordinaryConfigurationInputEpoch,
+                    inputAuthorityStillCurrent = {
+                        captureExternalCommandInputStamp() == expectedExternalCommandInputStamp
+                    },
+                )
+                when (configurationClaim) {
+                    MachineConfigurationClaimResult.CLAIMED -> Unit
+
+                    MachineConfigurationClaimResult.CONFIGURATION_INPUT_SUPERSEDED -> {
+                        if (retryRequest != null) {
+                            failRetryStartAndRecover(retryRequest, lease, priorWorkoutState)
+                        } else {
+                            failStart(lease, priorWorkoutState)
+                        }
+                        return@launch
+                    }
+
+                    MachineConfigurationClaimResult.REJECTED -> return@launch
+                }
+                var activationAllowed = false
+                var configurationCompletion: MachineConfigurationCompletion = MachineConfigurationCompletion.Rejected
+                val configFailure: Exception? = try {
+                    configMayHaveReachedMachine = true
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
+                    if (retryRequest != null) {
+                        afterAcceptedRetryConfigSentForTest?.invoke()
+                        currentCoroutineContext().ensureActive()
+                    }
                     Logger.i { "CONFIG command sent: ${command.size} bytes for ${effectiveParams.programMode}" }
                     val preview = command.take(16).joinToString(" ") { it.toUByte().toString(16).padStart(2, '0').uppercase() }
                     Logger.d { "Config preview: $preview ..." }
@@ -4094,21 +6089,80 @@ class ActiveSessionEngine(
                                 "progression@0x5C=${readFloatLE(command, 0x5C)}kg"
                         }
                     }
-                } catch (e: Exception) {
-                    if (e is CancellationException) throw e
-                    Logger.e(e) { "Failed to send config command" }
-                    coordinator._bleErrorEvents.tryEmit("Failed to send command: ${e.message}")
-                    failStart(lease, priorWorkoutState)
+                    currentCoroutineContext().ensureActive()
+                    bleRepository.startActiveWorkoutPolling()
+                    activationAllowed = true
+                    null
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    error
+                } finally {
+                    configurationCompletion = executionGuard.completeMachineConfiguration(
+                        lease = lease,
+                        activationCutoverTimestampMs = if (activationAllowed) wallClockMillisProvider() else null,
+                        inputAuthorityStillCurrent = {
+                            captureExternalCommandInputStamp() == expectedExternalCommandInputStamp
+                        },
+                    ) { activatedLease ->
+                        repFreshnessGate.resetFor(activatedLease)
+                        coordinator._workoutState.value = WorkoutState.Active
+                        retryStartCommitted = retryRequest != null
+                    }
+                    if (configurationCompletion is MachineConfigurationCompletion.TeardownBegun) {
+                        val deferredTeardown = takeDeferredMachineConfigurationTeardown(lease)
+                            ?: DeferredMachineConfigurationTeardown(
+                                lease = lease,
+                                reason = TeardownReason.RECOVERY,
+                                attempt = 1,
+                                afterReady = if (configurationCompletion.configurationInputsSuperseded) {
+                                    if (retryRequest != null) {
+                                        {
+                                            failRetryStartAndRecover(
+                                                request = retryRequest,
+                                                lease = lease,
+                                                priorWorkoutState = priorWorkoutState,
+                                            )
+                                        }
+                                    } else {
+                                        { failStart(lease, priorWorkoutState) }
+                                    }
+                                } else {
+                                    null
+                                },
+                            )
+                        launchClaimedMachineTeardown(deferredTeardown)
+                        configurationTeardownHandedOff = true
+                        recoveryTeardownScheduled = true
+                        retryRequest?.let(::clearAcceptedRetryStartClaim)
+                    } else if (configurationCompletion is MachineConfigurationCompletion.ReleasedWithoutActivation ||
+                        configurationCompletion is MachineConfigurationCompletion.Rejected
+                    ) {
+                        takeDeferredMachineConfigurationTeardown(lease)
+                    }
+                }
+                if (configurationTeardownHandedOff) return@launch
+                if (configFailure != null) {
+                    Logger.e(configFailure) { "Failed to send config command" }
+                    coordinator._bleErrorEvents.tryEmit("Failed to send command: ${configFailure.message}")
+                    if (retryRequest != null) {
+                        recoveryTeardownScheduled = recoverRetryStartAfterConfigAttempt(
+                            retryRequest,
+                            lease,
+                            priorWorkoutState,
+                        )
+                    } else {
+                        failStart(lease, priorWorkoutState)
+                    }
                     return@launch
                 }
 
-                val activeLease = executionGuard.activate(lease, wallClockMillisProvider())
+                val activeLease = (configurationCompletion as? MachineConfigurationCompletion.Activated)?.lease
                     ?: return@launch
-                repFreshnessGate.resetFor(activeLease)
-                bleRepository.startActiveWorkoutPolling()
-
-                if (!executionGuard.isCurrent(activeLease)) return@launch
-                coordinator._workoutState.value = WorkoutState.Active
+                retryRequest?.let(::clearAcceptedRetryStartClaim)
+                if (retryRequest != null) {
+                    afterAcceptedRetryActivatedForTest?.invoke()
+                    currentCoroutineContext().ensureActive()
+                }
                 coordinator.workoutStartTime = currentTimeMillis()
                 if (coordinator._loadedRoutine.value != null && coordinator.routineStartTime == 0L) {
                     coordinator.routineStartTime = coordinator.workoutStartTime
@@ -4134,13 +6188,51 @@ class ActiveSessionEngine(
                     Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Set initial baseline loadA=${metric.loadA}kg, loadB=${metric.loadB}kg" }
                 }
             } catch (e: CancellationException) {
+                if (retryRequest != null && !configurationTeardownHandedOff && !retryStartCommitted) {
+                    if (configMayHaveReachedMachine) {
+                        recoveryTeardownScheduled = recoverRetryStartAfterConfigAttempt(
+                            retryRequest,
+                            lease,
+                            priorWorkoutState,
+                        )
+                    } else {
+                        abortRetryStartBeforeConfig(retryRequest, lease, priorWorkoutState)
+                    }
+                }
                 throw e // let cancellation propagate
             } catch (e: Exception) {
                 Logger.e(e) { "workoutJob: uncaught exception" }
                 coordinator._bleErrorEvents.tryEmit("Workout error: ${e.message}")
-                failStart(lease, priorWorkoutState)
+                if (retryRequest != null) {
+                    if (!configurationTeardownHandedOff && !retryStartCommitted) {
+                        if (configMayHaveReachedMachine) {
+                            recoveryTeardownScheduled = recoverRetryStartAfterConfigAttempt(
+                                retryRequest,
+                                lease,
+                                priorWorkoutState,
+                            )
+                        } else {
+                            abortRetryStartBeforeConfig(retryRequest, lease, priorWorkoutState)
+                        }
+                    }
+                } else {
+                    failStart(lease, priorWorkoutState)
+                }
+            } finally {
+                if (retryRequest != null &&
+                    !retryStartCommitted &&
+                    ownsAcceptedRetryStartClaim(retryRequest) &&
+                    !recoveryTeardownScheduled
+                ) {
+                    if (configMayHaveReachedMachine) {
+                        recoverRetryStartAfterConfigAttempt(retryRequest, lease, priorWorkoutState)
+                    } else {
+                        abortRetryStartBeforeConfig(retryRequest, lease, priorWorkoutState)
+                    }
+                }
             }
         }
+        return lease
     }
 
     /**
@@ -4537,6 +6629,7 @@ class ActiveSessionEngine(
         require(snapshot.session.id == sessionId) {
             "Workout exit snapshot session must match its completion lease"
         }
+        var persistenceSucceeded = false
         try {
             if (workoutRepository.getSession(sessionId) == null) {
                 workoutRepository.saveSession(snapshot.session)
@@ -4597,9 +6690,12 @@ class ActiveSessionEngine(
             updateCycleProgressFromSnapshot(snapshot)
             scope.launch { syncTriggerManager?.onWorkoutCompleted() }
             currentCoroutineContext().ensureActive()
-            executionGuard.markPersistenceSucceeded(sessionId)
-            exitSnapshotStore.remove(snapshot)
-            executionGuard.prunePersistedClaims(retainNewest = 32)
+            withContext(NonCancellable) {
+                executionGuard.markPersistenceSucceeded(sessionId)
+                exitSnapshotStore.remove(snapshot)
+                executionGuard.prunePersistedClaims(retainNewest = 32)
+            }
+            persistenceSucceeded = true
         } catch (error: CancellationException) {
             executionGuard.markPersistenceFailed(sessionId)
             throw error
@@ -4608,6 +6704,39 @@ class ActiveSessionEngine(
             Logger.e(error) { "Failed to persist workout snapshot for session $sessionId" }
             coordinator._userFeedbackEvents.tryEmit("Workout data couldn't be saved. Please try again.")
         }
+        if (!persistenceSucceeded) return
+        try {
+            tryStartCurrentAcceptedRetryLive()
+        } catch (error: CancellationException) {
+            withContext(NonCancellable) {
+                failCurrentAcceptedRetryDispatchClosed(sessionId)
+            }
+            throw error
+        } catch (error: Exception) {
+            Logger.e(error) { "Failed to dispatch accepted retry for persisted session $sessionId" }
+            failCurrentAcceptedRetryDispatchClosed(sessionId)
+        }
+    }
+
+    private suspend fun failCurrentAcceptedRetryDispatchClosed(sourceStableSessionId: String) {
+        val recoveryPublicationEpoch = executionGuard.captureRecoveryPublicationEpoch()
+        val authority = restTransitionMutex.withLock {
+            val document = activeRuntimeDocument ?: return@withLock null
+            val plan = coordinator._restTransitionPlan.value as? RestTransitionPlan.AcceptedRetry
+                ?: return@withLock null
+            if (document.sourceStableSessionId != sourceStableSessionId || document.restTransitionPlan != plan) {
+                return@withLock null
+            }
+            val source = executionGuard.currentLease
+                ?.takeIf { leaseMatchesRetrySource(it, document) }
+                ?: return@withLock null
+            Triple(
+                plan,
+                activeRuntimeDocumentVersion,
+                RetryFailClosedAuthority.Live(source, recoveryPublicationEpoch),
+            )
+        } ?: return
+        failAcceptedRetryClosed(authority.first, authority.second, authority.third)
     }
 
     private suspend fun updateCycleProgressFromSnapshot(snapshot: WorkoutExitSnapshot) {
@@ -4663,6 +6792,9 @@ class ActiveSessionEngine(
     }
 
     fun stopWorkout(exitingWorkout: Boolean = false) {
+        executionGuard.supersedeRecoveryPublication()
+        executionGuard.supersedeQueuedSuccessors()
+        supersedePendingResetStart()
         // C1: Atomic compareAndSet prevents TOCTOU race — only the first caller proceeds
         if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
 
@@ -5789,9 +7921,7 @@ class ActiveSessionEngine(
                     executionGuard.releaseCompletionClaim(lease)
                     coordinator.stopWorkoutInProgress.value = false
                     // Restore working weight in params before startWorkout overrides it
-                    val workingWeight = RoutineSetWeightResolver(
-                        RoutineSetWeightRequest(exercise = currentExercise, setIndex = 0, currentPrKg = null),
-                    )
+                    val workingWeight = resolveOccurrenceSetWeight(currentExercise, 0)
                     coordinator._workoutParameters.update { p ->
                         p.copy(weightPerCableKg = workingWeight, reps = currentExercise.setReps.firstOrNull() ?: 10)
                     }
@@ -5812,9 +7942,7 @@ class ActiveSessionEngine(
                     executionGuard.releaseCompletionClaim(lease)
                     coordinator.stopWorkoutInProgress.value = false
                     // Restore working weight/reps
-                    val workingWeight = RoutineSetWeightResolver(
-                        RoutineSetWeightRequest(exercise = currentExercise, setIndex = 0, currentPrKg = null),
-                    )
+                    val workingWeight = resolveOccurrenceSetWeight(currentExercise, 0)
                     coordinator._workoutParameters.update { p ->
                         p.copy(
                             weightPerCableKg = workingWeight,
@@ -6301,9 +8429,7 @@ class ActiveSessionEngine(
                 val hasNextSet = nextSetIdx < exerciseForNextSet.setReps.size
                 if (hasNextSet) {
                     val nextSetReps = exerciseForNextSet.setReps.getOrNull(nextSetIdx)
-                    val nextSetWeight = RoutineSetWeightResolver(
-                        RoutineSetWeightRequest(exercise = exerciseForNextSet, setIndex = nextSetIdx, currentPrKg = null),
-                    )
+                    val nextSetWeight = resolveOccurrenceSetWeight(exerciseForNextSet, nextSetIdx)
                     val isNextSetLastSet = nextSetIdx >= exerciseForNextSet.setReps.size - 1
                     val nextIsAMRAP = nextSetReps == null || (exerciseForNextSet.isAMRAP && isNextSetLastSet)
 
@@ -6472,8 +8598,7 @@ class ActiveSessionEngine(
                     }
 
                     val currentPlan = coordinator._restTransitionPlan.value
-                    val blocksAutomaticAdvance = currentPlan is RestTransitionPlan.UnresolvedDropOffer ||
-                        currentPlan is RestTransitionPlan.AcceptedRetry
+                    val blocksAutomaticAdvance = currentPlan is RestTransitionPlan.UnresolvedDropOffer
                     if (remainingSeconds <= 0 && autoplay && !coordinator._isRestPaused.value && !blocksAutomaticAdvance) {
                         if (installedPlan != null) {
                             beforePersistedRestTimerActionForTest?.invoke()
@@ -6558,7 +8683,11 @@ class ActiveSessionEngine(
         val plan = coordinator._restTransitionPlan.value ?: return@withLock null
         if (plan.transitionId != owner.transitionId ||
             plan.sourceExecutionId != owner.sourceExecutionId ||
-            (plan !is RestTransitionPlan.NormalAdvance && plan !is RestTransitionPlan.Declined) ||
+            (
+                plan !is RestTransitionPlan.NormalAdvance &&
+                    plan !is RestTransitionPlan.Declined &&
+                    plan !is RestTransitionPlan.AcceptedRetry
+                ) ||
             !hasRestTransitionAuthority(document, plan, lease)
         ) {
             return@withLock null
@@ -6706,9 +8835,7 @@ class ActiveSessionEngine(
             nextSetIndex < nextExercise.setReps.size
         ) {
             val nextSetReps = nextExercise.setReps.getOrNull(nextSetIndex)
-            val nextSetWeight = RoutineSetWeightResolver(
-                RoutineSetWeightRequest(exercise = nextExercise, setIndex = nextSetIndex, currentPrKg = null),
-            )
+            val nextSetWeight = resolveOccurrenceSetWeight(nextExercise, nextSetIndex)
             val isNextSetLastSet = nextSetIndex >= nextExercise.setReps.size - 1
             coordinator._workoutParameters.value.copy(
                 weightPerCableKg = nextSetWeight,
@@ -6889,7 +9016,7 @@ class ActiveSessionEngine(
             ),
         )
         val prior = activeRuntimeDocument?.takeIf {
-            it.profileId == identity.profileId && it.routineSessionId == identity.routineSessionId
+            it.matchesRoutineIdentity(identity.profileId, identity.routineId, identity.routineSessionId)
         }
         val attemptState = PlannedSetAttemptState(
             logicalSetKey = identity.logicalSetKey,
@@ -7027,13 +9154,7 @@ class ActiveSessionEngine(
             val setWeight = if (coordinator._userAdjustedWeightDuringRest) {
                 currentParams.weightPerCableKg
             } else {
-                RoutineSetWeightResolver(
-                    RoutineSetWeightRequest(
-                        exercise = currentExercise,
-                        setIndex = coordinator._currentSetIndex.value,
-                        currentPrKg = null,
-                    ),
-                )
+                resolveOccurrenceSetWeight(currentExercise, coordinator._currentSetIndex.value)
             }
             val setReps = if (coordinator._userAdjustedWeightDuringRest) {
                 currentParams.reps
@@ -7173,13 +9294,7 @@ class ActiveSessionEngine(
             val nextSetWeight = if (preserveRestEdits) {
                 currentParams.weightPerCableKg
             } else {
-                RoutineSetWeightResolver(
-                    RoutineSetWeightRequest(
-                        exercise = nextExercise,
-                        setIndex = nextSetIdx,
-                        currentPrKg = null,
-                    ),
-                )
+                resolveOccurrenceSetWeight(nextExercise, nextSetIdx)
             }
             val nextReps = if (preserveRestEdits) {
                 currentParams.reps
@@ -7296,6 +9411,7 @@ class ActiveSessionEngine(
         } else {
             coordinator._userAdjustedWeightDuringRest = false
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
+            supersedeConfigurationInputIntent()
             val completedCycleId = cachedNavigation?.cycleId ?: coordinator.activeCycleId
             val completedCycleDayNumber = cachedNavigation?.cycleDayNumber ?: coordinator.activeCycleDayNumber
             scope.launch { updateCycleProgressIfNeeded(completedCycleId, completedCycleDayNumber) }
@@ -7307,12 +9423,14 @@ class ActiveSessionEngine(
             // between EnhancedMainScreen and ActiveWorkoutScreen.
             coordinator._workoutState.value = WorkoutState.Idle
             flowDelegate?.showRoutineComplete()
-            coordinator._currentSetIndex.value = 0
-            coordinator._currentExerciseIndex.value = 0
-            coordinator.currentRoutineSessionId = null
-            coordinator.currentRoutineName = null
-            coordinator.currentRoutineId = null
-            coordinator._completedRoutineSetKeys.value = emptySet()
+            executionGuard.mutateConfigurationInputs {
+                coordinator._currentSetIndex.value = 0
+                coordinator._currentExerciseIndex.value = 0
+                coordinator.currentRoutineSessionId = null
+                coordinator.currentRoutineName = null
+                coordinator.currentRoutineId = null
+                coordinator._completedRoutineSetKeys.value = emptySet()
+            }
             repCounter.reset()
             resetAutoStopState()
         }
@@ -7474,6 +9592,7 @@ class ActiveSessionEngine(
                 if (!replaceRuntimeDocument(updatedDocument)) return@withLock
                 if (!hasRestTransitionAuthority(updatedDocument, plan, lease)) return@withLock
                 setActiveRuntimeDocument(updatedDocument)
+                acceptedRetryPermission = null
                 publish()
                 val resting = coordinator._workoutState.value as? WorkoutState.Resting
                 if (resting != null) {
@@ -7711,6 +9830,10 @@ class ActiveSessionEngine(
     // ===== Cleanup =====
 
     fun cleanup() {
+        executionGuard.supersedeRecoveryPublication()
+        executionGuard.supersedeQueuedSuccessors()
+        supersedePendingResetStart()
+        resetMachineTeardownOwner.value = null
         val currentLease = executionGuard.currentLease
         val pendingTeardownLease = pendingTeardownReadyContinuation.value?.lease
         currentLease?.let(bodyweightCompletionGate::invalidate)

@@ -9,7 +9,9 @@ import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
+import com.devil.phoenixproject.domain.model.RackItemCategory
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.UserPreferences
@@ -517,6 +519,41 @@ class MainViewModelTest {
         assertEquals(20f, activeRoutine.exercises.single().weightPerCableKg)
         assertEquals(listOf(4), activeRoutine.exercises.single().setReps)
         assertEquals(overrides, activeRoutine.exercises.single().rackBehaviorOverrides)
+    }
+
+    @Test
+    fun `rack catalog save intent prevents a stale ordinary config command`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test")
+        viewModel.updateWorkoutParameters(
+            viewModel.workoutParameters.value.copy(weightPerCableKg = 25f),
+        )
+        var saveAtClaim = true
+        viewModel.workoutSessionManager.activeSessionEngine.beforeMachineConfigurationClaimForTest = {
+            if (saveAtClaim) {
+                saveAtClaim = false
+                viewModel.saveRackItem(
+                    RackItem(
+                        id = "claim-boundary-rack-item",
+                        name = "Claim boundary rack item",
+                        category = RackItemCategory.OTHER,
+                        weightKg = 5f,
+                    ),
+                )
+            }
+        }
+
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        assertFalse(saveAtClaim)
+        assertEquals(0, fakeBleRepository.commandsReceived.size)
+        assertEquals(null, viewModel.workoutSessionManager.activeSessionEngine.currentExecutionLeaseOrNull())
+
+        viewModel.workoutSessionManager.activeSessionEngine.beforeMachineConfigurationClaimForTest = null
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertEquals(1, fakeBleRepository.commandsReceived.size)
+        assertIs<WorkoutState.Active>(viewModel.workoutState.value)
     }
 
     // ========== Workout History Tests ==========

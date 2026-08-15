@@ -36,6 +36,7 @@ internal data class SetExecutionCompletion(
     val isTimed: Boolean,
     val isAmrap: Boolean,
     val isCableExercise: Boolean,
+    val physicalCableCount: Int? = null,
     val logicalPreRackCommandTemplate: com.devil.phoenixproject.domain.model.WorkoutParameters,
 ) {
     init {
@@ -50,6 +51,76 @@ internal data class SetExecutionCompletion(
         }
     }
 }
+
+/**
+ * Immutable command authority captured from the failed source execution for a
+ * retry resumed without an in-memory execution lease. Task 8 owns hydrating
+ * this authority after process death; Task 7 only consumes an explicit,
+ * identity-bound instance and never reconstructs it from mutable coordinator
+ * parameters.
+ */
+internal data class RestoredRetrySourceContext(
+    val sourceStableSessionId: String,
+    val sourceExecutionId: String,
+    val profileId: String,
+    val routineIdentity: RoutineExecutionIdentity,
+    val reason: SetEndReason,
+    val attemptNumber: Int,
+    val acceptedDropCount: Int,
+    val plannedSetType: SetType,
+    val programMode: ProgramMode,
+    val programmedBaseWeightPerCableKg: Float,
+    val configuredStartWeightPerCableKg: Float,
+    val progressionKg: Float,
+    val actualReps: Int,
+    val targetReps: Int?,
+    val isWarmup: Boolean,
+    val isEcho: Boolean,
+    val isJustLift: Boolean,
+    val isBodyweight: Boolean,
+    val isTimed: Boolean,
+    val isAmrap: Boolean,
+    val isCableExercise: Boolean,
+    val physicalCableCount: Int?,
+    val commandTemplate: com.devil.phoenixproject.domain.model.WorkoutParameters,
+) {
+    init {
+        require(sourceStableSessionId.isNotBlank())
+        require(sourceExecutionId.isNotBlank())
+        require(profileId == routineIdentity.profileId)
+        require(attemptNumber > 0)
+        require(acceptedDropCount in 0..2)
+        require(actualReps >= 0)
+        require(targetReps == null || targetReps > 0)
+        require(routineIdentity.logicalSetKey.setKind == plannedSetType)
+    }
+}
+
+internal fun SetExecutionCompletion.toRestoredRetrySourceContext(): RestoredRetrySourceContext = RestoredRetrySourceContext(
+    sourceStableSessionId = lease.sessionId,
+    sourceExecutionId = lease.executionId.toString(),
+    profileId = lease.profileId,
+    routineIdentity = requireNotNull(routineIdentity),
+    reason = reason,
+    attemptNumber = attemptNumber,
+    acceptedDropCount = acceptedDropCount,
+    plannedSetType = plannedSetType,
+    programMode = programMode,
+    programmedBaseWeightPerCableKg = programmedBaseWeightPerCableKg,
+    configuredStartWeightPerCableKg = configuredStartWeightPerCableKg,
+    progressionKg = progressionKg,
+    actualReps = actualReps,
+    targetReps = targetReps,
+    isWarmup = isWarmup,
+    isEcho = isEcho,
+    isJustLift = isJustLift,
+    isBodyweight = isBodyweight,
+    isTimed = isTimed,
+    isAmrap = isAmrap,
+    isCableExercise = isCableExercise,
+    physicalCableCount = physicalCableCount,
+    commandTemplate = logicalPreRackCommandTemplate,
+)
 
 internal data class SetExecutionActivationFacts(
     val routineIdentity: RoutineExecutionIdentity?,
@@ -68,6 +139,7 @@ internal data class SetExecutionActivationFacts(
     val isTimed: Boolean,
     val isAmrap: Boolean,
     val isCableExercise: Boolean,
+    val physicalCableCount: Int? = null,
     val logicalPreRackCommandTemplate: com.devil.phoenixproject.domain.model.WorkoutParameters,
 ) {
     fun complete(lease: ExecutionLease, reason: SetEndReason, actualReps: Int) = SetExecutionCompletion(
@@ -90,6 +162,7 @@ internal data class SetExecutionActivationFacts(
         isTimed = isTimed,
         isAmrap = isAmrap,
         isCableExercise = isCableExercise,
+        physicalCableCount = physicalCableCount,
         logicalPreRackCommandTemplate = logicalPreRackCommandTemplate,
     )
 }
@@ -168,6 +241,21 @@ private data class DangerZoneCountdownClaim(
     val lease: ExecutionLease,
     val startTimeMs: Long,
 )
+
+/** Persistence authority for a same-logical-set retry. */
+internal sealed interface RetryPersistenceGate {
+    val sourceStableSessionId: String
+
+    data class Live(
+        override val sourceStableSessionId: String,
+    ) : RetryPersistenceGate
+
+    data class Restored(
+        override val sourceStableSessionId: String,
+        val actionIdentity: RestActionIdentity,
+        val sourceContext: RestoredRetrySourceContext,
+    ) : RetryPersistenceGate
+}
 
 internal class DangerZoneCountdownGate {
     private val claim = atomic<DangerZoneCountdownClaim?>(null)

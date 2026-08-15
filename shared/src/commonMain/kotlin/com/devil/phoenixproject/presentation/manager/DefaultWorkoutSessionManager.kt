@@ -46,8 +46,6 @@ import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
-import com.devil.phoenixproject.domain.usecase.RoutineSetWeightRequest
-import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
@@ -269,6 +267,10 @@ class DefaultWorkoutSessionManager(
             override fun setWorkoutParametersInternal(params: WorkoutParameters) {
                 this@DefaultWorkoutSessionManager.setWorkoutParametersInternal(params)
             }
+            override fun mutateConfigurationInputs(block: () -> Unit) {
+                activeSessionEngine.mutateConfigurationInputs(block)
+            }
+            override fun resolveOccurrenceSetWeight(exercise: RoutineExercise, setIndex: Int): Float = activeSessionEngine.resolveOccurrenceSetWeight(exercise, setIndex)
         }
     }
 
@@ -771,6 +773,13 @@ class DefaultWorkoutSessionManager(
     fun updateActiveRackBehaviorOverrides(
         overrides: Map<String, RackItemBehavior>,
     ) = activeSessionEngine.updateActiveRackBehaviorOverrides(overrides)
+    fun updateLoadedRoutineRackBehaviorOverrides(
+        updatedRoutine: Routine,
+        overrides: Map<String, RackItemBehavior>,
+    ) = activeSessionEngine.updateLoadedRoutineRackBehaviorOverrides(updatedRoutine, overrides)
+    internal fun supersedeConfigurationInputIntent() = activeSessionEngine.supersedeConfigurationInputIntent()
+    internal fun beginConfigurationInputMutation(): ConfigurationInputMutationToken = activeSessionEngine.beginConfigurationInputMutation()
+    internal fun endConfigurationInputMutation(token: ConfigurationInputMutationToken) = activeSessionEngine.endConfigurationInputMutation(token)
     fun clearActiveRackSelection() = activeSessionEngine.clearActiveRackSelection()
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = activeSessionEngine.startWorkout(skipCountdown, isJustLiftMode)
     fun skipCountdown() = activeSessionEngine.skipCountdown()
@@ -939,7 +948,9 @@ class DefaultWorkoutSessionManager(
 
                 // Issue #209: If we have a loaded routine, force isJustLift = false
                 val isJustLift = if (routine != null) {
-                    coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(isJustLift = false)
+                    activeSessionEngine.setWorkoutParametersInternal(
+                        coordinator._workoutParameters.value.copy(isJustLift = false),
+                    )
                     false
                 } else {
                     coordinator._workoutParameters.value.isJustLift
@@ -1021,13 +1032,16 @@ class DefaultWorkoutSessionManager(
                                     }
                             }
                         }
+                        activeSessionEngine.supersedeConfigurationInputIntent()
                         coordinator._workoutState.value = WorkoutState.Idle
                         showRoutineComplete()
                         // Clear routine session context so stale IDs don't leak into next routine
-                        coordinator.currentRoutineSessionId = null
-                        coordinator.currentRoutineName = null
-                        coordinator.currentRoutineId = null
-                        coordinator._completedRoutineSetKeys.value = emptySet()
+                        activeSessionEngine.mutateConfigurationInputs {
+                            coordinator.currentRoutineSessionId = null
+                            coordinator.currentRoutineName = null
+                            coordinator.currentRoutineId = null
+                            coordinator._completedRoutineSetKeys.value = emptySet()
+                        }
                         return@launch
                     }
 
@@ -1036,35 +1050,31 @@ class DefaultWorkoutSessionManager(
                         Logger.d { "proceedFromSummary: Autoplay OFF - going to SetReady for next step" }
                         val (nextExIdx, nextSetIdx) = nextStep
 
-                        // Advance to next step
-                        coordinator._currentExerciseIndex.value = nextExIdx
-                        coordinator._currentSetIndex.value = nextSetIdx
-
-                        // Clear RPE for next set
-                        coordinator._currentSetRpe.value = null
-
                         // Get next exercise and update parameters
                         val nextExercise = routine.exercises[nextExIdx]
-                        val nextSetWeight = RoutineSetWeightResolver(
-                            RoutineSetWeightRequest(exercise = nextExercise, setIndex = nextSetIdx, currentPrKg = null),
-                        )
+                        val nextSetWeight = activeSessionEngine.resolveOccurrenceSetWeight(nextExercise, nextSetIdx)
                         val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
                         val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
                         val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)
 
-                        coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
-                            weightPerCableKg = nextSetWeight,
-                            reps = nextSetReps ?: 0,
-                            programMode = nextExercise.programMode,
-                            echoLevel = nextExercise.echoLevel,
-                            eccentricLoad = nextExercise.eccentricLoad,
-                            progressionRegressionKg = nextExercise.progressionKg,
-                            selectedExerciseId = nextExercise.exercise.id,
-                            isAMRAP = nextIsAMRAP,
-                            stallDetectionEnabled = nextExercise.stallDetectionEnabled,
-                            stopAtTop = nextExercise.stopAtTop,
-                            repCountTiming = nextExercise.repCountTiming,
-                        )
+                        activeSessionEngine.mutateConfigurationInputs {
+                            coordinator._currentExerciseIndex.value = nextExIdx
+                            coordinator._currentSetIndex.value = nextSetIdx
+                            coordinator._currentSetRpe.value = null
+                            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+                                weightPerCableKg = nextSetWeight,
+                                reps = nextSetReps ?: 0,
+                                programMode = nextExercise.programMode,
+                                echoLevel = nextExercise.echoLevel,
+                                eccentricLoad = nextExercise.eccentricLoad,
+                                progressionRegressionKg = nextExercise.progressionKg,
+                                selectedExerciseId = nextExercise.exercise.id,
+                                isAMRAP = nextIsAMRAP,
+                                stallDetectionEnabled = nextExercise.stallDetectionEnabled,
+                                stopAtTop = nextExercise.stopAtTop,
+                                repCountTiming = nextExercise.repCountTiming,
+                            )
+                        }
                         Logger.d {
                             "proceedFromSummary: Issue #203 - Updated params for next set: ${nextExercise.exercise.name}, setIdx=$nextSetIdx, isAMRAP=$nextIsAMRAP"
                         }

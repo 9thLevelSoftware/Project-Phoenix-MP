@@ -24,6 +24,16 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class FakeBleRepository : BleRepository {
 
+    sealed interface Event {
+        data object StopWorkoutEntered : Event
+        data object StopWorkoutCompleted : Event
+        data class WorkoutCommand(val bytes: ByteArray) : Event {
+            override fun equals(other: Any?): Boolean = other is WorkoutCommand && bytes.contentEquals(other.bytes)
+
+            override fun hashCode(): Int = bytes.contentHashCode()
+        }
+    }
+
     // Controllable state flows
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -62,11 +72,13 @@ class FakeBleRepository : BleRepository {
     val commandsReceived = mutableListOf<ByteArray>()
     val workoutParameters = mutableListOf<WorkoutParameters>()
     val colorSchemeCommands = mutableListOf<Int>()
+    val events = mutableListOf<Event>()
 
     // Configurable behavior
     var scanResult: Result<Unit> = Result.success(Unit)
     var connectResult: Result<Unit> = Result.success(Unit)
     var workoutCommandResult: Result<Unit> = Result.success(Unit)
+    var afterWorkoutCommand: suspend (ByteArray) -> Unit = {}
     var shouldFailConnect = false
     var connectDelay: Long = 0L
     var stopWorkoutBlock: suspend () -> Result<Unit> = { Result.success(Unit) }
@@ -161,9 +173,11 @@ class FakeBleRepository : BleRepository {
         commandsReceived.clear()
         workoutParameters.clear()
         colorSchemeCommands.clear()
+        events.clear()
         scanResult = Result.success(Unit)
         connectResult = Result.success(Unit)
         workoutCommandResult = Result.success(Unit)
+        afterWorkoutCommand = {}
         shouldFailConnect = false
         connectDelay = 0L
         stopWorkoutBlock = { Result.success(Unit) }
@@ -251,7 +265,10 @@ class FakeBleRepository : BleRepository {
     }
 
     override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
-        commandsReceived.add(command)
+        val copy = command.copyOf()
+        commandsReceived.add(copy)
+        events += Event.WorkoutCommand(copy)
+        afterWorkoutCommand(copy)
         return workoutCommandResult
     }
 
@@ -264,7 +281,10 @@ class FakeBleRepository : BleRepository {
 
     override suspend fun stopWorkout(): Result<Unit> {
         stopWorkoutCallCount++
-        return stopWorkoutBlock()
+        events += Event.StopWorkoutEntered
+        return stopWorkoutBlock().also {
+            events += Event.StopWorkoutCompleted
+        }
     }
 
     override suspend fun sendStopCommand(): Result<Unit> {

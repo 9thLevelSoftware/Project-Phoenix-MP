@@ -94,9 +94,59 @@ internal data class RecoveryAttempt(
     val attempt: Int,
 )
 
+internal sealed interface MachineTeardownClaimResult {
+    data object Begun : MachineTeardownClaimResult
+    data object DeferredUntilConfigurationCompletes : MachineTeardownClaimResult
+    data object Rejected : MachineTeardownClaimResult
+}
+
+internal sealed interface MachineConfigurationCompletion {
+    data class Activated(val lease: ExecutionLease) : MachineConfigurationCompletion
+    data class TeardownBegun(
+        val lease: ExecutionLease,
+        val configurationInputsSuperseded: Boolean = false,
+    ) : MachineConfigurationCompletion
+    data object ReleasedWithoutActivation : MachineConfigurationCompletion
+    data object Rejected : MachineConfigurationCompletion
+}
+
+internal enum class MachineConfigurationClaimResult {
+    CLAIMED,
+    CONFIGURATION_INPUT_SUPERSEDED,
+    REJECTED,
+}
+
 internal data class ResetCleanupToken(
     val lease: ExecutionLease?,
     val executionGeneration: Long,
+)
+
+internal data class NoCurrentSuccessorToken(
+    val executionGeneration: Long,
+    val supersessionEpoch: Long,
+    val configurationInputEpoch: Long,
+)
+
+internal data class ConfigurationInputMutationToken(
+    val id: Long,
+)
+
+private data class QueuedSuccessorSetup(
+    val lease: ExecutionLease,
+    val configurationInputEpoch: Long,
+)
+
+private data class MachineConfigurationClaim(
+    val lease: ExecutionLease,
+    val configurationInputEpoch: Long,
+)
+
+internal data class RecoveryPublicationClaim(
+    val id: Long,
+    val expectedLease: ExecutionLease?,
+    val executionGeneration: Long,
+    val supersessionEpoch: Long,
+    val allowNoCurrentAfterOwnedInvalidation: Boolean,
 )
 
 internal class WorkoutExecutionGuard(
@@ -111,6 +161,17 @@ internal class WorkoutExecutionGuard(
     private val persistedClaims = LinkedHashMap<String, PersistenceClaimStatus>()
 
     private var teardownLease: ExecutionLease? = null
+    private var machineConfigurationClaim: MachineConfigurationClaim? = null
+    private var deferredConfigurationTeardownLease: ExecutionLease? = null
+    private var deferredConfigurationTeardownAttempt = 0
+    private var recoveryPublicationSequence = 0L
+    private var recoveryPublicationSupersessionEpoch = 0L
+    private var recoveryPublicationClaim: RecoveryPublicationClaim? = null
+    private var queuedSuccessorSupersessionEpoch = 0L
+    private var configurationInputEpoch = 0L
+    private var configurationInputMutationSequence = 0L
+    private val openConfigurationInputMutations = mutableSetOf<Long>()
+    private var queuedSuccessorSetup: QueuedSuccessorSetup? = null
     private var teardownAttempt = 0
     private var teardownFailureReason: TeardownFailureReason? = null
     private var completionJob: Job? = null
@@ -127,6 +188,13 @@ internal class WorkoutExecutionGuard(
     val currentLease: ExecutionLease?
         get() = currentLeaseRef.value
 
+    fun captureMachineTeardownLease(): ExecutionLease? = withPlatformLock(teardownLock) {
+        val state = _machineTeardownState.value
+        teardownLease?.takeIf { lease ->
+            state is MachineTeardownState.TearingDown && state.executionId == lease.executionId
+        }
+    }
+
     fun captureResetCleanupToken(): ResetCleanupToken = withPlatformLock(teardownLock) {
         ResetCleanupToken(
             lease = currentLeaseRef.value,
@@ -134,10 +202,122 @@ internal class WorkoutExecutionGuard(
         )
     }
 
+    fun captureNoCurrentSuccessorToken(): NoCurrentSuccessorToken? = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed || currentLeaseRef.value != null) return@withPlatformLock null
+        NoCurrentSuccessorToken(
+            executionGeneration = executionSequence.value,
+            supersessionEpoch = queuedSuccessorSupersessionEpoch,
+            configurationInputEpoch = configurationInputEpoch,
+        )
+    }
+
+    fun <T : Any> prepareNoCurrentSuccessor(
+        prepareAndCapture: () -> T?,
+    ): Pair<NoCurrentSuccessorToken, T>? = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed || currentLeaseRef.value != null) return@withPlatformLock null
+        configurationInputEpoch += 1
+        val captured = prepareAndCapture() ?: return@withPlatformLock null
+        NoCurrentSuccessorToken(
+            executionGeneration = executionSequence.value,
+            supersessionEpoch = queuedSuccessorSupersessionEpoch,
+            configurationInputEpoch = configurationInputEpoch,
+        ) to captured
+    }
+
+    fun captureConfigurationInputEpoch(): Long = withPlatformLock(teardownLock) {
+        configurationInputEpoch
+    }
+
+    fun mutateConfigurationInputs(block: () -> Unit) = withPlatformLock(teardownLock) {
+        configurationInputEpoch += 1
+        block()
+    }
+
+    /**
+     * Marks a command-authoritative mutation that must suspend outside the guard lock.
+     * CONFIG claims fail closed while the token is open, and both boundaries advance
+     * the input epoch so a command captured on either side cannot cross the mutation.
+     */
+    fun beginConfigurationInputMutation(): ConfigurationInputMutationToken = withPlatformLock(teardownLock) {
+        configurationInputEpoch += 1
+        ConfigurationInputMutationToken(id = ++configurationInputMutationSequence).also { token ->
+            openConfigurationInputMutations += token.id
+        }
+    }
+
+    fun endConfigurationInputMutation(token: ConfigurationInputMutationToken) = withPlatformLock(teardownLock) {
+        if (openConfigurationInputMutations.remove(token.id)) {
+            configurationInputEpoch += 1
+        }
+    }
+
+    fun supersedeQueuedSuccessors() = withPlatformLock(teardownLock) {
+        supersedeQueuedSuccessorsLocked()
+    }
+
     fun beginExecution(seed: ExecutionSeed): Result<ExecutionLease> = withPlatformLock(teardownLock) {
-        if (seed.requiresMachine && _machineTeardownState.value !is MachineTeardownState.Ready) {
+        beginExecutionLocked(seed)
+    }
+
+    fun captureRecoveryPublicationEpoch(): Long = withPlatformLock(teardownLock) {
+        recoveryPublicationSupersessionEpoch
+    }
+
+    /**
+     * Atomically begins a successor only while [expectedSource] is still the
+     * connection-wide owner. A null expectation is the process-restored case and
+     * succeeds only when no execution is currently installed.
+     */
+    fun beginSuccessorExecution(
+        expectedSource: ExecutionLease?,
+        seed: ExecutionSeed,
+    ): Result<ExecutionLease> = withPlatformLock(teardownLock) {
+        val current = currentLeaseRef.value
+        val expectedSourceStillOwns = if (expectedSource == null) {
+            current == null
+        } else {
+            current != null && sameIdentity(current, expectedSource)
+        }
+        if (!expectedSourceStillOwns) {
             return@withPlatformLock Result.failure(
-                IllegalStateException("Machine teardown must be ready before beginning an execution"),
+                IllegalStateException("Expected source execution no longer owns the connection"),
+            )
+        }
+        beginExecutionLocked(seed)
+    }
+
+    fun beginNoCurrentSuccessorExecution(
+        token: NoCurrentSuccessorToken,
+        seed: ExecutionSeed,
+        candidateStillCurrent: () -> Boolean = { true },
+    ): Result<ExecutionLease> = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed ||
+            currentLeaseRef.value != null ||
+            executionSequence.value != token.executionGeneration ||
+            queuedSuccessorSupersessionEpoch != token.supersessionEpoch ||
+            configurationInputEpoch != token.configurationInputEpoch ||
+            !candidateStillCurrent()
+        ) {
+            return@withPlatformLock Result.failure(
+                IllegalStateException("Queued successor authority was superseded"),
+            )
+        }
+        beginExecutionLocked(seed).onSuccess { lease ->
+            queuedSuccessorSetup = QueuedSuccessorSetup(
+                lease = lease,
+                configurationInputEpoch = token.configurationInputEpoch,
+            )
+        }
+    }
+
+    private fun beginExecutionLocked(seed: ExecutionSeed): Result<ExecutionLease> {
+        if (machineConfigurationClaim != null ||
+            recoveryPublicationClaim != null ||
+            queuedSuccessorSetup != null ||
+            (seed.requiresMachine && _machineTeardownState.value !is MachineTeardownState.Ready)
+        ) {
+            return Result.failure(
+                IllegalStateException("Machine command boundary must be ready before beginning an execution"),
             )
         }
 
@@ -160,19 +340,227 @@ internal class WorkoutExecutionGuard(
             currentLeaseRef.value = null
         }
         invalidatedLeaseRef.value = null
+        supersedeQueuedSuccessorsLocked()
         currentLeaseRef.value = lease
         completionClaim = null
         log(LogEventType.WORKOUT_EXECUTION, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=begun")
-        Result.success(lease)
+        return Result.success(lease)
     }
 
-    fun activate(lease: ExecutionLease, cutoverTimestampMs: Long): ExecutionLease? = withPlatformLock(teardownLock) {
+    /**
+     * Reserves the non-suspending manual-recovery publication boundary. While the
+     * claim is held, no successor can replace the validated source execution.
+     */
+    fun beginRecoveryPublication(
+        expectedLease: ExecutionLease?,
+        expectedSupersessionEpoch: Long,
+        allowNoCurrentAfterOwnedInvalidation: Boolean,
+    ): RecoveryPublicationClaim? = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed || recoveryPublicationClaim != null) return@withPlatformLock null
+        if (recoveryPublicationSupersessionEpoch != expectedSupersessionEpoch) return@withPlatformLock null
+        if (!recoveryPublicationAuthorityMatches(expectedLease, allowNoCurrentAfterOwnedInvalidation)) {
+            return@withPlatformLock null
+        }
+        RecoveryPublicationClaim(
+            id = ++recoveryPublicationSequence,
+            expectedLease = expectedLease,
+            executionGeneration = executionSequence.value,
+            supersessionEpoch = expectedSupersessionEpoch,
+            allowNoCurrentAfterOwnedInvalidation = allowNoCurrentAfterOwnedInvalidation,
+        ).also { recoveryPublicationClaim = it }
+    }
+
+    fun commitRecoveryPublication(
+        claim: RecoveryPublicationClaim,
+        block: () -> Unit,
+    ): Boolean = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed ||
+            recoveryPublicationClaim != claim ||
+            executionSequence.value != claim.executionGeneration ||
+            recoveryPublicationSupersessionEpoch != claim.supersessionEpoch ||
+            !recoveryPublicationAuthorityMatches(
+                expectedLease = claim.expectedLease,
+                allowNoCurrentAfterOwnedInvalidation = claim.allowNoCurrentAfterOwnedInvalidation,
+            )
+        ) {
+            if (recoveryPublicationClaim == claim) {
+                recoveryPublicationClaim = null
+            }
+            return@withPlatformLock false
+        }
+        try {
+            block()
+            true
+        } finally {
+            if (recoveryPublicationClaim == claim) {
+                recoveryPublicationClaim = null
+            }
+        }
+    }
+
+    fun supersedeRecoveryPublication() = withPlatformLock(teardownLock) {
+        supersedeRecoveryPublicationLocked()
+    }
+
+    private fun supersedeRecoveryPublicationLocked() {
+        recoveryPublicationSupersessionEpoch += 1
+        recoveryPublicationClaim = null
+    }
+
+    private fun supersedeQueuedSuccessorsLocked() {
+        queuedSuccessorSupersessionEpoch += 1
+    }
+
+    private fun clearQueuedSuccessorSetupLocked(lease: ExecutionLease) {
+        if (sameIdentity(queuedSuccessorSetup?.lease, lease)) {
+            queuedSuccessorSetup = null
+        }
+    }
+
+    private fun recoveryPublicationAuthorityMatches(
+        expectedLease: ExecutionLease?,
+        allowNoCurrentAfterOwnedInvalidation: Boolean,
+    ): Boolean {
+        val current = currentLeaseRef.value
+        if (expectedLease == null) return current == null
+        if (sameIdentity(current, expectedLease)) return true
+        return allowNoCurrentAfterOwnedInvalidation &&
+            current == null &&
+            sameIdentity(invalidatedLeaseRef.value, expectedLease)
+    }
+
+    fun beginMachineConfiguration(lease: ExecutionLease): Boolean = claimMachineConfiguration(lease) == MachineConfigurationClaimResult.CLAIMED
+
+    fun claimMachineConfiguration(
+        lease: ExecutionLease,
+        expectedConfigurationInputEpoch: Long? = null,
+        inputAuthorityStillCurrent: () -> Boolean = { true },
+    ): MachineConfigurationClaimResult = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed || !lease.requiresMachine) {
+            return@withPlatformLock MachineConfigurationClaimResult.REJECTED
+        }
+        if (!sameIdentity(currentLeaseRef.value, lease)) {
+            return@withPlatformLock MachineConfigurationClaimResult.REJECTED
+        }
+        if (_machineTeardownState.value !is MachineTeardownState.Ready || machineConfigurationClaim != null) {
+            return@withPlatformLock MachineConfigurationClaimResult.REJECTED
+        }
+        if (openConfigurationInputMutations.isNotEmpty()) {
+            return@withPlatformLock MachineConfigurationClaimResult.CONFIGURATION_INPUT_SUPERSEDED
+        }
+        val queuedEpoch = queuedSuccessorSetup
+            ?.takeIf { sameIdentity(it.lease, lease) }
+            ?.configurationInputEpoch
+        val requiredEpoch = expectedConfigurationInputEpoch ?: queuedEpoch
+        if (requiredEpoch != null && requiredEpoch != configurationInputEpoch) {
+            return@withPlatformLock MachineConfigurationClaimResult.CONFIGURATION_INPUT_SUPERSEDED
+        }
+        if (!inputAuthorityStillCurrent()) {
+            return@withPlatformLock MachineConfigurationClaimResult.CONFIGURATION_INPUT_SUPERSEDED
+        }
+        machineConfigurationClaim = MachineConfigurationClaim(
+            lease = lease,
+            configurationInputEpoch = configurationInputEpoch,
+        )
+        MachineConfigurationClaimResult.CLAIMED
+    }
+
+    fun endMachineConfiguration(lease: ExecutionLease): Boolean = withPlatformLock(teardownLock) {
+        if (!sameIdentity(machineConfigurationClaim?.lease, lease)) return@withPlatformLock false
+        if (sameIdentity(deferredConfigurationTeardownLease, lease)) return@withPlatformLock false
+        machineConfigurationClaim = null
+        true
+    }
+
+    /**
+     * Finishes the CONFIG boundary atomically with either activation or a teardown
+     * handoff. The callback is non-suspending and must only publish in-memory state.
+     */
+    fun completeMachineConfiguration(
+        lease: ExecutionLease,
+        activationCutoverTimestampMs: Long?,
+        inputAuthorityStillCurrent: () -> Boolean = { true },
+        onActivated: (ExecutionLease) -> Unit,
+    ): MachineConfigurationCompletion = withPlatformLock(teardownLock) {
+        val configurationClaim = machineConfigurationClaim
+            ?: return@withPlatformLock MachineConfigurationCompletion.Rejected
+        if (!sameIdentity(configurationClaim.lease, lease)) {
+            return@withPlatformLock MachineConfigurationCompletion.Rejected
+        }
+        machineConfigurationClaim = null
+
+        if (sameIdentity(deferredConfigurationTeardownLease, lease)) {
+            val attempt = deferredConfigurationTeardownAttempt
+            deferredConfigurationTeardownLease = null
+            deferredConfigurationTeardownAttempt = 0
+            return@withPlatformLock if (beginTeardownLocked(lease, attempt)) {
+                MachineConfigurationCompletion.TeardownBegun(lease)
+            } else {
+                MachineConfigurationCompletion.ReleasedWithoutActivation
+            }
+        }
+
+        if (configurationClaim.configurationInputEpoch != configurationInputEpoch ||
+            !inputAuthorityStillCurrent()
+        ) {
+            return@withPlatformLock if (beginTeardownLocked(lease, attempt = 1)) {
+                MachineConfigurationCompletion.TeardownBegun(
+                    lease = lease,
+                    configurationInputsSuperseded = true,
+                )
+            } else {
+                MachineConfigurationCompletion.ReleasedWithoutActivation
+            }
+        }
+
+        if (activationCutoverTimestampMs == null) {
+            return@withPlatformLock MachineConfigurationCompletion.ReleasedWithoutActivation
+        }
+        val current = currentLeaseRef.value
+        if (current == null ||
+            !sameIdentity(current, lease) ||
+            _machineTeardownState.value !is MachineTeardownState.Ready
+        ) {
+            return@withPlatformLock MachineConfigurationCompletion.ReleasedWithoutActivation
+        }
+        val activated = current.copy(activationCutoverTimestampMs = activationCutoverTimestampMs)
+        currentLeaseRef.value = activated
+        clearQueuedSuccessorSetupLocked(lease)
+        log(LogEventType.WORKOUT_EXECUTION, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=activated")
+        onActivated(activated)
+        MachineConfigurationCompletion.Activated(activated)
+    }
+
+    fun activate(
+        lease: ExecutionLease,
+        cutoverTimestampMs: Long,
+        expectedConfigurationInputEpoch: Long? = null,
+        inputAuthorityStillCurrent: () -> Boolean = { true },
+    ): ExecutionLease? = withPlatformLock(teardownLock) {
         val current = currentLeaseRef.value ?: return@withPlatformLock null
         if (!sameIdentity(current, lease)) return@withPlatformLock null
+        if (expectedConfigurationInputEpoch != null &&
+            (expectedConfigurationInputEpoch != configurationInputEpoch || openConfigurationInputMutations.isNotEmpty())
+        ) {
+            return@withPlatformLock null
+        }
+        if (!inputAuthorityStillCurrent()) return@withPlatformLock null
+        if (lease.requiresMachine &&
+            (_machineTeardownState.value !is MachineTeardownState.Ready || machineConfigurationClaim != null)
+        ) {
+            return@withPlatformLock null
+        }
         val activated = current.copy(activationCutoverTimestampMs = cutoverTimestampMs)
         currentLeaseRef.value = activated
+        clearQueuedSuccessorSetupLocked(lease)
         log(LogEventType.WORKOUT_EXECUTION, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=activated")
         activated
+    }
+
+    fun releaseQueuedSuccessorSetup(lease: ExecutionLease): Boolean = withPlatformLock(teardownLock) {
+        if (!sameIdentity(queuedSuccessorSetup?.lease, lease)) return@withPlatformLock false
+        queuedSuccessorSetup = null
+        true
     }
 
     fun isCurrent(lease: ExecutionLease): Boolean = currentLeaseRef.value?.let { current ->
@@ -181,7 +569,13 @@ internal class WorkoutExecutionGuard(
 
     fun invalidateCurrent(reason: ExecutionInvalidationReason): ExecutionLease? = withPlatformLock(teardownLock) {
         val invalidated = currentLeaseRef.value ?: return null
+        if (reason == ExecutionInvalidationReason.START_FAILED) {
+            recoveryPublicationClaim = null
+        } else {
+            supersedeRecoveryPublicationLocked()
+        }
         cancelPresentationJobsLocked(invalidated)
+        clearQueuedSuccessorSetupLocked(invalidated)
         currentLeaseRef.value = null
         if (sameIdentity(completionClaim?.lease, invalidated)) {
             completionClaim = null
@@ -197,7 +591,13 @@ internal class WorkoutExecutionGuard(
     fun invalidate(lease: ExecutionLease, reason: ExecutionInvalidationReason): Boolean = withPlatformLock(teardownLock) {
         val current = currentLeaseRef.value ?: return@withPlatformLock false
         if (!sameIdentity(current, lease)) return@withPlatformLock false
+        if (reason == ExecutionInvalidationReason.START_FAILED) {
+            recoveryPublicationClaim = null
+        } else {
+            supersedeRecoveryPublicationLocked()
+        }
         cancelPresentationJobsLocked(current)
+        clearQueuedSuccessorSetupLocked(current)
         currentLeaseRef.value = null
         if (sameIdentity(completionClaim?.lease, current)) {
             completionClaim = null
@@ -221,6 +621,7 @@ internal class WorkoutExecutionGuard(
         if (token.lease != null && (invalidatedLease == null || !sameIdentity(token.lease, invalidatedLease))) {
             return@withPlatformLock false
         }
+        supersedeRecoveryPublicationLocked()
         block()
         true
     }
@@ -337,6 +738,13 @@ internal class WorkoutExecutionGuard(
 
     fun cancelAllOwnedJobs() {
         val ownedJobs = withPlatformLock(teardownLock) {
+            supersedeRecoveryPublicationLocked()
+            supersedeQueuedSuccessorsLocked()
+            queuedSuccessorSetup = null
+            if (openConfigurationInputMutations.isNotEmpty()) {
+                openConfigurationInputMutations.clear()
+                configurationInputEpoch += 1
+            }
             jobOwnershipClosed = true
             val jobs = listOfNotNull(completionJob, alertDeliveryJob, teardownJob)
             completionJob = null
@@ -351,14 +759,45 @@ internal class WorkoutExecutionGuard(
     }
 
     fun beginTeardown(lease: ExecutionLease, attempt: Int = 1): Boolean = withPlatformLock(teardownLock) {
-        if (jobOwnershipClosed) return@withPlatformLock false
+        beginTeardownLocked(lease, attempt)
+    }
+
+    fun requestTeardown(lease: ExecutionLease, attempt: Int = 1): MachineTeardownClaimResult = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed || attempt < 1) return@withPlatformLock MachineTeardownClaimResult.Rejected
         val ownsExecution = isCurrent(lease) || sameIdentity(invalidatedLeaseRef.value, lease)
-        if (attempt < 1 || _machineTeardownState.value !is MachineTeardownState.Ready || !ownsExecution) {
-            return@withPlatformLock false
+        if (_machineTeardownState.value !is MachineTeardownState.Ready || !ownsExecution) {
+            return@withPlatformLock MachineTeardownClaimResult.Rejected
+        }
+        val configuringLease = machineConfigurationClaim?.lease
+        if (configuringLease != null) {
+            if (!sameIdentity(configuringLease, lease) || deferredConfigurationTeardownLease != null) {
+                return@withPlatformLock MachineTeardownClaimResult.Rejected
+            }
+            deferredConfigurationTeardownLease = lease
+            deferredConfigurationTeardownAttempt = attempt
+            return@withPlatformLock MachineTeardownClaimResult.DeferredUntilConfigurationCompletes
+        }
+        if (beginTeardownLocked(lease, attempt)) {
+            MachineTeardownClaimResult.Begun
+        } else {
+            MachineTeardownClaimResult.Rejected
+        }
+    }
+
+    private fun beginTeardownLocked(lease: ExecutionLease, attempt: Int): Boolean {
+        if (jobOwnershipClosed) return false
+        val ownsExecution = isCurrent(lease) || sameIdentity(invalidatedLeaseRef.value, lease)
+        if (attempt < 1 ||
+            _machineTeardownState.value !is MachineTeardownState.Ready ||
+            machineConfigurationClaim != null ||
+            !ownsExecution
+        ) {
+            return false
         }
         if (sameIdentity(invalidatedLeaseRef.value, lease)) {
             invalidatedLeaseRef.value = null
         }
+        clearQueuedSuccessorSetupLocked(lease)
         teardownLease = lease
         teardownAttempt = attempt
         teardownFailureReason = null
@@ -366,7 +805,7 @@ internal class WorkoutExecutionGuard(
         teardownJobLease = null
         _machineTeardownState.value = MachineTeardownState.TearingDown(lease.executionId, attempt)
         log(LogEventType.WORKOUT_TEARDOWN, "executionId=${lease.executionId},sessionId=${lease.sessionId},transition=begun,attempt=$attempt")
-        true
+        return true
     }
 
     fun attachTeardownJob(lease: ExecutionLease, job: Job): Boolean = withPlatformLock(teardownLock) {
@@ -455,6 +894,10 @@ internal class WorkoutExecutionGuard(
 
     fun persistenceClaimStatus(sessionId: String): PersistenceClaimStatus = withPlatformLock(persistenceLock) {
         persistedClaims[sessionId] ?: PersistenceClaimStatus.UNCLAIMED
+    }
+
+    internal fun persistenceClaimsSnapshot(): Map<String, PersistenceClaimStatus> = withPlatformLock(persistenceLock) {
+        persistedClaims.toMap()
     }
 
     fun markPersistenceSucceeded(sessionId: String) = withPlatformLock(persistenceLock) {

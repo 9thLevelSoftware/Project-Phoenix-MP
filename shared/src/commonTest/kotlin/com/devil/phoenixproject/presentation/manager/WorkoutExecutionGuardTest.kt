@@ -289,6 +289,189 @@ class WorkoutExecutionGuardTest {
     }
 
     @Test
+    fun `machine configuration and teardown claims are mutually exclusive`() {
+        val guard = WorkoutExecutionGuard()
+        val lease = guard.beginExecution(seed("session-a")).getOrThrow()
+
+        assertTrue(guard.beginMachineConfiguration(lease))
+        assertFalse(guard.beginTeardown(lease))
+        assertTrue(guard.endMachineConfiguration(lease))
+        assertTrue(guard.beginTeardown(lease))
+    }
+
+    @Test
+    fun `queued successor setup blocks replacement until cable activation commits`() {
+        val guard = WorkoutExecutionGuard()
+        val token = requireNotNull(guard.captureNoCurrentSuccessorToken())
+        val queued = guard.beginNoCurrentSuccessorExecution(token, seed("queued")).getOrThrow()
+
+        assertTrue(guard.beginExecution(seed("replacement")).isFailure)
+        assertTrue(guard.beginMachineConfiguration(queued))
+        assertIs<MachineConfigurationCompletion.Activated>(
+            guard.completeMachineConfiguration(queued, 42L) {},
+        )
+        assertTrue(guard.beginExecution(seed("replacement")).isSuccess)
+    }
+
+    @Test
+    fun `queued successor candidate is revalidated inside its guarded begin`() {
+        val guard = WorkoutExecutionGuard()
+        val token = requireNotNull(guard.captureNoCurrentSuccessorToken())
+        var validations = 0
+
+        val rejected = guard.beginNoCurrentSuccessorExecution(token, seed("queued")) {
+            validations += 1
+            false
+        }
+
+        assertTrue(rejected.isFailure)
+        assertEquals(1, validations)
+        assertNull(guard.currentLease)
+        assertTrue(guard.beginExecution(seed("later")).isSuccess)
+    }
+
+    @Test
+    fun `configuration input mutation supersedes queued setup before config claim`() {
+        val guard = WorkoutExecutionGuard()
+        val (token, candidate) = requireNotNull(
+            guard.prepareNoCurrentSuccessor { "candidate" },
+        )
+        assertEquals("candidate", candidate)
+        val queued = guard.beginNoCurrentSuccessorExecution(token, seed("queued")).getOrThrow()
+
+        guard.mutateConfigurationInputs { }
+
+        assertEquals(
+            MachineConfigurationClaimResult.CONFIGURATION_INPUT_SUPERSEDED,
+            guard.claimMachineConfiguration(queued),
+        )
+        assertTrue(guard.invalidate(queued, ExecutionInvalidationReason.START_FAILED))
+        assertTrue(guard.beginExecution(seed("later")).isSuccess)
+    }
+
+    @Test
+    fun `explicit retry input epoch is checked atomically with config claim`() {
+        val guard = WorkoutExecutionGuard()
+        val epoch = guard.captureConfigurationInputEpoch()
+        val lease = guard.beginExecution(seed("retry")).getOrThrow()
+
+        guard.mutateConfigurationInputs { }
+
+        assertEquals(
+            MachineConfigurationClaimResult.CONFIGURATION_INPUT_SUPERSEDED,
+            guard.claimMachineConfiguration(lease, epoch),
+        )
+        assertTrue(guard.invalidate(lease, ExecutionInvalidationReason.START_FAILED))
+    }
+
+    @Test
+    fun `open suspended command input mutation blocks config until publication closes`() {
+        val guard = WorkoutExecutionGuard()
+        val lease = guard.beginExecution(seed("rack-catalog-update")).getOrThrow()
+        val mutation = guard.beginConfigurationInputMutation()
+
+        assertEquals(
+            MachineConfigurationClaimResult.CONFIGURATION_INPUT_SUPERSEDED,
+            guard.claimMachineConfiguration(lease),
+        )
+
+        guard.endConfigurationInputMutation(mutation)
+        assertTrue(guard.invalidate(lease, ExecutionInvalidationReason.START_FAILED))
+        val later = guard.beginExecution(seed("after-rack-catalog-update")).getOrThrow()
+        assertEquals(
+            MachineConfigurationClaimResult.CLAIMED,
+            guard.claimMachineConfiguration(later),
+        )
+    }
+
+    @Test
+    fun `nonmachine activation rejects a command identity epoch changed during setup`() {
+        val guard = WorkoutExecutionGuard()
+        val epoch = guard.captureConfigurationInputEpoch()
+        val lease = guard.beginExecution(
+            seed("bodyweight").copy(requiresMachine = false, isBodyweight = true),
+        ).getOrThrow()
+
+        guard.mutateConfigurationInputs { }
+
+        assertNull(guard.activate(lease, cutoverTimestampMs = 42L, expectedConfigurationInputEpoch = epoch))
+        assertTrue(guard.invalidate(lease, ExecutionInvalidationReason.START_FAILED))
+    }
+
+    @Test
+    fun `queued successor setup claim releases on invalidation and teardown`() {
+        val invalidationGuard = WorkoutExecutionGuard()
+        val invalidationToken = requireNotNull(invalidationGuard.captureNoCurrentSuccessorToken())
+        val invalidated = invalidationGuard
+            .beginNoCurrentSuccessorExecution(invalidationToken, seed("invalidated"))
+            .getOrThrow()
+
+        assertTrue(invalidationGuard.beginExecution(seed("blocked")).isFailure)
+        assertTrue(invalidationGuard.invalidate(invalidated, ExecutionInvalidationReason.START_FAILED))
+        assertTrue(invalidationGuard.beginExecution(seed("after-invalidation")).isSuccess)
+
+        val teardownGuard = WorkoutExecutionGuard()
+        val teardownToken = requireNotNull(teardownGuard.captureNoCurrentSuccessorToken())
+        val tearingDown = teardownGuard
+            .beginNoCurrentSuccessorExecution(teardownToken, seed("teardown"))
+            .getOrThrow()
+
+        assertTrue(teardownGuard.beginExecution(seed("blocked")).isFailure)
+        assertTrue(teardownGuard.beginTeardown(tearingDown))
+        assertTrue(teardownGuard.markTeardownReady(tearingDown))
+        assertTrue(teardownGuard.beginExecution(seed("after-teardown")).isSuccess)
+    }
+
+    @Test
+    fun `exact nonmachine terminal owner releases its queued successor setup claim`() {
+        val guard = WorkoutExecutionGuard()
+        val token = requireNotNull(guard.captureNoCurrentSuccessorToken())
+        val queued = guard
+            .beginNoCurrentSuccessorExecution(
+                token,
+                seed("bodyweight").copy(requiresMachine = false, isBodyweight = true),
+            )
+            .getOrThrow()
+
+        assertTrue(guard.beginExecution(seed("blocked")).isFailure)
+        assertTrue(guard.releaseQueuedSuccessorSetup(queued))
+        assertFalse(guard.releaseQueuedSuccessorSetup(queued))
+        assertTrue(guard.beginExecution(seed("after-release")).isSuccess)
+    }
+
+    @Test
+    fun `configuration completion hands an exact deferred teardown to the guard`() {
+        val guard = WorkoutExecutionGuard()
+        val lease = guard.beginExecution(seed("session-a")).getOrThrow()
+        var activationPublished = false
+
+        assertTrue(guard.beginMachineConfiguration(lease))
+        assertIs<MachineTeardownClaimResult.DeferredUntilConfigurationCompletes>(
+            guard.requestTeardown(lease),
+        )
+        val completion = guard.completeMachineConfiguration(lease, 42L) {
+            activationPublished = true
+        }
+
+        assertIs<MachineConfigurationCompletion.TeardownBegun>(completion)
+        assertFalse(activationPublished)
+        assertIs<MachineTeardownState.TearingDown>(guard.machineTeardownState.value)
+        assertNull(guard.currentLease?.activationCutoverTimestampMs)
+    }
+
+    @Test
+    fun `bodyweight successor cannot replace a cable lease during configuration`() {
+        val guard = WorkoutExecutionGuard()
+        val cableLease = guard.beginExecution(seed("cable")).getOrThrow()
+
+        assertTrue(guard.beginMachineConfiguration(cableLease))
+        assertTrue(
+            guard.beginExecution(seed("bodyweight").copy(requiresMachine = false)).isFailure,
+        )
+        assertEquals(cableLease, guard.currentLease)
+    }
+
+    @Test
     fun `recovery required teardown retries from the retained lease`() {
         val guard = WorkoutExecutionGuard()
         val lease = guard.beginExecution(seed("session-a")).getOrThrow()

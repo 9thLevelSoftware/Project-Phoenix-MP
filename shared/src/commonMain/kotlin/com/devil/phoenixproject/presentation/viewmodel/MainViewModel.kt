@@ -469,20 +469,32 @@ class MainViewModel(
     fun updateActiveRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) = workoutSessionManager.updateActiveRackBehaviorOverrides(overrides)
     fun clearActiveRackSelection() = workoutSessionManager.clearActiveRackSelection()
     fun saveRackItem(item: RackItem) {
-        viewModelScope.launch {
-            equipmentRackRepository.upsert(item)
+        val mutation = workoutSessionManager.beginConfigurationInputMutation()
+        val job = viewModelScope.launch {
+            try {
+                equipmentRackRepository.upsert(item)
+            } finally {
+                workoutSessionManager.endConfigurationInputMutation(mutation)
+            }
         }
+        job.invokeOnCompletion { workoutSessionManager.endConfigurationInputMutation(mutation) }
     }
 
     fun deleteRackItem(id: String) {
-        viewModelScope.launch {
-            equipmentRackRepository.delete(id)
-            val activeIds = activeRackItemIds.value
-            val remainingActiveIds = activeIds.filterNot { it == id }
-            if (remainingActiveIds.size != activeIds.size) {
-                updateActiveRackSelection(remainingActiveIds)
+        val mutation = workoutSessionManager.beginConfigurationInputMutation()
+        val job = viewModelScope.launch {
+            try {
+                equipmentRackRepository.delete(id)
+                val activeIds = activeRackItemIds.value
+                val remainingActiveIds = activeIds.filterNot { it == id }
+                if (remainingActiveIds.size != activeIds.size) {
+                    updateActiveRackSelection(remainingActiveIds)
+                }
+            } finally {
+                workoutSessionManager.endConfigurationInputMutation(mutation)
             }
         }
+        job.invokeOnCompletion { workoutSessionManager.endConfigurationInputMutation(mutation) }
     }
 
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = workoutSessionManager.startWorkout(skipCountdown, isJustLiftMode)
@@ -536,6 +548,7 @@ class MainViewModel(
         exerciseIndex: Int,
         overrides: Map<String, RackItemBehavior>,
     ) {
+        workoutSessionManager.supersedeConfigurationInputIntent()
         val routine = loadedRoutine.value ?: return
         val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
         val updatedActiveRoutine = routine.withRackBehaviorOverrides(
@@ -543,8 +556,7 @@ class MainViewModel(
             exerciseId = exercise.id,
             overrides = overrides,
         ) ?: return
-        workoutSessionManager.coordinator._loadedRoutine.value = updatedActiveRoutine
-        updateActiveRackBehaviorOverrides(overrides)
+        workoutSessionManager.updateLoadedRoutineRackBehaviorOverrides(updatedActiveRoutine, overrides)
         viewModelScope.launch {
             try {
                 val storedRoutine = workoutRepository.getRoutineById(routine.id)
