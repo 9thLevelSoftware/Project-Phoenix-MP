@@ -212,6 +212,7 @@ class DropSetEligibilityPolicyTest {
         isTimed = isTimed,
         isAmrap = isAmrap,
         isCableExercise = isCable,
+        logicalPreRackCommandTemplate = commandTemplate(),
     )
 
     private fun identity(setType: SetType = SetType.STANDARD) = RoutineExecutionIdentity(

@@ -1,19 +1,27 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeDocument
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLoadResult
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.DropSetConfiguration
+import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
+import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
@@ -24,6 +32,7 @@ import com.devil.phoenixproject.presentation.manager.GamificationManager
 import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceSnapshot
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -68,7 +77,50 @@ class FakeWorkoutServiceController : WorkoutServiceController {
     }
 }
 
-class DWSMTestHarness(
+class FakeActiveWorkoutRuntimeRepository : ActiveWorkoutRuntimeRepository {
+    data class ReplaceCall(
+        val profileId: String,
+        val routineSessionId: String,
+        val document: ActiveWorkoutRuntimeDocument,
+    )
+
+    val replacements = mutableListOf<ReplaceCall>()
+    val replaceEvents = mutableListOf<String>()
+    private val documents = mutableMapOf<Pair<String, String>, ActiveWorkoutRuntimeDocument>()
+    var failingReplaceCallsRemaining: Int = 0
+    var replaceBlock: (suspend () -> Unit)? = null
+    var cancellationOnNextReplace: CancellationException? = null
+
+    override suspend fun load(profileId: String, routineSessionId: String): ActiveWorkoutRuntimeLoadResult = documents[profileId to routineSessionId]
+        ?.let(ActiveWorkoutRuntimeLoadResult::Loaded)
+        ?: ActiveWorkoutRuntimeLoadResult.Missing
+
+    override suspend fun replace(
+        profileId: String,
+        routineSessionId: String,
+        document: ActiveWorkoutRuntimeDocument,
+    ) {
+        replaceEvents += "entered"
+        replacements += ReplaceCall(profileId, routineSessionId, document)
+        replaceBlock?.invoke()
+        cancellationOnNextReplace?.let { cancellation ->
+            cancellationOnNextReplace = null
+            throw cancellation
+        }
+        if (failingReplaceCallsRemaining > 0) {
+            failingReplaceCallsRemaining--
+            throw IllegalStateException("test runtime persistence failure")
+        }
+        documents[profileId to routineSessionId] = document
+        replaceEvents += "persisted"
+    }
+
+    override suspend fun delete(profileId: String, routineSessionId: String) {
+        documents.remove(profileId to routineSessionId)
+    }
+}
+
+internal class DWSMTestHarness(
     val testScope: TestScope,
     workoutRepositoryOverride: WorkoutRepository? = null,
     completedSetRepositoryOverride: CompletedSetRepository? = null,
@@ -81,6 +133,15 @@ class DWSMTestHarness(
     afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     afterResetInvalidation: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
     afterExecutionBegin: (outgoingExecutionId: Long?, executionId: Long) -> Unit = { _, _ -> },
+    dropSetEligibilityPolicy: DropSetEligibilityPolicy = DropSetEligibilityPolicy(
+        DropSetFeatureGate { false },
+        DropSetCandidateResolver(),
+    ),
+    dropSetConfigurationProvider: (RoutineExercise) -> DropSetConfiguration = {
+        DropSetConfiguration(enabled = false, minimumWeightPerCableKg = null)
+    },
+    transitionIdGenerator: () -> String = { "test-transition" },
+    offerIdGenerator: () -> String = { "test-offer" },
     hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 32,
         onBufferOverflow = BufferOverflow.SUSPEND,
@@ -104,7 +165,6 @@ class DWSMTestHarness(
             setIndex = setIndex,
             setKind = setKind,
         )
-
     }
 
     val nowMs: Long
@@ -120,6 +180,7 @@ class DWSMTestHarness(
     val fakeTrainingCycleRepo = FakeTrainingCycleRepository()
     val fakeRepMetricRepo = FakeRepMetricRepository()
     val fakeBiomechanicsRepo = FakeBiomechanicsRepository()
+    val fakeActiveWorkoutRuntimeRepository = FakeActiveWorkoutRuntimeRepository()
     val fakeWorkoutServiceController = FakeWorkoutServiceController()
     val fakeUserProfileRepo = FakeUserProfileRepository().apply { setActiveProfileForTest() }
     private val workoutRepository = workoutRepositoryOverride ?: fakeWorkoutRepo
@@ -163,6 +224,11 @@ class DWSMTestHarness(
         gamificationManager = gamificationManager,
         trainingCycleRepository = fakeTrainingCycleRepo,
         completedSetRepository = completedSetRepository,
+        activeWorkoutRuntimeRepository = fakeActiveWorkoutRuntimeRepository,
+        dropSetEligibilityPolicy = dropSetEligibilityPolicy,
+        dropSetConfigurationProvider = dropSetConfigurationProvider,
+        transitionIdGenerator = transitionIdGenerator,
+        offerIdGenerator = offerIdGenerator,
         syncTriggerManager = null,
         repMetricRepository = fakeRepMetricRepo,
         biomechanicsRepository = fakeBiomechanicsRepo,
@@ -200,6 +266,9 @@ class DWSMTestHarness(
 
     /** Convenience accessor for the coordinator (shared state bus) */
     val coordinator get() = dwsm.coordinator
+
+    /** Task 6 test seam for the coordinator-owned immutable rest transition. */
+    val restTransitionPlan get() = coordinator.restTransitionPlan
 
     /** Convenience accessor for the routine flow manager (routine CRUD, navigation, supersets) */
     val routineFlowManager get() = dwsm.routineFlowManager

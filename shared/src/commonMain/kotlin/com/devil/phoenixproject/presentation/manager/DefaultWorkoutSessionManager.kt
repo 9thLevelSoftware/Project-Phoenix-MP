@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
@@ -18,6 +19,7 @@ import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
+import com.devil.phoenixproject.domain.model.DropSetConfiguration
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -39,14 +41,16 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
-import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
+import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineSetWeightRequest
 import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.DataBackupManager
+import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
@@ -155,7 +159,7 @@ data class CycleDayCompletionEvent(
  * This class wires the sub-managers together and provides the public API consumed by MainViewModel.
  * After Phase 2 decomposition, this is a thin delegation layer (~300 lines).
  */
-class DefaultWorkoutSessionManager(
+class DefaultWorkoutSessionManager internal constructor(
     private val bleRepository: BleRepository,
     private val workoutRepository: WorkoutRepository,
     private val exerciseRepository: ExerciseRepository,
@@ -165,6 +169,13 @@ class DefaultWorkoutSessionManager(
     private val gamificationManager: GamificationManager,
     private val trainingCycleRepository: TrainingCycleRepository,
     private val completedSetRepository: CompletedSetRepository,
+    private val activeWorkoutRuntimeRepository: ActiveWorkoutRuntimeRepository,
+    private val dropSetEligibilityPolicy: DropSetEligibilityPolicy,
+    private val dropSetConfigurationProvider: (RoutineExercise) -> DropSetConfiguration = {
+        DropSetConfiguration(enabled = false, minimumWeightPerCableKg = null)
+    },
+    private val transitionIdGenerator: () -> String = KmpUtils::randomUUID,
+    private val offerIdGenerator: () -> String = KmpUtils::randomUUID,
     private val syncTriggerManager: SyncTriggerManager?,
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
@@ -197,6 +208,12 @@ class DefaultWorkoutSessionManager(
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.SUSPEND,
     ),
 ) : WorkoutStateProvider {
+    /** Test seam for proving transition-owned successor lookup behavior. */
+    internal var restTransitionNavigationLookupsForTest: Int = 0
+
+    /** Test seam for ordering assertions around durable transition consumption. */
+    internal var restTransitionNavigationLookupObserverForTest: (() -> Unit)? = null
+
     private val isIosPlatform = getPlatform().name.startsWith("iOS")
     private var summaryAutoAdvanceJob: Job? = null
 
@@ -247,10 +264,8 @@ class DefaultWorkoutSessionManager(
             ) {
                 activeSessionEngine.requestTeardownForTransition(expectedLease, reason, afterReady)
             }
-            override fun currentExecutionLeaseOrNull(): ExecutionLease? =
-                activeSessionEngine.currentExecutionLeaseOrNull()
-            override fun isCurrentExecution(lease: ExecutionLease): Boolean =
-                activeSessionEngine.isCurrentExecution(lease)
+            override fun currentExecutionLeaseOrNull(): ExecutionLease? = activeSessionEngine.currentExecutionLeaseOrNull()
+            override fun isCurrentExecution(lease: ExecutionLease): Boolean = activeSessionEngine.isCurrentExecution(lease)
             override fun setWorkoutParametersInternal(params: WorkoutParameters) {
                 this@DefaultWorkoutSessionManager.setWorkoutParametersInternal(params)
             }
@@ -269,6 +284,11 @@ class DefaultWorkoutSessionManager(
         gamificationManager = gamificationManager,
         trainingCycleRepository = trainingCycleRepository,
         completedSetRepository = completedSetRepository,
+        activeWorkoutRuntimeRepository = activeWorkoutRuntimeRepository,
+        dropSetEligibilityPolicy = dropSetEligibilityPolicy,
+        dropSetConfigurationProvider = dropSetConfigurationProvider,
+        transitionIdGenerator = transitionIdGenerator,
+        offerIdGenerator = offerIdGenerator,
         syncTriggerManager = syncTriggerManager,
         repMetricRepository = repMetricRepository,
         biomechanicsRepository = biomechanicsRepository,
@@ -322,7 +342,11 @@ class DefaultWorkoutSessionManager(
             override fun skipCurrentExerciseAndEnterNextStep(): Boolean = routineFlowManager.skipCurrentExerciseAndEnterNextStep()
             override fun showRoutineComplete() = routineFlowManager.showRoutineComplete()
             override fun getCurrentExercise(): RoutineExercise? = routineFlowManager.getCurrentExercise()
-            override fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>? = routineFlowManager.getNextStep(routine, exerciseIndex, setIndex)
+            override fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>? {
+                restTransitionNavigationLookupsForTest++
+                restTransitionNavigationLookupObserverForTest?.invoke()
+                return routineFlowManager.getNextStep(routine, exerciseIndex, setIndex)
+            }
             override fun isSameExercise(a: RoutineExercise, b: RoutineExercise): Boolean = routineFlowManager.isSameExercise(a, b)
             override fun isInSuperset(): Boolean = routineFlowManager.isInSuperset()
             override fun isAtEndOfSupersetCycle(): Boolean = routineFlowManager.isAtEndOfSupersetCycle()
@@ -334,8 +358,7 @@ class DefaultWorkoutSessionManager(
             override fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean = routineFlowManager.calculateIsLastExercise(isSingleExercise, currentExercise, routine)
             override fun clearCycleContext() = routineFlowManager.clearCycleContext()
             override fun seedRackSelectionForExercise(exerciseIndex: Int) = routineFlowManager.seedRackSelectionForExercise(exerciseIndex)
-            override fun proceedFromSummary(lease: ExecutionLease) =
-                this@DefaultWorkoutSessionManager.proceedFromSummary(lease)
+            override fun proceedFromSummary(completion: SetExecutionCompletion) = this@DefaultWorkoutSessionManager.proceedFromSummary(completion)
         }
 
         scope.launch {
@@ -393,7 +416,7 @@ class DefaultWorkoutSessionManager(
                             coordinator._workoutState.value is WorkoutState.SetSummary
                         ) {
                             Logger.d { "Summary auto-advance fallback fired - proceeding from summary in manager scope" }
-                            proceedFromSummary(lease)
+                            proceedFromSummary()
                         }
                     }
                 }
@@ -803,6 +826,9 @@ class DefaultWorkoutSessionManager(
     // ===== Rest/Flow Control — delegated to ActiveSessionEngine =====
 
     fun skipRest() = activeSessionEngine.skipRest()
+    fun applyRestTransition(command: RestTransitionCommand) = activeSessionEngine.applyRestTransition(command)
+    internal val restTransitionPlan: StateFlow<RestTransitionPlan?> get() = coordinator.restTransitionPlan
+    internal suspend fun applyRestTransitionAwait(command: RestTransitionCommand): RestTransitionReduction = activeSessionEngine.applyRestTransitionAwait(command)
     fun extendRestTime(seconds: Int) = activeSessionEngine.extendRestTime(seconds)
     fun toggleRestPause() = activeSessionEngine.toggleRestPause()
     fun resetRestTimer() = activeSessionEngine.resetRestTimer()
@@ -874,14 +900,19 @@ class DefaultWorkoutSessionManager(
      * Stays in DWSM because it coordinates between RoutineFlowManager and ActiveSessionEngine.
      */
     fun proceedFromSummary() {
-        proceedFromSummaryFor(activeSessionEngine.currentExecutionLeaseOrNull())
+        val lease = activeSessionEngine.currentExecutionLeaseOrNull()
+        val completion = lease?.let(activeSessionEngine::claimedCompletion)
+        proceedFromSummaryFor(lease, completion)
     }
 
-    internal fun proceedFromSummary(lease: ExecutionLease) {
-        proceedFromSummaryFor(lease)
+    internal fun proceedFromSummary(completion: SetExecutionCompletion) {
+        proceedFromSummaryFor(completion.lease, completion)
     }
 
-    private fun proceedFromSummaryFor(expectedLease: ExecutionLease?) {
+    private fun proceedFromSummaryFor(
+        expectedLease: ExecutionLease?,
+        completion: SetExecutionCompletion? = null,
+    ) {
         if (expectedLease != null && !activeSessionEngine.isCurrentExecution(expectedLease)) return
         // Issue #355: Atomic guard to prevent duplicate calls on iOS.
         // When app foregrounds, both manager-level fallback AND UI-level countdown can fire,
@@ -919,6 +950,25 @@ class DefaultWorkoutSessionManager(
                     "  currentExerciseIndex=${coordinator._currentExerciseIndex.value}, currentSetIndex=${coordinator._currentSetIndex.value}"
                 }
 
+                // A routine completion owns an immutable rest transition.  Install and
+                // durably publish that plan before any completion/finality/navigation
+                // lookup, including the manual (autoplay-off) summary path.
+                if (routine != null && !isJustLift && completion?.routineIdentity != null) {
+                    val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value)
+                    val isLastSetOfExercise = coordinator._currentSetIndex.value >=
+                        (currentExercise?.setReps?.size ?: 1) - 1
+                    val summary = coordinator._workoutState.value as? WorkoutState.SetSummary
+                    val completedWorkingReps = summary?.workingReps ?: 0
+                    if (isLastSetOfExercise && completedWorkingReps > 0) {
+                        val currentExerciseIndex = coordinator._currentExerciseIndex.value
+                        coordinator._completedExercises.value = coordinator._completedExercises.value + currentExerciseIndex
+                        coordinator._skippedExercises.value = coordinator._skippedExercises.value - currentExerciseIndex
+                    }
+                    coordinator._currentSetRpe.value = null
+                    activeSessionEngine.startRestTimer(completion)
+                    return@launch
+                }
+
                 // Check if routine is complete (for routine mode, not Just Lift)
                 if (routine != null && !isJustLift) {
                     val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value)
@@ -934,6 +984,7 @@ class DefaultWorkoutSessionManager(
                     }
 
                     // Check if there are ANY more steps using superset-aware navigation
+                    restTransitionNavigationLookupsForTest++
                     val nextStep = routineFlowManager.getNextStep(
                         routine,
                         coordinator._currentExerciseIndex.value,
@@ -1061,7 +1112,8 @@ class DefaultWorkoutSessionManager(
                 if (shouldShowRestTimer) {
                     Logger.d { "proceedFromSummary: Starting rest timer..." }
                     if (expectedLease != null) {
-                        activeSessionEngine.startRestTimer(expectedLease)
+                        completion?.let(activeSessionEngine::startRestTimer)
+                            ?: activeSessionEngine.startRestTimer(expectedLease)
                     } else {
                         activeSessionEngine.startRestTimer()
                     }

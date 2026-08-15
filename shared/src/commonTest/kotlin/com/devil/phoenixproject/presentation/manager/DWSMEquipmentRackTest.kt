@@ -154,6 +154,52 @@ class DWSMEquipmentRackTest {
     }
 
     @Test
+    fun `completion template retains pre rack weight with resolved rack metadata`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.fakeEquipmentRackRepo.saveItems(
+                listOf(
+                    rackItem("assist", 5f, RackItemBehavior.COUNTERWEIGHT),
+                    rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE),
+                ),
+            )
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    warmupReps = 0,
+                    weightPerCableKg = 40f,
+                ),
+            )
+            // Cable rack selection intentionally does not mirror into live params until
+            // set start; the immutable completion template must capture that resolved snapshot.
+            harness.dwsm.updateActiveRackSelection(listOf("assist", "vest"))
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(workingReps = 8, totalReps = 8)
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+            )
+            runCurrent()
+
+            val template = harness.activeSessionEngine.executionGuard
+                .claimedCompletion(lease)
+                ?.logicalPreRackCommandTemplate
+                ?: error("Expected claimed completion")
+            assertEquals(40f, template.weightPerCableKg)
+            assertEquals(listOf("assist", "vest"), template.activeRackItemIds)
+            assertEquals(10f, template.externalAddedLoadKg)
+            assertEquals(5f, template.counterweightKg)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `no rack workout sends programmed packet unchanged`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")

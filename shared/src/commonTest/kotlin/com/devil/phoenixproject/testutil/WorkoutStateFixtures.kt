@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 
-object WorkoutStateFixtures {
+internal object WorkoutStateFixtures {
 
     /** Put DWSM into Active workout state (post-countdown) */
     suspend fun TestScope.activeDWSM(): DWSMTestHarness {

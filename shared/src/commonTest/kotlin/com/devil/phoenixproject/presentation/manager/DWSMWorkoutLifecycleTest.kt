@@ -8,6 +8,9 @@ import com.devil.phoenixproject.domain.model.BadgeCategory
 import com.devil.phoenixproject.domain.model.BadgeRequirement
 import com.devil.phoenixproject.domain.model.BadgeTier
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
+import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.DropSetConfiguration
+import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
@@ -19,25 +22,34 @@ import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
+import com.devil.phoenixproject.testutil.WorkoutStateFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.activeDWSM
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures.createTestRoutine
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -2670,6 +2682,1160 @@ class DWSMWorkoutLifecycleTest {
         assertTrue(sessions.isNotEmpty(), "Session should have been saved")
 
         harness.cleanup()
+    }
+
+    @Test
+    fun `routine stall persists its captured normal plan before resting`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        val sourceLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+        harness.activeSessionEngine.handleSetCompletion(sourceLease, SetEndReason.STALL_FAILURE)
+        advanceTimeBy(11_000)
+
+        val plan = assertIs<RestTransitionPlan.NormalAdvance>(harness.restTransitionPlan.value)
+        assertEquals(sourceLease.executionId.toString(), plan.sourceExecutionId)
+        assertEquals(plan, harness.fakeActiveWorkoutRuntimeRepository.replacements.single().document.restTransitionPlan)
+        assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+
+        harness.cleanup()
+    }
+
+    @Test
+    fun `eligible routine stall persists unresolved offer before resting without advancing`() = runTest {
+        val harness = DWSMTestHarness(
+            this,
+            dropSetEligibilityPolicy = DropSetEligibilityPolicy(
+                DropSetFeatureGate { true },
+                DropSetCandidateResolver(),
+            ),
+            dropSetConfigurationProvider = { DropSetConfiguration(enabled = true, minimumWeightPerCableKg = 1f) },
+            transitionIdGenerator = { "transition-stall" },
+            offerIdGenerator = { "offer-stall" },
+        )
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        advanceUntilIdle()
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        val sourceLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+        val sourceParameters = harness.coordinator.workoutParameters.value
+
+        harness.activeSessionEngine.handleSetCompletion(sourceLease, SetEndReason.STALL_FAILURE)
+        advanceTimeBy(11_000)
+
+        val unresolved = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+        assertEquals("transition-stall", unresolved.transitionId)
+        assertEquals("offer-stall", unresolved.offerId)
+        assertEquals(unresolved, harness.fakeActiveWorkoutRuntimeRepository.replacements.single().document.restTransitionPlan)
+        assertEquals(0, harness.coordinator.currentExerciseIndex.value)
+        assertEquals(0, harness.coordinator.currentSetIndex.value)
+        assertEquals(sourceParameters.weightPerCableKg, harness.coordinator.workoutParameters.value.weightPerCableKg)
+        assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+
+        harness.cleanup()
+    }
+
+    @Test
+    fun `manual summary progression cannot bypass an eligible stall offer`() = runTest {
+        val harness = DWSMTestHarness(
+            this,
+            dropSetEligibilityPolicy = DropSetEligibilityPolicy(
+                DropSetFeatureGate { true },
+                DropSetCandidateResolver(),
+            ),
+            dropSetConfigurationProvider = { DropSetConfiguration(enabled = true, minimumWeightPerCableKg = 1f) },
+            transitionIdGenerator = { "transition-manual" },
+            offerIdGenerator = { "offer-manual" },
+        )
+        try {
+            harness.setActiveSummaryCountdownSeconds(0)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 1, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+
+            val sourceLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(sourceLease, SetEndReason.STALL_FAILURE)
+            advanceTimeBy(1_000)
+            if (harness.coordinator.workoutState.value is WorkoutState.SetSummary) {
+                harness.dwsm.proceedFromSummary()
+            }
+            advanceTimeBy(1_000)
+
+            assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            assertEquals(0, harness.coordinator.currentExerciseIndex.value)
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `autoplay off routine normal completion durably dispatches and preserves summary bookkeeping`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val observedStates = mutableListOf<WorkoutState>()
+        val stateObserver = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.workoutState.collect { observedStates += it }
+        }
+        try {
+            harness.setActiveSummaryCountdownSeconds(0)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 1, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(
+                warmupReps = 0,
+                workingReps = 8,
+                totalReps = 8,
+                isWarmupComplete = true,
+            )
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceTimeBy(1_000)
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+            harness.coordinator._currentSetRpe.value = 8
+
+            harness.dwsm.proceedFromSummary()
+            advanceUntilIdle()
+
+            assertEquals(null, harness.restTransitionPlan.value)
+            assertEquals(null, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.restTransitionPlan)
+            assertFalse(observedStates.any { it is WorkoutState.Resting })
+            assertTrue(0 in harness.coordinator._completedExercises.value)
+            assertFalse(0 in harness.coordinator._skippedExercises.value)
+            assertEquals(null, harness.coordinator._currentSetRpe.value)
+            assertIs<RoutineFlowState.Complete>(harness.coordinator.routineFlowState.value)
+        } finally {
+            stateObserver.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `accepting an offer persists accepted retry without a new lease or BLE command`() = runTest {
+        val harness = DWSMTestHarness(
+            this,
+            dropSetEligibilityPolicy = DropSetEligibilityPolicy(
+                DropSetFeatureGate { true },
+                DropSetCandidateResolver(),
+            ),
+            dropSetConfigurationProvider = { DropSetConfiguration(enabled = true, minimumWeightPerCableKg = 1f) },
+        )
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val sourceLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(sourceLease, SetEndReason.STALL_FAILURE)
+            advanceTimeBy(11_000)
+            val unresolved = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+            val commandsBeforeAcceptance = harness.fakeBleRepo.commandsReceived.size
+
+            harness.dwsm.applyRestTransition(
+                RestTransitionCommand.Accept(
+                    identity = unresolved.actionIdentity(),
+                    percentage = unresolved.candidates.first().percentage,
+                ),
+            )
+            runCurrent()
+
+            val accepted = assertIs<RestTransitionPlan.AcceptedRetry>(harness.restTransitionPlan.value)
+            assertEquals(unresolved.transitionId, accepted.transitionId)
+            assertEquals(sourceLease.executionId, harness.activeSessionEngine.currentExecutionLeaseForTest().executionId)
+            assertEquals(commandsBeforeAcceptance, harness.fakeBleRepo.commandsReceived.size)
+            assertEquals(1, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.attemptStates.single().acceptedDropCount)
+            assertEquals(accepted, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.restTransitionPlan)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `structured rest command returns its durable outcome and publishes the plan flow`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            val unresolved = prepareEligibleStallRest(harness)
+
+            val outcome = harness.dwsm.applyRestTransitionAwait(
+                RestTransitionCommand.Accept(unresolved.actionIdentity(), unresolved.candidates.first().percentage),
+            )
+
+            val changed = assertIs<RestTransitionReduction.Changed>(outcome)
+            val accepted = assertIs<RestTransitionPlan.AcceptedRetry>(changed.plan)
+            assertEquals(accepted, harness.dwsm.restTransitionPlan.value)
+            assertEquals(accepted, harness.restTransitionPlan.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `declining an offer persists the decision but leaves the captured rest pending`() = runTest {
+        val harness = DWSMTestHarness(
+            this,
+            dropSetEligibilityPolicy = DropSetEligibilityPolicy(
+                DropSetFeatureGate { true },
+                DropSetCandidateResolver(),
+            ),
+            dropSetConfigurationProvider = { DropSetConfiguration(enabled = true, minimumWeightPerCableKg = 1f) },
+        )
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val sourceLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(sourceLease, SetEndReason.STALL_FAILURE)
+            advanceTimeBy(11_000)
+            val unresolved = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+
+            harness.dwsm.applyRestTransition(RestTransitionCommand.Decline(unresolved.actionIdentity()))
+            runCurrent()
+
+            assertIs<RestTransitionPlan.Declined>(harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            assertEquals(0, harness.coordinator.currentExerciseIndex.value)
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `accepted retry ignores legacy skip and a racing decline`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            val unresolved = prepareEligibleStallRest(harness)
+            val replacementsBeforeDecision = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+
+            harness.dwsm.applyRestTransition(
+                RestTransitionCommand.Accept(unresolved.actionIdentity(), unresolved.candidates.first().percentage),
+            )
+            harness.dwsm.applyRestTransition(RestTransitionCommand.Decline(unresolved.actionIdentity()))
+            runCurrent()
+            val accepted = assertIs<RestTransitionPlan.AcceptedRetry>(harness.restTransitionPlan.value)
+
+            harness.dwsm.skipRest()
+            runCurrent()
+
+            assertEquals(accepted, harness.restTransitionPlan.value)
+            assertEquals(replacementsBeforeDecision + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(0, harness.coordinator.currentExerciseIndex.value)
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `plan owned rest extension persists before the visible timer changes`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceTimeBy(11_000)
+            assertIs<RestTransitionPlan.NormalAdvance>(harness.restTransitionPlan.value)
+            harness.dwsm.toggleRestPause()
+            runCurrent()
+            val originalDuration = harness.coordinator.restOriginalDuration.value
+            val originalRemaining = harness.coordinator._restSecondsRemaining.value
+
+            harness.fakeActiveWorkoutRuntimeRepository.failingReplaceCallsRemaining = 1
+            harness.dwsm.extendRestTime(15)
+            runCurrent()
+
+            assertEquals(originalDuration, harness.coordinator.restOriginalDuration.value)
+            assertEquals(originalRemaining, harness.coordinator._restSecondsRemaining.value)
+
+            harness.dwsm.extendRestTime(15)
+            runCurrent()
+            assertEquals(originalDuration + 15, harness.coordinator.restOriginalDuration.value)
+            assertEquals(
+                originalDuration + 15,
+                harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.originalRestDurationSeconds,
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `plan owned pause resume and reset persist before each visible timer change`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepareNormalRest(harness)
+
+            harness.fakeActiveWorkoutRuntimeRepository.failingReplaceCallsRemaining = 1
+            harness.dwsm.toggleRestPause()
+            runCurrent()
+            assertFalse(harness.coordinator.isRestPaused.value)
+
+            harness.dwsm.toggleRestPause()
+            runCurrent()
+            assertTrue(harness.coordinator.isRestPaused.value)
+            assertTrue(harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.isRestPaused)
+
+            harness.fakeActiveWorkoutRuntimeRepository.failingReplaceCallsRemaining = 1
+            harness.dwsm.toggleRestPause()
+            runCurrent()
+            assertTrue(harness.coordinator.isRestPaused.value)
+
+            harness.dwsm.toggleRestPause()
+            runCurrent()
+            assertFalse(harness.coordinator.isRestPaused.value)
+            assertFalse(harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.isRestPaused)
+
+            harness.dwsm.toggleRestPause()
+            runCurrent()
+            val pausedRemaining = harness.coordinator._restSecondsRemaining.value
+            harness.fakeActiveWorkoutRuntimeRepository.failingReplaceCallsRemaining = 1
+            harness.dwsm.resetRestTimer()
+            runCurrent()
+            assertTrue(harness.coordinator.isRestPaused.value)
+            assertEquals(pausedRemaining, harness.coordinator._restSecondsRemaining.value)
+
+            harness.dwsm.resetRestTimer()
+            runCurrent()
+            assertFalse(harness.coordinator.isRestPaused.value)
+            assertEquals(
+                harness.coordinator.restOriginalDuration.value,
+                harness.coordinator._restSecondsRemaining.value,
+            )
+            assertFalse(harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.isRestPaused)
+            assertEquals(null, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.pausedRestRemainingSeconds)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `rest command propagates repository cancellation without publishing a decision`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            val unresolved = prepareEligibleStallRest(harness)
+            harness.fakeActiveWorkoutRuntimeRepository.cancellationOnNextReplace =
+                CancellationException("rest-command-cancelled")
+
+            assertFailsWith<CancellationException> {
+                harness.dwsm.applyRestTransitionAwait(
+                    RestTransitionCommand.Accept(unresolved.actionIdentity(), unresolved.candidates.first().percentage),
+                )
+            }
+
+            assertEquals(unresolved, harness.restTransitionPlan.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `plan owned rest action does not publish its extension when repository cancellation stops mutation`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepareNormalRest(harness)
+            val originalDuration = harness.coordinator.restOriginalDuration.value
+            val originalPaused = harness.coordinator.isRestPaused.value
+            harness.fakeActiveWorkoutRuntimeRepository.cancellationOnNextReplace =
+                CancellationException("rest-timer-cancelled")
+
+            harness.dwsm.extendRestTime(15)
+            runCurrent()
+
+            assertEquals(originalDuration, harness.coordinator.restOriginalDuration.value)
+            assertEquals(originalPaused, harness.coordinator.isRestPaused.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `legacy skip fails closed for unresolved rest plans`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            val unresolved = prepareEligibleStallRest(harness)
+
+            harness.dwsm.skipRest()
+            runCurrent()
+
+            assertEquals(unresolved, harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            assertEquals(0, harness.coordinator.currentExerciseIndex.value)
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `identity skip clears a declined plan durably before advancing once`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            val unresolved = prepareEligibleStallRest(harness)
+            harness.dwsm.applyRestTransition(RestTransitionCommand.Decline(unresolved.actionIdentity()))
+            runCurrent()
+            val declined = assertIs<RestTransitionPlan.Declined>(harness.restTransitionPlan.value)
+            val replacementCountBeforeSkip = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+
+            harness.dwsm.applyRestTransition(RestTransitionCommand.SkipRest(declined.actionIdentity()))
+            runCurrent()
+
+            assertEquals(null, harness.restTransitionPlan.value)
+            assertEquals(null, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.restTransitionPlan)
+            assertEquals(replacementCountBeforeSkip + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(1, harness.coordinator.currentSetIndex.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `cancellation after durable normal clear fails closed before successor dispatch`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val clearBarrier = CompletableDeferred<Unit>()
+        try {
+            val normal = prepareNormalRest(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeActiveWorkoutRuntimeRepository.replaceBlock = { clearBarrier.await() }
+
+            harness.dwsm.applyRestTransition(RestTransitionCommand.SkipRest(normal.actionIdentity()))
+            runCurrent()
+            assertEquals(null, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.restTransitionPlan)
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+
+            harness.dwsm.resetForNewWorkout()
+            clearBarrier.complete(Unit)
+            runCurrent()
+
+            assertFalse(harness.activeSessionEngine.isCurrentExecution(lease))
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+            assertEquals(null, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.restTransitionPlan)
+        } finally {
+            if (!clearBarrier.isCompleted) clearBarrier.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `cancellation in the post clear pre side effect window fails closed`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val enteredPostClearWindow = CompletableDeferred<Unit>()
+        val releasePostClearWindow = CompletableDeferred<Unit>()
+        try {
+            val normal = prepareNormalRest(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.afterDurableRestPlanClearForTest = {
+                enteredPostClearWindow.complete(Unit)
+                releasePostClearWindow.await()
+            }
+
+            harness.dwsm.applyRestTransition(RestTransitionCommand.SkipRest(normal.actionIdentity()))
+            runCurrent()
+            assertTrue(enteredPostClearWindow.isCompleted)
+            assertEquals(null, harness.restTransitionPlan.value)
+            assertEquals(null, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.restTransitionPlan)
+
+            harness.dwsm.resetForNewWorkout()
+            releasePostClearWindow.complete(Unit)
+            runCurrent()
+
+            assertFalse(harness.activeSessionEngine.isCurrentExecution(lease))
+            assertEquals(0, harness.coordinator.currentExerciseIndex.value)
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+        } finally {
+            harness.activeSessionEngine.afterDurableRestPlanClearForTest = null
+            if (!releasePostClearWindow.isCompleted) releasePostClearWindow.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `legacy skip retains plain normal rest compatibility through a durable clear`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val normal = prepareNormalRest(harness)
+            val replacementCountBeforeSkip = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+
+            harness.dwsm.skipRest()
+            runCurrent()
+
+            assertEquals(null, harness.restTransitionPlan.value)
+            assertEquals(null, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.restTransitionPlan)
+            assertEquals(replacementCountBeforeSkip + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(1, harness.coordinator.currentSetIndex.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `blocked teardown still publishes a durable unresolved decision without a retry`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        val teardownBarrier = CompletableDeferred<Result<Unit>>()
+        try {
+            harness.fakeBleRepo.stopWorkoutBlock = { teardownBarrier.await() }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val sourceLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(sourceLease, SetEndReason.STALL_FAILURE)
+            runCurrent()
+
+            assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            assertEquals(sourceLease.executionId, harness.activeSessionEngine.currentExecutionLeaseForTest().executionId)
+            assertEquals(1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+        } finally {
+            teardownBarrier.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `teardown readiness never overwrites an unresolved resting offer`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        val teardownBarrier = CompletableDeferred<Result<Unit>>()
+        try {
+            harness.fakeBleRepo.stopWorkoutBlock = { teardownBarrier.await() }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+            runCurrent()
+            val unresolved = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+
+            teardownBarrier.complete(Result.success(Unit))
+            runCurrent()
+
+            assertEquals(unresolved, harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+        } finally {
+            if (!teardownBarrier.isCompleted) teardownBarrier.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `runtime installation and teardown progress independently with one completion job`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        val persistenceBarrier = CompletableDeferred<Unit>()
+        try {
+            harness.fakeActiveWorkoutRuntimeRepository.replaceBlock = { persistenceBarrier.await() }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+            runCurrent()
+
+            assertEquals(1, harness.activeSessionEngine.completionJobAttachCountForTest)
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertEquals(null, harness.restTransitionPlan.value)
+
+            persistenceBarrier.complete(Unit)
+            runCurrent()
+
+            assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+        } finally {
+            if (!persistenceBarrier.isCompleted) persistenceBarrier.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `unresolved action persists while teardown is not ready without retry effects`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        val teardownBarrier = CompletableDeferred<Result<Unit>>()
+        try {
+            harness.fakeBleRepo.stopWorkoutBlock = { teardownBarrier.await() }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+            runCurrent()
+            val unresolved = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+            val commandsBeforeAccept = harness.fakeBleRepo.commandsReceived.size
+
+            harness.dwsm.applyRestTransition(
+                RestTransitionCommand.Accept(unresolved.actionIdentity(), unresolved.candidates.first().percentage),
+            )
+            runCurrent()
+
+            assertIs<RestTransitionPlan.AcceptedRetry>(harness.restTransitionPlan.value)
+            assertEquals(lease, harness.activeSessionEngine.currentExecutionLeaseForTest())
+            assertEquals(commandsBeforeAccept, harness.fakeBleRepo.commandsReceived.size)
+            assertEquals(1, harness.activeSessionEngine.completionJobAttachCountForTest)
+        } finally {
+            if (!teardownBarrier.isCompleted) teardownBarrier.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `reset failure retains the durable unresolved resting decision`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            harness.fakeBleRepo.stopWorkoutBlock = {
+                Result.failure(IllegalStateException("RESET failed"))
+            }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+            advanceTimeBy(1_000)
+
+            assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            assertIs<MachineTeardownState.RecoveryRequired>(harness.dwsm.machineTeardownState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `reset invalidation prevents a blocked stale installation from publishing`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        val persistenceBarrier = CompletableDeferred<Unit>()
+        try {
+            harness.fakeActiveWorkoutRuntimeRepository.replaceBlock = { persistenceBarrier.await() }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+            runCurrent()
+            harness.dwsm.resetForNewWorkout()
+            runCurrent()
+            persistenceBarrier.complete(Unit)
+            runCurrent()
+
+            assertEquals(null, harness.restTransitionPlan.value)
+            assertFalse(harness.activeSessionEngine.isCurrentExecution(lease))
+        } finally {
+            if (!persistenceBarrier.isCompleted) persistenceBarrier.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `replacement execution B wins when stale A installation resumes`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        val persistenceBarrier = CompletableDeferred<Unit>()
+        try {
+            harness.setActiveSummaryCountdownSeconds(-1)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.fakeActiveWorkoutRuntimeRepository.replaceBlock = { persistenceBarrier.await() }
+            harness.activeSessionEngine.handleSetCompletion(leaseA, SetEndReason.STALL_FAILURE)
+            runCurrent()
+            advanceTimeBy(1_000)
+
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(leaseB.executionId != leaseA.executionId)
+
+            harness.activeSessionEngine.handleSetCompletion(leaseB, SetEndReason.TARGET_REPS_REACHED)
+            runCurrent()
+            persistenceBarrier.complete(Unit)
+            runCurrent()
+
+            assertFalse(harness.activeSessionEngine.isCurrentExecution(leaseA))
+            val finalDocument = harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document
+            assertEquals(leaseB.executionId.toString(), finalDocument.sourceExecutionId)
+            assertEquals(leaseB.executionId.toString(), assertIs<RestTransitionPlan.NormalAdvance>(harness.restTransitionPlan.value).sourceExecutionId)
+        } finally {
+            if (!persistenceBarrier.isCompleted) persistenceBarrier.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `zero rest normal transition clears durably before advancing`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f).copy(
+                exercises = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f).exercises.map {
+                    it.copy(setRestSeconds = listOf(0, 0))
+                },
+            )
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val sourceLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(sourceLease, SetEndReason.TARGET_REPS_REACHED)
+            advanceTimeBy(11_000)
+
+            assertEquals(null, harness.restTransitionPlan.value)
+            assertEquals(null, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.restTransitionPlan)
+            assertEquals(1, harness.coordinator.currentSetIndex.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `zero rest unresolved and accepted retry remain resting without automatic advance`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f).let { source ->
+                source.copy(exercises = source.exercises.map { it.copy(setRestSeconds = listOf(0, 0)) })
+            }
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+            advanceTimeBy(11_000)
+            val unresolved = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+            assertEquals(0, assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value).restSecondsRemaining)
+
+            harness.dwsm.applyRestTransition(
+                RestTransitionCommand.Accept(unresolved.actionIdentity(), unresolved.candidates.first().percentage),
+            )
+            runCurrent()
+            advanceTimeBy(1_000)
+
+            assertIs<RestTransitionPlan.AcceptedRetry>(harness.restTransitionPlan.value)
+            assertEquals(0, assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value).restSecondsRemaining)
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+            assertEquals(0, harness.dwsm.restTransitionNavigationLookupsForTest)
+            assertTrue(harness.coordinator.restTimerJob?.isActive == true)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `unresolved and accepted rest do not perform navigation lookups during timer ticks`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            val unresolved = prepareEligibleStallRest(harness)
+            advanceTimeBy(5_000)
+
+            assertEquals(0, harness.dwsm.restTransitionNavigationLookupsForTest)
+
+            harness.dwsm.applyRestTransition(
+                RestTransitionCommand.Accept(unresolved.actionIdentity(), unresolved.candidates.first().percentage),
+            )
+            runCurrent()
+            advanceTimeBy(5_000)
+
+            assertIs<RestTransitionPlan.AcceptedRetry>(harness.restTransitionPlan.value)
+            assertEquals(0, harness.dwsm.restTransitionNavigationLookupsForTest)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `normal plan caches an adjacent same exercise successor across repeated skip callbacks`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.setActiveSummaryCountdownSeconds(-1)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val source = createTestRoutine(exerciseCount = 1, setsPerExercise = 1, weightKg = 25f)
+            val first = source.exercises.single()
+            val routine = source.copy(
+                exercises = listOf(
+                    first.copy(id = "same-exercise-a", setReps = listOf(10), programMode = ProgramMode.OldSchool),
+                    first.copy(id = "same-exercise-b", setReps = listOf(10), programMode = ProgramMode.TUT),
+                ),
+            )
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceTimeBy(1_000)
+            val normal = assertIs<RestTransitionPlan.NormalAdvance>(harness.restTransitionPlan.value)
+            assertEquals(1, harness.dwsm.restTransitionNavigationLookupsForTest)
+
+            harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.SkipRest(normal.actionIdentity()))
+            runCurrent()
+            harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.SkipRest(normal.actionIdentity()))
+            runCurrent()
+
+            assertEquals(1, harness.coordinator.currentExerciseIndex.value)
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+            assertEquals(1, harness.dwsm.restTransitionNavigationLookupsForTest)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `normal plan caches a superset successor across repeated skip callbacks`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.setActiveSummaryCountdownSeconds(-1)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = WorkoutStateFixtures.createSupersetRoutine()
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceTimeBy(1_000)
+            val normal = assertIs<RestTransitionPlan.NormalAdvance>(harness.restTransitionPlan.value)
+            assertEquals(1, harness.dwsm.restTransitionNavigationLookupsForTest)
+
+            harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.SkipRest(normal.actionIdentity()))
+            runCurrent()
+            harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.SkipRest(normal.actionIdentity()))
+            runCurrent()
+
+            assertEquals(1, harness.coordinator.currentExerciseIndex.value)
+            assertEquals(0, harness.coordinator.currentSetIndex.value)
+            assertEquals(1, harness.dwsm.restTransitionNavigationLookupsForTest)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `eligible final set stall offers rest without final navigation`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 1, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+            advanceTimeBy(11_000)
+
+            assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            assertEquals(0, harness.dwsm.restTransitionNavigationLookupsForTest)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `resolved normal and declined transitions navigate exactly once`() = runTest {
+        val normalHarness = DWSMTestHarness(this)
+        val declinedHarness = enabledDropSetHarness(this)
+        try {
+            prepareNormalRest(normalHarness)
+            normalHarness.dwsm.skipRest()
+            runCurrent()
+            assertEquals(1, normalHarness.dwsm.restTransitionNavigationLookupsForTest)
+
+            val unresolved = prepareEligibleStallRest(declinedHarness)
+            declinedHarness.dwsm.applyRestTransition(RestTransitionCommand.Decline(unresolved.actionIdentity()))
+            runCurrent()
+            declinedHarness.dwsm.applyRestTransition(
+                RestTransitionCommand.SkipRest(assertIs<RestTransitionPlan.Declined>(declinedHarness.restTransitionPlan.value).actionIdentity()),
+            )
+            runCurrent()
+            assertEquals(1, declinedHarness.dwsm.restTransitionNavigationLookupsForTest)
+        } finally {
+            normalHarness.cleanup()
+            declinedHarness.cleanup()
+        }
+    }
+
+    @Test
+    fun `final normal transition advances its captured cycle after coordinator replacement`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releaseClear = CompletableDeferred<Unit>()
+        try {
+            val cycleA = trainingCycle("cycle-a")
+            val cycleB = trainingCycle("cycle-b")
+            harness.fakeTrainingCycleRepo.addCycle(cycleA)
+            harness.fakeTrainingCycleRepo.addCycle(cycleB)
+            harness.fakeTrainingCycleRepo.setActiveCycle(cycleA.id, "default")
+            harness.coordinator.activeCycleId = cycleA.id
+            harness.coordinator.activeCycleDayNumber = 1
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 1, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.coordinator._repCount.value = RepCount(
+                warmupReps = 0,
+                workingReps = 8,
+                totalReps = 8,
+                isWarmupComplete = true,
+            )
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceTimeBy(1_000)
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+
+            harness.dwsm.proceedFromSummary()
+            runCurrent()
+            val normal = assertIs<RestTransitionPlan.NormalAdvance>(harness.restTransitionPlan.value)
+            harness.fakeActiveWorkoutRuntimeRepository.replaceBlock = { releaseClear.await() }
+
+            harness.dwsm.applyRestTransition(RestTransitionCommand.SkipRest(normal.actionIdentity()))
+            runCurrent()
+            assertEquals(null, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.restTransitionPlan)
+
+            harness.fakeTrainingCycleRepo.setActiveCycle(cycleB.id, "default")
+            harness.coordinator.activeCycleId = cycleB.id
+            harness.coordinator.activeCycleDayNumber = 1
+            releaseClear.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(setOf(1), harness.fakeTrainingCycleRepo.getCycleProgress(cycleA.id)?.completedDays)
+            assertTrue(harness.fakeTrainingCycleRepo.getCycleProgress(cycleB.id)?.completedDays.orEmpty().isEmpty())
+            assertEquals(cycleB.id, harness.coordinator.activeCycleId)
+            assertEquals(1, harness.coordinator.activeCycleDayNumber)
+        } finally {
+            if (!releaseClear.isCompleted) releaseClear.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    private suspend fun prepareEligibleStallRest(harness: DWSMTestHarness): RestTransitionPlan.UnresolvedDropOffer {
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.dwsm.loadRoutine(routine)
+        harness.testScope.advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        harness.dwsm.startWorkout(skipCountdown = true)
+        harness.testScope.advanceUntilIdle()
+        val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+        harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+        harness.testScope.advanceTimeBy(11_000)
+        return assertIs(harness.restTransitionPlan.value)
+    }
+
+    private suspend fun prepareNormalRest(harness: DWSMTestHarness): RestTransitionPlan.NormalAdvance {
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.dwsm.loadRoutine(routine)
+        harness.testScope.advanceUntilIdle()
+        harness.dwsm.enterSetReady(0, 0)
+        harness.dwsm.startWorkout(skipCountdown = true)
+        harness.testScope.advanceUntilIdle()
+        val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+        harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+        harness.testScope.advanceTimeBy(11_000)
+        return assertIs(harness.restTransitionPlan.value)
+    }
+
+    private fun enabledDropSetHarness(testScope: TestScope) = DWSMTestHarness(
+        testScope,
+        dropSetEligibilityPolicy = DropSetEligibilityPolicy(DropSetFeatureGate { true }, DropSetCandidateResolver()),
+        dropSetConfigurationProvider = { DropSetConfiguration(enabled = true, minimumWeightPerCableKg = 1f) },
+    )
+
+    private fun trainingCycle(id: String) = TrainingCycle.create(
+        id = id,
+        name = id,
+        days = listOf(
+            CycleDay.create(id = "$id-day-1", cycleId = id, dayNumber = 1, routineId = "routine-1"),
+        ),
+    )
+
+    @Test
+    fun `a failed initial replace retries the exact transition and offer identities`() = runTest {
+        var transitionCalls = 0
+        var offerCalls = 0
+        val harness = DWSMTestHarness(
+            this,
+            dropSetEligibilityPolicy = DropSetEligibilityPolicy(
+                DropSetFeatureGate { true },
+                DropSetCandidateResolver(),
+            ),
+            dropSetConfigurationProvider = { DropSetConfiguration(enabled = true, minimumWeightPerCableKg = 1f) },
+            transitionIdGenerator = { "transition-${++transitionCalls}" },
+            offerIdGenerator = { "offer-${++offerCalls}" },
+        )
+        try {
+            harness.setActiveSummaryCountdownSeconds(-1)
+            harness.fakeActiveWorkoutRuntimeRepository.failingReplaceCallsRemaining = 1
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+            advanceTimeBy(1_000)
+            val firstAttempt = harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document
+
+            val completion = assertNotNull(harness.activeSessionEngine.claimedCompletion(lease))
+            harness.activeSessionEngine.startRestTimer(completion)
+            runCurrent()
+
+            val retryAttempt = harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document
+            assertEquals(firstAttempt.restTransitionPlan, retryAttempt.restTransitionPlan)
+            assertEquals(1, transitionCalls)
+            assertEquals(1, offerCalls)
+            assertEquals(firstAttempt.restTransitionPlan, harness.restTransitionPlan.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `a failed normal replace retries the exact transition for both next and final sets`() = runTest {
+        assertFailedNormalPlanRetries(setsPerExercise = 2)
+        assertFailedNormalPlanRetries(setsPerExercise = 1)
+    }
+
+    private suspend fun TestScope.assertFailedNormalPlanRetries(setsPerExercise: Int) {
+        var transitionCalls = 0
+        val harness = DWSMTestHarness(
+            this,
+            transitionIdGenerator = { "normal-$setsPerExercise-${++transitionCalls}" },
+        )
+        try {
+            harness.setActiveSummaryCountdownSeconds(-1)
+            harness.fakeActiveWorkoutRuntimeRepository.failingReplaceCallsRemaining = 1
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = setsPerExercise, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceTimeBy(1_000)
+            // The completion job makes the first durable attempt before summary work;
+            // summary-skipped flow retries it automatically. Both writes must retain
+            // the single generated transition identity.
+            val firstAttempt = harness.fakeActiveWorkoutRuntimeRepository.replacements.first().document
+            val retryAttempt = harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document
+            assertEquals(firstAttempt.restTransitionPlan, retryAttempt.restTransitionPlan)
+            assertEquals(1, transitionCalls)
+            assertEquals(firstAttempt.restTransitionPlan, harness.restTransitionPlan.value)
+        } finally {
+            harness.cleanup()
+        }
     }
 
     @Test

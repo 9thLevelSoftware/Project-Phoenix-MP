@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
@@ -56,6 +57,7 @@ import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.BackfillVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -118,7 +120,7 @@ private fun UserPreferences.toSettingsGlobalUiState() = SettingsGlobalUiState(
     language = language,
 )
 
-class MainViewModel constructor(
+class MainViewModel internal constructor(
     private val bleRepository: BleRepository,
     private val workoutRepository: WorkoutRepository,
     val exerciseRepository: ExerciseRepository,
@@ -128,6 +130,8 @@ class MainViewModel constructor(
     private val gamificationRepository: GamificationRepository,
     private val trainingCycleRepository: TrainingCycleRepository,
     private val completedSetRepository: CompletedSetRepository,
+    private val activeWorkoutRuntimeRepository: ActiveWorkoutRuntimeRepository,
+    private val dropSetEligibilityPolicy: DropSetEligibilityPolicy,
     private val syncTriggerManager: SyncTriggerManager? = null,
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
@@ -246,6 +250,8 @@ class MainViewModel constructor(
         gamificationManager = gamificationManager,
         trainingCycleRepository = trainingCycleRepository,
         completedSetRepository = completedSetRepository,
+        activeWorkoutRuntimeRepository = activeWorkoutRuntimeRepository,
+        dropSetEligibilityPolicy = dropSetEligibilityPolicy,
         syncTriggerManager = syncTriggerManager,
         repMetricRepository = repMetricRepository,
         biomechanicsRepository = biomechanicsRepository,
@@ -362,24 +368,22 @@ class MainViewModel constructor(
         exerciseId: String?,
         profileId: String?,
         limit: Int = 5,
-    ): StateFlow<List<WorkoutSession>> {
-        return historyManager.allWorkoutSessions
-            .map { sessions ->
-                if (profileId == null || exerciseId == null) {
-                    emptyList()
-                } else {
-                    sessions
-                        .filter { it.profileId == profileId && it.exerciseId == exerciseId }
-                        .filter { it.workingReps > 0 || it.totalReps > 0 }
-                        .sortedWith(
-                            compareByDescending<WorkoutSession> { it.timestamp }
-                                .thenByDescending { it.id },
-                        )
-                        .take(limit)
-                }
+    ): StateFlow<List<WorkoutSession>> = historyManager.allWorkoutSessions
+        .map { sessions ->
+            if (profileId == null || exerciseId == null) {
+                emptyList()
+            } else {
+                sessions
+                    .filter { it.profileId == profileId && it.exerciseId == exerciseId }
+                    .filter { it.workingReps > 0 || it.totalReps > 0 }
+                    .sortedWith(
+                        compareByDescending<WorkoutSession> { it.timestamp }
+                            .thenByDescending { it.id },
+                    )
+                    .take(limit)
             }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val groupedWorkoutHistory: StateFlow<List<HistoryItem>> get() = historyManager.groupedWorkoutHistory
     val isHistoryLoading: StateFlow<Boolean> get() = historyManager.isHistoryLoading

@@ -36,6 +36,7 @@ internal data class SetExecutionCompletion(
     val isTimed: Boolean,
     val isAmrap: Boolean,
     val isCableExercise: Boolean,
+    val logicalPreRackCommandTemplate: com.devil.phoenixproject.domain.model.WorkoutParameters,
 ) {
     init {
         require(attemptNumber > 0)
@@ -67,6 +68,7 @@ internal data class SetExecutionActivationFacts(
     val isTimed: Boolean,
     val isAmrap: Boolean,
     val isCableExercise: Boolean,
+    val logicalPreRackCommandTemplate: com.devil.phoenixproject.domain.model.WorkoutParameters,
 ) {
     fun complete(lease: ExecutionLease, reason: SetEndReason, actualReps: Int) = SetExecutionCompletion(
         lease = lease,
@@ -88,6 +90,7 @@ internal data class SetExecutionActivationFacts(
         isTimed = isTimed,
         isAmrap = isAmrap,
         isCableExercise = isCableExercise,
+        logicalPreRackCommandTemplate = logicalPreRackCommandTemplate,
     )
 }
 

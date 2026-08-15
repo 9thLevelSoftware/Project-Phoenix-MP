@@ -13,8 +13,8 @@ import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepQualityScore
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineFlowState
-import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.WeightAdjustmentRecommendation
 import com.devil.phoenixproject.domain.model.WorkoutMetric
@@ -59,6 +59,9 @@ class WorkoutCoordinator(
     velocityLossThresholdPercent: Float = 20f,
     autoEndOnVelocityLoss: Boolean = false,
 ) {
+    internal val _restTransitionPlan = MutableStateFlow<RestTransitionPlan?>(null)
+    internal val restTransitionPlan: StateFlow<RestTransitionPlan?> = _restTransitionPlan.asStateFlow()
+
     companion object {
         /** Position-based auto-stop duration in seconds (handles in danger zone and released) */
         const val AUTO_STOP_DURATION_SECONDS = 2.5f

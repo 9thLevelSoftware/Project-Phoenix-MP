@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.test.Test
 import kotlin.test.assertFailsWith
 
@@ -49,6 +50,7 @@ class SetExecutionCompletionContractTest {
         isTimed = false,
         isAmrap = false,
         isCableExercise = true,
+        logicalPreRackCommandTemplate = WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 50f),
     )
 
     private fun identity() = RoutineExecutionIdentity(

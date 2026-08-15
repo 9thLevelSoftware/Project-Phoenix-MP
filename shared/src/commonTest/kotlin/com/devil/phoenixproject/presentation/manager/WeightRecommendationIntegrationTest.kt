@@ -50,6 +50,33 @@ class WeightRecommendationIntegrationTest {
     }
 
     @Test
+    fun `durable normal transition persists before successor lookup and recommendation`() = runTest {
+        val harness = readyActiveRoutineHarness()
+        var normalTransitionWasPersistedBeforeLookup = false
+        try {
+            harness.dwsm.restTransitionNavigationLookupObserverForTest = {
+                val replacement = harness.fakeActiveWorkoutRuntimeRepository.replacements.lastOrNull()
+                normalTransitionWasPersistedBeforeLookup =
+                    replacement?.document?.restTransitionPlan is RestTransitionPlan.NormalAdvance &&
+                    harness.fakeActiveWorkoutRuntimeRepository.replaceEvents.lastOrNull() == "persisted"
+            }
+            seedCompletedSet(harness, actualReps = 10, qualityScores = listOf(95, 92, 90, 88))
+
+            harness.activeSessionEngine.handleSetCompletion(
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+            )
+            advanceTimeBy(1_000)
+
+            assertTrue(normalTransitionWasPersistedBeforeLookup)
+            assertEquals(1, harness.dwsm.restTransitionNavigationLookupsForTest)
+            assertTrue(harness.coordinator.weightAdjustmentRecommendation.value != null)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun setCompletionUsesNextSetProgrammedWeightAsRecommendationBaseline() = runTest {
         val baseRoutine = testRoutine()
         val routine = baseRoutine.copy(

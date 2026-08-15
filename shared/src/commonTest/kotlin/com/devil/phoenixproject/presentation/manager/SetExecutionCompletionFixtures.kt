@@ -3,6 +3,7 @@ package com.devil.phoenixproject.presentation.manager
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WorkoutParameters
 
 internal fun completionFixture(
     lease: ExecutionLease,
@@ -27,4 +28,5 @@ internal fun completionFixture(
     isTimed = lease.isTimedCable,
     isAmrap = lease.isAmrap,
     isCableExercise = lease.requiresMachine && !lease.isBodyweight,
+    logicalPreRackCommandTemplate = WorkoutParameters(ProgramMode.OldSchool, reps = 0),
 )

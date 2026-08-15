@@ -16,12 +16,13 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
+import com.devil.phoenixproject.util.Constants
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
-import kotlin.test.assertNotNull
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -394,9 +395,11 @@ class DropSetCompletionCaptureTest {
 
             when (case.origin) {
                 CompletionOrigin.DIRECT -> harness.activeSessionEngine.handleSetCompletion(lease, case.reason)
+
                 CompletionOrigin.AUTO_TARGET -> harness.repCounter.onRepEvent?.invoke(
                     RepEvent(RepType.WORKOUT_COMPLETE, warmupCount = 0, workingCount = case.actualReps),
                 )
+
                 CompletionOrigin.MANUAL_STOP -> harness.dwsm.stopWorkout(exitingWorkout = false)
             }
             testScheduler.advanceUntilIdle()
@@ -477,6 +480,16 @@ class DropSetCompletionCaptureTest {
             isTimed = isTimed,
             isAmrap = isAmrap,
             isCableExercise = isCable,
+            logicalPreRackCommandTemplate = WorkoutParameters(
+                programMode = mode,
+                reps = routine.exercises.single().setReps.singleOrNull() ?: 0,
+                weightPerCableKg = configuredStart,
+                progressionRegressionKg = progression,
+                isJustLift = isJustLift,
+                isAMRAP = isAmrap,
+                warmupReps = if (isBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS,
+                selectedExerciseId = occurrence.exercise.id,
+            ),
         )
     }
 
