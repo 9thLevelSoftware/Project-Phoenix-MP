@@ -4,10 +4,11 @@ import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ForceCurveResult
-import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
 import com.devil.phoenixproject.domain.model.SetEndReason
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.SingleExerciseDefaultsDocument
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -18,7 +19,77 @@ import kotlinx.atomicfu.atomic
 internal data class SetExecutionCompletion(
     val lease: ExecutionLease,
     val reason: SetEndReason,
-)
+    val routineIdentity: RoutineExecutionIdentity?,
+    val attemptNumber: Int,
+    val acceptedDropCount: Int,
+    val plannedSetType: SetType,
+    val programMode: ProgramMode,
+    val programmedBaseWeightPerCableKg: Float,
+    val configuredStartWeightPerCableKg: Float,
+    val progressionKg: Float,
+    val actualReps: Int,
+    val targetReps: Int?,
+    val isWarmup: Boolean,
+    val isEcho: Boolean,
+    val isJustLift: Boolean,
+    val isBodyweight: Boolean,
+    val isTimed: Boolean,
+    val isAmrap: Boolean,
+    val isCableExercise: Boolean,
+) {
+    init {
+        require(attemptNumber > 0)
+        require(acceptedDropCount in 0..2)
+        require(actualReps >= 0)
+        require(targetReps == null || targetReps > 0)
+        routineIdentity?.let { identity ->
+            require(identity.profileId == lease.profileId)
+            require(identity.logicalSetKey.setKind == plannedSetType)
+            require(identity.logicalSetKey.setIndex == identity.setIndex)
+        }
+    }
+}
+
+internal data class SetExecutionActivationFacts(
+    val routineIdentity: RoutineExecutionIdentity?,
+    val attemptNumber: Int,
+    val acceptedDropCount: Int,
+    val plannedSetType: SetType,
+    val programMode: ProgramMode,
+    val programmedBaseWeightPerCableKg: Float,
+    val configuredStartWeightPerCableKg: Float,
+    val progressionKg: Float,
+    val targetReps: Int?,
+    val isWarmup: Boolean,
+    val isEcho: Boolean,
+    val isJustLift: Boolean,
+    val isBodyweight: Boolean,
+    val isTimed: Boolean,
+    val isAmrap: Boolean,
+    val isCableExercise: Boolean,
+) {
+    fun complete(lease: ExecutionLease, reason: SetEndReason, actualReps: Int) = SetExecutionCompletion(
+        lease = lease,
+        reason = reason,
+        routineIdentity = routineIdentity,
+        attemptNumber = attemptNumber,
+        acceptedDropCount = acceptedDropCount,
+        plannedSetType = plannedSetType,
+        programMode = programMode,
+        programmedBaseWeightPerCableKg = programmedBaseWeightPerCableKg,
+        configuredStartWeightPerCableKg = configuredStartWeightPerCableKg,
+        progressionKg = progressionKg,
+        actualReps = actualReps,
+        targetReps = targetReps,
+        isWarmup = isWarmup,
+        isEcho = isEcho,
+        isJustLift = isJustLift,
+        isBodyweight = isBodyweight,
+        isTimed = isTimed,
+        isAmrap = isAmrap,
+        isCableExercise = isCableExercise,
+    )
+}
 
 private sealed interface BodyweightCompletionState {
     data object Empty : BodyweightCompletionState
@@ -64,10 +135,10 @@ internal class BodyweightCompletionGate {
         else -> false
     }
 
-    fun tryConsume(completion: SetExecutionCompletion): Boolean {
+    fun tryConsume(pending: SetExecutionCompletion, completion: SetExecutionCompletion = pending): Boolean {
         while (true) {
             val current = state.value as? BodyweightCompletionState.Pending ?: return false
-            if (current.completion != completion) return false
+            if (current.completion != pending || !pending.lease.sameExecutionAs(completion.lease)) return false
             if (state.compareAndSet(current, BodyweightCompletionState.Consuming(completion))) return true
         }
     }
@@ -157,15 +228,13 @@ internal data class WorkoutExecutionContext(
     val exerciseName: String?,
     val preferredCableCount: Int?,
     val displayMultiplier: Int?,
-    val plannedSetId: String?,
     val sessionBodyWeightKg: Float,
     val routineSessionId: String?,
     val routineId: String?,
     val routineName: String?,
     val cycleId: String?,
     val cycleDayNumber: Int?,
-    val logicalSetKey: LogicalSetKey? = null,
-    val attemptNumber: Int = 1,
+    val completionFacts: SetExecutionActivationFacts,
 )
 
 internal data class PostSaveWorkoutInput(

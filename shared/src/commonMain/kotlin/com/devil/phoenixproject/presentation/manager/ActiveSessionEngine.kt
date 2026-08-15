@@ -49,6 +49,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
+import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.SetType
@@ -1229,14 +1230,17 @@ class ActiveSessionEngine(
         val entry = coordinator._workoutState.value as? WorkoutState.BodyweightRepEntry ?: return
         val lease = executionGuard.currentLease ?: return
         val completion = bodyweightCompletionGate.pendingFor(lease) ?: return
+        val coercedReps = reps.coerceAtLeast(0)
+        // The delayed bodyweight gate owns the immutable activation/completion facts.
+        // Confirmation may change only the final rep count; never re-read coordinator state here.
+        val finalCompletion = completion.copy(actualReps = coercedReps)
         beforeBodyweightCompletionClaim(lease.executionId, lease.sessionId)
-        if (!executionGuard.tryClaimCompletion(completion)) return
-        if (!bodyweightCompletionGate.tryConsume(completion)) {
+        if (!executionGuard.tryClaimCompletion(finalCompletion)) return
+        if (!bodyweightCompletionGate.tryConsume(completion, finalCompletion)) {
             executionGuard.releaseCompletionClaim(lease)
             return
         }
         afterBodyweightCompletionConsume(lease.executionId, lease.sessionId)
-        val coercedReps = reps.coerceAtLeast(0)
         val committed = executionGuard.commitIfCurrent(lease) {
             selectBodyweightVariant(entry.exerciseKey, variant)
             coordinator.bodyweightCompletionVariantOverride = variant
@@ -1251,7 +1255,7 @@ class ActiveSessionEngine(
             return
         }
         handleSetCompletion(
-            completion = completion,
+            completion = finalCompletion,
             reason = TeardownReason.AUTO_COMPLETE,
             completionClaimed = true,
         )
@@ -3139,18 +3143,13 @@ class ActiveSessionEngine(
         coordinator._workoutState.value = WorkoutState.Initializing
         syncRoutineSessionContext()
         val routineSessionIdAtStart = coordinator.currentRoutineSessionId
+        val routineIdAtStart = coordinator.currentRoutineId
+        val routineNameAtStart = coordinator.currentRoutineName
+        val exerciseIndexAtStart = coordinator._currentExerciseIndex.value
         val setIndexAtStart = coordinator._currentSetIndex.value
-        val setKindAtStart = if (seedParams.isAMRAP) SetType.AMRAP else SetType.STANDARD
-        val logicalSetKeyAtStart = if (routineSessionIdAtStart != null && currentExercise != null) {
-            LogicalSetKey(
-                routineSessionId = routineSessionIdAtStart,
-                routineExerciseId = currentExercise.id,
-                setIndex = setIndexAtStart,
-                setKind = setKindAtStart,
-            )
-        } else {
-            null
-        }
+        val warmupSetIndexAtStart = coordinator._currentWarmupSetIndex.value
+        val cycleIdAtStart = coordinator.activeCycleId
+        val cycleDayNumberAtStart = coordinator.activeCycleDayNumber
 
         coordinator.workoutJob = scope.launch {
             try {
@@ -3166,26 +3165,90 @@ class ActiveSessionEngine(
                 val bodyweightDuration = if (isBodyweight) exerciseDuration else null
 
                 val selectedExerciseAtStart = currentExercise?.exercise ?: resolveSelectedExercise(params)
+                val plannedSetAtStart = currentExercise?.let { exercise ->
+                    completedSetRepository.getPlannedSets(exercise.id).find { it.setNumber == setIndexAtStart }
+                }
+                val semanticSetType = when {
+                    currentExercise == null -> if (seedParams.isAMRAP) SetType.AMRAP else SetType.STANDARD
+                    currentExercise.setReps.getOrNull(setIndexAtStart) == null -> SetType.AMRAP
+                    currentExercise.isAMRAP && setIndexAtStart == currentExercise.setReps.lastIndex -> SetType.AMRAP
+                    else -> SetType.STANDARD
+                }
+                val plannedSetTypeAtStart = plannedSetAtStart?.setType ?: semanticSetType
+                val logicalSetKeyAtStart = if (routineSessionIdAtStart != null && currentExercise != null) {
+                    LogicalSetKey(
+                        routineSessionId = routineSessionIdAtStart,
+                        routineExerciseId = currentExercise.id,
+                        setIndex = setIndexAtStart,
+                        setKind = plannedSetTypeAtStart,
+                    )
+                } else {
+                    null
+                }
                 // startWorkout is intentionally non-suspending. The durable seed is resolved
                 // inside its existing start job, before activation or any machine command,
                 // from the immutable key captured above rather than mutable coordinator state.
                 val attemptNumberAtStart = logicalSetKeyAtStart
                     ?.let { completedSetRepository.nextAttemptNumber(it) }
                     ?: 1
+                val routineIdentityAtStart = if (
+                    routineIdAtStart != null && routineSessionIdAtStart != null &&
+                    currentExercise != null && logicalSetKeyAtStart != null
+                ) {
+                    RoutineExecutionIdentity(
+                        profileId = lease.profileId,
+                        routineId = routineIdAtStart,
+                        routineSessionId = routineSessionIdAtStart,
+                        routineExerciseId = currentExercise.id,
+                        logicalSetKey = logicalSetKeyAtStart,
+                        plannedSetId = plannedSetAtStart?.id,
+                        exerciseIndex = exerciseIndexAtStart,
+                        setIndex = setIndexAtStart,
+                    )
+                } else {
+                    null
+                }
+                val programmedBaseWeight = currentExercise?.let { exercise ->
+                    RoutineSetWeightResolver(
+                        RoutineSetWeightRequest(
+                            exercise = exercise,
+                            setIndex = setIndexAtStart,
+                            currentPrKg = null,
+                            occurrenceMultiplier = 1f,
+                            manualAdjustmentPerCableKg = null,
+                        ),
+                    )
+                } ?: baseParams.weightPerCableKg
+                val semanticAmrap = plannedSetTypeAtStart == SetType.AMRAP
                 val startedContext = WorkoutExecutionContext(
                     lease = lease,
                     exerciseName = selectedExerciseAtStart?.name,
                     preferredCableCount = selectedExerciseAtStart?.preferredCableCount,
                     displayMultiplier = selectedExerciseAtStart?.displayMultiplier,
-                    plannedSetId = findPlannedSetId(setIndexAtStart),
                     sessionBodyWeightKg = resolvedSessionBodyWeightKg(),
                     routineSessionId = routineSessionIdAtStart,
-                    routineId = coordinator.currentRoutineId,
-                    routineName = coordinator.currentRoutineName,
-                    cycleId = coordinator.activeCycleId,
-                    cycleDayNumber = coordinator.activeCycleDayNumber,
-                    logicalSetKey = logicalSetKeyAtStart,
-                    attemptNumber = attemptNumberAtStart,
+                    routineId = routineIdAtStart,
+                    routineName = routineNameAtStart,
+                    cycleId = cycleIdAtStart,
+                    cycleDayNumber = cycleDayNumberAtStart,
+                    completionFacts = SetExecutionActivationFacts(
+                        routineIdentity = routineIdentityAtStart,
+                        attemptNumber = attemptNumberAtStart,
+                        acceptedDropCount = 0,
+                        plannedSetType = plannedSetTypeAtStart,
+                        programMode = baseParams.programMode,
+                        programmedBaseWeightPerCableKg = programmedBaseWeight,
+                        configuredStartWeightPerCableKg = baseParams.weightPerCableKg,
+                        progressionKg = baseParams.progressionRegressionKg,
+                        targetReps = if (semanticAmrap || isTimedCableAtStart || isBodyweightAtStart) null else leaseTarget,
+                        isWarmup = warmupSetIndexAtStart >= 0,
+                        isEcho = baseParams.isEchoMode,
+                        isJustLift = isJustLiftMode || baseParams.isJustLift,
+                        isBodyweight = isBodyweightAtStart,
+                        isTimed = durationSeconds != null,
+                        isAmrap = semanticAmrap,
+                        isCableExercise = requiresMachine,
+                    ),
                 )
                 if (!executionGuard.isCurrent(lease)) return@launch
                 executionContext = startedContext
@@ -3665,6 +3728,37 @@ class ActiveSessionEngine(
         buildExitSnapshot(completion, terminalPath)
     }
 
+    private fun completionFor(
+        lease: ExecutionLease,
+        reason: SetEndReason,
+        actualReps: Int = coordinator._repCount.value.workingReps,
+    ): SetExecutionCompletion {
+        val facts = executionContext
+            ?.takeIf { it.lease.executionId == lease.executionId && it.lease.sessionId == lease.sessionId }
+            ?.completionFacts
+            ?: coordinator._workoutParameters.value.let { params ->
+                SetExecutionActivationFacts(
+                    routineIdentity = null,
+                    attemptNumber = 1,
+                    acceptedDropCount = 0,
+                    plannedSetType = if (lease.isAmrap) SetType.AMRAP else SetType.STANDARD,
+                    programMode = params.programMode,
+                    programmedBaseWeightPerCableKg = params.weightPerCableKg,
+                    configuredStartWeightPerCableKg = params.weightPerCableKg,
+                    progressionKg = params.progressionRegressionKg,
+                    targetReps = lease.workingRepTarget.takeIf { !lease.isAmrap && it > 0 },
+                    isWarmup = false,
+                    isEcho = params.isEchoMode,
+                    isJustLift = lease.isJustLift,
+                    isBodyweight = lease.isBodyweight,
+                    isTimed = lease.isTimedCable,
+                    isAmrap = lease.isAmrap,
+                    isCableExercise = lease.requiresMachine && !lease.isBodyweight,
+                )
+            }
+        return facts.complete(lease, reason, actualReps)
+    }
+
     private fun buildExitSnapshot(
         completion: SetExecutionCompletion,
         terminalPath: TerminalPath,
@@ -3676,16 +3770,6 @@ class ActiveSessionEngine(
         val exerciseIndex = coordinator._currentExerciseIndex.value
         val setIndex = coordinator._currentSetIndex.value
         val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(exerciseIndex)
-        val fallbackLogicalSetKey = coordinator.currentRoutineSessionId?.let { routineSessionId ->
-            currentExercise?.let { exercise ->
-                LogicalSetKey(
-                    routineSessionId = routineSessionId,
-                    routineExerciseId = exercise.id,
-                    setIndex = setIndex,
-                    setKind = if (params.isAMRAP) SetType.AMRAP else SetType.STANDARD,
-                )
-            }
-        }
         val context = executionContext
             ?.takeIf { it.lease.executionId == lease.executionId && it.lease.sessionId == lease.sessionId }
             ?: WorkoutExecutionContext(
@@ -3693,15 +3777,30 @@ class ActiveSessionEngine(
                 exerciseName = currentExercise?.exercise?.name,
                 preferredCableCount = currentExercise?.exercise?.preferredCableCount,
                 displayMultiplier = currentExercise?.exercise?.displayMultiplier,
-                plannedSetId = null,
                 sessionBodyWeightKg = resolvedSessionBodyWeightKg(),
                 routineSessionId = coordinator.currentRoutineSessionId,
                 routineId = coordinator.currentRoutineId,
                 routineName = coordinator.currentRoutineName,
                 cycleId = coordinator.activeCycleId,
                 cycleDayNumber = coordinator.activeCycleDayNumber,
-                logicalSetKey = fallbackLogicalSetKey,
-                attemptNumber = 1,
+                completionFacts = SetExecutionActivationFacts(
+                    routineIdentity = completion.routineIdentity,
+                    attemptNumber = completion.attemptNumber,
+                    acceptedDropCount = completion.acceptedDropCount,
+                    plannedSetType = completion.plannedSetType,
+                    programMode = completion.programMode,
+                    programmedBaseWeightPerCableKg = completion.programmedBaseWeightPerCableKg,
+                    configuredStartWeightPerCableKg = completion.configuredStartWeightPerCableKg,
+                    progressionKg = completion.progressionKg,
+                    targetReps = completion.targetReps,
+                    isWarmup = completion.isWarmup,
+                    isEcho = completion.isEcho,
+                    isJustLift = completion.isJustLift,
+                    isBodyweight = completion.isBodyweight,
+                    isTimed = completion.isTimed,
+                    isAmrap = completion.isAmrap,
+                    isCableExercise = completion.isCableExercise,
+                ),
             )
         val summary = calculateSetSummaryMetrics(
             metrics = metrics,
@@ -3790,17 +3889,17 @@ class ActiveSessionEngine(
             CompletedSet(
                 id = generateUUID(),
                 sessionId = lease.sessionId,
-                plannedSetId = context.plannedSetId,
-                setNumber = context.logicalSetKey?.setIndex ?: setIndex,
-                setType = context.logicalSetKey?.setKind ?: if (params.isAMRAP) SetType.AMRAP else SetType.STANDARD,
+                plannedSetId = context.completionFacts.routineIdentity?.plannedSetId,
+                setNumber = context.completionFacts.routineIdentity?.logicalSetKey?.setIndex ?: setIndex,
+                setType = context.completionFacts.plannedSetType,
                 actualReps = repCount.workingReps,
                 actualWeightKg = savedWeightKg,
                 loggedRpe = coordinator._currentSetRpe.value,
                 isPr = false,
                 completedAt = wallClockMillisProvider(),
                 setEndReason = completion.reason,
-                routineExerciseId = context.logicalSetKey?.routineExerciseId,
-                attemptNumber = context.attemptNumber,
+                routineExerciseId = context.completionFacts.routineIdentity?.routineExerciseId,
+                attemptNumber = context.completionFacts.attemptNumber,
             )
         } else {
             null
@@ -4036,7 +4135,7 @@ class ActiveSessionEngine(
         val lease = executionGuard.currentLease
         val requestedCompletion = lease?.let { currentLease ->
             bodyweightCompletionGate.pendingFor(currentLease)
-                ?: SetExecutionCompletion(currentLease, SetEndReason.USER_STOPPED)
+                ?: completionFor(currentLease, SetEndReason.USER_STOPPED)
         }
         val completion = when (val claim = requestedCompletion?.let(executionGuard::claimCompletion)) {
             is CompletionClaimResult.Claimed -> claim.completion.also { claimed ->
@@ -4132,7 +4231,7 @@ class ActiveSessionEngine(
                             it.lease.sessionId == stoppedLease.sessionId
                     }
                 }
-                val legacyAttemptNumber = legacyContext?.attemptNumber ?: 1
+                val legacyAttemptNumber = legacyContext?.completionFacts?.attemptNumber ?: 1
                 Logger.d("ActiveSessionEngine") { "Manual stop continuation: exitingWorkout=$shouldExitToIdle" }
                 coordinator._hapticEvents.emit(HapticEvent.WORKOUT_END)
 
@@ -4146,7 +4245,7 @@ class ActiveSessionEngine(
 
                 // Re-read params after stop-time state updates.
                 val params = coordinator._workoutParameters.value
-                val legacyLogicalSetKey = legacyContext?.logicalSetKey
+                val legacyLogicalSetKey = legacyContext?.completionFacts?.routineIdentity?.logicalSetKey
                     ?: coordinator.currentRoutineSessionId?.let { routineSessionId ->
                         currentExercise?.let { exercise ->
                             LogicalSetKey(
@@ -4788,7 +4887,7 @@ class ActiveSessionEngine(
         val exerciseName = selectedExercise?.name
 
         val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
-        val completionLogicalSetKey = completionContext?.logicalSetKey
+        val completionLogicalSetKey = completionContext?.completionFacts?.routineIdentity?.logicalSetKey
             ?: coordinator.currentRoutineSessionId?.let { routineSessionId ->
                 currentExercise?.let { exercise ->
                     LogicalSetKey(
@@ -4928,7 +5027,7 @@ class ActiveSessionEngine(
                 completedAt = currentTimeMillis(),
                 setEndReason = completion.reason,
                 routineExerciseId = completionLogicalSetKey?.routineExerciseId,
-                attemptNumber = completionContext?.attemptNumber ?: 1,
+                attemptNumber = completionContext?.completionFacts?.attemptNumber ?: 1,
             )
             completedSetRepository.saveCompletedSet(completedSet)
             Logger.d("Saved CompletedSet: set #$setIndex, $working reps @ ${savedWeightKg}kg${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
@@ -5000,7 +5099,7 @@ class ActiveSessionEngine(
     ) {
         if (!executionGuard.isCurrent(lease)) return
         if (bodyweightCompletionGate.hasClaimedCompletion(lease)) return
-        handleSetCompletion(SetExecutionCompletion(lease, endReason), TeardownReason.AUTO_COMPLETE)
+        handleSetCompletion(completionFor(lease, endReason), TeardownReason.AUTO_COMPLETE)
     }
 
     private fun handleSetCompletion(

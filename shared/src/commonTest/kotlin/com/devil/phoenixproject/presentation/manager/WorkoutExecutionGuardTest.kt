@@ -231,12 +231,12 @@ class WorkoutExecutionGuardTest {
             assertTrue(guard.isCurrent(leaseA))
             validatedA.complete(Unit)
             releaseA.await()
-            guard.tryClaimCompletion(SetExecutionCompletion(leaseA, SetEndReason.TARGET_REPS_REACHED))
+            guard.tryClaimCompletion(completionFixture(leaseA, SetEndReason.TARGET_REPS_REACHED))
         }
 
         validatedA.await()
         val leaseB = guard.beginExecution(seed("session-b")).getOrThrow()
-        val completionB = SetExecutionCompletion(leaseB, SetEndReason.TARGET_REPS_REACHED)
+        val completionB = completionFixture(leaseB, SetEndReason.TARGET_REPS_REACHED)
         assertTrue(guard.tryClaimCompletion(completionB))
         releaseA.complete(Unit)
 
@@ -251,8 +251,8 @@ class WorkoutExecutionGuardTest {
     fun `first immutable completion remains authoritative until matching release`() {
         val guard = WorkoutExecutionGuard()
         val lease = guard.beginExecution(seed("session-a")).getOrThrow()
-        val vbtCompletion = SetExecutionCompletion(lease, SetEndReason.VBT_AUTO_END)
-        val manualCompletion = SetExecutionCompletion(lease, SetEndReason.USER_STOPPED)
+        val vbtCompletion = completionFixture(lease, SetEndReason.VBT_AUTO_END)
+        val manualCompletion = completionFixture(lease, SetEndReason.USER_STOPPED)
 
         assertEquals(
             CompletionClaimResult.Claimed(vbtCompletion),

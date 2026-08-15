@@ -474,7 +474,7 @@ class Issue673SetEndReasonLifecycleTest {
             val entry = assertIs<WorkoutState.BodyweightRepEntry>(harness.coordinator.workoutState.value)
 
             harness.activeSessionEngine.executionGuard.tryClaimCompletion(
-                SetExecutionCompletion(lease, SetEndReason.TARGET_REPS_REACHED),
+                completionFixture(lease, SetEndReason.TARGET_REPS_REACHED),
             )
             harness.dwsm.confirmBodyweightSetResult(reps = 6, variant = entry.selectedVariant)
             harness.activeSessionEngine.executionGuard.releaseCompletionClaim(lease)

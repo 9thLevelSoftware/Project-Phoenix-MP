@@ -665,7 +665,7 @@ class WorkoutExitPersistenceTest {
                 TerminalPath.END_WORKOUT to SetEndReason.USER_STOPPED,
             ).mapIndexed { index, (path, reason) ->
                 async {
-                    val completion = SetExecutionCompletion(lease, reason)
+                    val completion = completionFixture(lease, reason)
                     snapshotStore.getOrCapture(completion, path) {
                         readyBuilders.incrementAndGet()
                         while (readyBuilders.value < 2) {
@@ -687,8 +687,8 @@ class WorkoutExitPersistenceTest {
     fun `bodyweight completion gate rejects a stale A publication after B begins`() {
         val leaseA = executionLease(executionId = 1L, sessionId = "bodyweight-a")
         val leaseB = executionLease(executionId = 2L, sessionId = "bodyweight-b")
-        val completionA = SetExecutionCompletion(leaseA, SetEndReason.USER_STOPPED)
-        val completionB = SetExecutionCompletion(leaseB, SetEndReason.TIMER_EXPIRED)
+        val completionA = completionFixture(leaseA, SetEndReason.USER_STOPPED)
+        val completionB = completionFixture(leaseB, SetEndReason.TIMER_EXPIRED)
         val gate = BodyweightCompletionGate()
 
         gate.beginExecution(leaseA)
