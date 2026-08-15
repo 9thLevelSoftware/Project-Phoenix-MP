@@ -95,6 +95,30 @@ class DropSetEligibilityPolicyTest {
                 expectedLiveIdentity = base.copy(plannedSetId = "live-only-plan"),
             ),
         )
+        assertIs<DropSetEligibilityResult.Eligible>(
+            evaluate(
+                completion = completion(routineIdentity = base.copy(plannedSetId = null)),
+                expectedLiveIdentity = base.copy(plannedSetId = null),
+            ),
+        )
+    }
+
+    @Test
+    fun missingExpectedLiveIdentityFailsClosed() {
+        assertIneligible(
+            DropSetIneligibleReason.IDENTITY_MISMATCH,
+            evaluate(expectedLiveIdentity = null),
+        )
+    }
+
+    @Test
+    fun invalidMinimumValuesReturnPolicyLevelReason() {
+        listOf<Float?>(null, -1f, Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY).forEach { minimum ->
+            assertIneligible(
+                DropSetIneligibleReason.INVALID_MINIMUM,
+                evaluate(configuration = DropSetConfiguration(enabled = true, minimumWeightPerCableKg = minimum)),
+            )
+        }
     }
 
     @Test
@@ -143,7 +167,7 @@ class DropSetEligibilityPolicyTest {
         offerId: String = "offer",
         completion: SetExecutionCompletion = completion(),
         configuration: DropSetConfiguration = DropSetConfiguration(true, 1f),
-        expectedLiveIdentity: RoutineExecutionIdentity = identity(),
+        expectedLiveIdentity: RoutineExecutionIdentity? = identity(),
         commandTemplate: WorkoutParameters = commandTemplate(),
     ) = policy.evaluate(request(offerId, completion, configuration, expectedLiveIdentity, commandTemplate))
 
@@ -151,7 +175,7 @@ class DropSetEligibilityPolicyTest {
         offerId: String = "offer",
         completion: SetExecutionCompletion = completion(),
         configuration: DropSetConfiguration = DropSetConfiguration(true, 1f),
-        expectedLiveIdentity: RoutineExecutionIdentity = identity(),
+        expectedLiveIdentity: RoutineExecutionIdentity? = identity(),
         commandTemplate: WorkoutParameters = commandTemplate(),
     ) = DropSetEligibilityRequest(offerId, completion, configuration, expectedLiveIdentity, commandTemplate)
 

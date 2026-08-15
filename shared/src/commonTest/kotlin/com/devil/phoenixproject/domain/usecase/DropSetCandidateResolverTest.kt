@@ -105,6 +105,48 @@ class DropSetCandidateResolverTest {
     }
 
     @Test
+    fun returnsTypedInvalidReasonsInDocumentedPrecedence() {
+        assertEquals(
+            DropSetCandidateInvalidReason.INVALID_CONFIGURED_START,
+            assertIs<DropSetCandidateResolution.Invalid>(
+                resolve(start = Float.NaN, base = Float.NaN, floor = Float.NaN),
+            ).reason,
+        )
+        assertEquals(
+            DropSetCandidateInvalidReason.INVALID_PROGRAMMED_BASE,
+            assertIs<DropSetCandidateResolution.Invalid>(
+                resolve(start = 50f, base = Float.NaN, floor = Float.NaN),
+            ).reason,
+        )
+        assertEquals(
+            DropSetCandidateInvalidReason.INVALID_MINIMUM,
+            assertIs<DropSetCandidateResolution.Invalid>(
+                resolve(start = 50f, base = 50f, floor = Float.NaN),
+            ).reason,
+        )
+
+        val invalidCommand = commandTemplate(reps = 0)
+        assertEquals(
+            DropSetCandidateInvalidReason.BELOW_MINIMUM,
+            assertIs<DropSetCandidateResolution.Invalid>(
+                resolve(DropPercentage.TEN, start = 1f, base = 1f, floor = 1.5f, template = invalidCommand),
+            ).reason,
+        )
+        assertEquals(
+            DropSetCandidateInvalidReason.INVALID_COMMAND,
+            assertIs<DropSetCandidateResolution.Invalid>(
+                resolve(DropPercentage.TEN, start = 1f, base = 1f, floor = 1f, template = invalidCommand),
+            ).reason,
+        )
+        assertEquals(
+            DropSetCandidateInvalidReason.NOT_LOWER,
+            assertIs<DropSetCandidateResolution.Invalid>(
+                resolve(DropPercentage.TEN, start = 1f, base = 1f, floor = 1f),
+            ).reason,
+        )
+    }
+
+    @Test
     fun enforcesHardwareBoundsIncludingTrainerPlusMaximum() {
         assertEquals(
             0.5f,
