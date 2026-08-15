@@ -298,6 +298,21 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
+    // ActiveWorkoutRuntime -- migration 44, device-local retry recovery state.
+    SchemaTableOperation(
+        table = "ActiveWorkoutRuntime",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ActiveWorkoutRuntime (
+                profile_id TEXT NOT NULL,
+                routine_session_id TEXT NOT NULL,
+                document_version INTEGER NOT NULL,
+                runtime_json TEXT NOT NULL,
+                updated_at_epoch_ms INTEGER NOT NULL,
+                PRIMARY KEY (profile_id, routine_session_id)
+            )
+        """.trimIndent(),
+    ),
+
     // EarnedBadge -- originally bootstrapped by ensureGamificationTablesExist()
     // Full current shape: sync fields (m11), profile_id (m22)
     SchemaTableOperation(

@@ -72,6 +72,34 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `normal backup excludes local active workout runtime recovery data`() = runTest {
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "ordinary-exported-session",
+                routineSessionId = "ordinary-routine-session",
+                exerciseName = "Bench Press",
+                totalReps = 8,
+                workingReps = 8,
+            ),
+        )
+        database.vitruvianDatabaseQueries.replaceActiveWorkoutRuntime(
+            profile_id = "runtime-only-profile-key-673",
+            routine_session_id = "runtime-only-session-key-673",
+            document_version = 1,
+            runtime_json = """{"version":1,"sourceStableSessionId":"runtime-secret-673"}""",
+            updated_at_epoch_ms = 1_700_000_000_000,
+        )
+
+        val exportedJson = backupManager.exportToJson()
+        val decoded = testJson.decodeFromString<BackupData>(exportedJson)
+
+        assertEquals(listOf("ordinary-exported-session"), decoded.data.workoutSessions.map { it.id })
+        assertFalse(exportedJson.contains("runtime-only-profile-key-673"))
+        assertFalse(exportedJson.contains("runtime-only-session-key-673"))
+        assertFalse(exportedJson.contains("runtime-secret-673"))
+    }
+
+    @Test
     fun `exportAllData resolves placeholder routine name when mapping is unique`() = runTest {
         workoutRepository.saveRoutine(
             buildRoutine(

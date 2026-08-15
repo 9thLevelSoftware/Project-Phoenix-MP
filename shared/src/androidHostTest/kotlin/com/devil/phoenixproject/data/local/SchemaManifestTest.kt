@@ -227,6 +227,28 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `active runtime table reconciliation creates the missing table and is idempotent`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        val operation = manifestTables.first { it.table == "ActiveWorkoutRuntime" }
+
+        val created = applyTableCreate(driver, operation)
+        val alreadyPresent = applyTableCreate(driver, operation)
+
+        assertEquals(ReconciliationStatus.CREATED, created.status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, alreadyPresent.status)
+        assertEquals(
+            listOf(
+                "profile_id",
+                "routine_session_id",
+                "document_version",
+                "runtime_json",
+                "updated_at_epoch_ms",
+            ),
+            columnNames(driver, "ActiveWorkoutRuntime"),
+        )
+    }
+
+    @Test
     fun `reconcileFullSchema restores profile preference and cleanup tables with all columns`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         VitruvianDatabase.Schema.create(driver)

@@ -698,7 +698,7 @@ class SchemaParityTest {
     }
 
     @Test
-    fun `migration 44 to 45 adds logical attempt identity and preserves historical rows with null occurrence and attempt one`() {
+    fun `migration 44 to 45 adds attempt identity and active runtime while preserving historical defaults`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         buildSchemaAtVersion(driver, 44)
         driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
@@ -720,6 +720,20 @@ class SchemaParityTest {
         assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "attempt_number"))
         assertEquals(null, queryScalar(driver, "SELECT routine_exercise_id FROM CompletedSet WHERE id = 'cs-pre-attempt-identity'"))
         assertEquals("1", queryScalar(driver, "SELECT CAST(attempt_number AS TEXT) FROM CompletedSet WHERE id = 'cs-pre-attempt-identity'"))
+        assertEquals(
+            listOf(
+                "profile_id",
+                "routine_session_id",
+                "document_version",
+                "runtime_json",
+                "updated_at_epoch_ms",
+            ),
+            getColumns(driver, "ActiveWorkoutRuntime").keys.toList(),
+        )
+        assertEquals(
+            listOf("profile_id", "routine_session_id"),
+            getPrimaryKeyColumns(driver, "ActiveWorkoutRuntime"),
+        )
     }
 
     // ==================== HELPERS ====================
@@ -969,6 +983,25 @@ class SchemaParityTest {
             parameters = 0,
         )
         return columns
+    }
+
+    private fun getPrimaryKeyColumns(driver: SqlDriver, table: String): List<String> {
+        val columns = mutableListOf<Pair<Long, String>>()
+        driver.executeQuery(
+            null,
+            "PRAGMA table_info($table)",
+            { cursor ->
+                while (cursor.next().value) {
+                    val primaryKeyOrder = cursor.getLong(5) ?: 0L
+                    if (primaryKeyOrder > 0) {
+                        columns += primaryKeyOrder to cursor.getString(1).orEmpty()
+                    }
+                }
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        return columns.sortedBy { it.first }.map { it.second }
     }
 
     private fun getIndexes(driver: SqlDriver): List<String> {

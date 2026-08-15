@@ -2285,6 +2285,15 @@ CREATE TABLE PendingProfileContextRecovery (
     enqueued_at INTEGER NOT NULL
 );
 
+CREATE TABLE ActiveWorkoutRuntime (
+    profile_id TEXT NOT NULL,
+    routine_session_id TEXT NOT NULL,
+    document_version INTEGER NOT NULL,
+    runtime_json TEXT NOT NULL,
+    updated_at_epoch_ms INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, routine_session_id)
+);
+
 selectProfilePreferences:
 SELECT * FROM UserProfilePreferences WHERE profile_id = ?;
 
@@ -2552,6 +2561,27 @@ WHERE recovery_key = 'active_profile_transition';
 clearPendingProfileContextRecovery:
 DELETE FROM PendingProfileContextRecovery
 WHERE recovery_key = 'active_profile_transition';
+
+selectActiveWorkoutRuntime:
+SELECT * FROM ActiveWorkoutRuntime
+WHERE profile_id = ? AND routine_session_id = ?;
+
+replaceActiveWorkoutRuntime:
+INSERT OR REPLACE INTO ActiveWorkoutRuntime(
+    profile_id,
+    routine_session_id,
+    document_version,
+    runtime_json,
+    updated_at_epoch_ms
+) VALUES (?, ?, ?, ?, ?);
+
+deleteActiveWorkoutRuntime:
+DELETE FROM ActiveWorkoutRuntime
+WHERE profile_id = ? AND routine_session_id = ?;
+
+deleteActiveWorkoutRuntimeByProfile:
+DELETE FROM ActiveWorkoutRuntime
+WHERE profile_id = ?;
 
 -- Queries for UserProfile
 getActiveProfile:

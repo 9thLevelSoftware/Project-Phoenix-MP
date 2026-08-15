@@ -1028,6 +1028,14 @@ WHERE gs.rowid = (
     44 -> listOf(
         "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT",
         "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1",
+        """CREATE TABLE ActiveWorkoutRuntime (
+        profile_id TEXT NOT NULL,
+        routine_session_id TEXT NOT NULL,
+        document_version INTEGER NOT NULL,
+        runtime_json TEXT NOT NULL,
+        updated_at_epoch_ms INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, routine_session_id)
+    )""",
     )
 
     else -> emptyList()
