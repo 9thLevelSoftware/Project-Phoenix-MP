@@ -146,6 +146,7 @@ internal class DWSMTestHarness(
     },
     transitionIdGenerator: () -> String = { "test-transition" },
     offerIdGenerator: () -> String = { "test-offer" },
+    wallClockMillisProvider: (() -> Long)? = null,
     hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
         extraBufferCapacity = 32,
         onBufferOverflow = BufferOverflow.SUSPEND,
@@ -256,7 +257,7 @@ internal class DWSMTestHarness(
         afterExecutionBegin = afterExecutionBegin,
         _hapticEvents = hapticEvents,
         elapsedRealtimeProvider = { testScope.testScheduler.currentTime },
-        wallClockMillisProvider = { nowMs },
+        wallClockMillisProvider = wallClockMillisProvider ?: { nowMs },
     )
 
     // BleConnectionManager receives errors via coordinator.bleErrorEvents (no circular dependency)

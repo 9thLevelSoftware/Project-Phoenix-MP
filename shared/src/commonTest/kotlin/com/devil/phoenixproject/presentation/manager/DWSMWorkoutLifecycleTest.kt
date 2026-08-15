@@ -3893,6 +3893,141 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `cancelling navigation owner after lookup releases followers and permits retry`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        val resolverPublished = CompletableDeferred<Unit>()
+        val releaseResolver = CompletableDeferred<Unit>()
+        try {
+            val unresolved = prepareEligibleStallRest(harness)
+            harness.activeSessionEngine.afterRestTransitionNavigationResolutionForTest = {
+                resolverPublished.complete(Unit)
+                releaseResolver.await()
+            }
+
+            val owner = launch(UnconfinedTestDispatcher(testScheduler)) {
+                harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.Decline(unresolved.actionIdentity()))
+            }
+            resolverPublished.await()
+            val declined = assertIs<RestTransitionPlan.Declined>(harness.restTransitionPlan.value)
+            val followerFailure = CompletableDeferred<Throwable?>()
+            val follower = launch(UnconfinedTestDispatcher(testScheduler)) {
+                try {
+                    harness.activeSessionEngine.resolveRestTransitionNavigationForTest(declined.normalAdvance)
+                    followerFailure.complete(null)
+                } catch (error: Throwable) {
+                    followerFailure.complete(error)
+                }
+            }
+            runCurrent()
+            owner.cancel()
+            runCurrent()
+
+            assertTrue(owner.isCompleted)
+            assertTrue(follower.isCompleted)
+            assertIs<CancellationException>(followerFailure.await())
+            harness.activeSessionEngine.afterRestTransitionNavigationResolutionForTest = null
+            harness.dwsm.applyRestTransition(RestTransitionCommand.SkipRest(declined.actionIdentity()))
+            runCurrent()
+
+            assertEquals(2, harness.dwsm.restTransitionNavigationLookupsForTest)
+            assertEquals(1, harness.coordinator.currentSetIndex.value)
+        } finally {
+            if (!releaseResolver.isCompleted) releaseResolver.complete(Unit)
+            harness.activeSessionEngine.afterRestTransitionNavigationResolutionForTest = null
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `exception after navigation lookup releases followers and permits retry`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        val resolverPublished = CompletableDeferred<Unit>()
+        val releaseResolver = CompletableDeferred<Unit>()
+        val ownerFailure = CompletableDeferred<Throwable>()
+        try {
+            val unresolved = prepareEligibleStallRest(harness)
+            harness.activeSessionEngine.afterRestTransitionNavigationResolutionForTest = {
+                resolverPublished.complete(Unit)
+                releaseResolver.await()
+                error("post-lookup failure")
+            }
+
+            launch(UnconfinedTestDispatcher(testScheduler)) {
+                try {
+                    harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.Decline(unresolved.actionIdentity()))
+                } catch (error: Throwable) {
+                    ownerFailure.complete(error)
+                }
+            }
+            resolverPublished.await()
+            val declined = assertIs<RestTransitionPlan.Declined>(harness.restTransitionPlan.value)
+            val followerFailure = CompletableDeferred<Throwable?>()
+            val follower = launch(UnconfinedTestDispatcher(testScheduler)) {
+                try {
+                    harness.activeSessionEngine.resolveRestTransitionNavigationForTest(declined.normalAdvance)
+                    followerFailure.complete(null)
+                } catch (error: Throwable) {
+                    followerFailure.complete(error)
+                }
+            }
+            runCurrent()
+
+            releaseResolver.complete(Unit)
+            runCurrent()
+            assertIs<IllegalStateException>(ownerFailure.await())
+            assertTrue(follower.isCompleted)
+            assertIs<IllegalStateException>(followerFailure.await())
+
+            harness.activeSessionEngine.afterRestTransitionNavigationResolutionForTest = null
+            harness.dwsm.applyRestTransition(RestTransitionCommand.SkipRest(declined.actionIdentity()))
+            runCurrent()
+
+            assertEquals(2, harness.dwsm.restTransitionNavigationLookupsForTest)
+            assertEquals(1, harness.coordinator.currentSetIndex.value)
+        } finally {
+            if (!releaseResolver.isCompleted) releaseResolver.complete(Unit)
+            harness.activeSessionEngine.afterRestTransitionNavigationResolutionForTest = null
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `queued normal dispatch invalidated before resolution reads no navigation state`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val resolverScheduled = CompletableDeferred<Unit>()
+        val releaseResolver = CompletableDeferred<Unit>()
+        var cacheReads = 0
+        var contextReads = 0
+        try {
+            val normal = prepareNormalRest(harness)
+            val lookupsBeforeCommand = harness.dwsm.restTransitionNavigationLookupsForTest
+            harness.activeSessionEngine.beforeRestTransitionNavigationClaimForTest = {
+                resolverScheduled.complete(Unit)
+                releaseResolver.await()
+            }
+            harness.activeSessionEngine.onRestTransitionNavigationCacheReadForTest = { cacheReads++ }
+            harness.activeSessionEngine.onRestTransitionNavigationContextReadForTest = { contextReads++ }
+
+            harness.dwsm.applyRestTransition(RestTransitionCommand.SkipRest(normal.actionIdentity()))
+            resolverScheduled.await()
+            harness.dwsm.resetForNewWorkout()
+            releaseResolver.complete(Unit)
+            runCurrent()
+
+            assertEquals(lookupsBeforeCommand, harness.dwsm.restTransitionNavigationLookupsForTest)
+            assertEquals(0, cacheReads)
+            assertEquals(0, contextReads)
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+        } finally {
+            if (!releaseResolver.isCompleted) releaseResolver.complete(Unit)
+            harness.activeSessionEngine.beforeRestTransitionNavigationClaimForTest = null
+            harness.activeSessionEngine.onRestTransitionNavigationCacheReadForTest = null
+            harness.activeSessionEngine.onRestTransitionNavigationContextReadForTest = null
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `final normal transition advances its captured cycle after coordinator replacement`() = runTest {
         val harness = DWSMTestHarness(this)
         val releaseClear = CompletableDeferred<Unit>()
@@ -4230,6 +4365,223 @@ class DWSMWorkoutLifecycleTest {
             assertEquals(
                 pausedDocument,
                 harness.fakeActiveWorkoutRuntimeRepository.committedDocument(key.profileId, key.routineSessionId),
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `declining an active unresolved timer refreshes its owned navigation presentation`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            val unresolved = prepareEligibleStallRest(harness)
+            val beforeDecline = assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            assertEquals("", beforeDecline.nextExerciseName)
+
+            harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.Decline(unresolved.actionIdentity()))
+            runCurrent()
+
+            val resting = assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            val exercise = assertNotNull(harness.coordinator.loadedRoutine.value).exercises.single()
+            assertEquals(exercise.exercise.displayName, resting.nextExerciseName)
+            assertEquals(1, resting.currentSet)
+            assertEquals(2, resting.totalSets)
+            assertFalse(resting.isLastExercise)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `decline refresh preserves a user weight edit instead of preloading stale navigation params`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            val unresolved = prepareEligibleStallRest(harness)
+            harness.dwsm.adjustWeight(newWeightKg = 37f, sendToMachine = false)
+
+            harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.Decline(unresolved.actionIdentity()))
+            runCurrent()
+
+            assertEquals(37f, harness.coordinator.workoutParameters.value.weightPerCableKg)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `stale timer owner cannot publish captured parameters after reset and replacement`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val timerClaimed = CompletableDeferred<Unit>()
+        val releaseTimer = CompletableDeferred<Unit>()
+        try {
+            harness.activeSessionEngine.afterPersistedRestTimerClaimForTest = {
+                timerClaimed.complete(Unit)
+                releaseTimer.await()
+            }
+            prepareNormalRest(harness)
+            timerClaimed.await()
+
+            harness.dwsm.resetForNewWorkout()
+            val replacement = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 55f).copy(
+                id = "replacement-routine",
+                name = "Replacement Routine",
+            )
+            replacement.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(replacement)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            val replacementWeight = harness.coordinator.workoutParameters.value.weightPerCableKg
+
+            releaseTimer.complete(Unit)
+            runCurrent()
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(replacementWeight, harness.coordinator.workoutParameters.value.weightPerCableKg)
+            assertEquals("replacement-routine", harness.coordinator.loadedRoutine.value?.id)
+        } finally {
+            if (!releaseTimer.isCompleted) releaseTimer.complete(Unit)
+            harness.activeSessionEngine.afterPersistedRestTimerClaimForTest = null
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `timer tick captured before extension cannot overwrite the newer persisted version`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val tickCaptured = CompletableDeferred<Unit>()
+        val releaseTick = CompletableDeferred<Unit>()
+        var blockNextTick = true
+        try {
+            prepareNormalRest(harness)
+            harness.activeSessionEngine.beforePersistedRestTimerTickPublishForTest = {
+                if (blockNextTick) {
+                    blockNextTick = false
+                    tickCaptured.complete(Unit)
+                    releaseTick.await()
+                }
+            }
+            advanceTimeBy(100)
+            tickCaptured.await()
+
+            harness.dwsm.extendRestTime(15)
+            runCurrent()
+            val document = assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest())
+            val authoritativeRemaining = RestDeadlineCalculator.remainingSeconds(document, harness.nowMs)
+            assertEquals(authoritativeRemaining, harness.coordinator._restSecondsRemaining.value)
+
+            releaseTick.complete(Unit)
+            runCurrent()
+
+            assertEquals(authoritativeRemaining, harness.coordinator._restSecondsRemaining.value)
+            assertEquals(authoritativeRemaining, assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value).restSecondsRemaining)
+        } finally {
+            if (!releaseTick.isCompleted) releaseTick.complete(Unit)
+            harness.activeSessionEngine.beforePersistedRestTimerTickPublishForTest = null
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `extreme plan owned extension saturates without breaking timer invariants`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepareNormalRest(harness)
+            harness.dwsm.toggleRestPause()
+            runCurrent()
+
+            harness.dwsm.extendRestTime(Int.MAX_VALUE)
+            runCurrent()
+
+            val document = assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest())
+            assertEquals(Int.MAX_VALUE, document.originalRestDurationSeconds)
+            assertEquals(Int.MAX_VALUE, document.pausedRestRemainingSeconds)
+            assertTrue(document.isRestPaused)
+            assertEquals(Int.MAX_VALUE, harness.coordinator._restOriginalDuration.value)
+            assertEquals(Int.MAX_VALUE, harness.coordinator._restSecondsRemaining.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `timer tick captured before pause cannot overwrite the newer persisted version`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val tickCaptured = CompletableDeferred<Unit>()
+        val releaseTick = CompletableDeferred<Unit>()
+        var blockNextTick = true
+        try {
+            prepareNormalRest(harness)
+            harness.activeSessionEngine.beforePersistedRestTimerTickPublishForTest = {
+                if (blockNextTick) {
+                    blockNextTick = false
+                    tickCaptured.complete(Unit)
+                    releaseTick.await()
+                }
+            }
+            advanceTimeBy(100)
+            tickCaptured.await()
+            advanceTimeBy(2_000)
+
+            harness.dwsm.toggleRestPause()
+            runCurrent()
+            val pausedDocument = assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest())
+            val authoritativeRemaining = assertNotNull(pausedDocument.pausedRestRemainingSeconds)
+            assertTrue(pausedDocument.isRestPaused)
+
+            releaseTick.complete(Unit)
+            runCurrent()
+
+            assertTrue(harness.coordinator.isRestPaused.value)
+            assertEquals(authoritativeRemaining, harness.coordinator._restSecondsRemaining.value)
+            assertEquals(authoritativeRemaining, assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value).restSecondsRemaining)
+        } finally {
+            if (!releaseTick.isCompleted) releaseTick.complete(Unit)
+            harness.activeSessionEngine.beforePersistedRestTimerTickPublishForTest = null
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `backward wall clock during timer publication cannot exceed original duration`() = runTest {
+        var wallClockMs = DWSMTestHarness.TEST_WALL_CLOCK_EPOCH_MS
+        val harness = DWSMTestHarness(this, wallClockMillisProvider = { wallClockMs })
+        try {
+            harness.activeSessionEngine.afterPersistedRestTimerClaimForTest = {
+                wallClockMs -= 3_600_000L
+            }
+
+            prepareNormalRest(harness)
+
+            val document = assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest())
+            val resting = assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            assertEquals(document.originalRestDurationSeconds, resting.restSecondsRemaining)
+            assertEquals(document.originalRestDurationSeconds, harness.coordinator._restSecondsRemaining.value)
+        } finally {
+            harness.activeSessionEngine.afterPersistedRestTimerClaimForTest = null
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `near maximum wall clock creates an overflow safe persisted timer`() = runTest {
+        var wallClockMs = Long.MAX_VALUE - 500L
+        val harness = DWSMTestHarness(this, wallClockMillisProvider = { wallClockMs })
+        try {
+            prepareNormalRest(harness)
+
+            val document = assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest())
+            val resting = assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            assertEquals(Long.MAX_VALUE, document.restDeadlineEpochMs)
+            assertEquals(1, resting.restSecondsRemaining)
+            wallClockMs = Long.MIN_VALUE
+            assertEquals(
+                document.originalRestDurationSeconds,
+                RestDeadlineCalculator.remainingSeconds(document, wallClockMs),
             )
         } finally {
             harness.cleanup()

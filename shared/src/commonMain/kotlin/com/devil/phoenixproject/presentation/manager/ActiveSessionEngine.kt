@@ -167,12 +167,20 @@ private data class PersistedRestTimerOwner(
     val transitionId: String,
     val sourceExecutionId: String,
     val job: Job,
+    var navigationParametersPublished: Boolean = false,
 )
 
 private data class PersistedRestTimerClaim(
-    val deadlineEpochMs: Long,
-    val originalDurationSeconds: Int,
     val previousJob: Job?,
+)
+
+private data class PlanOwnedRestPresentation(
+    val documentVersion: Long,
+    val remainingSeconds: Int,
+    val originalDurationSeconds: Int,
+    val isPaused: Boolean,
+    val restingState: WorkoutState.Resting,
+    val navigationParameters: WorkoutParameters?,
 )
 
 /**
@@ -244,6 +252,7 @@ class ActiveSessionEngine(
     private val exitSnapshotStore = WorkoutExitSnapshotStore()
     private val restTransitionMutex = Mutex()
     private var activeRuntimeDocument: ActiveWorkoutRuntimeDocument? = null
+    private var activeRuntimeDocumentVersion: Long = 0L
     private var pendingInitialRestRuntimeDocument: ActiveWorkoutRuntimeDocument? = null
     private data class CachedTransitionNavigation(
         val transitionId: String,
@@ -256,6 +265,13 @@ class ActiveSessionEngine(
         val transitionId: String,
         val sourceExecutionId: String,
         val result: CompletableDeferred<CachedTransitionNavigation?>,
+    )
+    private data class TransitionNavigationResolutionContext(
+        val routine: Routine,
+        val exerciseIndex: Int,
+        val setIndex: Int,
+        val cycleId: String?,
+        val cycleDayNumber: Int?,
     )
     private var cachedTransitionNavigation: CachedTransitionNavigation? = null
     private var pendingTransitionNavigation: PendingTransitionNavigation? = null
@@ -318,7 +334,7 @@ class ActiveSessionEngine(
             if (!hasRestTransitionAuthority(updatedDocument, changed.plan, lease)) {
                 return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED)
             }
-            activeRuntimeDocument = updatedDocument
+            setActiveRuntimeDocument(updatedDocument)
             coordinator._restTransitionPlan.value = changed.plan
             changed
         }
@@ -366,7 +382,7 @@ class ActiveSessionEngine(
                 ) {
                     return@withLock false
                 }
-                activeRuntimeDocument = cleared
+                setActiveRuntimeDocument(cleared)
                 coordinator._restTransitionPlan.value = null
                 true
             }
@@ -397,11 +413,33 @@ class ActiveSessionEngine(
 
     /** Resolve exactly once, only after the transition plan has been durably installed. */
     private suspend fun resolveNavigationOnce(plan: RestTransitionPlan.NormalAdvance): CachedTransitionNavigation? {
+        beforeRestTransitionNavigationClaimForTest?.invoke()
         var ownsResolution = false
+        var resolutionContext: TransitionNavigationResolutionContext? = null
         val pending = restTransitionMutex.withLock {
+            val lease = executionGuard.currentLease ?: return@withLock null
+            val document = activeRuntimeDocument ?: return@withLock null
+            val currentPlan = coordinator._restTransitionPlan.value
+            val authoritativePlan = when (currentPlan) {
+                plan -> currentPlan
+                is RestTransitionPlan.Declined -> currentPlan.takeIf { it.normalAdvance == plan }
+                else -> null
+            } ?: return@withLock null
+            if (!hasRestTransitionAuthority(document, authoritativePlan, lease)) return@withLock null
+
+            onRestTransitionNavigationCacheReadForTest?.invoke()
             cachedTransitionNavigation
                 ?.takeIf { it.transitionId == plan.transitionId && it.sourceExecutionId == plan.sourceExecutionId }
                 ?.let { return it }
+            onRestTransitionNavigationContextReadForTest?.invoke()
+            val routine = coordinator._loadedRoutine.value ?: return@withLock null
+            resolutionContext = TransitionNavigationResolutionContext(
+                routine = routine,
+                exerciseIndex = plan.sourceCoordinates.exerciseIndex,
+                setIndex = plan.sourceCoordinates.setIndex,
+                cycleId = coordinator.activeCycleId,
+                cycleDayNumber = coordinator.activeCycleDayNumber,
+            )
             pendingTransitionNavigation
                 ?.takeIf { it.transitionId == plan.transitionId && it.sourceExecutionId == plan.sourceExecutionId }
                 ?: PendingTransitionNavigation(
@@ -413,22 +451,50 @@ class ActiveSessionEngine(
                     ownsResolution = true
                 }
         }
+        if (pending == null) return null
         if (!ownsResolution) return pending.result.await()
 
-        val resolved = try {
+        return try {
             beforeRestTransitionNavigationResolutionForTest?.invoke()
-            coordinator._loadedRoutine.value?.let { routine ->
-                CachedTransitionNavigation(
-                    transitionId = plan.transitionId,
-                    sourceExecutionId = plan.sourceExecutionId,
-                    nextStep = flowDelegate?.getNextStep(
-                        routine,
-                        plan.sourceCoordinates.exerciseIndex,
-                        plan.sourceCoordinates.setIndex,
-                    ),
-                    cycleId = coordinator.activeCycleId,
-                    cycleDayNumber = coordinator.activeCycleDayNumber,
-                )
+            val context = requireNotNull(resolutionContext)
+            val resolved = CachedTransitionNavigation(
+                transitionId = plan.transitionId,
+                sourceExecutionId = plan.sourceExecutionId,
+                nextStep = flowDelegate?.getNextStep(
+                    context.routine,
+                    context.exerciseIndex,
+                    context.setIndex,
+                ),
+                cycleId = context.cycleId,
+                cycleDayNumber = context.cycleDayNumber,
+            )
+            afterRestTransitionNavigationResolutionForTest?.invoke()
+            withContext(NonCancellable) {
+                restTransitionMutex.withLock {
+                    val lease = executionGuard.currentLease
+                    val document = activeRuntimeDocument
+                    val currentPlan = coordinator._restTransitionPlan.value
+                    val authoritativePlan = when (currentPlan) {
+                        plan -> currentPlan
+                        is RestTransitionPlan.Declined -> currentPlan.takeIf { it.normalAdvance == plan }
+                        else -> null
+                    }
+                    val canPublish = pendingTransitionNavigation === pending &&
+                        lease != null &&
+                        document != null &&
+                        authoritativePlan != null &&
+                        hasRestTransitionAuthority(document, authoritativePlan, lease)
+                    if (canPublish) {
+                        cachedTransitionNavigation = resolved
+                        pendingTransitionNavigation = null
+                        pending.result.complete(resolved)
+                        refreshActivePlanOwnedRestPresentationLocked()
+                    } else {
+                        if (pendingTransitionNavigation === pending) pendingTransitionNavigation = null
+                        pending.result.complete(null)
+                    }
+                }
+                pending.result.await()
             }
         } catch (error: Throwable) {
             withContext(NonCancellable) {
@@ -439,14 +505,6 @@ class ActiveSessionEngine(
             }
             throw error
         }
-        restTransitionMutex.withLock {
-            if (pendingTransitionNavigation === pending) {
-                if (resolved != null) cachedTransitionNavigation = resolved
-                pendingTransitionNavigation = null
-            }
-            pending.result.complete(resolved)
-        }
-        return pending.result.await()
     }
 
     private fun hasRestTransitionAuthority(
@@ -482,6 +540,11 @@ class ActiveSessionEngine(
         false
     }
 
+    private fun setActiveRuntimeDocument(document: ActiveWorkoutRuntimeDocument) {
+        activeRuntimeDocument = document
+        activeRuntimeDocumentVersion++
+    }
+
     private fun canonicalAttemptStates(states: List<PlannedSetAttemptState>): List<PlannedSetAttemptState> = states.associateBy { it.logicalSetKey }.values.toList()
 
     private fun canonicalOverlays(overlays: List<ExerciseLoadOverlay>): List<ExerciseLoadOverlay> = overlays.associateBy { it.routineExerciseId }.values.toList()
@@ -502,7 +565,23 @@ class ActiveSessionEngine(
     internal var lastInitialRestPlanInstallResultForTest: InitialRestPlanInstallResult? = null
         private set
     internal var afterDurableRestPlanClearForTest: (suspend () -> Unit)? = null
+    internal var beforeRestTransitionNavigationClaimForTest: (suspend () -> Unit)? = null
     internal var beforeRestTransitionNavigationResolutionForTest: (suspend () -> Unit)? = null
+    internal var afterRestTransitionNavigationResolutionForTest: (suspend () -> Unit)? = null
+    internal var onRestTransitionNavigationCacheReadForTest: (() -> Unit)? = null
+    internal var onRestTransitionNavigationContextReadForTest: (() -> Unit)? = null
+    internal var afterPersistedRestTimerClaimForTest: (suspend () -> Unit)? = null
+    internal var beforePersistedRestTimerTickPublishForTest: (suspend () -> Unit)? = null
+
+    internal suspend fun resolveRestTransitionNavigationForTest(plan: RestTransitionPlan.NormalAdvance): Boolean = resolveNavigationOnce(plan) != null
+
+    internal fun activeRuntimeDocumentForTest(): ActiveWorkoutRuntimeDocument? = activeRuntimeDocument
+
+    internal fun hasPendingTeardownReadyContinuationForTest(lease: ExecutionLease): Boolean = pendingTeardownReadyContinuation.value?.lease?.sameExecutionAs(lease) == true
+
+    internal fun discardTeardownReadyContinuationForTest(lease: ExecutionLease) {
+        discardTeardownReadyContinuation(lease)
+    }
 
     private val dangerZoneCountdownGate = DangerZoneCountdownGate()
 
@@ -654,8 +733,10 @@ class ActiveSessionEngine(
         }
         if (!executionGuard.beginTeardown(lease, attempt)) return
 
-        pendingTeardownReadyContinuation.value = afterReady?.let {
-            PendingTeardownReadyContinuation(lease, it)
+        if (afterReady != null) {
+            pendingTeardownReadyContinuation.value = PendingTeardownReadyContinuation(lease, afterReady)
+        } else {
+            discardTeardownReadyContinuation(lease)
         }
 
         launchMachineTeardownReset(lease, reason)
@@ -688,8 +769,13 @@ class ActiveSessionEngine(
             }
             if (failureReason != null) {
                 executionGuard.markRecoveryRequired(lease, failureReason)
-            } else if (executionGuard.markTeardownReady(lease) && executionGuard.isCurrent(lease)) {
-                takeTeardownReadyContinuation(lease)?.invoke()
+            } else {
+                val ready = executionGuard.markTeardownReady(lease)
+                if (ready && executionGuard.isCurrent(lease)) {
+                    takeTeardownReadyContinuation(lease)?.invoke()
+                } else {
+                    discardTeardownReadyContinuation(lease)
+                }
             }
         }
         if (executionGuard.attachTeardownJob(lease, job)) {
@@ -702,8 +788,16 @@ class ActiveSessionEngine(
     private fun takeTeardownReadyContinuation(lease: ExecutionLease): (() -> Unit)? {
         while (true) {
             val pending = pendingTeardownReadyContinuation.value ?: return null
-            if (pending.lease != lease) return null
+            if (!pending.lease.sameExecutionAs(lease)) return null
             if (pendingTeardownReadyContinuation.compareAndSet(pending, null)) return pending.callback
+        }
+    }
+
+    private fun discardTeardownReadyContinuation(lease: ExecutionLease) {
+        while (true) {
+            val pending = pendingTeardownReadyContinuation.value ?: return
+            if (!pending.lease.sameExecutionAs(lease)) return
+            if (pendingTeardownReadyContinuation.compareAndSet(pending, null)) return
         }
     }
 
@@ -2844,12 +2938,14 @@ class ActiveSessionEngine(
     fun resetForNewWorkout() {
         val resetToken = executionGuard.captureResetCleanupToken()
         val lease = resetToken.lease
+        val pendingTeardownLease = pendingTeardownReadyContinuation.value?.lease
         lease?.let(bodyweightCompletionGate::invalidate)
         lease?.let(::clearDangerZoneCountdownOverride)
         val invalidatedLease = lease?.takeIf {
             executionGuard.invalidate(it, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
         }
         if (invalidatedLease != null) {
+            discardTeardownReadyContinuation(invalidatedLease)
             afterResetInvalidation(invalidatedLease.executionId, invalidatedLease.sessionId)
             repFreshnessGate.invalidate(invalidatedLease)
             detachBiomechanicsContext(invalidatedLease)
@@ -2857,6 +2953,7 @@ class ActiveSessionEngine(
                 executionContext = null
             }
         }
+        pendingTeardownLease?.let(::discardTeardownReadyContinuation)
         if (lease != null && invalidatedLease == null) return
         executionGuard.commitResetCleanupIfNoSuccessor(resetToken, invalidatedLease) {
             clearSharedStateForNewWorkout()
@@ -3331,6 +3428,7 @@ class ActiveSessionEngine(
         bodyweightCompletionGate.invalidate(lease)
         clearDangerZoneCountdownOverride(lease)
         if (!executionGuard.invalidate(lease, ExecutionInvalidationReason.START_FAILED)) return
+        discardTeardownReadyContinuation(lease)
         executionGuard.cancelPresentationJobsFor(lease)
         repFreshnessGate.invalidate(lease)
         if (coordinator.currentSessionId == lease.sessionId) {
@@ -3410,6 +3508,7 @@ class ActiveSessionEngine(
             }
             return
         }
+        outgoingLease?.let(::discardTeardownReadyContinuation)
         afterExecutionBegin(outgoingLease?.executionId, lease.executionId)
         bodyweightCompletionGate.beginExecution(lease)
         if (!installBiomechanicsContext(lease)) return
@@ -5837,8 +5936,10 @@ class ActiveSessionEngine(
         remainingSeconds: Int,
         nowElapsedRealtimeMs: Long = elapsedRealtimeProvider(),
     ) {
-        coordinator.restDeadlineElapsedRealtimeMs =
-            nowElapsedRealtimeMs + (remainingSeconds.coerceAtLeast(0).toLong() * 1000L)
+        coordinator.restDeadlineElapsedRealtimeMs = saturatingAddMilliseconds(
+            baseMs = nowElapsedRealtimeMs,
+            durationMs = remainingSeconds.coerceAtLeast(0).toLong() * 1_000L,
+        )
     }
 
     private fun currentRestRemainingSeconds(): Int {
@@ -5846,16 +5947,14 @@ class ActiveSessionEngine(
         return computeRemainingSeconds(deadline)
     }
 
-    private fun computeEpochRemainingSeconds(deadlineEpochMs: Long): Int {
-        val remainingMs = deadlineEpochMs - wallClockMillisProvider()
-        if (remainingMs <= 0L) return 0
-        return ((remainingMs + 999L) / 1_000L).toInt()
-    }
+    private fun deadlineEpochMs(nowEpochMs: Long, durationSeconds: Int): Long = saturatingAddMilliseconds(
+        baseMs = nowEpochMs,
+        durationMs = durationSeconds.coerceAtLeast(0).toLong() * 1_000L,
+    )
 
-    private fun armRestDeadlineFromEpoch(deadlineEpochMs: Long) {
-        val remainingMs = (deadlineEpochMs - wallClockMillisProvider()).coerceAtLeast(0L)
-        coordinator.restDeadlineElapsedRealtimeMs = elapsedRealtimeProvider() + remainingMs
-    }
+    private fun saturatingAddMilliseconds(baseMs: Long, durationMs: Long): Long = if (durationMs > 0L && baseMs > Long.MAX_VALUE - durationMs) Long.MAX_VALUE else baseMs + durationMs
+
+    private fun saturatingAddSeconds(baseSeconds: Int, deltaSeconds: Int): Int = (baseSeconds.toLong() + deltaSeconds.toLong()).coerceIn(0L, Int.MAX_VALUE.toLong()).toInt()
 
     private fun armJustLiftRestDeadline(
         remainingSeconds: Int,
@@ -5958,7 +6057,7 @@ class ActiveSessionEngine(
         if (!hasExpectedAuthority(lease, "rest_timer_start")) return
         val timerJob = scope.launch(start = CoroutineStart.LAZY) {
             if (!hasExpectedAuthority(lease, "rest_timer_launch")) return@launch
-            val timerJob = coroutineContext[kotlinx.coroutines.Job]
+            val timerJob = coroutineContext[kotlinx.coroutines.Job] ?: return@launch
             val routine = coordinator._loadedRoutine.value
             val currentExercise = routine?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
             val exerciseId = currentExercise?.exercise?.id ?: coordinator._workoutParameters.value.selectedExerciseId
@@ -5984,6 +6083,9 @@ class ActiveSessionEngine(
             persistedTimerClaim?.previousJob
                 ?.takeIf { previous -> previous !== timerJob }
                 ?.cancel()
+            if (persistedTimerClaim != null) {
+                afterPersistedRestTimerClaimForTest?.invoke()
+            }
             val resolvedTransition = when (installedPlan) {
                 is RestTransitionPlan.NormalAdvance -> installedPlan
                 is RestTransitionPlan.Declined -> installedPlan.normalAdvance
@@ -6060,7 +6162,7 @@ class ActiveSessionEngine(
             val exerciseForNextSet = nextExerciseFromStep ?: currentExercise
             val nextExerciseIsBodyweight = isBodyweightExercise(exerciseForNextSet)
 
-            if (!deferredTransition && exerciseForNextSet != null && !nextExerciseIsBodyweight) {
+            if (persistedTimerClaim == null && !deferredTransition && exerciseForNextSet != null && !nextExerciseIsBodyweight) {
                 val nextSetIdx = nextSetIdxFromStep ?: (completedSetIndex + 1)
 
                 val hasNextSet = nextSetIdx < exerciseForNextSet.setReps.size
@@ -6104,16 +6206,21 @@ class ActiveSessionEngine(
             }
 
             // Issue #297, #228: Initialize rest timer control state
-            val initialRestDuration = persistedTimerClaim?.originalDurationSeconds ?: restDuration
-            val initialRemainingSeconds = persistedTimerClaim
-                ?.let { computeEpochRemainingSeconds(it.deadlineEpochMs) }
-                ?: restDuration
-            coordinator._restOriginalDuration.value = initialRestDuration
-            coordinator._restSecondsRemaining.value = initialRemainingSeconds
-            coordinator._isRestPaused.value = false
-            if (persistedTimerClaim != null) {
-                armRestDeadlineFromEpoch(persistedTimerClaim.deadlineEpochMs)
+            val persistedInitialPresentation = if (persistedTimerClaim != null && timerJob != null) {
+                publishCurrentPlanOwnedRestPresentation(
+                    timerJob = timerJob,
+                    initializeDeadline = true,
+                )
+                    ?: return@launch
             } else {
+                null
+            }
+            val initialRestDuration = persistedInitialPresentation?.originalDurationSeconds ?: restDuration
+            val initialRemainingSeconds = persistedInitialPresentation?.remainingSeconds ?: restDuration
+            if (persistedInitialPresentation == null) {
+                coordinator._restOriginalDuration.value = initialRestDuration
+                coordinator._restSecondsRemaining.value = initialRemainingSeconds
+                coordinator._isRestPaused.value = false
                 armRestDeadline(restDuration)
             }
 
@@ -6124,7 +6231,9 @@ class ActiveSessionEngine(
                 nextExercise?.supersetId == currentExercise?.supersetId
 
             // Emit Resting immediately so the UI timer starts without waiting on repository lookups.
-            if (hasExpectedAuthority(lease, "rest_timer_initial_state")) {
+            if (persistedInitialPresentation != null) {
+                Unit
+            } else if (hasExpectedAuthority(lease, "rest_timer_initial_state")) {
                 coordinator._workoutState.value = WorkoutState.Resting(
                     restSecondsRemaining = initialRemainingSeconds,
                     nextExerciseName = initialNextName,
@@ -6159,9 +6268,18 @@ class ActiveSessionEngine(
                 // Issue #339: Deadline-based loop so timers catch up after background suspension.
                 while (isActive) {
                     if (!hasExpectedAuthority(lease, "rest_timer_tick")) return@launch
-                    val remainingSeconds = currentRestRemainingSeconds()
-
-                    if (remainingSeconds != coordinator._restSecondsRemaining.value) {
+                    val planOwnedPresentation = if (installedPlan != null && timerJob != null) {
+                        captureCurrentPlanOwnedRestPresentation(timerJob) ?: return@launch
+                    } else {
+                        null
+                    }
+                    val remainingSeconds = planOwnedPresentation?.remainingSeconds ?: currentRestRemainingSeconds()
+                    if (planOwnedPresentation != null) {
+                        beforePersistedRestTimerTickPublishForTest?.invoke()
+                        if (!publishCapturedPlanOwnedRestPresentation(timerJob, planOwnedPresentation)) {
+                            continue
+                        }
+                    } else if (remainingSeconds != coordinator._restSecondsRemaining.value) {
                         coordinator._restSecondsRemaining.value = remainingSeconds
                     }
 
@@ -6196,7 +6314,9 @@ class ActiveSessionEngine(
                         if (!hasExpectedAuthority(lease, "rest_timer_after_ending_haptic")) return@launch
                     }
 
-                    if (remainingSeconds != lastRenderedSecond) {
+                    if (planOwnedPresentation != null) {
+                        lastRenderedSecond = remainingSeconds
+                    } else if (remainingSeconds != lastRenderedSecond) {
                         lastRenderedSecond = remainingSeconds
                         val nextName = when {
                             cachedNavigation != null -> nextExerciseFromStep?.exercise?.displayName.orEmpty()
@@ -6290,7 +6410,7 @@ class ActiveSessionEngine(
 
         val persistedDocument = if (document.restDeadlineEpochMs == null) {
             val timerDocument = document.copy(
-                restDeadlineEpochMs = wallClockMillisProvider() + restDurationSeconds.coerceAtLeast(0) * 1_000L,
+                restDeadlineEpochMs = deadlineEpochMs(wallClockMillisProvider(), restDurationSeconds),
                 pausedRestRemainingSeconds = null,
                 isRestPaused = false,
             )
@@ -6300,12 +6420,12 @@ class ActiveSessionEngine(
             ) {
                 return@withLock null
             }
-            activeRuntimeDocument = timerDocument
+            setActiveRuntimeDocument(timerDocument)
             timerDocument
         } else {
             document
         }
-        val deadline = persistedDocument.restDeadlineEpochMs ?: return@withLock null
+        if (persistedDocument.restDeadlineEpochMs == null) return@withLock null
         val previousJob = coordinator.restTimerJob
         coordinator.restTimerJob = timerJob
         persistedRestTimerOwner = PersistedRestTimerOwner(
@@ -6314,10 +6434,162 @@ class ActiveSessionEngine(
             job = timerJob,
         )
         PersistedRestTimerClaim(
-            deadlineEpochMs = deadline,
-            originalDurationSeconds = persistedDocument.originalRestDurationSeconds,
             previousJob = previousJob,
         )
+    }
+
+    private suspend fun publishCurrentPlanOwnedRestPresentation(
+        timerJob: Job,
+        initializeDeadline: Boolean,
+    ): PlanOwnedRestPresentation? = restTransitionMutex.withLock {
+        val presentation = capturePlanOwnedRestPresentationLocked(timerJob) ?: return@withLock null
+        if (!publishPlanOwnedRestPresentationLocked(timerJob, presentation, initializeDeadline)) return@withLock null
+        presentation
+    }
+
+    private suspend fun captureCurrentPlanOwnedRestPresentation(timerJob: Job): PlanOwnedRestPresentation? = restTransitionMutex.withLock {
+        capturePlanOwnedRestPresentationLocked(timerJob)
+    }
+
+    private suspend fun publishCapturedPlanOwnedRestPresentation(
+        timerJob: Job,
+        presentation: PlanOwnedRestPresentation,
+    ): Boolean = restTransitionMutex.withLock {
+        publishPlanOwnedRestPresentationLocked(timerJob, presentation, initializeDeadline = false)
+    }
+
+    private fun capturePlanOwnedRestPresentationLocked(timerJob: Job): PlanOwnedRestPresentation? {
+        val owner = persistedRestTimerOwner?.takeIf { it.job === timerJob } ?: return null
+        val lease = executionGuard.currentLease ?: return null
+        val document = activeRuntimeDocument ?: return null
+        val plan = coordinator._restTransitionPlan.value ?: return null
+        if (owner.transitionId != plan.transitionId ||
+            owner.sourceExecutionId != plan.sourceExecutionId ||
+            !hasRestTransitionAuthority(document, plan, lease)
+        ) {
+            return null
+        }
+        val routine = coordinator._loadedRoutine.value ?: return null
+        val currentExercise = routine.exercises.getOrNull(document.sourceExerciseIndex) ?: return null
+        val normalPlan = when (plan) {
+            is RestTransitionPlan.NormalAdvance -> plan
+            is RestTransitionPlan.Declined -> plan.normalAdvance
+            else -> null
+        }
+        val navigation = normalPlan?.let { normal ->
+            cachedTransitionNavigation?.takeIf {
+                it.transitionId == normal.transitionId && it.sourceExecutionId == normal.sourceExecutionId
+            }
+        }
+        val nextStep = navigation?.nextStep
+        val nextExercise = nextStep?.let { routine.exercises.getOrNull(it.first) }
+        val nextSetIndex = nextStep?.second
+        val displaySetIndex = nextSetIndex ?: (document.sourceSetIndex + 1)
+        val displayTotalSets = nextExercise?.setReps?.size ?: currentExercise.setReps.size
+        val isLastExercise = normalPlan != null && navigation != null && nextStep == null
+        val isLastSetOfCurrentExercise = document.sourceSetIndex >= currentExercise.setReps.size - 1
+        val isTransitioningToNextExercise = nextStep != null &&
+            nextStep.first != document.sourceExerciseIndex &&
+            isLastSetOfCurrentExercise &&
+            !isLastExercise
+        val supersetId = currentExercise.supersetId
+        val supersetLabel = supersetId?.let { id ->
+            val groupIndex = routine.supersets.indexOfFirst { it.id == id }
+            if (groupIndex >= 0) "Superset ${('A' + groupIndex)}" else "Superset"
+        }
+        val isSupersetTransition = supersetId != null &&
+            isTransitioningToNextExercise &&
+            nextExercise?.supersetId == supersetId
+        val navigationParameters = if (
+            !owner.navigationParametersPublished &&
+            !coordinator._userAdjustedWeightDuringRest &&
+            normalPlan != null &&
+            navigation != null &&
+            nextExercise != null &&
+            nextSetIndex != null &&
+            !isBodyweightExercise(nextExercise) &&
+            nextSetIndex < nextExercise.setReps.size
+        ) {
+            val nextSetReps = nextExercise.setReps.getOrNull(nextSetIndex)
+            val nextSetWeight = RoutineSetWeightResolver(
+                RoutineSetWeightRequest(exercise = nextExercise, setIndex = nextSetIndex, currentPrKg = null),
+            )
+            val isNextSetLastSet = nextSetIndex >= nextExercise.setReps.size - 1
+            coordinator._workoutParameters.value.copy(
+                weightPerCableKg = nextSetWeight,
+                reps = nextSetReps ?: 0,
+                programMode = nextExercise.programMode,
+                echoLevel = nextExercise.getEchoLevelForSet(nextSetIndex),
+                eccentricLoad = nextExercise.eccentricLoad,
+                progressionRegressionKg = clampUpcomingProgressionKg(nextExercise.progressionKg),
+                selectedExerciseId = nextExercise.exercise.id,
+                isAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet),
+                stallDetectionEnabled = nextExercise.stallDetectionEnabled,
+                warmupReps = Constants.DEFAULT_WARMUP_REPS,
+                stopAtTop = nextExercise.stopAtTop,
+                repCountTiming = nextExercise.repCountTiming,
+            )
+        } else {
+            null
+        }
+        val remainingSeconds = RestDeadlineCalculator.remainingSeconds(document, wallClockMillisProvider())
+        return PlanOwnedRestPresentation(
+            documentVersion = activeRuntimeDocumentVersion,
+            remainingSeconds = remainingSeconds,
+            originalDurationSeconds = document.originalRestDurationSeconds,
+            isPaused = document.isRestPaused,
+            restingState = WorkoutState.Resting(
+                restSecondsRemaining = remainingSeconds,
+                nextExerciseName = nextExercise?.exercise?.displayName.orEmpty(),
+                isLastExercise = isLastExercise,
+                currentSet = displaySetIndex,
+                totalSets = displayTotalSets,
+                isSupersetTransition = isSupersetTransition,
+                supersetLabel = supersetLabel,
+            ),
+            navigationParameters = navigationParameters,
+        )
+    }
+
+    private fun publishPlanOwnedRestPresentationLocked(
+        timerJob: Job,
+        presentation: PlanOwnedRestPresentation,
+        initializeDeadline: Boolean,
+    ): Boolean {
+        val owner = persistedRestTimerOwner?.takeIf { it.job === timerJob } ?: return false
+        val lease = executionGuard.currentLease ?: return false
+        val document = activeRuntimeDocument ?: return false
+        val plan = coordinator._restTransitionPlan.value ?: return false
+        if (presentation.documentVersion != activeRuntimeDocumentVersion ||
+            owner.transitionId != plan.transitionId ||
+            owner.sourceExecutionId != plan.sourceExecutionId ||
+            !hasRestTransitionAuthority(document, plan, lease)
+        ) {
+            return false
+        }
+        coordinator._restOriginalDuration.value = presentation.originalDurationSeconds
+        coordinator._restSecondsRemaining.value = presentation.remainingSeconds
+        coordinator._isRestPaused.value = presentation.isPaused
+        if (initializeDeadline) {
+            if (presentation.isPaused) {
+                coordinator.restDeadlineElapsedRealtimeMs = null
+            } else {
+                armRestDeadline(presentation.remainingSeconds)
+            }
+        }
+        presentation.navigationParameters?.let { parameters ->
+            coordinator._workoutParameters.value = parameters
+            owner.navigationParametersPublished = true
+        }
+        coordinator._workoutState.value = presentation.restingState
+        return true
+    }
+
+    private fun refreshActivePlanOwnedRestPresentationLocked() {
+        if (coordinator._workoutState.value !is WorkoutState.Resting) return
+        val owner = persistedRestTimerOwner ?: return
+        val presentation = capturePlanOwnedRestPresentationLocked(owner.job) ?: return
+        publishPlanOwnedRestPresentationLocked(owner.job, presentation, initializeDeadline = false)
     }
 
     private suspend fun installInitialRestPlan(
@@ -6366,7 +6638,7 @@ class ActiveSessionEngine(
                 return@withLock InitialRestPlanInstallResult.AuthorityRejected
             }
             pendingInitialRestRuntimeDocument = null
-            activeRuntimeDocument = document
+            setActiveRuntimeDocument(document)
             val plan = document.restTransitionPlan
                 ?: return@withLock InitialRestPlanInstallResult.SourceRejected
             coordinator._restTransitionPlan.value = plan
@@ -6892,18 +7164,23 @@ class ActiveSessionEngine(
         if (coordinator._workoutState.value !is WorkoutState.Resting) return
         if (coordinator._restTransitionPlan.value != null) {
             mutatePlanOwnedRest { document ->
-                val remaining = currentRestRemainingSeconds() + seconds
+                val nowEpochMs = wallClockMillisProvider()
+                val remaining = saturatingAddSeconds(
+                    RestDeadlineCalculator.remainingSeconds(document, nowEpochMs),
+                    seconds,
+                )
+                val originalDuration = saturatingAddSeconds(document.originalRestDurationSeconds, seconds)
                 document.copy(
-                    restDeadlineEpochMs = if (coordinator._isRestPaused.value) {
+                    restDeadlineEpochMs = if (document.isRestPaused) {
                         null
                     } else {
-                        wallClockMillisProvider() + remaining.coerceAtLeast(0) * 1_000L
+                        deadlineEpochMs(nowEpochMs, remaining)
                     },
-                    pausedRestRemainingSeconds = if (coordinator._isRestPaused.value) remaining.coerceAtLeast(0) else null,
-                    originalRestDurationSeconds = document.originalRestDurationSeconds + seconds,
+                    pausedRestRemainingSeconds = if (document.isRestPaused) remaining.coerceAtLeast(0) else null,
+                    originalRestDurationSeconds = originalDuration,
                 ) to {
-                    coordinator._restOriginalDuration.value += seconds
-                    if (coordinator._isRestPaused.value) {
+                    coordinator._restOriginalDuration.value = originalDuration
+                    if (document.isRestPaused) {
                         coordinator._restSecondsRemaining.value = remaining.coerceAtLeast(0)
                     } else {
                         armRestDeadline(remaining.coerceAtLeast(0))
@@ -6935,10 +7212,11 @@ class ActiveSessionEngine(
         if (coordinator._workoutState.value !is WorkoutState.Resting) return
         if (coordinator._restTransitionPlan.value != null) {
             mutatePlanOwnedRest { document ->
-                val pausing = !coordinator._isRestPaused.value
-                val remaining = if (pausing) currentRestRemainingSeconds() else coordinator._restSecondsRemaining.value
+                val nowEpochMs = wallClockMillisProvider()
+                val pausing = !document.isRestPaused
+                val remaining = RestDeadlineCalculator.remainingSeconds(document, nowEpochMs)
                 document.copy(
-                    restDeadlineEpochMs = if (pausing) null else wallClockMillisProvider() + remaining.coerceAtLeast(0) * 1_000L,
+                    restDeadlineEpochMs = if (pausing) null else deadlineEpochMs(nowEpochMs, remaining),
                     pausedRestRemainingSeconds = if (pausing) remaining.coerceAtLeast(0) else null,
                     isRestPaused = pausing,
                 ) to {
@@ -6971,7 +7249,7 @@ class ActiveSessionEngine(
             mutatePlanOwnedRest { document ->
                 val restored = document.originalRestDurationSeconds
                 document.copy(
-                    restDeadlineEpochMs = wallClockMillisProvider() + restored.coerceAtLeast(0) * 1_000L,
+                    restDeadlineEpochMs = deadlineEpochMs(wallClockMillisProvider(), restored),
                     pausedRestRemainingSeconds = null,
                     isRestPaused = false,
                 ) to {
@@ -7000,8 +7278,14 @@ class ActiveSessionEngine(
                 val (updatedDocument, publish) = mutation(document)
                 if (!replaceRuntimeDocument(updatedDocument)) return@withLock
                 if (!hasRestTransitionAuthority(updatedDocument, plan, lease)) return@withLock
-                activeRuntimeDocument = updatedDocument
+                setActiveRuntimeDocument(updatedDocument)
                 publish()
+                val resting = coordinator._workoutState.value as? WorkoutState.Resting
+                if (resting != null) {
+                    coordinator._workoutState.value = resting.copy(
+                        restSecondsRemaining = coordinator._restSecondsRemaining.value,
+                    )
+                }
             }
         }
     }
@@ -7233,13 +7517,16 @@ class ActiveSessionEngine(
 
     fun cleanup() {
         val currentLease = executionGuard.currentLease
+        val pendingTeardownLease = pendingTeardownReadyContinuation.value?.lease
         currentLease?.let(bodyweightCompletionGate::invalidate)
         currentLease?.let(::clearDangerZoneCountdownOverride)
         val lease = executionGuard.invalidateCurrent(ExecutionInvalidationReason.CLEANUP)
         if (lease != null) {
+            discardTeardownReadyContinuation(lease)
             repFreshnessGate.invalidate(lease)
             executionGuard.cancelPresentationJobsFor(lease)
         }
+        pendingTeardownLease?.let(::discardTeardownReadyContinuation)
         coordinator._weightAdjustmentRecommendation.value = null
         coordinator.monitorDataCollectionJob?.cancel()
         cancelAutoStartTimer()
