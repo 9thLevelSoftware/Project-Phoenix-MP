@@ -240,6 +240,66 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
         }
     }
 
+    @Test
+    fun everyOuterDocumentToPlanConsistencyInvariantRejectsCorruptJsonByName() = runTest {
+        val source = documentJson()
+        val otherKey = LogicalSetKey("routine-session-a", "routine-exercise-other", 1, SetType.AMRAP)
+        val cases = listOf(
+            outerCase(
+                "common plan source execution differs from document",
+                source,
+                acceptedRetry(sourceExecutionId = "execution-other"),
+            ),
+            outerCase(
+                "common plan logical key differs from document",
+                source,
+                acceptedRetry(logicalSetKey = otherKey),
+            ),
+            outerCase(
+                "accepted planned set differs from document",
+                source,
+                acceptedRetry(plannedSetId = "planned-set-other"),
+            ),
+            outerCase(
+                "accepted coordinates differ from document",
+                source,
+                acceptedRetry(sourceCoordinates = RestTransitionPlan.Coordinates(4, 1)),
+            ),
+            outerCase(
+                "normal planned set differs from document",
+                source,
+                normalAdvance(plannedSetId = "planned-set-other"),
+            ),
+            outerCase(
+                "normal coordinates differ from document",
+                source,
+                normalAdvance(sourceCoordinates = RestTransitionPlan.Coordinates(4, 1)),
+            ),
+            outerCase(
+                "unresolved planned set differs from document",
+                source,
+                unresolvedOffer(plannedSetId = "planned-set-other"),
+            ),
+            outerCase(
+                "unresolved nested normal coordinates differ from document",
+                source,
+                unresolvedOffer(normalCoordinates = RestTransitionPlan.Coordinates(4, 1)),
+            ),
+            outerCase(
+                "declined nested normal planned set differs from document",
+                source,
+                declined(normalPlannedSetId = "planned-set-other"),
+            ),
+            outerCase(
+                "declined nested normal coordinates differ from document",
+                source,
+                declined(normalCoordinates = RestTransitionPlan.Coordinates(4, 1)),
+            ),
+        )
+
+        assertEveryDocumentCaseIsCorrupt(cases)
+    }
+
     private suspend fun assertEveryDocumentCaseIsCorrupt(cases: List<NamedPayload>) {
         cases.forEach { case ->
             insertRaw(case.payload)
@@ -274,40 +334,56 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
 
     private fun logicalKey() = LogicalSetKey("routine-session-a", "routine-exercise-a", 1, SetType.AMRAP)
 
-    private fun normalAdvance() = RestTransitionPlan.NormalAdvance(
+    private fun normalAdvance(
+        sourceExecutionId: String = "execution-a",
+        logicalSetKey: LogicalSetKey = logicalKey(),
+        sourceCoordinates: RestTransitionPlan.Coordinates = RestTransitionPlan.Coordinates(3, 1),
+        plannedSetId: String? = "planned-set-a",
+    ) = RestTransitionPlan.NormalAdvance(
         transitionId = "transition-a",
-        sourceExecutionId = "execution-a",
-        logicalSetKey = logicalKey(),
-        sourceCoordinates = RestTransitionPlan.Coordinates(3, 1),
-        plannedSetId = "planned-set-a",
+        sourceExecutionId = sourceExecutionId,
+        logicalSetKey = logicalSetKey,
+        sourceCoordinates = sourceCoordinates,
+        plannedSetId = plannedSetId,
         restDurationSeconds = 60,
     )
 
-    private fun unresolvedOffer() = RestTransitionPlan.UnresolvedDropOffer(
+    private fun unresolvedOffer(
+        plannedSetId: String? = "planned-set-a",
+        normalCoordinates: RestTransitionPlan.Coordinates = RestTransitionPlan.Coordinates(3, 1),
+    ) = RestTransitionPlan.UnresolvedDropOffer(
         transitionId = "transition-a",
         sourceExecutionId = "execution-a",
         logicalSetKey = logicalKey(),
         offerId = "offer-a",
-        plannedSetId = "planned-set-a",
+        plannedSetId = plannedSetId,
         candidates = listOf(DropSetCandidate(DropPercentage.TWENTY, 32f, 0.8f)),
-        normalAdvance = normalAdvance(),
+        normalAdvance = normalAdvance(plannedSetId = plannedSetId, sourceCoordinates = normalCoordinates),
     )
 
-    private fun declined() = RestTransitionPlan.Declined(
+    private fun declined(
+        normalPlannedSetId: String? = "planned-set-a",
+        normalCoordinates: RestTransitionPlan.Coordinates = RestTransitionPlan.Coordinates(3, 1),
+    ) = RestTransitionPlan.Declined(
         transitionId = "transition-a",
         sourceExecutionId = "execution-a",
         logicalSetKey = logicalKey(),
         offerId = "offer-a",
-        normalAdvance = normalAdvance(),
+        normalAdvance = normalAdvance(plannedSetId = normalPlannedSetId, sourceCoordinates = normalCoordinates),
     )
 
-    private fun acceptedRetry() = RestTransitionPlan.AcceptedRetry(
+    private fun acceptedRetry(
+        sourceExecutionId: String = "execution-a",
+        logicalSetKey: LogicalSetKey = logicalKey(),
+        sourceCoordinates: RestTransitionPlan.Coordinates = RestTransitionPlan.Coordinates(3, 1),
+        plannedSetId: String? = "planned-set-a",
+    ) = RestTransitionPlan.AcceptedRetry(
         transitionId = "transition-a",
-        sourceExecutionId = "execution-a",
-        logicalSetKey = logicalKey(),
+        sourceExecutionId = sourceExecutionId,
+        logicalSetKey = logicalSetKey,
         offerId = "offer-a",
-        sourceCoordinates = RestTransitionPlan.Coordinates(3, 1),
-        plannedSetId = "planned-set-a",
+        sourceCoordinates = sourceCoordinates,
+        plannedSetId = plannedSetId,
         percentage = DropPercentage.TWENTY,
         resolvedWeightPerCableKg = 32f,
         resultingExerciseMultiplier = 0.8f,
@@ -315,6 +391,12 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
     )
 
     private fun planJson(plan: RestTransitionPlan): JsonObject = json.encodeToJsonElement(RestTransitionPlan.serializer(), plan).jsonObject
+
+    private fun outerCase(
+        name: String,
+        document: JsonObject,
+        internallyValidPlan: RestTransitionPlan,
+    ) = case(name, document.with("restTransitionPlan", planJson(internallyValidPlan)))
 
     private fun planCase(
         name: String,
