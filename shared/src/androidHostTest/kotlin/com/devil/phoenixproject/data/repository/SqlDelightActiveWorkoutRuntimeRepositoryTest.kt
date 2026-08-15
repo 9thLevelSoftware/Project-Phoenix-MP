@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.data.repository
 
 import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlCursor
+import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.SqlPreparedStatement
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.DropPercentage
@@ -10,6 +13,7 @@ import com.devil.phoenixproject.domain.model.PlannedSetAttemptState
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -75,6 +79,30 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
     }
 
     @Test
+    fun replaceRejectsAMismatchedProfileKeyWithoutWritingEitherIdentity() = runTest {
+        val document = runtime()
+
+        assertFailsWith<IllegalArgumentException> {
+            repository.replace("supplied-profile", document.routineSessionId, document)
+        }
+
+        assertEquals("0", scalar("SELECT CAST(COUNT(*) AS TEXT) FROM ActiveWorkoutRuntime WHERE profile_id='supplied-profile' AND routine_session_id='routine-session-a'"))
+        assertEquals("0", scalar("SELECT CAST(COUNT(*) AS TEXT) FROM ActiveWorkoutRuntime WHERE profile_id='profile-a' AND routine_session_id='routine-session-a'"))
+    }
+
+    @Test
+    fun replaceRejectsAMismatchedRoutineSessionKeyWithoutWritingEitherIdentity() = runTest {
+        val document = runtime()
+
+        assertFailsWith<IllegalArgumentException> {
+            repository.replace(document.profileId, "supplied-routine-session", document)
+        }
+
+        assertEquals("0", scalar("SELECT CAST(COUNT(*) AS TEXT) FROM ActiveWorkoutRuntime WHERE profile_id='profile-a' AND routine_session_id='supplied-routine-session'"))
+        assertEquals("0", scalar("SELECT CAST(COUNT(*) AS TEXT) FROM ActiveWorkoutRuntime WHERE profile_id='profile-a' AND routine_session_id='routine-session-a'"))
+    }
+
+    @Test
     fun lastWriteReplacesTheSameKeyAndUpdatesItsTimestampWithoutTouchingAnotherKey() = runTest {
         repository.replace("profile-a", "routine-session-a", runtime(sourceAttemptNumber = 1))
         repository.replace("profile-b", "routine-session-b", runtime(profileId = "profile-b", routineSessionId = "routine-session-b"))
@@ -100,6 +128,41 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
         assertEquals("1", scalar("SELECT CAST(COUNT(*) AS TEXT) FROM ActiveWorkoutRuntime WHERE profile_id='profile-a' AND routine_session_id='routine-session-a'"))
         assertEquals(41, assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(repository.load("profile-a", "routine-session-a")).document.sourceAttemptNumber)
         assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(repository.load("profile-b", "routine-session-b"))
+    }
+
+    @Test
+    fun generatedDeleteByProfileRemovesEveryRuntimeForOnlyThatProfile() = runTest {
+        repository.replace("profile-a", "routine-session-a", runtime())
+        repository.replace("profile-a", "routine-session-b", runtime(routineSessionId = "routine-session-b"))
+        repository.replace(
+            "profile-b",
+            "routine-session-c",
+            runtime(profileId = "profile-b", routineSessionId = "routine-session-c"),
+        )
+
+        database.vitruvianDatabaseQueries.deleteActiveWorkoutRuntimeByProfile("profile-a")
+
+        assertIs<ActiveWorkoutRuntimeLoadResult.Missing>(repository.load("profile-a", "routine-session-a"))
+        assertIs<ActiveWorkoutRuntimeLoadResult.Missing>(repository.load("profile-a", "routine-session-b"))
+        assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(repository.load("profile-b", "routine-session-c"))
+    }
+
+    @Test
+    fun replaceExecutesOneWriteAndNoPreliminaryRead() = runTest {
+        val countingDriver = CountingSqlDriver(driver)
+        val countedRepository = SqlDelightActiveWorkoutRuntimeRepository(
+            VitruvianDatabase(countingDriver),
+            nowEpochMs = { now },
+        )
+
+        countedRepository.replace("profile-a", "routine-session-a", runtime())
+
+        assertEquals(0, countingDriver.readStatements.size)
+        assertEquals(1, countingDriver.writeStatements.size)
+        assertEquals(
+            true,
+            countingDriver.writeStatements.single().contains("INSERT OR REPLACE INTO ActiveWorkoutRuntime"),
+        )
     }
 
     @Test
@@ -170,14 +233,14 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
                                 transition +
                                     ("sourceCoordinates" to JsonObject(coordinates + ("exerciseIndex" to JsonPrimitive(4)))),
                             )
-                    ),
+                        ),
             ),
             JsonObject(
                 source +
                     (
                         "restTransitionPlan" to
                             JsonObject(transition + ("plannedSetId" to JsonPrimitive("other-planned-set")))
-                    ),
+                        ),
             ),
             JsonObject(
                 source +
@@ -249,6 +312,25 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
         }.exceptionOrNull()
 
         assertIs<CancellationException>(thrown)
+    }
+
+    @Test
+    fun cancellationFromEveryCodecStageIsRethrownInsteadOfClassified() = runTest {
+        insertRaw(1, objectJson())
+
+        CodecStage.entries.forEach { stage ->
+            val cancellingRepository = SqlDelightActiveWorkoutRuntimeRepository(
+                database = database,
+                nowEpochMs = { now },
+                codec = CancellingCodec(stage),
+            )
+
+            val thrown = runCatching {
+                cancellingRepository.load("profile-a", "routine-session-a")
+            }.exceptionOrNull()
+
+            assertIs<CancellationException>(thrown, stage.name)
+        }
     }
 
     private suspend fun assertRejected(expected: ActiveWorkoutRuntimeRejection) {
@@ -331,5 +413,56 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
             QueryResult.Value(Unit)
         }, 0)
         return value
+    }
+
+    private enum class CodecStage { PARSE, VERSION, DECODE }
+
+    private inner class CancellingCodec(
+        private val stage: CodecStage,
+    ) : ActiveWorkoutRuntimeJsonCodec {
+        override fun encode(document: ActiveWorkoutRuntimeDocument): String = json.encodeToString(ActiveWorkoutRuntimeDocument.serializer(), document)
+
+        override fun parseObject(payload: String): JsonObject? {
+            if (stage == CodecStage.PARSE) throw CancellationException("cancel during parse")
+            return objectJson()
+        }
+
+        override fun version(document: JsonObject): Int? {
+            if (stage == CodecStage.VERSION) throw CancellationException("cancel during version")
+            return ActiveWorkoutRuntimeDocument.CURRENT_VERSION
+        }
+
+        override fun decode(payload: String): ActiveWorkoutRuntimeDocument {
+            if (stage == CodecStage.DECODE) throw CancellationException("cancel during decode")
+            return runtime()
+        }
+    }
+
+    private class CountingSqlDriver(
+        private val delegate: SqlDriver,
+    ) : SqlDriver by delegate {
+        val writeStatements = mutableListOf<String>()
+        val readStatements = mutableListOf<String>()
+
+        override fun execute(
+            identifier: Int?,
+            sql: String,
+            parameters: Int,
+            binders: (SqlPreparedStatement.() -> Unit)?,
+        ): QueryResult<Long> {
+            writeStatements += sql
+            return delegate.execute(identifier, sql, parameters, binders)
+        }
+
+        override fun <R> executeQuery(
+            identifier: Int?,
+            sql: String,
+            mapper: (SqlCursor) -> QueryResult<R>,
+            parameters: Int,
+            binders: (SqlPreparedStatement.() -> Unit)?,
+        ): QueryResult<R> {
+            readStatements += sql
+            return delegate.executeQuery(identifier, sql, mapper, parameters, binders)
+        }
     }
 }

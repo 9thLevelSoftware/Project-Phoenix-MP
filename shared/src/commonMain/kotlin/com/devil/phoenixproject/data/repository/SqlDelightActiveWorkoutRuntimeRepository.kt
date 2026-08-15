@@ -13,11 +13,17 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
-class SqlDelightActiveWorkoutRuntimeRepository(
+class SqlDelightActiveWorkoutRuntimeRepository internal constructor(
     database: VitruvianDatabase,
-    private val nowEpochMs: () -> Long = ::currentTimeMillis,
+    private val nowEpochMs: () -> Long,
+    private val codec: ActiveWorkoutRuntimeJsonCodec,
 ) : ActiveWorkoutRuntimeRepository {
     private val queries = database.vitruvianDatabaseQueries
+
+    constructor(
+        database: VitruvianDatabase,
+        nowEpochMs: () -> Long = ::currentTimeMillis,
+    ) : this(database, nowEpochMs, StrictActiveWorkoutRuntimeJsonCodec)
 
     override suspend fun load(
         profileId: String,
@@ -39,7 +45,7 @@ class SqlDelightActiveWorkoutRuntimeRepository(
             profile_id = profileId,
             routine_session_id = routineSessionId,
             document_version = document.version.toLong(),
-            runtime_json = codec.encodeToString(document),
+            runtime_json = codec.encode(document),
             updated_at_epoch_ms = nowEpochMs(),
         )
         Unit
@@ -52,7 +58,7 @@ class SqlDelightActiveWorkoutRuntimeRepository(
 
     private fun decode(storedVersion: Long, payload: String): ActiveWorkoutRuntimeLoadResult {
         val parsed = try {
-            codec.parseToJsonElement(payload) as? JsonObject
+            codec.parseObject(payload)
                 ?: return ActiveWorkoutRuntimeLoadResult.Rejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -61,7 +67,7 @@ class SqlDelightActiveWorkoutRuntimeRepository(
         }
 
         val payloadVersion = try {
-            parsed["version"]?.jsonPrimitive?.intOrNull
+            codec.version(parsed)
                 ?: return ActiveWorkoutRuntimeLoadResult.Rejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
         } catch (cancellation: CancellationException) {
             throw cancellation
@@ -77,21 +83,36 @@ class SqlDelightActiveWorkoutRuntimeRepository(
         }
 
         return try {
-            ActiveWorkoutRuntimeLoadResult.Loaded(codec.decodeFromString(payload))
+            ActiveWorkoutRuntimeLoadResult.Loaded(codec.decode(payload))
         } catch (cancellation: CancellationException) {
             throw cancellation
         } catch (_: Exception) {
             ActiveWorkoutRuntimeLoadResult.Rejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
         }
     }
+}
 
-    private companion object {
-        val codec = Json {
-            ignoreUnknownKeys = false
-            isLenient = false
-            coerceInputValues = false
-            encodeDefaults = true
-            explicitNulls = true
-        }
+internal interface ActiveWorkoutRuntimeJsonCodec {
+    fun encode(document: ActiveWorkoutRuntimeDocument): String
+    fun parseObject(payload: String): JsonObject?
+    fun version(document: JsonObject): Int?
+    fun decode(payload: String): ActiveWorkoutRuntimeDocument
+}
+
+private object StrictActiveWorkoutRuntimeJsonCodec : ActiveWorkoutRuntimeJsonCodec {
+    private val json = Json {
+        ignoreUnknownKeys = false
+        isLenient = false
+        coerceInputValues = false
+        encodeDefaults = true
+        explicitNulls = true
     }
+
+    override fun encode(document: ActiveWorkoutRuntimeDocument): String = json.encodeToString(document)
+
+    override fun parseObject(payload: String): JsonObject? = json.parseToJsonElement(payload) as? JsonObject
+
+    override fun version(document: JsonObject): Int? = document["version"]?.jsonPrimitive?.intOrNull
+
+    override fun decode(payload: String): ActiveWorkoutRuntimeDocument = json.decodeFromString(payload)
 }

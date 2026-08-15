@@ -721,6 +721,16 @@ class SchemaParityTest {
         assertEquals(null, queryScalar(driver, "SELECT routine_exercise_id FROM CompletedSet WHERE id = 'cs-pre-attempt-identity'"))
         assertEquals("1", queryScalar(driver, "SELECT CAST(attempt_number AS TEXT) FROM CompletedSet WHERE id = 'cs-pre-attempt-identity'"))
         assertEquals(
+            linkedMapOf(
+                "profile_id" to "TEXT",
+                "routine_session_id" to "TEXT",
+                "document_version" to "INTEGER",
+                "runtime_json" to "TEXT",
+                "updated_at_epoch_ms" to "INTEGER",
+            ),
+            getColumns(driver, "ActiveWorkoutRuntime"),
+        )
+        assertEquals(
             listOf(
                 "profile_id",
                 "routine_session_id",
@@ -728,18 +738,80 @@ class SchemaParityTest {
                 "runtime_json",
                 "updated_at_epoch_ms",
             ),
-            getColumns(driver, "ActiveWorkoutRuntime").keys.toList(),
+            getNotNullColumns(driver, "ActiveWorkoutRuntime"),
         )
         assertEquals(
             listOf("profile_id", "routine_session_id"),
             getPrimaryKeyColumns(driver, "ActiveWorkoutRuntime"),
         )
+        assertEquals(0, getForeignKeyCount(driver, "ActiveWorkoutRuntime"))
+        assertEquals(emptyList(), getUserIndexes(driver, "ActiveWorkoutRuntime"))
+    }
+
+    @Test
+    fun `resilient migration 44 independently converges every meaningful partial state`() {
+        val scenarios = listOf(
+            PartialMigration44State(
+                name = "routine identity column already present and runtime missing",
+                preAppliedSql = listOf("ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT"),
+                expectedSuccess = listOf(false, true, true),
+            ),
+            PartialMigration44State(
+                name = "attempt column already present and runtime missing",
+                preAppliedSql = listOf("ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1"),
+                expectedSuccess = listOf(true, false, true),
+            ),
+            PartialMigration44State(
+                name = "both attempt identity columns already present and runtime missing",
+                preAppliedSql = listOf(
+                    "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT",
+                    "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1",
+                ),
+                expectedSuccess = listOf(false, false, true),
+            ),
+            PartialMigration44State(
+                name = "both attempt identity columns and runtime table already present",
+                preAppliedSql = listOf(
+                    "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT",
+                    "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1",
+                    CREATE_ACTIVE_RUNTIME_SQL,
+                ),
+                expectedSuccess = listOf(false, false, false),
+            ),
+        )
+
+        scenarios.forEachIndexed { index, scenario ->
+            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            buildSchemaAtVersion(driver, 44)
+            scenario.preAppliedSql.forEach { driver.execute(null, it, 0) }
+            val completedSetId = "cs-resilient-44-$index"
+            insertHistoricalCompletedSet(driver, completedSetId)
+
+            val results = applyMigrationResilient(driver, 44)
+
+            assertEquals(3, results.size, scenario.name)
+            assertEquals(scenario.expectedSuccess, results.map { it.success }, scenario.name)
+            assertEquals(listOf(true, true, true), results.map { it.recoverable }, scenario.name)
+            assertEquals(null, queryScalar(driver, "SELECT routine_exercise_id FROM CompletedSet WHERE id = '$completedSetId'"), scenario.name)
+            assertEquals("1", queryScalar(driver, "SELECT CAST(attempt_number AS TEXT) FROM CompletedSet WHERE id = '$completedSetId'"), scenario.name)
+            assertActiveRuntimeShape(driver, scenario.name)
+        }
     }
 
     // ==================== HELPERS ====================
 
     companion object {
         private const val EXPECTED_SCHEMA_VERSION = 45L
+        private val CREATE_ACTIVE_RUNTIME_SQL = """
+            CREATE TABLE ActiveWorkoutRuntime (
+                profile_id TEXT NOT NULL,
+                routine_session_id TEXT NOT NULL,
+                document_version INTEGER NOT NULL,
+                runtime_json TEXT NOT NULL,
+                updated_at_epoch_ms INTEGER NOT NULL,
+                PRIMARY KEY (profile_id, routine_session_id)
+            )
+        """.trimIndent()
         private val CANONICAL_UUID_REGEX = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
         /**
@@ -1003,6 +1075,93 @@ class SchemaParityTest {
         )
         return columns.sortedBy { it.first }.map { it.second }
     }
+
+    private fun getNotNullColumns(driver: SqlDriver, table: String): List<String> {
+        val columns = mutableListOf<String>()
+        driver.executeQuery(
+            null,
+            "PRAGMA table_info($table)",
+            { cursor ->
+                while (cursor.next().value) {
+                    if (cursor.getLong(3) == 1L) columns += cursor.getString(1).orEmpty()
+                }
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        return columns
+    }
+
+    private fun getForeignKeyCount(driver: SqlDriver, table: String): Int {
+        var count = 0
+        driver.executeQuery(
+            null,
+            "PRAGMA foreign_key_list($table)",
+            { cursor ->
+                while (cursor.next().value) count++
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        return count
+    }
+
+    private fun getUserIndexes(driver: SqlDriver, table: String): List<String> {
+        val indexes = mutableListOf<String>()
+        driver.executeQuery(
+            null,
+            "PRAGMA index_list($table)",
+            { cursor ->
+                while (cursor.next().value) {
+                    val name = cursor.getString(1).orEmpty()
+                    if (!name.startsWith("sqlite_")) indexes += name
+                }
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        return indexes
+    }
+
+    private fun insertHistoricalCompletedSet(driver: SqlDriver, id: String) {
+        driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u-$id','U',0,1,1)", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r-$id','R',1)", 0)
+        driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re-$id','r-$id','Bench','Chest',0,40.0)", 0)
+        driver.execute(null, "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('s-$id',1,'OldSchool',10,40.0)", 0)
+        driver.execute(
+            null,
+            """
+            INSERT INTO CompletedSet (id, session_id, set_number, set_type, actual_reps, actual_weight_kg, is_pr, completed_at, set_end_reason)
+            VALUES ('$id', 's-$id', 0, 'STANDARD', 8, 40.0, 0, 1000, 'TARGET_REPS_REACHED')
+            """.trimIndent(),
+            0,
+        )
+    }
+
+    private fun assertActiveRuntimeShape(driver: SqlDriver, scenario: String) {
+        assertEquals(
+            linkedMapOf(
+                "profile_id" to "TEXT",
+                "routine_session_id" to "TEXT",
+                "document_version" to "INTEGER",
+                "runtime_json" to "TEXT",
+                "updated_at_epoch_ms" to "INTEGER",
+            ),
+            getColumns(driver, "ActiveWorkoutRuntime"),
+            scenario,
+        )
+        assertEquals(
+            listOf("profile_id", "routine_session_id"),
+            getPrimaryKeyColumns(driver, "ActiveWorkoutRuntime"),
+            scenario,
+        )
+    }
+
+    private data class PartialMigration44State(
+        val name: String,
+        val preAppliedSql: List<String>,
+        val expectedSuccess: List<Boolean>,
+    )
 
     private fun getIndexes(driver: SqlDriver): List<String> {
         val indexes = mutableListOf<String>()
