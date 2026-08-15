@@ -84,6 +84,12 @@ class WorkoutCoordinator(
         /** Minimum position range to consider "meaningful" for auto-stop detection (in mm) */
         const val MIN_RANGE_THRESHOLD = 50f
 
+        /**
+         * Minimum cable travel that proves deliberate progress while the ROM-fraction
+         * stall countdown is armed. Five millimetres filters ordinary sample noise.
+         */
+        const val ROM_FRACTION_STALL_PROGRESS_THRESHOLD_MM = 5f
+
         /** Issue #204: Startup grace period for AMRAP exercises (ms)
          * Prevents auto-stop from triggering before user has time to grab handles
          * when transitioning from a normal rep-based exercise to an AMRAP exercise.
@@ -438,6 +444,12 @@ class WorkoutCoordinator(
     @Volatile
     internal var stallArmedByRomFraction = false
 
+    // Position at which the current ROM-fraction countdown was armed or last
+    // refreshed. A later qualifying sample must travel far enough from this
+    // anchor to prove slow but deliberate cable progress.
+    @Volatile
+    internal var romFractionStallAnchorPosition: Float? = null
+
     // Issue #673 PR 2: ROM-fraction stall detection state.
     // Geometric signal: when velocity is in the dead band (2.5–10 mm/s) AND
     // the cable position is mid-ROM (30–80% of observed range), the user is
@@ -477,6 +489,7 @@ class WorkoutCoordinator(
         isCurrentlyStalled = false
         stallArmedByDeload = false
         stallArmedByRomFraction = false
+        romFractionStallAnchorPosition = null
         // Issue #673 PR 2: clear ROM-fraction stall state on set start/reset
         romRangeTop = null
         romRangeBottom = null

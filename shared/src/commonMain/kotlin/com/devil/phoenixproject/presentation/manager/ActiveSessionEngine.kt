@@ -74,6 +74,7 @@ import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.WorkoutCommandValidator
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -658,6 +659,7 @@ class ActiveSessionEngine(
                             coordinator.isCurrentlyStalled = true
                             coordinator.stallArmedByDeload = true
                             coordinator.stallArmedByRomFraction = false
+                            coordinator.romFractionStallAnchorPosition = null
                             Logger.d("Auto-stop stall timer STARTED via DELOAD_OCCURRED flag")
                         } else if (coordinator.stallStartTime != null && !inGrace) {
                             // F4: a real deload is the stronger signal — upgrade a
@@ -665,6 +667,7 @@ class ActiveSessionEngine(
                             // (position -> 0) don't cancel it via the racked-handles check.
                             coordinator.stallArmedByDeload = true
                             coordinator.stallArmedByRomFraction = false
+                            coordinator.romFractionStallAnchorPosition = null
                         } else if (inGrace) {
                             Logger.d("DELOAD_OCCURRED ignored - in AMRAP startup grace period")
                         }
@@ -724,7 +727,20 @@ class ActiveSessionEngine(
                             coordinator.isCurrentlyStalled = true
                             coordinator.stallArmedByDeload = false
                             coordinator.stallArmedByRomFraction = true
+                            coordinator.romFractionStallAnchorPosition = pos
                             Logger.d("Auto-stop stall timer STARTED via ROM-fraction signal (fraction=$fraction, velocity=$velocity)")
+                        } else if (coordinator.stallArmedByRomFraction && !coordinator.stallArmedByDeload) {
+                            val anchor = coordinator.romFractionStallAnchorPosition
+                            if (anchor == null) {
+                                coordinator.romFractionStallAnchorPosition = pos
+                            } else if (abs(pos - anchor) >= WorkoutCoordinator.ROM_FRACTION_STALL_PROGRESS_THRESHOLD_MM) {
+                                coordinator.stallStartTime = currentTimeMillis()
+                                coordinator.romFractionStallAnchorPosition = pos
+                                Logger.d(
+                                    "Auto-stop stall timer RESET via ROM-fraction progress " +
+                                        "(position=$pos, anchor=$anchor, velocity=$velocity)",
+                                )
+                            }
                         }
                     } else if (
                         coordinator.stallStartTime != null &&
@@ -1254,6 +1270,7 @@ class ActiveSessionEngine(
         coordinator.isCurrentlyStalled = false
         coordinator.stallArmedByDeload = false
         coordinator.stallArmedByRomFraction = false
+        coordinator.romFractionStallAnchorPosition = null
         if (coordinator.autoStopStartTime == null && !coordinator.autoStopTriggered) {
             coordinator._autoStopState.value = AutoStopUiState()
         }
@@ -1815,6 +1832,7 @@ class ActiveSessionEngine(
                 coordinator.isCurrentlyStalled = true
                 coordinator.stallArmedByDeload = false
                 coordinator.stallArmedByRomFraction = false
+                coordinator.romFractionStallAnchorPosition = null
             } else if (isDefinitelyMoving && coordinator.stallStartTime != null) {
                 resetStallTimer()
             }

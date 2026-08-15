@@ -1084,6 +1084,77 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `Issue 697 ROM fraction progress resets a backdated stall timer`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepareRomFractionStallHarness(harness) { advanceUntilIdle() }
+
+            // Establish a ROM-fraction countdown at 50% ROM, then make its
+            // deadline intentionally stale. A 10 mm move at 5 mm/s remains in
+            // the dead band but is deliberate cable progress, not a stall.
+            harness.fakeBleRepo.emitMachineStatusEvent(
+                MachineStatusEvent(harness.nowMs + 2L, SampleStatus(0), position = 50f, velocity = 5f),
+            )
+            advanceUntilIdle()
+            assertNotNull(harness.dwsm.coordinator.stallStartTime)
+
+            val expiredTimer = currentTimeMillis() - 6_000L
+            harness.dwsm.coordinator.stallStartTime = expiredTimer
+            harness.fakeBleRepo.emitMachineStatusEvent(
+                MachineStatusEvent(harness.nowMs + 3L, SampleStatus(0), position = 60f, velocity = 5f),
+            )
+            advanceUntilIdle()
+
+            val refreshedTimer = assertNotNull(harness.dwsm.coordinator.stallStartTime)
+            assertTrue(
+                refreshedTimer > expiredTimer,
+                "A 10 mm in-window ROM advance at 5 mm/s must reset the stall countdown",
+            )
+            assertTrue(harness.dwsm.coordinator.stallArmedByRomFraction)
+            assertFalse(harness.dwsm.coordinator.stallArmedByDeload)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Issue 697 out of window status does not clear a deload upgraded ROM timer`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepareRomFractionStallHarness(harness) { advanceUntilIdle() }
+
+            harness.fakeBleRepo.emitMachineStatusEvent(
+                MachineStatusEvent(harness.nowMs + 2L, SampleStatus(0), position = 50f, velocity = 5f),
+            )
+            advanceUntilIdle()
+            val romTimer = assertNotNull(harness.dwsm.coordinator.stallStartTime)
+            assertTrue(harness.dwsm.coordinator.stallArmedByRomFraction)
+
+            // DELOAD is a stronger event and now owns the existing timer.
+            harness.fakeBleRepo.emitDeloadOccurred()
+            advanceUntilIdle()
+            assertTrue(harness.dwsm.coordinator.stallArmedByDeload)
+            assertFalse(harness.dwsm.coordinator.stallArmedByRomFraction)
+
+            // 90% ROM leaves the ROM-fraction window. It must not clear the
+            // timer after DELOAD has taken ownership.
+            harness.fakeBleRepo.emitMachineStatusEvent(
+                MachineStatusEvent(harness.nowMs + 3L, SampleStatus(0), position = 90f, velocity = 5f),
+            )
+            advanceUntilIdle()
+
+            assertEquals(
+                romTimer,
+                harness.dwsm.coordinator.stallStartTime,
+                "An out-of-window status sample must not clear a DELOAD-owned timer",
+            )
+            assertTrue(harness.dwsm.coordinator.stallArmedByDeload)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `Issue 673 completed working rep cancels ROM fraction stall timer`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
