@@ -159,7 +159,7 @@ data class CycleDayCompletionEvent(
  * This class wires the sub-managers together and provides the public API consumed by MainViewModel.
  * After Phase 2 decomposition, this is a thin delegation layer (~300 lines).
  */
-class DefaultWorkoutSessionManager internal constructor(
+class DefaultWorkoutSessionManager(
     private val bleRepository: BleRepository,
     private val workoutRepository: WorkoutRepository,
     private val exerciseRepository: ExerciseRepository,

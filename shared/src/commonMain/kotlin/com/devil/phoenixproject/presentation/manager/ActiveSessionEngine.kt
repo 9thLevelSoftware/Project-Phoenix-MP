@@ -96,6 +96,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -108,6 +109,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
@@ -156,6 +158,23 @@ private class ExecutionBiomechanicsContext(
     var consecutiveThresholdReps: Int = 0,
 )
 
+private data class PendingTeardownReadyContinuation(
+    val lease: ExecutionLease,
+    val callback: () -> Unit,
+)
+
+private data class PersistedRestTimerOwner(
+    val transitionId: String,
+    val sourceExecutionId: String,
+    val job: Job,
+)
+
+private data class PersistedRestTimerClaim(
+    val deadlineEpochMs: Long,
+    val originalDurationSeconds: Int,
+    val previousJob: Job?,
+)
+
 /**
  * Handles all workout lifecycle logic: start/stop, rep processing, auto-stop,
  * BLE commands, rest timer, session persistence, weight adjustment, Just Lift,
@@ -170,7 +189,7 @@ private class ExecutionBiomechanicsContext(
  *
  * Scope: Receives the SAME CoroutineScope as DWSM for TestScope compatibility.
  */
-class ActiveSessionEngine internal constructor(
+class ActiveSessionEngine(
     val coordinator: WorkoutCoordinator,
     private val bleRepository: BleRepository,
     private val workoutRepository: WorkoutRepository,
@@ -221,6 +240,7 @@ class ActiveSessionEngine internal constructor(
     private var executionContext: WorkoutExecutionContext? = null
     private val bodyweightCompletionGate = BodyweightCompletionGate()
     private val biomechanicsContext = atomic<ExecutionBiomechanicsContext?>(null)
+    private val pendingTeardownReadyContinuation = atomic<PendingTeardownReadyContinuation?>(null)
     private val exitSnapshotStore = WorkoutExitSnapshotStore()
     private val restTransitionMutex = Mutex()
     private var activeRuntimeDocument: ActiveWorkoutRuntimeDocument? = null
@@ -232,7 +252,14 @@ class ActiveSessionEngine internal constructor(
         val cycleId: String?,
         val cycleDayNumber: Int?,
     )
+    private data class PendingTransitionNavigation(
+        val transitionId: String,
+        val sourceExecutionId: String,
+        val result: CompletableDeferred<CachedTransitionNavigation?>,
+    )
     private var cachedTransitionNavigation: CachedTransitionNavigation? = null
+    private var pendingTransitionNavigation: PendingTransitionNavigation? = null
+    private var persistedRestTimerOwner: PersistedRestTimerOwner? = null
 
     /**
      * Apply a UI rest action only after verifying the current lease, full routine
@@ -318,6 +345,7 @@ class ActiveSessionEngine internal constructor(
 
     private fun consumeNormalTransitionAndDispatch(plan: RestTransitionPlan.NormalAdvance) {
         scope.launch {
+            val cachedNavigation = resolveNavigationOnce(plan) ?: return@launch
             val consumed = restTransitionMutex.withLock {
                 val lease = executionGuard.currentLease ?: return@withLock false
                 val document = activeRuntimeDocument ?: return@withLock false
@@ -344,18 +372,19 @@ class ActiveSessionEngine internal constructor(
             }
             if (consumed) {
                 afterDurableRestPlanClearForTest?.invoke()
-                dispatchNormalAdvance(plan)
+                dispatchNormalAdvance(plan, cachedNavigation)
             }
         }
     }
 
-    private fun dispatchNormalAdvance(plan: RestTransitionPlan.NormalAdvance) {
+    private fun dispatchNormalAdvance(
+        plan: RestTransitionPlan.NormalAdvance,
+        cachedNavigation: CachedTransitionNavigation,
+    ) {
         val lease = executionGuard.currentLease ?: return
         if (plan.sourceExecutionId != lease.executionId.toString()) return
         if (coordinator._restTransitionPlan.value != null) return
-        val cachedNavigation = cachedTransitionNavigation
-            ?.takeIf { it.transitionId == plan.transitionId && it.sourceExecutionId == plan.sourceExecutionId }
-            ?: return
+        if (cachedNavigation.transitionId != plan.transitionId || cachedNavigation.sourceExecutionId != plan.sourceExecutionId) return
         coordinator._isRestPaused.value = false
         coordinator.restTimerJob?.cancel()
         coordinator.restTimerJob = null
@@ -367,23 +396,57 @@ class ActiveSessionEngine internal constructor(
     }
 
     /** Resolve exactly once, only after the transition plan has been durably installed. */
-    private fun resolveNavigationOnce(plan: RestTransitionPlan.NormalAdvance): CachedTransitionNavigation? {
-        cachedTransitionNavigation
-            ?.takeIf { it.transitionId == plan.transitionId && it.sourceExecutionId == plan.sourceExecutionId }
-            ?.let { return it }
-        val routine = coordinator._loadedRoutine.value ?: return null
-        val nextStep = flowDelegate?.getNextStep(
-            routine,
-            plan.sourceCoordinates.exerciseIndex,
-            plan.sourceCoordinates.setIndex,
-        )
-        return CachedTransitionNavigation(
-            transitionId = plan.transitionId,
-            sourceExecutionId = plan.sourceExecutionId,
-            nextStep = nextStep,
-            cycleId = coordinator.activeCycleId,
-            cycleDayNumber = coordinator.activeCycleDayNumber,
-        ).also { cachedTransitionNavigation = it }
+    private suspend fun resolveNavigationOnce(plan: RestTransitionPlan.NormalAdvance): CachedTransitionNavigation? {
+        var ownsResolution = false
+        val pending = restTransitionMutex.withLock {
+            cachedTransitionNavigation
+                ?.takeIf { it.transitionId == plan.transitionId && it.sourceExecutionId == plan.sourceExecutionId }
+                ?.let { return it }
+            pendingTransitionNavigation
+                ?.takeIf { it.transitionId == plan.transitionId && it.sourceExecutionId == plan.sourceExecutionId }
+                ?: PendingTransitionNavigation(
+                    transitionId = plan.transitionId,
+                    sourceExecutionId = plan.sourceExecutionId,
+                    result = CompletableDeferred(),
+                ).also {
+                    pendingTransitionNavigation = it
+                    ownsResolution = true
+                }
+        }
+        if (!ownsResolution) return pending.result.await()
+
+        val resolved = try {
+            beforeRestTransitionNavigationResolutionForTest?.invoke()
+            coordinator._loadedRoutine.value?.let { routine ->
+                CachedTransitionNavigation(
+                    transitionId = plan.transitionId,
+                    sourceExecutionId = plan.sourceExecutionId,
+                    nextStep = flowDelegate?.getNextStep(
+                        routine,
+                        plan.sourceCoordinates.exerciseIndex,
+                        plan.sourceCoordinates.setIndex,
+                    ),
+                    cycleId = coordinator.activeCycleId,
+                    cycleDayNumber = coordinator.activeCycleDayNumber,
+                )
+            }
+        } catch (error: Throwable) {
+            withContext(NonCancellable) {
+                restTransitionMutex.withLock {
+                    if (pendingTransitionNavigation === pending) pendingTransitionNavigation = null
+                    pending.result.completeExceptionally(error)
+                }
+            }
+            throw error
+        }
+        restTransitionMutex.withLock {
+            if (pendingTransitionNavigation === pending) {
+                if (resolved != null) cachedTransitionNavigation = resolved
+                pendingTransitionNavigation = null
+            }
+            pending.result.complete(resolved)
+        }
+        return pending.result.await()
     }
 
     private fun hasRestTransitionAuthority(
@@ -436,7 +499,10 @@ class ActiveSessionEngine internal constructor(
 
     internal var completionJobAttachCountForTest: Int = 0
         private set
+    internal var lastInitialRestPlanInstallResultForTest: InitialRestPlanInstallResult? = null
+        private set
     internal var afterDurableRestPlanClearForTest: (suspend () -> Unit)? = null
+    internal var beforeRestTransitionNavigationResolutionForTest: (suspend () -> Unit)? = null
 
     private val dangerZoneCountdownGate = DangerZoneCountdownGate()
 
@@ -588,13 +654,16 @@ class ActiveSessionEngine internal constructor(
         }
         if (!executionGuard.beginTeardown(lease, attempt)) return
 
-        launchMachineTeardownReset(lease, reason, afterReady)
+        pendingTeardownReadyContinuation.value = afterReady?.let {
+            PendingTeardownReadyContinuation(lease, it)
+        }
+
+        launchMachineTeardownReset(lease, reason)
     }
 
     private fun launchMachineTeardownReset(
         lease: ExecutionLease,
         reason: TeardownReason,
-        afterReady: (() -> Unit)? = null,
     ) {
         val job = scope.launch(start = CoroutineStart.LAZY) {
             val startedAt = elapsedRealtimeProvider()
@@ -620,13 +689,21 @@ class ActiveSessionEngine internal constructor(
             if (failureReason != null) {
                 executionGuard.markRecoveryRequired(lease, failureReason)
             } else if (executionGuard.markTeardownReady(lease) && executionGuard.isCurrent(lease)) {
-                afterReady?.invoke()
+                takeTeardownReadyContinuation(lease)?.invoke()
             }
         }
         if (executionGuard.attachTeardownJob(lease, job)) {
             job.start()
         } else {
             job.cancel()
+        }
+    }
+
+    private fun takeTeardownReadyContinuation(lease: ExecutionLease): (() -> Unit)? {
+        while (true) {
+            val pending = pendingTeardownReadyContinuation.value ?: return null
+            if (pending.lease != lease) return null
+            if (pendingTeardownReadyContinuation.compareAndSet(pending, null)) return pending.callback
         }
     }
 
@@ -5424,7 +5501,10 @@ class ActiveSessionEngine internal constructor(
                     ?.getOrNull(identity.exerciseIndex)
                     ?.getRestForSet(identity.setIndex)
                     ?: return@launchCompletionJob
-                val plan = installInitialRestPlan(completion, restDuration)
+                val plan = when (val result = installInitialRestPlan(completion, restDuration)) {
+                    is InitialRestPlanInstallResult.Installed -> result.plan
+                    else -> null
+                }
                 if (plan is RestTransitionPlan.UnresolvedDropOffer) {
                     startRestTimer(completion)
                 }
@@ -5433,11 +5513,6 @@ class ActiveSessionEngine internal constructor(
             if (!hasCurrentAuthority(lease, "completion_resume_after_teardown")) return@launchCompletionJob
             val params = coordinator._workoutParameters.value
             val isJustLift = params.isJustLift
-            // An eligible stall owns the visible Resting state before teardown is
-            // ready.  The post-ready bookkeeping must never replace that offer
-            // with SetSummary or schedule an ordinary successor.
-            val preserveUnresolvedResting =
-                coordinator._restTransitionPlan.value is RestTransitionPlan.UnresolvedDropOffer
 
             Logger.d("handleSetCompletion: isJustLift=$isJustLift")
 
@@ -5575,7 +5650,7 @@ class ActiveSessionEngine internal constructor(
                     is RestTransitionPlan.Declined -> persistedPlan.normalAdvance
                     else -> null
                 }
-                val cachedNavigation = normalPlan?.let(::resolveNavigationOnce)
+                val cachedNavigation = if (normalPlan != null) resolveNavigationOnce(normalPlan) else null
                 if (cachedNavigation != null) {
                     updateWeightRecommendationForCompletedSet(
                         params = params,
@@ -5613,9 +5688,22 @@ class ActiveSessionEngine internal constructor(
 
             val effectiveSkipSummary = skipSummary
 
+            // Rest actions can be selected while RESET is still in flight. Read the
+            // final durable plan and its visible state together under the transition
+            // mutex immediately before any post-Ready presentation write.
+            val preservePlanOwnedResting = restTransitionMutex.withLock {
+                val plan = coordinator._restTransitionPlan.value
+                val document = activeRuntimeDocument
+                coordinator._workoutState.value is WorkoutState.Resting &&
+                    plan != null &&
+                    plan !is RestTransitionPlan.NormalAdvance &&
+                    document != null &&
+                    hasRestTransitionAuthority(document, plan, lease)
+            }
+
             Logger.d("handleSetCompletion: summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, wasBodyweight=$wasBodyweight, effectiveSkipSummary=$effectiveSkipSummary, isJustLift=$isJustLift, isAMRAP=${params.isAMRAP}")
 
-            if (!effectiveSkipSummary && !preserveUnresolvedResting) {
+            if (!effectiveSkipSummary && !preservePlanOwnedResting) {
                 Logger.d("handleSetCompletion: Setting state to SetSummary (effectiveSkipSummary=false)")
                 val summaryPublished = executionGuard.commitIfCurrent(lease) {
                     coordinator._workoutState.value = summary
@@ -5625,7 +5713,7 @@ class ActiveSessionEngine internal constructor(
                 Logger.d("handleSetCompletion: Skipping SetSummary state (effectiveSkipSummary=true, wasBodyweight=$wasBodyweight)")
             }
 
-            if (preserveUnresolvedResting) return@launchCompletionJob
+            if (preservePlanOwnedResting) return@launchCompletionJob
 
             if (isJustLift) {
                 Logger.d("Just Lift: IMMEDIATE reset for next set (while showing summary)")
@@ -5758,6 +5846,17 @@ class ActiveSessionEngine internal constructor(
         return computeRemainingSeconds(deadline)
     }
 
+    private fun computeEpochRemainingSeconds(deadlineEpochMs: Long): Int {
+        val remainingMs = deadlineEpochMs - wallClockMillisProvider()
+        if (remainingMs <= 0L) return 0
+        return ((remainingMs + 999L) / 1_000L).toInt()
+    }
+
+    private fun armRestDeadlineFromEpoch(deadlineEpochMs: Long) {
+        val remainingMs = (deadlineEpochMs - wallClockMillisProvider()).coerceAtLeast(0L)
+        coordinator.restDeadlineElapsedRealtimeMs = elapsedRealtimeProvider() + remainingMs
+    }
+
     private fun armJustLiftRestDeadline(
         remainingSeconds: Int,
         nowElapsedRealtimeMs: Long = elapsedRealtimeProvider(),
@@ -5857,9 +5956,7 @@ class ActiveSessionEngine internal constructor(
         completion: SetExecutionCompletion? = null,
     ) {
         if (!hasExpectedAuthority(lease, "rest_timer_start")) return
-        coordinator.restTimerJob?.cancel()
-
-        coordinator.restTimerJob = scope.launch {
+        val timerJob = scope.launch(start = CoroutineStart.LAZY) {
             if (!hasExpectedAuthority(lease, "rest_timer_launch")) return@launch
             val timerJob = coroutineContext[kotlinx.coroutines.Job]
             val routine = coordinator._loadedRoutine.value
@@ -5871,17 +5968,29 @@ class ActiveSessionEngine internal constructor(
             // Capture a normal transition from immutable completion coordinates before any
             // navigation lookup. The later durable runtime installation owns publication.
             val restDuration = currentExercise?.getRestForSet(completedSetIndex) ?: 90
-            val installedPlan = completion?.routineIdentity?.let {
+            val installResult = completion?.routineIdentity?.let {
                 installInitialRestPlan(completion, restDuration)
             }
-            if (completion?.routineIdentity != null && installedPlan == null) return@launch
+            val installedPlan = (installResult as? InitialRestPlanInstallResult.Installed)?.plan
+            if (completion?.routineIdentity != null && installResult !is InitialRestPlanInstallResult.Installed) {
+                return@launch
+            }
+            val persistedTimerClaim = if (installedPlan != null && completion != null && timerJob != null) {
+                claimPersistedRestTimer(completion, installedPlan, restDuration, timerJob)
+                    ?: return@launch
+            } else {
+                null
+            }
+            persistedTimerClaim?.previousJob
+                ?.takeIf { previous -> previous !== timerJob }
+                ?.cancel()
             val resolvedTransition = when (installedPlan) {
                 is RestTransitionPlan.NormalAdvance -> installedPlan
                 is RestTransitionPlan.Declined -> installedPlan.normalAdvance
                 else -> null
             }
             val deferredTransition = installedPlan != null && resolvedTransition == null
-            val cachedNavigation = resolvedTransition?.let(::resolveNavigationOnce)
+            val cachedNavigation = if (resolvedTransition != null) resolveNavigationOnce(resolvedTransition) else null
             val nextStep = when {
                 cachedNavigation != null -> cachedNavigation.nextStep
 
@@ -5995,10 +6104,18 @@ class ActiveSessionEngine internal constructor(
             }
 
             // Issue #297, #228: Initialize rest timer control state
-            coordinator._restOriginalDuration.value = restDuration
-            coordinator._restSecondsRemaining.value = restDuration
+            val initialRestDuration = persistedTimerClaim?.originalDurationSeconds ?: restDuration
+            val initialRemainingSeconds = persistedTimerClaim
+                ?.let { computeEpochRemainingSeconds(it.deadlineEpochMs) }
+                ?: restDuration
+            coordinator._restOriginalDuration.value = initialRestDuration
+            coordinator._restSecondsRemaining.value = initialRemainingSeconds
             coordinator._isRestPaused.value = false
-            armRestDeadline(restDuration)
+            if (persistedTimerClaim != null) {
+                armRestDeadlineFromEpoch(persistedTimerClaim.deadlineEpochMs)
+            } else {
+                armRestDeadline(restDuration)
+            }
 
             // Determine if this is a superset transition for UI display purposes.
             // This indicates we're moving between exercises in a superset group.
@@ -6009,7 +6126,7 @@ class ActiveSessionEngine internal constructor(
             // Emit Resting immediately so the UI timer starts without waiting on repository lookups.
             if (hasExpectedAuthority(lease, "rest_timer_initial_state")) {
                 coordinator._workoutState.value = WorkoutState.Resting(
-                    restSecondsRemaining = restDuration,
+                    restSecondsRemaining = initialRemainingSeconds,
                     nextExerciseName = initialNextName,
                     isLastExercise = isLastExerciseOverall,
                     currentSet = displaySetIndex,
@@ -6034,7 +6151,7 @@ class ActiveSessionEngine internal constructor(
                 }
             }
 
-            var lastRenderedSecond = restDuration + 1
+            var lastRenderedSecond = initialRemainingSeconds + 1
             var lastTickedSecond = -1
             var restEndingEmitted = false
 
@@ -6109,7 +6226,19 @@ class ActiveSessionEngine internal constructor(
                     delay(100)
                 }
             } finally {
-                if (coordinator.restTimerJob === timerJob) {
+                if (installedPlan != null && timerJob != null) {
+                    withContext(NonCancellable) {
+                        restTransitionMutex.withLock {
+                            if (persistedRestTimerOwner?.job === timerJob) {
+                                persistedRestTimerOwner = null
+                                if (coordinator.restTimerJob === timerJob) {
+                                    coordinator._isRestPaused.value = false
+                                    coordinator.restDeadlineElapsedRealtimeMs = null
+                                }
+                            }
+                        }
+                    }
+                } else if (coordinator.restTimerJob === timerJob) {
                     coordinator._isRestPaused.value = false
                     coordinator.restDeadlineElapsedRealtimeMs = null
                 }
@@ -6133,27 +6262,86 @@ class ActiveSessionEngine internal constructor(
                 }
             }
         }
+        if (completion?.routineIdentity == null) {
+            coordinator.restTimerJob?.cancel()
+            coordinator.restTimerJob = timerJob
+        }
+        timerJob.start()
+    }
+
+    private suspend fun claimPersistedRestTimer(
+        completion: SetExecutionCompletion,
+        plan: RestTransitionPlan,
+        restDurationSeconds: Int,
+        timerJob: Job,
+    ): PersistedRestTimerClaim? = restTransitionMutex.withLock {
+        if (!hasCompletionRestAuthority(completion)) return@withLock null
+        val document = activeRuntimeDocument ?: return@withLock null
+        if (!hasRestTransitionAuthority(document, plan, completion.lease)) return@withLock null
+
+        val owner = persistedRestTimerOwner
+        if (owner?.transitionId == plan.transitionId &&
+            owner.sourceExecutionId == plan.sourceExecutionId &&
+            owner.job.isActive
+        ) {
+            return@withLock null
+        }
+        if (document.isRestPaused) return@withLock null
+
+        val persistedDocument = if (document.restDeadlineEpochMs == null) {
+            val timerDocument = document.copy(
+                restDeadlineEpochMs = wallClockMillisProvider() + restDurationSeconds.coerceAtLeast(0) * 1_000L,
+                pausedRestRemainingSeconds = null,
+                isRestPaused = false,
+            )
+            if (!replaceRuntimeDocument(timerDocument)) return@withLock null
+            if (!hasCompletionRestAuthority(completion) ||
+                coordinator._restTransitionPlan.value != plan
+            ) {
+                return@withLock null
+            }
+            activeRuntimeDocument = timerDocument
+            timerDocument
+        } else {
+            document
+        }
+        val deadline = persistedDocument.restDeadlineEpochMs ?: return@withLock null
+        val previousJob = coordinator.restTimerJob
+        coordinator.restTimerJob = timerJob
+        persistedRestTimerOwner = PersistedRestTimerOwner(
+            transitionId = plan.transitionId,
+            sourceExecutionId = plan.sourceExecutionId,
+            job = timerJob,
+        )
+        PersistedRestTimerClaim(
+            deadlineEpochMs = deadline,
+            originalDurationSeconds = persistedDocument.originalRestDurationSeconds,
+            previousJob = previousJob,
+        )
     }
 
     private suspend fun installInitialRestPlan(
         completion: SetExecutionCompletion,
         restDurationSeconds: Int,
-    ): RestTransitionPlan? {
-        val identity = completion.routineIdentity ?: return null
-        return restTransitionMutex.withLock {
-            if (!hasCompletionRestAuthority(completion)) return@withLock null
+    ): InitialRestPlanInstallResult {
+        val identity = completion.routineIdentity
+            ?: return recordInitialRestPlanInstallResult(InitialRestPlanInstallResult.SourceRejected)
+        val result = restTransitionMutex.withLock {
+            if (!hasCompletionRestAuthority(completion)) {
+                return@withLock InitialRestPlanInstallResult.AuthorityRejected
+            }
             val existing = coordinator._restTransitionPlan.value
             if (existing != null &&
                 existing.sourceExecutionId == completion.lease.executionId.toString() &&
                 existing.logicalSetKey == identity.logicalSetKey
             ) {
-                return@withLock existing
+                return@withLock InitialRestPlanInstallResult.Installed(existing)
             }
 
             val sourceExercise = coordinator._loadedRoutine.value
                 ?.exercises
                 ?.getOrNull(identity.exerciseIndex)
-                ?: return@withLock null
+                ?: return@withLock InitialRestPlanInstallResult.SourceRejected
             val document = pendingInitialRestRuntimeDocument
                 ?.takeIf { pending ->
                     pending.profileId == identity.profileId &&
@@ -6171,16 +6359,43 @@ class ActiveSessionEngine internal constructor(
                     restDurationSeconds = restDurationSeconds,
                 ).also { pendingInitialRestRuntimeDocument = it }
             if (!replaceRuntimeDocument(document)) {
-                return@withLock null
+                return@withLock InitialRestPlanInstallResult.PersistenceFailure
             }
             if (!hasCompletionRestAuthority(completion)) {
                 pendingInitialRestRuntimeDocument = null
-                return@withLock null
+                return@withLock InitialRestPlanInstallResult.AuthorityRejected
             }
             pendingInitialRestRuntimeDocument = null
             activeRuntimeDocument = document
-            document.restTransitionPlan?.also { coordinator._restTransitionPlan.value = it }
+            val plan = document.restTransitionPlan
+                ?: return@withLock InitialRestPlanInstallResult.SourceRejected
+            coordinator._restTransitionPlan.value = plan
+            InitialRestPlanInstallResult.Installed(plan)
         }
+        return recordInitialRestPlanInstallResult(result)
+    }
+
+    internal suspend fun installInitialRestPlanForTest(
+        completion: SetExecutionCompletion,
+        restDurationSeconds: Int,
+    ): InitialRestPlanInstallResult = installInitialRestPlan(completion, restDurationSeconds)
+
+    private fun recordInitialRestPlanInstallResult(
+        result: InitialRestPlanInstallResult,
+    ): InitialRestPlanInstallResult {
+        lastInitialRestPlanInstallResultForTest = result
+        val reason = when (result) {
+            is InitialRestPlanInstallResult.Installed -> return result
+            InitialRestPlanInstallResult.PersistenceFailure -> "PERSISTENCE_FAILURE"
+            InitialRestPlanInstallResult.AuthorityRejected -> "AUTHORITY_REJECTED"
+            InitialRestPlanInstallResult.SourceRejected -> "SOURCE_REJECTED"
+        }
+        connectionLogRepository.warning(
+            LogEventType.WORKOUT_PERSISTENCE,
+            "Rest transition install failed",
+            details = "reason=$reason",
+        )
+        return result
     }
 
     private fun buildInitialRestRuntimeDocument(
@@ -6230,7 +6445,7 @@ class ActiveSessionEngine internal constructor(
             attemptStates = prior?.attemptStates.orEmpty()
                 .filterNot { it.logicalSetKey == identity.logicalSetKey } + attemptState,
             restTransitionPlan = buildRestTransitionPlan(normalAdvance, eligibility),
-            restDeadlineEpochMs = wallClockMillisProvider() + restDurationSeconds.coerceAtLeast(0) * 1_000L,
+            restDeadlineEpochMs = null,
             originalRestDurationSeconds = restDurationSeconds.coerceAtLeast(0),
         )
     }
@@ -6921,7 +7136,7 @@ class ActiveSessionEngine internal constructor(
         if (state is WorkoutState.Resting && state.restSecondsRemaining == 0) {
             val plan = coordinator._restTransitionPlan.value
             if (plan != null) {
-                if (plan is RestTransitionPlan.NormalAdvance || plan is RestTransitionPlan.Declined) {
+                if (plan is RestTransitionPlan.NormalAdvance) {
                     applyRestTransition(RestTransitionCommand.SkipRest(plan.actionIdentity()))
                 }
                 return

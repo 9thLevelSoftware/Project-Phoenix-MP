@@ -119,6 +119,16 @@ sealed interface RestTransitionPlan {
     }
 }
 
+internal sealed interface InitialRestPlanInstallResult {
+    data class Installed(val plan: RestTransitionPlan) : InitialRestPlanInstallResult
+
+    data object PersistenceFailure : InitialRestPlanInstallResult
+
+    data object AuthorityRejected : InitialRestPlanInstallResult
+
+    data object SourceRejected : InitialRestPlanInstallResult
+}
+
 @Serializable
 data class RestActionIdentity(
     val transitionId: String,

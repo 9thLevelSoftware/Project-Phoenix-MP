@@ -89,7 +89,10 @@ class FakeActiveWorkoutRuntimeRepository : ActiveWorkoutRuntimeRepository {
     private val documents = mutableMapOf<Pair<String, String>, ActiveWorkoutRuntimeDocument>()
     var failingReplaceCallsRemaining: Int = 0
     var replaceBlock: (suspend () -> Unit)? = null
+    var afterReplaceCommit: (suspend (ActiveWorkoutRuntimeDocument) -> Unit)? = null
     var cancellationOnNextReplace: CancellationException? = null
+
+    fun committedDocument(profileId: String, routineSessionId: String): ActiveWorkoutRuntimeDocument? = documents[profileId to routineSessionId]
 
     override suspend fun load(profileId: String, routineSessionId: String): ActiveWorkoutRuntimeLoadResult = documents[profileId to routineSessionId]
         ?.let(ActiveWorkoutRuntimeLoadResult::Loaded)
@@ -113,6 +116,7 @@ class FakeActiveWorkoutRuntimeRepository : ActiveWorkoutRuntimeRepository {
         }
         documents[profileId to routineSessionId] = document
         replaceEvents += "persisted"
+        afterReplaceCommit?.invoke(document)
     }
 
     override suspend fun delete(profileId: String, routineSessionId: String) {

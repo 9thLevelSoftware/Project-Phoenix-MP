@@ -120,7 +120,7 @@ private fun UserPreferences.toSettingsGlobalUiState() = SettingsGlobalUiState(
     language = language,
 )
 
-class MainViewModel internal constructor(
+class MainViewModel(
     private val bleRepository: BleRepository,
     private val workoutRepository: WorkoutRepository,
     val exerciseRepository: ExerciseRepository,

@@ -21,11 +21,11 @@ internal data class DropSetEligibilityRequest(
     val commandTemplate: WorkoutParameters,
 )
 
-internal class DropSetEligibilityPolicy(
+class DropSetEligibilityPolicy(
     private val featureGate: DropSetFeatureGate,
     private val candidateResolver: DropSetCandidateResolver,
 ) {
-    fun evaluate(request: DropSetEligibilityRequest): DropSetEligibilityResult {
+    internal fun evaluate(request: DropSetEligibilityRequest): DropSetEligibilityResult {
         if (!featureGate.isEnabled()) return ineligible(DropSetIneligibleReason.FEATURE_GATED)
 
         val completion = request.completion
@@ -82,15 +82,14 @@ internal class DropSetEligibilityPolicy(
         )
     }
 
-    private fun RoutineExecutionIdentity.matches(live: RoutineExecutionIdentity): Boolean =
-        profileId == live.profileId &&
-            routineId == live.routineId &&
-            routineSessionId == live.routineSessionId &&
-            routineExerciseId == live.routineExerciseId &&
-            logicalSetKey == live.logicalSetKey &&
-            exerciseIndex == live.exerciseIndex &&
-            setIndex == live.setIndex &&
-            (plannedSetId == null || plannedSetId == live.plannedSetId)
+    private fun RoutineExecutionIdentity.matches(live: RoutineExecutionIdentity): Boolean = profileId == live.profileId &&
+        routineId == live.routineId &&
+        routineSessionId == live.routineSessionId &&
+        routineExerciseId == live.routineExerciseId &&
+        logicalSetKey == live.logicalSetKey &&
+        exerciseIndex == live.exerciseIndex &&
+        setIndex == live.setIndex &&
+        (plannedSetId == null || plannedSetId == live.plannedSetId)
 
     private fun ineligible(reason: DropSetIneligibleReason) = DropSetEligibilityResult.Ineligible(reason)
 

@@ -1,7 +1,9 @@
 package com.devil.phoenixproject.presentation.manager
 
 import app.cash.turbine.test
+import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.HandleState
+import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BadgeCategory
@@ -2705,7 +2707,7 @@ class DWSMWorkoutLifecycleTest {
 
         val plan = assertIs<RestTransitionPlan.NormalAdvance>(harness.restTransitionPlan.value)
         assertEquals(sourceLease.executionId.toString(), plan.sourceExecutionId)
-        assertEquals(plan, harness.fakeActiveWorkoutRuntimeRepository.replacements.single().document.restTransitionPlan)
+        assertEquals(plan, harness.fakeActiveWorkoutRuntimeRepository.replacements.first().document.restTransitionPlan)
         assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
 
         harness.cleanup()
@@ -2743,7 +2745,7 @@ class DWSMWorkoutLifecycleTest {
         val unresolved = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
         assertEquals("transition-stall", unresolved.transitionId)
         assertEquals("offer-stall", unresolved.offerId)
-        assertEquals(unresolved, harness.fakeActiveWorkoutRuntimeRepository.replacements.single().document.restTransitionPlan)
+        assertEquals(unresolved, harness.fakeActiveWorkoutRuntimeRepository.replacements.first().document.restTransitionPlan)
         assertEquals(0, harness.coordinator.currentExerciseIndex.value)
         assertEquals(0, harness.coordinator.currentSetIndex.value)
         assertEquals(sourceParameters.weightPerCableKg, harness.coordinator.workoutParameters.value.weightPerCableKg)
@@ -3136,26 +3138,46 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `cancellation after durable normal clear fails closed before successor dispatch`() = runTest {
         val harness = DWSMTestHarness(this)
-        val clearBarrier = CompletableDeferred<Unit>()
+        val clearCommitted = CompletableDeferred<Unit>()
+        val releaseCommittedClear = CompletableDeferred<Unit>()
         try {
             val normal = prepareNormalRest(harness)
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
-            harness.fakeActiveWorkoutRuntimeRepository.replaceBlock = { clearBarrier.await() }
+            val key = harness.fakeActiveWorkoutRuntimeRepository.replacements.last()
+            harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = { document ->
+                if (document.restTransitionPlan == null) {
+                    clearCommitted.complete(Unit)
+                    releaseCommittedClear.await()
+                }
+            }
 
             harness.dwsm.applyRestTransition(RestTransitionCommand.SkipRest(normal.actionIdentity()))
             runCurrent()
-            assertEquals(null, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.restTransitionPlan)
+            assertTrue(clearCommitted.isCompleted)
+            assertEquals(
+                null,
+                harness.fakeActiveWorkoutRuntimeRepository
+                    .committedDocument(key.profileId, key.routineSessionId)
+                    ?.restTransitionPlan,
+            )
+            assertEquals(normal, harness.restTransitionPlan.value)
             assertEquals(0, harness.coordinator.currentSetIndex.value)
 
             harness.dwsm.resetForNewWorkout()
-            clearBarrier.complete(Unit)
+            releaseCommittedClear.complete(Unit)
             runCurrent()
 
             assertFalse(harness.activeSessionEngine.isCurrentExecution(lease))
             assertEquals(0, harness.coordinator.currentSetIndex.value)
-            assertEquals(null, harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.restTransitionPlan)
+            assertEquals(
+                null,
+                harness.fakeActiveWorkoutRuntimeRepository
+                    .committedDocument(key.profileId, key.routineSessionId)
+                    ?.restTransitionPlan,
+            )
         } finally {
-            if (!clearBarrier.isCompleted) clearBarrier.complete(Unit)
+            harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = null
+            if (!releaseCommittedClear.isCompleted) releaseCommittedClear.complete(Unit)
             harness.cleanup()
         }
     }
@@ -3213,6 +3235,86 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `legacy start next set at zero fails closed for declined rest`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            val unresolved = prepareEligibleStallRest(harness)
+            harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.Decline(unresolved.actionIdentity()))
+            val declined = assertIs<RestTransitionPlan.Declined>(harness.restTransitionPlan.value)
+            val lastCommittedKey = harness.fakeActiveWorkoutRuntimeRepository.replacements.last()
+            val persistedBeforeCallback = requireNotNull(
+                harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
+                    lastCommittedKey.profileId,
+                    lastCommittedKey.routineSessionId,
+                ),
+            )
+            val replacementCountBeforeCallback = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+            val lookupCountBeforeCallback = harness.dwsm.restTransitionNavigationLookupsForTest
+            val sourceCoordinates = harness.coordinator.currentExerciseIndex.value to harness.coordinator.currentSetIndex.value
+            harness.coordinator._workoutState.value = WorkoutState.Resting(
+                restSecondsRemaining = 0,
+                nextExerciseName = "",
+                isLastExercise = false,
+                currentSet = 1,
+                totalSets = 2,
+            )
+
+            harness.dwsm.startNextSet()
+            runCurrent()
+
+            assertEquals(declined, harness.restTransitionPlan.value)
+            assertEquals(
+                persistedBeforeCallback,
+                harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
+                    lastCommittedKey.profileId,
+                    lastCommittedKey.routineSessionId,
+                ),
+            )
+            assertEquals(replacementCountBeforeCallback, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(lookupCountBeforeCallback, harness.dwsm.restTransitionNavigationLookupsForTest)
+            assertEquals(sourceCoordinates.first, harness.coordinator.currentExerciseIndex.value)
+            assertEquals(sourceCoordinates.second, harness.coordinator.currentSetIndex.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `legacy start next set at zero consumes a plain normal rest once`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepareNormalRest(harness)
+            val replacementCountBeforeCallback = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
+            harness.coordinator._workoutState.value = WorkoutState.Resting(
+                restSecondsRemaining = 0,
+                nextExerciseName = "",
+                isLastExercise = false,
+                currentSet = 1,
+                totalSets = 2,
+            )
+
+            harness.dwsm.startNextSet()
+            runCurrent()
+            harness.dwsm.startNextSet()
+            runCurrent()
+
+            assertEquals(null, harness.restTransitionPlan.value)
+            val lastCommittedKey = harness.fakeActiveWorkoutRuntimeRepository.replacements.last()
+            assertEquals(
+                null,
+                harness.fakeActiveWorkoutRuntimeRepository
+                    .committedDocument(lastCommittedKey.profileId, lastCommittedKey.routineSessionId)
+                    ?.restTransitionPlan,
+            )
+            assertEquals(replacementCountBeforeCallback + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            assertEquals(1, harness.dwsm.restTransitionNavigationLookupsForTest)
+            assertEquals(1, harness.coordinator.currentSetIndex.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `blocked teardown still publishes a durable unresolved decision without a retry`() = runTest {
         val harness = enabledDropSetHarness(this)
         val teardownBarrier = CompletableDeferred<Result<Unit>>()
@@ -3234,7 +3336,11 @@ class DWSMWorkoutLifecycleTest {
             assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
             assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
             assertEquals(sourceLease.executionId, harness.activeSessionEngine.currentExecutionLeaseForTest().executionId)
-            assertEquals(1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
+            val replacements = harness.fakeActiveWorkoutRuntimeRepository.replacements
+            assertEquals(2, replacements.size)
+            assertTrue(replacements.all { it.document.restTransitionPlan == harness.restTransitionPlan.value })
+            assertEquals(null, replacements.first().document.restDeadlineEpochMs)
+            assertNotNull(replacements.last().document.restDeadlineEpochMs)
         } finally {
             teardownBarrier.complete(Result.success(Unit))
             harness.cleanup()
@@ -3337,8 +3443,86 @@ class DWSMWorkoutLifecycleTest {
             assertEquals(lease, harness.activeSessionEngine.currentExecutionLeaseForTest())
             assertEquals(commandsBeforeAccept, harness.fakeBleRepo.commandsReceived.size)
             assertEquals(1, harness.activeSessionEngine.completionJobAttachCountForTest)
+
+            teardownBarrier.complete(Result.success(Unit))
+            runCurrent()
+
+            assertIs<RestTransitionPlan.AcceptedRetry>(harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
         } finally {
             if (!teardownBarrier.isCompleted) teardownBarrier.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `declining while teardown is blocked remains resting after ready`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        val teardownBarrier = CompletableDeferred<Result<Unit>>()
+        try {
+            harness.fakeBleRepo.stopWorkoutBlock = { teardownBarrier.await() }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+            runCurrent()
+            val unresolved = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+
+            harness.dwsm.applyRestTransition(RestTransitionCommand.Decline(unresolved.actionIdentity()))
+            runCurrent()
+            assertIs<RestTransitionPlan.Declined>(harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+
+            teardownBarrier.complete(Result.success(Unit))
+            runCurrent()
+
+            assertIs<RestTransitionPlan.Declined>(harness.restTransitionPlan.value)
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+        } finally {
+            if (!teardownBarrier.isCompleted) teardownBarrier.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `successful teardown retry resumes the original completion waiter`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.fakeBleRepo.stopWorkoutBlock = {
+                Result.failure(IllegalStateException("initial RESET failed"))
+            }
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceUntilIdle()
+
+            assertIs<RestTransitionPlan.NormalAdvance>(harness.restTransitionPlan.value)
+            assertIs<MachineTeardownState.RecoveryRequired>(harness.dwsm.machineTeardownState.value)
+            assertFalse(harness.coordinator.workoutState.value is WorkoutState.SetSummary)
+
+            harness.fakeBleRepo.stopWorkoutBlock = { Result.success(Unit) }
+            harness.dwsm.retryMachineTeardown()
+            runCurrent()
+
+            assertEquals(MachineTeardownState.Ready, harness.dwsm.machineTeardownState.value)
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+            assertEquals(1, harness.activeSessionEngine.completionJobAttachCountForTest)
+        } finally {
             harness.cleanup()
         }
     }
@@ -3654,6 +3838,61 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `decline and teardown resolution share one in flight navigation lookup`() = runTest {
+        val harness = enabledDropSetHarness(this)
+        val teardownBarrier = CompletableDeferred<Result<Unit>>()
+        val firstResolverEntered = CompletableDeferred<Unit>()
+        val releaseResolver = CompletableDeferred<Unit>()
+        var resolverOwnerCount = 0
+        try {
+            harness.fakeBleRepo.stopWorkoutBlock = { teardownBarrier.await() }
+            harness.activeSessionEngine.beforeRestTransitionNavigationResolutionForTest = {
+                resolverOwnerCount++
+                firstResolverEntered.complete(Unit)
+                releaseResolver.await()
+            }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+            runCurrent()
+            val unresolved = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+            val declineJob = launch(UnconfinedTestDispatcher(testScheduler)) {
+                harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.Decline(unresolved.actionIdentity()))
+            }
+            firstResolverEntered.await()
+
+            teardownBarrier.complete(Result.success(Unit))
+            runCurrent()
+
+            assertEquals(1, resolverOwnerCount)
+            releaseResolver.complete(Unit)
+            declineJob.join()
+            runCurrent()
+            val declined = assertIs<RestTransitionPlan.Declined>(harness.restTransitionPlan.value)
+            assertEquals(1, harness.dwsm.restTransitionNavigationLookupsForTest)
+
+            harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.SkipRest(declined.actionIdentity()))
+            runCurrent()
+
+            assertEquals(1, harness.dwsm.restTransitionNavigationLookupsForTest)
+            assertEquals(1, harness.coordinator.currentSetIndex.value)
+        } finally {
+            if (!teardownBarrier.isCompleted) teardownBarrier.complete(Result.success(Unit))
+            if (!releaseResolver.isCompleted) releaseResolver.complete(Unit)
+            harness.activeSessionEngine.beforeRestTransitionNavigationResolutionForTest = null
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `final normal transition advances its captured cycle after coordinator replacement`() = runTest {
         val harness = DWSMTestHarness(this)
         val releaseClear = CompletableDeferred<Unit>()
@@ -3754,9 +3993,11 @@ class DWSMWorkoutLifecycleTest {
     )
 
     @Test
-    fun `a failed initial replace retries the exact transition and offer identities`() = runTest {
+    fun `initial plan persistence failure is typed sanitized and retries exact identities after cancellation`() = runTest {
         var transitionCalls = 0
         var offerCalls = 0
+        val teardownBarrier = CompletableDeferred<Result<Unit>>()
+        val connectionLogs = ConnectionLogRepository.instance
         val harness = DWSMTestHarness(
             this,
             dropSetEligibilityPolicy = DropSetEligibilityPolicy(
@@ -3768,7 +4009,8 @@ class DWSMWorkoutLifecycleTest {
             offerIdGenerator = { "offer-${++offerCalls}" },
         )
         try {
-            harness.setActiveSummaryCountdownSeconds(-1)
+            connectionLogs.clearAll()
+            harness.fakeBleRepo.stopWorkoutBlock = { teardownBarrier.await() }
             harness.fakeActiveWorkoutRuntimeRepository.failingReplaceCallsRemaining = 1
             harness.fakeBleRepo.simulateConnect("Vee_Test")
             val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
@@ -3781,18 +4023,214 @@ class DWSMWorkoutLifecycleTest {
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
 
             harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
-            advanceTimeBy(1_000)
+            runCurrent()
             val firstAttempt = harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document
+            assertIs<InitialRestPlanInstallResult.PersistenceFailure>(
+                harness.activeSessionEngine.lastInitialRestPlanInstallResultForTest,
+            )
+            assertEquals(null, harness.restTransitionPlan.value)
+            assertEquals(0, harness.coordinator._currentExerciseIndex.value)
+            assertEquals(0, harness.coordinator._currentSetIndex.value)
+            val diagnostic = connectionLogs.logs.value.single {
+                it.eventType == LogEventType.WORKOUT_PERSISTENCE &&
+                    it.message == "Rest transition install failed"
+            }
+            assertEquals("reason=PERSISTENCE_FAILURE", diagnostic.details)
 
             val completion = assertNotNull(harness.activeSessionEngine.claimedCompletion(lease))
-            harness.activeSessionEngine.startRestTimer(completion)
-            runCurrent()
+            val restDuration = assertNotNull(firstAttempt.restTransitionPlan)
+                .let { plan ->
+                    when (plan) {
+                        is RestTransitionPlan.NormalAdvance -> plan.restDurationSeconds
+                        is RestTransitionPlan.UnresolvedDropOffer -> plan.normalAdvance.restDurationSeconds
+                        is RestTransitionPlan.Declined -> plan.normalAdvance.restDurationSeconds
+                        is RestTransitionPlan.AcceptedRetry -> error("initial plan cannot be accepted")
+                    }
+                }
+            harness.fakeActiveWorkoutRuntimeRepository.cancellationOnNextReplace =
+                CancellationException("cancel initial install retry")
+            assertFailsWith<CancellationException> {
+                harness.activeSessionEngine.installInitialRestPlanForTest(completion, restDuration)
+            }
+            val cancellationAttempt = harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document
+            assertEquals(firstAttempt.restTransitionPlan, cancellationAttempt.restTransitionPlan)
+            assertIs<InitialRestPlanInstallResult.PersistenceFailure>(
+                harness.activeSessionEngine.lastInitialRestPlanInstallResultForTest,
+            )
+
+            val retryResult = harness.activeSessionEngine.installInitialRestPlanForTest(completion, restDuration)
 
             val retryAttempt = harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document
+            assertIs<InitialRestPlanInstallResult.Installed>(retryResult)
             assertEquals(firstAttempt.restTransitionPlan, retryAttempt.restTransitionPlan)
             assertEquals(1, transitionCalls)
             assertEquals(1, offerCalls)
             assertEquals(firstAttempt.restTransitionPlan, harness.restTransitionPlan.value)
+            assertEquals(1, connectionLogs.logs.value.count { it.details == "reason=PERSISTENCE_FAILURE" })
+        } finally {
+            if (!teardownBarrier.isCompleted) teardownBarrier.complete(Result.success(Unit))
+            connectionLogs.clearAll()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `persisted rest deadline and visible timer share one delayed start instant`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val teardownBarrier = CompletableDeferred<Result<Unit>>()
+        try {
+            harness.setActiveSummaryCountdownSeconds(5)
+            harness.fakeBleRepo.stopWorkoutBlock = { teardownBarrier.await() }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            runCurrent()
+            advanceTimeBy(3_000)
+            teardownBarrier.complete(Result.success(Unit))
+            runCurrent()
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+
+            advanceTimeBy(5_000)
+            runCurrent()
+
+            val resting = assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            val key = harness.fakeActiveWorkoutRuntimeRepository.replacements.last()
+            val document = assertNotNull(
+                harness.fakeActiveWorkoutRuntimeRepository.committedDocument(key.profileId, key.routineSessionId),
+            )
+            val deadline = assertNotNull(document.restDeadlineEpochMs)
+            val persistedRemaining =
+                ((deadline - harness.nowMs).coerceAtLeast(0L) + 999L).div(1_000L).toInt()
+            assertEquals(persistedRemaining, resting.restSecondsRemaining)
+            assertEquals(document.originalRestDurationSeconds, resting.restSecondsRemaining)
+        } finally {
+            if (!teardownBarrier.isCompleted) teardownBarrier.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `repeated plan timer starts keep the persisted deadline and elapsed remaining`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val plan = prepareNormalRest(harness)
+            val completion = assertNotNull(
+                harness.activeSessionEngine.claimedCompletion(harness.activeSessionEngine.currentExecutionLeaseForTest()),
+            )
+            advanceTimeBy(2_200)
+            runCurrent()
+            val beforeRepeat = assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            val key = harness.fakeActiveWorkoutRuntimeRepository.replacements.last()
+            val deadlineBefore = assertNotNull(
+                harness.fakeActiveWorkoutRuntimeRepository
+                    .committedDocument(key.profileId, key.routineSessionId)
+                    ?.restDeadlineEpochMs,
+            )
+
+            harness.activeSessionEngine.startRestTimer(completion)
+            harness.activeSessionEngine.startRestTimer(completion)
+            runCurrent()
+
+            val afterRepeat = assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            val documentAfter = assertNotNull(
+                harness.fakeActiveWorkoutRuntimeRepository.committedDocument(key.profileId, key.routineSessionId),
+            )
+            assertEquals(plan, documentAfter.restTransitionPlan)
+            assertEquals(deadlineBefore, documentAfter.restDeadlineEpochMs)
+            assertTrue(afterRepeat.restSecondsRemaining <= beforeRepeat.restSecondsRemaining)
+            val persistedRemaining =
+                ((deadlineBefore - harness.nowMs).coerceAtLeast(0L) + 999L).div(1_000L).toInt()
+            assertEquals(persistedRemaining, afterRepeat.restSecondsRemaining)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `plan timer persistence failure and cancellation never publish divergent timer state`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val teardownBarrier = CompletableDeferred<Result<Unit>>()
+        try {
+            harness.fakeBleRepo.stopWorkoutBlock = { teardownBarrier.await() }
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            runCurrent()
+            val completion = assertNotNull(harness.activeSessionEngine.claimedCompletion(lease))
+            val key = harness.fakeActiveWorkoutRuntimeRepository.replacements.last()
+
+            harness.fakeActiveWorkoutRuntimeRepository.failingReplaceCallsRemaining = 1
+            harness.activeSessionEngine.startRestTimer(completion)
+            runCurrent()
+            assertFalse(harness.coordinator.workoutState.value is WorkoutState.Resting)
+            assertEquals(
+                null,
+                harness.fakeActiveWorkoutRuntimeRepository
+                    .committedDocument(key.profileId, key.routineSessionId)
+                    ?.restDeadlineEpochMs,
+            )
+
+            harness.fakeActiveWorkoutRuntimeRepository.cancellationOnNextReplace =
+                CancellationException("cancel timer start persistence")
+            harness.activeSessionEngine.startRestTimer(completion)
+            runCurrent()
+            assertFalse(harness.coordinator.workoutState.value is WorkoutState.Resting)
+            assertEquals(null, harness.coordinator.restDeadlineElapsedRealtimeMs)
+
+            harness.activeSessionEngine.startRestTimer(completion)
+            runCurrent()
+            assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
+            assertNotNull(
+                harness.fakeActiveWorkoutRuntimeRepository
+                    .committedDocument(key.profileId, key.routineSessionId)
+                    ?.restDeadlineEpochMs,
+            )
+        } finally {
+            if (!teardownBarrier.isCompleted) teardownBarrier.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `repeated plan timer start preserves a persisted paused invariant`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepareNormalRest(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val completion = assertNotNull(harness.activeSessionEngine.claimedCompletion(lease))
+            harness.dwsm.toggleRestPause()
+            runCurrent()
+            val remainingBefore = harness.coordinator._restSecondsRemaining.value
+            val key = harness.fakeActiveWorkoutRuntimeRepository.replacements.last()
+            val pausedDocument = assertNotNull(
+                harness.fakeActiveWorkoutRuntimeRepository.committedDocument(key.profileId, key.routineSessionId),
+            )
+            assertTrue(pausedDocument.isRestPaused)
+
+            harness.activeSessionEngine.startRestTimer(completion)
+            runCurrent()
+
+            assertTrue(harness.coordinator.isRestPaused.value)
+            assertEquals(remainingBefore, harness.coordinator._restSecondsRemaining.value)
+            assertEquals(
+                pausedDocument,
+                harness.fakeActiveWorkoutRuntimeRepository.committedDocument(key.profileId, key.routineSessionId),
+            )
         } finally {
             harness.cleanup()
         }
