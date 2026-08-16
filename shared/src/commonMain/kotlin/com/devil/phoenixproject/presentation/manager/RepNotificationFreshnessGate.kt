@@ -59,12 +59,15 @@ internal class RepNotificationFreshnessGate {
         // Issue #698: Just Lift uses unlimited target semantics (0xFF/252),
         // so the device-reported repsSetTotal will never match the finite UI
         // lease target. Accept only the known unlimited representation or zero
-        // for Just Lift; reject stale packets from prior finite-target sets.
-        val targetMatches = (lease.isJustLift &&
-                (notification.repsSetTotal == UNLIMITED_REPS_SET_TOTAL ||
-                    notification.repsSetTotal == 0)) ||
+        // for Just Lift; reject stale packets from prior finite-target sets,
+        // including one whose target happens to equal the UI lease target.
+        val targetMatches = if (lease.isJustLift) {
+            notification.repsSetTotal == UNLIMITED_REPS_SET_TOTAL ||
+                notification.repsSetTotal == 0
+        } else {
             notification.repsSetTotal == 0 ||
-            notification.repsSetTotal == lease.workingRepTarget
+                notification.repsSetTotal == lease.workingRepTarget
+        }
         if (!targetMatches) return RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH)
         if (stateFor(lease) is RepFreshnessState.Armed) return RepFreshnessDecision.Process
 

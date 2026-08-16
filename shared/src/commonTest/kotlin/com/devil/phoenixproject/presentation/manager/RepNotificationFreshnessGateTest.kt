@@ -187,17 +187,18 @@ class RepNotificationFreshnessGateTest {
     }
 
     @Test
-    fun `just lift rejects stale finite repsSetTotal from prior execution`() {
+    fun `just lift rejects stale finite repsSetTotal matching the UI target`() {
         val gate = RepNotificationFreshnessGate()
         val lease = activeLease(target = 10, cutover = 1_000L).copy(isJustLift = true)
 
         // Baseline arms
         assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, modernPacket(timestamp = 1_001L)))
 
-        // Stale packet from prior finite-target set (repsSetTotal=15) must be rejected
+        // A stale packet from a prior finite-target set can happen to have the
+        // same target as the Just Lift UI lease. It must still be rejected.
         assertEquals(
             RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH),
-            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 15, timestamp = 1_002L)),
+            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 10, timestamp = 1_002L)),
         )
     }
 
