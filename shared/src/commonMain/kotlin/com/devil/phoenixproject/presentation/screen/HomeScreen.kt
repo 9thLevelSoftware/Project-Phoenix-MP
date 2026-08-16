@@ -49,9 +49,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -59,18 +61,30 @@ import com.devil.phoenixproject.presentation.components.AnimatedActionButton
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
 import com.devil.phoenixproject.presentation.components.IconAnimation
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
+import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscovery
+import com.devil.phoenixproject.presentation.manager.RoutineResumeHandle
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.util.WindowHeightSizeClass
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeActionAuthority
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeCompletionDisposition
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeEntryPoint
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeOperationGate
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeRetryAction
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeUiOperation
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeUiOutcome
+import com.devil.phoenixproject.presentation.viewmodel.classifyRoutineResumeCompletion
+import com.devil.phoenixproject.presentation.viewmodel.runFreshCycleUiOperation
+import com.devil.phoenixproject.presentation.viewmodel.runRoutineResumeUiOperation
 import kotlin.time.Clock
 import kotlin.time.Instant
+import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
-import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -92,11 +106,15 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     val cycleRepository: TrainingCycleRepository = koinInject()
     val userProfileRepository: com.devil.phoenixproject.data.repository.UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    val activeProfileContext by userProfileRepository.activeProfileContext.collectAsState()
     val profileId = activeProfile?.id ?: "default"
     val activeCycle by cycleRepository.getActiveCycle(profileId).collectAsState(initial = null)
     var cycleProgress by remember { mutableStateOf<CycleProgress?>(null) }
-    var showResumeDialog by remember { mutableStateOf(false) }
-    var pendingCycleStart by remember { mutableStateOf<CycleStartRequest?>(null) }
+    var pendingResumeHandle by remember { mutableStateOf<RoutineResumeHandle?>(null) }
+    var resumeOperationInFlight by remember { mutableStateOf(false) }
+    var discardRetryPending by remember { mutableStateOf(false) }
+    var manualLoadRetry by remember { mutableStateOf<RoutineResumeUiOperation.RetryManualLoad?>(null) }
+    val resumeOperationGate = remember { RoutineResumeOperationGate() }
     var showOneRepMaxComingSoonDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
@@ -144,27 +162,132 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
         null
     }
 
-    fun startCycleWorkout(request: CycleStartRequest) {
-        if (viewModel.hasResumableProgress(request.routineId)) {
-            pendingCycleStart = request
-            showResumeDialog = true
-        } else {
-            viewModel.ensureConnection(
-                onConnected = {
-                    scope.launch {
-                        if (viewModel.loadRoutineFromCycleAsync(
-                                request.routineId,
-                                request.cycleId,
-                                request.dayNumber,
-                            )
-                        ) {
-                            viewModel.enterSetReady(0, 0)
-                            navController.navigate(NavigationRoutes.SetReady.route)
-                        }
-                    }
+    fun clearResumeDialog() {
+        pendingResumeHandle = null
+        resumeOperationInFlight = false
+        discardRetryPending = false
+        manualLoadRetry = null
+    }
+
+    LaunchedEffect(activeProfileContext) {
+        val ready = activeProfileContext as? ActiveProfileContext.Ready ?: return@LaunchedEffect
+        val handle = pendingResumeHandle ?: return@LaunchedEffect
+        if (ready.profile.id != handle.selectedProfileId) {
+            resumeOperationGate.supersede()
+            clearResumeDialog()
+        }
+    }
+
+    fun dispatchResumeOutcome(outcome: RoutineResumeUiOutcome) {
+        when (outcome) {
+            RoutineResumeUiOutcome.NavigateActiveWorkout -> {
+                clearResumeDialog()
+                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+            }
+
+            is RoutineResumeUiOutcome.EnterSetReady -> {
+                viewModel.enterSetReady(outcome.exerciseIndex, outcome.setIndex)
+                clearResumeDialog()
+                navController.navigate(NavigationRoutes.SetReady.route)
+            }
+
+            is RoutineResumeUiOutcome.RetainDialog -> {
+                resumeOperationInFlight = false
+                discardRetryPending = outcome.retryAction == RoutineResumeRetryAction.DISCARD
+            }
+
+            RoutineResumeUiOutcome.ConnectionFailed -> resumeOperationInFlight = false
+
+            is RoutineResumeUiOutcome.LoadFailed -> {
+                manualLoadRetry = outcome.retryOperation
+                resumeOperationInFlight = false
+            }
+
+            RoutineResumeUiOutcome.DismissDialog,
+            RoutineResumeUiOutcome.StartAndNavigateActiveWorkout,
+            is RoutineResumeUiOutcome.EnterDailyOverview,
+            -> clearResumeDialog()
+
+            RoutineResumeUiOutcome.StaleNoOp -> Unit
+        }
+    }
+
+    fun launchResumeOperation(operation: RoutineResumeUiOperation) {
+        resumeOperationInFlight = true
+        resumeOperationGate.launch(scope) { actionToken ->
+            val authority = RoutineResumeActionAuthority(
+                entryPoint = RoutineResumeEntryPoint.HOME_CYCLE,
+                actionToken = actionToken,
+                currentToken = { resumeOperationGate.currentToken },
+                contextIsCurrent = {
+                    viewModel.isRoutineResumeProfileCurrent(operation.handle.selectedProfileId)
                 },
-                onFailed = { /* Error shown via StateFlow */ },
             )
+            val outcome = runRoutineResumeUiOperation(
+                operation = operation,
+                authority = authority,
+                port = viewModel.routineResumeUiPort(),
+            )
+            when (
+                val disposition = classifyRoutineResumeCompletion(
+                    tokenCurrent = authority.tokenIsCurrent(),
+                    contextCurrent = authority.contextIsCurrent(),
+                    outcome = outcome,
+                )
+            ) {
+                RoutineResumeCompletionDisposition.IgnoreStaleToken -> return@launch
+                RoutineResumeCompletionDisposition.UnlockRetainedDialog -> resumeOperationInFlight = false
+                is RoutineResumeCompletionDisposition.Apply -> dispatchResumeOutcome(disposition.outcome)
+            }
+        }
+    }
+
+    fun startCycleWorkout(request: CycleStartRequest) {
+        val routine = routines.find { it.id == request.routineId } ?: return
+        pendingResumeHandle = null
+        resumeOperationInFlight = true
+        discardRetryPending = false
+        manualLoadRetry = null
+        resumeOperationGate.launch(scope) { selectionToken ->
+            val authority = RoutineResumeActionAuthority(
+                entryPoint = RoutineResumeEntryPoint.HOME_CYCLE,
+                actionToken = selectionToken,
+                currentToken = { resumeOperationGate.currentToken },
+                contextIsCurrent = { viewModel.isRoutineResumeProfileCurrent(routine.profileId) },
+            )
+            when (
+                val discovery = viewModel.discoverRoutineResume(
+                    routine = routine,
+                    launchOrigin = RoutineLaunchOrigin.TRAINING_CYCLES,
+                    cycleId = request.cycleId,
+                    cycleDayNumber = request.dayNumber,
+                )
+            ) {
+                is RoutineResumeDiscovery.Candidate -> if (authority.isCurrent()) {
+                    pendingResumeHandle = discovery.handle
+                    resumeOperationInFlight = false
+                }
+
+                RoutineResumeDiscovery.Missing -> if (authority.isCurrent()) {
+                    dispatchResumeOutcome(
+                        runFreshCycleUiOperation(
+                            routine = routine,
+                            cycleId = request.cycleId,
+                            dayNumber = request.dayNumber,
+                            authority = authority,
+                            port = viewModel.routineResumeUiPort(),
+                        ),
+                    )
+                }
+
+                RoutineResumeDiscovery.RetryableFailure -> if (authority.isCurrent()) {
+                    resumeOperationInFlight = false
+                }
+
+                RoutineResumeDiscovery.Superseded -> if (authority.isCurrent()) {
+                    clearResumeDialog()
+                }
+            }
         }
     }
 
@@ -254,47 +377,26 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
             )
         }
 
-        if (showResumeDialog) {
-            viewModel.getResumableProgressInfo()?.let { info ->
-                ResumeRoutineDialog(
-                    progressInfo = info,
-                    onResume = {
-                        showResumeDialog = false
-                        viewModel.ensureConnection(
-                            onConnected = {
-                                val exIdx = viewModel.currentExerciseIndex.value
-                                val setIdx = viewModel.currentSetIndex.value
-                                viewModel.enterSetReady(exIdx, setIdx)
-                                navController.navigate(NavigationRoutes.SetReady.route)
-                            },
-                            onFailed = { /* Error shown via StateFlow */ },
-                        )
-                    },
-                    onRestart = {
-                        val request = pendingCycleStart
-                        showResumeDialog = false
-                        if (request != null) {
-                            viewModel.ensureConnection(
-                                onConnected = {
-                                    scope.launch {
-                                        if (viewModel.loadRoutineFromCycleAsync(
-                                                request.routineId,
-                                                request.cycleId,
-                                                request.dayNumber,
-                                            )
-                                        ) {
-                                            viewModel.enterSetReady(0, 0)
-                                            navController.navigate(NavigationRoutes.SetReady.route)
-                                        }
-                                    }
-                                },
-                                onFailed = { /* Error shown via StateFlow */ },
-                            )
-                        }
-                    },
-                    onDismiss = { showResumeDialog = false },
-                )
-            }
+        pendingResumeHandle?.let { handle ->
+            ResumeRoutineDialog(
+                progressInfo = handle.progressInfo,
+                onResume = {
+                    if (resumeOperationInFlight || discardRetryPending) return@ResumeRoutineDialog
+                    launchResumeOperation(manualLoadRetry ?: RoutineResumeUiOperation.Resume(handle))
+                },
+                onRestart = {
+                    if (resumeOperationInFlight) return@ResumeRoutineDialog
+                    manualLoadRetry = null
+                    launchResumeOperation(RoutineResumeUiOperation.Restart(handle))
+                },
+                onDismiss = {
+                    if (!resumeOperationInFlight) {
+                        resumeOperationGate.supersede()
+                        clearResumeDialog()
+                    }
+                },
+                confirmEnabled = !resumeOperationInFlight && !discardRetryPending,
+            )
         }
     }
 }
@@ -681,9 +783,7 @@ private data class CycleStartRequest(
 internal suspend fun loadHomeCycleProgress(
     repository: TrainingCycleRepository,
     cycle: TrainingCycle,
-): CycleProgress? {
-    return repository.checkAndAutoAdvance(cycle.id) ?: repository.getCycleProgress(cycle.id)
-}
+): CycleProgress? = repository.checkAndAutoAdvance(cycle.id) ?: repository.getCycleProgress(cycle.id)
 
 internal fun buildHomeShortcutActions(
     onSingleExercise: () -> Unit,

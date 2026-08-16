@@ -1,5 +1,9 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.data.repository.RestoredRetrySourceAuthoritySnapshot
+import com.devil.phoenixproject.data.repository.RestoredWorkoutCommandTemplateSnapshot
+import com.devil.phoenixproject.data.repository.programModeFromSnapshotName
+import com.devil.phoenixproject.data.repository.toSnapshotName
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.CompletedSet
@@ -120,6 +124,58 @@ internal fun SetExecutionCompletion.toRestoredRetrySourceContext(): RestoredRetr
     isCableExercise = isCableExercise,
     physicalCableCount = physicalCableCount,
     commandTemplate = logicalPreRackCommandTemplate,
+)
+
+internal fun SetExecutionCompletion.toRuntimeSourceAuthoritySnapshot(): RestoredRetrySourceAuthoritySnapshot = RestoredRetrySourceAuthoritySnapshot(
+    sourceStableSessionId = lease.sessionId,
+    sourceExecutionId = lease.executionId.toString(),
+    profileId = lease.profileId,
+    routineIdentity = requireNotNull(routineIdentity),
+    reasonName = reason.name,
+    attemptNumber = attemptNumber,
+    acceptedDropCount = acceptedDropCount,
+    plannedSetTypeName = plannedSetType.name,
+    programModeName = programMode.toSnapshotName(),
+    programmedBaseWeightPerCableKg = programmedBaseWeightPerCableKg,
+    configuredStartWeightPerCableKg = configuredStartWeightPerCableKg,
+    progressionKg = progressionKg,
+    actualReps = actualReps,
+    targetReps = targetReps,
+    isWarmup = isWarmup,
+    isEcho = isEcho,
+    isJustLift = isJustLift,
+    isBodyweight = isBodyweight,
+    isTimed = isTimed,
+    isAmrap = isAmrap,
+    isCableExercise = isCableExercise,
+    physicalCableCount = physicalCableCount,
+    commandTemplate = RestoredWorkoutCommandTemplateSnapshot.from(logicalPreRackCommandTemplate),
+)
+
+internal fun RestoredRetrySourceAuthoritySnapshot.toRestoredRetrySourceContext(): RestoredRetrySourceContext = RestoredRetrySourceContext(
+    sourceStableSessionId = sourceStableSessionId,
+    sourceExecutionId = sourceExecutionId,
+    profileId = profileId,
+    routineIdentity = routineIdentity,
+    reason = SetEndReason.valueOf(reasonName),
+    attemptNumber = attemptNumber,
+    acceptedDropCount = acceptedDropCount,
+    plannedSetType = SetType.valueOf(plannedSetTypeName),
+    programMode = programModeFromSnapshotName(programModeName),
+    programmedBaseWeightPerCableKg = programmedBaseWeightPerCableKg,
+    configuredStartWeightPerCableKg = configuredStartWeightPerCableKg,
+    progressionKg = progressionKg,
+    actualReps = actualReps,
+    targetReps = targetReps,
+    isWarmup = isWarmup,
+    isEcho = isEcho,
+    isJustLift = isJustLift,
+    isBodyweight = isBodyweight,
+    isTimed = isTimed,
+    isAmrap = isAmrap,
+    isCableExercise = isCableExercise,
+    physicalCableCount = physicalCableCount,
+    commandTemplate = commandTemplate.toWorkoutParameters(),
 )
 
 internal data class SetExecutionActivationFacts(

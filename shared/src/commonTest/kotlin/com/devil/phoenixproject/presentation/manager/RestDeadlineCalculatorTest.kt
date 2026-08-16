@@ -1,8 +1,16 @@
 package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeDocument
+import com.devil.phoenixproject.data.repository.RestoredRetrySourceAuthoritySnapshot
+import com.devil.phoenixproject.data.repository.RestoredTeardownSeedSnapshot
+import com.devil.phoenixproject.data.repository.RestoredWorkoutCommandTemplateSnapshot
+import com.devil.phoenixproject.data.repository.toSnapshotName
 import com.devil.phoenixproject.domain.model.LogicalSetKey
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -134,12 +142,54 @@ class RestDeadlineCalculatorTest {
         routineId = "routine-a",
         routineSessionId = "routine-session-a",
         routineExerciseId = "routine-exercise-a",
-        sourceExecutionId = "execution-a",
+        sourceExecutionId = "42",
         sourceStableSessionId = "stable-session-a",
         sourceAttemptNumber = 1,
         logicalSetKey = LogicalSetKey("routine-session-a", "routine-exercise-a", 0, SetType.STANDARD),
         sourceExerciseIndex = 0,
         sourceSetIndex = 0,
+        sourceAuthority = RestoredRetrySourceAuthoritySnapshot(
+            sourceStableSessionId = "stable-session-a",
+            sourceExecutionId = "42",
+            profileId = "profile-a",
+            routineIdentity = RoutineExecutionIdentity(
+                profileId = "profile-a",
+                routineId = "routine-a",
+                routineSessionId = "routine-session-a",
+                routineExerciseId = "routine-exercise-a",
+                logicalSetKey = LogicalSetKey("routine-session-a", "routine-exercise-a", 0, SetType.STANDARD),
+                plannedSetId = null,
+                exerciseIndex = 0,
+                setIndex = 0,
+            ),
+            reasonName = SetEndReason.STALL_FAILURE.name,
+            attemptNumber = 1,
+            acceptedDropCount = 0,
+            plannedSetTypeName = SetType.STANDARD.name,
+            programModeName = ProgramMode.OldSchool.toSnapshotName(),
+            programmedBaseWeightPerCableKg = 25f,
+            configuredStartWeightPerCableKg = 25f,
+            progressionKg = 0f,
+            actualReps = 6,
+            targetReps = 10,
+            isWarmup = false,
+            isEcho = false,
+            isJustLift = false,
+            isBodyweight = false,
+            isTimed = false,
+            isAmrap = false,
+            isCableExercise = true,
+            physicalCableCount = 2,
+            commandTemplate = RestoredWorkoutCommandTemplateSnapshot.from(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 10, weightPerCableKg = 25f),
+            ),
+        ),
+        teardownSeed = RestoredTeardownSeedSnapshot(
+            sourceExecutionId = 42L,
+            sourceStableSessionId = "stable-session-a",
+            profileId = "profile-a",
+            requiresMachine = true,
+        ),
         restDeadlineEpochMs = restDeadlineEpochMs,
         pausedRestRemainingSeconds = pausedRestRemainingSeconds,
         isRestPaused = isRestPaused,

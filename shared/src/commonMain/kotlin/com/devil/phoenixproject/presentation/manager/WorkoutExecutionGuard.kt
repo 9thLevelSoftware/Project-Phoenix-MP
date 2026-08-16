@@ -119,6 +119,7 @@ internal enum class MachineConfigurationClaimResult {
 internal data class ResetCleanupToken(
     val lease: ExecutionLease?,
     val executionGeneration: Long,
+    val configurationInputEpoch: Long,
 )
 
 internal data class NoCurrentSuccessorToken(
@@ -129,6 +130,11 @@ internal data class NoCurrentSuccessorToken(
 
 internal data class ConfigurationInputMutationToken(
     val id: Long,
+)
+
+internal data class ConfigurationInputCapture<T>(
+    val configurationInputEpoch: Long,
+    val value: T,
 )
 
 private data class QueuedSuccessorSetup(
@@ -147,6 +153,40 @@ internal data class RecoveryPublicationClaim(
     val executionGeneration: Long,
     val supersessionEpoch: Long,
     val allowNoCurrentAfterOwnedInvalidation: Boolean,
+    val expectedRestoredOwner: RestoredRuntimeOwnerToken?,
+)
+
+internal data class RestoredTeardownSeed(
+    val sourceExecutionId: Long,
+    val sourceStableSessionId: String,
+    val profileId: String,
+    val requiresMachine: Boolean,
+) {
+    init {
+        require(sourceExecutionId > 0L)
+        require(sourceStableSessionId.isNotBlank())
+        require(profileId.isNotBlank())
+    }
+}
+
+internal data class RestoredRuntimeOwnerToken(
+    val id: Long,
+    val seed: RestoredTeardownSeed,
+    val executionGeneration: Long,
+    val recoverySupersessionEpoch: Long,
+    val configurationInputEpoch: Long,
+)
+
+internal data class RestoredRecoveryAttempt(
+    val owner: RestoredRuntimeOwnerToken,
+    val attempt: Int,
+)
+
+private data class RestoredTeardownRecord(
+    val owner: RestoredRuntimeOwnerToken,
+    val attempt: Int,
+    val ready: Boolean,
+    val revoked: Boolean,
 )
 
 internal class WorkoutExecutionGuard(
@@ -165,6 +205,7 @@ internal class WorkoutExecutionGuard(
     private var deferredConfigurationTeardownLease: ExecutionLease? = null
     private var deferredConfigurationTeardownAttempt = 0
     private var recoveryPublicationSequence = 0L
+    private var restoredRuntimeOwnerSequence = 0L
     private var recoveryPublicationSupersessionEpoch = 0L
     private var recoveryPublicationClaim: RecoveryPublicationClaim? = null
     private var queuedSuccessorSupersessionEpoch = 0L
@@ -180,6 +221,8 @@ internal class WorkoutExecutionGuard(
     private var alertDeliveryJobLease: ExecutionLease? = null
     private var teardownJob: Job? = null
     private var teardownJobLease: ExecutionLease? = null
+    private var restoredTeardownRecord: RestoredTeardownRecord? = null
+    private var restoredTeardownJob: Job? = null
     private var completionClaim: SetExecutionCompletion? = null
     private var jobOwnershipClosed = false
     private val _machineTeardownState = MutableStateFlow<MachineTeardownState>(MachineTeardownState.Ready)
@@ -196,11 +239,19 @@ internal class WorkoutExecutionGuard(
     }
 
     fun captureResetCleanupToken(): ResetCleanupToken = withPlatformLock(teardownLock) {
-        ResetCleanupToken(
-            lease = currentLeaseRef.value,
-            executionGeneration = executionSequence.value,
-        )
+        captureResetCleanupTokenLocked()
     }
+
+    fun supersedeRecoveryPublicationAndCaptureResetCleanupToken(): ResetCleanupToken = withPlatformLock(teardownLock) {
+        supersedeRecoveryPublicationLocked()
+        captureResetCleanupTokenLocked()
+    }
+
+    private fun captureResetCleanupTokenLocked() = ResetCleanupToken(
+        lease = currentLeaseRef.value,
+        executionGeneration = executionSequence.value,
+        configurationInputEpoch = configurationInputEpoch,
+    )
 
     fun captureNoCurrentSuccessorToken(): NoCurrentSuccessorToken? = withPlatformLock(teardownLock) {
         if (jobOwnershipClosed || currentLeaseRef.value != null) return@withPlatformLock null
@@ -215,6 +266,7 @@ internal class WorkoutExecutionGuard(
         prepareAndCapture: () -> T?,
     ): Pair<NoCurrentSuccessorToken, T>? = withPlatformLock(teardownLock) {
         if (jobOwnershipClosed || currentLeaseRef.value != null) return@withPlatformLock null
+        revokeRestoredRuntimeLocked()
         configurationInputEpoch += 1
         val captured = prepareAndCapture() ?: return@withPlatformLock null
         NoCurrentSuccessorToken(
@@ -228,9 +280,28 @@ internal class WorkoutExecutionGuard(
         configurationInputEpoch
     }
 
+    fun <T> captureConfigurationInputs(block: () -> T): ConfigurationInputCapture<T> = withPlatformLock(teardownLock) {
+        ConfigurationInputCapture(
+            configurationInputEpoch = configurationInputEpoch,
+            value = block(),
+        )
+    }
+
     fun mutateConfigurationInputs(block: () -> Unit) = withPlatformLock(teardownLock) {
+        revokeRestoredRuntimeLocked()
         configurationInputEpoch += 1
         block()
+    }
+
+    fun mutateConfigurationInputsIf(
+        candidateStillCurrent: () -> Boolean,
+        block: () -> Unit,
+    ): Boolean = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed || !candidateStillCurrent()) return@withPlatformLock false
+        revokeRestoredRuntimeLocked()
+        configurationInputEpoch += 1
+        block()
+        true
     }
 
     /**
@@ -239,6 +310,7 @@ internal class WorkoutExecutionGuard(
      * the input epoch so a command captured on either side cannot cross the mutation.
      */
     fun beginConfigurationInputMutation(): ConfigurationInputMutationToken = withPlatformLock(teardownLock) {
+        revokeRestoredRuntimeLocked()
         configurationInputEpoch += 1
         ConfigurationInputMutationToken(id = ++configurationInputMutationSequence).also { token ->
             openConfigurationInputMutations += token.id
@@ -247,6 +319,7 @@ internal class WorkoutExecutionGuard(
 
     fun endConfigurationInputMutation(token: ConfigurationInputMutationToken) = withPlatformLock(teardownLock) {
         if (openConfigurationInputMutations.remove(token.id)) {
+            revokeRestoredRuntimeLocked()
             configurationInputEpoch += 1
         }
     }
@@ -314,6 +387,7 @@ internal class WorkoutExecutionGuard(
         if (machineConfigurationClaim != null ||
             recoveryPublicationClaim != null ||
             queuedSuccessorSetup != null ||
+            restoredTeardownRecord != null ||
             (seed.requiresMachine && _machineTeardownState.value !is MachineTeardownState.Ready)
         ) {
             return Result.failure(
@@ -355,10 +429,14 @@ internal class WorkoutExecutionGuard(
         expectedLease: ExecutionLease?,
         expectedSupersessionEpoch: Long,
         allowNoCurrentAfterOwnedInvalidation: Boolean,
+        expectedRestoredOwner: RestoredRuntimeOwnerToken? = null,
     ): RecoveryPublicationClaim? = withPlatformLock(teardownLock) {
         if (jobOwnershipClosed || recoveryPublicationClaim != null) return@withPlatformLock null
         if (recoveryPublicationSupersessionEpoch != expectedSupersessionEpoch) return@withPlatformLock null
         if (!recoveryPublicationAuthorityMatches(expectedLease, allowNoCurrentAfterOwnedInvalidation)) {
+            return@withPlatformLock null
+        }
+        if (expectedRestoredOwner != null && !restoredRuntimeIsCurrentLocked(expectedRestoredOwner)) {
             return@withPlatformLock null
         }
         RecoveryPublicationClaim(
@@ -367,21 +445,25 @@ internal class WorkoutExecutionGuard(
             executionGeneration = executionSequence.value,
             supersessionEpoch = expectedSupersessionEpoch,
             allowNoCurrentAfterOwnedInvalidation = allowNoCurrentAfterOwnedInvalidation,
+            expectedRestoredOwner = expectedRestoredOwner,
         ).also { recoveryPublicationClaim = it }
     }
 
     fun commitRecoveryPublication(
         claim: RecoveryPublicationClaim,
+        candidateStillCurrent: () -> Boolean = { true },
         block: () -> Unit,
     ): Boolean = withPlatformLock(teardownLock) {
         if (jobOwnershipClosed ||
             recoveryPublicationClaim != claim ||
             executionSequence.value != claim.executionGeneration ||
             recoveryPublicationSupersessionEpoch != claim.supersessionEpoch ||
+            claim.expectedRestoredOwner?.let(::restoredRuntimeIsCurrentLocked) == false ||
             !recoveryPublicationAuthorityMatches(
                 expectedLease = claim.expectedLease,
                 allowNoCurrentAfterOwnedInvalidation = claim.allowNoCurrentAfterOwnedInvalidation,
-            )
+            ) ||
+            !candidateStillCurrent()
         ) {
             if (recoveryPublicationClaim == claim) {
                 recoveryPublicationClaim = null
@@ -389,6 +471,7 @@ internal class WorkoutExecutionGuard(
             return@withPlatformLock false
         }
         try {
+            claim.expectedRestoredOwner?.let(::revokeRestoredRuntimeLocked)
             block()
             true
         } finally {
@@ -398,11 +481,242 @@ internal class WorkoutExecutionGuard(
         }
     }
 
+    /**
+     * Publishes restored runtime state atomically with its exact teardown barrier.
+     * The callback must only mutate in-memory presentation state and must not suspend.
+     */
+    fun commitRestoredRuntimePublication(
+        claim: RecoveryPublicationClaim,
+        seed: RestoredTeardownSeed,
+        expectedConfigurationInputEpoch: Long,
+        block: (RestoredRuntimeOwnerToken) -> Unit,
+    ): RestoredRuntimeOwnerToken? = withPlatformLock(teardownLock) {
+        if (!recoveryPublicationClaimIsCurrent(claim) ||
+            claim.expectedLease != null ||
+            claim.allowNoCurrentAfterOwnedInvalidation ||
+            currentLeaseRef.value != null ||
+            restoredTeardownRecord != null ||
+            machineConfigurationClaim != null ||
+            configurationInputEpoch != expectedConfigurationInputEpoch ||
+            openConfigurationInputMutations.isNotEmpty() ||
+            _machineTeardownState.value !is MachineTeardownState.Ready
+        ) {
+            if (recoveryPublicationClaim == claim) recoveryPublicationClaim = null
+            return@withPlatformLock null
+        }
+        configurationInputEpoch += 1
+        val owner = RestoredRuntimeOwnerToken(
+            id = ++restoredRuntimeOwnerSequence,
+            seed = seed,
+            executionGeneration = executionSequence.value,
+            recoverySupersessionEpoch = claim.supersessionEpoch,
+            configurationInputEpoch = configurationInputEpoch,
+        )
+        val record = RestoredTeardownRecord(
+            owner = owner,
+            attempt = if (seed.requiresMachine) 1 else 0,
+            ready = !seed.requiresMachine,
+            revoked = false,
+        )
+        restoredTeardownRecord = record
+        restoredTeardownJob = null
+        if (seed.requiresMachine) {
+            _machineTeardownState.value = MachineTeardownState.TearingDown(seed.sourceExecutionId, 1)
+        }
+        return@withPlatformLock try {
+            block(owner)
+            owner
+        } catch (error: Throwable) {
+            restoredTeardownRecord = null
+            restoredTeardownJob = null
+            if (seed.requiresMachine) _machineTeardownState.value = MachineTeardownState.Ready
+            throw error
+        } finally {
+            if (recoveryPublicationClaim == claim) recoveryPublicationClaim = null
+        }
+    }
+
+    private fun recoveryPublicationClaimIsCurrent(claim: RecoveryPublicationClaim): Boolean = !jobOwnershipClosed &&
+        recoveryPublicationClaim == claim &&
+        executionSequence.value == claim.executionGeneration &&
+        recoveryPublicationSupersessionEpoch == claim.supersessionEpoch &&
+        claim.expectedRestoredOwner?.let(::restoredRuntimeIsCurrentLocked) != false &&
+        recoveryPublicationAuthorityMatches(
+            expectedLease = claim.expectedLease,
+            allowNoCurrentAfterOwnedInvalidation = claim.allowNoCurrentAfterOwnedInvalidation,
+        )
+
+    fun isRestoredTeardownReady(owner: RestoredRuntimeOwnerToken): Boolean = withPlatformLock(teardownLock) {
+        val record = restoredTeardownRecord ?: return@withPlatformLock false
+        record.owner == owner && !record.revoked && record.ready &&
+            (!owner.seed.requiresMachine || _machineTeardownState.value is MachineTeardownState.Ready)
+    }
+
+    fun isRestoredRuntimeCurrent(owner: RestoredRuntimeOwnerToken): Boolean = withPlatformLock(teardownLock) {
+        restoredRuntimeIsCurrentLocked(owner)
+    }
+
+    /**
+     * Commits a restored countdown tick at the same boundary that owns restored
+     * execution authority. This prevents a reset or configuration supersession
+     * from interleaving between the final timer check and presentation write.
+     */
+    fun commitRestoredTimerPublication(
+        owner: RestoredRuntimeOwnerToken,
+        candidateStillCurrent: () -> Boolean,
+        publish: () -> Unit,
+    ): Boolean = withPlatformLock(teardownLock) {
+        if (jobOwnershipClosed ||
+            !restoredRuntimeIsCurrentLocked(owner) ||
+            !candidateStillCurrent()
+        ) {
+            return@withPlatformLock false
+        }
+        if (!restoredRuntimeIsCurrentLocked(owner)) return@withPlatformLock false
+        publish()
+        true
+    }
+
+    private fun restoredRuntimeIsCurrentLocked(owner: RestoredRuntimeOwnerToken): Boolean {
+        val record = restoredTeardownRecord ?: return false
+        return record.owner == owner &&
+            !record.revoked &&
+            currentLeaseRef.value == null &&
+            executionSequence.value == owner.executionGeneration &&
+            recoveryPublicationSupersessionEpoch == owner.recoverySupersessionEpoch &&
+            configurationInputEpoch == owner.configurationInputEpoch
+    }
+
+    fun attachRestoredTeardownJob(owner: RestoredRuntimeOwnerToken, job: Job): Boolean = withPlatformLock(teardownLock) {
+        val record = restoredTeardownRecord ?: return@withPlatformLock false
+        val state = _machineTeardownState.value
+        if (jobOwnershipClosed ||
+            record.owner != owner ||
+            !owner.seed.requiresMachine ||
+            record.ready ||
+            state !is MachineTeardownState.TearingDown ||
+            state.executionId != owner.seed.sourceExecutionId ||
+            restoredTeardownJob != null
+        ) {
+            return@withPlatformLock false
+        }
+        restoredTeardownJob = job
+        true
+    }
+
+    fun clearRestoredTeardownJobIfOwned(owner: RestoredRuntimeOwnerToken, job: Job) = withPlatformLock(teardownLock) {
+        if (restoredTeardownRecord?.owner == owner && restoredTeardownJob === job) {
+            restoredTeardownJob = null
+        }
+    }
+
+    fun markRestoredTeardownReady(owner: RestoredRuntimeOwnerToken): Boolean = withPlatformLock(teardownLock) {
+        val record = restoredTeardownRecord ?: return@withPlatformLock false
+        val state = _machineTeardownState.value
+        if (record.owner != owner ||
+            !owner.seed.requiresMachine ||
+            record.ready ||
+            state !is MachineTeardownState.TearingDown ||
+            state.executionId != owner.seed.sourceExecutionId
+        ) {
+            return@withPlatformLock false
+        }
+        restoredTeardownJob = null
+        _machineTeardownState.value = MachineTeardownState.Ready
+        if (record.revoked) {
+            restoredTeardownRecord = null
+        } else {
+            restoredTeardownRecord = record.copy(ready = true)
+        }
+        true
+    }
+
+    fun markRestoredRecoveryRequired(
+        owner: RestoredRuntimeOwnerToken,
+        reason: TeardownFailureReason,
+    ): Boolean = withPlatformLock(teardownLock) {
+        val record = restoredTeardownRecord ?: return@withPlatformLock false
+        val state = _machineTeardownState.value
+        if (record.owner != owner ||
+            !owner.seed.requiresMachine ||
+            record.ready ||
+            state !is MachineTeardownState.TearingDown ||
+            state.executionId != owner.seed.sourceExecutionId
+        ) {
+            return@withPlatformLock false
+        }
+        restoredTeardownJob = null
+        _machineTeardownState.value = MachineTeardownState.RecoveryRequired(owner.seed.sourceExecutionId)
+        true
+    }
+
+    fun beginRestoredRecoveryAttempt(owner: RestoredRuntimeOwnerToken): RestoredRecoveryAttempt? = withPlatformLock(teardownLock) {
+        val record = restoredTeardownRecord ?: return@withPlatformLock null
+        val state = _machineTeardownState.value
+        if (jobOwnershipClosed ||
+            record.owner != owner ||
+            record.ready ||
+            state !is MachineTeardownState.RecoveryRequired ||
+            state.executionId != owner.seed.sourceExecutionId
+        ) {
+            return@withPlatformLock null
+        }
+        val attempt = record.attempt + 1
+        restoredTeardownRecord = record.copy(attempt = attempt)
+        _machineTeardownState.value = MachineTeardownState.TearingDown(owner.seed.sourceExecutionId, attempt)
+        RestoredRecoveryAttempt(owner, attempt)
+    }
+
+    fun revokeRestoredRuntime(owner: RestoredRuntimeOwnerToken? = null): Boolean = withPlatformLock(teardownLock) { revokeRestoredRuntimeLocked(owner) }
+
+    private fun revokeRestoredRuntimeLocked(owner: RestoredRuntimeOwnerToken? = null): Boolean {
+        val record = restoredTeardownRecord ?: return false
+        if (owner != null && record.owner != owner) return false
+        if (record.ready || !record.owner.seed.requiresMachine) {
+            restoredTeardownRecord = null
+            restoredTeardownJob = null
+            _machineTeardownState.value = MachineTeardownState.Ready
+        } else {
+            restoredTeardownRecord = record.copy(revoked = true)
+        }
+        return true
+    }
+
+    fun beginRestoredSuccessorExecution(
+        owner: RestoredRuntimeOwnerToken,
+        seed: ExecutionSeed,
+        candidateStillCurrent: () -> Boolean,
+    ): Result<ExecutionLease> = withPlatformLock(teardownLock) {
+        val record = restoredTeardownRecord
+        if (record == null ||
+            record.owner != owner ||
+            record.revoked ||
+            !record.ready ||
+            currentLeaseRef.value != null ||
+            executionSequence.value != owner.executionGeneration ||
+            recoveryPublicationSupersessionEpoch != owner.recoverySupersessionEpoch ||
+            configurationInputEpoch != owner.configurationInputEpoch ||
+            _machineTeardownState.value !is MachineTeardownState.Ready ||
+            !candidateStillCurrent()
+        ) {
+            return@withPlatformLock Result.failure(
+                IllegalStateException("Restored runtime authority was superseded"),
+            )
+        }
+        restoredTeardownRecord = null
+        val result = beginExecutionLocked(seed)
+        if (result.isFailure) {
+            restoredTeardownRecord = record
+        }
+        result
+    }
+
     fun supersedeRecoveryPublication() = withPlatformLock(teardownLock) {
         supersedeRecoveryPublicationLocked()
     }
 
     private fun supersedeRecoveryPublicationLocked() {
+        revokeRestoredRuntimeLocked()
         recoveryPublicationSupersessionEpoch += 1
         recoveryPublicationClaim = null
     }
@@ -617,6 +931,7 @@ internal class WorkoutExecutionGuard(
     ): Boolean = withPlatformLock(teardownLock) {
         if (currentLeaseRef.value != null) return@withPlatformLock false
         if (executionSequence.value != token.executionGeneration) return@withPlatformLock false
+        if (configurationInputEpoch != token.configurationInputEpoch) return@withPlatformLock false
         if (token.lease == null && invalidatedLease != null) return@withPlatformLock false
         if (token.lease != null && (invalidatedLease == null || !sameIdentity(token.lease, invalidatedLease))) {
             return@withPlatformLock false
@@ -746,13 +1061,15 @@ internal class WorkoutExecutionGuard(
                 configurationInputEpoch += 1
             }
             jobOwnershipClosed = true
-            val jobs = listOfNotNull(completionJob, alertDeliveryJob, teardownJob)
+            val jobs = listOfNotNull(completionJob, alertDeliveryJob, teardownJob, restoredTeardownJob)
             completionJob = null
             completionJobLease = null
             alertDeliveryJob = null
             alertDeliveryJobLease = null
             teardownJob = null
             teardownJobLease = null
+            restoredTeardownJob = null
+            restoredTeardownRecord = restoredTeardownRecord?.copy(revoked = true)
             jobs
         }
         ownedJobs.forEach(Job::cancel)

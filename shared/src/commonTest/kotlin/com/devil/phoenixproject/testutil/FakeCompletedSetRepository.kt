@@ -25,6 +25,9 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     private val plannedSets = mutableMapOf<String, PlannedSet>()
     private val completedSets = mutableMapOf<String, CompletedSet>()
     private val plannedSetsByExercise = mutableMapOf<String, MutableList<String>>()
+    val plannedSetReadRequests = mutableListOf<String>()
+    var beforeAttemptDurabilityRead: suspend () -> Unit = {}
+    var attemptDurabilityReadCount: Int = 0
     private val completedSetsBySession = mutableMapOf<String, MutableList<String>>()
     private val sessionExerciseIds = mutableMapOf<String, String>()
     private val sessionRoutineIds = mutableMapOf<String, String>()
@@ -53,6 +56,9 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         plannedSets.clear()
         completedSets.clear()
         plannedSetsByExercise.clear()
+        plannedSetReadRequests.clear()
+        beforeAttemptDurabilityRead = {}
+        attemptDurabilityReadCount = 0
         completedSetsBySession.clear()
         sessionExerciseIds.clear()
         sessionRoutineIds.clear()
@@ -62,10 +68,13 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
 
     // ==================== Planned Sets ====================
 
-    override suspend fun getPlannedSets(routineExerciseId: String): List<PlannedSet> = plannedSetsByExercise[routineExerciseId]
-        ?.mapNotNull { plannedSets[it] }
-        ?.sortedBy { it.setNumber }
-        ?: emptyList()
+    override suspend fun getPlannedSets(routineExerciseId: String): List<PlannedSet> {
+        plannedSetReadRequests += routineExerciseId
+        return plannedSetsByExercise[routineExerciseId]
+            ?.mapNotNull { plannedSets[it] }
+            ?.sortedBy { it.setNumber }
+            ?: emptyList()
+    }
 
     override suspend fun savePlannedSet(set: PlannedSet) {
         plannedSets[set.id] = set
@@ -176,16 +185,20 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         stableSessionId: String,
         key: LogicalSetKey,
         attemptNumber: Int,
-    ): Boolean = attemptNumber >= 1 &&
-        stableSessionId !in deletedSessionIds &&
-        sessionRoutineIds[stableSessionId] == key.routineSessionId &&
-        completedSets.values.any {
-            it.sessionId == stableSessionId &&
-                it.routineExerciseId == key.routineExerciseId &&
-                it.setNumber == key.setIndex &&
-                it.setType == key.setKind &&
-                it.attemptNumber.coerceAtLeast(1) == attemptNumber
-        }
+    ): Boolean {
+        attemptDurabilityReadCount++
+        beforeAttemptDurabilityRead()
+        return attemptNumber >= 1 &&
+            stableSessionId !in deletedSessionIds &&
+            sessionRoutineIds[stableSessionId] == key.routineSessionId &&
+            completedSets.values.any {
+                it.sessionId == stableSessionId &&
+                    it.routineExerciseId == key.routineExerciseId &&
+                    it.setNumber == key.setIndex &&
+                    it.setType == key.setKind &&
+                    it.attemptNumber.coerceAtLeast(1) == attemptNumber
+            }
+    }
 
     override suspend fun updateRpe(setId: String, rpe: Int) {
         val current = completedSets[setId] ?: return

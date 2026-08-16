@@ -2566,6 +2566,11 @@ selectActiveWorkoutRuntime:
 SELECT * FROM ActiveWorkoutRuntime
 WHERE profile_id = ? AND routine_session_id = ?;
 
+selectActiveWorkoutRuntimesByProfile:
+SELECT * FROM ActiveWorkoutRuntime
+WHERE profile_id = ?
+ORDER BY updated_at_epoch_ms DESC, routine_session_id DESC;
+
 replaceActiveWorkoutRuntime:
 INSERT OR REPLACE INTO ActiveWorkoutRuntime(
     profile_id,

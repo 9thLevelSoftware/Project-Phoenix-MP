@@ -132,9 +132,11 @@ internal sealed interface InitialRestPlanInstallResult {
 @Serializable
 data class RestActionIdentity(
     val transitionId: String,
+    val sourceExecutionId: String,
     val offerId: String?,
     val logicalSetKey: LogicalSetKey,
     val plannedSetId: String?,
+    val selectedPercentage: DropPercentage?,
 )
 
 sealed interface RestTransitionCommand {
@@ -188,6 +190,7 @@ enum class RestTransitionNoOpReason {
     OFFER_ID_MISMATCH,
     LOGICAL_SET_KEY_MISMATCH,
     PLANNED_SET_ID_MISMATCH,
+    SELECTED_PERCENTAGE_MISMATCH,
     DUPLICATE_COMMAND,
     COMMAND_STATE_MISMATCH,
     PERCENTAGE_NOT_OFFERED,
@@ -214,6 +217,7 @@ sealed interface RestTransitionReduction {
 
 fun RestTransitionPlan.actionIdentity(): RestActionIdentity = RestActionIdentity(
     transitionId = transitionId,
+    sourceExecutionId = sourceExecutionId,
     offerId = when (this) {
         is RestTransitionPlan.NormalAdvance -> null
         is RestTransitionPlan.UnresolvedDropOffer -> offerId
@@ -227,7 +231,22 @@ fun RestTransitionPlan.actionIdentity(): RestActionIdentity = RestActionIdentity
         is RestTransitionPlan.Declined -> normalAdvance.plannedSetId
         is RestTransitionPlan.AcceptedRetry -> plannedSetId
     },
+    selectedPercentage = (this as? RestTransitionPlan.AcceptedRetry)?.percentage,
 )
+
+internal fun RestTransitionPlan.withRestDurationSeconds(restDurationSeconds: Int): RestTransitionPlan = when (this) {
+    is RestTransitionPlan.NormalAdvance -> copy(restDurationSeconds = restDurationSeconds)
+
+    is RestTransitionPlan.UnresolvedDropOffer -> copy(
+        normalAdvance = normalAdvance.copy(restDurationSeconds = restDurationSeconds),
+    )
+
+    is RestTransitionPlan.Declined -> copy(
+        normalAdvance = normalAdvance.copy(restDurationSeconds = restDurationSeconds),
+    )
+
+    is RestTransitionPlan.AcceptedRetry -> this
+}
 
 fun buildRestTransitionPlan(
     normalAdvance: RestTransitionPlan.NormalAdvance,
@@ -268,6 +287,9 @@ fun reduceRestTransition(
 
     val expectedIdentity = plan.actionIdentity()
     val identity = command.identity
+    if (identity.sourceExecutionId != expectedIdentity.sourceExecutionId) {
+        return RestTransitionReduction.NoOp(RestTransitionNoOpReason.SOURCE_EXECUTION_MISMATCH)
+    }
     if (identity.transitionId != expectedIdentity.transitionId) {
         return RestTransitionReduction.NoOp(RestTransitionNoOpReason.TRANSITION_ID_MISMATCH)
     }
@@ -279,6 +301,9 @@ fun reduceRestTransition(
     }
     if (identity.plannedSetId != expectedIdentity.plannedSetId) {
         return RestTransitionReduction.NoOp(RestTransitionNoOpReason.PLANNED_SET_ID_MISMATCH)
+    }
+    if (identity.selectedPercentage != expectedIdentity.selectedPercentage) {
+        return RestTransitionReduction.NoOp(RestTransitionNoOpReason.SELECTED_PERCENTAGE_MISMATCH)
     }
 
     return when (command) {

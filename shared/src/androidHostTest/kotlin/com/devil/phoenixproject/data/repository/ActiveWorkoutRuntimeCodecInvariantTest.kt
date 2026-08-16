@@ -7,10 +7,15 @@ import com.devil.phoenixproject.domain.model.DropSetCandidate
 import com.devil.phoenixproject.domain.model.ExerciseLoadOverlay
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSetAttemptState
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
+import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.Json
@@ -153,6 +158,318 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
         )
 
         assertEveryDocumentCaseIsCorrupt(cases)
+    }
+
+    @Test
+    fun everyV2SourceAndTeardownAuthorityInvariantRejectsCorruptJsonByName() = runTest {
+        val document = documentJson()
+        val authority = document.getValue("sourceAuthority").jsonObject
+        val identity = authority.getValue("routineIdentity").jsonObject
+        val identityKey = identity.getValue("logicalSetKey").jsonObject
+        val template = authority.getValue("commandTemplate").jsonObject
+        val teardown = document.getValue("teardownSeed").jsonObject
+        fun withAuthority(updated: JsonObject) = document.with("sourceAuthority", updated)
+        fun withIdentity(updated: JsonObject) = withAuthority(authority.with("routineIdentity", updated))
+        fun withTemplate(updated: JsonObject) = withAuthority(authority.with("commandTemplate", updated))
+        fun withTeardown(updated: JsonObject) = document.with("teardownSeed", updated)
+        fun withCoordinatedExecutionId(executionId: Long): JsonObject = document
+            .with("sourceExecutionId", JsonPrimitive(executionId.toString()))
+            .with(
+                "sourceAuthority",
+                authority.with("sourceExecutionId", JsonPrimitive(executionId.toString())),
+            )
+            .with("teardownSeed", teardown.with("sourceExecutionId", JsonPrimitive(executionId)))
+        val positiveOverflow = Json.parseToJsonElement("1e400")
+        val negativeOverflow = Json.parseToJsonElement("-1e400")
+
+        val otherProfileIdentity = identity.with("profileId", JsonPrimitive("profile-other"))
+        val otherSessionIdentity = identity
+            .with("routineSessionId", JsonPrimitive("session-other"))
+            .with(
+                "logicalSetKey",
+                identityKey.with("routineSessionId", JsonPrimitive("session-other")),
+            )
+        val otherOccurrenceIdentity = identity
+            .with("routineExerciseId", JsonPrimitive("occurrence-other"))
+            .with(
+                "logicalSetKey",
+                identityKey.with("routineExerciseId", JsonPrimitive("occurrence-other")),
+            )
+        val standardKey = identityKey.with("setKind", JsonPrimitive(SetType.STANDARD.name))
+        val standardIdentity = identity.with("logicalSetKey", standardKey)
+        val otherSetIdentity = identity
+            .with("setIndex", JsonPrimitive(2))
+            .with("logicalSetKey", identityKey.with("setIndex", JsonPrimitive(2)))
+
+        val cases = listOf(
+            case(
+                "outer stable session differs from source",
+                withAuthority(authority.with("sourceStableSessionId", JsonPrimitive("stable-other"))),
+            ),
+            case(
+                "outer execution differs from source",
+                withAuthority(authority.with("sourceExecutionId", JsonPrimitive("43"))),
+            ),
+            case(
+                "outer profile differs from source and source identity",
+                withAuthority(
+                    authority
+                        .with("profileId", JsonPrimitive("profile-other"))
+                        .with("routineIdentity", otherProfileIdentity),
+                ),
+            ),
+            case(
+                "outer routine differs from source identity",
+                withIdentity(identity.with("routineId", JsonPrimitive("routine-other"))),
+            ),
+            case("outer routine session differs from source identity", withIdentity(otherSessionIdentity)),
+            case("outer occurrence differs from source identity", withIdentity(otherOccurrenceIdentity)),
+            case(
+                "outer logical key differs from internally valid source key",
+                withAuthority(
+                    authority
+                        .with("plannedSetTypeName", JsonPrimitive(SetType.STANDARD.name))
+                        .with("routineIdentity", standardIdentity),
+                ),
+            ),
+            case(
+                "outer planned set differs from source identity",
+                withIdentity(identity.with("plannedSetId", JsonPrimitive("planned-other"))),
+            ),
+            case(
+                "outer exercise coordinate differs from source identity",
+                withIdentity(identity.with("exerciseIndex", JsonPrimitive(4))),
+            ),
+            case("outer set coordinate differs from source identity", withIdentity(otherSetIdentity)),
+            case(
+                "outer attempt differs from source",
+                withAuthority(authority.with("attemptNumber", JsonPrimitive(3))),
+            ),
+            case(
+                "outer stable session differs from teardown",
+                withTeardown(teardown.with("sourceStableSessionId", JsonPrimitive("stable-other"))),
+            ),
+            case(
+                "outer execution differs from teardown",
+                withTeardown(teardown.with("sourceExecutionId", JsonPrimitive(43))),
+            ),
+            case("teardown zero execution id", withCoordinatedExecutionId(0L)),
+            case("teardown negative execution id", withCoordinatedExecutionId(-1L)),
+            case(
+                "outer profile differs from teardown",
+                withTeardown(teardown.with("profileId", JsonPrimitive("profile-other"))),
+            ),
+            case(
+                "source cable classification differs from teardown",
+                withTeardown(teardown.with("requiresMachine", JsonPrimitive(false))),
+            ),
+            case(
+                "current runtime rejects unknown source reason",
+                withAuthority(authority.with("reasonName", JsonPrimitive(SetEndReason.UNKNOWN.name))),
+            ),
+            case(
+                "source set type differs from logical key",
+                withAuthority(authority.with("plannedSetTypeName", JsonPrimitive(SetType.STANDARD.name))),
+            ),
+            case(
+                "source program mode differs from command template",
+                withAuthority(authority.with("programModeName", JsonPrimitive(ProgramMode.Pump.toSnapshotName()))),
+            ),
+            case("source non-positive attempt", withAuthority(authority.with("attemptNumber", JsonPrimitive(0)))),
+            case("source negative accepted drop count", withAuthority(authority.with("acceptedDropCount", JsonPrimitive(-1)))),
+            case("source drop count above limit", withAuthority(authority.with("acceptedDropCount", JsonPrimitive(3)))),
+            case(
+                "source negative programmed base weight",
+                withAuthority(authority.with("programmedBaseWeightPerCableKg", JsonPrimitive(-1.0))),
+            ),
+            case(
+                "source negative configured start weight",
+                withAuthority(authority.with("configuredStartWeightPerCableKg", JsonPrimitive(-1.0))),
+            ),
+            case("source positive-overflow progression", withAuthority(authority.with("progressionKg", positiveOverflow))),
+            case("source negative-overflow progression", withAuthority(authority.with("progressionKg", negativeOverflow))),
+            case("source negative actual reps", withAuthority(authority.with("actualReps", JsonPrimitive(-1)))),
+            case("source zero target reps", withAuthority(authority.with("targetReps", JsonPrimitive(0)))),
+            case("source zero physical cable count", withAuthority(authority.with("physicalCableCount", JsonPrimitive(0)))),
+            case("template unknown program mode", withTemplate(template.with("programModeName", JsonPrimitive("FUTURE")))),
+            case("template negative reps", withTemplate(template.with("reps", JsonPrimitive(-1)))),
+            case("template negative cable weight", withTemplate(template.with("weightPerCableKg", JsonPrimitive(-1.0)))),
+            case(
+                "template positive-overflow external added load",
+                withTemplate(template.with("externalAddedLoadKg", positiveOverflow)),
+            ),
+            case(
+                "template negative-overflow counterweight",
+                withTemplate(template.with("counterweightKg", negativeOverflow)),
+            ),
+            case(
+                "template positive-overflow progression regression",
+                withTemplate(template.with("progressionRegressionKg", positiveOverflow)),
+            ),
+            case(
+                "template blank rack id",
+                withTemplate(template.with("activeRackItemIds", JsonArray(listOf(JsonPrimitive(" "))))),
+            ),
+            case(
+                "template duplicate rack ids",
+                withTemplate(
+                    template.with(
+                        "activeRackItemIds",
+                        JsonArray(listOf(JsonPrimitive("rack-a"), JsonPrimitive("rack-a"))),
+                    ),
+                ),
+            ),
+            case("template negative warmup reps", withTemplate(template.with("warmupReps", JsonPrimitive(-1)))),
+            case(
+                "template blank selected exercise",
+                withTemplate(template.with("selectedExerciseId", JsonPrimitive(" "))),
+            ),
+            case(
+                "template negative last used weight",
+                withTemplate(template.with("lastUsedWeightKg", JsonPrimitive(-1.0))),
+            ),
+            case("template negative pr weight", withTemplate(template.with("prWeightKg", JsonPrimitive(-1.0)))),
+            case(
+                "template unknown rep count timing",
+                withTemplate(template.with("repCountTimingName", JsonPrimitive("FUTURE"))),
+            ),
+            case("template unknown echo level", withTemplate(template.with("echoLevelName", JsonPrimitive("FUTURE")))),
+            case(
+                "template unknown eccentric load",
+                withTemplate(template.with("eccentricLoadName", JsonPrimitive("FUTURE"))),
+            ),
+            case(
+                "template negative just lift rest",
+                withTemplate(template.with("justLiftRestSeconds", JsonPrimitive(-1))),
+            ),
+        )
+
+        assertEveryDocumentCaseIsCorrupt(cases)
+    }
+
+    @Test
+    fun directConstructorsRejectNegativeCountsNonPositiveTeardownAndEveryNonFiniteWeightByName() {
+        val runtime = runtime()
+        val authority = runtime.sourceAuthority
+        val template = authority.commandTemplate
+        val teardown = runtime.teardownSeed
+        val cases = listOf(
+            constructorCase("source negative accepted drop count") {
+                authority.copy(acceptedDropCount = -1)
+            },
+            constructorCase("source NaN programmed base weight") {
+                authority.copy(programmedBaseWeightPerCableKg = Float.NaN)
+            },
+            constructorCase("source positive-infinite programmed base weight") {
+                authority.copy(programmedBaseWeightPerCableKg = Float.POSITIVE_INFINITY)
+            },
+            constructorCase("source negative-infinite programmed base weight") {
+                authority.copy(programmedBaseWeightPerCableKg = Float.NEGATIVE_INFINITY)
+            },
+            constructorCase("source NaN configured start weight") {
+                authority.copy(configuredStartWeightPerCableKg = Float.NaN)
+            },
+            constructorCase("source positive-infinite configured start weight") {
+                authority.copy(configuredStartWeightPerCableKg = Float.POSITIVE_INFINITY)
+            },
+            constructorCase("source negative-infinite configured start weight") {
+                authority.copy(configuredStartWeightPerCableKg = Float.NEGATIVE_INFINITY)
+            },
+            constructorCase("source NaN progression") {
+                authority.copy(progressionKg = Float.NaN)
+            },
+            constructorCase("source positive-infinite progression") {
+                authority.copy(progressionKg = Float.POSITIVE_INFINITY)
+            },
+            constructorCase("source negative-infinite progression") {
+                authority.copy(progressionKg = Float.NEGATIVE_INFINITY)
+            },
+            constructorCase("teardown zero execution id") {
+                teardown.copy(sourceExecutionId = 0L)
+            },
+            constructorCase("teardown negative execution id") {
+                teardown.copy(sourceExecutionId = -1L)
+            },
+            constructorCase("template NaN cable weight") {
+                template.copy(weightPerCableKg = Float.NaN)
+            },
+            constructorCase("template positive-infinite cable weight") {
+                template.copy(weightPerCableKg = Float.POSITIVE_INFINITY)
+            },
+            constructorCase("template negative-infinite cable weight") {
+                template.copy(weightPerCableKg = Float.NEGATIVE_INFINITY)
+            },
+            constructorCase("template NaN external added load") {
+                template.copy(externalAddedLoadKg = Float.NaN)
+            },
+            constructorCase("template positive-infinite external added load") {
+                template.copy(externalAddedLoadKg = Float.POSITIVE_INFINITY)
+            },
+            constructorCase("template negative-infinite external added load") {
+                template.copy(externalAddedLoadKg = Float.NEGATIVE_INFINITY)
+            },
+            constructorCase("template NaN counterweight") {
+                template.copy(counterweightKg = Float.NaN)
+            },
+            constructorCase("template positive-infinite counterweight") {
+                template.copy(counterweightKg = Float.POSITIVE_INFINITY)
+            },
+            constructorCase("template negative-infinite counterweight") {
+                template.copy(counterweightKg = Float.NEGATIVE_INFINITY)
+            },
+            constructorCase("template NaN progression regression") {
+                template.copy(progressionRegressionKg = Float.NaN)
+            },
+            constructorCase("template positive-infinite progression regression") {
+                template.copy(progressionRegressionKg = Float.POSITIVE_INFINITY)
+            },
+            constructorCase("template negative-infinite progression regression") {
+                template.copy(progressionRegressionKg = Float.NEGATIVE_INFINITY)
+            },
+            constructorCase("template NaN last used weight") {
+                template.copy(lastUsedWeightKg = Float.NaN)
+            },
+            constructorCase("template positive-infinite last used weight") {
+                template.copy(lastUsedWeightKg = Float.POSITIVE_INFINITY)
+            },
+            constructorCase("template negative-infinite last used weight") {
+                template.copy(lastUsedWeightKg = Float.NEGATIVE_INFINITY)
+            },
+            constructorCase("template NaN PR weight") {
+                template.copy(prWeightKg = Float.NaN)
+            },
+            constructorCase("template positive-infinite PR weight") {
+                template.copy(prWeightKg = Float.POSITIVE_INFINITY)
+            },
+            constructorCase("template negative-infinite PR weight") {
+                template.copy(prWeightKg = Float.NEGATIVE_INFINITY)
+            },
+            constructorCase("document NaN exercise-load overlay multiplier") {
+                runtime.copy(
+                    exerciseLoadOverlays = listOf(ExerciseLoadOverlay("routine-exercise-a", Float.NaN)),
+                )
+            },
+            constructorCase("document positive-infinite exercise-load overlay multiplier") {
+                runtime.copy(
+                    exerciseLoadOverlays = listOf(
+                        ExerciseLoadOverlay("routine-exercise-a", Float.POSITIVE_INFINITY),
+                    ),
+                )
+            },
+            constructorCase("document negative-infinite exercise-load overlay multiplier") {
+                runtime.copy(
+                    exerciseLoadOverlays = listOf(
+                        ExerciseLoadOverlay("routine-exercise-a", Float.NEGATIVE_INFINITY),
+                    ),
+                )
+            },
+        )
+
+        cases.forEach { case ->
+            assertFailsWith<IllegalArgumentException>(case.name) {
+                case.construct()
+            }
+        }
     }
 
     @Test
@@ -318,13 +635,55 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
         routineId = "routine-a",
         routineSessionId = "routine-session-a",
         routineExerciseId = "routine-exercise-a",
-        sourceExecutionId = "execution-a",
+        sourceExecutionId = "42",
         sourceStableSessionId = "stable-session-a",
         sourceAttemptNumber = 2,
         logicalSetKey = logicalKey(),
         plannedSetId = "planned-set-a",
         sourceExerciseIndex = 3,
         sourceSetIndex = 1,
+        sourceAuthority = RestoredRetrySourceAuthoritySnapshot(
+            sourceStableSessionId = "stable-session-a",
+            sourceExecutionId = "42",
+            profileId = "profile-a",
+            routineIdentity = RoutineExecutionIdentity(
+                profileId = "profile-a",
+                routineId = "routine-a",
+                routineSessionId = "routine-session-a",
+                routineExerciseId = "routine-exercise-a",
+                logicalSetKey = logicalKey(),
+                plannedSetId = "planned-set-a",
+                exerciseIndex = 3,
+                setIndex = 1,
+            ),
+            reasonName = SetEndReason.STALL_FAILURE.name,
+            attemptNumber = 2,
+            acceptedDropCount = 1,
+            plannedSetTypeName = SetType.AMRAP.name,
+            programModeName = ProgramMode.OldSchool.toSnapshotName(),
+            programmedBaseWeightPerCableKg = 40f,
+            configuredStartWeightPerCableKg = 40f,
+            progressionKg = 0f,
+            actualReps = 6,
+            targetReps = 10,
+            isWarmup = false,
+            isEcho = false,
+            isJustLift = false,
+            isBodyweight = false,
+            isTimed = false,
+            isAmrap = true,
+            isCableExercise = true,
+            physicalCableCount = 2,
+            commandTemplate = RestoredWorkoutCommandTemplateSnapshot.from(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 10, weightPerCableKg = 40f),
+            ),
+        ),
+        teardownSeed = RestoredTeardownSeedSnapshot(
+            sourceExecutionId = 42L,
+            sourceStableSessionId = "stable-session-a",
+            profileId = "profile-a",
+            requiresMachine = true,
+        ),
         exerciseLoadOverlays = emptyList(),
         attemptStates = emptyList(),
         restTransitionPlan = null,
@@ -335,7 +694,7 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
     private fun logicalKey() = LogicalSetKey("routine-session-a", "routine-exercise-a", 1, SetType.AMRAP)
 
     private fun normalAdvance(
-        sourceExecutionId: String = "execution-a",
+        sourceExecutionId: String = "42",
         logicalSetKey: LogicalSetKey = logicalKey(),
         sourceCoordinates: RestTransitionPlan.Coordinates = RestTransitionPlan.Coordinates(3, 1),
         plannedSetId: String? = "planned-set-a",
@@ -353,7 +712,7 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
         normalCoordinates: RestTransitionPlan.Coordinates = RestTransitionPlan.Coordinates(3, 1),
     ) = RestTransitionPlan.UnresolvedDropOffer(
         transitionId = "transition-a",
-        sourceExecutionId = "execution-a",
+        sourceExecutionId = "42",
         logicalSetKey = logicalKey(),
         offerId = "offer-a",
         plannedSetId = plannedSetId,
@@ -366,14 +725,14 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
         normalCoordinates: RestTransitionPlan.Coordinates = RestTransitionPlan.Coordinates(3, 1),
     ) = RestTransitionPlan.Declined(
         transitionId = "transition-a",
-        sourceExecutionId = "execution-a",
+        sourceExecutionId = "42",
         logicalSetKey = logicalKey(),
         offerId = "offer-a",
         normalAdvance = normalAdvance(plannedSetId = normalPlannedSetId, sourceCoordinates = normalCoordinates),
     )
 
     private fun acceptedRetry(
-        sourceExecutionId: String = "execution-a",
+        sourceExecutionId: String = "42",
         logicalSetKey: LogicalSetKey = logicalKey(),
         sourceCoordinates: RestTransitionPlan.Coordinates = RestTransitionPlan.Coordinates(3, 1),
         plannedSetId: String? = "planned-set-a",
@@ -446,7 +805,7 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
         ) {
             bindString(0, "profile-a")
             bindString(1, "routine-session-a")
-            bindLong(2, 1)
+            bindLong(2, ActiveWorkoutRuntimeDocument.CURRENT_VERSION.toLong())
             bindString(3, payload.toString())
             bindLong(4, 1_700_000_000_000)
         }
@@ -454,8 +813,15 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
 
     private fun case(name: String, payload: JsonObject) = NamedPayload(name, payload)
 
+    private fun constructorCase(name: String, construct: () -> Unit) = NamedConstructorCase(name, construct)
+
     private data class NamedPayload(
         val name: String,
         val payload: JsonObject,
+    )
+
+    private data class NamedConstructorCase(
+        val name: String,
+        val construct: () -> Unit,
     )
 }

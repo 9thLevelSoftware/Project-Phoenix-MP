@@ -508,7 +508,8 @@ class WorkoutMachineTeardownTest {
             ),
         )
 
-        assertEquals(2, Regex("bleRepository\\.stopWorkout\\(\\)").findAll(activeSessionSource).count())
+        assertEquals(3, Regex("bleRepository\\.stopWorkout\\(\\)").findAll(activeSessionSource).count())
+        assertTrue(activeSessionSource.contains("launchRestoredMachineTeardownReset"))
         assertTrue(activeSessionSource.contains("pause/resume non-exit RESET exception"))
         assertTrue(!defaultManagerSource.contains("bleRepository.stopWorkout()"))
         assertTrue(!routineFlowSource.contains("stopMachineWorkout"))

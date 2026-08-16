@@ -10,8 +10,12 @@ import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.toDocument
 import com.devil.phoenixproject.data.preferences.toLegacySingleExerciseDefaults
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeDiscoveryResult
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeDocument
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLoadResult
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLookupKey
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeResumeResult
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
@@ -25,6 +29,7 @@ import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.RepNotification
+import com.devil.phoenixproject.data.repository.RestoredTeardownSeedSnapshot
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
@@ -58,7 +63,9 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineItem
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
+import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.SetType
@@ -249,6 +256,141 @@ private data class RestTransitionApplicationResult(
     val normalTransitionConsumed: Boolean,
 )
 
+private data class RestoredRuntimeOwner(
+    val handle: RoutineResumeHandle.Persisted,
+    val document: ActiveWorkoutRuntimeDocument,
+    val documentVersion: Long,
+    val guardOwner: RestoredRuntimeOwnerToken,
+    val sourceContext: RestoredRetrySourceContext,
+    val rackBehaviorOverrides: Map<String, RackItemBehavior>,
+    val externalCommandInputStamp: ExternalCommandInputStamp,
+)
+
+private data class RestoredRestTimerOwner(
+    val guardOwner: RestoredRuntimeOwnerToken,
+    val document: ActiveWorkoutRuntimeDocument,
+    val documentVersion: Long,
+    val transitionId: String,
+    val sourceExecutionId: String,
+    val monotonicDeadlineElapsedRealtimeMs: Long?,
+    val job: Job?,
+)
+
+private data class RestoredRestTimerPublication(
+    val jobToStart: Job?,
+    val jobsToCancel: List<Job>,
+)
+
+private sealed interface RestoredRestTimerMutation {
+    data class Extend(val seconds: Int) : RestoredRestTimerMutation
+    data object TogglePause : RestoredRestTimerMutation
+    data object Reset : RestoredRestTimerMutation
+}
+
+private data class RestoredNormalDispatch(
+    val owner: RestoredRuntimeOwner,
+    val plan: RestTransitionPlan.NormalAdvance,
+    val routine: Routine,
+    val exerciseIndex: Int,
+    val setIndex: Int,
+)
+
+private data class RestoredActionApplication(
+    val reduction: RestTransitionReduction,
+    val normalDispatch: RestoredNormalDispatch? = null,
+    val acceptedOwner: RestoredRuntimeOwner? = null,
+)
+
+private data class PendingRuntimeResume(
+    val handle: RoutineResumeHandle.Persisted,
+    val externalCommandInputStamp: ExternalCommandInputStamp,
+    val result: CompletableDeferred<ActiveWorkoutRuntimeResumeResult>,
+)
+
+internal enum class RuntimeCleanupReason {
+    ROUTINE_COMPLETED,
+    END_WORKOUT,
+    EXPLICIT_RESTART,
+    PROFILE_CHANGED,
+    IDENTITY_MISMATCH,
+    INVALID_DOCUMENT,
+    DISCARD_RECOVERY,
+}
+
+private enum class RuntimeCleanupPlanVariant { NONE, NORMAL, UNRESOLVED, ACCEPTED, DECLINED }
+
+private sealed interface RuntimeCleanupSource {
+    data class ActiveDocument(
+        val engineVersion: Long,
+        val sourceExecutionId: String,
+        val sourceStableSessionId: String,
+    ) : RuntimeCleanupSource
+
+    data class PendingInitialReplace(val candidateToken: Long) : RuntimeCleanupSource
+
+    data class PendingEngineReplace(
+        val candidateToken: Long,
+        val expectedPublishedEngineVersion: Long?,
+    ) : RuntimeCleanupSource
+
+    data class RestoredOwner(
+        val owner: RestoredRuntimeOwnerToken,
+        val engineVersion: Long,
+    ) : RuntimeCleanupSource
+
+    data class ColdHandle(
+        val rowRevision: com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRowRevision,
+    ) : RuntimeCleanupSource
+}
+
+private data class RuntimeCleanupCandidate(
+    val document: ActiveWorkoutRuntimeDocument,
+    val source: RuntimeCleanupSource,
+)
+
+private data class PendingRuntimeReplaceCandidate(
+    val candidateToken: Long,
+    val document: ActiveWorkoutRuntimeDocument,
+    val origin: RuntimeCleanupCandidate,
+    val expectedPublishedEngineVersion: Long?,
+)
+
+private data class RuntimeCleanupTarget(
+    val reason: RuntimeCleanupReason,
+    val lookupKey: ActiveWorkoutRuntimeLookupKey,
+    val initialRowRevision: com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRowRevision?,
+    val expectedDocument: ActiveWorkoutRuntimeDocument?,
+    val source: RuntimeCleanupSource,
+    val planVariant: RuntimeCleanupPlanVariant,
+    val exitPresentation: Boolean,
+)
+
+private enum class RuntimeCleanupResult { CLEARED, RETRYABLE_FAILURE, SUPERSEDED }
+
+private data class RuntimeCleanupDetachedEffects(
+    val completeNavigationFollower: (() -> Unit)? = null,
+    val jobs: List<Job> = emptyList(),
+)
+
+private data class CompletedNoLeasePresentation(
+    val loadedRoutine: Routine,
+    val routineId: String?,
+    val routineSessionId: String?,
+    val workoutState: WorkoutState,
+    val routineFlowState: RoutineFlowState.Complete,
+)
+
+private sealed interface RuntimeHydrationValidation {
+    data class Valid(
+        val document: ActiveWorkoutRuntimeDocument,
+        val preparation: RoutineRecoveryPreparation,
+        val sourceContext: RestoredRetrySourceContext,
+    ) : RuntimeHydrationValidation
+
+    data object Invalid : RuntimeHydrationValidation
+    data object RetryableFailure : RuntimeHydrationValidation
+}
+
 private data class PlanOwnedRestPresentation(
     val documentVersion: Long,
     val remainingSeconds: Int,
@@ -272,6 +414,10 @@ private sealed interface AcceptedRetryPermissionSource {
         val ownerJob: Job,
         val deadlineEpochMs: Long?,
     ) : AcceptedRetryPermissionSource
+
+    data class Restored(
+        val owner: RestoredRuntimeOwnerToken,
+    ) : AcceptedRetryPermissionSource
 }
 
 private data class AcceptedRetryGateSnapshot(
@@ -281,6 +427,7 @@ private data class AcceptedRetryGateSnapshot(
     val plan: RestTransitionPlan.AcceptedRetry,
     val permission: AcceptedRetryPermission?,
     val expectedSource: ExecutionLease?,
+    val restoredOwner: RestoredRuntimeOwner?,
     val completion: SetExecutionCompletion?,
     val commandTemplate: WorkoutParameters,
     val recoveryPublicationEpoch: Long,
@@ -299,6 +446,7 @@ private data class AcceptedRetryStartClaim(
 private data class RetryStartRequest(
     val startClaim: AcceptedRetryStartClaim? = null,
     val expectedSource: ExecutionLease?,
+    val restoredOwnerToken: RestoredRuntimeOwnerToken? = null,
     val sourceStableSessionId: String,
     val sourceAttemptNumber: Int,
     val requiresLivePersistedClaim: Boolean,
@@ -351,6 +499,7 @@ private sealed interface RetryFailClosedAuthority {
     ) : RetryFailClosedAuthority
 
     data class Restored(
+        val owner: RestoredRuntimeOwnerToken,
         override val recoveryPublicationEpoch: Long,
     ) : RetryFailClosedAuthority
 }
@@ -417,6 +566,1043 @@ class ActiveSessionEngine(
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
 ) {
+    internal suspend fun discoverRoutineResume(
+        routine: Routine,
+        inMemoryProgress: InMemoryRoutineProgressSnapshot?,
+        launchOrigin: RoutineLaunchOrigin,
+        cycleId: String?,
+        cycleDayNumber: Int?,
+    ): RoutineResumeDiscovery {
+        val readyProfile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+            ?: return RoutineResumeDiscovery.Superseded
+        if (routine.profileId != readyProfile.profile.id) return RoutineResumeDiscovery.Superseded
+        if (launchOrigin == RoutineLaunchOrigin.TRAINING_CYCLES &&
+            (cycleId.isNullOrBlank() || cycleDayNumber == null || cycleDayNumber <= 0)
+        ) {
+            return RoutineResumeDiscovery.Superseded
+        }
+        val generation = captureRoutineResumeGeneration()
+        if (inMemoryProgress != null) {
+            if (inMemoryProgress.loadedRoutine.id != routine.id ||
+                inMemoryProgress.loadedRoutine.profileId != readyProfile.profile.id ||
+                inMemoryProgress.configurationInputEpoch != generation.configurationInputEpoch
+            ) {
+                return RoutineResumeDiscovery.Superseded
+            }
+            return RoutineResumeDiscovery.Candidate(
+                RoutineResumeHandle.InMemory(
+                    selectedProfileId = readyProfile.profile.id,
+                    selectedRoutine = routine,
+                    activeRoutineSnapshot = inMemoryProgress.loadedRoutine,
+                    progressInfo = inMemoryProgress.progressInfo,
+                    launchOrigin = launchOrigin,
+                    cycleId = cycleId,
+                    cycleDayNumber = cycleDayNumber,
+                    managerGeneration = generation,
+                    exerciseIndex = inMemoryProgress.exerciseIndex,
+                    setIndex = inMemoryProgress.setIndex,
+                    routineSessionId = inMemoryProgress.routineSessionId,
+                    activeLaunchOrigin = inMemoryProgress.launchOrigin,
+                    activeCycleId = inMemoryProgress.cycleId,
+                    activeCycleDayNumber = inMemoryProgress.cycleDayNumber,
+                ),
+            )
+        }
+        val discovery = try {
+            activeWorkoutRuntimeRepository.discover(readyProfile.profile.id, routine.id)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return RoutineResumeDiscovery.RetryableFailure
+        }
+        currentCoroutineContext().ensureActive()
+        val currentProfile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+        if (currentProfile?.profile?.id != readyProfile.profile.id ||
+            captureRoutineResumeGeneration() != generation
+        ) {
+            return RoutineResumeDiscovery.Superseded
+        }
+        val found = discovery as? ActiveWorkoutRuntimeDiscoveryResult.Found
+            ?: return RoutineResumeDiscovery.Missing
+        val rowRevision: com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRowRevision
+        val progressInfo: ResumableProgressInfo
+        val manualRecoveryCoordinates: RestTransitionPlan.Coordinates?
+        when (val loadResult = found.loadResult) {
+            ActiveWorkoutRuntimeLoadResult.Missing -> return RoutineResumeDiscovery.Missing
+
+            is ActiveWorkoutRuntimeLoadResult.Loaded -> {
+                rowRevision = loadResult.rowRevision
+                manualRecoveryCoordinates = validatedManualRecoveryCoordinates(
+                    routine = routine,
+                    routineExerciseId = loadResult.document.routineExerciseId,
+                    exerciseIndex = loadResult.document.sourceExerciseIndex,
+                    setIndex = loadResult.document.sourceSetIndex,
+                )
+                progressInfo = persistedProgressInfo(routine, manualRecoveryCoordinates)
+            }
+
+            is ActiveWorkoutRuntimeLoadResult.Rejected -> {
+                val attribution = loadResult.attribution
+                    ?: return RoutineResumeDiscovery.Missing
+                rowRevision = loadResult.rowRevision
+                manualRecoveryCoordinates = validatedManualRecoveryCoordinates(
+                    routine = routine,
+                    routineExerciseId = attribution.routineExerciseId,
+                    exerciseIndex = attribution.sourceExerciseIndex,
+                    setIndex = attribution.sourceSetIndex,
+                )
+                progressInfo = persistedProgressInfo(routine, manualRecoveryCoordinates)
+            }
+        }
+        return RoutineResumeDiscovery.Candidate(
+            RoutineResumeHandle.Persisted(
+                selectedProfileId = readyProfile.profile.id,
+                selectedRoutine = routine,
+                lookupKey = found.lookupKey,
+                rowRevision = rowRevision,
+                progressInfo = progressInfo,
+                launchOrigin = launchOrigin,
+                cycleId = cycleId,
+                cycleDayNumber = cycleDayNumber,
+                managerGeneration = generation,
+                manualRecoveryCoordinates = manualRecoveryCoordinates,
+            ),
+        )
+    }
+
+    private fun inMemoryRoutineHandleIsCurrent(handle: RoutineResumeHandle.InMemory): Boolean {
+        val profile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+            ?: return false
+        return handle.selectedProfileId == profile.profile.id &&
+            handle.selectedRoutine.profileId == profile.profile.id &&
+            handle.activeRoutineSnapshot.profileId == profile.profile.id &&
+            captureRoutineResumeGeneration() == handle.managerGeneration &&
+            coordinator._loadedRoutine.value == handle.activeRoutineSnapshot &&
+            coordinator.currentRoutineSessionId == handle.routineSessionId &&
+            coordinator._currentExerciseIndex.value == handle.exerciseIndex &&
+            coordinator._currentSetIndex.value == handle.setIndex &&
+            coordinator.routineLaunchOrigin == handle.activeLaunchOrigin &&
+            coordinator.activeCycleId == handle.activeCycleId &&
+            coordinator.activeCycleDayNumber == handle.activeCycleDayNumber
+    }
+
+    internal fun resumeInMemoryRoutine(
+        handle: RoutineResumeHandle.InMemory,
+    ): ActiveWorkoutRuntimeResumeResult = if (inMemoryRoutineHandleIsCurrent(handle)) {
+        ActiveWorkoutRuntimeResumeResult.Missing
+    } else {
+        ActiveWorkoutRuntimeResumeResult.Superseded
+    }
+
+    internal fun isRoutineResumeHandleCurrent(
+        handle: RoutineResumeHandle.InMemory,
+    ): Boolean = inMemoryRoutineHandleIsCurrent(handle)
+
+    internal fun discardInMemoryRoutine(
+        handle: RoutineResumeHandle.InMemory,
+    ): RoutineResumeDiscardResult = if (inMemoryRoutineHandleIsCurrent(handle)) {
+        RoutineResumeDiscardResult.Missing
+    } else {
+        RoutineResumeDiscardResult.Superseded
+    }
+
+    private fun captureRoutineResumeGeneration() = RoutineResumeManagerGeneration(
+        configurationInputEpoch = executionGuard.captureConfigurationInputEpoch(),
+        recoveryPublicationEpoch = executionGuard.captureRecoveryPublicationEpoch(),
+    )
+
+    private fun validatedManualRecoveryCoordinates(
+        routine: Routine,
+        routineExerciseId: String?,
+        exerciseIndex: Int?,
+        setIndex: Int?,
+    ): RestTransitionPlan.Coordinates? {
+        if (routineExerciseId == null || exerciseIndex == null || setIndex == null) return null
+        val orderedExercises = routine.getItems().flatMap { item ->
+            when (item) {
+                is RoutineItem.Single -> listOf(item.exercise)
+                is RoutineItem.SupersetItem -> item.superset.exercises
+            }
+        }
+        val exercise = orderedExercises.getOrNull(exerciseIndex) ?: return null
+        if (exercise.id != routineExerciseId || setIndex !in exercise.setReps.indices) return null
+        return RestTransitionPlan.Coordinates(exerciseIndex, setIndex)
+    }
+
+    private fun persistedProgressInfo(
+        routine: Routine,
+        coordinates: RestTransitionPlan.Coordinates?,
+    ): ResumableProgressInfo {
+        val exercise = coordinates?.let { coordinate ->
+            routine.getItems().flatMap { item ->
+                when (item) {
+                    is RoutineItem.Single -> listOf(item.exercise)
+                    is RoutineItem.SupersetItem -> item.superset.exercises
+                }
+            }.getOrNull(coordinate.exerciseIndex)
+        }
+        return ResumableProgressInfo(
+            exerciseName = exercise?.exercise?.displayName.orEmpty(),
+            currentSet = coordinates?.setIndex?.plus(1) ?: 0,
+            totalSets = exercise?.setReps?.size ?: 0,
+            currentExercise = coordinates?.exerciseIndex?.plus(1) ?: 0,
+            totalExercises = routine.exercises.size,
+        )
+    }
+
+    internal suspend fun resumeRoutine(
+        handle: RoutineResumeHandle.Persisted,
+    ): ActiveWorkoutRuntimeResumeResult {
+        pendingColdRuntimeCleanupTarget(handle)?.let { target ->
+            if (target.reason == RuntimeCleanupReason.DISCARD_RECOVERY) {
+                return ActiveWorkoutRuntimeResumeResult.RetryableFailure
+            }
+        }
+        val externalCommandInputStamp = captureExternalCommandInputStamp()
+            ?: return ActiveWorkoutRuntimeResumeResult.RetryableFailure
+        var leadsAttempt = false
+        var supersededPending: PendingRuntimeResume? = null
+        val pending = runtimeResumeMutex.withLock {
+            pendingRuntimeResume?.takeIf { it.handle == handle } ?: PendingRuntimeResume(
+                handle = handle,
+                externalCommandInputStamp = externalCommandInputStamp,
+                result = CompletableDeferred(),
+            ).also {
+                supersededPending = pendingRuntimeResume
+                pendingRuntimeResume = it
+                leadsAttempt = true
+            }
+        }
+        supersededPending?.result?.complete(ActiveWorkoutRuntimeResumeResult.Superseded)
+        if (!leadsAttempt) return pending.result.await()
+        afterRuntimeResumeSelectionForTest?.invoke(handle)
+
+        try {
+            val existingOwner = restTransitionMutex.withLock {
+                restoredRuntimeOwner?.takeIf { owner ->
+                    owner.handle == handle &&
+                        owner.document == activeRuntimeDocument &&
+                        coordinator._restTransitionPlan.value == owner.document.restTransitionPlan &&
+                        pending.externalCommandInputStamp == owner.externalCommandInputStamp &&
+                        hasRestoredOwnerContextAuthority(owner, owner.document)
+                }
+            }
+            val resumed = if (existingOwner != null) {
+                ActiveWorkoutRuntimeResumeResult.RestoredRest
+            } else {
+                resumePersistedRoutine(handle, pending)
+            }
+            pending.result.complete(resumed)
+            return pending.result.await()
+        } catch (error: CancellationException) {
+            pending.result.completeExceptionally(error)
+            throw error
+        } catch (error: Throwable) {
+            pending.result.completeExceptionally(error)
+            throw error
+        } finally {
+            withContext(NonCancellable) {
+                runtimeResumeMutex.withLock {
+                    if (pendingRuntimeResume === pending) pendingRuntimeResume = null
+                }
+            }
+        }
+    }
+
+    private suspend fun resumePersistedRoutine(
+        handle: RoutineResumeHandle.Persisted,
+        pending: PendingRuntimeResume,
+    ): ActiveWorkoutRuntimeResumeResult {
+        if (!runtimeResumeAuthorityIsCurrent(handle, pending)) {
+            return ActiveWorkoutRuntimeResumeResult.Superseded
+        }
+
+        val loaded = try {
+            activeWorkoutRuntimeRepository.load(
+                profileId = handle.lookupKey.profileId,
+                routineSessionId = handle.lookupKey.routineSessionId,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return ActiveWorkoutRuntimeResumeResult.RetryableFailure
+        }
+        currentCoroutineContext().ensureActive()
+        if (!runtimeResumeAuthorityIsCurrent(handle, pending)) return ActiveWorkoutRuntimeResumeResult.Superseded
+
+        val document = when (loaded) {
+            ActiveWorkoutRuntimeLoadResult.Missing -> return ActiveWorkoutRuntimeResumeResult.Missing
+
+            is ActiveWorkoutRuntimeLoadResult.Rejected -> {
+                if (loaded.rowRevision != handle.rowRevision) {
+                    return ActiveWorkoutRuntimeResumeResult.Superseded
+                }
+                return deleteInvalidDiscoveredRuntime(handle, pending)
+            }
+
+            is ActiveWorkoutRuntimeLoadResult.Loaded -> {
+                if (loaded.rowRevision != handle.rowRevision) {
+                    return ActiveWorkoutRuntimeResumeResult.Superseded
+                }
+                pendingTrackedRuntimeCleanupTarget(handle, loaded.document)?.let { target ->
+                    val cleanupResult = clearActiveWorkoutRuntime(target)
+                    currentCoroutineContext().ensureActive()
+                    if (!runtimeResumeAuthorityIsCurrent(handle, pending)) {
+                        return ActiveWorkoutRuntimeResumeResult.Superseded
+                    }
+                    return when (cleanupResult) {
+                        RuntimeCleanupResult.CLEARED -> ActiveWorkoutRuntimeResumeResult.Missing
+
+                        RuntimeCleanupResult.RETRYABLE_FAILURE ->
+                            ActiveWorkoutRuntimeResumeResult.RetryableFailure
+
+                        RuntimeCleanupResult.SUPERSEDED -> ActiveWorkoutRuntimeResumeResult.Superseded
+                    }
+                }
+                loaded.document
+            }
+        }
+
+        if (!runtimeResumeAuthorityIsCurrent(handle, pending)) {
+            return ActiveWorkoutRuntimeResumeResult.Superseded
+        }
+        val source = validateRuntimeEnvelopeBeforePreparation(document, handle)
+            ?: return deleteInvalidDiscoveredRuntime(handle, pending)
+        val preparation = try {
+            recoveryPreparationCallsForTest++
+            flowDelegate?.prepareRoutineForRecovery(
+                routine = handle.selectedRoutine,
+                exerciseIndex = document.sourceExerciseIndex,
+                setIndex = document.sourceSetIndex,
+                launchOrigin = handle.launchOrigin,
+                cycleId = handle.cycleId,
+                cycleDayNumber = handle.cycleDayNumber,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return ActiveWorkoutRuntimeResumeResult.RetryableFailure
+        } ?: return deleteInvalidDiscoveredRuntime(handle, pending)
+        currentCoroutineContext().ensureActive()
+        if (!runtimeResumeAuthorityIsCurrent(handle, pending)) return ActiveWorkoutRuntimeResumeResult.Superseded
+
+        if (!validateRuntimePreparationStructure(document, preparation)) {
+            return deleteInvalidDiscoveredRuntime(handle, pending)
+        }
+
+        val plannedSets = try {
+            completedSetRepository.getPlannedSets(document.routineExerciseId)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return ActiveWorkoutRuntimeResumeResult.RetryableFailure
+        }
+        currentCoroutineContext().ensureActive()
+        if (!runtimeResumeAuthorityIsCurrent(handle, pending)) return ActiveWorkoutRuntimeResumeResult.Superseded
+
+        if (!validateRuntimeHydrationBeforeDurability(document, preparation, source, plannedSets)) {
+            return deleteInvalidDiscoveredRuntime(handle, pending)
+        }
+
+        val durable = try {
+            completedSetRepository.isAttemptDurable(
+                stableSessionId = document.sourceStableSessionId,
+                key = document.logicalSetKey,
+                attemptNumber = document.sourceAttemptNumber,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return ActiveWorkoutRuntimeResumeResult.RetryableFailure
+        }
+        currentCoroutineContext().ensureActive()
+        if (!runtimeResumeAuthorityIsCurrent(handle, pending)) return ActiveWorkoutRuntimeResumeResult.Superseded
+        if (!durable) return deleteInvalidDiscoveredRuntime(handle, pending)
+        if (!runtimeResumeAuthorityIsCurrent(handle, pending)) return ActiveWorkoutRuntimeResumeResult.Superseded
+
+        val plan = document.restTransitionPlan
+            ?: return deleteInvalidDiscoveredRuntime(handle, pending)
+        if (!validateRuntimeCurrentAuthority(document, preparation, source) ||
+            !planMatchesRestoredDocument(plan, document, source, preparation)
+        ) {
+            return deleteInvalidDiscoveredRuntime(handle, pending)
+        }
+        val validation = RuntimeHydrationValidation.Valid(document, preparation, source)
+
+        var restoredOwner: RestoredRuntimeOwner? = null
+        var restoredTimerPublication: RestoredRestTimerPublication? = null
+        val publicationResult = try {
+            restTransitionMutex.withLock {
+                val currentRestoredOwner = restoredRuntimeOwner
+                if (currentRestoredOwner?.handle == handle &&
+                    currentRestoredOwner.document == document &&
+                    activeRuntimeDocument == document &&
+                    coordinator._restTransitionPlan.value == document.restTransitionPlan &&
+                    pending.externalCommandInputStamp == currentRestoredOwner.externalCommandInputStamp &&
+                    hasRestoredOwnerContextAuthority(currentRestoredOwner, document)
+                ) {
+                    return@withLock ActiveWorkoutRuntimeResumeResult.RestoredRest
+                }
+                if (!runtimeResumeAuthorityIsCurrent(handle, pending)) {
+                    return@withLock ActiveWorkoutRuntimeResumeResult.Superseded
+                }
+                val finalLoad = activeWorkoutRuntimeRepository.load(
+                    profileId = handle.lookupKey.profileId,
+                    routineSessionId = handle.lookupKey.routineSessionId,
+                ) as? ActiveWorkoutRuntimeLoadResult.Loaded
+                    ?: return@withLock ActiveWorkoutRuntimeResumeResult.Superseded
+                currentCoroutineContext().ensureActive()
+                if (!runtimeResumeAuthorityIsCurrent(handle, pending)) {
+                    return@withLock ActiveWorkoutRuntimeResumeResult.Superseded
+                }
+                if (finalLoad.rowRevision != handle.rowRevision || finalLoad.document != document) {
+                    return@withLock ActiveWorkoutRuntimeResumeResult.Superseded
+                }
+                val publicationClaim = executionGuard.beginRecoveryPublication(
+                    expectedLease = null,
+                    expectedSupersessionEpoch = handle.managerGeneration.recoveryPublicationEpoch,
+                    allowNoCurrentAfterOwnedInvalidation = false,
+                ) ?: return@withLock ActiveWorkoutRuntimeResumeResult.Superseded
+                val guardOwner = executionGuard.commitRestoredRuntimePublication(
+                    claim = publicationClaim,
+                    seed = document.teardownSeed.toRestoredTeardownSeed(),
+                    expectedConfigurationInputEpoch = handle.managerGeneration.configurationInputEpoch,
+                ) { owner ->
+                    restoredTimerPublication = publishRestoredRuntime(
+                        handle = handle,
+                        validation = validation,
+                        guardOwner = owner,
+                        externalCommandInputStamp = pending.externalCommandInputStamp,
+                    )
+                    restoredOwner = restoredRuntimeOwner
+                } ?: return@withLock ActiveWorkoutRuntimeResumeResult.Superseded
+                check(restoredOwner?.guardOwner == guardOwner)
+                ActiveWorkoutRuntimeResumeResult.RestoredRest
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return ActiveWorkoutRuntimeResumeResult.RetryableFailure
+        }
+
+        if (publicationResult is ActiveWorkoutRuntimeResumeResult.RestoredRest) {
+            restoredTimerPublication?.jobsToCancel?.forEach { it.cancel() }
+            restoredTimerPublication?.jobToStart?.let(::startRestoredRestTimerIfOwned)
+            restoredOwner?.takeIf { it.guardOwner.seed.requiresMachine }
+                ?.guardOwner
+                ?.let(::launchRestoredMachineTeardownReset)
+        }
+        return publicationResult
+    }
+
+    private fun routineResumeHandleProfileIsCurrent(handle: RoutineResumeHandle.Persisted): Boolean {
+        val profile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+            ?: return false
+        return handle.selectedProfileId == profile.profile.id &&
+            handle.lookupKey.profileId == profile.profile.id &&
+            handle.selectedRoutine.profileId == profile.profile.id
+    }
+
+    private fun routineResumeHandleIsCurrent(handle: RoutineResumeHandle.Persisted): Boolean = routineResumeHandleProfileIsCurrent(handle) &&
+        captureRoutineResumeGeneration() == handle.managerGeneration
+
+    private suspend fun runtimeResumeAttemptIsCurrent(pending: PendingRuntimeResume): Boolean = runtimeResumeMutex.withLock { pendingRuntimeResume === pending }
+
+    private suspend fun runtimeResumeAuthorityIsCurrent(
+        handle: RoutineResumeHandle.Persisted,
+        pending: PendingRuntimeResume,
+    ): Boolean = routineResumeHandleIsCurrent(handle) &&
+        runtimeResumeAttemptIsCurrent(pending) &&
+        captureExternalCommandInputStamp() == pending.externalCommandInputStamp
+
+    private fun pendingColdRuntimeCleanupTarget(
+        handle: RoutineResumeHandle.Persisted,
+    ): RuntimeCleanupTarget? = pendingRuntimeCleanupRef.value.firstOrNull { target ->
+        target.lookupKey == handle.lookupKey &&
+            target.initialRowRevision == handle.rowRevision &&
+            (target.source as? RuntimeCleanupSource.ColdHandle)?.rowRevision == handle.rowRevision
+    }
+
+    private fun pendingTrackedRuntimeCleanupTarget(
+        handle: RoutineResumeHandle.Persisted,
+        document: ActiveWorkoutRuntimeDocument,
+    ): RuntimeCleanupTarget? = pendingRuntimeCleanupRef.value.firstOrNull { target ->
+        target.source !is RuntimeCleanupSource.ColdHandle &&
+            target.lookupKey == handle.lookupKey &&
+            target.expectedDocument == document
+    }
+
+    internal suspend fun discardRoutineResume(
+        handle: RoutineResumeHandle.Persisted,
+    ): RoutineResumeDiscardResult {
+        val existingTarget = pendingColdRuntimeCleanupTarget(handle)
+        if (existingTarget != null) {
+            if (!routineResumeHandleProfileIsCurrent(handle)) return RoutineResumeDiscardResult.Superseded
+            return when (clearActiveWorkoutRuntime(existingTarget)) {
+                RuntimeCleanupResult.CLEARED -> RoutineResumeDiscardResult.Discarded
+                RuntimeCleanupResult.RETRYABLE_FAILURE -> RoutineResumeDiscardResult.RetryableFailure
+                RuntimeCleanupResult.SUPERSEDED -> RoutineResumeDiscardResult.Superseded
+            }
+        }
+        if (!routineResumeHandleIsCurrent(handle)) return RoutineResumeDiscardResult.Superseded
+        val loaded = try {
+            activeWorkoutRuntimeRepository.load(
+                profileId = handle.lookupKey.profileId,
+                routineSessionId = handle.lookupKey.routineSessionId,
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return RoutineResumeDiscardResult.RetryableFailure
+        }
+        currentCoroutineContext().ensureActive()
+        if (!routineResumeHandleIsCurrent(handle)) return RoutineResumeDiscardResult.Superseded
+        when (loaded) {
+            ActiveWorkoutRuntimeLoadResult.Missing -> return RoutineResumeDiscardResult.Missing
+
+            is ActiveWorkoutRuntimeLoadResult.Loaded ->
+                if (loaded.rowRevision != handle.rowRevision) return RoutineResumeDiscardResult.Superseded
+
+            is ActiveWorkoutRuntimeLoadResult.Rejected ->
+                if (loaded.rowRevision != handle.rowRevision) return RoutineResumeDiscardResult.Superseded
+        }
+        if (loaded is ActiveWorkoutRuntimeLoadResult.Loaded) {
+            pendingTrackedRuntimeCleanupTarget(handle, loaded.document)?.let { target ->
+                return when (clearActiveWorkoutRuntime(target)) {
+                    RuntimeCleanupResult.CLEARED -> RoutineResumeDiscardResult.Discarded
+                    RuntimeCleanupResult.RETRYABLE_FAILURE -> RoutineResumeDiscardResult.RetryableFailure
+                    RuntimeCleanupResult.SUPERSEDED -> RoutineResumeDiscardResult.Superseded
+                }
+            }
+        }
+        val candidate = captureColdRuntimeCleanupTarget(
+            handle = handle,
+            loadResult = loaded,
+            reason = RuntimeCleanupReason.DISCARD_RECOVERY,
+        )
+        val installed = installRuntimeCleanupIntent(candidate)
+            ?: pendingRuntimeCleanupRef.value.firstOrNull { target ->
+                sameRuntimeCleanupTargetIdentity(target, candidate)
+            }
+            ?: return RoutineResumeDiscardResult.Superseded
+        val supersededPending = runtimeResumeMutex.withLock {
+            pendingRuntimeResume.also { pendingRuntimeResume = null }
+        }
+        supersededPending?.result?.complete(ActiveWorkoutRuntimeResumeResult.Superseded)
+        executionGuard.supersedeRecoveryPublication()
+        executionGuard.supersedeQueuedSuccessors()
+        supersedePendingResetStart()
+        return when (clearActiveWorkoutRuntime(installed)) {
+            RuntimeCleanupResult.CLEARED -> RoutineResumeDiscardResult.Discarded
+            RuntimeCleanupResult.RETRYABLE_FAILURE -> RoutineResumeDiscardResult.RetryableFailure
+            RuntimeCleanupResult.SUPERSEDED -> RoutineResumeDiscardResult.Superseded
+        }
+    }
+
+    private suspend fun deleteInvalidDiscoveredRuntime(
+        handle: RoutineResumeHandle.Persisted,
+        pending: PendingRuntimeResume,
+    ): ActiveWorkoutRuntimeResumeResult = try {
+        if (!runtimeResumeAuthorityIsCurrent(handle, pending)) {
+            return ActiveWorkoutRuntimeResumeResult.Superseded
+        }
+        val existingTarget = pendingColdRuntimeCleanupTarget(handle)
+        if (existingTarget?.reason == RuntimeCleanupReason.DISCARD_RECOVERY) {
+            return ActiveWorkoutRuntimeResumeResult.RetryableFailure
+        }
+        val target = existingTarget ?: run {
+            val current = activeWorkoutRuntimeRepository.load(
+                profileId = handle.lookupKey.profileId,
+                routineSessionId = handle.lookupKey.routineSessionId,
+            )
+            currentCoroutineContext().ensureActive()
+            if (!runtimeResumeAuthorityIsCurrent(handle, pending)) {
+                return ActiveWorkoutRuntimeResumeResult.Superseded
+            }
+            val currentRevision = when (current) {
+                ActiveWorkoutRuntimeLoadResult.Missing -> return ActiveWorkoutRuntimeResumeResult.Missing
+                is ActiveWorkoutRuntimeLoadResult.Loaded -> current.rowRevision
+                is ActiveWorkoutRuntimeLoadResult.Rejected -> current.rowRevision
+            }
+            if (currentRevision != handle.rowRevision) {
+                return ActiveWorkoutRuntimeResumeResult.Superseded
+            }
+            val candidate = captureColdRuntimeCleanupTarget(
+                handle = handle,
+                loadResult = current,
+                reason = RuntimeCleanupReason.INVALID_DOCUMENT,
+            )
+            installRuntimeCleanupIntent(candidate)
+                ?: pendingRuntimeCleanupRef.value.firstOrNull { cleanupTarget ->
+                    sameRuntimeCleanupTargetIdentity(cleanupTarget, candidate)
+                }
+                ?: return ActiveWorkoutRuntimeResumeResult.Superseded
+        }
+        when (clearActiveWorkoutRuntime(target)) {
+            RuntimeCleanupResult.CLEARED ->
+                handle.manualRecoveryCoordinates?.let { coordinates ->
+                    ActiveWorkoutRuntimeResumeResult.ManualSetReady(
+                        exerciseIndex = coordinates.exerciseIndex,
+                        setIndex = coordinates.setIndex,
+                    )
+                } ?: ActiveWorkoutRuntimeResumeResult.FreshStart
+
+            RuntimeCleanupResult.RETRYABLE_FAILURE -> ActiveWorkoutRuntimeResumeResult.RetryableFailure
+
+            RuntimeCleanupResult.SUPERSEDED -> ActiveWorkoutRuntimeResumeResult.Superseded
+        }
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        ActiveWorkoutRuntimeResumeResult.RetryableFailure
+    }
+
+    private fun validateRuntimeHydrationBeforeDurability(
+        document: ActiveWorkoutRuntimeDocument,
+        preparation: RoutineRecoveryPreparation,
+        source: RestoredRetrySourceContext,
+        plannedSets: List<com.devil.phoenixproject.domain.model.PlannedSet>,
+    ): Boolean {
+        val coordinatePlans = plannedSets.filter { it.setNumber == document.sourceSetIndex }
+        if (coordinatePlans.size > 1) return false
+        val plannedSet = coordinatePlans.singleOrNull()
+        val plannedSetMatches = if (document.plannedSetId == null) {
+            plannedSet == null &&
+                document.logicalSetKey.setKind == preparation.semanticSetType &&
+                source.targetReps == preparation.targetReps &&
+                source.isAmrap == (preparation.semanticSetType == SetType.AMRAP)
+        } else {
+            plannedSet?.id == document.plannedSetId &&
+                plannedSet.routineExerciseId == document.routineExerciseId &&
+                plannedSet.setType == document.logicalSetKey.setKind &&
+                plannedSetTargetMatchesSourceCommand(plannedSet, source) &&
+                source.targetReps == plannedSet.executionTargetReps(source) &&
+                source.isAmrap == (plannedSet.setType == SetType.AMRAP) &&
+                sameNullableMachineWeight(plannedSet.targetWeightKg, source.programmedBaseWeightPerCableKg)
+        }
+        if (!plannedSetMatches) {
+            return false
+        }
+
+        val plan = document.restTransitionPlan ?: return false
+        return planMatchesRestoredDocumentStructure(plan, document, source)
+    }
+
+    private fun validateRuntimeEnvelopeBeforePreparation(
+        document: ActiveWorkoutRuntimeDocument,
+        handle: RoutineResumeHandle.Persisted,
+    ): RestoredRetrySourceContext? {
+        val source = try {
+            document.sourceAuthority.toRestoredRetrySourceContext()
+        } catch (_: Exception) {
+            return null
+        }
+        if (handle.lookupKey.profileId != document.profileId ||
+            handle.lookupKey.routineSessionId != document.routineSessionId ||
+            handle.selectedProfileId != document.profileId ||
+            handle.selectedRoutine.id != document.routineId ||
+            handle.selectedRoutine.profileId != document.profileId ||
+            document.logicalSetKey.routineSessionId != document.routineSessionId ||
+            document.logicalSetKey.routineExerciseId != document.routineExerciseId ||
+            document.logicalSetKey.setIndex != document.sourceSetIndex ||
+            source.routineIdentity != document.sourceAuthority.routineIdentity ||
+            source.routineIdentity.profileId != document.profileId ||
+            source.routineIdentity.routineId != document.routineId ||
+            source.routineIdentity.routineSessionId != document.routineSessionId ||
+            source.routineIdentity.routineExerciseId != document.routineExerciseId ||
+            source.routineIdentity.logicalSetKey != document.logicalSetKey ||
+            source.routineIdentity.plannedSetId != document.plannedSetId ||
+            source.routineIdentity.exerciseIndex != document.sourceExerciseIndex ||
+            source.routineIdentity.setIndex != document.sourceSetIndex ||
+            source.sourceStableSessionId != document.sourceStableSessionId ||
+            source.sourceExecutionId != document.sourceExecutionId ||
+            source.attemptNumber != document.sourceAttemptNumber ||
+            source.plannedSetType != document.logicalSetKey.setKind ||
+            document.teardownSeed.sourceExecutionId.toString() != document.sourceExecutionId ||
+            document.teardownSeed.sourceStableSessionId != document.sourceStableSessionId ||
+            document.teardownSeed.profileId != document.profileId ||
+            document.teardownSeed.requiresMachine != source.isCableExercise ||
+            source.isCableExercise == source.isBodyweight
+        ) {
+            return null
+        }
+        return source
+    }
+
+    private fun validateRuntimePreparationStructure(
+        document: ActiveWorkoutRuntimeDocument,
+        preparation: RoutineRecoveryPreparation,
+    ): Boolean {
+        val routine = preparation.resolvedRoutine
+        val exercise = preparation.sourceExercise
+        if (routine.id != document.routineId ||
+            routine.profileId != document.profileId ||
+            preparation.sourceExerciseIndex != document.sourceExerciseIndex ||
+            preparation.sourceSetIndex != document.sourceSetIndex ||
+            routine.exercises.getOrNull(document.sourceExerciseIndex) !== exercise ||
+            exercise.id != document.routineExerciseId ||
+            document.sourceSetIndex !in exercise.setReps.indices
+        ) {
+            return false
+        }
+
+        if (document.exerciseLoadOverlays.groupingBy { it.routineExerciseId }.eachCount().values.any { it != 1 } ||
+            document.attemptStates.groupingBy { it.logicalSetKey }.eachCount().values.any { it != 1 } ||
+            document.exerciseLoadOverlays.any { overlay -> routine.exercises.count { it.id == overlay.routineExerciseId } != 1 } ||
+            document.attemptStates.any { state ->
+                val stateExercise = routine.exercises.singleOrNull {
+                    it.id == state.logicalSetKey.routineExerciseId
+                }
+                state.logicalSetKey.routineSessionId != document.routineSessionId ||
+                    stateExercise == null ||
+                    state.logicalSetKey.setIndex !in stateExercise.setReps.indices ||
+                    (
+                        state.logicalSetKey != document.logicalSetKey &&
+                            semanticSetType(stateExercise, state.logicalSetKey.setIndex) != state.logicalSetKey.setKind
+                        )
+            }
+        ) {
+            return false
+        }
+        return true
+    }
+
+    private fun validateRuntimeCurrentAuthority(
+        document: ActiveWorkoutRuntimeDocument,
+        preparation: RoutineRecoveryPreparation,
+        source: RestoredRetrySourceContext,
+    ): Boolean {
+        val exercise = preparation.sourceExercise
+        return source.isCableExercise != source.isBodyweight &&
+            source.programMode == exercise.programMode &&
+            sameMachineWeight(source.programmedBaseWeightPerCableKg, preparation.programmedBaseWeightPerCableKg) &&
+            !source.isWarmup &&
+            !source.isJustLift &&
+            source.isEcho == (exercise.programMode == ProgramMode.Echo) &&
+            source.isTimed == (exercise.duration?.takeIf { it > 0 } != null) &&
+            source.isBodyweight == exercise.exercise.isBodyweight &&
+            source.isCableExercise == !exercise.exercise.isBodyweight &&
+            source.physicalCableCount == exercise.exercise.preferredCableCount &&
+            sourceCommandMatchesPreparation(source, preparation) &&
+            document.restTransitionPlan != null
+    }
+
+    private fun plannedSetTargetMatchesSourceCommand(
+        plannedSet: com.devil.phoenixproject.domain.model.PlannedSet,
+        source: RestoredRetrySourceContext,
+    ): Boolean = when (plannedSet.setType) {
+        SetType.AMRAP -> plannedSet.targetReps == null
+        else -> plannedSet.targetReps == source.commandTemplate.reps
+    }
+
+    private fun com.devil.phoenixproject.domain.model.PlannedSet.executionTargetReps(
+        source: RestoredRetrySourceContext,
+    ): Int? = targetReps.takeUnless {
+        setType == SetType.AMRAP || source.isTimed || source.isBodyweight
+    }
+
+    private fun sourceCommandMatchesPreparation(
+        source: RestoredRetrySourceContext,
+        preparation: RoutineRecoveryPreparation,
+    ): Boolean {
+        val exercise = preparation.sourceExercise
+        val template = source.commandTemplate
+        val expectedAmrap = preparation.semanticSetType == SetType.AMRAP
+        val expectedReps = exercise.setReps.getOrNull(preparation.sourceSetIndex) ?: exercise.reps
+        val expectedWarmupReps = if (source.isBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS
+        return template.programMode == exercise.programMode &&
+            template.reps == expectedReps &&
+            template.echoLevel == exercise.getEchoLevelForSet(preparation.sourceSetIndex) &&
+            template.eccentricLoad == exercise.eccentricLoad &&
+            sameMachineWeight(template.progressionRegressionKg, exercise.progressionKg) &&
+            template.selectedExerciseId == exercise.exercise.id &&
+            template.stopAtTop == exercise.stopAtTop &&
+            template.stallDetectionEnabled == exercise.stallDetectionEnabled &&
+            template.repCountTiming == exercise.repCountTiming &&
+            template.isAMRAP == expectedAmrap &&
+            !template.isJustLift &&
+            !template.useAutoStart &&
+            template.warmupReps == expectedWarmupReps &&
+            template.activeRackItemIds == preparation.rackSelection.itemIds &&
+            sameMachineWeight(template.externalAddedLoadKg, preparation.rackSelection.adjustment.externalAddedLoadKg) &&
+            sameMachineWeight(template.counterweightKg, preparation.rackSelection.adjustment.counterweightKg) &&
+            sameMachineWeight(template.weightPerCableKg, source.configuredStartWeightPerCableKg) &&
+            sameMachineWeight(source.progressionKg, template.progressionRegressionKg)
+    }
+
+    private fun planMatchesRestoredDocument(
+        plan: RestTransitionPlan,
+        document: ActiveWorkoutRuntimeDocument,
+        source: RestoredRetrySourceContext,
+        preparation: RoutineRecoveryPreparation,
+    ): Boolean {
+        if (!planMatchesRestoredDocumentStructure(plan, document, source)) {
+            return false
+        }
+        return when (plan) {
+            is RestTransitionPlan.NormalAdvance,
+            is RestTransitionPlan.Declined,
+            -> true
+
+            is RestTransitionPlan.UnresolvedDropOffer ->
+                unresolvedPlanMatchesCurrentEligibilityPolicy(plan, document, source, preparation)
+
+            is RestTransitionPlan.AcceptedRetry -> retryCandidateMatchesCurrentPolicy(
+                exercise = preparation.sourceExercise,
+                percentage = plan.percentage,
+                sourceConfiguredStartWeightPerCableKg = source.configuredStartWeightPerCableKg,
+                programmedBaseWeightPerCableKg = source.programmedBaseWeightPerCableKg,
+                sourceCommandTemplate = source.commandTemplate,
+                expectedWeightPerCableKg = plan.resolvedWeightPerCableKg,
+                expectedMultiplier = plan.resultingExerciseMultiplier,
+            )
+        }
+    }
+
+    private fun planMatchesRestoredDocumentStructure(
+        plan: RestTransitionPlan,
+        document: ActiveWorkoutRuntimeDocument,
+        source: RestoredRetrySourceContext,
+    ): Boolean {
+        if (plan.sourceExecutionId != document.sourceExecutionId ||
+            plan.logicalSetKey != document.logicalSetKey ||
+            plan.actionIdentity().plannedSetId != document.plannedSetId
+        ) {
+            return false
+        }
+        val coordinates = RestTransitionPlan.Coordinates(document.sourceExerciseIndex, document.sourceSetIndex)
+        val sourceState = document.attemptStates.singleOrNull { it.logicalSetKey == document.logicalSetKey }
+            ?: return false
+        return when (plan) {
+            is RestTransitionPlan.NormalAdvance ->
+                plan.sourceCoordinates == coordinates &&
+                    plan.restDurationSeconds == document.originalRestDurationSeconds &&
+                    sourceState.nextAttemptNumber == source.attemptNumber + 1 &&
+                    sourceState.acceptedDropCount == source.acceptedDropCount
+
+            is RestTransitionPlan.UnresolvedDropOffer ->
+                plan.normalAdvance.sourceCoordinates == coordinates &&
+                    plan.normalAdvance.restDurationSeconds == document.originalRestDurationSeconds &&
+                    sourceState.nextAttemptNumber == source.attemptNumber + 1 &&
+                    sourceState.acceptedDropCount == source.acceptedDropCount
+
+            is RestTransitionPlan.Declined ->
+                source.reason == SetEndReason.STALL_FAILURE &&
+                    plan.normalAdvance.sourceCoordinates == coordinates &&
+                    plan.normalAdvance.restDurationSeconds == document.originalRestDurationSeconds &&
+                    sourceState.nextAttemptNumber == source.attemptNumber + 1 &&
+                    sourceState.acceptedDropCount == source.acceptedDropCount
+
+            is RestTransitionPlan.AcceptedRetry -> {
+                val sourceOverlay = document.exerciseLoadOverlays.singleOrNull {
+                    it.routineExerciseId == document.routineExerciseId
+                }
+                source.reason == SetEndReason.STALL_FAILURE &&
+                    plan.sourceCoordinates == coordinates &&
+                    plan.nextAttemptNumber == source.attemptNumber + 1 &&
+                    sourceState.nextAttemptNumber == plan.nextAttemptNumber + 1 &&
+                    sourceState.acceptedDropCount == source.acceptedDropCount + 1 &&
+                    sourceState.acceptedDropCount in 1..2 &&
+                    sourceOverlay != null &&
+                    sameMachineWeight(sourceOverlay.multiplier, plan.resultingExerciseMultiplier)
+            }
+        }
+    }
+
+    private fun unresolvedPlanMatchesCurrentEligibilityPolicy(
+        plan: RestTransitionPlan.UnresolvedDropOffer,
+        document: ActiveWorkoutRuntimeDocument,
+        source: RestoredRetrySourceContext,
+        preparation: RoutineRecoveryPreparation,
+    ): Boolean = try {
+        val completion = SetExecutionCompletion(
+            lease = ExecutionLease(
+                executionId = document.teardownSeed.sourceExecutionId,
+                sessionId = source.sourceStableSessionId,
+                profileId = source.profileId,
+                requiresMachine = document.teardownSeed.requiresMachine,
+                workingRepTarget = if (source.isBodyweight || (source.isTimed && source.isCableExercise)) {
+                    0
+                } else {
+                    source.commandTemplate.reps
+                },
+                isBodyweight = source.isBodyweight,
+                isJustLift = source.isJustLift,
+                isAmrap = source.isAmrap,
+                isTimedCable = source.isTimed && source.isCableExercise,
+            ),
+            reason = source.reason,
+            routineIdentity = source.routineIdentity,
+            attemptNumber = source.attemptNumber,
+            acceptedDropCount = source.acceptedDropCount,
+            plannedSetType = source.plannedSetType,
+            programMode = source.programMode,
+            programmedBaseWeightPerCableKg = source.programmedBaseWeightPerCableKg,
+            configuredStartWeightPerCableKg = source.configuredStartWeightPerCableKg,
+            progressionKg = source.progressionKg,
+            actualReps = source.actualReps,
+            targetReps = source.targetReps,
+            isWarmup = source.isWarmup,
+            isEcho = source.isEcho,
+            isJustLift = source.isJustLift,
+            isBodyweight = source.isBodyweight,
+            isTimed = source.isTimed,
+            isAmrap = source.isAmrap,
+            isCableExercise = source.isCableExercise,
+            physicalCableCount = source.physicalCableCount,
+            logicalPreRackCommandTemplate = source.commandTemplate,
+        )
+        val eligibility = dropSetEligibilityPolicy.evaluate(
+            DropSetEligibilityRequest(
+                offerId = plan.offerId,
+                completion = completion,
+                configuration = dropSetConfigurationProvider(preparation.sourceExercise),
+                expectedLiveIdentity = source.routineIdentity,
+                commandTemplate = source.commandTemplate,
+            ),
+        )
+        buildRestTransitionPlan(plan.normalAdvance, eligibility) == plan
+    } catch (error: CancellationException) {
+        throw error
+    } catch (_: Exception) {
+        false
+    }
+
+    private fun publishRestoredRuntime(
+        handle: RoutineResumeHandle.Persisted,
+        validation: RuntimeHydrationValidation.Valid,
+        guardOwner: RestoredRuntimeOwnerToken,
+        externalCommandInputStamp: ExternalCommandInputStamp,
+    ): RestoredRestTimerPublication {
+        beforeRestoredRuntimeOwnerPublicationForTest?.invoke()
+        val document = validation.document
+        val preparation = validation.preparation
+        val source = validation.sourceContext
+        val remainingSeconds = RestDeadlineCalculator.remainingSeconds(document, wallClockMillisProvider())
+        val plan = requireNotNull(document.restTransitionPlan)
+        val monotonicDeadline = if (!document.isRestPaused && remainingSeconds > 0) {
+            saturatingAddMilliseconds(
+                baseMs = elapsedRealtimeProvider(),
+                durationMs = remainingSeconds.toLong() * 1_000L,
+            )
+        } else {
+            null
+        }
+        val timerJob = monotonicDeadline?.let {
+            createRestoredRestTimerJob(
+                guardOwner = guardOwner,
+                transitionId = plan.transitionId,
+                sourceExecutionId = plan.sourceExecutionId,
+            )
+        }
+
+        val legacyBodyweightTimerJob = coordinator.bodyweightTimerJob
+        coordinator.bodyweightTimerJob = null
+        coordinator._skippedExercises.value = emptySet()
+        coordinator._completedExercises.value = emptySet()
+        coordinator._completedRoutineSetKeys.value = emptySet()
+        coordinator._weightAdjustmentRecommendation.value = null
+        coordinator._sessionBodyweightState.value = SessionBodyweightState(
+            routineHasBodyweight = preparation.resolvedRoutine.exercises.any { it.exercise.isBodyweight },
+        )
+        coordinator.bodyweightSetsCompletedInRoutine = 0
+        coordinator._selectedBodyweightVariants.value = emptyMap()
+        coordinator.bodyweightCompletionVariantOverride = null
+        coordinator.previousExerciseWasBodyweight = false
+        coordinator.routineStartTime = 0L
+        coordinator.routineAccumulatedCalories = 0f
+        coordinator.currentSessionId = null
+        coordinator.workoutStartTime = 0L
+        coordinator.warmupCompleteTimeMs = 0L
+        coordinator.collectedMetrics.value = emptyList()
+        coordinator.setRepMetrics.value = emptyList()
+        coordinator._currentSetRpe.value = null
+        coordinator._userAdjustedWeightDuringRest = false
+        coordinator.pendingWeightChangeKg = null
+
+        coordinator._loadedRoutine.value = preparation.resolvedRoutine
+        coordinator._currentExerciseIndex.value = document.sourceExerciseIndex
+        coordinator._currentSetIndex.value = document.sourceSetIndex
+        coordinator._currentWarmupSetIndex.value = -1
+        coordinator.currentRoutineId = document.routineId
+        coordinator.currentRoutineName = preparation.resolvedRoutine.name
+        coordinator.currentRoutineSessionId = document.routineSessionId
+        coordinator.routineLaunchOrigin = preparation.launchOrigin
+        coordinator.activeCycleId = preparation.cycleId
+        coordinator.activeCycleDayNumber = preparation.cycleDayNumber
+        coordinator._workoutParameters.value = source.commandTemplate
+        coordinator.setActiveRackSelection(
+            itemIds = preparation.rackSelection.itemIds,
+            precomputedAdjustment = preparation.rackSelection.adjustment,
+            precomputedItemsJson = preparation.rackSelection.itemsJson,
+        )
+        coordinator._activeRackBehaviorOverrides.value = preparation.rackSelection.behaviorOverrides
+        setActiveRuntimeDocument(document)
+        coordinator._restTransitionPlan.value = document.restTransitionPlan
+        acceptedRetryPermission = null
+        persistedRestTimerOwner = null
+        val legacyTimerJob = coordinator.restTimerJob
+        coordinator.restTimerJob = null
+        coordinator.restDeadlineElapsedRealtimeMs = null
+        coordinator._isRestPaused.value = document.isRestPaused
+        coordinator._restOriginalDuration.value = document.originalRestDurationSeconds
+        coordinator._restSecondsRemaining.value = remainingSeconds
+        restoredRuntimeOwner = RestoredRuntimeOwner(
+            handle = handle,
+            document = document,
+            documentVersion = activeRuntimeDocumentVersion,
+            guardOwner = guardOwner,
+            sourceContext = source,
+            rackBehaviorOverrides = preparation.rackSelection.behaviorOverrides.toMap(),
+            externalCommandInputStamp = externalCommandInputStamp,
+        )
+        val replacedRestoredTimer = replaceRestoredRestTimerOwner(
+            RestoredRestTimerOwner(
+                guardOwner = guardOwner,
+                document = document,
+                documentVersion = activeRuntimeDocumentVersion,
+                transitionId = plan.transitionId,
+                sourceExecutionId = plan.sourceExecutionId,
+                monotonicDeadlineElapsedRealtimeMs = monotonicDeadline,
+                job = timerJob,
+            ),
+        )
+        restoredTeardownRetryOwner = guardOwner
+        coordinator._workoutState.value = WorkoutState.Resting(
+            restSecondsRemaining = remainingSeconds,
+            nextExerciseName = preparation.sourceExercise.exercise.displayName,
+            isLastExercise = false,
+            currentSet = document.sourceSetIndex + 1,
+            totalSets = preparation.sourceExercise.setReps.size,
+        )
+        beforeRestoredRoutineFlowPublicationForTest?.invoke()
+        coordinator._routineFlowState.value = RoutineFlowState.SetReady(
+            exerciseIndex = document.sourceExerciseIndex,
+            setIndex = document.sourceSetIndex,
+            adjustedWeight = source.commandTemplate.weightPerCableKg,
+            adjustedReps = source.commandTemplate.reps,
+            adjustedProgressionKg = source.commandTemplate.progressionRegressionKg,
+            echoLevel = source.commandTemplate.echoLevel,
+            eccentricLoadPercent = source.commandTemplate.eccentricLoad.percentage,
+        )
+        return RestoredRestTimerPublication(
+            jobToStart = timerJob,
+            jobsToCancel = listOfNotNull(
+                legacyTimerJob,
+                legacyBodyweightTimerJob,
+                replacedRestoredTimer?.job,
+            )
+                .distinct(),
+        )
+    }
+
+    private fun RestoredTeardownSeedSnapshot.toRestoredTeardownSeed() = RestoredTeardownSeed(
+        sourceExecutionId = sourceExecutionId,
+        sourceStableSessionId = sourceStableSessionId,
+        profileId = profileId,
+        requiresMachine = requiresMachine,
+    )
+
     private val rackJson = Json {
         ignoreUnknownKeys = true
         encodeDefaults = true
@@ -433,6 +1619,26 @@ class ActiveSessionEngine(
     private val pendingResetStart = atomic<PendingResetStart?>(null)
     private val exitSnapshotStore = WorkoutExitSnapshotStore()
     private val restTransitionMutex = Mutex()
+    private val runtimeResumeMutex = Mutex()
+    private var pendingRuntimeResume: PendingRuntimeResume? = null
+    private val pendingRuntimeCleanupRef = atomic<List<RuntimeCleanupTarget>>(emptyList())
+    private val stopWorkoutCleanupTargetRef = atomic<RuntimeCleanupTarget?>(null)
+    private val runtimeCleanupCandidateRef = atomic<RuntimeCleanupCandidate?>(null)
+    private val pendingInitialRuntimeCandidateSequence = atomic(0L)
+    private val pendingRuntimeReplaceCandidateRef = atomic<PendingRuntimeReplaceCandidate?>(null)
+    private val pendingRuntimeReplaceCandidateSequence = atomic(0L)
+    private val restoredRuntimeOwnerRef = atomic<RestoredRuntimeOwner?>(null)
+    private var restoredRuntimeOwner: RestoredRuntimeOwner?
+        get() = restoredRuntimeOwnerRef.value
+        set(value) {
+            restoredRuntimeOwnerRef.value = value
+        }
+    private val restoredTeardownRetryOwnerRef = atomic<RestoredRuntimeOwnerToken?>(null)
+    private var restoredTeardownRetryOwner: RestoredRuntimeOwnerToken?
+        get() = restoredTeardownRetryOwnerRef.value
+        set(value) {
+            restoredTeardownRetryOwnerRef.value = value
+        }
     private var activeRuntimeDocument: ActiveWorkoutRuntimeDocument? = null
     private var activeRuntimeDocumentVersion: Long = 0L
     private var pendingInitialRestRuntimeDocument: ActiveWorkoutRuntimeDocument? = null
@@ -458,7 +1664,13 @@ class ActiveSessionEngine(
     private var cachedTransitionNavigation: CachedTransitionNavigation? = null
     private var pendingTransitionNavigation: PendingTransitionNavigation? = null
     private var persistedRestTimerOwner: PersistedRestTimerOwner? = null
-    private var acceptedRetryPermission: AcceptedRetryPermission? = null
+    private val restoredRestTimerOwnerRef = atomic<RestoredRestTimerOwner?>(null)
+    private val acceptedRetryPermissionRef = atomic<AcceptedRetryPermission?>(null)
+    private var acceptedRetryPermission: AcceptedRetryPermission?
+        get() = acceptedRetryPermissionRef.value
+        set(value) {
+            acceptedRetryPermissionRef.value = value
+        }
     private val acceptedRetryStartClaim = atomic<AcceptedRetryStartClaim?>(null)
     private val dropSetCandidateResolver = DropSetCandidateResolver()
 
@@ -483,9 +1695,23 @@ class ActiveSessionEngine(
     ): RestTransitionApplicationResult {
         val recoveryPublicationEpoch = executionGuard.captureRecoveryPublicationEpoch()
         var acceptedRetryToFailClosed: Triple<RestTransitionPlan.AcceptedRetry, Long, RetryFailClosedAuthority>? = null
+        var restoredActionApplied = false
+        var restoredNormalDispatch: RestoredNormalDispatch? = null
+        var restoredAcceptedOwner: RestoredRuntimeOwner? = null
         val reduction = restTransitionMutex.withLock {
             val lease = executionGuard.currentLease
-                ?: return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED)
+            if (lease == null) {
+                if (timerAuthority != null) {
+                    return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED)
+                }
+                val restored = applyRestoredActionLocked(command)
+                restoredActionApplied = restored.reduction is RestTransitionReduction.Changed ||
+                    restored.normalDispatch != null ||
+                    restored.acceptedOwner != null
+                restoredNormalDispatch = restored.normalDispatch
+                restoredAcceptedOwner = restored.acceptedOwner
+                return@withLock restored.reduction
+            }
             val plan = coordinator._restTransitionPlan.value
                 ?: return@withLock RestTransitionReduction.NoOp(RestTransitionNoOpReason.NO_CURRENT_PLAN)
             val document = activeRuntimeDocument
@@ -499,7 +1725,9 @@ class ActiveSessionEngine(
                 if (plan is RestTransitionPlan.AcceptedRetry &&
                     command is RestTransitionCommand.SkipRest &&
                     command.identity == plan.actionIdentity() &&
-                    leaseMatchesRetrySource(lease, document)
+                    leaseMatchesRetrySource(lease, document) &&
+                    !liveRestTransitionIsTerminallySuperseded(document) &&
+                    liveRestTransitionProfileIsCurrent(document)
                 ) {
                     acceptedRetryToFailClosed = Triple(
                         plan,
@@ -600,25 +1828,39 @@ class ActiveSessionEngine(
         if (reduction is RestTransitionReduction.PendingAcceptedRetry) {
             beforeAcceptedRetryGateCaptureForTest?.invoke()
         }
-        val acceptedRetryStarted = when (reduction) {
-            is RestTransitionReduction.PendingAcceptedRetry,
-            is RestTransitionReduction.Changed,
-            -> tryStartCurrentAcceptedRetryLive()
+        val acceptedRetryStarted = restoredAcceptedOwner?.let { owner ->
+            tryStartCurrentAcceptedRetryRestored(owner.guardOwner)
+        } ?: if (restoredActionApplied) {
+            false
+        } else {
+            when (reduction) {
+                is RestTransitionReduction.PendingAcceptedRetry,
+                is RestTransitionReduction.Changed,
+                -> tryStartCurrentAcceptedRetryLive()
 
-            else -> false
+                else -> false
+            }
         }
 
+        val restoredNormalConsumed = restoredNormalDispatch?.let { dispatch ->
+            beforeRestoredNormalDispatchForTest?.invoke()
+            dispatchRestoredNormalAdvance(dispatch)
+        } ?: false
         val normalTransitionConsumed = when (reduction) {
             // A decline closes only the offer.  The captured normal transition stays
             // in rest until its timer or an identity-bearing Skip Rest dispatches it.
             is RestTransitionReduction.Changed -> {
-                (reduction.plan as? RestTransitionPlan.Declined)?.let { declined ->
-                    resolveNavigationOnce(declined.normalAdvance)
+                if (!restoredActionApplied) {
+                    (reduction.plan as? RestTransitionPlan.Declined)?.let { declined ->
+                        resolveNavigationOnce(declined.normalAdvance)
+                    }
                 }
                 false
             }
 
-            is RestTransitionReduction.DispatchNormal -> if (timerAuthority == null) {
+            is RestTransitionReduction.DispatchNormal -> if (restoredNormalDispatch != null) {
+                restoredNormalConsumed
+            } else if (timerAuthority == null) {
                 consumeNormalTransitionAndDispatch(reduction.plan)
                 false
             } else {
@@ -638,6 +1880,533 @@ class ActiveSessionEngine(
             reduction = reduction,
             normalTransitionConsumed = normalTransitionConsumed,
         )
+    }
+
+    private suspend fun applyRestoredActionLocked(
+        command: RestTransitionCommand,
+    ): RestoredActionApplication {
+        val owner = restoredRuntimeOwner
+            ?: return RestoredActionApplication(RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED))
+        val document = activeRuntimeDocument
+            ?: return RestoredActionApplication(
+                RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED),
+            ).also {
+                revokeRestoredActionAuthorityLocked(owner.guardOwner)
+            }
+        val plan = coordinator._restTransitionPlan.value
+            ?: return RestoredActionApplication(RestTransitionReduction.NoOp(RestTransitionNoOpReason.NO_CURRENT_PLAN))
+        if (!hasRestoredRestTransitionAuthority(owner, document, plan)) {
+            afterRestoredActionProfileAuthorityFailureForTest?.invoke()
+            val retainAuthority = hasRestoredRestTransitionAuthorityIgnoringReadyProfile(owner, document, plan) &&
+                restoredOwnerContextCanBeRetainedAfterAuthorityFailure(owner, document)
+            if (!retainAuthority) {
+                revokeRestoredActionAuthorityLocked(owner.guardOwner)
+            }
+            return RestoredActionApplication(RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED))
+        }
+        if (command is RestTransitionCommand.Accept &&
+            (
+                document.attemptStates.groupingBy { it.logicalSetKey }.eachCount().values.any { it != 1 } ||
+                    document.exerciseLoadOverlays.groupingBy { it.routineExerciseId }.eachCount().values.any { it != 1 }
+                )
+        ) {
+            return RestoredActionApplication(RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED))
+        }
+
+        val reduced = reduceRestTransition(
+            RestTransitionReducerState(
+                plan = plan,
+                currentSourceExecutionId = document.sourceExecutionId,
+                attemptStates = document.attemptStates,
+            ),
+            command,
+        )
+        if (reduced is RestTransitionReduction.PendingAcceptedRetry) {
+            acceptedRetryPermission = AcceptedRetryPermission(
+                transitionId = plan.transitionId,
+                sourceExecutionId = plan.sourceExecutionId,
+                documentVersion = activeRuntimeDocumentVersion,
+                source = AcceptedRetryPermissionSource.Restored(owner.guardOwner),
+            )
+            return RestoredActionApplication(
+                reduction = reduced,
+                acceptedOwner = owner,
+            )
+        }
+        if (reduced is RestTransitionReduction.DispatchNormal) {
+            val routine = coordinator._loadedRoutine.value
+                ?: return RestoredActionApplication(
+                    RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED),
+                ).also {
+                    revokeRestoredActionAuthorityLocked(owner.guardOwner)
+                }
+            val clearedDocument = document.copy(restTransitionPlan = null)
+            val priorDocumentVersion = activeRuntimeDocumentVersion
+            try {
+                if (!replaceRuntimeDocument(clearedDocument)) {
+                    return RestoredActionApplication(RestTransitionReduction.NoOp(RestTransitionNoOpReason.PERSISTENCE_FAILURE))
+                }
+            } catch (error: CancellationException) {
+                when (runtimeDocumentCommitStatus(clearedDocument, document)) {
+                    RuntimeDocumentCommitStatus.COMMITTED -> try {
+                        withContext(NonCancellable) {
+                            val reconciledOwner = reconcileRestoredDocumentCommitLocked(
+                                owner = owner,
+                                priorDocument = document,
+                                priorDocumentVersion = priorDocumentVersion,
+                                priorPlan = plan,
+                                committedDocument = clearedDocument,
+                            )
+                            if (reconciledOwner != null) {
+                                dispatchRestoredNormalAdvanceLocked(
+                                    RestoredNormalDispatch(
+                                        owner = reconciledOwner,
+                                        plan = reduced.plan,
+                                        routine = routine,
+                                        exerciseIndex = document.sourceExerciseIndex,
+                                        setIndex = document.sourceSetIndex,
+                                    ),
+                                )
+                            }
+                        }
+                    } catch (_: Throwable) {
+                        retireRestoredActionAuthorityPreservingCancellation(owner.guardOwner)
+                    }
+
+                    RuntimeDocumentCommitStatus.UNCHANGED_PRIOR -> Unit
+
+                    RuntimeDocumentCommitStatus.DIVERGED,
+                    RuntimeDocumentCommitStatus.UNKNOWN,
+                    ->
+                        retireRestoredActionAuthorityPreservingCancellation(owner.guardOwner)
+                }
+                throw error
+            }
+            val updatedOwner = reconcileRestoredDocumentCommitLocked(
+                owner = owner,
+                priorDocument = document,
+                priorDocumentVersion = priorDocumentVersion,
+                priorPlan = plan,
+                committedDocument = clearedDocument,
+            ) ?: return RestoredActionApplication(
+                RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED),
+            )
+            return RestoredActionApplication(
+                reduction = reduced,
+                normalDispatch = RestoredNormalDispatch(
+                    owner = updatedOwner,
+                    plan = reduced.plan,
+                    routine = routine,
+                    exerciseIndex = document.sourceExerciseIndex,
+                    setIndex = document.sourceSetIndex,
+                ),
+            )
+        }
+        val changed = reduced as? RestTransitionReduction.Changed
+            ?: return RestoredActionApplication(reduced)
+        val acceptedOverlay = (changed.plan as? RestTransitionPlan.AcceptedRetry)?.let {
+            ExerciseLoadOverlay(
+                routineExerciseId = document.routineExerciseId,
+                multiplier = it.resultingExerciseMultiplier,
+            )
+        }
+        val updatedDocument = document.copy(
+            restTransitionPlan = changed.plan,
+            attemptStates = canonicalAttemptStates(changed.attemptStates ?: document.attemptStates),
+            exerciseLoadOverlays = acceptedOverlay?.let { overlay ->
+                canonicalOverlays(
+                    document.exerciseLoadOverlays.filterNot {
+                        it.routineExerciseId == overlay.routineExerciseId
+                    } + overlay,
+                )
+            } ?: canonicalOverlays(document.exerciseLoadOverlays),
+        )
+        val priorDocumentVersion = activeRuntimeDocumentVersion
+        try {
+            if (!replaceRuntimeDocument(updatedDocument)) {
+                return RestoredActionApplication(RestTransitionReduction.NoOp(RestTransitionNoOpReason.PERSISTENCE_FAILURE))
+            }
+        } catch (error: CancellationException) {
+            when (runtimeDocumentCommitStatus(updatedDocument, document)) {
+                RuntimeDocumentCommitStatus.COMMITTED -> try {
+                    withContext(NonCancellable) {
+                        reconcileRestoredDocumentCommitLocked(
+                            owner = owner,
+                            priorDocument = document,
+                            priorDocumentVersion = priorDocumentVersion,
+                            priorPlan = plan,
+                            committedDocument = updatedDocument,
+                        )
+                    }
+                } catch (_: Throwable) {
+                    retireRestoredActionAuthorityPreservingCancellation(owner.guardOwner)
+                }
+
+                RuntimeDocumentCommitStatus.UNCHANGED_PRIOR -> Unit
+
+                RuntimeDocumentCommitStatus.DIVERGED,
+                RuntimeDocumentCommitStatus.UNKNOWN,
+                ->
+                    retireRestoredActionAuthorityPreservingCancellation(owner.guardOwner)
+            }
+            throw error
+        }
+        val updatedOwner = reconcileRestoredDocumentCommitLocked(
+            owner = owner,
+            priorDocument = document,
+            priorDocumentVersion = priorDocumentVersion,
+            priorPlan = plan,
+            committedDocument = updatedDocument,
+        ) ?: return RestoredActionApplication(
+            RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED),
+        )
+        if (!hasRestoredRestTransitionAuthority(updatedOwner, updatedDocument, changed.plan)) {
+            revokeRestoredActionAuthorityLocked(updatedOwner.guardOwner)
+            return RestoredActionApplication(RestTransitionReduction.NoOp(RestTransitionNoOpReason.AUTHORITY_CHANGED))
+        }
+        return RestoredActionApplication(changed)
+    }
+
+    private fun reconcileRestoredDocumentCommitLocked(
+        owner: RestoredRuntimeOwner,
+        priorDocument: ActiveWorkoutRuntimeDocument,
+        priorDocumentVersion: Long,
+        priorPlan: RestTransitionPlan,
+        committedDocument: ActiveWorkoutRuntimeDocument,
+    ): RestoredRuntimeOwner? {
+        if (activeRuntimeDocument != priorDocument ||
+            activeRuntimeDocumentVersion != priorDocumentVersion ||
+            coordinator._restTransitionPlan.value != priorPlan ||
+            restoredRuntimeOwner != owner
+        ) {
+            if (restoredRuntimeOwner == owner) {
+                revokeRestoredActionAuthorityLocked(owner.guardOwner)
+            }
+            return null
+        }
+        val retainActionOwner = hasRestoredRestTransitionAuthority(owner, priorDocument, priorPlan)
+        setActiveRuntimeDocument(committedDocument)
+        coordinator._restTransitionPlan.value = committedDocument.restTransitionPlan
+        acceptedRetryPermission = null
+        persistedRestTimerOwner = null
+        coordinator.restTimerJob = null
+        val restoredTimerJobToCancel = reconcileRestoredRestTimerDocumentLocked(
+            owner = owner.guardOwner,
+            priorDocument = priorDocument,
+            priorDocumentVersion = priorDocumentVersion,
+            committedDocument = committedDocument,
+            committedDocumentVersion = activeRuntimeDocumentVersion,
+            retainOwner = retainActionOwner,
+        )
+        val updatedOwner = if (retainActionOwner) {
+            owner.copy(
+                document = committedDocument,
+                documentVersion = activeRuntimeDocumentVersion,
+            )
+        } else {
+            null
+        }
+        restoredRuntimeOwner = updatedOwner
+        if (updatedOwner == null) {
+            revokeRestoredActionAuthorityLocked(owner.guardOwner)
+        }
+        restoredTimerJobToCancel?.cancel()
+        return updatedOwner
+    }
+
+    private fun revokeRestoredActionAuthorityLocked(owner: RestoredRuntimeOwnerToken) {
+        executionGuard.revokeRestoredRuntime(owner)
+        clearRestoredRuntimeOwnerIfOwned(owner)
+        if (executionGuard.machineTeardownState.value is MachineTeardownState.Ready) {
+            clearRestoredTeardownRetryOwnerIfOwned(owner)
+        }
+        clearRestoredAcceptedRetryPermissionIfOwned(owner)
+        detachRestoredRestTimerIfOwned(owner)?.cancel()
+    }
+
+    private fun clearRestoredRuntimeOwnerIfOwned(owner: RestoredRuntimeOwnerToken) {
+        while (true) {
+            val current = restoredRuntimeOwnerRef.value
+            if (current?.guardOwner != owner) return
+            beforeRestoredOwnerCompareAndClearForTest?.invoke(owner)
+            if (restoredRuntimeOwnerRef.compareAndSet(current, null)) return
+        }
+    }
+
+    private fun clearRestoredAcceptedRetryPermissionIfOwned(owner: RestoredRuntimeOwnerToken) {
+        while (true) {
+            val current = acceptedRetryPermissionRef.value ?: return
+            if ((current.source as? AcceptedRetryPermissionSource.Restored)?.owner != owner) return
+            if (acceptedRetryPermissionRef.compareAndSet(current, null)) return
+        }
+    }
+
+    private fun clearRestoredTeardownRetryOwnerIfOwned(owner: RestoredRuntimeOwnerToken) {
+        while (true) {
+            val current = restoredTeardownRetryOwnerRef.value ?: return
+            if (current != owner) return
+            if (restoredTeardownRetryOwnerRef.compareAndSet(current, null)) return
+        }
+    }
+
+    private fun replaceRestoredRestTimerOwner(
+        replacement: RestoredRestTimerOwner,
+    ): RestoredRestTimerOwner? {
+        while (true) {
+            val current = restoredRestTimerOwnerRef.value
+            if (restoredRestTimerOwnerRef.compareAndSet(current, replacement)) return current
+        }
+    }
+
+    private fun detachRestoredRestTimerIfOwned(owner: RestoredRuntimeOwnerToken): Job? {
+        while (true) {
+            val current = restoredRestTimerOwnerRef.value ?: return null
+            if (current.guardOwner != owner) return null
+            beforeRestoredRestTimerOwnerCompareAndClearForTest?.invoke(owner)
+            if (restoredRestTimerOwnerRef.compareAndSet(current, null)) return current.job
+        }
+    }
+
+    private fun detachRestoredRestTimerIfExact(owner: RestoredRestTimerOwner): Job? {
+        if (restoredRestTimerOwnerRef.value !== owner) return null
+        beforeRestoredRestTimerOwnerCompareAndClearForTest?.invoke(owner.guardOwner)
+        return if (restoredRestTimerOwnerRef.compareAndSet(owner, null)) owner.job else null
+    }
+
+    private fun reconcileRestoredRestTimerDocumentLocked(
+        owner: RestoredRuntimeOwnerToken,
+        priorDocument: ActiveWorkoutRuntimeDocument,
+        priorDocumentVersion: Long,
+        committedDocument: ActiveWorkoutRuntimeDocument,
+        committedDocumentVersion: Long,
+        retainOwner: Boolean,
+    ): Job? {
+        while (true) {
+            val current = restoredRestTimerOwnerRef.value ?: return null
+            if (current.guardOwner != owner ||
+                current.document != priorDocument ||
+                current.documentVersion != priorDocumentVersion
+            ) {
+                return null
+            }
+            val committedPlan = committedDocument.restTransitionPlan
+            val replacement = committedPlan?.takeIf {
+                retainOwner &&
+                    it.transitionId == current.transitionId &&
+                    it.sourceExecutionId == current.sourceExecutionId
+            }?.let {
+                current.copy(
+                    document = committedDocument,
+                    documentVersion = committedDocumentVersion,
+                )
+            }
+            if (restoredRestTimerOwnerRef.compareAndSet(current, replacement)) {
+                return if (replacement == null) current.job else null
+            }
+        }
+    }
+
+    private fun clearRestoredRestTimerIfOwned(
+        owner: RestoredRuntimeOwnerToken,
+        timerJob: Job,
+    ): Boolean {
+        while (true) {
+            val current = restoredRestTimerOwnerRef.value ?: return false
+            if (current.guardOwner != owner || current.job !== timerJob) return false
+            if (restoredRestTimerOwnerRef.compareAndSet(current, null)) return true
+        }
+    }
+
+    private fun startRestoredRestTimerIfOwned(timerJob: Job) {
+        val owner = restoredRestTimerOwnerRef.value
+        if (owner?.job === timerJob && executionGuard.isRestoredRuntimeCurrent(owner.guardOwner)) {
+            timerJob.start()
+        } else {
+            timerJob.cancel()
+        }
+    }
+
+    private fun createRestoredRestTimerJob(
+        guardOwner: RestoredRuntimeOwnerToken,
+        transitionId: String,
+        sourceExecutionId: String,
+    ): Job {
+        lateinit var timerJob: Job
+        timerJob = scope.launch(start = CoroutineStart.LAZY) {
+            runRestoredRestTimer(
+                guardOwner = guardOwner,
+                transitionId = transitionId,
+                sourceExecutionId = sourceExecutionId,
+                timerJob = timerJob,
+            )
+        }
+        return timerJob
+    }
+
+    private suspend fun runRestoredRestTimer(
+        guardOwner: RestoredRuntimeOwnerToken,
+        transitionId: String,
+        sourceExecutionId: String,
+        timerJob: Job,
+    ) {
+        try {
+            while (currentCoroutineContext().isActive) {
+                delay(100L)
+                val owner = restoredRestTimerOwnerRef.value?.takeIf { current ->
+                    current.guardOwner == guardOwner &&
+                        current.transitionId == transitionId &&
+                        current.sourceExecutionId == sourceExecutionId &&
+                        current.job === timerJob
+                } ?: return
+                val deadline = owner.monotonicDeadlineElapsedRealtimeMs ?: return
+                val remainingSeconds = computeRemainingSeconds(deadline)
+                beforeRestoredRestTimerTickPublishForTest?.invoke(owner.guardOwner, remainingSeconds)
+                if (!publishRestoredRestTimerTick(owner, remainingSeconds)) {
+                    afterRestoredRestTimerProfileAuthorityFailureForTest?.invoke()
+                    val retainForTransientProfile = restTransitionMutex.withLock {
+                        restoredRestTimerOwnerRef.value === owner &&
+                            restoredTimerPresentationCanBeRetainedAfterAuthorityFailure(owner)
+                    }
+                    if (retainForTransientProfile) continue
+                    if (restoredRestTimerOwnerRef.compareAndSet(owner, null)) {
+                        revokeRestoredActionAuthorityLocked(owner.guardOwner)
+                        return
+                    }
+                    continue
+                }
+                if (remainingSeconds <= 0) {
+                    afterRestoredRestTimerZeroPublishForTest?.invoke(owner.guardOwner)
+                    val expiredOwner = owner.copy(
+                        monotonicDeadlineElapsedRealtimeMs = null,
+                        job = null,
+                    )
+                    if (restoredRestTimerOwnerRef.compareAndSet(
+                            owner,
+                            expiredOwner,
+                        )
+                    ) {
+                        return
+                    }
+                    val migratedOwner = restoredRestTimerOwnerRef.value
+                    if (migratedOwner?.guardOwner == guardOwner &&
+                        migratedOwner.transitionId == transitionId &&
+                        migratedOwner.sourceExecutionId == sourceExecutionId &&
+                        migratedOwner.job === timerJob &&
+                        migratedOwner.monotonicDeadlineElapsedRealtimeMs != null
+                    ) {
+                        continue
+                    }
+                    return
+                }
+            }
+        } catch (error: CancellationException) {
+            clearRestoredRestTimerIfOwned(guardOwner, timerJob)
+            throw error
+        }
+    }
+
+    private suspend fun publishRestoredRestTimerTick(
+        owner: RestoredRestTimerOwner,
+        remainingSeconds: Int,
+    ): Boolean = restTransitionMutex.withLock {
+        executionGuard.commitRestoredTimerPublication(
+            owner = owner.guardOwner,
+            candidateStillCurrent = {
+                restoredRestTimerOwnerRef.value === owner &&
+                    restoredTimerPresentationIsCurrent(owner)
+            },
+        ) {
+            coordinator._restSecondsRemaining.value = remainingSeconds
+            val resting = coordinator._workoutState.value as WorkoutState.Resting
+            coordinator._workoutState.value = resting.copy(restSecondsRemaining = remainingSeconds)
+        }
+    }
+
+    private fun restoredTimerPresentationIsCurrent(owner: RestoredRestTimerOwner): Boolean {
+        val restoredOwner = restoredRuntimeOwner ?: return false
+        val document = activeRuntimeDocument ?: return false
+        val plan = coordinator._restTransitionPlan.value ?: return false
+        return restoredOwner.guardOwner == owner.guardOwner &&
+            restoredOwner.document == owner.document &&
+            restoredOwner.documentVersion == owner.documentVersion &&
+            document == owner.document &&
+            activeRuntimeDocumentVersion == owner.documentVersion &&
+            plan.transitionId == owner.transitionId &&
+            plan.sourceExecutionId == owner.sourceExecutionId &&
+            !document.isRestPaused &&
+            coordinator._workoutState.value is WorkoutState.Resting &&
+            hasRestoredOwnerContextAuthority(restoredOwner, document)
+    }
+
+    private fun restoredTimerPresentationCanBeRetainedAfterAuthorityFailure(
+        owner: RestoredRestTimerOwner,
+    ): Boolean {
+        val restoredOwner = restoredRuntimeOwner ?: return false
+        val document = activeRuntimeDocument ?: return false
+        val plan = coordinator._restTransitionPlan.value ?: return false
+        return restoredOwner.guardOwner == owner.guardOwner &&
+            restoredOwner.document == owner.document &&
+            restoredOwner.documentVersion == owner.documentVersion &&
+            document == owner.document &&
+            activeRuntimeDocumentVersion == owner.documentVersion &&
+            plan.transitionId == owner.transitionId &&
+            plan.sourceExecutionId == owner.sourceExecutionId &&
+            !document.isRestPaused &&
+            coordinator._workoutState.value is WorkoutState.Resting &&
+            restoredOwnerContextCanBeRetainedAfterAuthorityFailure(restoredOwner, document)
+    }
+
+    private suspend fun dispatchRestoredNormalAdvance(dispatch: RestoredNormalDispatch): Boolean = restTransitionMutex.withLock { dispatchRestoredNormalAdvanceLocked(dispatch) }
+
+    private fun dispatchRestoredNormalAdvanceLocked(dispatch: RestoredNormalDispatch): Boolean {
+        val owner = restoredRuntimeOwner ?: return false.also {
+            revokeRestoredActionAuthorityLocked(dispatch.owner.guardOwner)
+        }
+        val document = activeRuntimeDocument ?: return false.also {
+            revokeRestoredActionAuthorityLocked(dispatch.owner.guardOwner)
+        }
+        if (owner != dispatch.owner ||
+            document.restTransitionPlan != null ||
+            coordinator._restTransitionPlan.value != null ||
+            document.sourceExerciseIndex != dispatch.exerciseIndex ||
+            document.sourceSetIndex != dispatch.setIndex ||
+            !hasRestoredOwnerContextAuthority(owner, document)
+        ) {
+            revokeRestoredActionAuthorityLocked(dispatch.owner.guardOwner)
+            return false
+        }
+
+        val nextStep = try {
+            flowDelegate?.getNextStep(
+                dispatch.routine,
+                dispatch.exerciseIndex,
+                dispatch.setIndex,
+            )
+        } catch (error: Throwable) {
+            revokeRestoredActionAuthorityLocked(owner.guardOwner)
+            throw error
+        }
+        if (restoredRuntimeOwner != owner ||
+            activeRuntimeDocument != document ||
+            activeRuntimeDocumentVersion != owner.documentVersion ||
+            coordinator._restTransitionPlan.value != null ||
+            document.restTransitionPlan != null ||
+            !hasRestoredOwnerContextAuthority(owner, document)
+        ) {
+            revokeRestoredActionAuthorityLocked(owner.guardOwner)
+            return false
+        }
+        revokeRestoredActionAuthorityLocked(owner.guardOwner)
+        coordinator._isRestPaused.value = false
+        coordinator.restTimerJob?.cancel()
+        coordinator.restTimerJob = null
+        coordinator._workoutState.value = WorkoutState.Idle
+        if (nextStep == null) {
+            flowDelegate?.showRoutineComplete()
+        } else {
+            flowDelegate?.enterSetReady(nextStep.first, nextStep.second)
+        }
+        return true
     }
 
     private fun hasPersistedRestTimerActionAuthorityLocked(
@@ -863,8 +2632,16 @@ class ActiveSessionEngine(
         document: ActiveWorkoutRuntimeDocument,
         plan: RestTransitionPlan,
         lease: ExecutionLease,
+    ): Boolean = liveRestTransitionProfileIsCurrent(document) &&
+        hasRestTransitionAuthorityIgnoringReadyProfile(document, plan, lease)
+
+    private fun hasRestTransitionAuthorityIgnoringReadyProfile(
+        document: ActiveWorkoutRuntimeDocument,
+        plan: RestTransitionPlan,
+        lease: ExecutionLease,
     ): Boolean {
-        if (!executionGuard.isCurrent(lease) ||
+        if (liveRestTransitionIsTerminallySuperseded(document) ||
+            !executionGuard.isCurrent(lease) ||
             document.sourceExecutionId != lease.executionId.toString() ||
             document.sourceStableSessionId != lease.sessionId ||
             document.profileId != lease.profileId ||
@@ -876,7 +2653,117 @@ class ActiveSessionEngine(
         }
         val routine = coordinator._loadedRoutine.value ?: return false
         val sourceExercise = routine.exercises.getOrNull(document.sourceExerciseIndex) ?: return false
-        return coordinator.currentRoutineId == document.routineId &&
+        return (routine.profileId ?: "default") == document.profileId &&
+            coordinator.currentRoutineId == document.routineId &&
+            coordinator.currentRoutineSessionId == document.routineSessionId &&
+            coordinator._currentExerciseIndex.value == document.sourceExerciseIndex &&
+            coordinator._currentSetIndex.value == document.sourceSetIndex &&
+            sourceExercise.id == document.routineExerciseId
+    }
+
+    private fun liveRestTransitionProfileIsCurrent(document: ActiveWorkoutRuntimeDocument): Boolean = (userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready)
+        ?.profile
+        ?.id == document.profileId
+
+    private fun liveRestTransitionIsTerminallySuperseded(
+        document: ActiveWorkoutRuntimeDocument,
+    ): Boolean {
+        val readyProfile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+        return (readyProfile != null && readyProfile.profile.id != document.profileId) ||
+            runtimeCleanupFencesLiveDocument(document)
+    }
+
+    private fun runtimeCleanupFencesLiveDocument(document: ActiveWorkoutRuntimeDocument): Boolean {
+        val currentDocumentVersion = activeRuntimeDocumentVersion
+        return pendingRuntimeCleanupRef.value.any { target ->
+            target.expectedDocument == document &&
+                when (val source = target.source) {
+                    is RuntimeCleanupSource.ActiveDocument ->
+                        source.engineVersion == currentDocumentVersion
+
+                    is RuntimeCleanupSource.RestoredOwner ->
+                        source.engineVersion == currentDocumentVersion
+
+                    is RuntimeCleanupSource.PendingEngineReplace ->
+                        source.expectedPublishedEngineVersion == currentDocumentVersion ||
+                            source.expectedPublishedEngineVersion == currentDocumentVersion + 1L
+
+                    is RuntimeCleanupSource.PendingInitialReplace ->
+                        pendingInitialRestRuntimeDocument === document
+
+                    is RuntimeCleanupSource.ColdHandle -> false
+                }
+        }
+    }
+
+    private fun hasRestoredRestTransitionAuthority(
+        owner: RestoredRuntimeOwner,
+        document: ActiveWorkoutRuntimeDocument,
+        plan: RestTransitionPlan,
+    ): Boolean = hasRestoredRestTransitionAuthorityIgnoringReadyProfile(owner, document, plan) &&
+        hasRestoredOwnerContextAuthority(owner, document)
+
+    private fun hasRestoredRestTransitionAuthorityIgnoringReadyProfile(
+        owner: RestoredRuntimeOwner,
+        document: ActiveWorkoutRuntimeDocument,
+        plan: RestTransitionPlan,
+    ): Boolean = document.restTransitionPlan == plan &&
+        document.logicalSetKey == plan.logicalSetKey &&
+        document.plannedSetId == plan.actionIdentity().plannedSetId &&
+        hasRestoredOwnerContextAuthorityIgnoringReadyProfile(owner, document)
+
+    private fun hasRestoredOwnerContextAuthority(
+        owner: RestoredRuntimeOwner,
+        document: ActiveWorkoutRuntimeDocument,
+    ): Boolean {
+        if (!hasRestoredOwnerContextAuthorityIgnoringReadyProfile(owner, document) ||
+            captureExternalCommandInputStamp() != owner.externalCommandInputStamp
+        ) {
+            return false
+        }
+        val readyProfile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+            ?: return false
+        return readyProfile.profile.id == document.profileId
+    }
+
+    // A failed authority read under Switching may be followed immediately by Ready for the
+    // same profile. Retain only while every non-profile identity remains exact; a stable
+    // external-input mismatch or a definitively different Ready profile still revokes.
+    private fun restoredOwnerContextCanBeRetainedAfterAuthorityFailure(
+        owner: RestoredRuntimeOwner,
+        document: ActiveWorkoutRuntimeDocument,
+    ): Boolean {
+        val profileContext = userProfileRepository.activeProfileContext.value
+        val profileMayStillMatch = when (profileContext) {
+            is ActiveProfileContext.Switching -> true
+            is ActiveProfileContext.Ready -> profileContext.profile.id == document.profileId
+        }
+        if (!profileMayStillMatch) return false
+        if (profileContext is ActiveProfileContext.Ready) {
+            val currentStamp = captureExternalCommandInputStamp()
+            if (currentStamp != null && currentStamp != owner.externalCommandInputStamp) return false
+        }
+        return hasRestoredOwnerContextAuthorityIgnoringReadyProfile(owner, document)
+    }
+
+    private fun hasRestoredOwnerContextAuthorityIgnoringReadyProfile(
+        owner: RestoredRuntimeOwner,
+        document: ActiveWorkoutRuntimeDocument,
+    ): Boolean {
+        if (restoredRuntimeOwner != owner ||
+            owner.document != document ||
+            owner.documentVersion != activeRuntimeDocumentVersion ||
+            activeRuntimeDocument != document ||
+            executionGuard.currentLease != null ||
+            !executionGuard.isRestoredRuntimeCurrent(owner.guardOwner)
+        ) {
+            return false
+        }
+        val routine = coordinator._loadedRoutine.value ?: return false
+        val sourceExercise = routine.exercises.getOrNull(document.sourceExerciseIndex) ?: return false
+        return routine.profileId == document.profileId &&
+            routine.id == document.routineId &&
+            coordinator.currentRoutineId == document.routineId &&
             coordinator.currentRoutineSessionId == document.routineSessionId &&
             coordinator._currentExerciseIndex.value == document.sourceExerciseIndex &&
             coordinator._currentSetIndex.value == document.sourceSetIndex &&
@@ -892,6 +2779,34 @@ class ActiveSessionEngine(
             document.sourceStableSessionId
         } ?: return false
         return tryStartAcceptedRetry(RetryPersistenceGate.Live(sourceStableSessionId))
+    }
+
+    private suspend fun tryStartCurrentAcceptedRetryRestored(
+        expectedOwner: RestoredRuntimeOwnerToken,
+    ): Boolean {
+        val gate = restTransitionMutex.withLock {
+            val owner = restoredRuntimeOwner
+                ?.takeIf { it.guardOwner == expectedOwner }
+                ?: return@withLock null
+            val plan = coordinator._restTransitionPlan.value as? RestTransitionPlan.AcceptedRetry
+                ?: return@withLock null
+            val document = activeRuntimeDocument ?: return@withLock null
+            val permission = acceptedRetryPermission ?: return@withLock null
+            if (owner.document != document ||
+                owner.documentVersion != activeRuntimeDocumentVersion ||
+                document.restTransitionPlan != plan ||
+                permission.source != AcceptedRetryPermissionSource.Restored(expectedOwner) ||
+                !hasAcceptedRetryPermissionAuthorityLocked(permission, document, plan)
+            ) {
+                return@withLock null
+            }
+            RetryPersistenceGate.Restored(
+                sourceStableSessionId = document.sourceStableSessionId,
+                actionIdentity = plan.actionIdentity(),
+                sourceContext = owner.sourceContext,
+            )
+        } ?: return false
+        return tryStartAcceptedRetry(gate)
     }
 
     /**
@@ -996,15 +2911,52 @@ class ActiveSessionEngine(
                 buildAndConsumeRetryStartRequestLocked(snapshot, plannedSets)
             }
         } catch (error: CancellationException) {
-            withContext(NonCancellable) {
-                val recovery = restTransitionMutex.withLock {
-                    failAcceptedRetryClosedLocked(
-                        snapshot.plan,
-                        snapshot.documentVersion,
-                        snapshot.failClosedAuthority(),
-                    )
+            val clearedDocument = snapshot.document.copy(restTransitionPlan = null)
+            when (runtimeDocumentCommitStatus(clearedDocument, snapshot.document)) {
+                RuntimeDocumentCommitStatus.COMMITTED -> try {
+                    withContext(NonCancellable) {
+                        val recovery = restTransitionMutex.withLock {
+                            snapshot.restoredOwner?.let { owner ->
+                                reconcileRestoredDocumentCommitLocked(
+                                    owner = owner,
+                                    priorDocument = snapshot.document,
+                                    priorDocumentVersion = snapshot.documentVersion,
+                                    priorPlan = snapshot.plan,
+                                    committedDocument = clearedDocument,
+                                )?.let { reconciledOwner ->
+                                    buildFailClosedRetryStartRequest(
+                                        document = clearedDocument,
+                                        plan = snapshot.plan,
+                                        authority = snapshot.failClosedAuthority(),
+                                        expectedSource = null,
+                                        restoredOwner = reconciledOwner,
+                                    )
+                                }
+                            } ?: if (snapshot.gate is RetryPersistenceGate.Live) {
+                                failAcceptedRetryClosedLocked(
+                                    snapshot.plan,
+                                    snapshot.documentVersion,
+                                    snapshot.failClosedAuthority(),
+                                )
+                            } else {
+                                null
+                            }
+                        }
+                        recovery?.let { enterManualRetryRecovery(it, expectedLease = it.expectedSource) }
+                    }
+                } catch (_: Throwable) {
+                    snapshot.restoredOwner?.let { owner ->
+                        retireRestoredActionAuthorityPreservingCancellation(owner.guardOwner)
+                    }
                 }
-                recovery?.let { enterManualRetryRecovery(it, expectedLease = it.expectedSource) }
+
+                RuntimeDocumentCommitStatus.UNCHANGED_PRIOR -> Unit
+
+                RuntimeDocumentCommitStatus.DIVERGED,
+                RuntimeDocumentCommitStatus.UNKNOWN,
+                -> snapshot.restoredOwner?.let { owner ->
+                    retireRestoredActionAuthorityPreservingCancellation(owner.guardOwner)
+                }
             }
             throw error
         }
@@ -1026,7 +2978,11 @@ class ActiveSessionEngine(
                 return false
             }
         } catch (error: CancellationException) {
-            enterManualRetryRecovery(request, expectedLease = request.expectedSource)
+            try {
+                enterManualRetryRecovery(request, expectedLease = request.expectedSource)
+            } catch (_: Throwable) {
+                releaseManualRetryRecoveryAuthority(request)
+            }
             throw error
         } catch (error: Exception) {
             Logger.e(error) { "Accepted retry dispatch failed after its plan was consumed" }
@@ -1057,6 +3013,20 @@ class ActiveSessionEngine(
             ?: return RetryGateCapture.Wait
         val document = activeRuntimeDocument
             ?: return RetryGateCapture.Wait
+        val restoredOwner = when (gate) {
+            is RetryPersistenceGate.Live -> null
+
+            is RetryPersistenceGate.Restored ->
+                restoredRuntimeOwner
+                    ?.takeIf { owner ->
+                        owner.document == document &&
+                            owner.documentVersion == activeRuntimeDocumentVersion &&
+                            owner.sourceContext == gate.sourceContext &&
+                            owner.guardOwner.configurationInputEpoch == configurationInputEpoch &&
+                            owner.guardOwner.recoverySupersessionEpoch == recoveryPublicationEpoch
+                    }
+                    ?: return RetryGateCapture.Wait
+        }
         val permission = when (gate) {
             is RetryPersistenceGate.Live -> {
                 val livePermission = acceptedRetryPermission ?: return RetryGateCapture.Wait
@@ -1069,7 +3039,15 @@ class ActiveSessionEngine(
 
             is RetryPersistenceGate.Restored -> {
                 if (gate.actionIdentity != plan.actionIdentity()) return RetryGateCapture.Wait
-                null
+                val owner = requireNotNull(restoredOwner)
+                val restoredPermission = acceptedRetryPermission ?: return RetryGateCapture.Wait
+                if (restoredPermission.source != AcceptedRetryPermissionSource.Restored(owner.guardOwner) ||
+                    !hasAcceptedRetryPermissionAuthorityLocked(restoredPermission, document, plan)
+                ) {
+                    acceptedRetryPermission = null
+                    return RetryGateCapture.Wait
+                }
+                restoredPermission
             }
         }
         val expectedSource = when (gate) {
@@ -1098,12 +3076,20 @@ class ActiveSessionEngine(
             plan = plan,
             permission = permission,
             expectedSource = expectedSource,
+            restoredOwner = restoredOwner,
             completion = completion,
             commandTemplate = commandTemplate,
             recoveryPublicationEpoch = recoveryPublicationEpoch,
             configurationInputEpoch = configurationInputEpoch,
             externalCommandInputStamp = externalCommandInputStamp,
         )
+        if (gate is RetryPersistenceGate.Restored &&
+            !hasRestoredRetryExternalAuthority(snapshot)
+        ) {
+            val owner = requireNotNull(restoredOwner)
+            revokeRestoredActionAuthorityLocked(owner.guardOwner)
+            return RetryGateCapture.Wait
+        }
         if (!hasAcceptedRetrySnapshotAuthorityLocked(snapshot, requireTeardownReady = false)) {
             return RetryGateCapture.FailClosed(
                 plan,
@@ -1111,10 +3097,24 @@ class ActiveSessionEngine(
                 snapshot.failClosedAuthority(),
             )
         }
-        if (executionGuard.machineTeardownState.value !is MachineTeardownState.Ready) {
+        val teardownReady = when (gate) {
+            is RetryPersistenceGate.Live -> executionGuard.machineTeardownState.value is MachineTeardownState.Ready
+            is RetryPersistenceGate.Restored -> executionGuard.isRestoredTeardownReady(requireNotNull(restoredOwner).guardOwner)
+        }
+        if (!teardownReady) {
             return RetryGateCapture.Wait
         }
         return RetryGateCapture.Ready(snapshot)
+    }
+
+    private fun hasRestoredRetryExternalAuthority(snapshot: AcceptedRetryGateSnapshot): Boolean {
+        val owner = snapshot.restoredOwner ?: return false
+        val readyProfile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+            ?: return false
+        return readyProfile.profile.id == snapshot.document.profileId &&
+            snapshot.externalCommandInputStamp.profileId == snapshot.document.profileId &&
+            captureExternalCommandInputStamp() == snapshot.externalCommandInputStamp &&
+            executionGuard.isRestoredRuntimeCurrent(owner.guardOwner)
     }
 
     private fun AcceptedRetryGateSnapshot.failClosedAuthority(): RetryFailClosedAuthority = when (gate) {
@@ -1123,7 +3123,10 @@ class ActiveSessionEngine(
             recoveryPublicationEpoch,
         )
 
-        is RetryPersistenceGate.Restored -> RetryFailClosedAuthority.Restored(recoveryPublicationEpoch)
+        is RetryPersistenceGate.Restored -> RetryFailClosedAuthority.Restored(
+            owner = requireNotNull(restoredOwner).guardOwner,
+            recoveryPublicationEpoch = recoveryPublicationEpoch,
+        )
     }
 
     private fun leaseMatchesRetrySource(
@@ -1157,6 +3160,14 @@ class ActiveSessionEngine(
                     document.restDeadlineEpochMs == permissionSource.deadlineEpochMs &&
                     !document.isRestPaused &&
                     RestDeadlineCalculator.remainingSeconds(document, wallClockMillisProvider()) <= 0
+            }
+
+            is AcceptedRetryPermissionSource.Restored -> {
+                val owner = restoredRuntimeOwner ?: return false
+                owner.guardOwner == permissionSource.owner &&
+                    owner.document == document &&
+                    owner.documentVersion == activeRuntimeDocumentVersion &&
+                    executionGuard.isRestoredRuntimeCurrent(permissionSource.owner)
             }
         }
     }
@@ -1223,7 +3234,8 @@ class ActiveSessionEngine(
                 val permission = acceptedRetryPermission ?: return false
                 val source = snapshot.expectedSource ?: return false
                 val completion = snapshot.completion ?: return false
-                if (snapshot.permission != permission ||
+                if (snapshot.restoredOwner != null ||
+                    snapshot.permission != permission ||
                     permission.documentVersion != snapshot.documentVersion ||
                     permission.transitionId != plan.transitionId ||
                     permission.sourceExecutionId != plan.sourceExecutionId ||
@@ -1246,7 +3258,19 @@ class ActiveSessionEngine(
             is RetryPersistenceGate.Restored -> {
                 val gate = snapshot.gate
                 val context = gate.sourceContext
-                if (snapshot.permission != null ||
+                val owner = snapshot.restoredOwner ?: return false
+                val currentOwner = restoredRuntimeOwner ?: return false
+                val permission = acceptedRetryPermission ?: return false
+                if (currentOwner != owner ||
+                    owner.document != document ||
+                    owner.documentVersion != snapshot.documentVersion ||
+                    owner.sourceContext != context ||
+                    snapshot.permission != permission ||
+                    permission.source != AcceptedRetryPermissionSource.Restored(owner.guardOwner) ||
+                    !hasAcceptedRetryPermissionAuthorityLocked(permission, document, plan) ||
+                    snapshot.configurationInputEpoch != owner.guardOwner.configurationInputEpoch ||
+                    snapshot.recoveryPublicationEpoch != owner.guardOwner.recoverySupersessionEpoch ||
+                    !executionGuard.isRestoredRuntimeCurrent(owner.guardOwner) ||
                     gate.actionIdentity != plan.actionIdentity() ||
                     executionGuard.currentLease != null ||
                     snapshot.expectedSource != null ||
@@ -1264,7 +3288,14 @@ class ActiveSessionEngine(
                 }
             }
         }
-        return !requireTeardownReady || executionGuard.machineTeardownState.value is MachineTeardownState.Ready
+        if (!requireTeardownReady) return true
+        return when (snapshot.gate) {
+            is RetryPersistenceGate.Live -> executionGuard.machineTeardownState.value is MachineTeardownState.Ready
+
+            is RetryPersistenceGate.Restored -> executionGuard.isRestoredTeardownReady(
+                requireNotNull(snapshot.restoredOwner).guardOwner,
+            )
+        }
     }
 
     private fun reconstructLiveRoutineIdentity(
@@ -1392,10 +3423,16 @@ class ActiveSessionEngine(
 
         val cleared = document.copy(restTransitionPlan = null)
         if (!replaceRuntimeDocument(cleared)) return RetryRequestBuildResult.Wait
-        if (activeRuntimeDocumentVersion != snapshot.documentVersion ||
-            activeRuntimeDocument != document ||
-            coordinator._restTransitionPlan.value != plan
-        ) {
+        if (!hasAcceptedRetrySnapshotAuthorityLocked(snapshot, requireTeardownReady = true)) {
+            snapshot.restoredOwner?.let { owner ->
+                reconcileRestoredDocumentCommitLocked(
+                    owner = owner,
+                    priorDocument = document,
+                    priorDocumentVersion = snapshot.documentVersion,
+                    priorPlan = plan,
+                    committedDocument = cleared,
+                )
+            }
             return RetryRequestBuildResult.Wait
         }
         val startClaim = AcceptedRetryStartClaim(
@@ -1409,14 +3446,26 @@ class ActiveSessionEngine(
             return RetryRequestBuildResult.Wait
         }
         setActiveRuntimeDocument(cleared)
+        val clearedRestoredOwner = snapshot.restoredOwner?.copy(
+            document = cleared,
+            documentVersion = activeRuntimeDocumentVersion,
+        )
+        if (clearedRestoredOwner != null) {
+            restoredRuntimeOwner = clearedRestoredOwner
+        }
         coordinator._restTransitionPlan.value = null
         acceptedRetryPermission = null
         persistedRestTimerOwner = null
         coordinator.restTimerJob = null
+        clearedRestoredOwner
+            ?.guardOwner
+            ?.let(::detachRestoredRestTimerIfOwned)
+            ?.cancel()
         return RetryRequestBuildResult.Ready(
             RetryStartRequest(
                 startClaim = startClaim,
                 expectedSource = snapshot.expectedSource,
+                restoredOwnerToken = clearedRestoredOwner?.guardOwner,
                 sourceStableSessionId = document.sourceStableSessionId,
                 sourceAttemptNumber = document.sourceAttemptNumber,
                 requiresLivePersistedClaim = snapshot.gate is RetryPersistenceGate.Live,
@@ -1451,7 +3500,8 @@ class ActiveSessionEngine(
                 expectedWeightPerCableKg = plan.resolvedWeightPerCableKg,
                 programmedBaseWeightPerCableKg = programmedBase,
                 params = params,
-                rackBehaviorOverrides = coordinator._activeRackBehaviorOverrides.value.toMap(),
+                rackBehaviorOverrides = snapshot.restoredOwner?.rackBehaviorOverrides
+                    ?: coordinator._activeRackBehaviorOverrides.value.toMap(),
             ),
         )
     }
@@ -1600,82 +3650,128 @@ class ActiveSessionEngine(
         ) {
             return null
         }
+        var restoredOwner: RestoredRuntimeOwner? = null
         val expectedSource = when (authority) {
             is RetryFailClosedAuthority.Live -> authority.source.takeIf {
                 executionGuard.isCurrent(it) && leaseMatchesRetrySource(it, document)
             } ?: return null
 
             is RetryFailClosedAuthority.Restored -> {
-                if (executionGuard.currentLease != null) {
+                val owner = restoredRuntimeOwner
+                if (owner == null ||
+                    owner.guardOwner != authority.owner ||
+                    owner.document != document ||
+                    owner.documentVersion != documentVersion ||
+                    executionGuard.currentLease != null ||
+                    !executionGuard.isRestoredRuntimeCurrent(authority.owner)
+                ) {
                     return null
                 }
+                restoredOwner = owner
                 null
             }
         }
         val cleared = document.copy(restTransitionPlan = null)
         if (!replaceRuntimeDocument(cleared)) return null
         setActiveRuntimeDocument(cleared)
+        restoredOwner = restoredOwner?.copy(
+            document = cleared,
+            documentVersion = activeRuntimeDocumentVersion,
+        )
+        restoredOwner?.let { restoredRuntimeOwner = it }
         coordinator._restTransitionPlan.value = null
         acceptedRetryPermission = null
         persistedRestTimerOwner = null
         coordinator.restTimerJob = null
-        return RetryStartRequest(
+        return buildFailClosedRetryStartRequest(
+            document = cleared,
+            plan = plan,
+            authority = authority,
             expectedSource = expectedSource,
-            sourceStableSessionId = document.sourceStableSessionId,
-            sourceAttemptNumber = document.sourceAttemptNumber,
-            requiresLivePersistedClaim = authority is RetryFailClosedAuthority.Live,
-            runtimeDocumentVersion = activeRuntimeDocumentVersion,
-            recoveryPublicationEpoch = authority.recoveryPublicationEpoch,
-            configurationInputEpoch = -1L,
-            externalCommandInputStamp = captureExternalCommandInputStamp(),
-            profileId = document.profileId,
-            routineId = document.routineId,
-            routineSessionId = document.routineSessionId,
-            routineExerciseId = document.routineExerciseId,
-            logicalSetKey = document.logicalSetKey,
-            plannedSetId = document.plannedSetId,
-            plannedTargetReps = null,
-            plannedTargetWeightKg = null,
-            exerciseIndex = document.sourceExerciseIndex,
-            setIndex = document.sourceSetIndex,
-            attemptNumber = plan.nextAttemptNumber,
-            acceptedDropCount = document.attemptStates.firstOrNull { it.logicalSetKey == plan.logicalSetKey }?.acceptedDropCount ?: 0,
-            percentage = plan.percentage,
-            sourceConfiguredStartWeightPerCableKg = coordinator._workoutParameters.value.weightPerCableKg,
-            sourceCommandTemplate = coordinator._workoutParameters.value,
-            sourceIsTimed = false,
-            sourceIsBodyweight = false,
-            sourceIsCableExercise = true,
-            sourcePhysicalCableCount = coordinator._loadedRoutine.value
+            restoredOwner = restoredOwner,
+        )
+    }
+
+    private fun buildFailClosedRetryStartRequest(
+        document: ActiveWorkoutRuntimeDocument,
+        plan: RestTransitionPlan.AcceptedRetry,
+        authority: RetryFailClosedAuthority,
+        expectedSource: ExecutionLease?,
+        restoredOwner: RestoredRuntimeOwner?,
+    ): RetryStartRequest = RetryStartRequest(
+        expectedSource = expectedSource,
+        restoredOwnerToken = restoredOwner?.guardOwner,
+        sourceStableSessionId = document.sourceStableSessionId,
+        sourceAttemptNumber = document.sourceAttemptNumber,
+        requiresLivePersistedClaim = authority is RetryFailClosedAuthority.Live,
+        runtimeDocumentVersion = activeRuntimeDocumentVersion,
+        recoveryPublicationEpoch = authority.recoveryPublicationEpoch,
+        configurationInputEpoch = restoredOwner?.guardOwner?.configurationInputEpoch ?: -1L,
+        externalCommandInputStamp = restoredOwner?.externalCommandInputStamp
+            ?: captureExternalCommandInputStamp(),
+        profileId = document.profileId,
+        routineId = document.routineId,
+        routineSessionId = document.routineSessionId,
+        routineExerciseId = document.routineExerciseId,
+        logicalSetKey = document.logicalSetKey,
+        plannedSetId = document.plannedSetId,
+        plannedTargetReps = null,
+        plannedTargetWeightKg = null,
+        exerciseIndex = document.sourceExerciseIndex,
+        setIndex = document.sourceSetIndex,
+        attemptNumber = plan.nextAttemptNumber,
+        acceptedDropCount = document.attemptStates.firstOrNull { it.logicalSetKey == plan.logicalSetKey }?.acceptedDropCount ?: 0,
+        percentage = plan.percentage,
+        sourceConfiguredStartWeightPerCableKg = restoredOwner?.sourceContext?.configuredStartWeightPerCableKg
+            ?: coordinator._workoutParameters.value.weightPerCableKg,
+        sourceCommandTemplate = restoredOwner?.sourceContext?.commandTemplate
+            ?: coordinator._workoutParameters.value,
+        sourceIsTimed = restoredOwner?.sourceContext?.isTimed ?: false,
+        sourceIsBodyweight = restoredOwner?.sourceContext?.isBodyweight ?: false,
+        sourceIsCableExercise = restoredOwner?.sourceContext?.isCableExercise ?: true,
+        sourcePhysicalCableCount = restoredOwner?.sourceContext?.physicalCableCount
+            ?: coordinator._loadedRoutine.value
                 ?.exercises
                 ?.getOrNull(document.sourceExerciseIndex)
                 ?.exercise
                 ?.preferredCableCount,
-            occurrenceMultiplier = plan.resultingExerciseMultiplier,
-            expectedWeightPerCableKg = plan.resolvedWeightPerCableKg,
-            programmedBaseWeightPerCableKg = plan.resolvedWeightPerCableKg / plan.resultingExerciseMultiplier,
-            params = coordinator._workoutParameters.value.copy(weightPerCableKg = plan.resolvedWeightPerCableKg),
-            rackBehaviorOverrides = coordinator._activeRackBehaviorOverrides.value.toMap(),
-        )
-    }
+        occurrenceMultiplier = plan.resultingExerciseMultiplier,
+        expectedWeightPerCableKg = plan.resolvedWeightPerCableKg,
+        programmedBaseWeightPerCableKg = plan.resolvedWeightPerCableKg / plan.resultingExerciseMultiplier,
+        params = (restoredOwner?.sourceContext?.commandTemplate ?: coordinator._workoutParameters.value).copy(
+            weightPerCableKg = plan.resolvedWeightPerCableKg,
+        ),
+        rackBehaviorOverrides = restoredOwner?.rackBehaviorOverrides
+            ?: coordinator._activeRackBehaviorOverrides.value.toMap(),
+    )
 
     private fun enterManualRetryRecovery(
         request: RetryStartRequest,
         expectedLease: ExecutionLease?,
         allowNoCurrentAfterOwnedInvalidation: Boolean = false,
     ) {
+        val restoredOwnerToken = request.restoredOwnerToken.takeIf { expectedLease == null }
+        if (restoredOwnerToken != null &&
+            (
+                !executionGuard.isRestoredRuntimeCurrent(restoredOwnerToken) ||
+                    !restoredManualRecoveryPresentationIsCurrent(request)
+                )
+        ) {
+            releaseManualRetryRecoveryAuthority(request)
+            return
+        }
         val current = executionGuard.currentLease
         if (expectedLease == null && current != null) {
-            clearAcceptedRetryStartClaim(request)
+            releaseManualRetryRecoveryAuthority(request)
             return
         }
         if (expectedLease != null) {
             if (current == null && !allowNoCurrentAfterOwnedInvalidation) {
-                clearAcceptedRetryStartClaim(request)
+                releaseManualRetryRecoveryAuthority(request)
                 return
             }
             if (current != null && !current.sameExecutionAs(expectedLease)) {
-                clearAcceptedRetryStartClaim(request)
+                releaseManualRetryRecoveryAuthority(request)
                 return
             }
         }
@@ -1684,21 +3780,74 @@ class ActiveSessionEngine(
             expectedLease = expectedLease,
             expectedSupersessionEpoch = request.recoveryPublicationEpoch,
             allowNoCurrentAfterOwnedInvalidation = allowNoCurrentAfterOwnedInvalidation,
+            expectedRestoredOwner = restoredOwnerToken,
         )
         if (publicationClaim == null) {
-            clearAcceptedRetryStartClaim(request)
+            releaseManualRetryRecoveryAuthority(request)
             return
         }
         try {
             afterManualRetryRecoveryClaimForTest?.invoke()
-            executionGuard.commitRecoveryPublication(publicationClaim) {
+            executionGuard.commitRecoveryPublication(
+                claim = publicationClaim,
+                candidateStillCurrent = {
+                    restoredOwnerToken == null || restoredManualRecoveryPresentationIsCurrent(request)
+                },
+            ) {
+                beforeManualRetryRecoveryCommitForTest?.invoke(request.params, request.rackBehaviorOverrides)
                 coordinator._workoutParameters.value = request.params
+                coordinator._activeRackBehaviorOverrides.value = request.rackBehaviorOverrides
                 coordinator._workoutState.value = WorkoutState.Idle
                 flowDelegate?.enterSetReady(request.exerciseIndex, request.setIndex)
             }
         } finally {
-            clearAcceptedRetryStartClaim(request)
+            releaseManualRetryRecoveryAuthority(request)
         }
+    }
+
+    private fun releaseManualRetryRecoveryAuthority(request: RetryStartRequest) {
+        request.restoredOwnerToken?.let { owner ->
+            revokeRestoredActionAuthorityLocked(owner)
+        }
+        clearAcceptedRetryStartClaim(request)
+    }
+
+    private fun restoredManualRecoveryPresentationIsCurrent(request: RetryStartRequest): Boolean {
+        val ownerToken = request.restoredOwnerToken ?: return false
+        val owner = restoredRuntimeOwner ?: return false
+        val document = activeRuntimeDocument ?: return false
+        val stamp = request.externalCommandInputStamp ?: return false
+        val readyProfile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+            ?: return false
+        val routine = coordinator._loadedRoutine.value ?: return false
+        val sourceExercise = routine.exercises.getOrNull(request.exerciseIndex) ?: return false
+        return owner.guardOwner == ownerToken &&
+            owner.document == document &&
+            owner.documentVersion == request.runtimeDocumentVersion &&
+            activeRuntimeDocumentVersion == request.runtimeDocumentVersion &&
+            document.restTransitionPlan == null &&
+            coordinator._restTransitionPlan.value == null &&
+            coordinator._workoutState.value is WorkoutState.Resting &&
+            (request.startClaim == null || ownsAcceptedRetryStartClaim(request)) &&
+            readyProfile.profile.id == request.profileId &&
+            stamp == owner.externalCommandInputStamp &&
+            captureExternalCommandInputStamp() == stamp &&
+            document.profileId == request.profileId &&
+            document.routineId == request.routineId &&
+            document.routineSessionId == request.routineSessionId &&
+            document.routineExerciseId == request.routineExerciseId &&
+            document.sourceStableSessionId == request.sourceStableSessionId &&
+            document.logicalSetKey == request.logicalSetKey &&
+            document.plannedSetId == request.plannedSetId &&
+            document.sourceExerciseIndex == request.exerciseIndex &&
+            document.sourceSetIndex == request.setIndex &&
+            routine.profileId == request.profileId &&
+            routine.id == request.routineId &&
+            coordinator.currentRoutineId == request.routineId &&
+            coordinator.currentRoutineSessionId == request.routineSessionId &&
+            coordinator._currentExerciseIndex.value == request.exerciseIndex &&
+            coordinator._currentSetIndex.value == request.setIndex &&
+            sourceExercise.id == request.routineExerciseId
     }
 
     private fun failRetryStartAndRecover(
@@ -1906,6 +4055,34 @@ class ActiveSessionEngine(
             retryCommandMatchesCurrentExercise(request, exercise)
     }
 
+    /** Called only while the guard holds its teardown lock; do not re-enter the guard here. */
+    private fun restoredRetryCandidateStillCurrent(request: RetryStartRequest): Boolean {
+        val token = request.restoredOwnerToken ?: return false
+        val owner = restoredRuntimeOwner ?: return false
+        val document = activeRuntimeDocument ?: return false
+        return owner.guardOwner == token &&
+            owner.document == document &&
+            owner.documentVersion == activeRuntimeDocumentVersion &&
+            document.restTransitionPlan == null &&
+            coordinator._restTransitionPlan.value == null &&
+            acceptedRetryPermission == null &&
+            ownsAcceptedRetryStartClaim(request) &&
+            document.profileId == request.profileId &&
+            document.routineId == request.routineId &&
+            document.routineSessionId == request.routineSessionId &&
+            document.routineExerciseId == request.routineExerciseId &&
+            document.sourceStableSessionId == request.sourceStableSessionId &&
+            document.logicalSetKey == request.logicalSetKey &&
+            document.plannedSetId == request.plannedSetId &&
+            document.sourceExerciseIndex == request.exerciseIndex &&
+            document.sourceSetIndex == request.setIndex &&
+            coordinator.currentRoutineId == request.routineId &&
+            coordinator.currentRoutineSessionId == request.routineSessionId &&
+            coordinator._currentExerciseIndex.value == request.exerciseIndex &&
+            coordinator._currentSetIndex.value == request.setIndex &&
+            coordinator._workoutState.value is WorkoutState.Resting
+    }
+
     private fun retryCommandMatchesCurrentExercise(
         request: RetryStartRequest,
         exercise: RoutineExercise,
@@ -1963,18 +4140,86 @@ class ActiveSessionEngine(
                 )
     }
 
-    private suspend fun replaceRuntimeDocument(document: ActiveWorkoutRuntimeDocument): Boolean = try {
-        activeWorkoutRuntimeRepository.replace(document.profileId, document.routineSessionId, document)
-        true
-    } catch (error: CancellationException) {
-        throw error
-    } catch (_: Exception) {
-        false
+    private suspend fun replaceRuntimeDocument(document: ActiveWorkoutRuntimeDocument): Boolean {
+        val pendingReplace = runtimeCleanupCandidateRef.value
+            ?.takeIf { origin -> origin.document != document }
+            ?.let { origin ->
+                val originEngineVersion = when (val source = origin.source) {
+                    is RuntimeCleanupSource.ActiveDocument -> source.engineVersion
+
+                    is RuntimeCleanupSource.RestoredOwner -> source.engineVersion
+
+                    is RuntimeCleanupSource.PendingEngineReplace -> source.expectedPublishedEngineVersion
+
+                    is RuntimeCleanupSource.PendingInitialReplace,
+                    is RuntimeCleanupSource.ColdHandle,
+                    -> null
+                }
+                PendingRuntimeReplaceCandidate(
+                    candidateToken = pendingRuntimeReplaceCandidateSequence.incrementAndGet(),
+                    document = document,
+                    origin = origin,
+                    expectedPublishedEngineVersion = originEngineVersion?.plus(1L),
+                )
+            }
+            ?.takeIf { candidate -> pendingRuntimeReplaceCandidateRef.compareAndSet(null, candidate) }
+        if (pendingReplace != null) {
+            handoffPendingRuntimeReplaceToCleanup(pendingReplace)
+        }
+        return try {
+            activeWorkoutRuntimeRepository.replace(document.profileId, document.routineSessionId, document)
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            false
+        } finally {
+            if (pendingReplace != null) {
+                pendingRuntimeReplaceCandidateRef.compareAndSet(pendingReplace, null)
+            }
+        }
+    }
+
+    private enum class RuntimeDocumentCommitStatus { COMMITTED, UNCHANGED_PRIOR, DIVERGED, UNKNOWN }
+
+    private suspend fun runtimeDocumentCommitStatus(
+        candidate: ActiveWorkoutRuntimeDocument,
+        prior: ActiveWorkoutRuntimeDocument,
+    ): RuntimeDocumentCommitStatus = withContext(NonCancellable) {
+        try {
+            val loaded = activeWorkoutRuntimeRepository.load(
+                profileId = candidate.profileId,
+                routineSessionId = candidate.routineSessionId,
+            ) as? ActiveWorkoutRuntimeLoadResult.Loaded
+            when (loaded?.document) {
+                candidate -> RuntimeDocumentCommitStatus.COMMITTED
+                prior -> RuntimeDocumentCommitStatus.UNCHANGED_PRIOR
+                else -> RuntimeDocumentCommitStatus.DIVERGED
+            }
+        } catch (_: Throwable) {
+            RuntimeDocumentCommitStatus.UNKNOWN
+        }
+    }
+
+    private fun retireRestoredActionAuthorityPreservingCancellation(owner: RestoredRuntimeOwnerToken) {
+        try {
+            revokeRestoredActionAuthorityLocked(owner)
+        } catch (_: Throwable) {
+            // Best-effort retirement must never replace the causal cancellation.
+        }
     }
 
     private fun setActiveRuntimeDocument(document: ActiveWorkoutRuntimeDocument) {
         activeRuntimeDocument = document
         activeRuntimeDocumentVersion++
+        runtimeCleanupCandidateRef.value = RuntimeCleanupCandidate(
+            document = document,
+            source = RuntimeCleanupSource.ActiveDocument(
+                engineVersion = activeRuntimeDocumentVersion,
+                sourceExecutionId = document.sourceExecutionId,
+                sourceStableSessionId = document.sourceStableSessionId,
+            ),
+        )
     }
 
     private fun canonicalAttemptStates(states: List<PlannedSetAttemptState>): List<PlannedSetAttemptState> = states.associateBy { it.logicalSetKey }.values.toList()
@@ -2044,6 +4289,22 @@ class ActiveSessionEngine(
     internal var afterAcceptedRetryActivatedForTest: (suspend () -> Unit)? = null
     internal var beforeManualRetryRecoveryPublishForTest: (() -> Unit)? = null
     internal var afterManualRetryRecoveryClaimForTest: (() -> Unit)? = null
+    internal var beforeManualRetryRecoveryCommitForTest: ((WorkoutParameters, Map<String, RackItemBehavior>) -> Unit)? = null
+    internal var beforeRestoredNormalDispatchForTest: (() -> Unit)? = null
+    internal var beforeRestoredOwnerCompareAndClearForTest: ((RestoredRuntimeOwnerToken) -> Unit)? = null
+    internal var afterRestoredActionProfileAuthorityFailureForTest: (suspend () -> Unit)? = null
+    internal var beforeRestoredRestTimerTickPublishForTest: (suspend (RestoredRuntimeOwnerToken, Int) -> Unit)? = null
+    internal var afterRestoredRestTimerProfileAuthorityFailureForTest: (suspend () -> Unit)? = null
+    internal var afterRestoredRestTimerZeroPublishForTest: (suspend (RestoredRuntimeOwnerToken) -> Unit)? = null
+    internal var beforeRestoredRestTimerOwnerCompareAndClearForTest: ((RestoredRuntimeOwnerToken) -> Unit)? = null
+    internal var afterRestoredRestTimerControlCaptureForTest: (suspend () -> Unit)? = null
+    internal var afterCleanupDisposalBoundaryForTest: (() -> Unit)? = null
+    internal var beforeCleanupGuardCloseForTest: (() -> Unit)? = null
+
+    internal fun clearAcceptedRetryStartClaimForTest(): Boolean {
+        val claim = acceptedRetryStartClaim.value ?: return false
+        return acceptedRetryStartClaim.compareAndSet(claim, null)
+    }
     internal var pendingResetStartInterceptorForTest: ((resume: () -> Unit) -> Unit)? = null
     internal var beforeExecutionBeginForTest: (() -> Unit)? = null
     internal var beforeQueuedSuccessorMachineConfigurationForTest: (() -> Unit)? = null
@@ -2055,13 +4316,28 @@ class ActiveSessionEngine(
     internal var onRestTransitionNavigationContextReadForTest: (() -> Unit)? = null
     internal var afterPersistedRestTimerClaimForTest: (suspend () -> Unit)? = null
     internal var beforePersistedRestTimerTickPublishForTest: (suspend () -> Unit)? = null
+    internal var afterPersistedRestTimerProfileAuthorityFailureForTest: (suspend () -> Unit)? = null
     internal var beforePersistedRestTimerActionForTest: (suspend () -> Unit)? = null
     internal var afterPersistedRestTimerActionAuthorizationForTest: (suspend () -> Unit)? = null
     internal var afterResetCleanupTokenCaptureForTest: (() -> Unit)? = null
+    internal var recoveryPreparationCallsForTest: Int = 0
+    internal var afterRuntimeResumeSelectionForTest: (suspend (RoutineResumeHandle.Persisted) -> Unit)? = null
+    internal var beforeRestoredRuntimeOwnerPublicationForTest: (() -> Unit)? = null
+    internal var beforeRestoredRoutineFlowPublicationForTest: (() -> Unit)? = null
 
     internal suspend fun resolveRestTransitionNavigationForTest(plan: RestTransitionPlan.NormalAdvance): Boolean = resolveNavigationOnce(plan) != null
 
     internal fun activeRuntimeDocumentForTest(): ActiveWorkoutRuntimeDocument? = activeRuntimeDocument
+
+    internal fun currentRestoredRuntimeOwnerForTest(): RestoredRuntimeOwnerToken? = restoredRuntimeOwner?.guardOwner
+
+    internal fun currentRestoredAcceptedRetryPermissionOwnerForTest(): RestoredRuntimeOwnerToken? = (acceptedRetryPermission?.source as? AcceptedRetryPermissionSource.Restored)?.owner
+
+    internal fun currentRestoredRestTimerOwnerForTest(): RestoredRuntimeOwnerToken? = restoredRestTimerOwnerRef.value?.guardOwner
+
+    internal fun currentRestoredRestTimerJobForTest(): Job? = restoredRestTimerOwnerRef.value?.job
+
+    internal fun currentRestoredRestTimerDeadlineElapsedRealtimeMsForTest(): Long? = restoredRestTimerOwnerRef.value?.monotonicDeadlineElapsedRealtimeMs
 
     internal fun mutateActiveRuntimeDocumentForTest(
         transform: (ActiveWorkoutRuntimeDocument) -> ActiveWorkoutRuntimeDocument,
@@ -2069,31 +4345,6 @@ class ActiveSessionEngine(
         val updated = transform(requireNotNull(activeRuntimeDocument))
         setActiveRuntimeDocument(updated)
         coordinator._restTransitionPlan.value = updated.restTransitionPlan
-    }
-
-    internal fun installAcceptedRetryRuntimeForTest(document: ActiveWorkoutRuntimeDocument) {
-        val plan = requireNotNull(document.restTransitionPlan as? RestTransitionPlan.AcceptedRetry)
-        require(executionGuard.currentLease == null)
-        setActiveRuntimeDocument(document)
-        coordinator._restTransitionPlan.value = plan
-        coordinator._workoutState.value = WorkoutState.Resting(
-            restSecondsRemaining = RestDeadlineCalculator.remainingSeconds(document, wallClockMillisProvider()),
-            nextExerciseName = coordinator._loadedRoutine.value
-                ?.exercises
-                ?.getOrNull(document.sourceExerciseIndex)
-                ?.exercise
-                ?.displayName
-                .orEmpty(),
-            isLastExercise = false,
-            currentSet = document.sourceSetIndex + 1,
-            totalSets = coordinator._loadedRoutine.value
-                ?.exercises
-                ?.getOrNull(document.sourceExerciseIndex)
-                ?.setReps
-                ?.size
-                ?: 0,
-        )
-        acceptedRetryPermission = null
     }
 
     internal fun hasRetainedWorkoutExitSnapshotForTest(sessionId: String): Boolean = exitSnapshotStore.findBySessionId(sessionId) != null
@@ -2352,6 +4603,42 @@ class ActiveSessionEngine(
         }
     }
 
+    private fun launchRestoredMachineTeardownReset(guardOwner: RestoredRuntimeOwnerToken) {
+        val job = scope.launch(start = CoroutineStart.LAZY) {
+            var failureReason: TeardownFailureReason? = null
+            try {
+                withTimeout(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+                    bleRepository.stopWorkout().getOrThrow()
+                }
+                if (bleRepository.connectionState.value !is ConnectionState.Connected) {
+                    failureReason = TeardownFailureReason.DISCONNECTED
+                }
+            } catch (error: TimeoutCancellationException) {
+                failureReason = TeardownFailureReason.TIMED_OUT
+            } catch (error: CancellationException) {
+                throw error
+            } catch (_: Exception) {
+                failureReason = TeardownFailureReason.RESET_FAILED
+            } finally {
+                bleRepository.stopPolling()
+                executionGuard.clearRestoredTeardownJobIfOwned(guardOwner, currentCoroutineContext()[Job] ?: return@launch)
+            }
+            if (failureReason != null) {
+                executionGuard.markRestoredRecoveryRequired(guardOwner, failureReason)
+            } else {
+                if (executionGuard.markRestoredTeardownReady(guardOwner)) {
+                    clearRestoredTeardownRetryOwnerIfOwned(guardOwner)
+                    scope.launch { tryStartCurrentAcceptedRetryRestored(guardOwner) }
+                }
+            }
+        }
+        if (executionGuard.attachRestoredTeardownJob(guardOwner, job)) {
+            job.start()
+        } else {
+            job.cancel()
+        }
+    }
+
     private fun takeTeardownReadyContinuation(lease: ExecutionLease): (() -> Unit)? {
         while (true) {
             val pending = pendingTeardownReadyContinuation.value ?: return null
@@ -2470,6 +4757,15 @@ class ActiveSessionEngine(
 
     fun retryMachineTeardown() {
         if (bleRepository.connectionState.value !is ConnectionState.Connected) return
+        val restoredOwner = restoredRuntimeOwner?.guardOwner ?: restoredTeardownRetryOwner
+        if (restoredOwner != null) {
+            val restoredAttempt = executionGuard.beginRestoredRecoveryAttempt(restoredOwner)
+            if (restoredAttempt != null) {
+                launchRestoredMachineTeardownReset(restoredAttempt.owner)
+                return
+            }
+            if (executionGuard.isRestoredRuntimeCurrent(restoredOwner)) return
+        }
         val recoveryAttempt = executionGuard.beginRecoveryAttempt() ?: return
         launchMachineTeardownReset(
             lease = recoveryAttempt.lease,
@@ -2516,6 +4812,25 @@ class ActiveSessionEngine(
 
         /** Suspend until routine load and PR weight resolution complete */
         suspend fun loadRoutineAsync(routine: Routine): Boolean
+
+        /** Suspend and publish only while the originating Resume UI action remains current. */
+        suspend fun loadRoutineForResumeAsync(
+            routine: Routine,
+            launchOrigin: RoutineLaunchOrigin,
+            cycleId: String?,
+            cycleDayNumber: Int?,
+            publicationStillCurrent: () -> Boolean,
+        ): Boolean
+
+        /** Resolve cold-recovery inputs without publishing coordinator state. */
+        suspend fun prepareRoutineForRecovery(
+            routine: Routine,
+            exerciseIndex: Int,
+            setIndex: Int,
+            launchOrigin: RoutineLaunchOrigin,
+            cycleId: String?,
+            cycleDayNumber: Int?,
+        ): RoutineRecoveryPreparation?
 
         /** Enter SetReady screen for a specific exercise/set */
         fun enterSetReady(exerciseIndex: Int, setIndex: Int)
@@ -2626,6 +4941,20 @@ class ActiveSessionEngine(
     init {
         // Collectors #3-8 (workout lifecycle collectors).
         // Collectors #1-2 are in RoutineFlowManager (constructed before ActiveSessionEngine).
+
+        scope.launch {
+            userProfileRepository.activeProfileContext.collect { context ->
+                val ready = context as? ActiveProfileContext.Ready ?: return@collect
+                val candidate = runtimeCleanupCandidateRef.value
+                if (candidate != null && candidate.document.profileId != ready.profile.id) {
+                    beginTrackedRuntimeCleanup(
+                        reason = RuntimeCleanupReason.PROFILE_CHANGED,
+                        candidate = candidate,
+                    )
+                }
+                exitProfileMismatchedPresentationIfCurrent(ready.profile.id)
+            }
+        }
 
         // #3: Hook up RepCounter
         repCounter.onRepEvent = repEvent@{ event ->
@@ -4490,6 +6819,28 @@ class ActiveSessionEngine(
         return result
     }
 
+    internal suspend fun loadRoutineFromCycleForResumeAsync(
+        routine: Routine,
+        cycleId: String,
+        dayNumber: Int,
+        publicationStillCurrent: () -> Boolean,
+    ): Boolean {
+        if (routine.exercises.isEmpty() || cycleId.isBlank() || dayNumber <= 0 ||
+            !publicationStillCurrent()
+        ) {
+            return false
+        }
+        val result = flowDelegate?.loadRoutineForResumeAsync(
+            routine = routine,
+            launchOrigin = RoutineLaunchOrigin.TRAINING_CYCLES,
+            cycleId = cycleId,
+            cycleDayNumber = dayNumber,
+            publicationStillCurrent = publicationStillCurrent,
+        ) ?: false
+        currentCoroutineContext().ensureActive()
+        return result && publicationStillCurrent()
+    }
+
     fun clearCycleContext() {
         flowDelegate?.clearCycleContext()
     }
@@ -4625,16 +6976,25 @@ class ActiveSessionEngine(
     // ===== Core Workout Lifecycle =====
 
     fun resetForNewWorkout() {
-        executionGuard.supersedeRecoveryPublication()
+        val cleanupCandidate = runtimeCleanupCandidateRef.value
+        val restoredTimerOwner = restoredRestTimerOwnerRef.value
+        val resetToken = executionGuard.supersedeRecoveryPublicationAndCaptureResetCleanupToken()
+        val cleanupTarget = cleanupCandidate?.let { candidate ->
+            installRuntimeCleanupIntent(
+                captureRuntimeCleanupTarget(candidate, RuntimeCleanupReason.EXPLICIT_RESTART),
+            )
+        }
         executionGuard.supersedeQueuedSuccessors()
         supersedePendingResetStart()
+        cleanupTarget?.let(::launchRuntimeCleanup)
         if (acceptedRetryStartClaim.value != null && coordinator.workoutJob?.isActive == true) {
+            restoredTimerOwner?.let(::detachRestoredRestTimerIfExact)?.cancel()
             coordinator.workoutJob?.cancel(CancellationException("Accepted retry reset requested"))
             return
         }
-        val resetToken = executionGuard.captureResetCleanupToken()
         val lease = resetToken.lease
         afterResetCleanupTokenCaptureForTest?.invoke()
+        restoredTimerOwner?.let(::detachRestoredRestTimerIfExact)?.cancel()
         coordinator.workoutJob?.cancel(CancellationException("Workout reset requested"))
         coordinator.workoutJob = null
         lease?.let(bodyweightCompletionGate::invalidate)
@@ -4875,6 +7235,13 @@ class ActiveSessionEngine(
     internal fun mutateConfigurationInputs(block: () -> Unit) {
         executionGuard.mutateConfigurationInputs(block)
     }
+
+    internal fun mutateConfigurationInputsIf(
+        candidateStillCurrent: () -> Boolean,
+        block: () -> Unit,
+    ): Boolean = executionGuard.mutateConfigurationInputsIf(candidateStillCurrent, block)
+
+    internal fun <T> captureConfigurationInputs(block: () -> T): ConfigurationInputCapture<T> = executionGuard.captureConfigurationInputs(block)
 
     internal fun supersedeConfigurationInputIntent() {
         executionGuard.mutateConfigurationInputs { }
@@ -5388,6 +7755,12 @@ class ActiveSessionEngine(
         )
         beforeExecutionBeginForTest?.invoke()
         val leaseResult = when {
+            retryRequest?.restoredOwnerToken != null -> executionGuard.beginRestoredSuccessorExecution(
+                owner = retryRequest.restoredOwnerToken,
+                seed = executionSeed,
+                candidateStillCurrent = { restoredRetryCandidateStillCurrent(retryRequest) },
+            )
+
             retryRequest != null -> executionGuard.beginSuccessorExecution(retryRequest.expectedSource, executionSeed)
 
             queuedSuccessorToken != null -> executionGuard.beginNoCurrentSuccessorExecution(
@@ -5404,6 +7777,10 @@ class ActiveSessionEngine(
                 else -> rejectStart(StartRejectionReason.TEARING_DOWN)
             }
             return null
+        }
+        retryRequest?.restoredOwnerToken?.let { owner ->
+            clearRestoredRuntimeOwnerIfOwned(owner)
+            clearRestoredTeardownRetryOwnerIfOwned(owner)
         }
         if (queuedStartCandidate != null && captureQueuedStartCandidate() != queuedStartCandidate) {
             executionGuard.invalidate(lease, ExecutionInvalidationReason.START_FAILED)
@@ -6791,12 +9168,772 @@ class ActiveSessionEngine(
         coordinator.routineLaunchOrigin = null
     }
 
+    private fun captureRuntimeCleanupTarget(
+        owner: RestoredRuntimeOwner,
+        reason: RuntimeCleanupReason,
+        exitPresentation: Boolean = false,
+    ) = RuntimeCleanupTarget(
+        reason = reason,
+        lookupKey = owner.handle.lookupKey,
+        initialRowRevision = null,
+        expectedDocument = owner.document,
+        source = RuntimeCleanupSource.RestoredOwner(
+            owner = owner.guardOwner,
+            engineVersion = owner.documentVersion,
+        ),
+        planVariant = runtimeCleanupPlanVariant(owner.document),
+        exitPresentation = exitPresentation,
+    )
+
+    private fun captureRuntimeCleanupTarget(
+        candidate: RuntimeCleanupCandidate,
+        reason: RuntimeCleanupReason,
+        exitPresentation: Boolean = false,
+    ) = RuntimeCleanupTarget(
+        reason = reason,
+        lookupKey = ActiveWorkoutRuntimeLookupKey(
+            profileId = candidate.document.profileId,
+            routineSessionId = candidate.document.routineSessionId,
+        ),
+        initialRowRevision = (candidate.source as? RuntimeCleanupSource.ColdHandle)?.rowRevision,
+        expectedDocument = candidate.document,
+        source = candidate.source,
+        planVariant = runtimeCleanupPlanVariant(candidate.document),
+        exitPresentation = exitPresentation,
+    )
+
+    private fun captureColdRuntimeCleanupTarget(
+        handle: RoutineResumeHandle.Persisted,
+        loadResult: ActiveWorkoutRuntimeLoadResult,
+        reason: RuntimeCleanupReason,
+    ): RuntimeCleanupTarget {
+        val document = (loadResult as? ActiveWorkoutRuntimeLoadResult.Loaded)?.document
+        return RuntimeCleanupTarget(
+            reason = reason,
+            lookupKey = handle.lookupKey,
+            initialRowRevision = handle.rowRevision,
+            expectedDocument = document,
+            source = RuntimeCleanupSource.ColdHandle(handle.rowRevision),
+            planVariant = document?.let(::runtimeCleanupPlanVariant) ?: RuntimeCleanupPlanVariant.NONE,
+            exitPresentation = false,
+        )
+    }
+
+    private fun runtimeCleanupPlanVariant(document: ActiveWorkoutRuntimeDocument) = when (document.restTransitionPlan) {
+        null -> RuntimeCleanupPlanVariant.NONE
+        is RestTransitionPlan.NormalAdvance -> RuntimeCleanupPlanVariant.NORMAL
+        is RestTransitionPlan.UnresolvedDropOffer -> RuntimeCleanupPlanVariant.UNRESOLVED
+        is RestTransitionPlan.AcceptedRetry -> RuntimeCleanupPlanVariant.ACCEPTED
+        is RestTransitionPlan.Declined -> RuntimeCleanupPlanVariant.DECLINED
+    }
+
+    private fun beginRestoredRuntimeTerminalCleanup(
+        owner: RestoredRuntimeOwner,
+        reason: RuntimeCleanupReason,
+    ) {
+        val candidate = captureRuntimeCleanupTarget(owner, reason, exitPresentation = true)
+        val target = installRuntimeCleanupIntent(candidate)
+            ?: pendingRuntimeCleanupRef.value.firstOrNull { existing ->
+                sameRuntimeCleanupTargetIdentity(existing, candidate)
+            }
+            ?: run {
+                coordinator.stopWorkoutInProgress.value = false
+                return
+            }
+        ownStopWorkoutCleanupTarget(target)
+        executionGuard.supersedeRecoveryPublication()
+        executionGuard.supersedeQueuedSuccessors()
+        supersedePendingResetStart()
+        launchRuntimeCleanup(target)
+    }
+
+    internal fun beginRoutineCompletedRuntimeCleanup() {
+        beginTrackedRuntimeCleanup(RuntimeCleanupReason.ROUTINE_COMPLETED)
+    }
+
+    internal fun beginRoutineAbandonmentRuntimeCleanup() {
+        beginTrackedRuntimeCleanup(RuntimeCleanupReason.EXPLICIT_RESTART)
+    }
+
+    private fun beginTrackedRuntimeCleanup(reason: RuntimeCleanupReason) {
+        beginTrackedRuntimeCleanup(
+            reason = reason,
+            candidate = runtimeCleanupCandidateRef.value ?: return,
+        )
+    }
+
+    private fun beginTrackedRuntimeCleanup(
+        reason: RuntimeCleanupReason,
+        candidate: RuntimeCleanupCandidate,
+    ) {
+        val capturedTarget = captureRuntimeCleanupTarget(
+            candidate = candidate,
+            reason = reason,
+            exitPresentation = reason == RuntimeCleanupReason.PROFILE_CHANGED,
+        )
+        val target = installRuntimeCleanupIntent(capturedTarget)
+        if (target == null) {
+            if (capturedTarget.exitPresentation) {
+                pendingRuntimeCleanupRef.value
+                    .firstOrNull { existing -> sameRuntimeCleanupTargetIdentity(existing, capturedTarget) }
+                    ?.let(::exitRuntimeCleanupPresentationIfCurrent)
+            }
+            return
+        }
+        launchRuntimeCleanup(target)
+    }
+
+    private fun exitRuntimeCleanupPresentationIfCurrent(
+        target: RuntimeCleanupTarget,
+        requireDifferentProfile: Boolean = true,
+    ) {
+        val document = target.expectedDocument ?: return
+        executionGuard.mutateConfigurationInputsIf(
+            candidateStillCurrent = {
+                if (!runtimeCleanupTargetIsPending(target)) return@mutateConfigurationInputsIf false
+                if (requireDifferentProfile) {
+                    val readyProfile = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+                        ?: return@mutateConfigurationInputsIf false
+                    if (readyProfile.profile.id == document.profileId) return@mutateConfigurationInputsIf false
+                }
+                val loadedRoutine = coordinator._loadedRoutine.value
+                coordinator.currentRoutineId == document.routineId &&
+                    coordinator.currentRoutineSessionId == document.routineSessionId &&
+                    (
+                        loadedRoutine == null ||
+                            (
+                                loadedRoutine.id == document.routineId &&
+                                    (loadedRoutine.profileId ?: "default") == document.profileId
+                                )
+                        )
+            },
+        ) {
+            detachEndedRoutineFromCoordinator()
+            coordinator._workoutState.value = WorkoutState.Idle
+            coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
+        }
+    }
+
+    private fun exitProfileMismatchedPresentationIfCurrent(readyProfileId: String) {
+        val loadedRoutine = coordinator._loadedRoutine.value ?: return
+        if ((loadedRoutine.profileId ?: "default") == readyProfileId) return
+        val routineId = coordinator.currentRoutineId
+        val routineSessionId = coordinator.currentRoutineSessionId
+        executionGuard.mutateConfigurationInputsIf(
+            candidateStillCurrent = {
+                val currentReady = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+                    ?: return@mutateConfigurationInputsIf false
+                currentReady.profile.id == readyProfileId &&
+                    coordinator._loadedRoutine.value === loadedRoutine &&
+                    coordinator.currentRoutineId == routineId &&
+                    coordinator.currentRoutineSessionId == routineSessionId
+            },
+        ) {
+            detachEndedRoutineFromCoordinator()
+            coordinator._workoutState.value = WorkoutState.Idle
+            coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
+        }
+    }
+
+    private fun runtimeCleanupTargetMatchesCandidate(
+        target: RuntimeCleanupTarget,
+        candidate: RuntimeCleanupCandidate,
+    ): Boolean {
+        if (target.expectedDocument != candidate.document) return false
+        val targetEngineVersion = when (val source = target.source) {
+            is RuntimeCleanupSource.ActiveDocument -> source.engineVersion
+
+            is RuntimeCleanupSource.RestoredOwner -> source.engineVersion
+
+            is RuntimeCleanupSource.PendingEngineReplace -> source.expectedPublishedEngineVersion
+
+            is RuntimeCleanupSource.PendingInitialReplace,
+            is RuntimeCleanupSource.ColdHandle,
+            -> null
+        }
+        val candidateEngineVersion = when (val source = candidate.source) {
+            is RuntimeCleanupSource.ActiveDocument -> source.engineVersion
+
+            is RuntimeCleanupSource.RestoredOwner -> source.engineVersion
+
+            is RuntimeCleanupSource.PendingEngineReplace -> source.expectedPublishedEngineVersion
+
+            is RuntimeCleanupSource.PendingInitialReplace,
+            is RuntimeCleanupSource.ColdHandle,
+            -> null
+        }
+        if (targetEngineVersion != null || candidateEngineVersion != null) {
+            return targetEngineVersion != null && targetEngineVersion == candidateEngineVersion
+        }
+        return target.source == candidate.source
+    }
+
+    private fun handoffPendingRuntimeReplaceToCleanup(pending: PendingRuntimeReplaceCandidate) {
+        val ancestor = pendingRuntimeCleanupRef.value.firstOrNull { target ->
+            runtimeCleanupTargetMatchesCandidate(target, pending.origin)
+        } ?: return
+        enqueueRuntimeCleanupTarget(
+            RuntimeCleanupTarget(
+                reason = ancestor.reason,
+                lookupKey = ActiveWorkoutRuntimeLookupKey(
+                    profileId = pending.document.profileId,
+                    routineSessionId = pending.document.routineSessionId,
+                ),
+                initialRowRevision = null,
+                expectedDocument = pending.document,
+                source = RuntimeCleanupSource.PendingEngineReplace(
+                    candidateToken = pending.candidateToken,
+                    expectedPublishedEngineVersion = pending.expectedPublishedEngineVersion,
+                ),
+                planVariant = runtimeCleanupPlanVariant(pending.document),
+                exitPresentation = ancestor.exitPresentation,
+            ),
+        )
+    }
+
+    private fun installRuntimeCleanupIntent(target: RuntimeCleanupTarget): RuntimeCleanupTarget? {
+        val installed = enqueueRuntimeCleanupTarget(target) ?: return null
+        val directOwner = (target.source as? RuntimeCleanupSource.RestoredOwner)?.owner
+        val matchingOwner = restoredRuntimeOwnerRef.value
+            ?.takeIf { owner ->
+                val targetVersion = when (val source = target.source) {
+                    is RuntimeCleanupSource.ActiveDocument -> source.engineVersion
+
+                    is RuntimeCleanupSource.RestoredOwner -> source.engineVersion
+
+                    is RuntimeCleanupSource.PendingEngineReplace -> source.expectedPublishedEngineVersion
+
+                    is RuntimeCleanupSource.PendingInitialReplace,
+                    is RuntimeCleanupSource.ColdHandle,
+                    -> null
+                }
+                owner.document == target.expectedDocument &&
+                    (targetVersion == null || owner.documentVersion == targetVersion)
+            }
+            ?.guardOwner
+        (directOwner ?: matchingOwner)?.let { owner ->
+            revokeRestoredActionAuthorityLocked(owner)
+            clearRestoredTeardownRetryOwnerIfOwned(owner)
+        }
+        clearAcceptedRetryStartClaimIfOwned(target)
+        pendingRuntimeReplaceCandidateRef.value?.let(::handoffPendingRuntimeReplaceToCleanup)
+        return installed
+    }
+
+    private fun launchRuntimeCleanup(target: RuntimeCleanupTarget): Job = scope.launch {
+        clearActiveWorkoutRuntime(target)
+    }
+
+    private fun handoffStopWorkoutCleanupTarget(
+        previous: RuntimeCleanupTarget,
+        successor: RuntimeCleanupTarget,
+    ) {
+        stopWorkoutCleanupTargetRef.compareAndSet(previous, successor)
+    }
+
+    private fun ownStopWorkoutCleanupTarget(target: RuntimeCleanupTarget) {
+        stopWorkoutCleanupTargetRef.value = target
+        if (!runtimeCleanupTargetIsPending(target)) {
+            releaseStopWorkoutGuardIfOwned(target)
+        }
+    }
+
+    private fun releaseStopWorkoutGuardIfOwned(target: RuntimeCleanupTarget) {
+        if (stopWorkoutCleanupTargetRef.compareAndSet(target, null)) {
+            coordinator.stopWorkoutInProgress.value = false
+        }
+    }
+
+    private fun sameRuntimeCleanupTargetIdentity(
+        left: RuntimeCleanupTarget,
+        right: RuntimeCleanupTarget,
+    ): Boolean {
+        if (left.lookupKey != right.lookupKey ||
+            left.initialRowRevision != right.initialRowRevision ||
+            left.expectedDocument != right.expectedDocument
+        ) {
+            return false
+        }
+        if (left.source == right.source) return true
+        val leftEngineVersion = when (val source = left.source) {
+            is RuntimeCleanupSource.ActiveDocument -> source.engineVersion
+
+            is RuntimeCleanupSource.RestoredOwner -> source.engineVersion
+
+            is RuntimeCleanupSource.PendingEngineReplace -> source.expectedPublishedEngineVersion
+
+            is RuntimeCleanupSource.PendingInitialReplace,
+            is RuntimeCleanupSource.ColdHandle,
+            -> null
+        }
+        val rightEngineVersion = when (val source = right.source) {
+            is RuntimeCleanupSource.ActiveDocument -> source.engineVersion
+
+            is RuntimeCleanupSource.RestoredOwner -> source.engineVersion
+
+            is RuntimeCleanupSource.PendingEngineReplace -> source.expectedPublishedEngineVersion
+
+            is RuntimeCleanupSource.PendingInitialReplace,
+            is RuntimeCleanupSource.ColdHandle,
+            -> null
+        }
+        return leftEngineVersion != null && leftEngineVersion == rightEngineVersion
+    }
+
+    private fun enqueueRuntimeCleanupTarget(candidate: RuntimeCleanupTarget): RuntimeCleanupTarget? {
+        while (true) {
+            val current = pendingRuntimeCleanupRef.value
+            if (current.any { existing -> sameRuntimeCleanupTargetIdentity(existing, candidate) }) return null
+            if (pendingRuntimeCleanupRef.compareAndSet(current, current + candidate)) {
+                connectionLogRepository.info(
+                    LogEventType.WORKOUT_PERSISTENCE,
+                    "Active workout runtime cleanup",
+                    details = "reason=${candidate.reason},planVariant=${candidate.planVariant}",
+                )
+                return candidate
+            }
+        }
+    }
+
+    private fun runtimeCleanupTargetIsPending(target: RuntimeCleanupTarget): Boolean = pendingRuntimeCleanupRef.value.any { it === target }
+
+    private fun removeRuntimeCleanupTarget(target: RuntimeCleanupTarget) {
+        while (true) {
+            val current = pendingRuntimeCleanupRef.value
+            if (current.none { it === target }) return
+            val updated = current.filterNot { it === target }
+            if (pendingRuntimeCleanupRef.compareAndSet(current, updated)) return
+        }
+    }
+
+    private fun clearAcceptedRetryStartClaimIfOwned(target: RuntimeCleanupTarget) {
+        val document = target.expectedDocument ?: return
+        val transitionId = document.restTransitionPlan?.transitionId ?: return
+        while (true) {
+            val claim = acceptedRetryStartClaim.value ?: return
+            if (claim.sourceStableSessionId != document.sourceStableSessionId ||
+                claim.sourceExecutionId != document.sourceExecutionId ||
+                claim.transitionId != transitionId
+            ) {
+                return
+            }
+            if (acceptedRetryStartClaim.compareAndSet(claim, null)) return
+        }
+    }
+
+    private fun detachTransitionNavigationForCleanup(
+        target: RuntimeCleanupTarget,
+    ): CompletableDeferred<CachedTransitionNavigation?>? {
+        val document = target.expectedDocument ?: return null
+        val transitionId = document.restTransitionPlan?.transitionId
+        val sourceExecutionId = document.sourceExecutionId
+        if (cachedTransitionNavigation?.let {
+                it.transitionId == transitionId && it.sourceExecutionId == sourceExecutionId
+            } == true
+        ) {
+            cachedTransitionNavigation = null
+        }
+        val pending = pendingTransitionNavigation?.takeIf {
+            it.transitionId == transitionId && it.sourceExecutionId == sourceExecutionId
+        }
+        if (pending != null) {
+            pendingTransitionNavigation = null
+        }
+        return pending?.result
+    }
+
+    private fun makeRuntimeCleanupInertLocked(
+        target: RuntimeCleanupTarget,
+    ): RuntimeCleanupDetachedEffects {
+        val document = target.expectedDocument ?: return RuntimeCleanupDetachedEffects()
+        val expectedEngineVersion = when (val source = target.source) {
+            is RuntimeCleanupSource.ActiveDocument -> source.engineVersion
+
+            is RuntimeCleanupSource.RestoredOwner -> source.engineVersion
+
+            is RuntimeCleanupSource.PendingEngineReplace -> source.expectedPublishedEngineVersion
+
+            is RuntimeCleanupSource.PendingInitialReplace,
+            is RuntimeCleanupSource.ColdHandle,
+            -> null
+        }
+        val activeTargetMatches = expectedEngineVersion != null &&
+            activeRuntimeDocument == document &&
+            activeRuntimeDocumentVersion == expectedEngineVersion
+        val pendingTargetMatches = target.source is RuntimeCleanupSource.PendingInitialReplace &&
+            pendingInitialRestRuntimeDocument === document
+        if (!activeTargetMatches && !pendingTargetMatches) return RuntimeCleanupDetachedEffects()
+
+        if (activeTargetMatches) {
+            activeRuntimeDocument = null
+            activeRuntimeDocumentVersion += 1L
+        }
+        if (pendingTargetMatches) pendingInitialRestRuntimeDocument = null
+        if (coordinator._restTransitionPlan.value == document.restTransitionPlan) {
+            coordinator._restTransitionPlan.value = null
+        }
+        val persistedTimerJob = persistedRestTimerOwner?.job
+        persistedRestTimerOwner = null
+        val legacyTimerJob = coordinator.restTimerJob
+        coordinator.restTimerJob = null
+        coordinator.restDeadlineElapsedRealtimeMs = null
+        coordinator._restSecondsRemaining.value = 0
+        coordinator._restOriginalDuration.value = 0
+        coordinator._isRestPaused.value = false
+        val pendingNavigation = detachTransitionNavigationForCleanup(target)
+        if (target.exitPresentation &&
+            coordinator.currentRoutineId == document.routineId &&
+            coordinator.currentRoutineSessionId == document.routineSessionId
+        ) {
+            detachEndedRoutineFromCoordinator()
+            coordinator._workoutState.value = WorkoutState.Idle
+            coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
+        }
+        return RuntimeCleanupDetachedEffects(
+            completeNavigationFollower = pendingNavigation?.let { follower ->
+                { follower.complete(null) }
+            },
+            jobs = listOfNotNull(persistedTimerJob, legacyTimerJob).distinct(),
+        )
+    }
+
+    private fun pendingEngineReplacementTarget(
+        predecessor: RuntimeCleanupTarget,
+        document: ActiveWorkoutRuntimeDocument,
+    ): RuntimeCleanupTarget? = pendingRuntimeCleanupRef.value.firstOrNull { candidate ->
+        candidate !== predecessor &&
+            candidate.reason == predecessor.reason &&
+            candidate.lookupKey == predecessor.lookupKey &&
+            candidate.expectedDocument == document &&
+            candidate.source is RuntimeCleanupSource.PendingEngineReplace
+    }
+
+    private suspend fun clearActiveWorkoutRuntime(target: RuntimeCleanupTarget): RuntimeCleanupResult {
+        var detachedEffects = RuntimeCleanupDetachedEffects()
+        return try {
+            restTransitionMutex.withLock {
+                var currentTarget = target
+                while (true) {
+                    if (!runtimeCleanupTargetIsPending(currentTarget)) {
+                        releaseStopWorkoutGuardIfOwned(currentTarget)
+                        return@withLock RuntimeCleanupResult.SUPERSEDED
+                    }
+                    val nextEffects = makeRuntimeCleanupInertLocked(currentTarget)
+                    detachedEffects = RuntimeCleanupDetachedEffects(
+                        completeNavigationFollower = detachedEffects.completeNavigationFollower
+                            ?: nextEffects.completeNavigationFollower,
+                        jobs = (detachedEffects.jobs + nextEffects.jobs).distinct(),
+                    )
+                    val loaded = activeWorkoutRuntimeRepository.load(
+                        profileId = currentTarget.lookupKey.profileId,
+                        routineSessionId = currentTarget.lookupKey.routineSessionId,
+                    )
+                    currentCoroutineContext().ensureActive()
+                    val revision = when (loaded) {
+                        ActiveWorkoutRuntimeLoadResult.Missing -> {
+                            finishRuntimeCleanupLocked(currentTarget)
+                            return@withLock RuntimeCleanupResult.CLEARED
+                        }
+
+                        is ActiveWorkoutRuntimeLoadResult.Loaded -> {
+                            val exactLoadedTarget = if (currentTarget.source is RuntimeCleanupSource.ColdHandle) {
+                                loaded.rowRevision == currentTarget.initialRowRevision
+                            } else {
+                                currentTarget.expectedDocument != null &&
+                                    loaded.document == currentTarget.expectedDocument
+                            }
+                            if (!exactLoadedTarget) {
+                                val successor = pendingEngineReplacementTarget(currentTarget, loaded.document)
+                                if (successor != null) {
+                                    handoffStopWorkoutCleanupTarget(currentTarget, successor)
+                                }
+                                retireRuntimeCleanupCandidate(currentTarget)
+                                removeRuntimeCleanupTarget(currentTarget)
+                                if (successor == null) {
+                                    releaseStopWorkoutGuardIfOwned(currentTarget)
+                                    return@withLock RuntimeCleanupResult.SUPERSEDED
+                                }
+                                currentTarget = successor
+                                continue
+                            }
+                            loaded.rowRevision
+                        }
+
+                        is ActiveWorkoutRuntimeLoadResult.Rejected -> {
+                            if (currentTarget.source !is RuntimeCleanupSource.ColdHandle ||
+                                loaded.rowRevision != currentTarget.initialRowRevision
+                            ) {
+                                retireRuntimeCleanupCandidate(currentTarget)
+                                removeRuntimeCleanupTarget(currentTarget)
+                                releaseStopWorkoutGuardIfOwned(currentTarget)
+                                return@withLock RuntimeCleanupResult.SUPERSEDED
+                            }
+                            loaded.rowRevision
+                        }
+                    }
+                    val deleted = activeWorkoutRuntimeRepository.deleteIfRevisionMatches(
+                        profileId = currentTarget.lookupKey.profileId,
+                        routineSessionId = currentTarget.lookupKey.routineSessionId,
+                        expectedRevision = revision,
+                    )
+                    currentCoroutineContext().ensureActive()
+                    if (!deleted) {
+                        val current = activeWorkoutRuntimeRepository.load(
+                            profileId = currentTarget.lookupKey.profileId,
+                            routineSessionId = currentTarget.lookupKey.routineSessionId,
+                        )
+                        currentCoroutineContext().ensureActive()
+                        val exactTargetStillPresent = when (current) {
+                            ActiveWorkoutRuntimeLoadResult.Missing -> {
+                                finishRuntimeCleanupLocked(currentTarget)
+                                return@withLock RuntimeCleanupResult.CLEARED
+                            }
+
+                            is ActiveWorkoutRuntimeLoadResult.Loaded ->
+                                current.rowRevision == revision &&
+                                    if (currentTarget.source is RuntimeCleanupSource.ColdHandle) {
+                                        current.rowRevision == currentTarget.initialRowRevision
+                                    } else {
+                                        currentTarget.expectedDocument != null &&
+                                            current.document == currentTarget.expectedDocument
+                                    }
+
+                            is ActiveWorkoutRuntimeLoadResult.Rejected ->
+                                currentTarget.source is RuntimeCleanupSource.ColdHandle &&
+                                    current.rowRevision == revision &&
+                                    current.rowRevision == currentTarget.initialRowRevision
+                        }
+                        if (!exactTargetStillPresent) {
+                            retireRuntimeCleanupCandidate(currentTarget)
+                            removeRuntimeCleanupTarget(currentTarget)
+                            releaseStopWorkoutGuardIfOwned(currentTarget)
+                            return@withLock RuntimeCleanupResult.SUPERSEDED
+                        }
+                        return@withLock RuntimeCleanupResult.RETRYABLE_FAILURE
+                    }
+                    finishRuntimeCleanupLocked(currentTarget)
+                    return@withLock RuntimeCleanupResult.CLEARED
+                }
+                @Suppress("UNREACHABLE_CODE")
+                RuntimeCleanupResult.SUPERSEDED
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            RuntimeCleanupResult.RETRYABLE_FAILURE
+        } finally {
+            detachedEffects.jobs.forEach { it.cancel() }
+            detachedEffects.completeNavigationFollower?.invoke()
+        }
+    }
+
+    private fun finishRuntimeCleanupLocked(target: RuntimeCleanupTarget) {
+        val document = target.expectedDocument
+        if (document == null) {
+            removeRuntimeCleanupTarget(target)
+            releaseStopWorkoutGuardIfOwned(target)
+            return
+        }
+        val expectedEngineVersion = when (val source = target.source) {
+            is RuntimeCleanupSource.ActiveDocument -> source.engineVersion
+
+            is RuntimeCleanupSource.RestoredOwner -> source.engineVersion
+
+            is RuntimeCleanupSource.PendingEngineReplace -> source.expectedPublishedEngineVersion
+
+            is RuntimeCleanupSource.PendingInitialReplace,
+            is RuntimeCleanupSource.ColdHandle,
+            -> null
+        }
+        val activeTargetMatches = expectedEngineVersion != null &&
+            activeRuntimeDocument == document &&
+            activeRuntimeDocumentVersion == expectedEngineVersion
+        val pendingTargetMatches = target.source is RuntimeCleanupSource.PendingInitialReplace &&
+            pendingInitialRestRuntimeDocument === document
+        if (activeTargetMatches) {
+            activeRuntimeDocument = null
+            activeRuntimeDocumentVersion += 1L
+        }
+        if (pendingTargetMatches) {
+            pendingInitialRestRuntimeDocument = null
+        }
+        if ((activeTargetMatches || pendingTargetMatches) &&
+            coordinator._restTransitionPlan.value == document.restTransitionPlan
+        ) {
+            coordinator._restTransitionPlan.value = null
+        }
+        retireRuntimeCleanupCandidate(target)
+        removeRuntimeCleanupTarget(target)
+        releaseStopWorkoutGuardIfOwned(target)
+    }
+
+    private fun retireRuntimeCleanupCandidate(target: RuntimeCleanupTarget) {
+        val document = target.expectedDocument ?: return
+        val expectedEngineVersion = when (val source = target.source) {
+            is RuntimeCleanupSource.ActiveDocument -> source.engineVersion
+
+            is RuntimeCleanupSource.RestoredOwner -> source.engineVersion
+
+            is RuntimeCleanupSource.PendingEngineReplace -> source.expectedPublishedEngineVersion
+
+            is RuntimeCleanupSource.PendingInitialReplace,
+            is RuntimeCleanupSource.ColdHandle,
+            -> null
+        }
+        while (true) {
+            val candidate = runtimeCleanupCandidateRef.value ?: return
+            val candidateEngineVersion = when (val source = candidate.source) {
+                is RuntimeCleanupSource.ActiveDocument -> source.engineVersion
+
+                is RuntimeCleanupSource.RestoredOwner -> source.engineVersion
+
+                is RuntimeCleanupSource.PendingEngineReplace -> source.expectedPublishedEngineVersion
+
+                is RuntimeCleanupSource.PendingInitialReplace,
+                is RuntimeCleanupSource.ColdHandle,
+                -> null
+            }
+            val targetSourceMatches = when (val source = target.source) {
+                is RuntimeCleanupSource.PendingInitialReplace ->
+                    (candidate.source as? RuntimeCleanupSource.PendingInitialReplace)?.candidateToken == source.candidateToken
+
+                is RuntimeCleanupSource.ActiveDocument,
+                is RuntimeCleanupSource.RestoredOwner,
+                is RuntimeCleanupSource.PendingEngineReplace,
+                -> candidateEngineVersion == expectedEngineVersion
+
+                is RuntimeCleanupSource.ColdHandle -> candidate.source == source
+            }
+            if (candidate.document != document || !targetSourceMatches) return
+            if (runtimeCleanupCandidateRef.compareAndSet(candidate, null)) return
+        }
+    }
+
+    internal fun retryPendingRuntimeCleanup(): Job? {
+        val target = pendingRuntimeCleanupRef.value.firstOrNull() ?: return null
+        return scope.launch {
+            clearActiveWorkoutRuntime(target)
+        }
+    }
+
+    internal fun pendingRuntimeCleanupReasonForTest(): RuntimeCleanupReason? = pendingRuntimeCleanupRef.value.firstOrNull()?.reason
+
+    private fun captureCompletedNoLeasePresentation(): CompletedNoLeasePresentation? {
+        if (executionGuard.currentLease != null ||
+            restoredRuntimeOwnerRef.value != null ||
+            activeRuntimeDocument != null ||
+            runtimeCleanupCandidateRef.value != null ||
+            pendingRuntimeCleanupRef.value.isNotEmpty()
+        ) {
+            return null
+        }
+        val loadedRoutine = coordinator._loadedRoutine.value ?: return null
+        val flowState = coordinator._routineFlowState.value as? RoutineFlowState.Complete ?: return null
+        return CompletedNoLeasePresentation(
+            loadedRoutine = loadedRoutine,
+            routineId = coordinator.currentRoutineId,
+            routineSessionId = coordinator.currentRoutineSessionId,
+            workoutState = coordinator._workoutState.value,
+            routineFlowState = flowState,
+        )
+    }
+
+    private fun exitCompletedNoLeasePresentationIfCurrent(
+        presentation: CompletedNoLeasePresentation,
+    ): Boolean = executionGuard.mutateConfigurationInputsIf(
+        candidateStillCurrent = {
+            executionGuard.currentLease == null &&
+                restoredRuntimeOwnerRef.value == null &&
+                activeRuntimeDocument == null &&
+                runtimeCleanupCandidateRef.value == null &&
+                pendingRuntimeCleanupRef.value.isEmpty() &&
+                coordinator._loadedRoutine.value === presentation.loadedRoutine &&
+                coordinator.currentRoutineId == presentation.routineId &&
+                coordinator.currentRoutineSessionId == presentation.routineSessionId &&
+                coordinator._workoutState.value == presentation.workoutState &&
+                coordinator._routineFlowState.value == presentation.routineFlowState
+        },
+    ) {
+        executionGuard.supersedeRecoveryPublication()
+        executionGuard.supersedeQueuedSuccessors()
+        supersedePendingResetStart()
+        detachEndedRoutineFromCoordinator()
+        coordinator._workoutState.value = WorkoutState.Idle
+        coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
+    }
+
     fun stopWorkout(exitingWorkout: Boolean = false) {
+        val cleanupCandidateAtInvocation = if (exitingWorkout) runtimeCleanupCandidateRef.value else null
+        val restoredOwnerAtInvocation = restoredRuntimeOwnerRef.value
+        val pendingNoLeaseCleanupAtInvocation = if (
+            exitingWorkout &&
+            executionGuard.currentLease == null &&
+            restoredOwnerAtInvocation == null
+        ) {
+            cleanupCandidateAtInvocation?.let { candidate ->
+                pendingRuntimeCleanupRef.value.firstOrNull { target ->
+                    runtimeCleanupTargetMatchesCandidate(target, candidate)
+                }
+            }
+        } else {
+            null
+        }
+        val completedNoLeasePresentationAtInvocation = if (
+            exitingWorkout &&
+            executionGuard.currentLease == null &&
+            restoredOwnerAtInvocation == null &&
+            pendingNoLeaseCleanupAtInvocation == null
+        ) {
+            captureCompletedNoLeasePresentation()
+        } else {
+            null
+        }
+        if (executionGuard.currentLease == null && restoredOwnerAtInvocation != null) {
+            if (!exitingWorkout) return
+            if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
+            beginRestoredRuntimeTerminalCleanup(
+                owner = restoredOwnerAtInvocation,
+                reason = RuntimeCleanupReason.END_WORKOUT,
+            )
+            return
+        }
+        if (pendingNoLeaseCleanupAtInvocation != null) {
+            if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
+            ownStopWorkoutCleanupTarget(pendingNoLeaseCleanupAtInvocation)
+            executionGuard.supersedeRecoveryPublication()
+            executionGuard.supersedeQueuedSuccessors()
+            supersedePendingResetStart()
+            exitRuntimeCleanupPresentationIfCurrent(
+                target = pendingNoLeaseCleanupAtInvocation,
+                requireDifferentProfile = false,
+            )
+            launchRuntimeCleanup(pendingNoLeaseCleanupAtInvocation)
+            return
+        }
+        if (completedNoLeasePresentationAtInvocation != null) {
+            if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
+            try {
+                exitCompletedNoLeasePresentationIfCurrent(completedNoLeasePresentationAtInvocation)
+            } finally {
+                coordinator.stopWorkoutInProgress.value = false
+            }
+            return
+        }
         executionGuard.supersedeRecoveryPublication()
         executionGuard.supersedeQueuedSuccessors()
         supersedePendingResetStart()
         // C1: Atomic compareAndSet prevents TOCTOU race — only the first caller proceeds
         if (!coordinator.stopWorkoutInProgress.compareAndSet(expect = false, update = true)) return
+        val cleanupTarget = cleanupCandidateAtInvocation?.let { cleanupCandidate ->
+            val candidate = captureRuntimeCleanupTarget(
+                cleanupCandidate,
+                RuntimeCleanupReason.END_WORKOUT,
+            )
+            installRuntimeCleanupIntent(candidate)
+                ?: pendingRuntimeCleanupRef.value.firstOrNull { existing ->
+                    sameRuntimeCleanupTargetIdentity(existing, candidate)
+                }
+        }?.also(::ownStopWorkoutCleanupTarget)
 
         val lease = executionGuard.currentLease
         val requestedCompletion = lease?.let { currentLease ->
@@ -6811,7 +9948,11 @@ class ActiveSessionEngine(
             is CompletionClaimResult.AlreadyClaimed -> claim.completion
 
             CompletionClaimResult.Rejected -> {
-                coordinator.stopWorkoutInProgress.value = false
+                if (cleanupTarget != null) {
+                    launchRuntimeCleanup(cleanupTarget)
+                } else {
+                    coordinator.stopWorkoutInProgress.value = false
+                }
                 return
             }
 
@@ -6827,6 +9968,7 @@ class ActiveSessionEngine(
             coordinator._workoutState.value = WorkoutState.Idle
             coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
             launchSnapshotPersistence(snapshot)
+            cleanupTarget?.let(::launchRuntimeCleanup)
             beginMachineTeardown(completion.lease, TeardownReason.END_WORKOUT)
             return
         }
@@ -8528,7 +11670,16 @@ class ActiveSessionEngine(
                 while (isActive) {
                     if (!hasExpectedAuthority(lease, "rest_timer_tick")) return@launch
                     val planOwnedPresentation = if (installedPlan != null && timerJob != null) {
-                        captureCurrentPlanOwnedRestPresentation(timerJob) ?: return@launch
+                        val captured = captureCurrentPlanOwnedRestPresentation(timerJob)
+                        if (captured == null) {
+                            afterPersistedRestTimerProfileAuthorityFailureForTest?.invoke()
+                            if (retainPlanOwnedRestTimerForTransientProfile(timerJob)) {
+                                delay(100L)
+                                continue
+                            }
+                            return@launch
+                        }
+                        captured
                     } else {
                         null
                     }
@@ -8775,6 +11926,21 @@ class ActiveSessionEngine(
         capturePlanOwnedRestPresentationLocked(timerJob)
     }
 
+    private suspend fun retainPlanOwnedRestTimerForTransientProfile(timerJob: Job): Boolean = restTransitionMutex.withLock {
+        val owner = persistedRestTimerOwner?.takeIf { it.job === timerJob } ?: return@withLock false
+        val lease = executionGuard.currentLease ?: return@withLock false
+        val document = activeRuntimeDocument ?: return@withLock false
+        val plan = coordinator._restTransitionPlan.value ?: return@withLock false
+        val profileMayStillMatch = when (val profileContext = userProfileRepository.activeProfileContext.value) {
+            is ActiveProfileContext.Switching -> true
+            is ActiveProfileContext.Ready -> profileContext.profile.id == document.profileId
+        }
+        profileMayStillMatch &&
+            owner.transitionId == plan.transitionId &&
+            owner.sourceExecutionId == plan.sourceExecutionId &&
+            hasRestTransitionAuthorityIgnoringReadyProfile(document, plan, lease)
+    }
+
     private suspend fun publishCapturedPlanOwnedRestPresentation(
         timerJob: Job,
         presentation: PlanOwnedRestPresentation,
@@ -8952,6 +12118,7 @@ class ActiveSessionEngine(
                     sourceExercise = sourceExercise,
                     restDurationSeconds = restDurationSeconds,
                 ).also { pendingInitialRestRuntimeDocument = it }
+            ensurePendingInitialRuntimeCleanupCandidate(document)
             if (!replaceRuntimeDocument(document)) {
                 return@withLock InitialRestPlanInstallResult.PersistenceFailure
             }
@@ -8967,6 +12134,20 @@ class ActiveSessionEngine(
             InitialRestPlanInstallResult.Installed(plan)
         }
         return recordInitialRestPlanInstallResult(result)
+    }
+
+    private fun ensurePendingInitialRuntimeCleanupCandidate(document: ActiveWorkoutRuntimeDocument) {
+        while (true) {
+            val current = runtimeCleanupCandidateRef.value
+            if (current?.document === document && current.source is RuntimeCleanupSource.PendingInitialReplace) return
+            val replacement = RuntimeCleanupCandidate(
+                document = document,
+                source = RuntimeCleanupSource.PendingInitialReplace(
+                    candidateToken = pendingInitialRuntimeCandidateSequence.incrementAndGet(),
+                ),
+            )
+            if (runtimeCleanupCandidateRef.compareAndSet(current, replacement)) return
+        }
     }
 
     internal suspend fun installInitialRestPlanForTest(
@@ -9035,6 +12216,13 @@ class ActiveSessionEngine(
             plannedSetId = identity.plannedSetId,
             sourceExerciseIndex = identity.exerciseIndex,
             sourceSetIndex = identity.setIndex,
+            sourceAuthority = completion.toRuntimeSourceAuthoritySnapshot(),
+            teardownSeed = RestoredTeardownSeedSnapshot(
+                sourceExecutionId = completion.lease.executionId,
+                sourceStableSessionId = completion.lease.sessionId,
+                profileId = completion.lease.profileId,
+                requiresMachine = completion.lease.requiresMachine,
+            ),
             exerciseLoadOverlays = prior?.exerciseLoadOverlays.orEmpty(),
             attemptStates = prior?.attemptStates.orEmpty()
                 .filterNot { it.logicalSetKey == identity.logicalSetKey } + attemptState,
@@ -9476,28 +12664,38 @@ class ActiveSessionEngine(
     fun extendRestTime(seconds: Int) {
         if (coordinator._workoutState.value !is WorkoutState.Resting) return
         if (coordinator._restTransitionPlan.value != null) {
-            mutatePlanOwnedRest { document ->
-                val nowEpochMs = wallClockMillisProvider()
-                val remaining = saturatingAddSeconds(
-                    RestDeadlineCalculator.remainingSeconds(document, nowEpochMs),
-                    seconds,
+            val restoredTimerOwner = restoredRestTimerOwnerRef.value
+            if (restoredTimerOwner != null) {
+                mutateRestoredPlanOwnedRest(
+                    capturedTimerOwner = restoredTimerOwner,
+                    mutation = RestoredRestTimerMutation.Extend(seconds),
                 )
-                val originalDuration = saturatingAddSeconds(document.originalRestDurationSeconds, seconds)
-                document.copy(
-                    restDeadlineEpochMs = if (document.isRestPaused) {
-                        null
-                    } else {
-                        deadlineEpochMs(nowEpochMs, remaining)
-                    },
-                    pausedRestRemainingSeconds = if (document.isRestPaused) remaining.coerceAtLeast(0) else null,
-                    originalRestDurationSeconds = originalDuration,
-                ) to {
-                    coordinator._restOriginalDuration.value = originalDuration
-                    if (document.isRestPaused) {
-                        coordinator._restSecondsRemaining.value = remaining.coerceAtLeast(0)
-                    } else {
-                        armRestDeadline(remaining.coerceAtLeast(0))
-                        coordinator._restSecondsRemaining.value = currentRestRemainingSeconds()
+            } else {
+                mutatePlanOwnedRest { document ->
+                    val nowEpochMs = wallClockMillisProvider()
+                    val remaining = saturatingAddSeconds(
+                        RestDeadlineCalculator.remainingSeconds(document, nowEpochMs),
+                        seconds,
+                    )
+                    val originalDuration = saturatingAddSeconds(document.originalRestDurationSeconds, seconds)
+                    document.copy(
+                        restTransitionPlan = document.restTransitionPlan
+                            ?.withRestDurationSeconds(originalDuration),
+                        restDeadlineEpochMs = if (document.isRestPaused) {
+                            null
+                        } else {
+                            deadlineEpochMs(nowEpochMs, remaining)
+                        },
+                        pausedRestRemainingSeconds = if (document.isRestPaused) remaining.coerceAtLeast(0) else null,
+                        originalRestDurationSeconds = originalDuration,
+                    ) to {
+                        coordinator._restOriginalDuration.value = originalDuration
+                        if (document.isRestPaused) {
+                            coordinator._restSecondsRemaining.value = remaining.coerceAtLeast(0)
+                        } else {
+                            armRestDeadline(remaining.coerceAtLeast(0))
+                            coordinator._restSecondsRemaining.value = currentRestRemainingSeconds()
+                        }
                     }
                 }
             }
@@ -9524,18 +12722,26 @@ class ActiveSessionEngine(
     fun toggleRestPause() {
         if (coordinator._workoutState.value !is WorkoutState.Resting) return
         if (coordinator._restTransitionPlan.value != null) {
-            mutatePlanOwnedRest { document ->
-                val nowEpochMs = wallClockMillisProvider()
-                val pausing = !document.isRestPaused
-                val remaining = RestDeadlineCalculator.remainingSeconds(document, nowEpochMs)
-                document.copy(
-                    restDeadlineEpochMs = if (pausing) null else deadlineEpochMs(nowEpochMs, remaining),
-                    pausedRestRemainingSeconds = if (pausing) remaining.coerceAtLeast(0) else null,
-                    isRestPaused = pausing,
-                ) to {
-                    coordinator._restSecondsRemaining.value = remaining.coerceAtLeast(0)
-                    coordinator._isRestPaused.value = pausing
-                    if (pausing) coordinator.restDeadlineElapsedRealtimeMs = null else armRestDeadline(remaining.coerceAtLeast(0))
+            val restoredTimerOwner = restoredRestTimerOwnerRef.value
+            if (restoredTimerOwner != null) {
+                mutateRestoredPlanOwnedRest(
+                    capturedTimerOwner = restoredTimerOwner,
+                    mutation = RestoredRestTimerMutation.TogglePause,
+                )
+            } else {
+                mutatePlanOwnedRest { document ->
+                    val nowEpochMs = wallClockMillisProvider()
+                    val pausing = !document.isRestPaused
+                    val remaining = RestDeadlineCalculator.remainingSeconds(document, nowEpochMs)
+                    document.copy(
+                        restDeadlineEpochMs = if (pausing) null else deadlineEpochMs(nowEpochMs, remaining),
+                        pausedRestRemainingSeconds = if (pausing) remaining.coerceAtLeast(0) else null,
+                        isRestPaused = pausing,
+                    ) to {
+                        coordinator._restSecondsRemaining.value = remaining.coerceAtLeast(0)
+                        coordinator._isRestPaused.value = pausing
+                        if (pausing) coordinator.restDeadlineElapsedRealtimeMs = null else armRestDeadline(remaining.coerceAtLeast(0))
+                    }
                 }
             }
             return
@@ -9559,16 +12765,24 @@ class ActiveSessionEngine(
     fun resetRestTimer() {
         if (coordinator._workoutState.value !is WorkoutState.Resting) return
         if (coordinator._restTransitionPlan.value != null) {
-            mutatePlanOwnedRest { document ->
-                val restored = document.originalRestDurationSeconds
-                document.copy(
-                    restDeadlineEpochMs = deadlineEpochMs(wallClockMillisProvider(), restored),
-                    pausedRestRemainingSeconds = null,
-                    isRestPaused = false,
-                ) to {
-                    coordinator._isRestPaused.value = false
-                    coordinator._restSecondsRemaining.value = restored
-                    armRestDeadline(restored)
+            val restoredTimerOwner = restoredRestTimerOwnerRef.value
+            if (restoredTimerOwner != null) {
+                mutateRestoredPlanOwnedRest(
+                    capturedTimerOwner = restoredTimerOwner,
+                    mutation = RestoredRestTimerMutation.Reset,
+                )
+            } else {
+                mutatePlanOwnedRest { document ->
+                    val restored = document.originalRestDurationSeconds
+                    document.copy(
+                        restDeadlineEpochMs = deadlineEpochMs(wallClockMillisProvider(), restored),
+                        pausedRestRemainingSeconds = null,
+                        isRestPaused = false,
+                    ) to {
+                        coordinator._isRestPaused.value = false
+                        coordinator._restSecondsRemaining.value = restored
+                        armRestDeadline(restored)
+                    }
                 }
             }
             return
@@ -9577,6 +12791,267 @@ class ActiveSessionEngine(
         coordinator._restSecondsRemaining.value = coordinator._restOriginalDuration.value
         armRestDeadline(coordinator._restOriginalDuration.value)
         Logger.d("ActiveSessionEngine") { "resetRestTimer: reset to ${coordinator._restOriginalDuration.value}s" }
+    }
+
+    private fun mutateRestoredPlanOwnedRest(
+        capturedTimerOwner: RestoredRestTimerOwner,
+        mutation: RestoredRestTimerMutation,
+    ) {
+        scope.launch {
+            afterRestoredRestTimerControlCaptureForTest?.invoke()
+            var timerPublication: RestoredRestTimerPublication? = null
+            restTransitionMutex.withLock {
+                val owner = restoredRuntimeOwner ?: return@withLock
+                val document = activeRuntimeDocument ?: return@withLock
+                val plan = coordinator._restTransitionPlan.value ?: return@withLock
+                if (restoredRestTimerOwnerRef.value !== capturedTimerOwner ||
+                    owner.guardOwner != capturedTimerOwner.guardOwner ||
+                    owner.document != capturedTimerOwner.document ||
+                    owner.documentVersion != capturedTimerOwner.documentVersion ||
+                    document != capturedTimerOwner.document ||
+                    activeRuntimeDocumentVersion != capturedTimerOwner.documentVersion ||
+                    plan.transitionId != capturedTimerOwner.transitionId ||
+                    plan.sourceExecutionId != capturedTimerOwner.sourceExecutionId ||
+                    coordinator._workoutState.value !is WorkoutState.Resting ||
+                    !hasRestoredRestTransitionAuthority(owner, document, plan)
+                ) {
+                    return@withLock
+                }
+
+                val nowElapsedRealtimeMs = elapsedRealtimeProvider()
+                val nowEpochMs = wallClockMillisProvider()
+                val currentRemaining = if (document.isRestPaused) {
+                    document.pausedRestRemainingSeconds ?: return@withLock
+                } else {
+                    capturedTimerOwner.monotonicDeadlineElapsedRealtimeMs
+                        ?.let { computeRemainingSeconds(it, nowElapsedRealtimeMs) }
+                        ?: 0
+                }
+                val updatedOriginalDuration: Int
+                val updatedRemaining: Int
+                val updatedPaused: Boolean
+                when (mutation) {
+                    is RestoredRestTimerMutation.Extend -> {
+                        updatedOriginalDuration = saturatingAddSeconds(
+                            document.originalRestDurationSeconds,
+                            mutation.seconds,
+                        )
+                        updatedRemaining = saturatingAddSeconds(currentRemaining, mutation.seconds)
+                            .coerceAtMost(updatedOriginalDuration)
+                        updatedPaused = document.isRestPaused
+                    }
+
+                    RestoredRestTimerMutation.TogglePause -> {
+                        updatedOriginalDuration = document.originalRestDurationSeconds
+                        updatedRemaining = currentRemaining.coerceIn(0, updatedOriginalDuration)
+                        updatedPaused = !document.isRestPaused
+                    }
+
+                    RestoredRestTimerMutation.Reset -> {
+                        updatedOriginalDuration = document.originalRestDurationSeconds
+                        updatedRemaining = updatedOriginalDuration
+                        updatedPaused = false
+                    }
+                }
+                val updatedMonotonicDeadline = if (!updatedPaused && updatedRemaining > 0) {
+                    saturatingAddMilliseconds(
+                        baseMs = nowElapsedRealtimeMs,
+                        durationMs = updatedRemaining.toLong() * 1_000L,
+                    )
+                } else {
+                    null
+                }
+                val updatedDocument = document.copy(
+                    restTransitionPlan = if (mutation is RestoredRestTimerMutation.Extend) {
+                        plan.withRestDurationSeconds(updatedOriginalDuration)
+                    } else {
+                        plan
+                    },
+                    restDeadlineEpochMs = if (updatedMonotonicDeadline == null) {
+                        null
+                    } else {
+                        deadlineEpochMs(nowEpochMs, updatedRemaining)
+                    },
+                    pausedRestRemainingSeconds = if (updatedPaused) updatedRemaining else null,
+                    isRestPaused = updatedPaused,
+                    originalRestDurationSeconds = updatedOriginalDuration,
+                )
+                val replacementJob = if (updatedMonotonicDeadline != null) {
+                    capturedTimerOwner.job ?: createRestoredRestTimerJob(
+                        guardOwner = capturedTimerOwner.guardOwner,
+                        transitionId = capturedTimerOwner.transitionId,
+                        sourceExecutionId = capturedTimerOwner.sourceExecutionId,
+                    )
+                } else {
+                    null
+                }
+                val createdJob = replacementJob?.takeIf { it !== capturedTimerOwner.job }
+                val committed = try {
+                    replaceRuntimeDocument(updatedDocument)
+                } catch (error: CancellationException) {
+                    when (runtimeDocumentCommitStatus(updatedDocument, document)) {
+                        RuntimeDocumentCommitStatus.COMMITTED -> {
+                            try {
+                                withContext(NonCancellable) {
+                                    val reconciled = reconcileRestoredRestTimerMutationCommitLocked(
+                                        owner = owner,
+                                        capturedTimerOwner = capturedTimerOwner,
+                                        document = document,
+                                        plan = plan,
+                                        updatedDocument = updatedDocument,
+                                        updatedOriginalDuration = updatedOriginalDuration,
+                                        updatedRemaining = updatedRemaining,
+                                        updatedPaused = updatedPaused,
+                                        updatedMonotonicDeadline = updatedMonotonicDeadline,
+                                        replacementJob = replacementJob,
+                                        createdJob = createdJob,
+                                    )
+                                    publishRestoredRestTimerMutationJobs(reconciled)
+                                }
+                            } catch (_: Throwable) {
+                                createdJob?.cancel()
+                                retireRestoredActionAuthorityPreservingCancellation(owner.guardOwner)
+                            }
+                        }
+
+                        RuntimeDocumentCommitStatus.UNCHANGED_PRIOR -> createdJob?.cancel()
+
+                        RuntimeDocumentCommitStatus.DIVERGED,
+                        RuntimeDocumentCommitStatus.UNKNOWN,
+                        -> try {
+                            createdJob?.cancel()
+                            revokeRestoredActionAuthorityLocked(owner.guardOwner)
+                        } catch (_: Throwable) {
+                            // Preserve the causal cancellation after best-effort retirement.
+                        }
+                    }
+                    throw error
+                }
+                if (!committed) {
+                    when (runtimeDocumentCommitStatus(updatedDocument, document)) {
+                        RuntimeDocumentCommitStatus.COMMITTED -> {
+                            timerPublication = reconcileRestoredRestTimerMutationCommitLocked(
+                                owner = owner,
+                                capturedTimerOwner = capturedTimerOwner,
+                                document = document,
+                                plan = plan,
+                                updatedDocument = updatedDocument,
+                                updatedOriginalDuration = updatedOriginalDuration,
+                                updatedRemaining = updatedRemaining,
+                                updatedPaused = updatedPaused,
+                                updatedMonotonicDeadline = updatedMonotonicDeadline,
+                                replacementJob = replacementJob,
+                                createdJob = createdJob,
+                            )
+                        }
+
+                        RuntimeDocumentCommitStatus.UNCHANGED_PRIOR -> createdJob?.cancel()
+
+                        RuntimeDocumentCommitStatus.DIVERGED,
+                        RuntimeDocumentCommitStatus.UNKNOWN,
+                        -> {
+                            createdJob?.cancel()
+                            revokeRestoredActionAuthorityLocked(owner.guardOwner)
+                        }
+                    }
+                    return@withLock
+                }
+                timerPublication = reconcileRestoredRestTimerMutationCommitLocked(
+                    owner = owner,
+                    capturedTimerOwner = capturedTimerOwner,
+                    document = document,
+                    plan = plan,
+                    updatedDocument = updatedDocument,
+                    updatedOriginalDuration = updatedOriginalDuration,
+                    updatedRemaining = updatedRemaining,
+                    updatedPaused = updatedPaused,
+                    updatedMonotonicDeadline = updatedMonotonicDeadline,
+                    replacementJob = replacementJob,
+                    createdJob = createdJob,
+                )
+            }
+            publishRestoredRestTimerMutationJobs(timerPublication)
+        }
+    }
+
+    private fun reconcileRestoredRestTimerMutationCommitLocked(
+        owner: RestoredRuntimeOwner,
+        capturedTimerOwner: RestoredRestTimerOwner,
+        document: ActiveWorkoutRuntimeDocument,
+        plan: RestTransitionPlan,
+        updatedDocument: ActiveWorkoutRuntimeDocument,
+        updatedOriginalDuration: Int,
+        updatedRemaining: Int,
+        updatedPaused: Boolean,
+        updatedMonotonicDeadline: Long?,
+        replacementJob: Job?,
+        createdJob: Job?,
+    ): RestoredRestTimerPublication? {
+        val updatedDocumentVersion = capturedTimerOwner.documentVersion + 1L
+        val replacementTimerOwner = capturedTimerOwner.copy(
+            document = updatedDocument,
+            documentVersion = updatedDocumentVersion,
+            monotonicDeadlineElapsedRealtimeMs = updatedMonotonicDeadline,
+            job = replacementJob,
+        )
+        val replacementOwner = owner.copy(
+            document = updatedDocument,
+            documentVersion = updatedDocumentVersion,
+        )
+        val published = executionGuard.commitRestoredTimerPublication(
+            owner = capturedTimerOwner.guardOwner,
+            candidateStillCurrent = {
+                restoredRuntimeOwnerRef.value === owner &&
+                    restoredRestTimerOwnerRef.value === capturedTimerOwner &&
+                    activeRuntimeDocument == document &&
+                    activeRuntimeDocumentVersion == capturedTimerOwner.documentVersion &&
+                    coordinator._restTransitionPlan.value == plan &&
+                    coordinator._workoutState.value is WorkoutState.Resting &&
+                    hasRestoredOwnerContextAuthority(owner, document)
+            },
+        ) {
+            check(restoredRuntimeOwnerRef.compareAndSet(owner, replacementOwner))
+            check(restoredRestTimerOwnerRef.compareAndSet(capturedTimerOwner, replacementTimerOwner))
+            setActiveRuntimeDocument(updatedDocument)
+            check(activeRuntimeDocumentVersion == updatedDocumentVersion)
+            coordinator._restTransitionPlan.value = updatedDocument.restTransitionPlan
+            clearRestoredAcceptedRetryPermissionIfOwned(owner.guardOwner)
+            persistedRestTimerOwner = null
+            coordinator.restTimerJob = null
+            coordinator.restDeadlineElapsedRealtimeMs = null
+            coordinator._restOriginalDuration.value = updatedOriginalDuration
+            coordinator._restSecondsRemaining.value = updatedRemaining
+            coordinator._isRestPaused.value = updatedPaused
+            val resting = coordinator._workoutState.value as WorkoutState.Resting
+            coordinator._workoutState.value = resting.copy(
+                restSecondsRemaining = updatedRemaining,
+            )
+        }
+        if (published) {
+            return RestoredRestTimerPublication(
+                jobToStart = replacementJob,
+                jobsToCancel = listOfNotNull(
+                    capturedTimerOwner.job?.takeIf { it !== replacementJob },
+                ),
+            )
+        }
+
+        if (restoredRuntimeOwnerRef.value === owner &&
+            restoredRestTimerOwnerRef.value === capturedTimerOwner &&
+            activeRuntimeDocument == document &&
+            activeRuntimeDocumentVersion == capturedTimerOwner.documentVersion &&
+            coordinator._restTransitionPlan.value == plan
+        ) {
+            setActiveRuntimeDocument(updatedDocument)
+        }
+        createdJob?.cancel()
+        revokeRestoredActionAuthorityLocked(owner.guardOwner)
+        return null
+    }
+
+    private fun publishRestoredRestTimerMutationJobs(publication: RestoredRestTimerPublication?) {
+        publication?.jobsToCancel?.forEach { it.cancel() }
+        publication?.jobToStart?.let(::startRestoredRestTimerIfOwned)
     }
 
     private fun mutatePlanOwnedRest(
@@ -9590,8 +13065,11 @@ class ActiveSessionEngine(
                 if (!hasRestTransitionAuthority(document, plan, lease)) return@withLock
                 val (updatedDocument, publish) = mutation(document)
                 if (!replaceRuntimeDocument(updatedDocument)) return@withLock
-                if (!hasRestTransitionAuthority(updatedDocument, plan, lease)) return@withLock
+                if (activeRuntimeDocument != document || !hasRestTransitionAuthority(document, plan, lease)) {
+                    return@withLock
+                }
                 setActiveRuntimeDocument(updatedDocument)
+                coordinator._restTransitionPlan.value = updatedDocument.restTransitionPlan
                 acceptedRetryPermission = null
                 publish()
                 val resting = coordinator._workoutState.value as? WorkoutState.Resting
@@ -9830,12 +13308,15 @@ class ActiveSessionEngine(
     // ===== Cleanup =====
 
     fun cleanup() {
-        executionGuard.supersedeRecoveryPublication()
-        executionGuard.supersedeQueuedSuccessors()
-        supersedePendingResetStart()
-        resetMachineTeardownOwner.value = null
         val currentLease = executionGuard.currentLease
         val pendingTeardownLease = pendingTeardownReadyContinuation.value?.lease
+        beforeCleanupGuardCloseForTest?.invoke()
+        executionGuard.cancelAllOwnedJobs()
+        val restoredOwner = restoredRuntimeOwnerRef.value
+        val restoredTimerOwner = restoredRestTimerOwnerRef.value
+        afterCleanupDisposalBoundaryForTest?.invoke()
+        supersedePendingResetStart()
+        resetMachineTeardownOwner.value = null
         currentLease?.let(bodyweightCompletionGate::invalidate)
         currentLease?.let(::clearDangerZoneCountdownOverride)
         val lease = executionGuard.invalidateCurrent(ExecutionInvalidationReason.CLEANUP)
@@ -9848,6 +13329,14 @@ class ActiveSessionEngine(
         coordinator._weightAdjustmentRecommendation.value = null
         coordinator.monitorDataCollectionJob?.cancel()
         cancelAutoStartTimer()
+        if (restoredOwner != null) {
+            revokeRestoredActionAuthorityLocked(restoredOwner.guardOwner)
+        } else {
+            restoredTimerOwner
+                ?.guardOwner
+                ?.let(::detachRestoredRestTimerIfOwned)
+                ?.cancel()
+        }
         coordinator.restTimerJob?.cancel()
         coordinator.restDeadlineElapsedRealtimeMs = null
         cancelJustLiftEggTimer()
@@ -9855,7 +13344,6 @@ class ActiveSessionEngine(
         coordinator.repEventsCollectionJob?.cancel()
         coordinator.workoutJob?.cancel()
         stopMotionStartDetection()
-        executionGuard.cancelAllOwnedJobs()
     }
 
     private companion object {

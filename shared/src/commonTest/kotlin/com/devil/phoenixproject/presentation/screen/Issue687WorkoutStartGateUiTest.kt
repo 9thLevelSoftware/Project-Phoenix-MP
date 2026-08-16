@@ -245,15 +245,32 @@ class Issue687WorkoutStartGateUiTest {
         assertContainsAll(
             daily,
             "viewModel.machineTeardownState.collectAsState()",
-            "requiresMachine = pendingRoutine?.exercises",
-            "?.getOrNull(info.currentExercise - 1)",
+            "val inMemoryHandle = handle as? RoutineResumeHandle.InMemory",
+            "captured.activeRoutineSnapshot.exercises",
+            ".getOrNull(captured.exerciseIndex)",
             "?.exercise?.isBodyweight != true",
-            "confirmEnabled = startGate.startEnabled",
+            "confirmEnabled = !resumeOperationInFlight &&",
+            "!discardRetryPending &&",
+            "(inMemoryHandle == null || startGate.startEnabled)",
             "confirmLabel =",
-            "supportingContent =",
+        )
+
+        val supportingContentStart = daily.indexOf(
+            "supportingContent = if (inMemoryHandle != null) {",
+        )
+        val supportingContentEnd = daily.indexOf("\n            )", supportingContentStart)
+        assertTrue(supportingContentStart >= 0, "Daily direct-Resume support gate is missing")
+        assertTrue(supportingContentEnd > supportingContentStart, "Daily Resume dialog boundary is missing")
+        val supportingContentBlock = daily
+            .substring(supportingContentStart, supportingContentEnd)
+            .replace(Regex("\\s+"), " ")
+        assertContainsAll(
+            supportingContentBlock,
+            "supportingContent = if (inMemoryHandle != null) {",
             "WorkoutStartGateNotice(",
             "viewModel.retryWorkoutTeardown()",
             "viewModel.reconnectWorkoutTeardown()",
+            "} else { null }",
         )
         assertContainsAll(
             dialog,

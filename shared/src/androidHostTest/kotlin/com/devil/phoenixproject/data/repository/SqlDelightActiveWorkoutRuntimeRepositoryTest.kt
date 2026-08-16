@@ -10,11 +10,18 @@ import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.ExerciseLoadOverlay
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSetAttemptState
+import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -57,6 +64,253 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
     @Test
     fun loadReturnsMissingWhenTheExactKeyHasNoRow() = runTest {
         assertIs<ActiveWorkoutRuntimeLoadResult.Missing>(repository.load("profile-a", "routine-session-a"))
+    }
+
+    @Test
+    fun discoverReturnsNewestDecodedExactProfileAndRoutineWithItsSqlKey() = runTest {
+        now = 100L
+        repository.replace("profile-a", "routine-session-a", runtime(routineSessionId = "routine-session-a"))
+        now = 200L
+        repository.replace("profile-a", "routine-session-b", runtime(routineSessionId = "routine-session-b"))
+        now = 300L
+        repository.replace(
+            "profile-b",
+            "routine-session-c",
+            runtime(profileId = "profile-b", routineSessionId = "routine-session-c"),
+        )
+
+        val found = assertIs<ActiveWorkoutRuntimeDiscoveryResult.Found>(
+            repository.discover("profile-a", "routine-a"),
+        )
+
+        assertEquals(ActiveWorkoutRuntimeLookupKey("profile-a", "routine-session-b"), found.lookupKey)
+        assertEquals(
+            "routine-session-b",
+            assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(found.loadResult).document.routineSessionId,
+        )
+    }
+
+    @Test
+    fun discoverIgnoresNewerRejectedAndEmbeddedProfileMismatchRows() = runTest {
+        now = 100L
+        repository.replace("profile-a", "routine-session-valid", runtime(routineSessionId = "routine-session-valid"))
+        now = 200L
+        val wrongProfile = runtime(profileId = "embedded-other", routineSessionId = "embedded-session")
+        insertRaw(
+            documentVersion = 2,
+            payload = json.encodeToString(ActiveWorkoutRuntimeDocument.serializer(), wrongProfile),
+            profileId = "profile-a",
+            routineSessionId = "sql-mismatch-session",
+        )
+        now = 300L
+        insertRaw(
+            documentVersion = 2,
+            payload = "{not-json",
+            profileId = "profile-a",
+            routineSessionId = "rejected-session",
+        )
+
+        val found = assertIs<ActiveWorkoutRuntimeDiscoveryResult.Found>(
+            repository.discover("profile-a", "routine-a"),
+        )
+
+        assertEquals(ActiveWorkoutRuntimeLookupKey("profile-a", "routine-session-valid"), found.lookupKey)
+    }
+
+    @Test
+    fun discoverReturnsTypedUnsupportedExactEnvelopeWithItsSqlKeyAndRevision() = runTest {
+        now = 400L
+        val v1Payload = JsonObject(objectJson() + ("version" to JsonPrimitive(1)))
+        insertRaw(
+            documentVersion = 1,
+            payload = v1Payload.toString(),
+            profileId = "profile-a",
+            routineSessionId = "captured-v1-sql-key",
+        )
+
+        val found = assertIs<ActiveWorkoutRuntimeDiscoveryResult.Found>(
+            repository.discover("profile-a", "routine-a"),
+        )
+        val rejected = assertIs<ActiveWorkoutRuntimeLoadResult.Rejected>(found.loadResult)
+        val attribution = assertIs<ActiveWorkoutRuntimeAttributionEnvelope>(rejected.attribution)
+
+        assertEquals(
+            ActiveWorkoutRuntimeLookupKey("profile-a", "captured-v1-sql-key"),
+            found.lookupKey,
+        )
+        assertEquals(ActiveWorkoutRuntimeRejection.UNSUPPORTED_VERSION, rejected.reason)
+        assertEquals("profile-a", attribution.profileId)
+        assertEquals("routine-a", attribution.routineId)
+        assertEquals(400L, rejected.rowRevision.updatedAtEpochMs)
+    }
+
+    @Test
+    fun discoverReturnsNewerAttributableCurrentCorruptRowInsteadOfOlderExecutableRow() = runTest {
+        now = 100L
+        repository.replace(
+            "profile-a",
+            "routine-session-valid",
+            runtime(routineSessionId = "routine-session-valid"),
+        )
+        val sourceAuthority = objectJson().getValue("sourceAuthority") as JsonObject
+        val attributableCurrentCorrupt = JsonObject(
+            objectJson() +
+                (
+                    "sourceAuthority" to JsonObject(
+                        sourceAuthority + ("reasonName" to JsonPrimitive(SetEndReason.UNKNOWN.name)),
+                    )
+                    ),
+        )
+        now = 200L
+        insertRaw(
+            documentVersion = 2,
+            payload = attributableCurrentCorrupt.toString(),
+            profileId = "profile-a",
+            routineSessionId = "routine-session-current-corrupt",
+        )
+
+        val found = assertIs<ActiveWorkoutRuntimeDiscoveryResult.Found>(
+            repository.discover("profile-a", "routine-a"),
+        )
+        val rejected = assertIs<ActiveWorkoutRuntimeLoadResult.Rejected>(found.loadResult)
+
+        assertEquals(
+            ActiveWorkoutRuntimeLookupKey("profile-a", "routine-session-current-corrupt"),
+            found.lookupKey,
+        )
+        assertEquals(ActiveWorkoutRuntimeRejection.CORRUPT_JSON, rejected.reason)
+        assertEquals("profile-a", rejected.attribution?.profileId)
+        assertEquals("routine-a", rejected.attribution?.routineId)
+        assertEquals(200L, rejected.rowRevision.updatedAtEpochMs)
+    }
+
+    @Test
+    fun discoverLeavesUnattributableAndWrongRoutineUnsupportedRowsUnassociated() = runTest {
+        now = 500L
+        insertRaw(
+            documentVersion = 1,
+            payload = """{"version":1,"profileId":"profile-a"}""",
+            profileId = "profile-a",
+            routineSessionId = "missing-routine-envelope",
+        )
+        now = 600L
+        val wrongRoutine = JsonObject(
+            objectJson() +
+                ("version" to JsonPrimitive(1)) +
+                ("routineId" to JsonPrimitive("routine-other")),
+        )
+        insertRaw(
+            documentVersion = 1,
+            payload = wrongRoutine.toString(),
+            profileId = "profile-a",
+            routineSessionId = "wrong-routine-envelope",
+        )
+        now = 700L
+        insertRaw(
+            documentVersion = 1,
+            payload = "{not-json",
+            profileId = "profile-a",
+            routineSessionId = "corrupt-envelope",
+        )
+
+        assertIs<ActiveWorkoutRuntimeDiscoveryResult.Missing>(
+            repository.discover("profile-a", "routine-a"),
+        )
+        assertIs<ActiveWorkoutRuntimeLoadResult.Rejected>(
+            repository.load("profile-a", "missing-routine-envelope"),
+        )
+        assertIs<ActiveWorkoutRuntimeLoadResult.Rejected>(
+            repository.load("profile-a", "wrong-routine-envelope"),
+        )
+        assertIs<ActiveWorkoutRuntimeLoadResult.Rejected>(
+            repository.load("profile-a", "corrupt-envelope"),
+        )
+    }
+
+    @Test
+    fun discoverBreaksEqualTimestampTiesByDescendingRoutineSessionId() = runTest {
+        now = 800L
+        repository.replace("profile-a", "routine-session-a", runtime(routineSessionId = "routine-session-a"))
+        repository.replace("profile-a", "routine-session-z", runtime(routineSessionId = "routine-session-z"))
+
+        val found = assertIs<ActiveWorkoutRuntimeDiscoveryResult.Found>(
+            repository.discover("profile-a", "routine-a"),
+        )
+
+        assertEquals(ActiveWorkoutRuntimeLookupKey("profile-a", "routine-session-z"), found.lookupKey)
+    }
+
+    @Test
+    fun exactLoadRevisionChangesWhenTheCapturedRowIsReplaced() = runTest {
+        now = 100L
+        repository.replace("profile-a", "routine-session-a", runtime(sourceAttemptNumber = 2))
+        val first = assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(
+            repository.load("profile-a", "routine-session-a"),
+        )
+        now = 101L
+        repository.replace("profile-a", "routine-session-a", runtime(sourceAttemptNumber = 3))
+        val replacement = assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(
+            repository.load("profile-a", "routine-session-a"),
+        )
+
+        assertNotEquals(first.rowRevision, replacement.rowRevision)
+        assertEquals(100L, first.rowRevision.updatedAtEpochMs)
+        assertEquals(101L, replacement.rowRevision.updatedAtEpochMs)
+    }
+
+    @Test
+    fun exactLoadRevisionChangesForSameMillisecondPayloadReplacement() = runTest {
+        now = 900L
+        repository.replace("profile-a", "routine-session-a", runtime(sourceAttemptNumber = 2))
+        val first = assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(
+            repository.load("profile-a", "routine-session-a"),
+        )
+
+        repository.replace("profile-a", "routine-session-a", runtime(sourceAttemptNumber = 3))
+        val replacement = assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(
+            repository.load("profile-a", "routine-session-a"),
+        )
+
+        assertEquals(first.rowRevision.updatedAtEpochMs, replacement.rowRevision.updatedAtEpochMs)
+        assertNotEquals(first.rowRevision, replacement.rowRevision)
+        assertNotEquals(first.rowRevision.encodedPayloadIdentity, replacement.rowRevision.encodedPayloadIdentity)
+    }
+
+    @Test
+    fun conditionalDeleteUsesTheFullSameMillisecondRowRevisionAsAnAtomicCompareAndSwap() = runTest {
+        now = 901L
+        repository.replace("profile-a", "routine-session-a", runtime(sourceAttemptNumber = 2))
+        val captured = assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(
+            repository.load("profile-a", "routine-session-a"),
+        )
+        repository.replace("profile-a", "routine-session-a", runtime(sourceAttemptNumber = 3))
+        val replacement = assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(
+            repository.load("profile-a", "routine-session-a"),
+        )
+
+        assertFalse(
+            repository.deleteIfRevisionMatches(
+                profileId = "profile-a",
+                routineSessionId = "routine-session-a",
+                expectedRevision = captured.rowRevision,
+            ),
+        )
+        assertEquals(
+            3,
+            assertIs<ActiveWorkoutRuntimeLoadResult.Loaded>(
+                repository.load("profile-a", "routine-session-a"),
+            ).document.sourceAttemptNumber,
+        )
+        assertTrue(
+            repository.deleteIfRevisionMatches(
+                profileId = "profile-a",
+                routineSessionId = "routine-session-a",
+                expectedRevision = replacement.rowRevision,
+            ),
+        )
+        assertIs<ActiveWorkoutRuntimeLoadResult.Missing>(
+            repository.load("profile-a", "routine-session-a"),
+        )
     }
 
     @Test
@@ -167,25 +421,72 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
 
     @Test
     fun malformedJsonIsRejectedAsCorrupt() = runTest {
-        insertRaw(1, "{not-json")
+        insertRaw(2, "{not-json")
         assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
     }
 
     @Test
     fun missingRequiredFieldIsRejectedAsCorrupt() = runTest {
-        insertRaw(1, JsonObject(objectJson().filterKeys { it != "routineId" }))
+        insertRaw(2, JsonObject(objectJson().filterKeys { it != "routineId" }))
+        assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
+    }
+
+    @Test
+    fun missingV2SourceAuthorityIsRejectedAsCorrupt() = runTest {
+        insertRaw(2, JsonObject(objectJson().filterKeys { it != "sourceAuthority" }))
+        assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
+    }
+
+    @Test
+    fun unknownV2SourceAuthorityFieldIsRejectedAsCorrupt() = runTest {
+        val sourceAuthority = objectJson().getValue("sourceAuthority") as JsonObject
+        insertRaw(
+            2,
+            JsonObject(
+                objectJson() +
+                    ("sourceAuthority" to JsonObject(sourceAuthority + ("futureAuthority" to JsonPrimitive(true)))),
+            ),
+        )
+        assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
+    }
+
+    @Test
+    fun invalidV2SourceAuthorityEnumIsRejectedAsCorrupt() = runTest {
+        val sourceAuthority = objectJson().getValue("sourceAuthority") as JsonObject
+        insertRaw(
+            2,
+            JsonObject(
+                objectJson() +
+                    ("sourceAuthority" to JsonObject(sourceAuthority + ("reasonName" to JsonPrimitive("FUTURE")))),
+            ),
+        )
+        assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
+    }
+
+    @Test
+    fun missingOrInvalidV2TeardownSeedIsRejectedAsCorrupt() = runTest {
+        insertRaw(2, JsonObject(objectJson().filterKeys { it != "teardownSeed" }))
+        assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
+        val teardownSeed = objectJson().getValue("teardownSeed") as JsonObject
+        insertRaw(
+            2,
+            JsonObject(
+                objectJson() +
+                    ("teardownSeed" to JsonObject(teardownSeed + ("sourceExecutionId" to JsonPrimitive(0)))),
+            ),
+        )
         assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
     }
 
     @Test
     fun wrongFieldTypeIsRejectedAsCorrupt() = runTest {
-        insertRaw(1, JsonObject(objectJson() + ("sourceAttemptNumber" to JsonPrimitive("one"))))
+        insertRaw(2, JsonObject(objectJson() + ("sourceAttemptNumber" to JsonPrimitive("one"))))
         assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
     }
 
     @Test
     fun unknownPropertyIsRejectedAsCorrupt() = runTest {
-        insertRaw(1, JsonObject(objectJson() + ("futureField" to JsonPrimitive(true))))
+        insertRaw(2, JsonObject(objectJson() + ("futureField" to JsonPrimitive(true))))
         assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
     }
 
@@ -193,7 +494,7 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
     fun unknownEnumIsRejectedAsCorrupt() = runTest {
         val logicalKey = objectJson().getValue("logicalSetKey") as JsonObject
         insertRaw(
-            1,
+            2,
             JsonObject(
                 objectJson() +
                     ("logicalSetKey" to JsonObject(logicalKey + ("setKind" to JsonPrimitive("FUTURE_SET")))),
@@ -204,7 +505,7 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
 
     @Test
     fun constructorInvariantFailureIsRejectedAsCorrupt() = runTest {
-        insertRaw(1, JsonObject(objectJson() + ("originalRestDurationSeconds" to JsonPrimitive(-1))))
+        insertRaw(2, JsonObject(objectJson() + ("originalRestDurationSeconds" to JsonPrimitive(-1))))
         assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
     }
 
@@ -261,7 +562,7 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
         )
 
         corruptPayloads.forEach { payload ->
-            insertRaw(1, payload)
+            insertRaw(2, payload)
             assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
         }
     }
@@ -270,7 +571,7 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
     fun loadLeavesSqlKeyIdentityMismatchForValidatedResumeWithoutRewritingTheDocument() = runTest {
         val document = runtime()
         insertRaw(
-            documentVersion = 1,
+            documentVersion = 2,
             payload = json.encodeToString(ActiveWorkoutRuntimeDocument.serializer(), document),
             profileId = "different-sql-profile",
             routineSessionId = "different-sql-session",
@@ -286,19 +587,19 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
 
     @Test
     fun unsupportedStoredColumnVersionIsRejectedBeforeCurrentDecode() = runTest {
-        insertRaw(2, "{\"version\":1,\"future\":true}")
-        assertRejected(ActiveWorkoutRuntimeRejection.UNSUPPORTED_VERSION)
-    }
-
-    @Test
-    fun unsupportedPayloadVersionIsRejectedBeforeCurrentDecode() = runTest {
         insertRaw(1, "{\"version\":2,\"future\":true}")
         assertRejected(ActiveWorkoutRuntimeRejection.UNSUPPORTED_VERSION)
     }
 
     @Test
+    fun unsupportedPayloadVersionIsRejectedBeforeCurrentDecode() = runTest {
+        insertRaw(2, "{\"version\":1,\"future\":true}")
+        assertRejected(ActiveWorkoutRuntimeRejection.UNSUPPORTED_VERSION)
+    }
+
+    @Test
     fun currentVersionWithNonIntegerPayloadVersionIsRejectedAsCorrupt() = runTest {
-        insertRaw(1, JsonObject(objectJson() + ("version" to JsonPrimitive(1.0))))
+        insertRaw(2, JsonObject(objectJson() + ("version" to JsonPrimitive(2.0))))
         assertRejected(ActiveWorkoutRuntimeRejection.CORRUPT_JSON)
     }
 
@@ -316,7 +617,7 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
 
     @Test
     fun cancellationFromEveryCodecStageIsRethrownInsteadOfClassified() = runTest {
-        insertRaw(1, objectJson())
+        insertRaw(2, objectJson())
 
         CodecStage.entries.forEach { stage ->
             val cancellingRepository = SqlDelightActiveWorkoutRuntimeRepository(
@@ -340,13 +641,14 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
 
     private fun runtime(
         profileId: String = "profile-a",
+        routineId: String = "routine-a",
         routineSessionId: String = "routine-session-a",
         sourceAttemptNumber: Int = 2,
     ): ActiveWorkoutRuntimeDocument {
         val key = LogicalSetKey(routineSessionId, "routine-exercise-a", 1, SetType.AMRAP)
         val normalAdvance = RestTransitionPlan.NormalAdvance(
             transitionId = "transition-a",
-            sourceExecutionId = "execution-a",
+            sourceExecutionId = "42",
             logicalSetKey = key,
             sourceCoordinates = RestTransitionPlan.Coordinates(3, 1),
             plannedSetId = "planned-set-a",
@@ -354,21 +656,63 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
         )
         return ActiveWorkoutRuntimeDocument(
             profileId = profileId,
-            routineId = "routine-a",
+            routineId = routineId,
             routineSessionId = routineSessionId,
             routineExerciseId = "routine-exercise-a",
-            sourceExecutionId = "execution-a",
+            sourceExecutionId = "42",
             sourceStableSessionId = "stable-session-a",
             sourceAttemptNumber = sourceAttemptNumber,
             logicalSetKey = key,
             plannedSetId = "planned-set-a",
             sourceExerciseIndex = 3,
             sourceSetIndex = 1,
+            sourceAuthority = RestoredRetrySourceAuthoritySnapshot(
+                sourceStableSessionId = "stable-session-a",
+                sourceExecutionId = "42",
+                profileId = profileId,
+                routineIdentity = RoutineExecutionIdentity(
+                    profileId = profileId,
+                    routineId = routineId,
+                    routineSessionId = routineSessionId,
+                    routineExerciseId = "routine-exercise-a",
+                    logicalSetKey = key,
+                    plannedSetId = "planned-set-a",
+                    exerciseIndex = 3,
+                    setIndex = 1,
+                ),
+                reasonName = SetEndReason.STALL_FAILURE.name,
+                attemptNumber = sourceAttemptNumber,
+                acceptedDropCount = 1,
+                plannedSetTypeName = SetType.AMRAP.name,
+                programModeName = ProgramMode.OldSchool.toSnapshotName(),
+                programmedBaseWeightPerCableKg = 40f,
+                configuredStartWeightPerCableKg = 40f,
+                progressionKg = 0f,
+                actualReps = 6,
+                targetReps = 10,
+                isWarmup = false,
+                isEcho = false,
+                isJustLift = false,
+                isBodyweight = false,
+                isTimed = false,
+                isAmrap = true,
+                isCableExercise = true,
+                physicalCableCount = 2,
+                commandTemplate = RestoredWorkoutCommandTemplateSnapshot.from(
+                    WorkoutParameters(ProgramMode.OldSchool, reps = 10, weightPerCableKg = 40f),
+                ),
+            ),
+            teardownSeed = RestoredTeardownSeedSnapshot(
+                sourceExecutionId = 42L,
+                sourceStableSessionId = "stable-session-a",
+                profileId = profileId,
+                requiresMachine = true,
+            ),
             exerciseLoadOverlays = listOf(ExerciseLoadOverlay("routine-exercise-a", 0.8f)),
             attemptStates = listOf(PlannedSetAttemptState(key, nextAttemptNumber = 3, acceptedDropCount = 1)),
             restTransitionPlan = RestTransitionPlan.AcceptedRetry(
                 transitionId = "transition-a",
-                sourceExecutionId = "execution-a",
+                sourceExecutionId = "42",
                 logicalSetKey = key,
                 offerId = "offer-a",
                 sourceCoordinates = RestTransitionPlan.Coordinates(3, 1),

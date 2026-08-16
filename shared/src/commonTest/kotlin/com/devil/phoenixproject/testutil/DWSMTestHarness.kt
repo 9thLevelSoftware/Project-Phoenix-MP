@@ -1,9 +1,14 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeAttributionEnvelope
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeDiscoveryResult
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeDocument
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLoadResult
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLookupKey
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRejection
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRowRevision
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
@@ -87,16 +92,113 @@ class FakeActiveWorkoutRuntimeRepository : ActiveWorkoutRuntimeRepository {
     val replacements = mutableListOf<ReplaceCall>()
     val replaceEvents = mutableListOf<String>()
     private val documents = mutableMapOf<Pair<String, String>, ActiveWorkoutRuntimeDocument>()
+    private val rejectedRows = mutableMapOf<Pair<String, String>, ActiveWorkoutRuntimeLoadResult.Rejected>()
+    private val documentSequences = mutableMapOf<Pair<String, String>, Long>()
+    private var nextDocumentSequence = 0L
     var failingReplaceCallsRemaining: Int = 0
+    var discoverBlock: (suspend () -> Unit)? = null
     var replaceBlock: (suspend () -> Unit)? = null
     var afterReplaceCommit: (suspend (ActiveWorkoutRuntimeDocument) -> Unit)? = null
     var cancellationOnNextReplace: CancellationException? = null
+    var loadCalls: Int = 0
+    var afterLoadSnapshot: (suspend (Int, ActiveWorkoutRuntimeLookupKey, ActiveWorkoutRuntimeLoadResult) -> Unit)? = null
+    var beforeConditionalDelete: (suspend () -> Unit)? = null
+    var failingConditionalDeleteCallsRemaining: Int = 0
+    var cancellationOnNextConditionalDelete: CancellationException? = null
 
     fun committedDocument(profileId: String, routineSessionId: String): ActiveWorkoutRuntimeDocument? = documents[profileId to routineSessionId]
 
-    override suspend fun load(profileId: String, routineSessionId: String): ActiveWorkoutRuntimeLoadResult = documents[profileId to routineSessionId]
-        ?.let(ActiveWorkoutRuntimeLoadResult::Loaded)
-        ?: ActiveWorkoutRuntimeLoadResult.Missing
+    fun installRejected(
+        profileId: String,
+        routineSessionId: String,
+        reason: ActiveWorkoutRuntimeRejection,
+        attribution: ActiveWorkoutRuntimeAttributionEnvelope?,
+    ): ActiveWorkoutRuntimeLoadResult.Rejected {
+        val key = profileId to routineSessionId
+        val sequence = nextDocumentSequence++
+        val rejected = ActiveWorkoutRuntimeLoadResult.Rejected(
+            reason = reason,
+            rowRevision = ActiveWorkoutRuntimeRowRevision(
+                documentVersion = 1L,
+                updatedAtEpochMs = sequence,
+                encodedPayloadIdentity = "rejected:$profileId:$routineSessionId:$sequence",
+            ),
+            attribution = attribution,
+        )
+        documents.remove(key)
+        rejectedRows[key] = rejected
+        documentSequences[key] = sequence
+        return rejected
+    }
+
+    fun replacePreservingRevisionTimestamp(
+        profileId: String,
+        routineSessionId: String,
+        document: ActiveWorkoutRuntimeDocument,
+    ) {
+        require(document.profileId == profileId)
+        require(document.routineSessionId == routineSessionId)
+        val key = profileId to routineSessionId
+        require(documentSequences.containsKey(key))
+        documents[key] = document
+        rejectedRows.remove(key)
+    }
+
+    override suspend fun discover(profileId: String, routineId: String): ActiveWorkoutRuntimeDiscoveryResult {
+        discoverBlock?.invoke()
+        val loadedCandidates = documents.entries.mapNotNull { (key, document) ->
+            if (key.first != profileId || document.routineId != routineId) return@mapNotNull null
+            Triple(
+                key,
+                documentSequences[key] ?: Long.MIN_VALUE,
+                ActiveWorkoutRuntimeLoadResult.Loaded(document, rowRevision(key, document)),
+            )
+        }
+        val rejectedCandidates = rejectedRows.entries.mapNotNull { (key, rejected) ->
+            val attribution = rejected.attribution
+            if (key.first != profileId || attribution?.profileId != profileId || attribution.routineId != routineId) {
+                return@mapNotNull null
+            }
+            Triple(key, documentSequences[key] ?: Long.MIN_VALUE, rejected)
+        }
+        return (loadedCandidates + rejectedCandidates)
+            .maxByOrNull { (_, sequence, _) -> sequence }
+            ?.let { (key, _, loadResult) ->
+                ActiveWorkoutRuntimeDiscoveryResult.Found(
+                    lookupKey = ActiveWorkoutRuntimeLookupKey(key.first, key.second),
+                    loadResult = loadResult,
+                )
+            }
+            ?: ActiveWorkoutRuntimeDiscoveryResult.Missing
+    }
+
+    override suspend fun load(profileId: String, routineSessionId: String): ActiveWorkoutRuntimeLoadResult {
+        val key = profileId to routineSessionId
+        val result = documents[key]?.let { document ->
+            ActiveWorkoutRuntimeLoadResult.Loaded(
+                document,
+                rowRevision(key, document),
+            )
+        }
+            ?: rejectedRows[key]
+            ?: ActiveWorkoutRuntimeLoadResult.Missing
+        val call = ++loadCalls
+        afterLoadSnapshot?.invoke(
+            call,
+            ActiveWorkoutRuntimeLookupKey(profileId, routineSessionId),
+            result,
+        )
+        return result
+    }
+
+    private fun rowRevision(
+        key: Pair<String, String>,
+        document: ActiveWorkoutRuntimeDocument,
+    ) = ActiveWorkoutRuntimeRowRevision(
+        documentVersion = document.version.toLong(),
+        updatedAtEpochMs = documentSequences[key] ?: Long.MIN_VALUE,
+        encodedPayloadIdentity = document.toString(),
+    )
 
     override suspend fun replace(
         profileId: String,
@@ -115,12 +217,39 @@ class FakeActiveWorkoutRuntimeRepository : ActiveWorkoutRuntimeRepository {
             throw IllegalStateException("test runtime persistence failure")
         }
         documents[profileId to routineSessionId] = document
+        rejectedRows.remove(profileId to routineSessionId)
+        documentSequences[profileId to routineSessionId] = nextDocumentSequence++
         replaceEvents += "persisted"
         afterReplaceCommit?.invoke(document)
     }
 
     override suspend fun delete(profileId: String, routineSessionId: String) {
         documents.remove(profileId to routineSessionId)
+        rejectedRows.remove(profileId to routineSessionId)
+        documentSequences.remove(profileId to routineSessionId)
+    }
+
+    override suspend fun deleteIfRevisionMatches(
+        profileId: String,
+        routineSessionId: String,
+        expectedRevision: ActiveWorkoutRuntimeRowRevision,
+    ): Boolean {
+        beforeConditionalDelete?.invoke()
+        cancellationOnNextConditionalDelete?.let { cancellation ->
+            cancellationOnNextConditionalDelete = null
+            throw cancellation
+        }
+        if (failingConditionalDeleteCallsRemaining > 0) {
+            failingConditionalDeleteCallsRemaining--
+            throw IllegalStateException("test runtime conditional delete failure")
+        }
+        val key = profileId to routineSessionId
+        val currentRevision = documents[key]?.let { rowRevision(key, it) }
+            ?: rejectedRows[key]?.rowRevision
+            ?: return false
+        if (currentRevision != expectedRevision) return false
+        delete(profileId, routineSessionId)
+        return true
     }
 }
 

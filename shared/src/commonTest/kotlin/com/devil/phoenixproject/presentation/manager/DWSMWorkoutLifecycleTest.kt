@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.presentation.manager
 
 import app.cash.turbine.test
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeDocument
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLoadResult
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeResumeResult
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.HandleState
@@ -34,6 +37,7 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.TrainingCycle
@@ -62,6 +66,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.NonCancellable
@@ -109,16 +114,21 @@ class DWSMWorkoutLifecycleTest {
         val commandCount: Int,
     )
 
+    private data class HydratedAcceptedRetryFixture(
+        val harness: DWSMTestHarness,
+        val document: ActiveWorkoutRuntimeDocument,
+        val handle: RoutineResumeHandle.Persisted,
+        val accepted: RestTransitionPlan.AcceptedRetry,
+        val sourceContext: RestoredRetrySourceContext,
+        val sourceStableSessionId: String,
+        val completedSets: FakeCompletedSetRepository,
+        val commandCount: Int,
+    )
+
     private data class ExhaustedDropOverlayFixture(
         val normalAdvance: RestTransitionPlan.NormalAdvance,
         val routine: Routine,
         val routineExerciseId: String,
-    )
-
-    private fun DurableAcceptedRetryFixture.restoredGate() = RetryPersistenceGate.Restored(
-        sourceStableSessionId = sourceLease.sessionId,
-        actionIdentity = accepted.actionIdentity(),
-        sourceContext = sourceContext,
     )
 
     private fun executionSeedForRetryTest(sessionId: String) = ExecutionSeed(
@@ -864,8 +874,25 @@ class DWSMWorkoutLifecycleTest {
                 } else {
                     harness.activeSessionEngine.mutateActiveRuntimeDocumentForTest { document ->
                         when (mismatch) {
-                            "profile" -> document.copy(profileId = "stale-profile")
-                            else -> document.copy(routineId = "stale-routine")
+                            "profile" -> document.copy(
+                                profileId = "stale-profile",
+                                sourceAuthority = document.sourceAuthority.copy(
+                                    profileId = "stale-profile",
+                                    routineIdentity = document.sourceAuthority.routineIdentity.copy(
+                                        profileId = "stale-profile",
+                                    ),
+                                ),
+                                teardownSeed = document.teardownSeed.copy(profileId = "stale-profile"),
+                            )
+
+                            else -> document.copy(
+                                routineId = "stale-routine",
+                                sourceAuthority = document.sourceAuthority.copy(
+                                    routineIdentity = document.sourceAuthority.routineIdentity.copy(
+                                        routineId = "stale-routine",
+                                    ),
+                                ),
+                            )
                         }
                     }
                 }
@@ -1067,32 +1094,25 @@ class DWSMWorkoutLifecycleTest {
 
     @Test
     fun `restored retry uses the exact durable attempt with an empty live claim map`() = runTest {
-        val harness = enabledDropSetHarness(this)
+        val restored = prepareHydratedAcceptedRetry()
+        val harness = restored.harness
         try {
-            val fixture = prepareDurableAcceptedRetry(harness)
-            harness.activeSessionEngine.executionGuard.prunePersistedClaims(retainNewest = 0)
-            harness.dwsm.applyRestTransitionAwait(
-                RestTransitionCommand.SkipRest(fixture.accepted.actionIdentity()),
-            )
-            runCurrent()
-            assertEquals(fixture.commandCount, harness.fakeBleRepo.commandsReceived.size)
-            assertTrue(
-                harness.activeSessionEngine.executionGuard.invalidate(
-                    fixture.sourceLease,
-                    ExecutionInvalidationReason.CLEANUP,
+            assertTrue(harness.activeSessionEngine.executionGuard.persistenceClaimsSnapshot().isEmpty())
+
+            assertIs<RestTransitionReduction.PendingAcceptedRetry>(
+                harness.dwsm.applyRestTransitionAwait(
+                    RestTransitionCommand.SkipRest(restored.accepted.actionIdentity()),
                 ),
             )
-
-            val started = harness.activeSessionEngine.tryStartAcceptedRetry(
-                fixture.restoredGate(),
-            )
             runCurrent()
 
-            assertTrue(started)
-            assertEquals(fixture.commandCount + 1, harness.fakeBleRepo.commandsReceived.size)
+            assertEquals(restored.commandCount + 1, harness.fakeBleRepo.commandsReceived.size)
             assertEquals(null, harness.restTransitionPlan.value)
-            assertEquals(PersistenceClaimStatus.UNCLAIMED, harness.activeSessionEngine.executionGuard.persistenceClaimStatus(fixture.sourceLease.sessionId))
-            assertTrue(harness.activeSessionEngine.currentExecutionLeaseForTest().executionId > fixture.sourceLease.executionId)
+            assertEquals(
+                PersistenceClaimStatus.UNCLAIMED,
+                harness.activeSessionEngine.executionGuard.persistenceClaimStatus(restored.sourceStableSessionId),
+            )
+            assertNotNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
         } finally {
             harness.cleanup()
         }
@@ -1100,27 +1120,24 @@ class DWSMWorkoutLifecycleTest {
 
     @Test
     fun `restored retry ignores unrelated in-memory persistence claims`() = runTest {
-        val harness = enabledDropSetHarness(this)
+        val restored = prepareHydratedAcceptedRetry()
+        val harness = restored.harness
         try {
-            val fixture = prepareDurableAcceptedRetry(harness)
             assertIs<PersistenceClaimResult.Claimed>(
                 harness.activeSessionEngine.executionGuard.claimPersistence(
                     sessionId = "unrelated-persistence",
                     path = TerminalPath.MANUAL_STOP,
                 ),
             )
-            assertTrue(
-                harness.activeSessionEngine.executionGuard.invalidate(
-                    fixture.sourceLease,
-                    ExecutionInvalidationReason.CLEANUP,
+
+            assertIs<RestTransitionReduction.PendingAcceptedRetry>(
+                harness.dwsm.applyRestTransitionAwait(
+                    RestTransitionCommand.SkipRest(restored.accepted.actionIdentity()),
                 ),
             )
-
-            val started = harness.activeSessionEngine.tryStartAcceptedRetry(fixture.restoredGate())
             runCurrent()
 
-            assertTrue(started)
-            assertEquals(fixture.commandCount + 1, harness.fakeBleRepo.commandsReceived.size)
+            assertEquals(restored.commandCount + 1, harness.fakeBleRepo.commandsReceived.size)
             assertEquals(
                 PersistenceClaimStatus.IN_PROGRESS,
                 harness.activeSessionEngine.executionGuard.persistenceClaimStatus("unrelated-persistence"),
@@ -1132,94 +1149,65 @@ class DWSMWorkoutLifecycleTest {
 
     @Test
     fun `restored retry on a fresh engine uses explicit captured command authority`() = runTest {
-        val completedSets = FakeCompletedSetRepository()
-        val sourceHarness = enabledDropSetHarness(
-            testScope = this,
-            completedSetRepositoryOverride = completedSets,
-        )
-        var restoredHarness: DWSMTestHarness? = null
+        val restored = prepareHydratedAcceptedRetry()
+        val harness = restored.harness
         try {
-            val fixture = prepareDurableAcceptedRetry(sourceHarness, completedSets)
-            val runtimeDocument = assertNotNull(sourceHarness.activeSessionEngine.activeRuntimeDocumentForTest())
-            val sourceContext = assertNotNull(
-                sourceHarness.activeSessionEngine.claimedCompletion(fixture.sourceLease),
-            ).toRestoredRetrySourceContext()
-            val routine = assertNotNull(sourceHarness.coordinator.loadedRoutine.value)
-            sourceHarness.cleanup()
-
-            restoredHarness = enabledDropSetHarness(
-                testScope = this,
-                completedSetRepositoryOverride = completedSets,
-            )
-            restoredHarness.fakeBleRepo.simulateConnect("Vee_Test")
-            routine.exercises.forEach { restoredHarness.fakeExerciseRepo.addExercise(it.exercise) }
-            restoredHarness.dwsm.loadRoutine(routine)
-            advanceUntilIdle()
-            restoredHarness.coordinator.currentRoutineId = runtimeDocument.routineId
-            restoredHarness.coordinator.currentRoutineSessionId = runtimeDocument.routineSessionId
-            restoredHarness.coordinator._currentExerciseIndex.value = runtimeDocument.sourceExerciseIndex
-            restoredHarness.coordinator._currentSetIndex.value = runtimeDocument.sourceSetIndex
-            restoredHarness.coordinator._workoutParameters.value = sourceContext.commandTemplate.copy(
+            harness.coordinator._workoutParameters.value = restored.sourceContext.commandTemplate.copy(
                 programMode = ProgramMode.Pump,
                 reps = 99,
                 weightPerCableKg = 2f,
                 progressionRegressionKg = 9f,
             )
-            restoredHarness.activeSessionEngine.installAcceptedRetryRuntimeForTest(runtimeDocument)
 
-            val started = restoredHarness.activeSessionEngine.tryStartAcceptedRetry(
-                RetryPersistenceGate.Restored(
-                    sourceStableSessionId = fixture.sourceLease.sessionId,
-                    actionIdentity = fixture.accepted.actionIdentity(),
-                    sourceContext = sourceContext,
+            assertIs<RestTransitionReduction.PendingAcceptedRetry>(
+                harness.dwsm.applyRestTransitionAwait(
+                    RestTransitionCommand.SkipRest(restored.accepted.actionIdentity()),
                 ),
             )
             runCurrent()
 
-            assertTrue(started)
-            assertEquals(1, restoredHarness.fakeBleRepo.commandsReceived.size)
+            assertEquals(restored.commandCount + 1, harness.fakeBleRepo.commandsReceived.size)
             assertEquals(
-                fixture.accepted.resolvedWeightPerCableKg,
+                restored.accepted.resolvedWeightPerCableKg,
                 readFloatLe(
-                    restoredHarness.fakeBleRepo.commandsReceived.single(),
+                    harness.fakeBleRepo.commandsReceived.last(),
                     BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT,
                 ),
             )
             assertEquals(
-                sourceContext.commandTemplate.progressionRegressionKg,
-                restoredHarness.coordinator.workoutParameters.value.progressionRegressionKg,
+                restored.sourceContext.commandTemplate.progressionRegressionKg,
+                harness.coordinator.workoutParameters.value.progressionRegressionKg,
             )
-            assertTrue(restoredHarness.activeSessionEngine.executionGuard.persistenceClaimsSnapshot().isEmpty())
+            assertTrue(harness.activeSessionEngine.executionGuard.persistenceClaimsSnapshot().isEmpty())
         } finally {
-            restoredHarness?.cleanup()
-            sourceHarness.cleanup()
+            harness.cleanup()
         }
     }
 
     @Test
     fun `restored retry rejects a captured programmed base that does not match the routine`() = runTest {
-        val harness = enabledDropSetHarness(this)
+        val restored = prepareHydratedAcceptedRetry()
+        val harness = restored.harness
         try {
-            val fixture = prepareDurableAcceptedRetry(harness)
-            harness.activeSessionEngine.executionGuard.prunePersistedClaims(retainNewest = 0)
-            assertTrue(
-                harness.activeSessionEngine.executionGuard.invalidate(
-                    fixture.sourceLease,
-                    ExecutionInvalidationReason.CLEANUP,
-                ),
+            val loadedRoutine = assertNotNull(harness.coordinator.loadedRoutine.value)
+            harness.coordinator._loadedRoutine.value = loadedRoutine.copy(
+                exercises = loadedRoutine.exercises.mapIndexed { index, occurrence ->
+                    if (index == restored.accepted.sourceCoordinates.exerciseIndex) {
+                        occurrence.copy(
+                            weightPerCableKg = restored.sourceContext.programmedBaseWeightPerCableKg + 1f,
+                        )
+                    } else {
+                        occurrence
+                    }
+                },
             )
 
-            val started = harness.activeSessionEngine.tryStartAcceptedRetry(
-                fixture.restoredGate().copy(
-                    sourceContext = fixture.sourceContext.copy(
-                        programmedBaseWeightPerCableKg = fixture.sourceContext.programmedBaseWeightPerCableKg + 1f,
-                    ),
-                ),
+            harness.dwsm.applyRestTransitionAwait(
+                RestTransitionCommand.SkipRest(restored.accepted.actionIdentity()),
             )
             runCurrent()
 
-            assertFalse(started)
-            assertEquals(fixture.commandCount, harness.fakeBleRepo.commandsReceived.size)
+            assertEquals(restored.commandCount, harness.fakeBleRepo.commandsReceived.size)
             assertEquals(null, harness.restTransitionPlan.value)
             assertIs<RoutineFlowState.SetReady>(harness.coordinator.routineFlowState.value)
         } finally {
@@ -1228,88 +1216,48 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
-    fun `restored retry rejects source command contexts outside drop-set eligibility`() = runTest {
-        listOf("program mode", "auto start", "warmup set", "firmware warmup").forEach { mutation ->
-            val harness = enabledDropSetHarness(this)
-            try {
-                val fixture = prepareDurableAcceptedRetry(harness)
-                assertTrue(
-                    harness.activeSessionEngine.executionGuard.invalidate(
-                        fixture.sourceLease,
-                        ExecutionInvalidationReason.CLEANUP,
-                    ),
-                )
-                if (mutation == "program mode") {
-                    val routine = assertNotNull(harness.coordinator.loadedRoutine.value)
-                    harness.coordinator._loadedRoutine.value = routine.copy(
-                        exercises = routine.exercises.mapIndexed { index, exercise ->
-                            if (index == fixture.accepted.sourceCoordinates.exerciseIndex) {
-                                exercise.copy(programMode = ProgramMode.Pump)
-                            } else {
-                                exercise
-                            }
-                        },
-                    )
-                }
-                val sourceContext = when (mutation) {
-                    "program mode" -> fixture.sourceContext.copy(
-                        programMode = ProgramMode.Pump,
-                        commandTemplate = fixture.sourceContext.commandTemplate.copy(programMode = ProgramMode.Pump),
-                    )
+    fun `restored retry rejects loaded routine drift outside drop-set eligibility`() = runTest {
+        val restored = prepareHydratedAcceptedRetry()
+        val harness = restored.harness
+        try {
+            val routine = assertNotNull(harness.coordinator.loadedRoutine.value)
+            harness.coordinator._loadedRoutine.value = routine.copy(
+                exercises = routine.exercises.mapIndexed { index, occurrence ->
+                    if (index == restored.accepted.sourceCoordinates.exerciseIndex) {
+                        occurrence.copy(programMode = ProgramMode.Pump)
+                    } else {
+                        occurrence
+                    }
+                },
+            )
 
-                    "auto start" -> fixture.sourceContext.copy(
-                        commandTemplate = fixture.sourceContext.commandTemplate.copy(useAutoStart = true),
-                    )
+            harness.dwsm.applyRestTransitionAwait(
+                RestTransitionCommand.SkipRest(restored.accepted.actionIdentity()),
+            )
+            runCurrent()
 
-                    "warmup set" -> fixture.sourceContext.copy(isWarmup = true)
-
-                    else -> fixture.sourceContext.copy(
-                        commandTemplate = fixture.sourceContext.commandTemplate.copy(
-                            warmupReps = Constants.DEFAULT_WARMUP_REPS - 1,
-                        ),
-                    )
-                }
-
-                val started = harness.activeSessionEngine.tryStartAcceptedRetry(
-                    fixture.restoredGate().copy(sourceContext = sourceContext),
-                )
-                runCurrent()
-
-                assertFalse(started, mutation)
-                assertEquals(fixture.commandCount, harness.fakeBleRepo.commandsReceived.size, mutation)
-                assertEquals(null, harness.restTransitionPlan.value, mutation)
-                assertIs<RoutineFlowState.SetReady>(harness.coordinator.routineFlowState.value, mutation)
-            } finally {
-                harness.cleanup()
-            }
+            assertEquals(restored.commandCount, harness.fakeBleRepo.commandsReceived.size)
+            assertNull(harness.restTransitionPlan.value)
+            assertIs<RoutineFlowState.SetReady>(harness.coordinator.routineFlowState.value)
+            assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
+        } finally {
+            harness.cleanup()
         }
     }
 
     @Test
     fun `restored retry with a missing durable attempt fails closed to manual set ready`() = runTest {
-        val harness = enabledDropSetHarness(this)
+        val restored = prepareHydratedAcceptedRetry()
+        val harness = restored.harness
         try {
-            val fixture = prepareDurableAcceptedRetry(harness)
-            harness.activeSessionEngine.executionGuard.prunePersistedClaims(retainNewest = 0)
+            restored.completedSets.deleteCompletedSetsForSession(restored.sourceStableSessionId)
+
             harness.dwsm.applyRestTransitionAwait(
-                RestTransitionCommand.SkipRest(fixture.accepted.actionIdentity()),
-            )
-            runCurrent()
-            assertTrue(
-                harness.activeSessionEngine.executionGuard.invalidate(
-                    fixture.sourceLease,
-                    ExecutionInvalidationReason.CLEANUP,
-                ),
-            )
-            harness.fakeCompletedSetRepo.deleteCompletedSetsForSession(fixture.sourceLease.sessionId)
-
-            val started = harness.activeSessionEngine.tryStartAcceptedRetry(
-                fixture.restoredGate(),
+                RestTransitionCommand.SkipRest(restored.accepted.actionIdentity()),
             )
             runCurrent()
 
-            assertFalse(started)
-            assertEquals(fixture.commandCount, harness.fakeBleRepo.commandsReceived.size)
+            assertEquals(restored.commandCount, harness.fakeBleRepo.commandsReceived.size)
             assertEquals(null, harness.restTransitionPlan.value)
             val setReady = assertIs<RoutineFlowState.SetReady>(harness.coordinator.routineFlowState.value)
             assertEquals(0, setReady.exerciseIndex)
@@ -2286,37 +2234,27 @@ class DWSMWorkoutLifecycleTest {
 
     @Test
     fun `restored retry cannot overwrite a newer execution after accepted plan consumption`() = runTest {
-        val harness = enabledDropSetHarness(this)
+        val restored = prepareHydratedAcceptedRetry()
+        val harness = restored.harness
         var newerLease: ExecutionLease? = null
         try {
-            val fixture = prepareDurableAcceptedRetry(harness)
-            harness.activeSessionEngine.executionGuard.prunePersistedClaims(retainNewest = 0)
-            harness.dwsm.applyRestTransitionAwait(
-                RestTransitionCommand.SkipRest(fixture.accepted.actionIdentity()),
-            )
-            runCurrent()
-            assertTrue(
-                harness.activeSessionEngine.executionGuard.invalidate(
-                    fixture.sourceLease,
-                    ExecutionInvalidationReason.CLEANUP,
-                ),
-            )
+            val owner = assertNotNull(harness.activeSessionEngine.currentRestoredRuntimeOwnerForTest())
             harness.activeSessionEngine.afterAcceptedRetryPlanConsumedForTest = {
+                harness.activeSessionEngine.executionGuard.revokeRestoredRuntime(owner)
                 newerLease = harness.activeSessionEngine.executionGuard.beginExecution(
                     executionSeedForRetryTest("newer-execution"),
                 ).getOrThrow()
                 harness.coordinator._workoutState.value = WorkoutState.Active
             }
 
-            val started = harness.activeSessionEngine.tryStartAcceptedRetry(
-                fixture.restoredGate(),
+            harness.dwsm.applyRestTransitionAwait(
+                RestTransitionCommand.SkipRest(restored.accepted.actionIdentity()),
             )
             runCurrent()
 
-            assertFalse(started)
             assertEquals(newerLease, harness.activeSessionEngine.executionGuard.currentLease)
             assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
-            assertEquals(fixture.commandCount, harness.fakeBleRepo.commandsReceived.size)
+            assertEquals(restored.commandCount, harness.fakeBleRepo.commandsReceived.size)
         } finally {
             harness.activeSessionEngine.afterAcceptedRetryPlanConsumedForTest = null
             harness.cleanup()
@@ -3202,6 +3140,69 @@ class DWSMWorkoutLifecycleTest {
             ).toRestoredRetrySourceContext(),
             commandCount = offerFixture.commandCount,
         )
+    }
+
+    private suspend fun TestScope.prepareHydratedAcceptedRetry(
+        routineOverride: Routine? = null,
+    ): HydratedAcceptedRetryFixture {
+        val completedSets = FakeCompletedSetRepository()
+        val sourceHarness = enabledDropSetHarness(
+            testScope = this,
+            completedSetRepositoryOverride = completedSets,
+        )
+        var targetHarness: DWSMTestHarness? = null
+        try {
+            val source = prepareDurableAcceptedRetry(
+                harness = sourceHarness,
+                completedSets = completedSets,
+                routineOverride = routineOverride,
+            )
+            val document = assertNotNull(sourceHarness.activeSessionEngine.activeRuntimeDocumentForTest())
+            val routine = assertNotNull(sourceHarness.coordinator.loadedRoutine.value)
+
+            targetHarness = enabledDropSetHarness(
+                testScope = this,
+                completedSetRepositoryOverride = completedSets,
+            )
+            targetHarness.fakeBleRepo.simulateConnect("Vee_Test")
+            routine.exercises.forEach { targetHarness.fakeExerciseRepo.addExercise(it.exercise) }
+            targetHarness.fakeActiveWorkoutRuntimeRepository.replace(
+                profileId = document.profileId,
+                routineSessionId = document.routineSessionId,
+                document = document,
+            )
+            val handle = assertIs<RoutineResumeHandle.Persisted>(
+                assertIs<RoutineResumeDiscovery.Candidate>(
+                    targetHarness.dwsm.discoverRoutineResume(
+                        routine = routine,
+                        launchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES,
+                    ),
+                ).handle,
+            )
+            assertIs<ActiveWorkoutRuntimeResumeResult.RestoredRest>(
+                targetHarness.dwsm.resumeRoutine(handle),
+            )
+            runCurrent()
+            assertIs<MachineTeardownState.Ready>(targetHarness.dwsm.machineTeardownState.value)
+            val restoredAccepted = assertIs<RestTransitionPlan.AcceptedRetry>(
+                targetHarness.restTransitionPlan.value,
+            )
+            return HydratedAcceptedRetryFixture(
+                harness = targetHarness,
+                document = document,
+                handle = handle,
+                accepted = restoredAccepted,
+                sourceContext = source.sourceContext,
+                sourceStableSessionId = source.sourceLease.sessionId,
+                completedSets = completedSets,
+                commandCount = targetHarness.fakeBleRepo.commandsReceived.size,
+            )
+        } catch (error: Throwable) {
+            targetHarness?.cleanup()
+            throw error
+        } finally {
+            sourceHarness.cleanup()
+        }
     }
 
     private suspend fun prepareExhaustedDropOverlay(
@@ -6991,6 +6992,12 @@ class DWSMWorkoutLifecycleTest {
                 originalDuration + 15,
                 harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.originalRestDurationSeconds,
             )
+            assertEquals(
+                originalDuration + 15,
+                assertIs<RestTransitionPlan.NormalAdvance>(
+                    harness.fakeActiveWorkoutRuntimeRepository.replacements.last().document.restTransitionPlan,
+                ).restDurationSeconds,
+            )
         } finally {
             harness.cleanup()
         }
@@ -7550,7 +7557,9 @@ class DWSMWorkoutLifecycleTest {
         val harness = enabledDropSetHarness(this)
         val persistenceBarrier = CompletableDeferred<Unit>()
         try {
-            harness.fakeActiveWorkoutRuntimeRepository.replaceBlock = { persistenceBarrier.await() }
+            harness.fakeActiveWorkoutRuntimeRepository.replaceBlock = {
+                withContext(NonCancellable) { persistenceBarrier.await() }
+            }
             harness.fakeBleRepo.simulateConnect("Vee_Test")
             val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
             routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
@@ -7566,10 +7575,18 @@ class DWSMWorkoutLifecycleTest {
             harness.dwsm.resetForNewWorkout()
             runCurrent()
             persistenceBarrier.complete(Unit)
-            runCurrent()
+            advanceUntilIdle()
 
             assertEquals(null, harness.restTransitionPlan.value)
             assertFalse(harness.activeSessionEngine.isCurrentExecution(lease))
+            val staleDocument = harness.fakeActiveWorkoutRuntimeRepository.replacements.single().document
+            assertIs<ActiveWorkoutRuntimeLoadResult.Missing>(
+                harness.fakeActiveWorkoutRuntimeRepository.load(
+                    staleDocument.profileId,
+                    staleDocument.routineSessionId,
+                ),
+            )
+            assertNull(harness.activeSessionEngine.pendingRuntimeCleanupReasonForTest())
         } finally {
             if (!persistenceBarrier.isCompleted) persistenceBarrier.complete(Unit)
             harness.cleanup()

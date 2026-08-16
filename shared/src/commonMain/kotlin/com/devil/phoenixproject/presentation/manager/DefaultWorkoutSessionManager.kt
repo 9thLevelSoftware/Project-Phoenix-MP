@@ -5,7 +5,10 @@ import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLookupKey
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeResumeResult
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRowRevision
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
@@ -31,6 +34,7 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightAction
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.SetEndReason
@@ -132,6 +136,65 @@ data class ResumableProgressInfo(
     val currentExercise: Int,
     val totalExercises: Int,
 )
+
+data class RoutineResumeManagerGeneration(
+    val configurationInputEpoch: Long,
+    val recoveryPublicationEpoch: Long,
+)
+
+sealed interface RoutineResumeHandle {
+    val selectedProfileId: String
+    val selectedRoutine: Routine
+    val progressInfo: ResumableProgressInfo
+    val launchOrigin: RoutineLaunchOrigin
+    val cycleId: String?
+    val cycleDayNumber: Int?
+    val managerGeneration: RoutineResumeManagerGeneration
+
+    data class InMemory(
+        override val selectedProfileId: String,
+        override val selectedRoutine: Routine,
+        val activeRoutineSnapshot: Routine,
+        override val progressInfo: ResumableProgressInfo,
+        override val launchOrigin: RoutineLaunchOrigin,
+        override val cycleId: String?,
+        override val cycleDayNumber: Int?,
+        override val managerGeneration: RoutineResumeManagerGeneration,
+        val exerciseIndex: Int,
+        val setIndex: Int,
+        val routineSessionId: String?,
+        val activeLaunchOrigin: RoutineLaunchOrigin,
+        val activeCycleId: String?,
+        val activeCycleDayNumber: Int?,
+    ) : RoutineResumeHandle
+
+    data class Persisted(
+        override val selectedProfileId: String,
+        override val selectedRoutine: Routine,
+        val lookupKey: ActiveWorkoutRuntimeLookupKey,
+        val rowRevision: ActiveWorkoutRuntimeRowRevision,
+        override val progressInfo: ResumableProgressInfo,
+        override val launchOrigin: RoutineLaunchOrigin,
+        override val cycleId: String?,
+        override val cycleDayNumber: Int?,
+        override val managerGeneration: RoutineResumeManagerGeneration,
+        val manualRecoveryCoordinates: RestTransitionPlan.Coordinates?,
+    ) : RoutineResumeHandle
+}
+
+sealed interface RoutineResumeDiscovery {
+    data object Missing : RoutineResumeDiscovery
+    data object RetryableFailure : RoutineResumeDiscovery
+    data object Superseded : RoutineResumeDiscovery
+    data class Candidate(val handle: RoutineResumeHandle) : RoutineResumeDiscovery
+}
+
+sealed interface RoutineResumeDiscardResult {
+    data object Discarded : RoutineResumeDiscardResult
+    data object Missing : RoutineResumeDiscardResult
+    data object RetryableFailure : RoutineResumeDiscardResult
+    data object Superseded : RoutineResumeDiscardResult
+}
 
 /**
  * Event emitted when a training cycle day is completed after a workout.
@@ -270,7 +333,14 @@ class DefaultWorkoutSessionManager(
             override fun mutateConfigurationInputs(block: () -> Unit) {
                 activeSessionEngine.mutateConfigurationInputs(block)
             }
+            override fun mutateConfigurationInputsIf(
+                candidateStillCurrent: () -> Boolean,
+                block: () -> Unit,
+            ): Boolean = activeSessionEngine.mutateConfigurationInputsIf(candidateStillCurrent, block)
+            override fun <T> captureConfigurationInputs(block: () -> T): ConfigurationInputCapture<T> = activeSessionEngine.captureConfigurationInputs(block)
             override fun resolveOccurrenceSetWeight(exercise: RoutineExercise, setIndex: Int): Float = activeSessionEngine.resolveOccurrenceSetWeight(exercise, setIndex)
+            override fun beginRoutineCompletedRuntimeCleanup() = activeSessionEngine.beginRoutineCompletedRuntimeCleanup()
+            override fun beginRoutineAbandonmentRuntimeCleanup() = activeSessionEngine.beginRoutineAbandonmentRuntimeCleanup()
         }
     }
 
@@ -339,6 +409,34 @@ class DefaultWorkoutSessionManager(
         activeSessionEngine.flowDelegate = object : ActiveSessionEngine.WorkoutFlowDelegate {
             override fun loadRoutine(routine: Routine) = routineFlowManager.loadRoutine(routine)
             override suspend fun loadRoutineAsync(routine: Routine): Boolean = routineFlowManager.loadRoutineAsync(routine)
+            override suspend fun loadRoutineForResumeAsync(
+                routine: Routine,
+                launchOrigin: RoutineLaunchOrigin,
+                cycleId: String?,
+                cycleDayNumber: Int?,
+                publicationStillCurrent: () -> Boolean,
+            ): Boolean = routineFlowManager.loadRoutineForResumeAsync(
+                routine = routine,
+                launchOrigin = launchOrigin,
+                cycleId = cycleId,
+                cycleDayNumber = cycleDayNumber,
+                publicationStillCurrent = publicationStillCurrent,
+            )
+            override suspend fun prepareRoutineForRecovery(
+                routine: Routine,
+                exerciseIndex: Int,
+                setIndex: Int,
+                launchOrigin: RoutineLaunchOrigin,
+                cycleId: String?,
+                cycleDayNumber: Int?,
+            ): RoutineRecoveryPreparation? = routineFlowManager.prepareRoutineForRecovery(
+                routine = routine,
+                exerciseIndex = exerciseIndex,
+                setIndex = setIndex,
+                launchOrigin = launchOrigin,
+                cycleId = cycleId,
+                cycleDayNumber = cycleDayNumber,
+            )
             override fun enterSetReady(exerciseIndex: Int, setIndex: Int) = routineFlowManager.enterSetReady(exerciseIndex, setIndex)
             override fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) = routineFlowManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)
             override fun skipCurrentExerciseAndEnterNextStep(): Boolean = routineFlowManager.skipCurrentExerciseAndEnterNextStep()
@@ -682,6 +780,16 @@ class DefaultWorkoutSessionManager(
 
     /** Issue #2 Fix: Suspend version that completes after routine is fully loaded */
     suspend fun loadRoutineAsync(routine: Routine) = routineFlowManager.loadRoutineAsync(routine)
+    internal suspend fun loadRoutineForResumeAsync(
+        routine: Routine,
+        publicationStillCurrent: () -> Boolean,
+    ) = routineFlowManager.loadRoutineForResumeAsync(
+        routine = routine,
+        launchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES,
+        cycleId = null,
+        cycleDayNumber = null,
+        publicationStillCurrent = publicationStillCurrent,
+    )
     fun loadRoutineById(routineId: String) = routineFlowManager.loadRoutineById(routineId)
     fun enterRoutineOverview(routine: Routine) = routineFlowManager.enterRoutineOverview(routine)
     fun enterRoutineOverview(routine: Routine, modifier: AppliedRoutineModifier) = routineFlowManager.enterRoutineOverview(routine, modifier)
@@ -830,12 +938,45 @@ class DefaultWorkoutSessionManager(
 
     fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) = activeSessionEngine.loadRoutineFromCycle(routineId, cycleId, dayNumber)
     suspend fun loadRoutineFromCycleAsync(routineId: String, cycleId: String, dayNumber: Int) = activeSessionEngine.loadRoutineFromCycleAsync(routineId, cycleId, dayNumber)
+    internal suspend fun loadRoutineFromCycleForResumeAsync(
+        routine: Routine,
+        cycleId: String,
+        dayNumber: Int,
+        publicationStillCurrent: () -> Boolean,
+    ) = activeSessionEngine.loadRoutineFromCycleForResumeAsync(
+        routine = routine,
+        cycleId = cycleId,
+        dayNumber = dayNumber,
+        publicationStillCurrent = publicationStillCurrent,
+    )
     fun clearCycleContext() = activeSessionEngine.clearCycleContext()
 
     // ===== Rest/Flow Control — delegated to ActiveSessionEngine =====
 
     fun skipRest() = activeSessionEngine.skipRest()
     fun applyRestTransition(command: RestTransitionCommand) = activeSessionEngine.applyRestTransition(command)
+    suspend fun discoverRoutineResume(
+        routine: Routine,
+        launchOrigin: RoutineLaunchOrigin,
+        cycleId: String? = null,
+        cycleDayNumber: Int? = null,
+    ): RoutineResumeDiscovery = activeSessionEngine.discoverRoutineResume(
+        routine = routine,
+        inMemoryProgress = userProfileRepository.activeProfile.value?.id
+            ?.let { profileId -> routineFlowManager.captureResumableProgress(routine.id, profileId) },
+        launchOrigin = launchOrigin,
+        cycleId = cycleId,
+        cycleDayNumber = cycleDayNumber,
+    )
+    suspend fun resumeRoutine(handle: RoutineResumeHandle): ActiveWorkoutRuntimeResumeResult = when (handle) {
+        is RoutineResumeHandle.InMemory -> activeSessionEngine.resumeInMemoryRoutine(handle)
+        is RoutineResumeHandle.Persisted -> activeSessionEngine.resumeRoutine(handle)
+    }
+    fun isRoutineResumeHandleCurrent(handle: RoutineResumeHandle.InMemory): Boolean = activeSessionEngine.isRoutineResumeHandleCurrent(handle)
+    suspend fun discardRoutineResume(handle: RoutineResumeHandle): RoutineResumeDiscardResult = when (handle) {
+        is RoutineResumeHandle.InMemory -> activeSessionEngine.discardInMemoryRoutine(handle)
+        is RoutineResumeHandle.Persisted -> activeSessionEngine.discardRoutineResume(handle)
+    }
     internal val restTransitionPlan: StateFlow<RestTransitionPlan?> get() = coordinator.restTransitionPlan
     internal suspend fun applyRestTransitionAwait(command: RestTransitionCommand): RestTransitionReduction = activeSessionEngine.applyRestTransitionAwait(command)
     fun extendRestTime(seconds: Int) = activeSessionEngine.extendRestTime(seconds)
