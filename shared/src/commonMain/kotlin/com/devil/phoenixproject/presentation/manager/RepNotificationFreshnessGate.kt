@@ -56,18 +56,18 @@ internal class RepNotificationFreshnessGate {
         val identity = lease.identity()
         if (notification.isLegacyFormat) return evaluateLegacy(identity, notification)
 
-        // Issue #698: Just Lift uses unlimited target semantics (0xFF/252),
-        // so the device-reported repsSetTotal will never match the finite UI
-        // lease target. Exempt Just Lift leases from target equality check.
-        val targetMatches = lease.isJustLift ||
+        // Issue #698/#700: Just Lift and AMRAP use unlimited target semantics
+        // (0xFF/252), so the device-reported repsSetTotal will never match the
+        // finite UI lease target. Exempt both from target equality check.
+        val targetMatches = lease.isJustLift || lease.isAmrap ||
             notification.repsSetTotal == 0 ||
             notification.repsSetTotal == lease.workingRepTarget
         if (!targetMatches) return RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH)
         if (stateFor(lease) is RepFreshnessState.Armed) return RepFreshnessDecision.Process
 
-        // Issue #698: Just Lift has no finite rep target, so repsSetCount
-        // should never be treated as terminal. Exempt from terminal check.
-        val terminal = !lease.isJustLift &&
+        // Issue #698/#700: Just Lift and AMRAP have no finite rep target,
+        // so repsSetCount should never be treated as terminal.
+        val terminal = !(lease.isJustLift || lease.isAmrap) &&
             lease.workingRepTarget > 0 &&
             notification.repsSetCount >= lease.workingRepTarget
         val allZero = notification.topCounter == 0 &&
