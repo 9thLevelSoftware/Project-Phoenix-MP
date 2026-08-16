@@ -3284,6 +3284,12 @@ class ActiveSessionEngine(
                 val activeLease = executionGuard.activate(lease, wallClockMillisProvider())
                     ?: return@launch
                 repFreshnessGate.resetFor(activeLease)
+                // Auto-start can confirm Grabbed before this lease becomes active. The polling
+                // restart preserves that confirmed detector state, so carry it into the new
+                // Just Lift lease rather than requiring a second state emission or zero packet.
+                if (activeLease.isJustLift && bleRepository.handleState.value == HandleState.Grabbed) {
+                    repFreshnessGate.observeMovement(activeLease)
+                }
                 bleRepository.startActiveWorkoutPolling()
 
                 if (!executionGuard.isCurrent(activeLease)) return@launch

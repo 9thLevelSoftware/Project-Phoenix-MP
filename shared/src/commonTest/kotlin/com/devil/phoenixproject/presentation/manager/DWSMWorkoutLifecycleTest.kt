@@ -1738,6 +1738,43 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `Just Lift warmup accepts unlimited progress when the confirmed grab predates lease activation`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+        harness.fakeBleRepo.setHandleState(HandleState.Grabbed)
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = 20f,
+                progressionRegressionKg = 0f,
+                stallDetectionEnabled = true,
+                isAMRAP = false,
+                isJustLift = true,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
+
+        // Auto-start can confirm Grabbed before the new execution lease is activated.
+        // startActiveWorkoutPolling preserves that state, so no second emission is required.
+        completeWarmupReps(
+            harness,
+            warmupTarget = 3,
+            workingTarget = 8,
+            repsSetTotal = 252,
+        )
+        advanceUntilIdle()
+
+        val afterWarmup = harness.dwsm.coordinator.repCount.value
+        assertTrue(afterWarmup.isWarmupComplete)
+        assertEquals(0, afterWarmup.workingReps)
+        harness.cleanup()
+    }
+
+    @Test
     fun `Issue 267 Just Lift warmup to working rep transitions without failed stall state`() = runTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
