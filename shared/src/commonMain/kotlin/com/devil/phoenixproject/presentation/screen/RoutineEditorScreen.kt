@@ -259,6 +259,7 @@ fun RoutineEditorScreen(
             state.exercises != snapshotExercises ||
             state.supersets != snapshotSupersets
         )
+    val canSaveRoutine = state.exercises.isNotEmpty() && state.routineName.isNotBlank()
 
     // Drag and Drop State
     val lazyListState = rememberLazyListState()
@@ -504,18 +505,19 @@ fun RoutineEditorScreen(
                         val routineToSave = if (base != null) {
                             base.copy(
                                 id = finalRoutineId,
-                                name = state.routineName.ifBlank { "Unnamed Routine" },
+                                name = state.routineName.trim(),
                                 supersets = base.supersets.map { it.copy(routineId = finalRoutineId) },
                             )
                         } else {
                             Routine(
                                 id = finalRoutineId,
-                                name = state.routineName.ifBlank { "Unnamed Routine" },
+                                name = state.routineName.trim(),
                             )
                         }
                         viewModel.saveRoutine(routineToSave)
                         navController.popBackStack()
                     },
+                    enabled = canSaveRoutine,
                 ) {
                     Text(stringResource(Res.string.action_save))
                 }
