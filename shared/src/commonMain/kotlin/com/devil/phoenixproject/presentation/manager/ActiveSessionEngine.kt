@@ -546,7 +546,13 @@ class ActiveSessionEngine(
                     val params = coordinator._workoutParameters.value
                     val currentState = coordinator._workoutState.value
                     val currentLease = executionGuard.currentLease
-                    if (activityState == HandleState.Moving &&
+                    // A confirmed Just Lift grab proves a fresh execution is in motion.
+                    // HandleStateDetector can transition directly Released -> Grabbed when the
+                    // first pull already exceeds the velocity threshold, so waiting only for
+                    // Moving would leave the freshness gate unarmed without a zero packet.
+                    val hasFreshJustLiftGrab = activityState == HandleState.Grabbed &&
+                        currentLease?.isJustLift == true
+                    if ((activityState == HandleState.Moving || hasFreshJustLiftGrab) &&
                         currentLease?.activationCutoverTimestampMs != null &&
                         executionGuard.isCurrent(currentLease)
                     ) {
