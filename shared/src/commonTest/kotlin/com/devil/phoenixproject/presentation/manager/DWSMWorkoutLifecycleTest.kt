@@ -1717,14 +1717,20 @@ class DWSMWorkoutLifecycleTest {
         advanceUntilIdle()
         assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
 
-        completeWarmupReps(harness, warmupTarget = 3, workingTarget = 8)
+        completeWarmupReps(
+            harness,
+            warmupTarget = 3,
+            workingTarget = 8,
+            repsSetTotal = 252,
+            includeZeroBaseline = true,
+        )
         advanceUntilIdle()
 
         val afterWarmup = harness.dwsm.coordinator.repCount.value
         assertTrue(afterWarmup.isWarmupComplete)
         assertEquals(0, afterWarmup.workingReps)
 
-        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8)
+        completeFirstWorkingRep(harness, warmupTarget = 3, workingTarget = 8, repsSetTotal = 252)
         advanceUntilIdle()
 
         val afterWorkingRep = harness.dwsm.coordinator.repCount.value
@@ -2236,7 +2242,13 @@ class DWSMWorkoutLifecycleTest {
         harness.cleanup()
     }
 
-    private suspend fun completeWarmupReps(harness: DWSMTestHarness, warmupTarget: Int = 3, workingTarget: Int = 8) {
+    private suspend fun completeWarmupReps(
+        harness: DWSMTestHarness,
+        warmupTarget: Int = 3,
+        workingTarget: Int = 8,
+        repsSetTotal: Int = workingTarget,
+        includeZeroBaseline: Boolean = false,
+    ) {
         val activeMetric = WorkoutMetric(
             positionA = 120f,
             positionB = 120f,
@@ -2245,6 +2257,23 @@ class DWSMWorkoutLifecycleTest {
             loadA = 10f,
             loadB = 10f,
         )
+
+        if (includeZeroBaseline) {
+            harness.fakeBleRepo.emitRepNotification(
+                RepNotification(
+                    topCounter = 0,
+                    completeCounter = 0,
+                    repsRomCount = 0,
+                    repsRomTotal = warmupTarget,
+                    repsSetCount = 0,
+                    repsSetTotal = repsSetTotal,
+                    rangeTop = 800f,
+                    rangeBottom = 0f,
+                    rawData = ByteArray(24),
+                    timestamp = harness.nowMs,
+                ),
+            )
+        }
 
         for (warmupRep in 1..warmupTarget) {
             harness.fakeBleRepo.emitMetric(activeMetric)
@@ -2255,7 +2284,7 @@ class DWSMWorkoutLifecycleTest {
                     repsRomCount = warmupRep,
                     repsRomTotal = warmupTarget,
                     repsSetCount = 0,
-                    repsSetTotal = workingTarget,
+                    repsSetTotal = repsSetTotal,
                     rangeTop = 800f,
                     rangeBottom = 0f,
                     rawData = ByteArray(24),
@@ -2746,7 +2775,12 @@ class DWSMWorkoutLifecycleTest {
         harness.cleanup()
     }
 
-    private suspend fun completeFirstWorkingRep(harness: DWSMTestHarness, warmupTarget: Int = 3, workingTarget: Int = 8) {
+    private suspend fun completeFirstWorkingRep(
+        harness: DWSMTestHarness,
+        warmupTarget: Int = 3,
+        workingTarget: Int = 8,
+        repsSetTotal: Int = workingTarget,
+    ) {
         val activeMetric = WorkoutMetric(
             positionA = 120f,
             positionB = 120f,
@@ -2764,7 +2798,7 @@ class DWSMWorkoutLifecycleTest {
                 repsRomCount = warmupTarget,
                 repsRomTotal = warmupTarget,
                 repsSetCount = 1,
-                repsSetTotal = workingTarget,
+                repsSetTotal = repsSetTotal,
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),

@@ -173,6 +173,43 @@ class RepNotificationFreshnessGateTest {
     }
 
     @Test
+    fun `just lift unlimited progress waits for a zero baseline or observed movement`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 10, cutover = 1_000L).copy(isJustLift = true)
+
+        // A delayed packet from a prior Just Lift execution has the same
+        // unlimited target, so it cannot establish freshness by itself.
+        assertEquals(
+            RepFreshnessDecision.Drop(RepDropReason.PROGRESS_BEFORE_EVIDENCE),
+            gate.evaluate(lease, modernPacket(repsSetCount = 5, repsSetTotal = 252, timestamp = 1_001L)),
+        )
+        assertEquals(RepFreshnessState.AwaitingEvidence, gate.stateFor(lease))
+
+        // An all-zero packet establishes the new-session baseline.
+        assertEquals(
+            RepFreshnessDecision.BaselineOnly,
+            gate.evaluate(lease, modernPacket(repsSetTotal = 252, timestamp = 1_002L)),
+        )
+        assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 252, timestamp = 1_003L)),
+        )
+    }
+
+    @Test
+    fun `observed movement arms just lift unlimited progress`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 10, cutover = 1_000L).copy(isJustLift = true)
+
+        assertTrue(gate.observeMovement(lease))
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 252, timestamp = 1_001L)),
+        )
+    }
+
+    @Test
     fun `just lift lease does not treat repsSetCount as terminal`() {
         val gate = RepNotificationFreshnessGate()
         val lease = activeLease(target = 3, cutover = 1_000L).copy(isJustLift = true)

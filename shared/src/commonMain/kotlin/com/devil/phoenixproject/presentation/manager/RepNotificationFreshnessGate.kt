@@ -12,6 +12,7 @@ internal enum class RepDropReason {
     LEASE_NOT_ACTIVE,
     PRE_CUTOVER_TIMESTAMP,
     TARGET_MISMATCH,
+    PROGRESS_BEFORE_EVIDENCE,
     TERMINAL_BEFORE_EVIDENCE,
 }
 
@@ -90,6 +91,9 @@ internal class RepNotificationFreshnessGate {
         if (allZero) {
             states[identity] = RepFreshnessState.Armed
             return RepFreshnessDecision.BaselineOnly
+        }
+        if (lease.isJustLift && hasNonTerminalProgress) {
+            return RepFreshnessDecision.Drop(RepDropReason.PROGRESS_BEFORE_EVIDENCE)
         }
         if (hasNonTerminalProgress) {
             states[identity] = RepFreshnessState.Armed
