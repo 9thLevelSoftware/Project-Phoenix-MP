@@ -917,4 +917,92 @@ class WorkoutExitPersistenceTest {
             velocityB = 130.0,
         ),
     )
+
+    /**
+     * Issue #703: Rep count off-by-one when ROM reps precede working set.
+     *
+     * When the Nth rep notification triggers WORKOUT_COMPLETE, handleSetCompletion
+     * reads coordinator._repCount.value which was still stale (N-1) because the
+     * StateFlow write at handleRepNotification line 1334 occurs AFTER repCounter.process()
+     * returns. The fix flushes _repCount.value inside the WORKOUT_COMPLETE handler
+     * before calling handleSetCompletion.
+     */
+    @Test
+    fun `issue 703 - working reps persist correctly when ROM reps precede working set`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            // Setup: reps=7, warmupReps=3 (matching reporter's scenario)
+            harness.fakeExerciseRepo.addExercise(TestFixtures.benchPress)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 7,
+                    warmupReps = 3,
+                    weightPerCableKg = 25f,
+                    selectedExerciseId = TestFixtures.benchPress.id,
+                ),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true)
+            harness.testScope.testScheduler.advanceUntilIdle()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            // Simulate 3 ROM/warmup reps
+            repeat(3) { romRep ->
+                harness.fakeBleRepo.emitRepNotification(
+                    harness.repNotification(
+                        repsSetCount = romRep,
+                        timestamp = nowMs() + romRep * 1000L,
+                        repsRomCount = romRep + 1,
+                        repsRomTotal = 3,
+                    ),
+                )
+                harness.testScope.testScheduler.advanceUntilIdle()
+            }
+
+            // Simulate 7 working reps (repsSetCount 0..6, repsRomCount stays at 3)
+            repeat(7) { workingRep ->
+                harness.fakeBleRepo.emitRepNotification(
+                    harness.repNotification(
+                        repsSetCount = workingRep + 1,
+                        timestamp = nowMs() + (3 + workingRep) * 1000L,
+                        repsRomCount = 3,
+                        repsRomTotal = 3,
+                    ),
+                )
+                harness.testScope.testScheduler.advanceUntilIdle()
+            }
+
+            // Verify the persisted session has workingReps=7, not 6
+            val savedSessions = harness.fakeWorkoutRepo.saveSessionAttempts
+            assertTrue(savedSessions.isNotEmpty(), "Expected at least one saved session")
+            val lastSession = savedSessions.last()
+            assertEquals(
+                7,
+                lastSession.workingReps,
+                "Issue #703: workingReps should be 7, not ${lastSession.workingReps}. " +
+                    "The StateFlow was stale when WORKOUT_COMPLETE fired.",
+            )
+            assertEquals(
+                7,
+                lastSession.totalReps,
+                "Issue #703: totalReps should be 7",
+            )
+
+            // Verify completedSet also has correct rep count
+            val savedCompletedSets = harness.fakeCompletedSetRepo.saved
+            assertTrue(savedCompletedSets.isNotEmpty(), "Expected at least one completed set")
+            val lastCompletedSet = savedCompletedSets.last()
+            assertEquals(
+                7,
+                lastCompletedSet.actualReps,
+                "Issue #703: CompletedSet.actualReps should be 7, not ${lastCompletedSet.actualReps}",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    private fun nowMs() = DWSMTestHarness.TEST_WALL_CLOCK_EPOCH_MS
 }
