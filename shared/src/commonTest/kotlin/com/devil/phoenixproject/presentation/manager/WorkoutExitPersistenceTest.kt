@@ -923,7 +923,7 @@ class WorkoutExitPersistenceTest {
      *
      * When the Nth rep notification triggers WORKOUT_COMPLETE, handleSetCompletion
      * reads coordinator._repCount.value which was still stale (N-1) because the
-     * StateFlow write at handleRepNotification line 1334 occurs AFTER repCounter.process()
+     * StateFlow write in handleRepNotification occurs AFTER repCounter.process()
      * returns. The fix flushes _repCount.value inside the WORKOUT_COMPLETE handler
      * before calling handleSetCompletion.
      */
@@ -954,7 +954,7 @@ class WorkoutExitPersistenceTest {
                     harness.modernRepPacket(
                         repsSetCount = romRep,
                         repsSetTotal = 7,
-                        timestamp = nowMs() + romRep * 1000L,
+                        timestamp = harness.nowMs + romRep * 1000L,
                         repsRomCount = romRep + 1,
                         repsRomTotal = 3,
                     ),
@@ -968,7 +968,7 @@ class WorkoutExitPersistenceTest {
                     harness.modernRepPacket(
                         repsSetCount = workingRep + 1,
                         repsSetTotal = 7,
-                        timestamp = nowMs() + (3 + workingRep) * 1000L,
+                        timestamp = harness.nowMs + (3 + workingRep) * 1000L,
                         repsRomCount = 3,
                         repsRomTotal = 3,
                     ),
@@ -1005,6 +1005,4 @@ class WorkoutExitPersistenceTest {
             harness.cleanup()
         }
     }
-
-    private fun nowMs() = DWSMTestHarness.TEST_WALL_CLOCK_EPOCH_MS
 }
