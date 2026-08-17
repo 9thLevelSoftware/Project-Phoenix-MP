@@ -951,8 +951,9 @@ class WorkoutExitPersistenceTest {
             // Simulate 3 ROM/warmup reps
             repeat(3) { romRep ->
                 harness.fakeBleRepo.emitRepNotification(
-                    harness.repNotification(
+                    harness.modernRepPacket(
                         repsSetCount = romRep,
+                        repsSetTotal = 7,
                         timestamp = nowMs() + romRep * 1000L,
                         repsRomCount = romRep + 1,
                         repsRomTotal = 3,
@@ -964,8 +965,9 @@ class WorkoutExitPersistenceTest {
             // Simulate 7 working reps (repsSetCount 0..6, repsRomCount stays at 3)
             repeat(7) { workingRep ->
                 harness.fakeBleRepo.emitRepNotification(
-                    harness.repNotification(
+                    harness.modernRepPacket(
                         repsSetCount = workingRep + 1,
+                        repsSetTotal = 7,
                         timestamp = nowMs() + (3 + workingRep) * 1000L,
                         repsRomCount = 3,
                         repsRomTotal = 3,
