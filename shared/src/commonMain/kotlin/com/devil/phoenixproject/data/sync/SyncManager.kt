@@ -1494,10 +1494,11 @@ class SyncManager(
             personalRecordIds = capParity(knownPersonalRecordIds.toList(), "personalRecordIds"),
         )
 
+        val entityIds = currentKnownEntityIds()
         Logger.i("SyncManager") {
-            "Parity sync: sending ${currentKnownEntityIds().sessionIds.size} session IDs, " +
-                "${currentKnownEntityIds().routineIds.size} routine IDs, ${currentKnownEntityIds().cycleIds.size} cycle IDs, " +
-                "${currentKnownEntityIds().personalRecordIds.size} personal record IDs"
+            "Parity sync: sending ${entityIds.sessionIds.size} session IDs, " +
+                "${entityIds.routineIds.size} routine IDs, ${entityIds.cycleIds.size} cycle IDs, " +
+                "${entityIds.personalRecordIds.size} personal record IDs"
         }
 
         var pagesProcessed = 0
