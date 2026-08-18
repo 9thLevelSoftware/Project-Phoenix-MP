@@ -430,7 +430,7 @@ class PortalPullPaginationTest {
     // ==================== Parity Sync: knownEntityIds ====================
 
     @Test
-    fun pullSendsKnownEntityIdsButOmitsPersonalRecordsForLwwRefresh() = runTest {
+    fun pullSendsKnownPersonalRecordIdsForParityAndTombstones() = runTest {
         authenticate()
         val s1 = "11111111-1111-4111-a111-111111111111"
         val s2 = "22222222-2222-4222-a222-222222222222"
@@ -454,9 +454,9 @@ class PortalPullPaginationTest {
         assertEquals(emptyList<String>(), known.cycleIds)
         assertEquals(listOf(b1, b2), known.badgeIds)
         assertEquals(
-            emptyList<String>(),
+            listOf(pr1),
             known.personalRecordIds,
-            "Known PR UUIDs must be omitted so the portal returns newer active rows and tombstones",
+            "Known PR UUIDs must be sent so the portal can page and return tombstones",
         )
     }
 
@@ -484,7 +484,7 @@ class PortalPullPaginationTest {
     }
 
     @Test
-    fun pullFiltersNonUuidBadgesAndOmitsPersonalRecordsBeforeSend() = runTest {
+    fun pullFiltersNonUuidBadgesAndPersonalRecordsBeforeSend() = runTest {
         authenticate()
         val realBadge = "77777777-7777-4777-a777-777777777777"
         val realPr = "88888888-8888-4888-a888-888888888888"
@@ -501,7 +501,54 @@ class PortalPullPaginationTest {
             known.badgeIds,
             "Local numeric badge ids must be filtered before send; portal parity uses UUID row ids",
         )
-        assertEquals(emptyList<String>(), known.personalRecordIds)
+        assertEquals(
+            listOf(realPr),
+            known.personalRecordIds,
+            "Local numeric PR ids must be filtered; canonical UUIDs must be sent",
+        )
+    }
+
+    @Test
+    fun pullIncludesPersonalRecordIdsFromEarlierPagesInTheSamePull() = runTest {
+        authenticate()
+        val localPr = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        val page1Pr = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        fakeSyncRepo.personalRecordIds = listOf(localPr)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 1L,
+                    hasMore = true,
+                    nextCursor = "pr-page-2",
+                    personalRecords = listOf(
+                        PullPersonalRecordDto(
+                            id = page1Pr,
+                            userId = "user-123",
+                            exerciseName = "Bench",
+                            updatedAt = "2026-07-08T14:24:09.648091+00:00",
+                        ),
+                    ),
+                ),
+            ),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 2L,
+                    hasMore = false,
+                    personalRecords = emptyList(),
+                ),
+            ),
+        )
+
+        createManager().sync()
+
+        assertEquals(2, fakeApi.pullKnownEntityIdsHistory.size)
+        assertEquals(listOf(localPr), fakeApi.pullKnownEntityIdsHistory[0].personalRecordIds)
+        assertEquals(
+            listOf(localPr, page1Pr),
+            fakeApi.pullKnownEntityIdsHistory[1].personalRecordIds,
+            "IDs merged on page 1 must be sent on page 2 so a stuck cursor cannot replay them",
+        )
     }
 
     @Test
