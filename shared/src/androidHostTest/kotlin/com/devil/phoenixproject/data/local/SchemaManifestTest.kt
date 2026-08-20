@@ -506,8 +506,9 @@ class SchemaManifestTest {
 
         val report = reconcileFullSchema(driver)
 
-        // Verify the report has entries for all manifest items
-        val expectedTotal = manifestTables.size + manifestColumns.size + manifestIndexes.size
+        // Verify the report has entries for all manifest items, including dropped tables
+        val expectedTotal = manifestDroppedTables.size + manifestTables.size +
+            manifestColumns.size + manifestIndexes.size
         assertEquals(expectedTotal, report.total)
 
         // No failures should occur (all prerequisite tables exist)
