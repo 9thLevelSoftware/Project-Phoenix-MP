@@ -97,6 +97,7 @@ import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.rememberBackupLocationPicker
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -154,6 +155,9 @@ import vitruvianprojectphoenix.shared.generated.resources.settings_language_help
 import vitruvianprojectphoenix.shared.generated.resources.settings_machine_diagnostics_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_refresh_wger_catalog
 import vitruvianprojectphoenix.shared.generated.resources.settings_refresh_wger_catalog_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_refresh_wger_catalog_error
+import vitruvianprojectphoenix.shared.generated.resources.settings_refresh_wger_catalog_in_progress
+import vitruvianprojectphoenix.shared.generated.resources.settings_refresh_wger_catalog_success
 import vitruvianprojectphoenix.shared.generated.resources.settings_show_exercise_videos
 import vitruvianprojectphoenix.shared.generated.resources.settings_show_exercise_videos_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_theme_dark
@@ -758,9 +762,9 @@ fun SettingsTab(
                         wgerRefreshInProgress = false
                         wgerRefreshMessage = result.fold(
                             onSuccess = { count ->
-                                "Added $count exercises from wger"
+                                getString(Res.string.settings_refresh_wger_catalog_success, count)
                             },
-                            onFailure = { "Could not refresh from wger" },
+                            onFailure = { getString(Res.string.settings_refresh_wger_catalog_error) },
                         )
                     }
                 },
@@ -769,7 +773,7 @@ fun SettingsTab(
             ) {
                 Text(
                     if (wgerRefreshInProgress) {
-                        "Refreshing…"
+                        stringResource(Res.string.settings_refresh_wger_catalog_in_progress)
                     } else {
                         stringResource(Res.string.settings_refresh_wger_catalog)
                     },

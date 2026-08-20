@@ -121,9 +121,8 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             .map { mapMuscleGroup(it) }
                             .distinct()
                         val primaryMuscle = muscleNames.firstOrNull() ?: "Other"
-                        val equipmentLabel = (exercise.equipment ?: "").trim()
-                        val isBodyweight = equipmentLabel.isEmpty() ||
-                            equipmentLabel.equals("body only", ignoreCase = true)
+                        val equipmentLabel = canonicalEquipmentLabel(exercise.equipment)
+                        val isBodyweight = equipmentLabel == BODYWEIGHT_EQUIPMENT
 
                         queries.insertExercise(
                             id = exercise.id,
@@ -224,9 +223,10 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             .mapNotNull { it.nameEn ?: it.name }
                             .map { mapMuscleGroup(it) }
                             .distinct()
-                        val equipmentLabel = info.equipment.mapNotNull { it.name }
-                            .joinToString(",") { it.lowercase() }
-                        val isBodyweight = equipmentLabel.isBlank() ||
+                        val equipmentLabel = canonicalEquipmentLabel(
+                            info.equipment.mapNotNull { it.name }.joinToString(",") { it.lowercase() },
+                        )
+                        val isBodyweight = equipmentLabel == BODYWEIGHT_EQUIPMENT ||
                             equipmentLabel.contains("bodyweight") ||
                             equipmentLabel.contains("body only")
                         val licenseName = info.license?.shortName ?: info.license?.fullName ?: "CC-BY-SA 4.0"
@@ -324,9 +324,23 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
         const val BUNDLED_CATALOG_SOURCE = "free-exercise-db@unlicense-1"
         const val FREE_EXERCISE_IMAGE_BASE =
             "https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"
+        const val BODYWEIGHT_EQUIPMENT = "BODYWEIGHT"
         private const val WGER_EXERCISE_INFO_URL =
             "https://wger.de/api/v2/exerciseinfo/?language=2&limit=100"
         private const val WGER_ENGLISH_LANGUAGE = 2
+
+        internal fun canonicalEquipmentLabel(raw: String?): String {
+            val trimmed = raw.orEmpty().trim()
+            return if (
+                trimmed.isEmpty() ||
+                trimmed.equals("body only", ignoreCase = true) ||
+                trimmed.equals("bodyweight", ignoreCase = true)
+            ) {
+                BODYWEIGHT_EQUIPMENT
+            } else {
+                trimmed
+            }
+        }
 
         internal fun mapMuscleGroup(raw: String): String = when (raw.trim().lowercase()) {
             "abdominals", "abs", "core" -> "Core"

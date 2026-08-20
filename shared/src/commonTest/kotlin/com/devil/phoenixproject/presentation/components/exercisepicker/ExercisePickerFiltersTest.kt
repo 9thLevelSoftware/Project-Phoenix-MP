@@ -100,4 +100,18 @@ class ExercisePickerFiltersTest {
 
         assertEquals(linkedSetOf("squat", "bench"), completedIds)
     }
+
+    @Test
+    fun bodyweightFilterMatchesExplicitClassificationNotJustToken() {
+        val bodyOnly = exercise("plank", equipment = "body only").copy(isBodyweightOverride = true)
+        val cable = exercise("row", equipment = "HANDLES").copy(isBodyweightOverride = false)
+        val token = exercise("push-up", equipment = "BODYWEIGHT").copy(isBodyweightOverride = true)
+
+        val result = filterExercisePickerCandidates(
+            candidates = listOf(bodyOnly, cable, token),
+            filters = ExercisePickerFilterState(selectedEquipment = setOf("Bodyweight")),
+        )
+
+        assertEquals(listOf(bodyOnly, token), result)
+    }
 }

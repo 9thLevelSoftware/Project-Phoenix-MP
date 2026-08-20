@@ -193,6 +193,7 @@ class SqlDelightExerciseRepositoryTest {
         assertNotNull(plank)
         assertEquals("Core", plank.muscleGroup)
         assertEquals(true, plank.isBodyweight)
+        assertEquals("BODYWEIGHT", plank.equipment)
     }
 
     private fun insertExercise(

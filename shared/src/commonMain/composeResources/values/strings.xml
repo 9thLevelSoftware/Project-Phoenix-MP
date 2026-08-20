@@ -899,6 +899,7 @@
     <string name="settings_refresh_wger_catalog_description">Downloads openly licensed exercises from wger (CC-BY-SA). Does not replace the bundled catalogue.</string>
     <string name="settings_refresh_wger_catalog_success">Added %1$d exercises from wger</string>
     <string name="settings_refresh_wger_catalog_error">Could not refresh from wger</string>
+    <string name="settings_refresh_wger_catalog_in_progress">Refreshing…</string>
     <string name="profile_weight_increment">Weight increment</string>
     <string name="profile_body_weight">Body weight</string>
     <string name="profile_set_summary">Set summary duration</string>
