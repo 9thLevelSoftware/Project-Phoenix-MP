@@ -25,12 +25,14 @@ class FakePreferencesManager : PreferencesManager {
     private var justLiftDefaults = JustLiftDefaults()
     // Issue #611 (PR-followup #613): backing field for the 18+ modal one-shot flag.
     private var _adultsOnlyPrompted: Boolean = false
+    private var exerciseCatalogSource: String = ""
 
     fun reset() {
         _preferencesFlow.value = UserPreferences()
         exerciseDefaults.clear()
         justLiftDefaults = JustLiftDefaults()
         _adultsOnlyPrompted = false
+        exerciseCatalogSource = ""
     }
 
     fun setPreferences(preferences: UserPreferences) {
@@ -47,6 +49,12 @@ class FakePreferencesManager : PreferencesManager {
 
     override suspend fun setEnableVideoPlayback(enabled: Boolean) {
         _preferencesFlow.value = _preferencesFlow.value.copy(enableVideoPlayback = enabled)
+    }
+
+    override fun getExerciseCatalogSource(): String = exerciseCatalogSource
+
+    override suspend fun setExerciseCatalogSource(source: String) {
+        exerciseCatalogSource = source
     }
 
     suspend fun setBeepsEnabled(enabled: Boolean) {

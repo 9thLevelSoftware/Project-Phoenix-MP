@@ -113,7 +113,7 @@ class SqlDelightWorkoutRepositoryVelocityPointsTest {
     fun `returns one point per qualifying session using working avg weight`() = runTest {
         val db = createInMemoryTestDatabase()
         seedExercise(db, id = "ex1")
-        val exerciseRepo = SqlDelightExerciseRepository(db, ExerciseImporter(db))
+        val exerciseRepo = SqlDelightExerciseRepository(db, ExerciseImporter(db), com.devil.phoenixproject.testutil.FakePreferencesManager())
         val repo = SqlDelightWorkoutRepository(db, exerciseRepo)
 
         // session A: inside window — workingAvgWeightKg=40 must win over weightPerCableKg=42
@@ -149,7 +149,7 @@ class SqlDelightWorkoutRepositoryVelocityPointsTest {
     fun `excludes null-MCV and zero-rep sessions within the window`() = runTest {
         val db = createInMemoryTestDatabase()
         seedExercise(db, id = "ex1")
-        val exerciseRepo = SqlDelightExerciseRepository(db, ExerciseImporter(db))
+        val exerciseRepo = SqlDelightExerciseRepository(db, ExerciseImporter(db), com.devil.phoenixproject.testutil.FakePreferencesManager())
         val repo = SqlDelightWorkoutRepository(db, exerciseRepo)
 
         // (a) qualifying in-window session
@@ -197,7 +197,7 @@ class SqlDelightWorkoutRepositoryVelocityPointsTest {
     fun `getExerciseIdsWithVelocityData returns distinct mcv-bearing exercises`() = runTest {
         val db = createInMemoryTestDatabase()
         seedExercise(db, id = "exA"); seedExercise(db, id = "exB")
-        val exerciseRepo = SqlDelightExerciseRepository(db, ExerciseImporter(db))
+        val exerciseRepo = SqlDelightExerciseRepository(db, ExerciseImporter(db), com.devil.phoenixproject.testutil.FakePreferencesManager())
         val repo = SqlDelightWorkoutRepository(db, exerciseRepo)
 
         // two MCV-bearing sets for exA — must appear only once (DISTINCT)

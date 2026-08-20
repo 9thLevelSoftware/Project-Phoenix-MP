@@ -1,10 +1,10 @@
 package com.devil.phoenixproject.domain.model
 
 object FiveThreeOneRoutineDetector {
-    const val BENCH_ID = "ZZ92N8QsBdp6HCh3"
-    const val SHOULDER_PRESS_ID = "0040d53f-85c7-4564-b14e-9b38c979b461"
-    const val SQUAT_ID = "UjIGHxCav-lS9B2I"
-    const val DEADLIFT_ID = "e64c7837-52e2-4b97-b771-cf08ab861af1"
+    const val BENCH_ID = "Barbell_Bench_Press_-_Medium_Grip"
+    const val SHOULDER_PRESS_ID = "Barbell_Shoulder_Press"
+    const val SQUAT_ID = "Barbell_Squat"
+    const val DEADLIFT_ID = "Barbell_Deadlift"
 
     val UPPER_LIFT_IDS = setOf(BENCH_ID, SHOULDER_PRESS_ID)
     val MAIN_LIFT_IDS = setOf(BENCH_ID, SHOULDER_PRESS_ID, SQUAT_ID, DEADLIFT_ID)

@@ -1016,5 +1016,19 @@ WHERE gs.rowid = (
     SELECT id FROM UserProfile""",
     )
 
+    43 -> listOf(
+        "DELETE FROM ExerciseVideo",
+        "DROP TABLE IF EXISTS ExerciseVideo",
+        """CREATE TABLE ExerciseImage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        exerciseId TEXT NOT NULL,
+        url TEXT NOT NULL,
+        sortOrder INTEGER NOT NULL,
+        FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+    )""",
+        "CREATE INDEX idx_exercise_image_exercise ON ExerciseImage(exerciseId)",
+        "UPDATE Exercise SET archived = 1 WHERE isCustom = 0",
+    )
+
     else -> emptyList()
 }

@@ -68,8 +68,8 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -84,7 +84,7 @@ import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
-import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
@@ -309,15 +309,15 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                 val adjustmentState = adjustmentStates.getValue(exercise.id)
                 val adjustments by adjustmentState
 
-                // Load video for this exercise
-                var videoEntity by remember { mutableStateOf<ExerciseVideoEntity?>(null) }
+                var images by remember(exercise.exercise.id) {
+                    mutableStateOf<List<ExerciseImageEntity>>(emptyList())
+                }
                 LaunchedEffect(exercise.exercise.id) {
                     exercise.exercise.id?.let { exerciseId ->
                         try {
-                            val videos = exerciseRepository.getVideos(exerciseId)
-                            videoEntity = videos.firstOrNull()
+                            images = exerciseRepository.getImages(exerciseId)
                         } catch (_: Exception) {
-                            // Video loading failed - will show placeholder
+                            // Image loading failed - will show placeholder
                         }
                     }
                 }
@@ -328,7 +328,7 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                     isCompleted = isCompleted,
                     weightUnit = weightUnit,
                     formatWeight = viewModel::formatWeight,
-                    videoUrl = if (enableVideoPlayback) videoEntity?.videoUrl else null,
+                    imageUrls = if (enableVideoPlayback) images.map { it.url } else emptyList(),
                     adjustedWeight = adjustments.weight,
                     adjustedReps = adjustments.reps,
                     isAMRAP = exercise.isAMRAP,
@@ -547,7 +547,7 @@ private fun ExerciseOverviewCard(
     isCompleted: Boolean,
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
-    videoUrl: String?,
+    imageUrls: List<String>,
     adjustedWeight: Float,
     adjustedReps: Int,
     isAMRAP: Boolean,
@@ -610,13 +610,13 @@ private fun ExerciseOverviewCard(
                     )
                 }
 
-                // Video thumbnail
-                VideoPlayer(
-                    videoUrl = videoUrl,
+                ExerciseDemoImage(
+                    imageUrls = imageUrls,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(sizing.videoHeight)
                         .clip(MaterialTheme.shapes.small),
+                    contentDescription = exercise.exercise.displayName,
                 )
 
                 // Mode indicator (read-only) - Issue #222: Hide for bodyweight exercises

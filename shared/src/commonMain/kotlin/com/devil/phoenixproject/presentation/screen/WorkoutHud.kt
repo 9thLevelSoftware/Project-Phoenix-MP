@@ -23,17 +23,17 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.presentation.components.AnimatedRepCounter
 import com.devil.phoenixproject.presentation.components.CircularForceGauge
 import com.devil.phoenixproject.presentation.components.EnhancedCablePositionBar
+import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExpandedForceCurve
 import com.devil.phoenixproject.presentation.components.ForceCurveMiniGraph
 import com.devil.phoenixproject.presentation.components.StableRepProgress
-import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.ResponsiveDimensions
 import com.devil.phoenixproject.presentation.util.SetTypeLabel
@@ -55,7 +55,7 @@ import vitruvianprojectphoenix.shared.generated.resources.*
  *
  * Slots:
  * - Top Bar: Connection Status (Left), Phase/Mode (Center), Stop Button (Right)
- * - Center: Horizontal Pager (Metrics | Video | Stats)
+ * - Center: Horizontal Pager (Metrics | Demo | Stats)
  * - Bottom Bar: Weight/Reps controls & Navigation
  */
 @OptIn(ExperimentalFoundationApi::class)
@@ -729,6 +729,7 @@ private fun ExecutionPage(
     }
 }
 
+@Suppress("UNUSED_PARAMETER")
 @Composable
 private fun InstructionPage(
     loadedRoutine: Routine?,
@@ -739,97 +740,42 @@ private fun InstructionPage(
 ) {
     val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
     val exerciseId = currentExercise?.exercise?.id ?: selectedExerciseId
-    var videoEntity by remember(currentExerciseIndex, exerciseId) { mutableStateOf<ExerciseVideoEntity?>(null) }
-    var isLoading by remember(currentExerciseIndex, exerciseId) { mutableStateOf(true) }
-
-    LaunchedEffect(currentExerciseIndex, exerciseId) {
-        isLoading = true
-        videoEntity = null
-        if (exerciseId != null) {
-            try {
-                videoEntity = exerciseRepository.getVideos(exerciseId).firstOrNull()
-            } catch (e: Exception) {
-                co.touchlab.kermit.Logger.e("WorkoutHud") { "Failed to load video for $exerciseId: ${e.message}" }
-            }
-        }
-        isLoading = false
+    var images by remember(currentExerciseIndex, exerciseId) {
+        mutableStateOf<List<ExerciseImageEntity>>(emptyList())
     }
 
-    Box(
-        modifier = Modifier.fillMaxSize().padding(16.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        when {
-            !enableVideoPlayback -> Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    Icons.Default.VideocamOff,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                )
-                Text(
-                    "Video Playback Disabled",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Text(
-                    "Enable in Settings",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                )
-            }
-
-            isLoading -> CircularProgressIndicator()
-
-            videoEntity != null -> Column(
-                modifier = Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                currentExercise?.exercise?.name?.let { name ->
-                    Text(
-                        name,
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(bottom = 12.dp),
-                    )
-                }
-                VideoPlayer(
-                    videoUrl = videoEntity?.videoUrl,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
-                        .clip(MaterialTheme.shapes.small),
-                )
-            }
-
-            else -> Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                Icon(
-                    Icons.Default.VideoLibrary,
-                    contentDescription = null,
-                    modifier = Modifier.size(48.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                )
-                Text(
-                    "No Video Available",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                currentExercise?.exercise?.name?.let { name ->
-                    Text(
-                        name,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-                    )
-                }
+    LaunchedEffect(currentExerciseIndex, exerciseId) {
+        images = emptyList()
+        if (exerciseId != null) {
+            try {
+                images = exerciseRepository.getImages(exerciseId)
+            } catch (e: Exception) {
+                co.touchlab.kermit.Logger.e("WorkoutHud") { "Failed to load images for $exerciseId: ${e.message}" }
             }
         }
+    }
+
+    Column(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        currentExercise?.exercise?.name?.let { name ->
+            Text(
+                name,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.padding(bottom = 12.dp),
+            )
+        }
+        ExerciseDemoImage(
+            imageUrls = images.map { it.url },
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .clip(MaterialTheme.shapes.small),
+            contentDescription = currentExercise?.exercise?.name,
+        )
     }
 }
 

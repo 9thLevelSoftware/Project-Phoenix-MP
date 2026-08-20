@@ -638,10 +638,92 @@ class SchemaParityTest {
         assertEquals(true, getTables(driver).contains("PendingProfileContextRecovery"))
     }
 
+    @Test
+    fun migration43To44ReplacesExerciseVideoWithExerciseImageAndArchivesStockRows() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 43)
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+                equipment, movement, sidedness, grip, gripWidth, minRepRange, popularity, archived,
+                isFavorite, isCustom, timesPerformed, lastPerformed, aliases, defaultCableConfig,
+                one_rep_max_kg, updatedAt, serverId, deletedAt
+            ) VALUES (
+                'legacy-1', 'Squat', 'Squat', '', 0, 'Legs', 'Legs', '',
+                'BAR', '', '', '', '', 1, 0, 0,
+                0, 0, 0, NULL, '', 'DOUBLE',
+                NULL, NULL, NULL, NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+                equipment, movement, sidedness, grip, gripWidth, minRepRange, popularity, archived,
+                isFavorite, isCustom, timesPerformed, lastPerformed, aliases, defaultCableConfig,
+                one_rep_max_kg, updatedAt, serverId, deletedAt
+            ) VALUES (
+                'custom-1', 'My Lift', 'My Lift', '', 0, 'Chest', 'Chest', '',
+                '', '', '', '', '', 1, 0, 0,
+                0, 1, 0, NULL, '', 'EITHER',
+                NULL, NULL, NULL, NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO ExerciseVideo (exerciseId, angle, videoUrl, thumbnailUrl, isTutorial)
+            VALUES ('legacy-1', 'front', 'https://example.com/demo.mp4', 'https://example.com/demo.jpg', 0)
+            """.trimIndent(),
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 43, EXPECTED_SCHEMA_VERSION)
+
+        assertEquals(false, getTables(driver).contains("ExerciseVideo"))
+        assertEquals(true, getTables(driver).contains("ExerciseImage"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(archived AS TEXT) FROM Exercise WHERE id = 'legacy-1'"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(archived AS TEXT) FROM Exercise WHERE id = 'custom-1'"))
+    }
+
+    @Test
+    fun `resilient migration 43 fallback drops video table and archives stock rows`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 43)
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+                equipment, movement, sidedness, grip, gripWidth, minRepRange, popularity, archived,
+                isFavorite, isCustom, timesPerformed, lastPerformed, aliases, defaultCableConfig,
+                one_rep_max_kg, updatedAt, serverId, deletedAt
+            ) VALUES (
+                'legacy-2', 'Squat', 'Squat', '', 0, 'Legs', 'Legs', '',
+                'BAR', '', '', '', '', 1, 0, 0,
+                0, 0, 0, NULL, '', 'DOUBLE',
+                NULL, NULL, NULL, NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        applyMigrationResilient(driver, 43)
+        assertEquals(false, getTables(driver).contains("ExerciseVideo"))
+        assertEquals(true, getTables(driver).contains("ExerciseImage"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(archived AS TEXT) FROM Exercise WHERE id = 'legacy-2'"))
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 43L
+        private const val EXPECTED_SCHEMA_VERSION = 44L
         private val CANONICAL_UUID_REGEX = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
         /**

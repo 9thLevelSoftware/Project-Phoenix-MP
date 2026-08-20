@@ -2,7 +2,7 @@ package com.devil.phoenixproject.domain.model
 
 /**
  * Represents the machine's status flags parsed from bytes 16-17 of the Monitor characteristic.
- * Based on official app's SampleStatus class.
+ * Bit flags from bytes 16-17 of the Monitor characteristic.
  */
 @Suppress("unused") // Protocol reference class - used for machine status parsing
 data class SampleStatus(val raw: Int) {
@@ -31,9 +31,7 @@ data class SampleStatus(val raw: Int) {
     }
 
     companion object {
-        // Constants derived from official app's SampleStatus enum (bit masks)
-        // Note: The official app code shows bit shifts like `1 << 0`, `1 << 1`, etc.
-        // cVar8 = new c("DELOAD_OCCURRED", 7, He.a.i(s10, 15)); -> 1 << 15 = 0x8000
+        // Bit masks observed on the Monitor characteristic (1 << n).
 
         const val REP_TOP_READY = 1 shl 0 // 0x0001
         const val REP_BOTTOM_READY = 1 shl 1 // 0x0002

@@ -34,6 +34,7 @@ class SqlDelightAssessmentRepositoryTest {
         exerciseRepository = SqlDelightExerciseRepository(
             database,
             com.devil.phoenixproject.data.local.ExerciseImporter(database),
+            com.devil.phoenixproject.testutil.FakePreferencesManager(),
         )
         workoutRepository = SqlDelightWorkoutRepository(database, exerciseRepository)
         repository = SqlDelightAssessmentRepository(

@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.presentation.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -14,8 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
@@ -27,7 +24,6 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,7 +44,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -56,12 +51,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
-import coil3.compose.LocalPlatformContext
-import coil3.compose.SubcomposeAsyncImage
-import coil3.request.ImageRequest
-import coil3.request.crossfade
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExerciseFilterShelf
 import com.devil.phoenixproject.presentation.components.exercisepicker.ExerciseListEmptyState
@@ -77,7 +68,6 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_back
 import vitruvianprojectphoenix.shared.generated.resources.cd_clear_search
 import vitruvianprojectphoenix.shared.generated.resources.cd_close
 import vitruvianprojectphoenix.shared.generated.resources.cd_search
-import vitruvianprojectphoenix.shared.generated.resources.cd_video_thumbnail
 import vitruvianprojectphoenix.shared.generated.resources.search_exercises
 import vitruvianprojectphoenix.shared.generated.resources.select_exercise
 
@@ -374,6 +364,7 @@ fun ExercisePickerDialog(
  *   height should still be capped by the caller (e.g. [MiniExercisePickerDialog]).
  *   Defaults to true so existing call sites are unaffected.
  */
+@Suppress("UNUSED_PARAMETER")
 @Composable
 fun ExercisePickerContent(
     exercises: List<Exercise>,
@@ -406,7 +397,7 @@ fun ExercisePickerContent(
 ) {
     var showVideoDialog by remember { mutableStateOf(false) }
     var videoDialogExercise by remember { mutableStateOf<Exercise?>(null) }
-    var videoDialogVideos by remember { mutableStateOf<List<ExerciseVideoEntity>>(emptyList()) }
+    var videoDialogImages by remember { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
     val listState = rememberLazyListState()
     val focusManager = LocalFocusManager.current
     val useCompactAccessibility = isCompactAccessibilityLayout()
@@ -418,16 +409,14 @@ fun ExercisePickerContent(
         selectedMuscles.isNotEmpty() ||
         selectedEquipment.isNotEmpty()
 
-    // Video dialog
-    if (showVideoDialog && videoDialogVideos.isNotEmpty() && videoDialogExercise != null) {
-        ExerciseVideoDialog(
+    if (showVideoDialog && videoDialogImages.isNotEmpty() && videoDialogExercise != null) {
+        ExerciseImageDialog(
             exerciseName = videoDialogExercise!!.name,
-            videos = videoDialogVideos,
-            enableVideoPlayback = enableVideoPlayback,
+            images = videoDialogImages,
             onDismiss = {
                 showVideoDialog = false
                 videoDialogExercise = null
-                videoDialogVideos = emptyList()
+                videoDialogImages = emptyList()
             },
         )
     }
@@ -540,9 +529,9 @@ fun ExercisePickerContent(
                 exerciseRepository = exerciseRepository,
                 onExerciseSelected = onExerciseSelected,
                 onToggleFavorite = onToggleFavorite,
-                onShowVideo = { exercise, videos ->
+                onShowVideo = { exercise, images ->
                     videoDialogExercise = exercise
-                    videoDialogVideos = videos
+                    videoDialogImages = images
                     showVideoDialog = true
                 },
                 onEditExercise = if (enableCustomExercises) onEditExercise else null,
@@ -566,28 +555,16 @@ fun ExercisePickerContent(
 }
 
 /**
- * Exercise Video Dialog
+ * Exercise demonstration image dialog.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ExerciseVideoDialog(
+fun ExerciseImageDialog(
     exerciseName: String,
-    videos: List<ExerciseVideoEntity>,
-    enableVideoPlayback: Boolean,
+    images: List<ExerciseImageEntity>,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var selectedAngle by remember {
-        mutableStateOf(
-            videos.firstOrNull { it.angle == "FRONT" }?.angle
-                ?: videos.firstOrNull()?.angle
-                ?: "FRONT",
-        )
-    }
-
-    val currentVideo = videos.firstOrNull { it.angle == selectedAngle }
-        ?: videos.firstOrNull()
-
     ModalBottomSheet(
         onDismissRequest = onDismiss,
         modifier = modifier,
@@ -618,64 +595,17 @@ fun ExerciseVideoDialog(
                 }
             }
 
-            // Angle selection chips if multiple angles
-            if (videos.size > 1) {
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.padding(bottom = 16.dp),
-                ) {
-                    items(videos) { video ->
-                        FilterChip(
-                            selected = selectedAngle == video.angle,
-                            onClick = { selectedAngle = video.angle },
-                            label = { Text(video.angle.lowercase().replaceFirstChar { it.uppercase() }) },
-                        )
-                    }
-                }
-            }
-
-            // Video player area
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .aspectRatio(16f / 9f),
                 shape = MaterialTheme.shapes.small,
             ) {
-                if (enableVideoPlayback) {
-                    VideoPlayer(
-                        videoUrl = currentVideo?.videoUrl,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    // Show thumbnail when video playback is disabled
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        currentVideo?.thumbnailUrl?.let { thumbnailUrl ->
-                            val formattedUrl = if (thumbnailUrl.contains("image.mux.com") && !thumbnailUrl.contains("?")) {
-                                "$thumbnailUrl?width=600&height=400"
-                            } else {
-                                thumbnailUrl
-                            }
-                            SubcomposeAsyncImage(
-                                model = ImageRequest.Builder(LocalPlatformContext.current)
-                                    .data(formattedUrl)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = stringResource(Res.string.cd_video_thumbnail),
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        } ?: Text(
-                            text = "Video playback disabled",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+                ExerciseDemoImage(
+                    imageUrls = images.map { it.url },
+                    modifier = Modifier.fillMaxSize(),
+                    contentDescription = exerciseName,
+                )
             }
         }
     }

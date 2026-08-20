@@ -6,7 +6,7 @@ Align Phoenix weight handling with the official Vitruvian app: the selected, sto
 
 ## Current Evidence
 
-The official-app deobfuscation findings show a single scalar force value in kilograms flowing through set storage and BLE command encoding. Cable count is exercise metadata and does not branch load math. The only official-app doubling found is a display-only caption: "Total weight for 2 cables".
+Hardware captures show a single scalar force value in kilograms flowing through set storage and BLE command encoding. Cable count is exercise metadata and does not branch load math. The only doubling found is a display-only caption: "Total weight for 2 cables".
 
 Phoenix already mostly matches this at the machine contract:
 

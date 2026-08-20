@@ -152,11 +152,6 @@ kotlin {
                 // Ktor OkHttp engine for Android
                 implementation(libs.ktor.client.okhttp)
 
-                // Media3 ExoPlayer (for HLS video playback)
-                implementation(libs.media3.exoplayer)
-                implementation(libs.media3.exoplayer.hls)
-                implementation(libs.media3.ui)
-
                 // Compose Preview Tooling (for @Preview in shared module)
                 implementation(libs.cmp.ui.tooling)
 

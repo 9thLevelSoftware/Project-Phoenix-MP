@@ -893,8 +893,12 @@
     <string name="profile_recovery_retry_failed">Profile recovery is still unavailable</string>
     <string name="profile_delete_reassign_message">Delete &quot;%1$s&quot;? Its workouts, routines, records, badges, assessments, and progression data will move to Default. This cannot be undone.</string>
     <string name="settings_video_behavior">Video Behavior</string>
-    <string name="settings_show_exercise_videos">Show Exercise Videos</string>
-    <string name="settings_show_exercise_videos_description">Display exercise demonstrations; turn this off on slower devices</string>
+    <string name="settings_show_exercise_videos">Show Exercise Demos</string>
+    <string name="settings_show_exercise_videos_description">Display exercise demonstration stills; turn this off on slower devices</string>
+    <string name="settings_refresh_wger_catalog">Refresh extra exercises from wger</string>
+    <string name="settings_refresh_wger_catalog_description">Downloads openly licensed exercises from wger (CC-BY-SA). Does not replace the bundled catalogue.</string>
+    <string name="settings_refresh_wger_catalog_success">Added %1$d exercises from wger</string>
+    <string name="settings_refresh_wger_catalog_error">Could not refresh from wger</string>
     <string name="profile_weight_increment">Weight increment</string>
     <string name="profile_body_weight">Body weight</string>
     <string name="profile_set_summary">Set summary duration</string>

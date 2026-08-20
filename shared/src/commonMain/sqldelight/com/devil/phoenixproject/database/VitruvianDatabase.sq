@@ -40,16 +40,16 @@ CREATE TABLE Exercise (
 CREATE INDEX idx_exercise_popularity ON Exercise(popularity DESC, name ASC);
 CREATE INDEX idx_exercise_last_performed ON Exercise(lastPerformed DESC);
 
--- Exercise Videos
-CREATE TABLE ExerciseVideo (
+-- Exercise demonstration stills (openly-licensed remote images)
+CREATE TABLE ExerciseImage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     exerciseId TEXT NOT NULL,
-    angle TEXT NOT NULL,
-    videoUrl TEXT NOT NULL,
-    thumbnailUrl TEXT NOT NULL,
-    isTutorial INTEGER NOT NULL DEFAULT 0,
+    url TEXT NOT NULL,
+    sortOrder INTEGER NOT NULL,
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
 );
+
+CREATE INDEX idx_exercise_image_exercise ON ExerciseImage(exerciseId);
 
 -- Workout sessions table (Matches Domain Model)
 CREATE TABLE WorkoutSession (
@@ -552,24 +552,27 @@ UPDATE ExerciseMvt SET profile_id = :targetProfileId WHERE profile_id = :sourceP
 
 -- Exercise Queries
 selectAllExercises:
-SELECT * FROM Exercise ORDER BY name ASC;
+SELECT * FROM Exercise WHERE archived = 0 ORDER BY name ASC;
 
 searchExercises:
 SELECT * FROM Exercise
-WHERE name LIKE ('%' || :query || '%')
-   OR muscleGroups LIKE ('%' || :query || '%')
-   OR description LIKE ('%' || :query || '%')
-   OR aliases LIKE ('%' || :query || '%')
+WHERE archived = 0
+  AND (
+    name LIKE ('%' || :query || '%')
+    OR muscleGroups LIKE ('%' || :query || '%')
+    OR description LIKE ('%' || :query || '%')
+    OR aliases LIKE ('%' || :query || '%')
+  )
 ORDER BY popularity DESC, name ASC;
 
 filterExercisesByMuscle:
-SELECT * FROM Exercise WHERE muscleGroups LIKE ('%' || :muscle || '%') ORDER BY name ASC;
+SELECT * FROM Exercise WHERE archived = 0 AND muscleGroups LIKE ('%' || :muscle || '%') ORDER BY name ASC;
 
 filterExercisesByEquipment:
-SELECT * FROM Exercise WHERE equipment LIKE ('%' || :equipment || '%') ORDER BY name ASC;
+SELECT * FROM Exercise WHERE archived = 0 AND equipment LIKE ('%' || :equipment || '%') ORDER BY name ASC;
 
 selectFavorites:
-SELECT * FROM Exercise WHERE isFavorite = 1 ORDER BY name ASC;
+SELECT * FROM Exercise WHERE archived = 0 AND isFavorite = 1 ORDER BY name ASC;
 
 selectExerciseById:
 SELECT * FROM Exercise WHERE id = ?;
@@ -603,7 +606,7 @@ SELECT * FROM Exercise WHERE archived = 0 ORDER BY popularity DESC, name ASC;
 
 -- Get recently performed exercises
 selectRecentlyPerformed:
-SELECT * FROM Exercise WHERE lastPerformed IS NOT NULL ORDER BY lastPerformed DESC LIMIT ?;
+SELECT * FROM Exercise WHERE archived = 0 AND lastPerformed IS NOT NULL ORDER BY lastPerformed DESC LIMIT ?;
 
 -- Get exercises excluding archived
 selectActiveExercises:
@@ -652,22 +655,25 @@ WHERE routineSessionId = ?
 deleteAllSessions:
 DELETE FROM WorkoutSession;
 
--- Exercise Video Queries
-selectVideosByExercise:
-SELECT * FROM ExerciseVideo WHERE exerciseId = ? AND isTutorial = 0;
+-- Exercise image queries
+selectImagesByExercise:
+SELECT * FROM ExerciseImage WHERE exerciseId = ? ORDER BY sortOrder ASC, id ASC;
 
-countVideos:
-SELECT COUNT(*) FROM ExerciseVideo;
+countImages:
+SELECT COUNT(*) FROM ExerciseImage;
 
-insertVideo:
-INSERT INTO ExerciseVideo (exerciseId, angle, videoUrl, thumbnailUrl, isTutorial)
-VALUES (?, ?, ?, ?, ?);
+insertImage:
+INSERT INTO ExerciseImage (exerciseId, url, sortOrder)
+VALUES (?, ?, ?);
+
+deleteImagesForExercise:
+DELETE FROM ExerciseImage WHERE exerciseId = ?;
 
 deleteAllExercises:
 DELETE FROM Exercise;
 
-deleteAllVideos:
-DELETE FROM ExerciseVideo;
+deleteAllImages:
+DELETE FROM ExerciseImage;
 
 -- Workout Session Queries
 -- Issue #591 follow-up (chatgpt-codex-connector P2): filter soft-
@@ -2081,7 +2087,7 @@ getExercisesWithOneRepMax:
 SELECT * FROM Exercise WHERE one_rep_max_kg IS NOT NULL;
 
 findExerciseByName:
-SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) LIMIT 1;
+SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) ORDER BY archived ASC LIMIT 1;
 
 -- Exercise lookup for sync pull: exact match on name and muscle group
 findExerciseByNameAndMuscle:

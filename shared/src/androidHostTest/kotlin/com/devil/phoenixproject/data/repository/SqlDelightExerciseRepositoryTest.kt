@@ -23,7 +23,11 @@ class SqlDelightExerciseRepositoryTest {
     fun setup() {
         database = createTestDatabase()
         importer = ExerciseImporter(database)
-        repository = SqlDelightExerciseRepository(database, importer)
+        repository = SqlDelightExerciseRepository(
+            database,
+            importer,
+            com.devil.phoenixproject.testutil.FakePreferencesManager(),
+        )
     }
 
     @Test
@@ -94,81 +98,53 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
-    fun `getVideos returns exercise videos`() = runTest {
-        insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
-        database.vitruvianDatabaseQueries.insertVideo(
+    fun `getImages returns exercise demonstration stills`() = runTest {
+        insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "barbell")
+        database.vitruvianDatabaseQueries.insertImage(
             exerciseId = "ex-1",
-            angle = "front",
-            videoUrl = "https://example.com/video.mp4",
-            thumbnailUrl = "https://example.com/thumb.jpg",
-            isTutorial = 0L,
+            url = "https://example.com/0.jpg",
+            sortOrder = 0L,
+        )
+        database.vitruvianDatabaseQueries.insertImage(
+            exerciseId = "ex-1",
+            url = "https://example.com/1.jpg",
+            sortOrder = 1L,
         )
 
-        val videos = repository.getVideos("ex-1")
+        val images = repository.getImages("ex-1")
 
-        assertEquals(1, videos.size)
-        assertEquals("front", videos.first().angle)
+        assertEquals(2, images.size)
+        assertEquals("https://example.com/0.jpg", images.first().url)
+        assertEquals(1, images.last().sortOrder)
     }
 
     @Test
-    fun `getVideos excludes instructional tutorial videos`() = runTest {
-        insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
-        database.vitruvianDatabaseQueries.insertVideo(
-            exerciseId = "ex-1",
-            angle = "front",
-            videoUrl = "https://example.com/demo.mp4",
-            thumbnailUrl = "https://example.com/demo.jpg",
-            isTutorial = 0L,
-        )
-        database.vitruvianDatabaseQueries.insertVideo(
-            exerciseId = "ex-1",
-            angle = "tutorial",
-            videoUrl = "https://example.com/tutorial.mp4",
-            thumbnailUrl = "https://example.com/tutorial.jpg",
-            isTutorial = 1L,
-        )
-
-        val videos = repository.getVideos("ex-1")
-
-        assertEquals(1, videos.size)
-        assertEquals("front", videos.single().angle)
-        assertEquals(false, videos.single().isTutorial)
-    }
-
-    @Test
-    fun `import ignores instructional tutorial videos`() = runTest {
-        val result = importer.importFromJsonString(
+    fun `import maps free-exercise-db rows and images`() = runTest {
+        val result = importer.importFromFreeExerciseJson(
             """
             [
               {
-                "id": "ex-1",
-                "name": "Bench Press",
-                "equipment": ["BAR"],
-                "muscleGroups": ["CHEST"],
-                "videos": [
-                  {
-                    "video": "https://example.com/demo.mp4",
-                    "thumbnail": "https://example.com/demo.jpg",
-                    "angle": "front"
-                  }
-                ],
-                "tutorial": {
-                  "video": "https://example.com/tutorial.mp4",
-                  "thumbnail": "https://example.com/tutorial.jpg"
-                }
+                "id": "Barbell_Bench_Press_-_Medium_Grip",
+                "name": "Barbell Bench Press - Medium Grip",
+                "equipment": "barbell",
+                "primaryMuscles": ["chest"],
+                "secondaryMuscles": ["triceps", "shoulders"],
+                "instructions": ["Lie back.", "Press."],
+                "category": "strength",
+                "images": ["Barbell_Bench_Press_-_Medium_Grip/0.jpg"]
               }
             ]
             """.trimIndent(),
         )
 
         assertTrue(result.isSuccess)
-        val videos = repository.getVideos("ex-1")
-        val rawVideoCount = database.vitruvianDatabaseQueries.countVideos().executeAsOne()
-
-        assertEquals(1, rawVideoCount)
-        assertEquals(1, videos.size)
-        assertEquals("front", videos.single().angle)
-        assertEquals(false, videos.single().isTutorial)
+        val exercise = repository.getExerciseById("Barbell_Bench_Press_-_Medium_Grip")
+        assertNotNull(exercise)
+        assertEquals("Chest", exercise.muscleGroup)
+        assertEquals(false, exercise.isBodyweight)
+        val images = repository.getImages("Barbell_Bench_Press_-_Medium_Grip")
+        assertEquals(1, images.size)
+        assertTrue(images.single().url.contains("Barbell_Bench_Press_-_Medium_Grip/0.jpg"))
     }
 
     @Test
@@ -194,45 +170,29 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
-    fun `import normalizes audited single cable names while preserving correct entries`() = runTest {
-        val result = importer.importFromJsonString(
+    fun `import marks body-only rows as bodyweight`() = runTest {
+        val result = importer.importFromFreeExerciseJson(
             """
             [
               {
-                "id": "row-sc",
-                "name": "Bent Over Row (SC)",
-                "equipment": ["HANDLES"],
-                "muscleGroups": ["BACK"],
-                "muscles": ["lats"],
-                "sidedness": "bilateral"
-              },
-              {
-                "id": "reverse-lunge-sc",
-                "name": "Reverse Lunge (SC)",
-                "equipment": ["HANDLES"],
-                "muscleGroups": ["LEGS"],
-                "muscles": ["glutes"],
-                "movement": "unilateral_leg",
-                "sidedness": "unilateral"
+                "id": "Plank",
+                "name": "Plank",
+                "equipment": "body only",
+                "primaryMuscles": ["abdominals"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "strength",
+                "images": []
               }
             ]
             """.trimIndent(),
         )
 
         assertTrue(result.isSuccess)
-
-        val normalizedRow = database.vitruvianDatabaseQueries.selectExerciseById("row-sc").executeAsOneOrNull()
-        val reverseLunge = database.vitruvianDatabaseQueries.selectExerciseById("reverse-lunge-sc").executeAsOneOrNull()
-
-        assertNotNull(normalizedRow)
-        assertEquals("unilateral", normalizedRow.sidedness)
-        assertEquals("SINGLE", normalizedRow.defaultCableConfig)
-        assertEquals(ExerciseCableIntent.SINGLE, repository.getExerciseById("row-sc")?.cableIntent)
-
-        assertNotNull(reverseLunge)
-        assertEquals("unilateral", reverseLunge.sidedness)
-        assertEquals("SINGLE", reverseLunge.defaultCableConfig)
-        assertEquals(ExerciseCableIntent.SINGLE, repository.getExerciseById("reverse-lunge-sc")?.cableIntent)
+        val plank = repository.getExerciseById("Plank")
+        assertNotNull(plank)
+        assertEquals("Core", plank.muscleGroup)
+        assertEquals(true, plank.isBodyweight)
     }
 
     private fun insertExercise(
