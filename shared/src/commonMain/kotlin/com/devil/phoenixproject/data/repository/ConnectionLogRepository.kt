@@ -157,7 +157,7 @@ class ConnectionLogRepository {
      */
     fun exportAsText(): String {
         val sb = StringBuilder()
-        sb.appendLine("=== Vitruvian Connection Logs ===")
+        sb.appendLine("=== Connection Logs ===")
         sb.appendLine("Exported: ${formatTimestamp(currentTimeMillis())}")
         sb.appendLine("Total entries: ${_logs.value.size}")
         sb.appendLine()

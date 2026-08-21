@@ -5,7 +5,7 @@ package com.devil.phoenixproject.util
  */
 object Constants {
     // App version
-    const val APP_VERSION = "0.9.6"
+    const val APP_VERSION = "1.0.0"
 
     // EULA version - increment when EULA text changes materially
     // Users must re-accept when this version increases
@@ -132,7 +132,7 @@ object OneRepMaxCalculator {
 
 /**
  * Protocol constants for machine BLE frames.
- * NOTE: Legacy web app used different sizes and commands
+ * NOTE: older protocol revisions used different frame sizes and commands
  */
 @Suppress("unused") // Protocol reference constants
 object ProtocolConstants {
@@ -140,7 +140,7 @@ object ProtocolConstants {
 
     // Frame sizes
     const val STOP_PACKET_SIZE = 2
-    const val REGULAR_PACKET_SIZE = 25 // Was 96 in web app
+    const val REGULAR_PACKET_SIZE = 25
     const val ECHO_PACKET_SIZE = 32 // F308: matches BlePacketFactory.createEchoControl()
     const val ACTIVATION_PACKET_SIZE = 96 // F308: matches BlePacketFactory.createProgramParams()/ActivationPacket.SIZE
     const val COLOR_SCHEME_SIZE = 34

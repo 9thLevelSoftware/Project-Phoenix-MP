@@ -61,7 +61,7 @@ class BleConstantsTest {
 
     @Test
     fun `activation packet force config offsets match firmware layout`() {
-        // Official eccentric-up profile tail.
+        // Eccentric-up profile tail (firmware layout).
         assertEquals(0x48, BleConstants.ActivationPacket.OFFSET_ECC_UP_MIN_MMS)
         assertEquals(0x4A, BleConstants.ActivationPacket.OFFSET_ECC_UP_MAX_MMS)
         assertEquals(0x4C, BleConstants.ActivationPacket.OFFSET_ECC_UP_RAMP)
@@ -70,7 +70,7 @@ class BleConstantsTest {
         assertEquals(0x48, BleConstants.ActivationPacket.OFFSET_SOFT_MAX)
         assertEquals(0x4C, BleConstants.ActivationPacket.OFFSET_INCREMENT)
 
-        // Official force config block.
+        // Force config block (firmware layout).
         assertEquals(0x50, BleConstants.ActivationPacket.OFFSET_FORCE_MIN)
         assertEquals(0x54, BleConstants.ActivationPacket.OFFSET_FORCE_MAX)
         assertEquals(0x58, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT)

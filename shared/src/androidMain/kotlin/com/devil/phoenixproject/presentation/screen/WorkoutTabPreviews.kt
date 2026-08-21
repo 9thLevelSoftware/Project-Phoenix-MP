@@ -406,7 +406,7 @@ private fun WorkoutTabCountdownPreview() {
                         exercise = Exercise(
                             name = "Bench Press",
                             muscleGroup = "Chest",
-                            equipment = "Vitruvian",
+                            equipment = "Cable",
                             id = "bench-press",
                         ),
                         orderIndex = 0,
@@ -520,7 +520,7 @@ private fun WorkoutTabRestingPreview() {
 
 /**
  * Preview of WorkoutTab in set summary state - shows enhanced stats after completing a set.
- * Updated to showcase the new SetSummaryCard matching the official Vitruvian app design.
+ * Updated to showcase the new SetSummaryCard.
  */
 @Preview(
     name = "WorkoutTab - Set Summary (Enhanced)",
@@ -775,7 +775,7 @@ private fun WorkoutTabCompletedWithNextExercisePreview() {
                 exercise = Exercise(
                     name = "Bench Press",
                     muscleGroup = "Chest",
-                    equipment = "Vitruvian",
+                    equipment = "Cable",
                     id = "bench-press",
                 ),
                 orderIndex = 0,
@@ -789,7 +789,7 @@ private fun WorkoutTabCompletedWithNextExercisePreview() {
                 exercise = Exercise(
                     name = "Bent Over Rows",
                     muscleGroup = "Back",
-                    equipment = "Vitruvian",
+                    equipment = "Cable",
                     id = "rows",
                 ),
                 orderIndex = 1,

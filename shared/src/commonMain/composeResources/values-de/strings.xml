@@ -106,7 +106,7 @@
     <string name="connection_failed">Verbindung fehlgeschlagen</string>
     <string name="disconnect">Trennen</string>
     <string name="disconnect_title">Trennen?</string>
-    <string name="disconnect_message">Bist du sicher, dass du die Verbindung zum Vitruvian-Gerät trennen möchtest?</string>
+    <string name="disconnect_message">Bist du sicher, dass du die Verbindung zum Gerät trennen möchtest?</string>
 
     <!-- Settings -->
     <string name="settings_title">Einstellungen</string>
@@ -522,7 +522,6 @@
     <string name="cd_previous_exercise">Previous exercise</string>
     <string name="cd_next_exercise">Next exercise</string>
     <string name="cd_completed">Completed</string>
-    <string name="cd_video_thumbnail">Video thumbnail</string>
     <string name="cd_thumbnail_for">Thumbnail for %1$s</string>
     <string name="cd_clear_filters">Clear filters</string>
     <string name="cd_alphabet_nav">Alphabet navigation. Tap a letter to jump to exercises starting with that letter.</string>
@@ -769,10 +768,10 @@
     <string name="profile_recovery_message">Phoenix konnte nicht bestätigen, welches Profil aktiv ist. Versuche es erneut, bevor du fortfährst.</string>
     <string name="profile_recovery_retry_failed">Profilwiederherstellung ist weiterhin nicht verfügbar</string>
     <string name="profile_delete_reassign_message">„%1$s“ löschen? Trainings, Routinen, Rekorde, Abzeichen, Tests und Fortschrittsdaten werden zu Default verschoben. Dies kann nicht rückgängig gemacht werden.</string>
-    <string name="settings_video_behavior">Videoverhalten</string>
-    <string name="settings_show_exercise_videos">Übungsvideos anzeigen</string>
+    <string name="settings_video_behavior">Übungsdemos</string>
+    <string name="settings_show_exercise_videos">Übungsdemos anzeigen</string>
     <string name="settings_show_exercise_videos_description">Übungsdemonstrationen anzeigen; auf langsameren Geräten deaktivieren</string>
-    <string name="settings_exercise_demos_disabled">Videowiedergabe deaktiviert</string>
+    <string name="settings_exercise_demos_disabled">Übungsdemos deaktiviert</string>
     <string name="profile_weight_increment">Gewichtsschritt</string>
     <string name="profile_body_weight">Körpergewicht</string>
     <string name="profile_set_summary">Dauer der Satzzusammenfassung</string>

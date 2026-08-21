@@ -1,10 +1,13 @@
 package com.devil.phoenixproject.data.local
 
 /**
- * Maps archived Vitruvian catalogue IDs onto the replacement free-exercise-db slugs
- * used by cycle templates and 5/3/1 detection. Name matching covers remaining stock
- * rows whose names are unchanged; [nameAliases] and [stemKey] cover reviewed
- * singular/plural renames such as Rack Pull → Rack Pulls.
+ * Maps archived legacy catalogue row IDs onto the replacement free-exercise-db slugs
+ * used by cycle templates and 5/3/1 detection. The keys are opaque identifiers only —
+ * this object carries no catalogue content (names, descriptions, media) and exists
+ * solely so user-owned sessions, PRs, and routines created before migration 43 keep
+ * resolving. Name matching covers remaining archived rows whose names are unchanged;
+ * [nameAliases] and [stemKey] cover reviewed singular/plural renames such as
+ * Rack Pull → Rack Pulls.
  */
 object LegacyCatalogueIdMap {
     val explicit: Map<String, String> = mapOf(

@@ -24,7 +24,7 @@ data class Exercise(
     val muscleGroup: String,
     val muscleGroups: String = muscleGroup, // Comma-separated list of primary muscle groups (defaults to muscleGroup for backward compatibility)
     val equipment: String = "",
-    val id: String? = null, // Optional exercise library ID for loading videos/thumbnails
+    val id: String? = null, // Optional exercise library ID (free-exercise-db slug, wger_<id>, or custom_<ts>) used to load demo images
     val isFavorite: Boolean = false, // Whether exercise is marked as favorite
     val isCustom: Boolean = false, // Whether exercise was created by user
     val timesPerformed: Int = 0, // Number of times this exercise has been performed

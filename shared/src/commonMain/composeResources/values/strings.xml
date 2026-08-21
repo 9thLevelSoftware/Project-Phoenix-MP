@@ -120,7 +120,7 @@
     <string name="connection_failed">Connection Failed</string>
     <string name="disconnect">Disconnect</string>
     <string name="disconnect_title">Disconnect?</string>
-    <string name="disconnect_message">Are you sure you want to disconnect from the Vitruvian machine?</string>
+    <string name="disconnect_message">Are you sure you want to disconnect from the trainer?</string>
     <string name="disconnect_integration_title">Disconnect integration?</string>
     <string name="disconnect_integration_message">Are you sure you want to disconnect %1$s? This will remove the integration and may interrupt a scheduled sync.</string>
     <string name="banner_not_connected_to_machine">Not connected to machine</string>
@@ -609,7 +609,6 @@
     <string name="cd_previous_exercise">Previous exercise</string>
     <string name="cd_next_exercise">Next exercise</string>
     <string name="cd_completed">Completed</string>
-    <string name="cd_video_thumbnail">Video thumbnail</string>
     <string name="cd_thumbnail_for">Thumbnail for %1$s</string>
     <string name="cd_clear_filters">Clear filters</string>
     <string name="cd_alphabet_nav">Alphabet navigation. Tap a letter to jump to exercises starting with that letter.</string>
@@ -870,8 +869,6 @@
     <string name="cd_strength_assessment_cta">Open Strength Assessment picker</string>
     <string name="cd_exercise_history_detail">View exercise history and 1RM</string>
 
-    <!-- ==================== Video Player ==================== -->
-    <string name="video_preview_unavailable">Video preview unavailable</string>
 
     <!-- ==================== Just Lift auto-start honesty (task-5B.3) ==================== -->
     <string name="autostart_connect_prompt">Connect to enable auto-start</string>
@@ -913,10 +910,10 @@
     <string name="profile_recovery_message">Phoenix could not confirm which profile is active. Retry before continuing.</string>
     <string name="profile_recovery_retry_failed">Profile recovery is still unavailable</string>
     <string name="profile_delete_reassign_message">Delete &quot;%1$s&quot;? Its workouts, routines, records, badges, assessments, and progression data will move to Default. This cannot be undone.</string>
-    <string name="settings_video_behavior">Video Behavior</string>
+    <string name="settings_video_behavior">Exercise Demos</string>
     <string name="settings_show_exercise_videos">Show Exercise Demos</string>
     <string name="settings_show_exercise_videos_description">Display exercise demonstration stills; turn this off on slower devices</string>
-    <string name="settings_exercise_demos_disabled">Video Playback Disabled</string>
+    <string name="settings_exercise_demos_disabled">Exercise Demos Disabled</string>
     <string name="settings_refresh_wger_catalog">Refresh extra exercises from wger</string>
     <string name="settings_refresh_wger_catalog_description">Downloads openly licensed exercises from wger (CC-BY-SA). Does not replace the bundled catalogue.</string>
     <string name="settings_refresh_wger_catalog_success">Added %1$d exercises from wger</string>

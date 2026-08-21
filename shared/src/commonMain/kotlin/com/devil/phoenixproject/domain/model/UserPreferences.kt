@@ -10,7 +10,7 @@ data class UserPreferences(
     // Issue #167: autoplayEnabled removed - now derived from summaryCountdownSeconds
     // summaryCountdownSeconds == 0 (Unlimited) = autoplay OFF, != 0 = autoplay ON
     val stopAtTop: Boolean = false, // false = stop at bottom (extended), true = stop at top (contracted)
-    val enableVideoPlayback: Boolean = true, // true = show videos, false = hide videos to avoid slow loading
+    val enableVideoPlayback: Boolean = true, // true = show exercise demo images, false = hide them to avoid slow loading
     val beepsEnabled: Boolean = true, // true = play audio cues during workouts, false = haptic only
     val colorScheme: Int = 0,
     val discoModeUnlocked: Boolean = false, // Easter egg - unlocked by tapping LED header 7 times

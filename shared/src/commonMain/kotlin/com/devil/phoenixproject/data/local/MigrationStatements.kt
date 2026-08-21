@@ -917,24 +917,16 @@ WHERE gs.rowid = (
     39 -> listOf(
         "ALTER TABLE Exercise ADD COLUMN isBodyweight INTEGER",
         "ALTER TABLE RoutineExercise ADD COLUMN isBodyweight INTEGER",
-        """UPDATE Exercise SET isBodyweight = 0 WHERE id IN (
-        'UjIGHxCav-lS9B2I',
-        'enuJ_FgAzXDLAweK',
-        'KoL_gx00nuf2wncV',
-        'kSLyRg4bjLuzTeIM',
-        '2nTn2QR6MyezFYmK',
-        'fAglxv8VMaisUTyo'
+        """UPDATE Exercise SET isBodyweight = 0
+    WHERE isCustom = 0 AND TRIM(name) IN (
+        'Squat',
+        'Good Morning',
+        'Medial Delt Twist',
+        'Kneeling 45 Degree Kickback',
+        'Just Lift exercise'
     )""",
         """UPDATE RoutineExercise SET isBodyweight = 1, exerciseEquipment = ''
     WHERE exerciseEquipment = 'Bodyweight'""",
-        """UPDATE RoutineExercise SET isBodyweight = 0 WHERE exerciseId IN (
-        'UjIGHxCav-lS9B2I',
-        'enuJ_FgAzXDLAweK',
-        'KoL_gx00nuf2wncV',
-        'kSLyRg4bjLuzTeIM',
-        '2nTn2QR6MyezFYmK',
-        'fAglxv8VMaisUTyo'
-    )""",
         """UPDATE RoutineExercise SET isBodyweight = 0
     WHERE isBodyweight IS NULL AND TRIM(exerciseName) IN (
         'Squat',

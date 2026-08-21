@@ -624,7 +624,7 @@ class MainViewModelTest {
         advanceUntilIdle()
 
         assertEquals(WorkoutState.Active, viewModel.workoutState.value)
-        // Official activation starts send CONFIG (0x04) only, without legacy START (0x03).
+        // Activation sends CONFIG (0x04) only; the legacy START (0x03) command is not sent.
         assertEquals(1, fakeBleRepository.commandsReceived.size)
         assertEquals(0x04.toByte(), fakeBleRepository.commandsReceived[0][0])
         assertFalse(fakeBleRepository.commandsReceived.any { it.firstOrNull() == 0x03.toByte() })

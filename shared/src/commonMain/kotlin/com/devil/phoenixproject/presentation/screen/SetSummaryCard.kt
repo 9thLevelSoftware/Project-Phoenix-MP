@@ -46,7 +46,7 @@ import vitruvianprojectphoenix.shared.generated.resources.*
 import vitruvianprojectphoenix.shared.generated.resources.Res
 
 /**
- * Enhanced Set Summary Card - matches official Vitruvian app design
+ * Enhanced Set Summary Card
  * Shows detailed metrics: reps, volume, mode, peak/avg forces, duration, energy
  */
 @Composable
@@ -99,7 +99,7 @@ fun SetSummaryCard(
     }
 
     // Calculate display values.
-    // Official app primary load display is per-cable. Total volume is already a total value,
+    // Primary load display is per-cable. Total volume is already a total value,
     // so it only needs unit conversion.
     val displayReps = summary.repCount
     val totalVolumeDisplay = kgToDisplay(summary.totalVolumeKg, weightUnit)

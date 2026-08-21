@@ -347,7 +347,7 @@ class SchemaParityTest {
                 id, name, created, muscleGroup, muscleGroups, equipment,
                 popularity, archived, isFavorite, isCustom, timesPerformed, defaultCableConfig
             ) VALUES (
-                'UjIGHxCav-lS9B2I', 'Squat', 0, 'LEGS', 'LEGS', '',
+                'legacy-squat', 'Squat', 0, 'LEGS', 'LEGS', '',
                 0, 0, 0, 0, 0, 'DOUBLE'
             )
             """.trimIndent(),
@@ -361,7 +361,7 @@ class SchemaParityTest {
                 id, name, created, muscleGroup, muscleGroups, equipment,
                 popularity, archived, isFavorite, isCustom, timesPerformed, defaultCableConfig
             ) VALUES (
-                'U9nn8f-vcAltrR-E', 'Plank', 0, 'CORE', 'CORE', '',
+                'legacy-plank', 'Plank', 0, 'CORE', 'CORE', '',
                 0, 0, 0, 0, 0, 'DOUBLE'
             )
             """.trimIndent(),
@@ -391,7 +391,7 @@ class SchemaParityTest {
             INSERT INTO RoutineExercise (
                 id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment, exerciseId, orderIndex, weightPerCableKg
             ) VALUES (
-                'rex-squat', 'routine-635', 'Squat', 'LEGS', '', 'UjIGHxCav-lS9B2I', 1, 40.0
+                'rex-squat', 'routine-635', 'Squat', 'LEGS', '', 'legacy-squat', 1, 40.0
             )
             """.trimIndent(),
             0,
@@ -428,8 +428,8 @@ class SchemaParityTest {
         assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "isBodyweight"))
 
         // Squat backfilled to explicit cable (0); Plank untouched (NULL = derived)
-        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'UjIGHxCav-lS9B2I'"))
-        assertEquals(null, queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'U9nn8f-vcAltrR-E'"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'legacy-squat'"))
+        assertEquals(null, queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'legacy-plank'"))
 
         // Sentinel converted to explicit flag and cleared from equipment
         assertEquals("1", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-sentinel'"))
@@ -464,7 +464,7 @@ class SchemaParityTest {
                 id, name, created, muscleGroup, muscleGroups, equipment,
                 popularity, archived, isFavorite, isCustom, timesPerformed, defaultCableConfig
             ) VALUES (
-                'UjIGHxCav-lS9B2I', 'Squat', 0, 'LEGS', 'LEGS', '',
+                'legacy-squat', 'Squat', 0, 'LEGS', 'LEGS', '',
                 0, 0, 0, 0, 0, 'DOUBLE'
             )
             """.trimIndent(),
@@ -491,7 +491,7 @@ class SchemaParityTest {
         migrateWithResilience(driver, 39, 40)
 
         assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "isBodyweight"))
-        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'UjIGHxCav-lS9B2I'"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'legacy-squat'"))
         assertEquals("1", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-sentinel-resilient'"))
         assertEquals("", queryScalar(driver, "SELECT exerciseEquipment FROM RoutineExercise WHERE id = 'rex-sentinel-resilient'"))
     }
