@@ -335,6 +335,54 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
         }
     }
 
+    /**
+     * Points history, PRs, routines, and other per-exercise rows at replacement
+     * catalogue IDs so the active picker entries keep prior work.
+     */
+    fun remapLegacyCatalogueIds() {
+        val stock = queries.selectStockExercisesForRemap().executeAsList()
+        val activeById = stock.filter { it.archived == 0L }.associateBy { it.id }
+        val activeByName = stock.filter { it.archived == 0L }
+            .groupBy { it.name.lowercase().trim() }
+            .mapNotNull { (name, rows) -> rows.singleOrNull()?.let { name to it.id } }
+            .toMap()
+        val archived = stock.filter { it.archived == 1L }
+
+        val mappings = LinkedHashMap<String, String>()
+        for (row in archived) {
+            val explicit = LegacyCatalogueIdMap.explicit[row.id]
+            if (explicit != null && activeById.containsKey(explicit) && explicit != row.id) {
+                mappings[row.id] = explicit
+            }
+        }
+        for (row in archived) {
+            if (row.id in mappings) continue
+            val byName = activeByName[row.name.lowercase().trim()]
+            if (byName != null && byName != row.id) {
+                mappings[row.id] = byName
+            }
+        }
+
+        if (mappings.isEmpty()) return
+
+        queries.transaction {
+            for ((oldId, newId) in mappings) {
+                queries.mergeLegacyExerciseUserFields(oldId = oldId, newId = newId)
+                queries.reassignWorkoutSessionExerciseId(newId = newId, oldId = oldId)
+                queries.reassignRoutineExerciseId(newId = newId, oldId = oldId)
+                queries.deleteConflictingPersonalRecords(newId = newId, oldId = oldId)
+                queries.reassignPersonalRecordExerciseId(newId = newId, oldId = oldId)
+                queries.reassignExerciseSignatureExerciseId(newId = newId, oldId = oldId)
+                queries.reassignAssessmentResultExerciseId(newId = newId, oldId = oldId)
+                queries.reassignVelocityOneRepMaxExerciseId(newId = newId, oldId = oldId)
+                queries.deleteConflictingExerciseMvt(newId = newId, oldId = oldId)
+                queries.reassignExerciseMvtExerciseId(newId = newId, oldId = oldId)
+                queries.reassignProgressionEventExerciseId(newId = newId, oldId = oldId)
+            }
+        }
+        Logger.d { "Remapped ${mappings.size} legacy catalogue IDs onto replacement rows" }
+    }
+
     private fun generateDisplayNames(exercises: List<FreeExerciseJson>): Map<String, String> {
         val grouped = exercises.groupBy { it.name.lowercase().trim() }
         return exercises.associate { exercise ->

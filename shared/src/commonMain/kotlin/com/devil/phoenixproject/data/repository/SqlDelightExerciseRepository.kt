@@ -146,22 +146,19 @@ class SqlDelightExerciseRepository(
     override suspend fun importExercises(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
             val currentSource = preferencesManager.getExerciseCatalogSource()
-            if (currentSource == ExerciseImporter.BUNDLED_CATALOG_SOURCE) {
-                Logger.d { "Exercise catalogue already imported ($currentSource)" }
-                return@withContext Result.success(Unit)
-            }
-
-            Logger.d { "Importing bundled free-exercise-db catalogue..." }
-            val result = exerciseImporter.importExercises()
-            val importedCount = result.getOrNull() ?: 0
-            if (result.isSuccess && importedCount > 0) {
+            if (currentSource != ExerciseImporter.BUNDLED_CATALOG_SOURCE) {
+                Logger.d { "Importing bundled free-exercise-db catalogue..." }
+                val result = exerciseImporter.importExercises()
+                val importedCount = result.getOrNull() ?: 0
+                if (!result.isSuccess || importedCount <= 0) {
+                    return@withContext result.exceptionOrNull()?.let { Result.failure(it) }
+                        ?: Result.failure(Exception("Import produced no exercises"))
+                }
                 preferencesManager.setExerciseCatalogSource(ExerciseImporter.BUNDLED_CATALOG_SOURCE)
                 Logger.d { "Successfully imported $importedCount exercises" }
-                Result.success(Unit)
-            } else {
-                result.exceptionOrNull()?.let { Result.failure(it) }
-                    ?: Result.failure(Exception("Import produced no exercises"))
             }
+            exerciseImporter.remapLegacyCatalogueIds()
+            Result.success(Unit)
         } catch (e: Exception) {
             Logger.e(e) { "Failed to import exercises" }
             Result.failure(e)

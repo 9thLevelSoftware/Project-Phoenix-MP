@@ -621,6 +621,73 @@ WHERE id = ? AND isCustom = 0;
 countExercises:
 SELECT COUNT(*) FROM Exercise;
 
+selectStockExercisesForRemap:
+SELECT id, name, archived FROM Exercise WHERE isCustom = 0;
+
+reassignWorkoutSessionExerciseId:
+UPDATE WorkoutSession SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+reassignRoutineExerciseId:
+UPDATE RoutineExercise SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+deleteConflictingPersonalRecords:
+DELETE FROM PersonalRecord WHERE id IN (
+    SELECT oldRow.id FROM PersonalRecord AS oldRow
+    INNER JOIN PersonalRecord AS newRow
+        ON newRow.exerciseId = :newId
+        AND oldRow.exerciseId = :oldId
+        AND newRow.workoutMode = oldRow.workoutMode
+        AND newRow.prType = oldRow.prType
+        AND newRow.phase = oldRow.phase
+        AND newRow.profile_id = oldRow.profile_id
+);
+
+reassignPersonalRecordExerciseId:
+UPDATE PersonalRecord SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+reassignExerciseSignatureExerciseId:
+UPDATE ExerciseSignature SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+reassignAssessmentResultExerciseId:
+UPDATE AssessmentResult SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+reassignVelocityOneRepMaxExerciseId:
+UPDATE VelocityOneRepMaxEstimate SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+deleteConflictingExerciseMvt:
+DELETE FROM ExerciseMvt WHERE exerciseId = :oldId AND profile_id IN (
+    SELECT profile_id FROM ExerciseMvt WHERE exerciseId = :newId
+);
+
+reassignExerciseMvtExerciseId:
+UPDATE ExerciseMvt SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+reassignProgressionEventExerciseId:
+UPDATE ProgressionEvent SET exercise_id = :newId WHERE exercise_id = :oldId;
+
+mergeLegacyExerciseUserFields:
+UPDATE Exercise SET
+    isFavorite = CASE
+        WHEN isFavorite = 1 THEN 1
+        WHEN (SELECT isFavorite FROM Exercise WHERE id = :oldId) = 1 THEN 1
+        ELSE isFavorite
+    END,
+    timesPerformed = timesPerformed + COALESCE((SELECT timesPerformed FROM Exercise WHERE id = :oldId), 0),
+    lastPerformed = CASE
+        WHEN lastPerformed IS NULL THEN (SELECT lastPerformed FROM Exercise WHERE id = :oldId)
+        WHEN (SELECT lastPerformed FROM Exercise WHERE id = :oldId) IS NULL THEN lastPerformed
+        WHEN lastPerformed >= (SELECT lastPerformed FROM Exercise WHERE id = :oldId) THEN lastPerformed
+        ELSE (SELECT lastPerformed FROM Exercise WHERE id = :oldId)
+    END,
+    one_rep_max_kg = CASE
+        WHEN one_rep_max_kg IS NULL THEN (SELECT one_rep_max_kg FROM Exercise WHERE id = :oldId)
+        WHEN (SELECT one_rep_max_kg FROM Exercise WHERE id = :oldId) IS NULL THEN one_rep_max_kg
+        WHEN one_rep_max_kg >= (SELECT one_rep_max_kg FROM Exercise WHERE id = :oldId) THEN one_rep_max_kg
+        ELSE (SELECT one_rep_max_kg FROM Exercise WHERE id = :oldId)
+    END,
+    mvtOverrideMs = COALESCE(mvtOverrideMs, (SELECT mvtOverrideMs FROM Exercise WHERE id = :oldId))
+WHERE id = :newId AND isCustom = 0;
+
 -- Increment times performed and update last performed timestamp
 incrementPerformed:
 UPDATE Exercise

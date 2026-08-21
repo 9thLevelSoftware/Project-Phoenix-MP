@@ -333,6 +333,119 @@ class SqlDelightExerciseRepositoryTest {
         assertEquals("Plank", byCase.id)
     }
 
+    @Test
+    fun `remap moves history and PRs onto replacement catalogue ids`() = runTest {
+        insertExercise(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+            isFavorite = 1L,
+            oneRepMaxKg = 100.0,
+            timesPerformed = 4L,
+        )
+        database.vitruvianDatabaseQueries.insertRecord(
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+            exerciseName = "Bench Press",
+            weight = 80.0,
+            reps = 5,
+            oneRepMax = 90.0,
+            achievedAt = 1_700_000_000_000L,
+            workoutMode = "OldSchool",
+            prType = "MAX_WEIGHT",
+            volume = 400.0,
+            phase = "COMBINED",
+            profile_id = "default",
+            cable_count = 2,
+            uuid = null,
+        )
+        database.vitruvianDatabaseQueries.insertSession(
+            id = "session-legacy-bench",
+            timestamp = 1_700_000_000_000L,
+            mode = "OldSchool",
+            targetReps = 5,
+            weightPerCableKg = 40.0,
+            progressionKg = 0.0,
+            duration = 60,
+            totalReps = 5,
+            warmupReps = 0,
+            workingReps = 5,
+            isJustLift = 0,
+            stopAtTop = 0,
+            eccentricLoad = 100,
+            echoLevel = 1,
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+            exerciseName = "Bench Press",
+            routineSessionId = null,
+            routineName = null,
+            routineId = null,
+            safetyFlags = 0,
+            deloadWarningCount = 0,
+            romViolationCount = 0,
+            spotterActivations = 0,
+            peakForceConcentricA = null,
+            peakForceConcentricB = null,
+            peakForceEccentricA = null,
+            peakForceEccentricB = null,
+            avgForceConcentricA = null,
+            avgForceConcentricB = null,
+            avgForceEccentricA = null,
+            avgForceEccentricB = null,
+            heaviestLiftKg = 40.0,
+            totalVolumeKg = 200.0,
+            cableCount = 2,
+            estimatedCalories = null,
+            warmupAvgWeightKg = null,
+            workingAvgWeightKg = 40.0,
+            burnoutAvgWeightKg = null,
+            peakWeightKg = 40.0,
+            rpe = null,
+            avgMcvMmS = null,
+            avgAsymmetryPercent = null,
+            totalVelocityLossPercent = null,
+            dominantSide = null,
+            strengthProfile = null,
+            formScore = null,
+            profile_id = "default",
+            display_multiplier = 2,
+            externalAddedLoadKg = 0.0,
+            counterweightKg = 0.0,
+            rackItemsJson = "[]",
+        )
+
+        val imported = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Barbell_Bench_Press_-_Medium_Grip",
+                "name": "Barbell Bench Press - Medium Grip",
+                "equipment": "barbell",
+                "primaryMuscles": ["chest"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "strength",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
+        assertTrue(imported.isSuccess)
+        importer.remapLegacyCatalogueIds()
+
+        val replacement = "Barbell_Bench_Press_-_Medium_Grip"
+        val session = database.vitruvianDatabaseQueries.selectSessionById("session-legacy-bench").executeAsOne()
+        assertEquals(replacement, session.exerciseId)
+        val prs = database.vitruvianDatabaseQueries.selectAllPRsForExercise(replacement, "default").executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals(80.0, prs.single().weight)
+        val exercise = repository.getExerciseById(replacement)
+        assertNotNull(exercise)
+        assertEquals(true, exercise.isFavorite)
+        assertEquals(100.0f, exercise.oneRepMaxKg)
+        assertEquals(4, exercise.timesPerformed)
+    }
+
     private fun insertExercise(
         id: String,
         name: String,
