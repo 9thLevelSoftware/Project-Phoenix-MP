@@ -294,6 +294,33 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     @Test
+    fun `getRecentCompletedSetsForExercise collapses unbounded attempts before the history limit`() = runTest {
+        repeat(6) { attempt ->
+            val sessionId = "attempt-session-$attempt"
+            insertWorkoutSession(sessionId, "bench", routineSessionId = "run-unbounded")
+            repository.saveCompletedSet(
+                completedSet(
+                    "attempt-$attempt",
+                    sessionId,
+                    0,
+                    routineExerciseId = "exercise-1",
+                    attemptNumber = attempt + 1,
+                ).copy(completedAt = 1000L + attempt, actualReps = attempt),
+            )
+        }
+        insertWorkoutSession("older-session", "bench", routineSessionId = "run-older")
+        repository.saveCompletedSet(
+            completedSet("older", "older-session", 0, routineExerciseId = "exercise-1")
+                .copy(completedAt = 100L),
+        )
+
+        val recent = repository.getRecentCompletedSetsForExercise("bench", 1, "default")
+
+        assertEquals(listOf("attempt-5"), recent.map { it.id })
+        assertEquals(6, recent.single().attemptNumber)
+    }
+
+    @Test
     fun `isAttemptDurable requires exact stable session logical key and attempt on authoritative session`() = runTest {
         insertWorkoutSession("durable-session", "bench", routineSessionId = "routine-session-a")
         insertWorkoutSession("other-stable-session", "bench", routineSessionId = "routine-session-a")

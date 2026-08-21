@@ -3,7 +3,6 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSet
-import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlinx.coroutines.flow.Flow
 
@@ -121,8 +120,6 @@ interface CompletedSetRepository {
     suspend fun deleteCompletedSetsForSession(sessionId: String)
 }
 
-internal const val LOGICAL_SET_ATTEMPT_OVERSCAN = 4
-
 internal fun collapseCompletedSetsToLatestLogicalAttempts(
     sets: List<CompletedSet>,
     routineSessionIdFor: (sessionId: String) -> String?,
@@ -131,7 +128,6 @@ internal fun collapseCompletedSetsToLatestLogicalAttempts(
         val routineSessionId: String,
         val routineExerciseId: String,
         val setNumber: Int,
-        val setType: SetType,
     )
     val selected = LinkedHashMap<Any, CompletedSet>()
     for (set in sets) {
@@ -140,7 +136,7 @@ internal fun collapseCompletedSetsToLatestLogicalAttempts(
         val key: Any = if (routineSessionId.isNullOrBlank() || routineExerciseId.isNullOrBlank()) {
             set.id
         } else {
-            LogicalKey(routineSessionId, routineExerciseId, set.setNumber, set.setType)
+            LogicalKey(routineSessionId, routineExerciseId, set.setNumber)
         }
         val existing = selected[key]
         if (existing == null) {

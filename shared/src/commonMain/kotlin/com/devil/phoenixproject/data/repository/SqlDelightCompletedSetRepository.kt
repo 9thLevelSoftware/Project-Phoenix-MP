@@ -164,12 +164,11 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
     }
 
     override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> = withContext(Dispatchers.IO) {
-        val overscan = (limit.coerceAtLeast(1) * LOGICAL_SET_ATTEMPT_OVERSCAN).toLong()
         val routineSessionBySessionId = mutableMapOf<String, String?>()
         val sets = queries.selectRecentCompletedSetsForExercise(
             exerciseId,
             profileId,
-            overscan,
+            limit.coerceAtLeast(1).toLong(),
         ) { id, sessionId, plannedSetId, routineExerciseId, setNumber, setType, attemptNumber, actualReps, actualWeightKg, loggedRpe, isPr, completedAt, setEndReason, routineSessionId ->
             routineSessionBySessionId[sessionId] = routineSessionId
             mapToCompletedSet(
@@ -188,7 +187,7 @@ class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepo
                 setEndReason,
             )
         }.executeAsList()
-        collapseCompletedSetsToLatestLogicalAttempts(sets, routineSessionBySessionId::get).take(limit)
+        collapseCompletedSetsToLatestLogicalAttempts(sets, routineSessionBySessionId::get)
     }
 
     override suspend fun saveCompletedSet(set: CompletedSet) {

@@ -93,20 +93,16 @@ class RestoredRuntimeTimerRaceTest {
             runCurrent()
             val staleOwner = assertNotNull(harness.activeSessionEngine.currentRestoredRestTimerOwnerForTest())
             val staleJob = assertNotNull(harness.activeSessionEngine.currentRestoredRestTimerJobForTest())
-            var intercepted = false
-            harness.activeSessionEngine.beforeRestoredRestTimerOwnerCompareAndClearForTest = { expectedOwner ->
-                if (!intercepted && expectedOwner == staleOwner) {
-                    intercepted = true
-                    staleDetachEntered.complete(Unit)
-                    runBlocking { releaseStaleDetach.await() }
-                }
+            harness.activeSessionEngine.afterResetCleanupTokenCaptureForTest = {
+                staleDetachEntered.complete(Unit)
+                runBlocking { releaseStaleDetach.await() }
             }
 
             val staleReset = async(Dispatchers.Default) {
                 harness.dwsm.resetForNewWorkout()
             }
             withContext(Dispatchers.IO) {
-                withTimeout(10_000L) { staleDetachEntered.await() }
+                withTimeout(2_000L) { staleDetachEntered.await() }
             }
 
             val newer = installActiveTimerRuntime(harness, "newer-resume-b")
@@ -123,7 +119,7 @@ class RestoredRuntimeTimerRaceTest {
 
             releaseStaleDetach.complete(Unit)
             withContext(Dispatchers.IO) {
-                withTimeout(10_000L) { staleReset.await() }
+                withTimeout(2_000L) { staleReset.await() }
             }
 
             assertEquals(newerOwner, harness.activeSessionEngine.currentRestoredRuntimeOwnerForTest())
@@ -147,7 +143,7 @@ class RestoredRuntimeTimerRaceTest {
             )
         } finally {
             releaseStaleDetach.complete(Unit)
-            harness.activeSessionEngine.beforeRestoredRestTimerOwnerCompareAndClearForTest = null
+            harness.activeSessionEngine.afterResetCleanupTokenCaptureForTest = null
             harness.cleanup()
         }
     }

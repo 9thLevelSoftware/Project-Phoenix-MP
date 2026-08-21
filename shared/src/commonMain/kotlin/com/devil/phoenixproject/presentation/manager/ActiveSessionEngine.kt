@@ -6997,6 +6997,7 @@ class ActiveSessionEngine(
         supersedePendingResetStart()
         cleanupTarget?.let(::launchRuntimeCleanup)
         if (acceptedRetryStartClaim.value != null && coordinator.workoutJob?.isActive == true) {
+            afterResetCleanupTokenCaptureForTest?.invoke()
             restoredTimerOwner?.let(::detachRestoredRestTimerIfExact)?.cancel()
             coordinator.workoutJob?.cancel(CancellationException("Accepted retry reset requested"))
             return

@@ -186,6 +186,7 @@ class ProgressionUseCaseTest {
                     routineExerciseId = "occurrence-1",
                     attemptNumber = 2,
                     setNumber = 0,
+                    setType = SetType.DROP_SET,
                 ),
                 completedSet(
                     id = "failed",
@@ -240,12 +241,13 @@ class ProgressionUseCaseTest {
         routineExerciseId: String? = null,
         attemptNumber: Int = 1,
         setNumber: Int = 1,
+        setType: SetType = SetType.STANDARD,
     ): CompletedSet = CompletedSet(
         id = id,
         sessionId = sessionId,
         plannedSetId = null,
         setNumber = setNumber,
-        setType = SetType.STANDARD,
+        setType = setType,
         actualReps = reps,
         actualWeightKg = weight,
         loggedRpe = rpe,
