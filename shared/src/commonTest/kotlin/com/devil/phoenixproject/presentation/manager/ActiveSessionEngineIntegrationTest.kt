@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
@@ -349,6 +350,40 @@ class ActiveSessionEngineIntegrationTest {
     }
 
     @Test
+    fun completing_day_four_of_legacy_catalogue_id_531_cycle_emits_new_week_number() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val cycle = seedFiveThreeOneCycle(
+                harness,
+                templateId = null,
+                benchId = FiveThreeOneRoutineDetector.LEGACY_BENCH_ID,
+                squatId = FiveThreeOneRoutineDetector.LEGACY_SQUAT_ID,
+                shoulderPressId = FiveThreeOneRoutineDetector.LEGACY_SHOULDER_PRESS_ID,
+                deadliftId = FiveThreeOneRoutineDetector.LEGACY_DEADLIFT_ID,
+            )
+            harness.fakeTrainingCycleRepo.initializeProgress(cycle.id)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+            completeCycleWorkoutDay(
+                harness = harness,
+                routineId = "routine-deadlift",
+                cycleId = cycle.id,
+                dayNumber = 4,
+                engine = harness.activeSessionEngine,
+            )
+            advanceUntilIdle()
+
+            val completionEvent = harness.coordinator.cycleDayCompletionEvent.value
+            assertNotNull(completionEvent)
+            assertTrue(completionEvent.isRotationComplete)
+            assertEquals(2, completionEvent.newWeekNumber)
+            assertEquals(2, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun first_set_of_day_four_531_cycle_does_not_advance_week() = runTest {
         val harness = DWSMTestHarness(this)
         try {
@@ -515,11 +550,15 @@ class ActiveSessionEngineIntegrationTest {
         harness: DWSMTestHarness,
         weekNumber: Int = 1,
         templateId: String? = "template_531",
+        benchId: String = BENCH_ID,
+        squatId: String = SQUAT_ID,
+        shoulderPressId: String = SHOULDER_PRESS_ID,
+        deadliftId: String = DEADLIFT_ID,
     ): TrainingCycle {
-        val bench = seededMainLift(BENCH_ID, "Bench Press", 100f)
-        val squat = seededMainLift(SQUAT_ID, "Squat", 140f)
-        val press = seededMainLift(SHOULDER_PRESS_ID, "Shoulder Press", 90f)
-        val deadlift = seededMainLift(DEADLIFT_ID, "Conventional Deadlift", 160f)
+        val bench = seededMainLift(benchId, "Bench Press", 100f)
+        val squat = seededMainLift(squatId, "Squat", 140f)
+        val press = seededMainLift(shoulderPressId, "Shoulder Press", 90f)
+        val deadlift = seededMainLift(deadliftId, "Conventional Deadlift", 160f)
         val inclineBench = accessoryExercise("incline", "Incline Bench Press")
         val row = accessoryExercise("row", "Bent Over Row")
         val plank = Exercise(id = "plank", name = "Plank", muscleGroup = "Core", muscleGroups = "Core", equipment = "")

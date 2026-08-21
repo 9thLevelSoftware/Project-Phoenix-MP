@@ -6,8 +6,24 @@ object FiveThreeOneRoutineDetector {
     const val SQUAT_ID = "Barbell_Squat"
     const val DEADLIFT_ID = "Barbell_Deadlift"
 
+    const val LEGACY_BENCH_ID = "ZZ92N8QsBdp6HCh3"
+    const val LEGACY_SHOULDER_PRESS_ID = "0040d53f-85c7-4564-b14e-9b38c979b461"
+    const val LEGACY_SQUAT_ID = "UjIGHxCav-lS9B2I"
+    const val LEGACY_DEADLIFT_ID = "e64c7837-52e2-4b97-b771-cf08ab861af1"
+
     val UPPER_LIFT_IDS = setOf(BENCH_ID, SHOULDER_PRESS_ID)
     val MAIN_LIFT_IDS = setOf(BENCH_ID, SHOULDER_PRESS_ID, SQUAT_ID, DEADLIFT_ID)
+
+    private val canonicalLiftById = mapOf(
+        BENCH_ID to BENCH_ID,
+        SHOULDER_PRESS_ID to SHOULDER_PRESS_ID,
+        SQUAT_ID to SQUAT_ID,
+        DEADLIFT_ID to DEADLIFT_ID,
+        LEGACY_BENCH_ID to BENCH_ID,
+        LEGACY_SHOULDER_PRESS_ID to SHOULDER_PRESS_ID,
+        LEGACY_SQUAT_ID to SQUAT_ID,
+        LEGACY_DEADLIFT_ID to DEADLIFT_ID,
+    )
 
     private val knownSetShapes = listOf(
         FiveThreeOneWeeks.WEEK_1,
@@ -21,9 +37,11 @@ object FiveThreeOneRoutineDetector {
         )
     }
 
+    fun canonicalMainLiftId(exerciseId: String?): String? = exerciseId?.let(canonicalLiftById::get)
+
     fun mainLiftId(exercise: RoutineExercise): String? {
-        val exerciseId = exercise.exercise.id ?: return null
-        return if (exercise.usePercentOfPR && exerciseId in MAIN_LIFT_IDS) exerciseId else null
+        if (!exercise.usePercentOfPR) return null
+        return canonicalMainLiftId(exercise.exercise.id)
     }
 
     fun knownShapeMainLiftId(exercise: RoutineExercise): String? =

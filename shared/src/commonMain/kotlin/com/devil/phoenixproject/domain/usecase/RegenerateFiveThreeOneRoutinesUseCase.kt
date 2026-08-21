@@ -18,6 +18,7 @@ class RegenerateFiveThreeOneRoutinesUseCase(
     suspend fun execute(cycleId: String, targetWeek: Int, bumpTrainingMax: Boolean): Boolean {
         val cycle = trainingCycleRepository.getCycleById(cycleId) ?: return false
         val matchedLiftIds = linkedSetOf<String>()
+        val storedLiftIdsByCanonical = linkedMapOf<String, String>()
         var failedMainLiftRegeneration = false
         val routineUpdates = mutableListOf<Pair<Routine, Routine>>()
 
@@ -47,7 +48,10 @@ class RegenerateFiveThreeOneRoutinesUseCase(
                     day = day,
                     routine = routine,
                     targetWeek = targetWeek,
-                    onMatchedLift = { matchedLiftIds += it },
+                    onMatchedLift = { canonicalId, storedId ->
+                        matchedLiftIds += canonicalId
+                        storedLiftIdsByCanonical.putIfAbsent(canonicalId, storedId)
+                    },
                 )
             } catch (e: IllegalStateException) {
                 Logger.w(e) { "5/3/1 regeneration found ambiguous main lift state: cycleId=$cycleId routineId=$routineId" }
@@ -79,7 +83,8 @@ class RegenerateFiveThreeOneRoutinesUseCase(
         }
 
         if (bumpTrainingMax) {
-            for (exerciseId in matchedLiftIds) {
+            for (canonicalId in matchedLiftIds) {
+                val exerciseId = storedLiftIdsByCanonical[canonicalId] ?: canonicalId
                 val exercise = exerciseRepository.getExerciseById(exerciseId)
                 if (exercise == null) {
                     Logger.w { "5/3/1 TM bump skipped missing exercise row: exerciseId=$exerciseId" }
@@ -92,7 +97,7 @@ class RegenerateFiveThreeOneRoutinesUseCase(
                     continue
                 }
 
-                val bump = if (exerciseId in FiveThreeOneRoutineDetector.UPPER_LIFT_IDS) {
+                val bump = if (canonicalId in FiveThreeOneRoutineDetector.UPPER_LIFT_IDS) {
                     UPPER_ONE_REP_MAX_BUMP_KG
                 } else {
                     LOWER_ONE_REP_MAX_BUMP_KG
@@ -109,16 +114,17 @@ class RegenerateFiveThreeOneRoutinesUseCase(
         day: CycleDay,
         routine: Routine,
         targetWeek: Int,
-        onMatchedLift: (String) -> Unit,
+        onMatchedLift: (canonicalId: String, storedId: String) -> Unit,
     ): Routine? {
         val matches = routine.exercises.mapIndexedNotNull { index, exercise ->
-            FiveThreeOneRoutineDetector.mainLiftId(exercise)?.let { liftId ->
-                MainLiftMatch(
-                    index = index,
-                    liftId = liftId,
-                    hasFiveThreeOneSetShape = FiveThreeOneRoutineDetector.hasKnownSetShape(exercise),
-                )
-            }
+            val liftId = FiveThreeOneRoutineDetector.mainLiftId(exercise) ?: return@mapIndexedNotNull null
+            val storedId = exercise.exercise.id ?: return@mapIndexedNotNull null
+            MainLiftMatch(
+                index = index,
+                liftId = liftId,
+                storedId = storedId,
+                hasFiveThreeOneSetShape = FiveThreeOneRoutineDetector.hasKnownSetShape(exercise),
+            )
         }
         if (matches.isEmpty()) {
             return null
@@ -147,7 +153,7 @@ class RegenerateFiveThreeOneRoutinesUseCase(
             }
         }
 
-        onMatchedLift(mainLiftMatch.liftId)
+        onMatchedLift(mainLiftMatch.liftId, mainLiftMatch.storedId)
         val mainLiftIndex = mainLiftMatch.index
         var changed = false
         val targetSets = FiveThreeOneWeeks.forWeek(targetWeek)
@@ -175,6 +181,7 @@ class RegenerateFiveThreeOneRoutinesUseCase(
     private data class MainLiftMatch(
         val index: Int,
         val liftId: String,
+        val storedId: String,
         val hasFiveThreeOneSetShape: Boolean,
     )
 

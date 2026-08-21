@@ -2,6 +2,7 @@ package com.devil.phoenixproject.domain.usecase
 
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -272,6 +273,32 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         assertEquals(listOf(59, 68, 77), storedBenchRoutine.exercises[1].setWeightsPercentOfPR)
     }
 
+    @Test
+    fun `legacy catalogue ids still regenerate week and bump stored one-rep max`() = runTest {
+        seedFiveThreeOneCycle(
+            benchId = FiveThreeOneRoutineDetector.LEGACY_BENCH_ID,
+            squatId = FiveThreeOneRoutineDetector.LEGACY_SQUAT_ID,
+            shoulderPressId = FiveThreeOneRoutineDetector.LEGACY_SHOULDER_PRESS_ID,
+            deadliftId = FiveThreeOneRoutineDetector.LEGACY_DEADLIFT_ID,
+        )
+
+        assertTrue(useCase.execute(cycleId = "cycle-531", targetWeek = 2, bumpTrainingMax = true))
+
+        val benchRoutine = workoutRepository.getRoutineById("routine-bench")
+        assertNotNull(benchRoutine)
+        assertEquals(listOf(63, 72, 81), benchRoutine.exercises.first().setWeightsPercentOfPR)
+        assertEquals(2, trainingCycleRepository.getCycleById("cycle-531")?.weekNumber)
+        assertEquals(
+            101.25f + (1.25f / 0.9f),
+            exerciseRepository.getExerciseById(FiveThreeOneRoutineDetector.LEGACY_BENCH_ID)?.oneRepMaxKg,
+        )
+        assertEquals(
+            140f + (2.5f / 0.9f),
+            exerciseRepository.getExerciseById(FiveThreeOneRoutineDetector.LEGACY_SQUAT_ID)?.oneRepMaxKg,
+        )
+        assertNull(exerciseRepository.getExerciseById(BENCH_ID))
+    }
+
     private fun seedFiveThreeOneCycle(
         includeNullShoulderPressOneRepMax: Boolean = false,
         benchMainLiftPercentages: List<Int> = listOf(59, 68, 77),
@@ -279,24 +306,28 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         benchMainLiftPosition: Int = 0,
         replaceExpectedMainLiftsWithAccessories: Boolean = false,
         replaceBenchMainLiftWithAccessory: Boolean = false,
+        benchId: String = BENCH_ID,
+        squatId: String = SQUAT_ID,
+        shoulderPressId: String = SHOULDER_PRESS_ID,
+        deadliftId: String = DEADLIFT_ID,
     ): TrainingCycle {
         val bench = mainLiftExercise(
-            id = BENCH_ID,
+            id = benchId,
             name = "Bench Press",
             oneRepMaxKg = 101.25f,
         )
         val squat = mainLiftExercise(
-            id = SQUAT_ID,
+            id = squatId,
             name = "Squat",
             oneRepMaxKg = 140f,
         )
         val press = mainLiftExercise(
-            id = SHOULDER_PRESS_ID,
+            id = shoulderPressId,
             name = "Shoulder Press",
             oneRepMaxKg = if (includeNullShoulderPressOneRepMax) null else 88.5f,
         )
         val deadlift = mainLiftExercise(
-            id = DEADLIFT_ID,
+            id = deadliftId,
             name = "Conventional Deadlift",
             oneRepMaxKg = 160.75f,
         )
