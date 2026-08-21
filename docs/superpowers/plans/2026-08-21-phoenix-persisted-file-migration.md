@@ -63,8 +63,10 @@
 - [ ] Run a true skipped-version upgrade with production-signed APKs when a signed candidate and controlled device are available.
 - [ ] Run physical iOS upgrade validation and second-launch cleanup checks where device access exists.
 - [x] Confirm identifiers and signing configuration are unchanged.
-- [ ] Update PR 709 description with compatibility literals, evidence, and remaining device gates.
+- [x] Update PR 709 description with compatibility literals, evidence, and remaining device gates.
 - [x] Commit as `test: verify Phoenix persisted-file upgrade path`.
+
+The implementation commit is published at `4fd5a407`. PR 709 remains closed, so GitHub retains its historical pull-ref snapshot at `25023179` even though the restored head branch now contains the migration commits. Reopening is intentionally left to the maintainer after the production-signed Android and physical-iOS gates are attached.
 
 ## Focused verification
 
