@@ -30,13 +30,15 @@
 
 ## Task 3: iOS database operations
 
-- [ ] Resolve paths with SQLiter `DatabaseFileContext.databasePath`.
-- [ ] Inspect legacy files with `DatabaseConfiguration(version = NO_VERSION_CHECK)` and close raw drivers before filesystem changes.
-- [ ] Use same-directory no-replacement moves and an exclusive neutral lock.
-- [ ] Exclude target, staging, recovery, and sidecars from backup using corrected paths.
-- [ ] Prepare before the resilient normal driver and validate afterward.
+- [x] Resolve paths with SQLiter `DatabaseFileContext.databasePath`.
+- [x] Inspect legacy files with `DatabaseConfiguration(version = NO_VERSION_CHECK)` and close raw drivers before filesystem changes.
+- [x] Use same-directory no-replacement moves and an exclusive neutral lock.
+- [x] Exclude target, staging, recovery, and sidecars from backup using corrected paths.
+- [x] Prepare before the resilient normal driver and validate afterward.
 - [ ] Compile the iOS ARM64 framework and record the physical-device verification gate.
-- [ ] Commit as `feat(ios): migrate persisted database filename safely`.
+- [x] Commit as `feat(ios): migrate persisted Phoenix database filename safely`.
+
+`compileKotlinIosArm64` passes on Windows. `linkReleaseFrameworkIosArm64` is skipped on this host, so framework linking and the physical-device upgrade remain release gates.
 
 ## Task 4: Android preference filenames
 
