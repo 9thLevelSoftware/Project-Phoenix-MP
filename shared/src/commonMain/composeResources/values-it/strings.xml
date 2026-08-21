@@ -79,4 +79,5 @@
     <string name="workout_teardown_retry">Riprova</string>
     <string name="label_previously_completed">Completati in precedenza</string>
     <string name="cd_filter_previously_completed">Filtra gli esercizi completati in precedenza</string>
+    <string name="cd_phoenix_logo">Logo Phoenix</string>
 </resources>
