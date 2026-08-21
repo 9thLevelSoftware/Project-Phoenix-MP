@@ -351,7 +351,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
         val mappings = LinkedHashMap<String, String>()
         for (row in archived) {
             val explicit = LegacyCatalogueIdMap.explicit[row.id]
-            if (explicit != null && activeById.containsKey(explicit) && explicit != row.id) {
+            if (explicit != null && activeById.containsKey(explicit)) {
                 mappings[row.id] = explicit
             }
         }
@@ -368,9 +368,10 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
         queries.transaction {
             for ((oldId, newId) in mappings) {
                 queries.mergeLegacyExerciseUserFields(oldId = oldId, newId = newId)
+                queries.consumeLegacyExerciseUserFields(oldId)
                 queries.reassignWorkoutSessionExerciseId(newId = newId, oldId = oldId)
                 queries.reassignRoutineExerciseId(newId = newId, oldId = oldId)
-                queries.deleteConflictingPersonalRecords(newId = newId, oldId = oldId)
+                resolvePersonalRecordCollisions(oldId = oldId, newId = newId)
                 queries.reassignPersonalRecordExerciseId(newId = newId, oldId = oldId)
                 queries.reassignExerciseSignatureExerciseId(newId = newId, oldId = oldId)
                 queries.reassignAssessmentResultExerciseId(newId = newId, oldId = oldId)
@@ -381,6 +382,33 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
             }
         }
         Logger.d { "Remapped ${mappings.size} legacy catalogue IDs onto replacement rows" }
+    }
+
+    private fun resolvePersonalRecordCollisions(oldId: String, newId: String) {
+        data class Key(val workoutMode: String, val prType: String, val phase: String, val profileId: String)
+        val oldRows = queries.selectPersonalRecordsByExerciseId(oldId).executeAsList()
+        val newRows = queries.selectPersonalRecordsByExerciseId(newId).executeAsList()
+            .associateBy { Key(it.workoutMode, it.prType, it.phase, it.profile_id) }
+        for (old in oldRows) {
+            val rival = newRows[Key(old.workoutMode, old.prType, old.phase, old.profile_id)] ?: continue
+            val oldWins = if (old.prType == "MAX_VOLUME") {
+                old.volume > rival.volume ||
+                    (old.volume == rival.volume && old.achievedAt >= rival.achievedAt)
+            } else {
+                old.weight > rival.weight ||
+                    (old.weight == rival.weight && old.oneRepMax > rival.oneRepMax) ||
+                    (
+                        old.weight == rival.weight &&
+                            old.oneRepMax == rival.oneRepMax &&
+                            old.achievedAt >= rival.achievedAt
+                        )
+            }
+            if (oldWins) {
+                queries.deletePersonalRecordById(rival.id)
+            } else {
+                queries.deletePersonalRecordById(old.id)
+            }
+        }
     }
 
     private fun generateDisplayNames(exercises: List<FreeExerciseJson>): Map<String, String> {

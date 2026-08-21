@@ -444,6 +444,13 @@ class SqlDelightExerciseRepositoryTest {
         assertEquals(true, exercise.isFavorite)
         assertEquals(100.0f, exercise.oneRepMaxKg)
         assertEquals(4, exercise.timesPerformed)
+
+        importer.remapLegacyCatalogueIds()
+        val afterSecondPass = repository.getExerciseById(replacement)
+        assertNotNull(afterSecondPass)
+        assertEquals(4, afterSecondPass.timesPerformed)
+        assertEquals(true, afterSecondPass.isFavorite)
+        assertEquals(100.0f, afterSecondPass.oneRepMaxKg)
     }
 
     private fun insertExercise(

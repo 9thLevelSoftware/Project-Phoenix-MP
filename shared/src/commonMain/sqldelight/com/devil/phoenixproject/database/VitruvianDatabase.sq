@@ -614,8 +614,7 @@ UPDATE Exercise SET
     minRepRange = ?,
     aliases = ?,
     defaultCableConfig = ?,
-    isBodyweight = ?,
-    archived = 0
+    isBodyweight = ?
 WHERE id = ? AND isCustom = 0;
 
 countExercises:
@@ -630,17 +629,8 @@ UPDATE WorkoutSession SET exerciseId = :newId WHERE exerciseId = :oldId;
 reassignRoutineExerciseId:
 UPDATE RoutineExercise SET exerciseId = :newId WHERE exerciseId = :oldId;
 
-deleteConflictingPersonalRecords:
-DELETE FROM PersonalRecord WHERE id IN (
-    SELECT oldRow.id FROM PersonalRecord AS oldRow
-    INNER JOIN PersonalRecord AS newRow
-        ON newRow.exerciseId = :newId
-        AND oldRow.exerciseId = :oldId
-        AND newRow.workoutMode = oldRow.workoutMode
-        AND newRow.prType = oldRow.prType
-        AND newRow.phase = oldRow.phase
-        AND newRow.profile_id = oldRow.profile_id
-);
+selectPersonalRecordsByExerciseId:
+SELECT * FROM PersonalRecord WHERE exerciseId = :exerciseId;
 
 reassignPersonalRecordExerciseId:
 UPDATE PersonalRecord SET exerciseId = :newId WHERE exerciseId = :oldId;
@@ -687,6 +677,15 @@ UPDATE Exercise SET
     END,
     mvtOverrideMs = COALESCE(mvtOverrideMs, (SELECT mvtOverrideMs FROM Exercise WHERE id = :oldId))
 WHERE id = :newId AND isCustom = 0;
+
+consumeLegacyExerciseUserFields:
+UPDATE Exercise SET
+    timesPerformed = 0,
+    isFavorite = 0,
+    one_rep_max_kg = NULL,
+    mvtOverrideMs = NULL,
+    lastPerformed = NULL
+WHERE id = :oldId AND isCustom = 0;
 
 -- Increment times performed and update last performed timestamp
 incrementPerformed:
