@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.local
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.database.PersonalRecord
 import com.devil.phoenixproject.database.VitruvianDatabase
 import com.devil.phoenixproject.domain.model.Exercise
 import io.ktor.client.HttpClient
@@ -343,21 +344,27 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
         val stock = queries.selectStockExercisesForRemap().executeAsList()
         val activeById = stock.filter { it.archived == 0L }.associateBy { it.id }
         val activeByName = stock.filter { it.archived == 0L }
-            .groupBy { it.name.lowercase().trim() }
+            .groupBy { LegacyCatalogueIdMap.matchKey(it.name) }
             .mapNotNull { (name, rows) -> rows.singleOrNull()?.let { name to it.id } }
             .toMap()
         val archived = stock.filter { it.archived == 1L }
+
+        val activeByStem = stock.filter { it.archived == 0L }
+            .groupBy { LegacyCatalogueIdMap.stemKey(it.name) }
+            .mapNotNull { (key, rows) -> rows.singleOrNull()?.let { key to it.id } }
+            .toMap()
 
         val mappings = LinkedHashMap<String, String>()
         for (row in archived) {
             val explicit = LegacyCatalogueIdMap.explicit[row.id]
             if (explicit != null && activeById.containsKey(explicit)) {
                 mappings[row.id] = explicit
+                continue
             }
-        }
-        for (row in archived) {
-            if (row.id in mappings) continue
-            val byName = activeByName[row.name.lowercase().trim()]
+            val exact = LegacyCatalogueIdMap.matchKey(row.name)
+            val byName = activeByName[exact]
+                ?: LegacyCatalogueIdMap.nameAliases[exact]?.let { activeByName[it] }
+                ?: activeByStem[LegacyCatalogueIdMap.stemKey(row.name)]
             if (byName != null && byName != row.id) {
                 mappings[row.id] = byName
             }
@@ -376,7 +383,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                 queries.reassignExerciseSignatureExerciseId(newId = newId, oldId = oldId)
                 queries.reassignAssessmentResultExerciseId(newId = newId, oldId = oldId)
                 queries.reassignVelocityOneRepMaxExerciseId(newId = newId, oldId = oldId)
-                queries.deleteConflictingExerciseMvt(newId = newId, oldId = oldId)
+                mergeExerciseMvtCollisions(oldId = oldId, newId = newId)
                 queries.reassignExerciseMvtExerciseId(newId = newId, oldId = oldId)
                 queries.reassignProgressionEventExerciseId(newId = newId, oldId = oldId)
             }
@@ -391,23 +398,38 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
             .associateBy { Key(it.workoutMode, it.prType, it.phase, it.profile_id) }
         for (old in oldRows) {
             val rival = newRows[Key(old.workoutMode, old.prType, old.phase, old.profile_id)] ?: continue
-            val oldWins = if (old.prType == "MAX_VOLUME") {
-                old.volume > rival.volume ||
-                    (old.volume == rival.volume && old.achievedAt >= rival.achievedAt)
-            } else {
-                old.weight > rival.weight ||
-                    (old.weight == rival.weight && old.oneRepMax > rival.oneRepMax) ||
-                    (
-                        old.weight == rival.weight &&
-                            old.oneRepMax == rival.oneRepMax &&
-                            old.achievedAt >= rival.achievedAt
-                        )
+            val comparator = when (old.prType) {
+                "MAX_VOLUME" -> compareBy<PersonalRecord>({ it.volume }, { it.achievedAt })
+                else -> compareBy<PersonalRecord>({ it.weight }, { it.oneRepMax }, { it.achievedAt })
             }
-            if (oldWins) {
-                queries.deletePersonalRecordById(rival.id)
+            // Bigger metric wins; complete ties keep the legacy row so remap can reassign it.
+            val oldWins = comparator.compare(old, rival) >= 0
+            queries.deletePersonalRecordById(if (oldWins) rival.id else old.id)
+        }
+    }
+
+    private fun mergeExerciseMvtCollisions(oldId: String, newId: String) {
+        val oldRows = queries.selectExerciseMvtByExerciseId(oldId).executeAsList()
+        val newByProfile = queries.selectExerciseMvtByExerciseId(newId).executeAsList()
+            .associateBy { it.profile_id }
+        for (old in oldRows) {
+            val rival = newByProfile[old.profile_id] ?: continue
+            val oldCount = old.sampleCount.coerceAtLeast(0)
+            val newCount = rival.sampleCount.coerceAtLeast(0)
+            val totalCount = oldCount + newCount
+            val mergedMs = if (totalCount == 0L) {
+                if (old.updatedAt >= rival.updatedAt) old.personalMvtMs else rival.personalMvtMs
             } else {
-                queries.deletePersonalRecordById(old.id)
+                (old.personalMvtMs * oldCount + rival.personalMvtMs * newCount) / totalCount
             }
+            queries.upsertExerciseMvt(
+                exerciseId = newId,
+                profileId = old.profile_id,
+                personalMvtMs = mergedMs,
+                sampleCount = totalCount,
+                updatedAt = maxOf(old.updatedAt, rival.updatedAt),
+            )
+            queries.deleteExerciseMvt(old.exerciseId, old.profile_id)
         }
     }
 

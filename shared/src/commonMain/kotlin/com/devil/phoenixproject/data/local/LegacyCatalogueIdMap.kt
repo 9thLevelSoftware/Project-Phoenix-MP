@@ -3,7 +3,8 @@ package com.devil.phoenixproject.data.local
 /**
  * Maps archived Vitruvian catalogue IDs onto the replacement free-exercise-db slugs
  * used by cycle templates and 5/3/1 detection. Name matching covers remaining stock
- * rows whose names are unchanged.
+ * rows whose names are unchanged; [nameAliases] and [stemKey] cover reviewed
+ * singular/plural renames such as Rack Pull → Rack Pulls.
  */
 object LegacyCatalogueIdMap {
     val explicit: Map<String, String> = mapOf(
@@ -26,6 +27,7 @@ object LegacyCatalogueIdMap {
         "05wiA4Eqtrj388Ui" to "Hammer_Curls",
         "1cAPp9FYOqgEFDfm" to "Barbell_Shrug",
         "lKxWrGuEzVcxLYqG" to "Face_Pull",
+        "CZp8oeIT32m1oO8o" to "Face_Pull",
         "WAB_Z7EUGeUxF9ce" to "Romanian_Deadlift",
         "vvG84utDyVrhhcJB" to "Barbell_Lunge",
         "IIglddaLiD3aFW9a" to "Leg_Extensions",
@@ -36,5 +38,55 @@ object LegacyCatalogueIdMap {
         "e280829c-aa17-4812-b8fa-bcd0d89ad815" to "One-Legged_Cable_Kickback",
         "FLyfmJWYyxLus7e8" to "Crunches",
         "enuJ_FgAzXDLAweK" to "Good_Morning",
+        "Pa7L7GPGmD7zSNOr" to "Rack_Pulls",
+        "wgiwmR1yt3QJtiWs" to "Concentration_Curls",
+        "2S9GLUWvISCI0RFC" to "Mountain_Climbers",
+        "f9uw1qCFUhNlrPoj" to "Windmills",
+        "bGY-qHuQ4SSqd2lB" to "Zercher_Squats",
     )
+
+    /**
+     * Lowercased display-name aliases for stock rows whose replacement name is a
+     * reviewed singular/plural rename rather than an exact match.
+     */
+    val nameAliases: Map<String, String> = mapOf(
+        "concentration curl" to "concentration curls",
+        "crunch" to "crunches",
+        "face pulls" to "face pull",
+        "glute kickbacks" to "glute kickback",
+        "hammer curl" to "hammer curls",
+        "mountain climber" to "mountain climbers",
+        "rack pull" to "rack pulls",
+        "windmill" to "windmills",
+        "zercher squat" to "zercher squats",
+    )
+
+    fun matchKey(name: String): String =
+        name.lowercase().trim().replace(WHITESPACE, " ")
+
+    /**
+     * Stems the last word so unique singular/plural pairs share a key
+     * (`Rack Pull` / `Rack Pulls` → `rack pull`). Applied only when that key
+     * identifies a single active catalogue row.
+     */
+    fun stemKey(name: String): String {
+        val key = matchKey(name)
+        val lastSpace = key.lastIndexOf(' ')
+        val last = if (lastSpace >= 0) key.substring(lastSpace + 1) else key
+        val prefix = if (lastSpace >= 0) key.substring(0, lastSpace + 1) else ""
+        val stemmedLast = when {
+            last.endsWith("ies") && last.length > 4 -> last.dropLast(3) + "y"
+            last.length > 4 && (
+                last.endsWith("ches") ||
+                    last.endsWith("shes") ||
+                    last.endsWith("sses") ||
+                    last.endsWith("xes")
+                ) -> last.dropLast(2)
+            last.endsWith("s") && !last.endsWith("ss") && last.length > 3 -> last.dropLast(1)
+            else -> last
+        }
+        return prefix + stemmedLast
+    }
+
+    private val WHITESPACE = Regex("\\s+")
 }

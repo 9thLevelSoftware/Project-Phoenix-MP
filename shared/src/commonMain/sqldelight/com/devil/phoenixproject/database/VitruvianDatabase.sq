@@ -534,6 +534,9 @@ VALUES (:exerciseId, :profileId, :personalMvtMs, :sampleCount, :updatedAt);
 selectAllExerciseMvtByProfile:
 SELECT * FROM ExerciseMvt WHERE profile_id = :profileId ORDER BY exerciseId;
 
+selectExerciseMvtByExerciseId:
+SELECT * FROM ExerciseMvt WHERE exerciseId = :exerciseId;
+
 deleteExerciseMvt:
 DELETE FROM ExerciseMvt WHERE exerciseId = :exerciseId AND profile_id = :profileId;
 
@@ -643,11 +646,6 @@ UPDATE AssessmentResult SET exerciseId = :newId WHERE exerciseId = :oldId;
 
 reassignVelocityOneRepMaxExerciseId:
 UPDATE VelocityOneRepMaxEstimate SET exerciseId = :newId WHERE exerciseId = :oldId;
-
-deleteConflictingExerciseMvt:
-DELETE FROM ExerciseMvt WHERE exerciseId = :oldId AND profile_id IN (
-    SELECT profile_id FROM ExerciseMvt WHERE exerciseId = :newId
-);
 
 reassignExerciseMvtExerciseId:
 UPDATE ExerciseMvt SET exerciseId = :newId WHERE exerciseId = :oldId;

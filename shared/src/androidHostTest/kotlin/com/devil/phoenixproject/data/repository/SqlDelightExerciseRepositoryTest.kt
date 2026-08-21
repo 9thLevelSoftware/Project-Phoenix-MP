@@ -453,6 +453,242 @@ class SqlDelightExerciseRepositoryTest {
         assertEquals(100.0f, afterSecondPass.oneRepMaxKg)
     }
 
+    @Test
+    fun `remap maps renamed rack pull onto rack pulls`() = runTest {
+        insertExercise(
+            id = "legacy-rack-pull",
+            name = "Rack Pull",
+            muscleGroup = "Back",
+            equipment = "BAR",
+            archived = 1L,
+            timesPerformed = 6L,
+        )
+        insertPr(exerciseId = "legacy-rack-pull", exerciseName = "Rack Pull", weight = 180.0)
+
+        val imported = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Rack_Pulls",
+                "name": "Rack Pulls",
+                "equipment": "barbell",
+                "primaryMuscles": ["hamstrings"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "strength",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
+        assertTrue(imported.isSuccess)
+        importer.remapLegacyCatalogueIds()
+
+        val prs = database.vitruvianDatabaseQueries
+            .selectAllPRsForExercise("Rack_Pulls", "default")
+            .executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals(180.0, prs.single().weight)
+        val leftover = database.vitruvianDatabaseQueries
+            .selectPersonalRecordsByExerciseId("legacy-rack-pull")
+            .executeAsList()
+        assertTrue(leftover.isEmpty())
+        val exercise = repository.getExerciseById("Rack_Pulls")
+        assertNotNull(exercise)
+        assertEquals(6, exercise.timesPerformed)
+    }
+
+    @Test
+    fun `remap keeps the heavier colliding PR`() = runTest {
+        insertExercise(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+        )
+        insertPr(exerciseId = "ZZ92N8QsBdp6HCh3", exerciseName = "Bench Press", weight = 80.0, oneRepMax = 90.0)
+        insertExercise(
+            id = "Barbell_Bench_Press_-_Medium_Grip",
+            name = "Barbell Bench Press - Medium Grip",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+        )
+        insertPr(
+            exerciseId = "Barbell_Bench_Press_-_Medium_Grip",
+            exerciseName = "Barbell Bench Press - Medium Grip",
+            weight = 110.0,
+            oneRepMax = 120.0,
+        )
+
+        importer.remapLegacyCatalogueIds()
+
+        val prs = database.vitruvianDatabaseQueries
+            .selectAllPRsForExercise("Barbell_Bench_Press_-_Medium_Grip", "default")
+            .executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals(110.0, prs.single().weight)
+        assertEquals(120.0, prs.single().oneRepMax)
+        val leftover = database.vitruvianDatabaseQueries
+            .selectPersonalRecordsByExerciseId("ZZ92N8QsBdp6HCh3")
+            .executeAsList()
+        assertTrue(leftover.isEmpty())
+    }
+
+    @Test
+    fun `remap keeps the heavier colliding PR from the legacy row`() = runTest {
+        insertExercise(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+        )
+        insertPr(exerciseId = "ZZ92N8QsBdp6HCh3", exerciseName = "Bench Press", weight = 140.0, oneRepMax = 155.0)
+        insertExercise(
+            id = "Barbell_Bench_Press_-_Medium_Grip",
+            name = "Barbell Bench Press - Medium Grip",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+        )
+        insertPr(
+            exerciseId = "Barbell_Bench_Press_-_Medium_Grip",
+            exerciseName = "Barbell Bench Press - Medium Grip",
+            weight = 95.0,
+            oneRepMax = 100.0,
+        )
+
+        importer.remapLegacyCatalogueIds()
+
+        val prs = database.vitruvianDatabaseQueries
+            .selectAllPRsForExercise("Barbell_Bench_Press_-_Medium_Grip", "default")
+            .executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals(140.0, prs.single().weight)
+        assertEquals(155.0, prs.single().oneRepMax)
+    }
+
+    @Test
+    fun `remap keeps the larger colliding MAX_VOLUME PR`() = runTest {
+        insertExercise(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+        )
+        insertPr(
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+            exerciseName = "Bench Press",
+            weight = 60.0,
+            volume = 900.0,
+            prType = "MAX_VOLUME",
+        )
+        insertExercise(
+            id = "Barbell_Bench_Press_-_Medium_Grip",
+            name = "Barbell Bench Press - Medium Grip",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+        )
+        insertPr(
+            exerciseId = "Barbell_Bench_Press_-_Medium_Grip",
+            exerciseName = "Barbell Bench Press - Medium Grip",
+            weight = 80.0,
+            volume = 400.0,
+            prType = "MAX_VOLUME",
+        )
+
+        importer.remapLegacyCatalogueIds()
+
+        val prs = database.vitruvianDatabaseQueries
+            .selectAllPRsForExercise("Barbell_Bench_Press_-_Medium_Grip", "default")
+            .executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals("MAX_VOLUME", prs.single().prType)
+        assertEquals(900.0, prs.single().volume)
+    }
+
+    @Test
+    fun `remap merges colliding personal MVT samples`() = runTest {
+        insertExercise(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+        )
+        insertExercise(
+            id = "Barbell_Bench_Press_-_Medium_Grip",
+            name = "Barbell Bench Press - Medium Grip",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+        )
+        database.vitruvianDatabaseQueries.upsertExerciseMvt(
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+            profileId = "default",
+            personalMvtMs = 400.0,
+            sampleCount = 3,
+            updatedAt = 1_700_000_000_000L,
+        )
+        database.vitruvianDatabaseQueries.upsertExerciseMvt(
+            exerciseId = "Barbell_Bench_Press_-_Medium_Grip",
+            profileId = "default",
+            personalMvtMs = 200.0,
+            sampleCount = 1,
+            updatedAt = 1_800_000_000_000L,
+        )
+
+        importer.remapLegacyCatalogueIds()
+
+        val merged = database.vitruvianDatabaseQueries
+            .selectExerciseMvt("Barbell_Bench_Press_-_Medium_Grip", "default")
+            .executeAsOne()
+        assertEquals(4, merged.sampleCount)
+        assertEquals(350.0, merged.personalMvtMs)
+        assertEquals(1_800_000_000_000L, merged.updatedAt)
+        val leftover = database.vitruvianDatabaseQueries
+            .selectExerciseMvtByExerciseId("ZZ92N8QsBdp6HCh3")
+            .executeAsList()
+        assertTrue(leftover.isEmpty())
+
+        importer.remapLegacyCatalogueIds()
+        val afterSecondPass = database.vitruvianDatabaseQueries
+            .selectExerciseMvt("Barbell_Bench_Press_-_Medium_Grip", "default")
+            .executeAsOne()
+        assertEquals(4, afterSecondPass.sampleCount)
+        assertEquals(350.0, afterSecondPass.personalMvtMs)
+    }
+
+    private fun insertPr(
+        exerciseId: String,
+        exerciseName: String,
+        weight: Double,
+        oneRepMax: Double = weight,
+        volume: Double = weight * 5,
+        prType: String = "MAX_WEIGHT",
+        achievedAt: Long = 1_700_000_000_000L,
+        workoutMode: String = "OldSchool",
+        phase: String = "COMBINED",
+        profileId: String = "default",
+        reps: Long = 5,
+    ) {
+        database.vitruvianDatabaseQueries.insertRecord(
+            exerciseId = exerciseId,
+            exerciseName = exerciseName,
+            weight = weight,
+            reps = reps,
+            oneRepMax = oneRepMax,
+            achievedAt = achievedAt,
+            workoutMode = workoutMode,
+            prType = prType,
+            volume = volume,
+            phase = phase,
+            profile_id = profileId,
+            cable_count = 2,
+            uuid = null,
+        )
+    }
+
     private fun insertExercise(
         id: String,
         name: String,
