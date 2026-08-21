@@ -23,10 +23,10 @@
 
 ## Task 2: Android database operations
 
-- [ ] Implement `DatabaseFileOperations` with `Context.getDatabasePath`, raw `SQLiteDatabase`, synchronous flushes, same-directory atomic no-replacement moves, and a file lock.
-- [ ] Prepare before `AndroidSqliteDriver`; validate integrity, schema version, and reconciliation after initialization.
-- [ ] Add instrumentation coverage for populated legacy/WAL migration, corrupt input, interrupted staging, and cleanup.
-- [ ] Commit as `feat(android): migrate persisted Phoenix database filename safely`.
+- [x] Implement `DatabaseFileOperations` with `Context.getDatabasePath`, raw `SQLiteDatabase`, synchronous flushes, same-directory atomic no-replacement moves, and a file lock.
+- [x] Prepare before `AndroidSqliteDriver`; validate integrity, schema version, and reconciliation after initialization.
+- [x] Add instrumentation coverage for populated legacy/WAL migration, corrupt input, interrupted staging, and cleanup.
+- [x] Commit as `feat(android): migrate persisted Phoenix database filename safely`.
 
 ## Task 3: iOS database operations
 

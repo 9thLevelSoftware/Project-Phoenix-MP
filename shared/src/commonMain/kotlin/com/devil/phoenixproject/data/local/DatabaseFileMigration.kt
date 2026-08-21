@@ -1,5 +1,13 @@
 package com.devil.phoenixproject.data.local
 
+internal object DatabaseFileNames {
+    const val LEGACY = "vitruvian.db"
+    const val TARGET = "phoenix.db"
+    const val STAGING = "phoenix.db.migrating"
+    const val RECOVERY = "phoenix-recovery.db"
+    const val LOCK = "phoenix-db-migration.lock"
+}
+
 internal enum class DatabaseArtifact {
     LEGACY,
     TARGET,
@@ -83,12 +91,16 @@ internal class DatabaseFileMigrationCoordinator(
 
         when {
             layout.targetExists -> prepareExistingTarget(layout)
+
             layout.legacyExists -> migrateLegacy(layout)
+
             layout.recoveryExists -> reconstructFromRecovery(layout)
+
             layout.stagingExists -> throw DatabaseFileMigrationException(
                 DatabaseMigrationFailureCode.RECOVERY_COPY_FAILED,
                 "A migration staging file exists without a verified database source.",
             )
+
             else -> DatabasePreparation(
                 migratedThisLaunch = false,
                 recoveryCleanupDue = false,
