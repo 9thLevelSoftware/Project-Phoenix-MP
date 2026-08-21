@@ -1196,3 +1196,49 @@ private fun AutoStartOverlayPreview() {
         }
     }
 }
+
+@Preview(
+    name = "RestTimer - Drop set unresolved",
+    showBackground = true,
+    backgroundColor = 0xFF0F172A,
+    widthDp = 400,
+    heightDp = 800,
+)
+@Composable
+private fun RestTimerDropSetUnresolvedPreview() {
+    MaterialTheme {
+        RestTimerCard(
+            restSecondsRemaining = 45,
+            nextExerciseName = "Bench Press",
+            isLastExercise = false,
+            currentSet = 2,
+            totalSets = 4,
+            nextExerciseWeight = 40f,
+            nextExerciseReps = 8,
+            onSkipRest = {},
+            onEndWorkout = {},
+            dropSetOffer = DropSetOfferUiState.Unresolved(
+                context = DropSetOfferContext(
+                    identity = com.devil.phoenixproject.presentation.manager.RestActionIdentity(
+                        transitionId = "transition",
+                        sourceExecutionId = "source",
+                        offerId = "offer",
+                        logicalSetKey = LogicalSetKey("session", "exercise", 1, SetType.STANDARD),
+                        plannedSetId = "planned",
+                        selectedPercentage = null,
+                    ),
+                    exerciseDisplayName = "Bench Press",
+                    failedSetNumber = 2,
+                    failedConfiguredWeightPerCableKg = 50f,
+                    minimumWeightPerCableKg = 5f,
+                ),
+                candidates = listOf(
+                    DropSetCandidateUiState(DropPercentage.TEN, 45f, true),
+                    DropSetCandidateUiState(DropPercentage.TWENTY, 40f, true),
+                    DropSetCandidateUiState(DropPercentage.THIRTY, 0f, false),
+                ),
+                remainingDrops = 2,
+            ),
+        )
+    }
+}

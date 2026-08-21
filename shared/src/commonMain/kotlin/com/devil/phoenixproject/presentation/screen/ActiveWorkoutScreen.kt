@@ -108,6 +108,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val isExerciseTimerPaused by viewModel.isExerciseTimerPaused.collectAsState()
     val currentRackLoadAdjustment by viewModel.currentRackLoadAdjustment.collectAsState()
     val machineTeardownState by viewModel.machineTeardownState.collectAsState()
+    val restTransitionPlan by viewModel.restTransitionPlan.collectAsState()
 
     val connectionError by viewModel.connectionError.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
@@ -263,9 +264,9 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                             loadedRoutine?.id?.startsWith(
                                 DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX,
                             ) ==
-                            true &&
+                                true &&
                                 !viewModel.isStoppingWorkout()
-                        )
+                            )
                     ) -> {
                 // Issue #660: a direct timed Stop Set returns a temp routine to SetReady.
                 // Let the routine-flow observer navigate there rather than tearing down to Home.
@@ -369,6 +370,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         userPreferences.effectiveWeightIncrementKg,
         currentRackLoadAdjustment,
         machineTeardownState,
+        restTransitionPlan,
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -410,6 +412,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             weightStepKg = userPreferences.effectiveWeightIncrementKg,
             rackLoadAdjustment = currentRackLoadAdjustment,
             machineTeardownState = machineTeardownState,
+            restTransitionPlan = restTransitionPlan,
         )
     }
 
@@ -428,6 +431,9 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             onReconnectWorkoutTeardown = { viewModel.reconnectWorkoutTeardown() },
             onStopWorkout = { showExitConfirmation = true },
             onSkipRest = { viewModel.skipRest() },
+            onSkipRestWithIdentity = { identity -> viewModel.skipRest(identity) },
+            onAcceptDropSetAction = { identity, percentage -> viewModel.acceptDropSet(identity, percentage) },
+            onDeclineDropSetAction = { identity -> viewModel.declineDropSet(identity) },
             onExtendRest = { seconds -> viewModel.extendRestTime(seconds) },
             onToggleRestPause = { viewModel.toggleRestPause() },
             onResetRest = { viewModel.resetRestTimer() },

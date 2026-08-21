@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -62,6 +63,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
@@ -90,6 +92,7 @@ import com.devil.phoenixproject.presentation.viewmodel.ExerciseType
 import com.devil.phoenixproject.presentation.viewmodel.SetConfiguration
 import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.parseLocalizedDecimal
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -99,6 +102,11 @@ import vitruvianprojectphoenix.shared.generated.resources.cd_add_set
 import vitruvianprojectphoenix.shared.generated.resources.cd_close
 import vitruvianprojectphoenix.shared.generated.resources.cd_delete_set
 import vitruvianprojectphoenix.shared.generated.resources.cd_personal_record
+import vitruvianprojectphoenix.shared.generated.resources.drop_set_min_weight
+import vitruvianprojectphoenix.shared.generated.resources.drop_set_min_weight_error
+import vitruvianprojectphoenix.shared.generated.resources.drop_set_min_weight_supporting
+import vitruvianprojectphoenix.shared.generated.resources.drop_set_offer_toggle
+import vitruvianprojectphoenix.shared.generated.resources.drop_set_title
 import vitruvianprojectphoenix.shared.generated.resources.label_duration
 import vitruvianprojectphoenix.shared.generated.resources.label_reps
 import vitruvianprojectphoenix.shared.generated.resources.percent_label
@@ -161,6 +169,9 @@ fun ExerciseEditBottomSheet(
     val stallDetectionEnabled by viewModel.stallDetectionEnabled.collectAsState()
     val repCountTiming by viewModel.repCountTiming.collectAsState()
     val stopAtTop by viewModel.stopAtTop.collectAsState()
+    val dropSetEnabled by viewModel.dropSetEnabled.collectAsState()
+    val dropSetMinWeightKg by viewModel.dropSetMinWeightKg.collectAsState()
+    val isDropSetMinWeightValid by viewModel.isDropSetMinWeightValid.collectAsState()
     val defaultRackItemIds by viewModel.defaultRackItemIds.collectAsState()
     val rackBehaviorOverrides by viewModel.rackBehaviorOverrides.collectAsState()
 
@@ -612,6 +623,20 @@ fun ExerciseEditBottomSheet(
                         }
                     }
 
+                    if (selectedMode is WorkoutMode.OldSchool) {
+                        DropSetRoutineConfigurationCard(
+                            dropSetEnabled = dropSetEnabled,
+                            dropSetMinWeightKg = dropSetMinWeightKg,
+                            isDropSetMinWeightValid = isDropSetMinWeightValid,
+                            weightUnit = weightUnit,
+                            weightSuffix = weightSuffix,
+                            kgToDisplay = kgToDisplay,
+                            displayToKg = displayToKg,
+                            onDropSetEnabledChange = viewModel::onDropSetEnabledChange,
+                            onDropSetMinWeightKgChange = viewModel::onDropSetMinWeightKgChange,
+                        )
+                    }
+
                     // Rep Count Timing toggle
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -741,7 +766,7 @@ fun ExerciseEditBottomSheet(
                     modifier = Modifier
                         .weight(1f)
                         .height(56.dp),
-                    enabled = sets.isNotEmpty() && primaryActionEnabled,
+                    enabled = sets.isNotEmpty() && primaryActionEnabled && isDropSetMinWeightValid,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -1400,12 +1425,16 @@ fun WeightConfigurationCard(
                         text = when {
                             baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM ->
                                 "Scale weight based on your velocity 1RM estimate"
+
                             baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.MAX_VOLUME_PR ->
                                 "Scale weight based on your max-volume personal record"
+
                             baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.MAX_WEIGHT_PR ->
                                 "Scale weight based on your max-weight personal record"
+
                             currentExercisePR != null ->
                                 "Scale weight based on your ${currentExercisePR.phase.displayLabel().lowercase()} personal record"
+
                             else ->
                                 "No baseline available for the selected scaling type"
                         },
@@ -1479,7 +1508,9 @@ fun WeightConfigurationCard(
                         Text(
                             text = when (effectiveBasisForControls) {
                                 ScalingBasis.ESTIMATED_1RM -> "$weightPercentOfPR% of Est. 1RM"
+
                                 ScalingBasis.MAX_VOLUME_PR -> "$weightPercentOfPR% of Max-volume PR"
+
                                 ScalingBasis.MAX_WEIGHT_PR ->
                                     "$weightPercentOfPR% of ${currentExercisePR?.phase?.displayLabel() ?: "Max-weight"} PR"
                             },
@@ -1562,6 +1593,112 @@ fun WeightConfigurationCard(
             }
         }
     }
+}
+
+@Composable
+internal fun DropSetRoutineConfigurationCard(
+    dropSetEnabled: Boolean,
+    dropSetMinWeightKg: Float?,
+    isDropSetMinWeightValid: Boolean,
+    weightUnit: WeightUnit,
+    weightSuffix: String,
+    kgToDisplay: (Float, WeightUnit) -> Float,
+    displayToKg: (Float, WeightUnit) -> Float,
+    onDropSetEnabledChange: (Boolean) -> Unit,
+    onDropSetMinWeightKgChange: (Float?) -> Unit,
+) {
+    var dropSetMinWeightText by remember {
+        mutableStateOf(formatDropSetMinWeightInput(dropSetMinWeightKg, weightUnit, kgToDisplay))
+    }
+    LaunchedEffect(dropSetMinWeightKg, weightUnit) {
+        val parsedKg = parseLocalizedDecimal(dropSetMinWeightText)?.let { displayToKg(it, weightUnit) }
+        if (parsedKg != dropSetMinWeightKg) {
+            dropSetMinWeightText = formatDropSetMinWeightInput(dropSetMinWeightKg, weightUnit, kgToDisplay)
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+        shadowElevation = 2.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.small),
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(Res.string.drop_set_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (dropSetEnabled) FontWeight.Bold else FontWeight.Normal,
+                        color = if (dropSetEnabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                    Text(
+                        text = stringResource(Res.string.drop_set_offer_toggle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = dropSetEnabled,
+                    onCheckedChange = onDropSetEnabledChange,
+                )
+            }
+
+            if (dropSetEnabled) {
+                OutlinedTextField(
+                    value = dropSetMinWeightText,
+                    onValueChange = { value ->
+                        dropSetMinWeightText = value
+                        onDropSetMinWeightKgChange(
+                            parseLocalizedDecimal(value)?.let { displayToKg(it, weightUnit) },
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(Res.string.drop_set_min_weight)) },
+                    singleLine = true,
+                    isError = !isDropSetMinWeightValid,
+                    supportingText = {
+                        Text(
+                            text = if (isDropSetMinWeightValid) {
+                                stringResource(Res.string.drop_set_min_weight_supporting, weightSuffix)
+                            } else {
+                                stringResource(Res.string.drop_set_min_weight_error)
+                            },
+                            color = if (isDropSetMinWeightValid) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                )
+            }
+        }
+    }
+}
+
+private fun formatDropSetMinWeightInput(
+    weightKg: Float?,
+    weightUnit: WeightUnit,
+    kgToDisplay: (Float, WeightUnit) -> Float,
+): String {
+    val display = weightKg?.let { kgToDisplay(it, weightUnit) } ?: return ""
+    return if (display % 1f == 0f) display.toInt().toString() else display.toString()
 }
 
 /**

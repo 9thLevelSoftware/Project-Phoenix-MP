@@ -730,6 +730,71 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `toPortalRoutine maps drop set configuration`() {
+        val enabled = makeRoutineExercise().copy(dropSetEnabled = true, dropSetMinWeightKg = 12.5f)
+        val disabled = makeRoutineExercise().copy(dropSetEnabled = false, dropSetMinWeightKg = null)
+        val result = PortalSyncAdapter.toPortalRoutine(
+            makeRoutine(exercises = listOf(enabled, disabled)),
+            "user-1",
+        )
+
+        assertEquals(true, result.exercises[0].dropSetEnabled)
+        assertEquals(12.5f, result.exercises[0].dropSetMinWeightKg)
+        assertEquals(false, result.exercises[1].dropSetEnabled)
+        assertNull(result.exercises[1].dropSetMinWeightKg)
+    }
+
+    @Test
+    fun `older pull payload omitting drop set fields decodes to null`() {
+        val dto = portalPayloadJson.decodeFromString(
+            PullRoutineExerciseDto.serializer(),
+            """{"id":"rex-legacy","routineId":"routine-1","name":"Bench Press"}""",
+        )
+        assertNull(dto.dropSetEnabled)
+        assertNull(dto.dropSetMinWeightKg)
+    }
+
+    @Test
+    fun `pull payload with explicit disabled drop set decodes to false`() {
+        val dto = portalPayloadJson.decodeFromString(
+            PullRoutineExerciseDto.serializer(),
+            """{"id":"rex-off","routineId":"routine-1","dropSetEnabled":false,"dropSetMinWeightKg":null}""",
+        )
+        assertEquals(false, dto.dropSetEnabled)
+        assertNull(dto.dropSetMinWeightKg)
+    }
+
+    @Test
+    fun `programmed set count collapses retry attempts that share logical identity`() {
+        val identity = PortalSyncAdapter.LogicalSetSyncIdentity("run-1", "rex-1", 1)
+        val sessions = listOf(
+            makeSessionWithReps(sessionId = "attempt-1", routineSessionId = "run-1")
+                .copy(logicalSetIdentity = identity),
+            makeSessionWithReps(sessionId = "attempt-2", routineSessionId = "run-1")
+                .copy(logicalSetIdentity = identity),
+            makeSessionWithReps(sessionId = "legacy", routineSessionId = "run-1"),
+        )
+
+        assertEquals(2, PortalSyncAdapter.programmedSetCount(sessions))
+        val grouped = sessions.map {
+            it.copy(session = it.session.copy(routineSessionId = "run-1"))
+        }
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(grouped, "user-1")
+        assertEquals(1, result.size)
+        assertEquals(2, result[0].setCount)
+        assertEquals(3, result[0].exerciseCount)
+    }
+
+    @Test
+    fun `programmed set count keeps legacy one session one set without identity`() {
+        val sessions = listOf(
+            makeSessionWithReps(sessionId = "s1", routineSessionId = "run-1"),
+            makeSessionWithReps(sessionId = "s2", routineSessionId = "run-1"),
+        )
+        assertEquals(2, PortalSyncAdapter.programmedSetCount(sessions))
+    }
+
+    @Test
     fun `toPortalRoutine maps PR percentage when enabled`() {
         val exercises = listOf(
             makeRoutineExercise(

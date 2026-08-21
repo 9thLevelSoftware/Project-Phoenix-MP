@@ -49,12 +49,14 @@ sealed interface RestTransitionPlan {
         val offerId: String,
         val plannedSetId: String?,
         val candidates: List<DropSetCandidate>,
+        val remainingDrops: Int = 2,
         val normalAdvance: NormalAdvance,
     ) : RestTransitionPlan {
         init {
             validateIdentity(transitionId, sourceExecutionId, logicalSetKey, plannedSetId)
             require(offerId.isNotBlank())
             require(candidates.isNotEmpty())
+            require(remainingDrops in 1..2)
             require(normalAdvance.transitionId == transitionId)
             require(normalAdvance.sourceExecutionId == sourceExecutionId)
             require(normalAdvance.logicalSetKey == logicalSetKey)
@@ -271,6 +273,7 @@ fun buildRestTransitionPlan(
             offerId = offer.offerId,
             plannedSetId = normalAdvance.plannedSetId,
             candidates = offer.candidates,
+            remainingDrops = offer.remainingDrops,
             normalAdvance = normalAdvance,
         )
     }

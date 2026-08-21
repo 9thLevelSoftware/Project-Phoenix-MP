@@ -75,6 +75,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -99,6 +100,9 @@ import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
 import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
+import com.devil.phoenixproject.presentation.manager.RestActionIdentity
+import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
+import com.devil.phoenixproject.presentation.manager.actionIdentity
 import com.devil.phoenixproject.presentation.theme.phoenixStructuralContainerColor
 import com.devil.phoenixproject.presentation.theme.phoenixStructuralContentColor
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
@@ -202,6 +206,9 @@ fun WorkoutTab(
         onReconnectWorkoutTeardown = actions::onReconnectWorkoutTeardown,
         onStopWorkout = actions::onStopWorkout,
         onSkipRest = actions::onSkipRest,
+        onSkipRestWithIdentity = actions::onSkipRest,
+        onAcceptDropSet = actions::onAcceptDropSet,
+        onDeclineDropSet = actions::onDeclineDropSet,
         onExtendRest = actions::onExtendRest,
         onToggleRestPause = actions::onToggleRestPause,
         onResetRest = actions::onResetRest,
@@ -236,6 +243,7 @@ fun WorkoutTab(
         weightStepKg = state.weightStepKg,
         rackLoadAdjustment = state.rackLoadAdjustment,
         currentWarmupSetIndex = state.currentWarmupSetIndex,
+        restTransitionPlan = state.restTransitionPlan,
     )
 }
 
@@ -282,6 +290,9 @@ fun WorkoutTab(
     onReconnectWorkoutTeardown: () -> Unit = {},
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
+    onSkipRestWithIdentity: (RestActionIdentity) -> Unit = { onSkipRest() },
+    onAcceptDropSet: (RestActionIdentity, DropPercentage) -> Unit = { _, _ -> },
+    onDeclineDropSet: (RestActionIdentity) -> Unit = {},
     onExtendRest: (Int) -> Unit = {},
     onToggleRestPause: () -> Unit = {},
     onResetRest: () -> Unit = {},
@@ -323,6 +334,7 @@ fun WorkoutTab(
     rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
     // Issue #646: -1 means not currently in variable warm-up phase
     currentWarmupSetIndex: Int = -1,
+    restTransitionPlan: RestTransitionPlan? = null,
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -670,7 +682,25 @@ fun WorkoutTab(
                         isSupersetTransition = workoutState.isSupersetTransition,
                         supersetLabel = workoutState.supersetLabel,
                         isRestPaused = isRestPaused,
-                        onSkipRest = onSkipRest,
+                        dropSetOffer = dropSetOfferUiState(
+                            plan = restTransitionPlan,
+                            teardown = machineTeardownState,
+                            exerciseDisplayName = workoutState.nextExerciseName,
+                            failedSetNumber = workoutState.currentSet,
+                            failedConfiguredWeightPerCableKg = workoutParameters.lastUsedWeightKg
+                                ?: workoutParameters.weightPerCableKg,
+                            minimumWeightPerCableKg = 0f,
+                        ),
+                        onAcceptDropSet = onAcceptDropSet,
+                        onDeclineDropSet = onDeclineDropSet,
+                        onSkipRest = {
+                            val identity = restTransitionPlan?.actionIdentity()
+                            if (identity != null) {
+                                onSkipRestWithIdentity(identity)
+                            } else {
+                                onSkipRest()
+                            }
+                        },
                         onExtendRest = onExtendRest,
                         onToggleRestPause = onToggleRestPause,
                         onResetRest = onResetRest,

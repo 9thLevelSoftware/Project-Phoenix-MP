@@ -243,6 +243,8 @@ data class PortalRoutineExerciseSyncDto(
     val perSetEchoLevels: String? = null, // JSON array of echo level names
     val warmupSets: String? = null, // JSON array of {reps, percentOfWorking}
     val rackBehaviorOverrides: String? = null, // JSON map of rackItemId -> behavior name
+    val dropSetEnabled: Boolean = false,
+    val dropSetMinWeightKg: Float? = null,
 )
 
 // ─── Training Cycle Sync DTOs ─────────────────────────────────────
@@ -409,10 +411,9 @@ private val LOCAL_ONLY_PROFILE_PREFERENCE_KEYS = setOf(
     "legacymigrationversion",
 )
 
-private fun normalizedProfilePreferenceWireKey(key: String): String =
-    key
-        .filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
-        .lowercase()
+private fun normalizedProfilePreferenceWireKey(key: String): String = key
+    .filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
+    .lowercase()
 
 internal enum class ProfilePreferenceWireSafetyViolation {
     INVALID_TEXT_TREE,
@@ -425,12 +426,14 @@ internal fun isPostgresCompatibleText(value: String): Boolean {
         val codeUnit = value[index]
         when {
             codeUnit == '\u0000' -> return false
+
             codeUnit in '\uD800'..'\uDBFF' -> {
                 if (index + 1 >= value.length || value[index + 1] !in '\uDC00'..'\uDFFF') {
                     return false
                 }
                 index += 1
             }
+
             codeUnit in '\uDC00'..'\uDFFF' -> return false
         }
         index += 1
@@ -444,17 +447,21 @@ internal fun profilePreferenceWireSafetyViolation(
     is kotlinx.serialization.json.JsonArray -> value.firstNotNullOfOrNull(
         ::profilePreferenceWireSafetyViolation,
     )
+
     is kotlinx.serialization.json.JsonObject -> {
         value.entries.firstNotNullOfOrNull { (key, child) ->
             when {
                 !isPostgresCompatibleText(key) ->
                     ProfilePreferenceWireSafetyViolation.INVALID_TEXT_TREE
+
                 normalizedProfilePreferenceWireKey(key) in LOCAL_ONLY_PROFILE_PREFERENCE_KEYS ->
                     ProfilePreferenceWireSafetyViolation.LOCAL_ONLY_KEY
+
                 else -> profilePreferenceWireSafetyViolation(child)
             }
         }
     }
+
     is kotlinx.serialization.json.JsonPrimitive -> if (
         value.isString && !isPostgresCompatibleText(value.content)
     ) {
@@ -898,6 +905,8 @@ data class PullRoutineExerciseDto(
     val perSetEchoLevels: String? = null, // JSON array of echo level names
     val warmupSets: String? = null, // JSON array of {reps, percentOfWorking}
     val rackBehaviorOverrides: String? = null, // JSON map of rackItemId -> behavior name
+    val dropSetEnabled: Boolean? = null,
+    val dropSetMinWeightKg: Float? = null,
 )
 
 /**

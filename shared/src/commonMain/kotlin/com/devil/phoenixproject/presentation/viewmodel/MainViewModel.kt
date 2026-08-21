@@ -31,6 +31,7 @@ import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
@@ -72,6 +73,8 @@ import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.presentation.manager.HistoryManager
 import com.devil.phoenixproject.presentation.manager.JustLiftDefaults
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
+import com.devil.phoenixproject.presentation.manager.RestActionIdentity
+import com.devil.phoenixproject.presentation.manager.RestTransitionCommand
 import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
 import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscardResult
 import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscovery
@@ -895,6 +898,10 @@ class MainViewModel(
     fun resetLoadBaseline() = workoutSessionManager.resetLoadBaseline()
     fun proceedFromSummary() = workoutSessionManager.proceedFromSummary()
     fun skipRest() = workoutSessionManager.skipRest()
+    fun skipRest(identity: RestActionIdentity) = workoutSessionManager.applyRestTransition(RestTransitionCommand.SkipRest(identity))
+    fun acceptDropSet(identity: RestActionIdentity, percentage: DropPercentage) = workoutSessionManager.applyRestTransition(RestTransitionCommand.Accept(identity, percentage))
+    fun declineDropSet(identity: RestActionIdentity) = workoutSessionManager.applyRestTransition(RestTransitionCommand.Decline(identity))
+    val restTransitionPlan get() = workoutSessionManager.restTransitionPlan
     fun extendRestTime(seconds: Int) = workoutSessionManager.extendRestTime(seconds)
     fun toggleRestPause() = workoutSessionManager.toggleRestPause()
     fun resetRestTimer() = workoutSessionManager.resetRestTimer()

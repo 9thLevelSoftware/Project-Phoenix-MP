@@ -298,6 +298,27 @@
     <string name="rest_continue">Weiter</string>
     <string name="rest_complete_announcement">Pause beendet</string>
     <string name="rest_seconds_remaining">Noch %1$d Sekunden</string>
+    <string name="drop_set_title">Drop-Set</string>
+    <string name="drop_set_offer_toggle">Nach einem Abbruch einen Drop-Set anbieten.</string>
+    <string name="drop_set_min_weight">Mindestgewicht</string>
+    <string name="drop_set_min_weight_supporting">Mindestgewicht je Seil in %1$s</string>
+    <string name="drop_set_min_weight_error">Gib ein Mindestgewicht größer als 0 ein</string>
+    <string name="drop_set_offer_question">Diesen Satz mit einem Drop-Set wiederholen?</string>
+    <string name="drop_set_retry_set">Satz wiederholen</string>
+    <string name="drop_set_skip">Drop-Set überspringen</string>
+    <string name="drop_set_candidate_unavailable">Unter dem konfigurierten Mindestgewicht</string>
+    <string name="drop_set_remaining_one">1 Drop übrig</string>
+    <string name="drop_set_remaining_many">%1$d Drops übrig</string>
+    <string name="drop_set_accepted_waiting">Wiederholung bei %1$s — %2$s je Seil</string>
+    <string name="drop_set_saving">Fehlversuch wird gespeichert</string>
+    <string name="drop_set_preparing">Trainer wird vorbereitet</string>
+    <string name="drop_set_ready">Bereit zur Wiederholung</string>
+    <string name="drop_set_recovery">Verbinde erneut, um diesen Drop-Set zu wiederholen</string>
+    <string name="drop_set_skip_rest_blocked">Wähle einen Drop-Set oder überspringe ihn, bevor du die Pause überspringst</string>
+    <string name="drop_set_waiting_timer">Pause beendet. Wähle einen Drop-Set oder überspringe ihn, um fortzufahren.</string>
+    <string name="cd_drop_set_candidate">%1$s Drop, %2$s je Seil</string>
+    <string name="cd_drop_set_candidate_unavailable">%1$s Drop nicht verfügbar</string>
+    <string name="cd_drop_set_retry_disabled">Wähle einen Drop-Prozentsatz zum Wiederholen</string>
     <string name="set_weight">Gewicht einstellen</string>
 
     <!-- Connection Logs -->

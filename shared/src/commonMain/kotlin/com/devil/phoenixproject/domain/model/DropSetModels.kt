@@ -94,6 +94,10 @@ object DisabledDropSetFeatureGate : DropSetFeatureGate {
     override fun isEnabled(): Boolean = false
 }
 
+object EnabledDropSetFeatureGate : DropSetFeatureGate {
+    override fun isEnabled(): Boolean = true
+}
+
 data class DropSetConfiguration(
     val enabled: Boolean,
     val minimumWeightPerCableKg: Float?,
@@ -159,7 +163,6 @@ data class ExerciseLoadOverlay(
 /**
  * Combine every overlay for one routine-exercise occurrence without mutating its routine definition.
  */
-fun Iterable<ExerciseLoadOverlay>.multiplierFor(routineExerciseId: String): Float =
-    filter { it.routineExerciseId == routineExerciseId }.fold(1f) { combined, overlay ->
-        combined * overlay.multiplier
-    }
+fun Iterable<ExerciseLoadOverlay>.multiplierFor(routineExerciseId: String): Float = filter { it.routineExerciseId == routineExerciseId }.fold(1f) { combined, overlay ->
+    combined * overlay.multiplier
+}

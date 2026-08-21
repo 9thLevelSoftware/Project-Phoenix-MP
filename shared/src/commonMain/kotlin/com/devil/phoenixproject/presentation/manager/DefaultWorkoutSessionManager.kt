@@ -232,8 +232,11 @@ class DefaultWorkoutSessionManager(
     private val completedSetRepository: CompletedSetRepository,
     private val activeWorkoutRuntimeRepository: ActiveWorkoutRuntimeRepository,
     private val dropSetEligibilityPolicy: DropSetEligibilityPolicy,
-    private val dropSetConfigurationProvider: (RoutineExercise) -> DropSetConfiguration = {
-        DropSetConfiguration(enabled = false, minimumWeightPerCableKg = null)
+    private val dropSetConfigurationProvider: (RoutineExercise) -> DropSetConfiguration = { exercise ->
+        DropSetConfiguration(
+            enabled = exercise.dropSetEnabled,
+            minimumWeightPerCableKg = exercise.dropSetMinWeightKg,
+        )
     },
     private val transitionIdGenerator: () -> String = KmpUtils::randomUUID,
     private val offerIdGenerator: () -> String = KmpUtils::randomUUID,

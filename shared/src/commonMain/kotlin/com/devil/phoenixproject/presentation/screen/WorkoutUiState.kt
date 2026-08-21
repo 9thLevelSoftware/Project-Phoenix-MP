@@ -4,6 +4,7 @@ import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
@@ -15,6 +16,8 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
+import com.devil.phoenixproject.presentation.manager.RestActionIdentity
+import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
 
 /**
  * UI State holder for WorkoutTab.
@@ -100,6 +103,7 @@ data class WorkoutUiState(
     val weightStepKg: Float = 0.25f,
     val rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
     val machineTeardownState: MachineTeardownState = MachineTeardownState.Ready,
+    val restTransitionPlan: RestTransitionPlan? = null,
 ) {
     /** True when currently executing a variable warm-up set (for HUD label) */
     val isInVariableWarmup: Boolean get() = currentWarmupSetIndex >= 0
@@ -140,6 +144,12 @@ interface WorkoutActions {
 
     /** Skip rest timer and proceed immediately */
     fun onSkipRest()
+
+    fun onSkipRest(identity: RestActionIdentity) = onSkipRest()
+
+    fun onAcceptDropSet(identity: RestActionIdentity, percentage: DropPercentage) {}
+
+    fun onDeclineDropSet(identity: RestActionIdentity) {}
 
     /** Extend rest timer by given seconds (Issue #297, #228) */
     fun onExtendRest(seconds: Int)
@@ -214,6 +224,9 @@ object PreviewWorkoutActions : WorkoutActions {
     override fun onReconnectWorkoutTeardown() {}
     override fun onStopWorkout() {}
     override fun onSkipRest() {}
+    override fun onSkipRest(identity: RestActionIdentity) {}
+    override fun onAcceptDropSet(identity: RestActionIdentity, percentage: DropPercentage) {}
+    override fun onDeclineDropSet(identity: RestActionIdentity) {}
     override fun onExtendRest(seconds: Int) {}
     override fun onToggleRestPause() {}
     override fun onResetRest() {}
@@ -249,6 +262,9 @@ fun workoutActions(
     onReconnectWorkoutTeardown: () -> Unit = {},
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
+    onSkipRestWithIdentity: (RestActionIdentity) -> Unit = { onSkipRest() },
+    onAcceptDropSetAction: (RestActionIdentity, DropPercentage) -> Unit = { _, _ -> },
+    onDeclineDropSetAction: (RestActionIdentity) -> Unit = {},
     onExtendRest: (Int) -> Unit = {},
     onToggleRestPause: () -> Unit = {},
     onResetRest: () -> Unit = {},
@@ -278,6 +294,9 @@ fun workoutActions(
     override fun onReconnectWorkoutTeardown() = onReconnectWorkoutTeardown()
     override fun onStopWorkout() = onStopWorkout()
     override fun onSkipRest() = onSkipRest()
+    override fun onSkipRest(identity: RestActionIdentity) = onSkipRestWithIdentity(identity)
+    override fun onAcceptDropSet(identity: RestActionIdentity, percentage: DropPercentage) = onAcceptDropSetAction(identity, percentage)
+    override fun onDeclineDropSet(identity: RestActionIdentity) = onDeclineDropSetAction(identity)
     override fun onExtendRest(seconds: Int) = onExtendRest(seconds)
     override fun onToggleRestPause() = onToggleRestPause()
     override fun onResetRest() = onResetRest()

@@ -11,8 +11,8 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
-import com.devil.phoenixproject.domain.model.DisabledDropSetFeatureGate
 import com.devil.phoenixproject.domain.model.DropSetFeatureGate
+import com.devil.phoenixproject.domain.model.EnabledDropSetFeatureGate
 import com.devil.phoenixproject.domain.onerepmax.MvtProvider
 import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
@@ -46,7 +46,7 @@ val domainModule = module {
     single { ProgressionUseCase(get(), get()) }
     single { RecommendWeightAdjustmentUseCase() }
     single { ApplyEquipmentRackLoadUseCase() }
-    single<DropSetFeatureGate> { DisabledDropSetFeatureGate }
+    single<DropSetFeatureGate> { EnabledDropSetFeatureGate }
     single { DropSetCandidateResolver() }
     single { DropSetEligibilityPolicy(get(), get()) }
     factory { ResolveRoutineScalingBaselineUseCase(get(), get(), get()) }

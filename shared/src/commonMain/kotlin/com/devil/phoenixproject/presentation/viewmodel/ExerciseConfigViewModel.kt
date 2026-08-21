@@ -136,6 +136,15 @@ class ExerciseConfigViewModel constructor(
     private val _stopAtTop = MutableStateFlow(false)
     val stopAtTop: StateFlow<Boolean> = _stopAtTop.asStateFlow()
 
+    private val _dropSetEnabled = MutableStateFlow(false)
+    val dropSetEnabled: StateFlow<Boolean> = _dropSetEnabled.asStateFlow()
+
+    private val _dropSetMinWeightKg = MutableStateFlow<Float?>(null)
+    val dropSetMinWeightKg: StateFlow<Float?> = _dropSetMinWeightKg.asStateFlow()
+
+    private val _isDropSetMinWeightValid = MutableStateFlow(true)
+    val isDropSetMinWeightValid: StateFlow<Boolean> = _isDropSetMinWeightValid.asStateFlow()
+
     // PR percentage scaling state (Issue #57)
     private val _usePercentOfPR = MutableStateFlow(false)
     val usePercentOfPR: StateFlow<Boolean> = _usePercentOfPR.asStateFlow()
@@ -257,6 +266,9 @@ class ExerciseConfigViewModel constructor(
         _stallDetectionEnabled.value = exercise.stallDetectionEnabled
         _repCountTiming.value = exercise.repCountTiming
         _stopAtTop.value = exercise.stopAtTop
+        _dropSetEnabled.value = exercise.dropSetEnabled
+        _dropSetMinWeightKg.value = exercise.dropSetMinWeightKg
+        refreshDropSetValidation()
 
         // PR percentage scaling fields (Issue #57)
         _usePercentOfPR.value = exercise.usePercentOfPR
@@ -297,6 +309,7 @@ class ExerciseConfigViewModel constructor(
 
     fun onSelectedModeChange(mode: WorkoutMode) {
         _selectedMode.value = mode
+        refreshDropSetValidation()
         // Load PR for the new mode
         if (::originalExercise.isInitialized) {
             originalExercise.exercise.id?.let { exerciseId ->
@@ -420,8 +433,7 @@ class ExerciseConfigViewModel constructor(
      * ResolveRoutineWeightsUseCase (e.g. a legacy row with prTypeForScaling=MAX_VOLUME
      * resolves to MAX_VOLUME_PR, not the default MAX_WEIGHT_PR).
      */
-    fun effectiveScalingBasis(): ScalingBasis =
-        _scalingBasis.value ?: ScalingBasis.fromPrType(_prTypeForScaling.value)
+    fun effectiveScalingBasis(): ScalingBasis = _scalingBasis.value ?: ScalingBasis.fromPrType(_prTypeForScaling.value)
 
     /**
      * Resolves the baseline weight (kg/cable) for the currently-selected scaling basis,
@@ -442,8 +454,10 @@ class ExerciseConfigViewModel constructor(
         return when (effectiveScalingBasis()) {
             ScalingBasis.MAX_WEIGHT_PR ->
                 _currentExercisePR.value?.weightPerCableKg?.takeIf { it > 0 }
+
             ScalingBasis.MAX_VOLUME_PR ->
                 _currentMaxVolumePR.value?.weightPerCableKg?.takeIf { it > 0 }
+
             ScalingBasis.ESTIMATED_1RM ->
                 _velocityEstimateKg.value?.takeIf { it > 0 }
                     ?: _storedOneRepMaxKg.value?.takeIf { it > 0 }
@@ -491,6 +505,26 @@ class ExerciseConfigViewModel constructor(
 
     fun onStopAtTopChange(enabled: Boolean) {
         _stopAtTop.value = enabled
+    }
+
+    fun onDropSetEnabledChange(enabled: Boolean) {
+        _dropSetEnabled.value = enabled
+        refreshDropSetValidation()
+    }
+
+    fun onDropSetMinWeightKgChange(weightKg: Float?) {
+        _dropSetMinWeightKg.value = weightKg
+        refreshDropSetValidation()
+    }
+
+    private fun refreshDropSetValidation() {
+        val enabled = _dropSetEnabled.value
+        val minimum = _dropSetMinWeightKg.value
+        _isDropSetMinWeightValid.value = when {
+            !enabled -> true
+            _selectedMode.value !is WorkoutMode.OldSchool -> true
+            else -> minimum != null && minimum.isFinite() && minimum > 0f
+        }
     }
 
     // PR percentage scaling handlers (Issue #57)
@@ -806,7 +840,7 @@ class ExerciseConfigViewModel constructor(
         get() = _sets.value.sumOf { it.repeatCount.coerceIn(1, 20) }
 
     fun onSave(onSaveCallback: (RoutineExercise) -> Unit) {
-        if (_sets.value.isEmpty()) return
+        if (_sets.value.isEmpty() || !_isDropSetMinWeightValid.value) return
 
         // Debug logging for AMRAP exercise data saving
         logDebug("━━━━━ ExerciseConfigViewModel.onSave() ━━━━━")
@@ -882,6 +916,8 @@ class ExerciseConfigViewModel constructor(
             stallDetectionEnabled = _stallDetectionEnabled.value,
             repCountTiming = _repCountTiming.value,
             stopAtTop = _stopAtTop.value,
+            dropSetEnabled = _dropSetEnabled.value,
+            dropSetMinWeightKg = _dropSetMinWeightKg.value,
             // PR percentage scaling fields (Issue #57)
             usePercentOfPR = _usePercentOfPR.value,
             weightPercentOfPR = _weightPercentOfPR.value,
