@@ -25,7 +25,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
@@ -100,12 +99,12 @@ private fun AppLifecycleObserver(
     }
 }
 
-/**
- * Crash-safe error screen shown when DI resolution fails.
- * Displays the exception details so the user can report them.
- */
 @Composable
-fun CrashErrorScreen(error: String) {
+internal fun PersistedFileStartupFailureScreen(
+    failure: StartupDependencyResolution.Failed,
+    onRetry: () -> Unit,
+) {
+    val dualDatabases = failure.diagnosticCode == "DB_DUAL_DATABASES"
     Box(
         modifier = Modifier.fillMaxSize().background(Color(0xFF1A1A2E)).padding(24.dp),
         contentAlignment = Alignment.Center,
@@ -116,21 +115,33 @@ fun CrashErrorScreen(error: String) {
         ) {
             Text("Project Phoenix", color = Color(0xFFFF6B35), fontSize = 24.sp)
             Spacer(Modifier.height(16.dp))
-            Text("Startup Error", color = Color.White, fontSize = 18.sp)
+            Text("Local data preserved", color = Color.White, fontSize = 18.sp)
             Spacer(Modifier.height(12.dp))
             Text(
-                "The app failed to initialize. Please capture this screen for support.",
+                if (dualDatabases) {
+                    "Phoenix found two database files. Automatic recovery is disabled, and neither file was changed. " +
+                        "Please contact support and include the diagnostic code below."
+                } else {
+                    "Phoenix could not safely prepare local storage. Existing local data was left in place. " +
+                        "You can retry after resolving the device or storage issue."
+                },
                 color = Color.White.copy(alpha = 0.7f),
                 fontSize = 14.sp,
+                textAlign = TextAlign.Center,
             )
             Spacer(Modifier.height(16.dp))
             Text(
-                error,
+                "Diagnostic code: ${failure.diagnosticCode}",
                 color = Color(0xFFFF6B6B),
                 fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
                 modifier = Modifier.padding(8.dp),
             )
+            if (failure.retryAllowed) {
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = onRetry) {
+                    Text(stringResource(Res.string.action_retry))
+                }
+            }
         }
     }
 }

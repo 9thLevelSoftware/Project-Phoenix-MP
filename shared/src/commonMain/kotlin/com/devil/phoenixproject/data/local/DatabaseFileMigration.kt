@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.data.local
 
+import com.devil.phoenixproject.StartupDiagnosticFailure
+
 internal object DatabaseFileNames {
     const val LEGACY = "vitruvian.db"
     const val TARGET = "phoenix.db"
@@ -44,7 +46,10 @@ internal class DatabaseFileMigrationException(
     val code: DatabaseMigrationFailureCode,
     message: String,
     cause: Throwable? = null,
-) : IllegalStateException(message, cause)
+) : IllegalStateException(message, cause), StartupDiagnosticFailure {
+    override val startupDiagnosticCode: String = "DB_${code.name}"
+    override val startupRetryAllowed: Boolean = code != DatabaseMigrationFailureCode.DUAL_DATABASES
+}
 
 internal data class DatabasePreparation(
     val migratedThisLaunch: Boolean,

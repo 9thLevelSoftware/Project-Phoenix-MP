@@ -13,21 +13,17 @@ struct PhoenixAppEntry: App {
         // Initialize Koin for dependency injection.
         // The iOS entrypoint lives in shared/iosMain (KoinInitIos.kt) so the Kotlin/Native
         // export class is KoinInitIosKt, not KoinInitKt.
-        logger.info("[STEP 1/3] Starting Koin initialization...")
+        logger.info("[STEP 1/2] Starting Koin initialization...")
         do {
             try KoinInitIosKt.doInitKoin()
-            logger.info("[STEP 1/3] Koin initialization completed")
+            logger.info("[STEP 1/2] Koin initialization completed")
         } catch {
-            logger.error("[STEP 1/3] Koin initialization FAILED: \(error.localizedDescription)")
-            // Re-throw to see crash in logs
+            logger.error("[STEP 1/2] Koin initialization FAILED: \(error.localizedDescription)")
         }
 
-        // Run migrations after Koin is initialized (mirrors Android PhoenixApp.onCreate())
-        logger.info("[STEP 2/3] Running migrations...")
-        KoinInitKt.runMigrations()
-        logger.info("[STEP 2/3] Migrations completed")
-
-        logger.info("[STEP 3/3] App init complete, loading UI...")
+        // Persisted-file and row-level migrations are gated by IosAppHost so
+        // failures render a retryable shared screen instead of being ignored.
+        logger.info("[STEP 2/2] App init complete, loading gated UI...")
         logger.info("========== APP INITIALIZATION SUCCESS ==========")
     }
 

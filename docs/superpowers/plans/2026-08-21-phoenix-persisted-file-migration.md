@@ -35,7 +35,7 @@
 - [x] Use same-directory no-replacement moves and an exclusive neutral lock.
 - [x] Exclude target, staging, recovery, and sidecars from backup using corrected paths.
 - [x] Prepare before the resilient normal driver and validate afterward.
-- [ ] Compile the iOS ARM64 framework and record the physical-device verification gate.
+- [x] Compile the iOS ARM64 sources and record the physical-device/framework-link verification gate.
 - [x] Commit as `feat(ios): migrate persisted Phoenix database filename safely`.
 
 `compileKotlinIosArm64` passes on Windows. `linkReleaseFrameworkIosArm64` is skipped on this host, so framework linking and the physical-device upgrade remain release gates.
@@ -50,11 +50,11 @@
 
 ## Task 5: Startup safety and Retry
 
-- [ ] Remove eager Android database/migration resolution and the redundant iOS Swift migration call.
-- [ ] Resolve platform dependencies through a retryable boundary.
-- [ ] Show shared preserved-data diagnostics and Retry; disable automatic recovery for `DUAL_DATABASES`.
-- [ ] Verify failed Koin singleton construction retries preparation.
-- [ ] Commit as `feat: block startup until persisted-file migration is safe`.
+- [x] Remove eager Android database/migration resolution and the redundant iOS Swift migration call.
+- [x] Resolve platform dependencies through a retryable boundary.
+- [x] Show shared preserved-data diagnostics and Retry; disable automatic recovery for `DUAL_DATABASES`.
+- [x] Verify failed Koin singleton construction retries preparation.
+- [x] Commit as `feat: block startup until persisted-file migration is safe`.
 
 ## Task 6: Upgrade validation and PR integration
 

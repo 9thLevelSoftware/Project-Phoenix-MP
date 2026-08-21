@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.preferences
 
 import android.content.Context
 import android.content.SharedPreferences
+import com.devil.phoenixproject.StartupDiagnosticFailure
 import java.io.File
 
 internal const val PREFERENCE_MIGRATION_MARKER = "__phoenix_preference_filename_migration_v1"
@@ -36,7 +37,10 @@ internal class PreferenceFileMigrationException(
     val code: PreferenceMigrationFailureCode,
     message: String,
     cause: Throwable? = null,
-) : IllegalStateException(message, cause)
+) : IllegalStateException(message, cause), StartupDiagnosticFailure {
+    override val startupDiagnosticCode: String = "PREFERENCES_${code.name}"
+    override val startupRetryAllowed: Boolean = true
+}
 
 internal interface PreferenceFileOperations {
     fun exists(artifact: PreferenceArtifact): Boolean

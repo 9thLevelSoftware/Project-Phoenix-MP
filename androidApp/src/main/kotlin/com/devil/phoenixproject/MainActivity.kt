@@ -11,7 +11,6 @@ import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.presentation.components.RequireBlePermissions
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.NightSample
 import com.devil.phoenixproject.ui.theme.ThemeMode
@@ -37,11 +36,7 @@ class MainActivity : ComponentActivity() {
             navigationBarStyle = systemBarStyle,
         )
         setContent {
-            // Require BLE permissions before showing the app
-            // Permission screens have their own theme, App provides its own theme
-            RequireBlePermissions {
-                AndroidAppHost()
-            }
+            AndroidAppHost()
         }
     }
 
