@@ -2,11 +2,13 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.QualityTrend
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepQualityScore
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.TrainingCycle
@@ -20,8 +22,11 @@ import com.devil.phoenixproject.util.BleConstants
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.atomicfu.atomic
 import kotlinx.coroutines.CancellationException
@@ -29,6 +34,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -36,6 +42,135 @@ import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
 
 class WorkoutExitPersistenceTest {
+
+    @Test
+    fun `routine completion preserves start key after set index mutation`() = runTest {
+        assertRoutineAttemptIdentityAfterMutation(mutateSetIndex = true, mutateSetKind = false)
+    }
+
+    @Test
+    fun `routine completion preserves start key after set kind mutation`() = runTest {
+        assertRoutineAttemptIdentityAfterMutation(mutateSetIndex = false, mutateSetKind = true)
+    }
+
+    private suspend fun TestScope.assertRoutineAttemptIdentityAfterMutation(
+        mutateSetIndex: Boolean,
+        mutateSetKind: Boolean,
+    ) {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = WorkoutStateFixtures.createTestRoutine(
+                exerciseCount = 1,
+                setsPerExercise = 1,
+                repsPerSet = 3,
+            ).copy(id = "attempt-routine", name = "attempt-routine")
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            val routineSessionId = "routine-session-attempt"
+            harness.coordinator.currentRoutineSessionId = routineSessionId
+            harness.coordinator.currentRoutineId = routine.id
+            harness.coordinator.currentRoutineName = routine.name
+            val originalKey = LogicalSetKey(
+                routineSessionId = routineSessionId,
+                routineExerciseId = routine.exercises.single().id,
+                setIndex = 0,
+                setKind = SetType.STANDARD,
+            )
+            listOf(1, 2).forEach { attempt ->
+                val sessionId = "historical-attempt-$attempt"
+                harness.fakeCompletedSetRepo.setSessionRoutine(sessionId, routineSessionId)
+                harness.fakeCompletedSetRepo.saveCompletedSet(
+                    CompletedSet(
+                        id = "historical-set-$attempt",
+                        sessionId = sessionId,
+                        plannedSetId = null,
+                        setNumber = originalKey.setIndex,
+                        setType = originalKey.setKind,
+                        actualReps = 3,
+                        actualWeightKg = 25f,
+                        loggedRpe = null,
+                        isPr = false,
+                        completedAt = attempt.toLong(),
+                        routineExerciseId = originalKey.routineExerciseId,
+                        attemptNumber = attempt,
+                    ),
+                )
+            }
+
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeCompletedSetRepo.setSessionRoutine(lease.sessionId, routineSessionId)
+            harness.coordinator._loadedRoutine.value = routine.copy(
+                exercises = listOf(routine.exercises.single().copy(id = "mutated-occurrence")),
+            )
+            if (mutateSetIndex) harness.coordinator._currentSetIndex.value = 1
+            if (mutateSetKind) {
+                harness.coordinator._workoutParameters.value = harness.coordinator._workoutParameters.value.copy(
+                    isAMRAP = true,
+                )
+            }
+            harness.coordinator._repCount.value = RepCount(workingReps = 2)
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.TARGET_REPS_REACHED)
+            advanceUntilIdle()
+
+            val persisted = harness.fakeCompletedSetRepo.saved.single { it.sessionId == lease.sessionId }
+            assertEquals(originalKey.routineExerciseId, persisted.routineExerciseId)
+            assertEquals(originalKey.setIndex, persisted.setNumber)
+            assertEquals(originalKey.setKind, persisted.setType)
+            assertEquals(3, persisted.attemptNumber)
+            assertTrue(harness.fakeCompletedSetRepo.isAttemptDurable(lease.sessionId, originalKey, 3))
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `zero-rep stall failure persists durable attempt identity`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = WorkoutStateFixtures.createTestRoutine(
+                exerciseCount = 1,
+                setsPerExercise = 1,
+                repsPerSet = 3,
+            ).copy(id = "zero-rep-stall", name = "zero-rep-stall")
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val routineSessionId = assertNotNull(harness.coordinator.currentRoutineSessionId)
+            harness.fakeCompletedSetRepo.setSessionRoutine(lease.sessionId, routineSessionId)
+            harness.coordinator._repCount.value = RepCount(workingReps = 0, hasPendingRep = true)
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+            advanceUntilIdle()
+
+            val persisted = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId).single()
+            assertEquals(0, persisted.actualReps)
+            assertEquals(SetEndReason.STALL_FAILURE, persisted.setEndReason)
+            assertEquals(routine.exercises.single().id, persisted.routineExerciseId)
+            assertFalse(persisted.isPr)
+            val key = LogicalSetKey(
+                routineSessionId = routineSessionId,
+                routineExerciseId = routine.exercises.single().id,
+                setIndex = 0,
+                setKind = SetType.STANDARD,
+            )
+            assertTrue(harness.fakeCompletedSetRepo.isAttemptDurable(lease.sessionId, key, 1))
+            val session = harness.fakeWorkoutRepo.saveSessionAttempts.single { it.id == lease.sessionId }
+            assertEquals(0, session.workingReps)
+        } finally {
+            harness.cleanup()
+        }
+    }
 
     @Test
     fun `manual stop persists immutable snapshot when RESET fails`() = runTest {
@@ -86,7 +221,10 @@ class WorkoutExitPersistenceTest {
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
             harness.fakeBleRepo.stopWorkoutBlock = { Result.failure(IllegalStateException("reset failed")) }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                SetEndReason.TARGET_REPS_REACHED,
+            )
             advanceUntilIdle()
 
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
@@ -106,7 +244,13 @@ class WorkoutExitPersistenceTest {
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
             harness.fakeBleRepo.stopWorkoutBlock = { neverReset.await() }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
 
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
@@ -127,7 +271,13 @@ class WorkoutExitPersistenceTest {
             startTrackedCableSet(harness)
             harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
 
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.size)
@@ -161,7 +311,10 @@ class WorkoutExitPersistenceTest {
             val saved = harness.fakeWorkoutRepo.saveSessionAttempts.single()
             assertEquals(lease.sessionId, saved.id)
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                SetEndReason.TARGET_REPS_REACHED,
+            )
             advanceUntilIdle()
 
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
@@ -215,7 +368,13 @@ class WorkoutExitPersistenceTest {
             harness.fakeGamificationRepo.badgeLookupProfileIds.clear()
             harness.fakeGamificationRepo.updateStatsProfileIds.clear()
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
             harness.fakeUserProfileRepo.seedReadyProfileForTest("profile-b")
             harness.setActiveSummaryCountdownSeconds(5)
@@ -255,7 +414,13 @@ class WorkoutExitPersistenceTest {
             harness.fakeGamificationRepo.badgeLookupProfileIds.clear()
             harness.fakeBleRepo.stopWorkoutBlock = { releaseReset.await() }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
             harness.dwsm.stopWorkout(exitingWorkout = true)
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
@@ -501,7 +666,13 @@ class WorkoutExitPersistenceTest {
                 }
             }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             advanceUntilIdle()
             harness.dwsm.stopWorkout(exitingWorkout = true)
             advanceUntilIdle()
@@ -533,14 +704,18 @@ class WorkoutExitPersistenceTest {
         val readyBuilders = atomic(0)
 
         val snapshots = withContext(Dispatchers.Default) {
-            listOf(TerminalPath.AUTO_COMPLETE, TerminalPath.END_WORKOUT).mapIndexed { index, path ->
+            listOf(
+                TerminalPath.AUTO_COMPLETE to SetEndReason.STALL_FAILURE,
+                TerminalPath.END_WORKOUT to SetEndReason.USER_STOPPED,
+            ).mapIndexed { index, (path, reason) ->
                 async {
-                    snapshotStore.getOrCapture(lease, path) {
+                    val completion = completionFixture(lease, reason)
+                    snapshotStore.getOrCapture(completion, path) {
                         readyBuilders.incrementAndGet()
                         while (readyBuilders.value < 2) {
                             // Force both terminal paths to build before either can install.
                         }
-                        exitSnapshot(lease, path, completedSetId = "set-${index + 1}")
+                        exitSnapshot(completion, path, completedSetId = "set-${index + 1}")
                     }
                 }
             }.awaitAll()
@@ -548,6 +723,44 @@ class WorkoutExitPersistenceTest {
 
         assertEquals(setOf(lease.sessionId), snapshots.map { it.session.id }.toSet())
         assertEquals(1, snapshots.mapNotNull { it.completedSet?.id }.distinct().size)
+        assertEquals(1, snapshots.map { it.completion.reason }.distinct().size)
+        assertEquals(1, snapshots.mapNotNull { it.completedSet?.setEndReason }.distinct().size)
+    }
+
+    @Test
+    fun `bodyweight completion gate rejects a stale A publication after B begins`() {
+        val leaseA = executionLease(executionId = 1L, sessionId = "bodyweight-a")
+        val leaseB = executionLease(executionId = 2L, sessionId = "bodyweight-b")
+        val completionA = completionFixture(leaseA, SetEndReason.USER_STOPPED)
+        val completionB = completionFixture(leaseB, SetEndReason.TIMER_EXPIRED)
+        val gate = BodyweightCompletionGate()
+
+        gate.beginExecution(leaseA)
+        gate.invalidate(leaseA)
+        gate.beginExecution(leaseB)
+        gate.beginExecution(leaseA)
+
+        assertFalse(gate.tryPublish(completionA))
+        assertNull(gate.pendingFor(leaseB))
+        assertTrue(gate.tryPublish(completionB))
+        assertEquals(completionB, gate.pendingFor(leaseB))
+        assertTrue(gate.tryConsume(completionB))
+        assertFalse(gate.tryConsume(completionB))
+    }
+
+    @Test
+    fun `danger countdown gate preserves newer B against delayed A prime and clear`() {
+        val leaseA = executionLease(executionId = 1L, sessionId = "danger-a")
+        val leaseB = executionLease(executionId = 2L, sessionId = "danger-b")
+        val gate = DangerZoneCountdownGate()
+
+        assertTrue(gate.tryPrime(leaseA, startTimeMs = 100L))
+        assertTrue(gate.tryPrime(leaseB, startTimeMs = 200L))
+        assertFalse(gate.tryPrime(leaseA, startTimeMs = 300L))
+        gate.clear(leaseA)
+
+        assertEquals(200L, gate.consume(leaseB))
+        assertNull(gate.consume(leaseB))
     }
 
     @Test
@@ -667,7 +880,13 @@ class WorkoutExitPersistenceTest {
                 }
             }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             advanceUntilIdle()
 
             assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
@@ -813,16 +1032,17 @@ class WorkoutExitPersistenceTest {
     )
 
     private fun exitSnapshot(
-        lease: ExecutionLease,
+        completion: SetExecutionCompletion,
         terminalPath: TerminalPath,
         completedSetId: String,
     ) = WorkoutExitSnapshot(
-        lease = lease,
+        completion = completion,
+        lease = completion.lease,
         terminalPath = terminalPath,
-        session = TestFixtures.createWorkoutSession(id = lease.sessionId),
+        session = TestFixtures.createWorkoutSession(id = completion.lease.sessionId),
         completedSet = CompletedSet(
             id = completedSetId,
-            sessionId = lease.sessionId,
+            sessionId = completion.lease.sessionId,
             plannedSetId = null,
             setNumber = 0,
             setType = SetType.STANDARD,
@@ -831,6 +1051,7 @@ class WorkoutExitPersistenceTest {
             loggedRpe = null,
             isPr = false,
             completedAt = 100L,
+            setEndReason = completion.reason,
         ),
         metrics = emptyList(),
         repMetrics = emptyList(),
@@ -851,7 +1072,7 @@ class WorkoutExitPersistenceTest {
         cycleId = null,
         cycleDayNumber = null,
         postSaveInput = PostSaveWorkoutInput(
-            profileId = lease.profileId,
+            profileId = completion.lease.profileId,
             exerciseId = TestFixtures.benchPress.id,
             workingReps = 2,
             achievedWeightKg = 25f,
@@ -863,6 +1084,18 @@ class WorkoutExitPersistenceTest {
             peakEccentricForceKg = 0f,
             sessionMcvMmS = null,
         ),
+    )
+
+    private fun executionLease(executionId: Long, sessionId: String) = ExecutionLease(
+        executionId = executionId,
+        sessionId = sessionId,
+        profileId = "profile-a",
+        requiresMachine = false,
+        workingRepTarget = 0,
+        isBodyweight = true,
+        isJustLift = false,
+        isAmrap = false,
+        isTimedCable = false,
     )
 
     private fun repMetric() = RepMetricData(

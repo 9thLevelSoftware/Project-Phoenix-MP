@@ -1,7 +1,9 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.collapseCompletedSetsToLatestLogicalAttempts
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -24,14 +26,27 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     private val plannedSets = mutableMapOf<String, PlannedSet>()
     private val completedSets = mutableMapOf<String, CompletedSet>()
     private val plannedSetsByExercise = mutableMapOf<String, MutableList<String>>()
+    val plannedSetReadRequests = mutableListOf<String>()
+    var beforeAttemptDurabilityRead: suspend () -> Unit = {}
+    var attemptDurabilityReadCount: Int = 0
     private val completedSetsBySession = mutableMapOf<String, MutableList<String>>()
     private val sessionExerciseIds = mutableMapOf<String, String>()
+    private val sessionRoutineIds = mutableMapOf<String, String>()
+    private val deletedSessionIds = mutableSetOf<String>()
 
     private val completedSetsFlows =
         mutableMapOf<String, MutableStateFlow<List<CompletedSet>>>()
 
     fun setSessionExercise(sessionId: String, exerciseId: String) {
         sessionExerciseIds[sessionId] = exerciseId
+    }
+
+    fun setSessionRoutine(sessionId: String, routineSessionId: String) {
+        sessionRoutineIds[sessionId] = routineSessionId
+    }
+
+    fun softDeleteSession(sessionId: String) {
+        deletedSessionIds += sessionId
     }
 
     fun reset() {
@@ -42,17 +57,25 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         plannedSets.clear()
         completedSets.clear()
         plannedSetsByExercise.clear()
+        plannedSetReadRequests.clear()
+        beforeAttemptDurabilityRead = {}
+        attemptDurabilityReadCount = 0
         completedSetsBySession.clear()
         sessionExerciseIds.clear()
+        sessionRoutineIds.clear()
+        deletedSessionIds.clear()
         completedSetsFlows.clear()
     }
 
     // ==================== Planned Sets ====================
 
-    override suspend fun getPlannedSets(routineExerciseId: String): List<PlannedSet> = plannedSetsByExercise[routineExerciseId]
-        ?.mapNotNull { plannedSets[it] }
-        ?.sortedBy { it.setNumber }
-        ?: emptyList()
+    override suspend fun getPlannedSets(routineExerciseId: String): List<PlannedSet> {
+        plannedSetReadRequests += routineExerciseId
+        return plannedSetsByExercise[routineExerciseId]
+            ?.mapNotNull { plannedSets[it] }
+            ?.sortedBy { it.setNumber }
+            ?: emptyList()
+    }
 
     override suspend fun savePlannedSet(set: PlannedSet) {
         plannedSets[set.id] = set
@@ -103,17 +126,21 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     // profileId is accepted to match the interface; this fake does not model
     // per-session profiles, so profile scoping is exercised by the SQL-backed
     // repository, not here.
-    override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> = getCompletedSetsForExercise(exerciseId).take(limit)
+    override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> {
+        val recent = getCompletedSetsForExercise(exerciseId).filter { it.sessionId !in deletedSessionIds }
+        return collapseCompletedSetsToLatestLogicalAttempts(recent, sessionRoutineIds::get).take(limit)
+    }
 
     override suspend fun saveCompletedSet(set: CompletedSet) {
-        saveCompletedSetAttempts += set
-        beforeSaveCompletedSet(set)
-        completedSets[set.id] = set
-        completedSetsBySession.getOrPut(set.sessionId) { mutableListOf() }
-            .apply { if (!contains(set.id)) add(set.id) }
-        updateCompletedFlow(set.sessionId)
-        saved += set
-        afterSaveCompletedSet(set)
+        val canonicalSet = set.copy(attemptNumber = set.attemptNumber.coerceAtLeast(1))
+        saveCompletedSetAttempts += canonicalSet
+        beforeSaveCompletedSet(canonicalSet)
+        completedSets[canonicalSet.id] = canonicalSet
+        completedSetsBySession.getOrPut(canonicalSet.sessionId) { mutableListOf() }
+            .apply { if (!contains(canonicalSet.id)) add(canonicalSet.id) }
+        updateCompletedFlow(canonicalSet.sessionId)
+        saved += canonicalSet
+        afterSaveCompletedSet(canonicalSet)
     }
 
     override suspend fun ensureCompletedSetForTaggedJustLift(session: WorkoutSession, isAmrap: Boolean): CompletedSet? {
@@ -145,6 +172,36 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
 
     override suspend fun saveCompletedSets(sets: List<CompletedSet>) {
         sets.forEach { saveCompletedSet(it) }
+    }
+
+    override suspend fun nextAttemptNumber(key: LogicalSetKey): Int = completedSets.values
+        .asSequence()
+        .filter { it.sessionId !in deletedSessionIds }
+        .filter { sessionRoutineIds[it.sessionId] == key.routineSessionId }
+        .filter { it.routineExerciseId == key.routineExerciseId }
+        .filter { it.setNumber == key.setIndex }
+        .filter { it.setType == key.setKind }
+        .maxOfOrNull { it.attemptNumber.coerceAtLeast(1) }
+        ?.plus(1)
+        ?: 1
+
+    override suspend fun isAttemptDurable(
+        stableSessionId: String,
+        key: LogicalSetKey,
+        attemptNumber: Int,
+    ): Boolean {
+        attemptDurabilityReadCount++
+        beforeAttemptDurabilityRead()
+        return attemptNumber >= 1 &&
+            stableSessionId !in deletedSessionIds &&
+            sessionRoutineIds[stableSessionId] == key.routineSessionId &&
+            completedSets.values.any {
+                it.sessionId == stableSessionId &&
+                    it.routineExerciseId == key.routineExerciseId &&
+                    it.setNumber == key.setIndex &&
+                    it.setType == key.setKind &&
+                    it.attemptNumber.coerceAtLeast(1) == attemptNumber
+            }
     }
 
     override suspend fun updateRpe(setId: String, rpe: Int) {

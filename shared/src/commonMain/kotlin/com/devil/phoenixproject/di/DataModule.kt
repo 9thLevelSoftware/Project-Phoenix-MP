@@ -64,6 +64,7 @@ val dataModule = module {
     // Training Cycles Repositories
     single<TrainingCycleRepository> { SqlDelightTrainingCycleRepository(get()) }
     single<CompletedSetRepository> { SqlDelightCompletedSetRepository(get()) }
+    single<ActiveWorkoutRuntimeRepository> { SqlDelightActiveWorkoutRuntimeRepository(get()) }
     single<ProgressionRepository> { SqlDelightProgressionRepository(get()) }
     single<EquipmentRackRepository> {
         ProfileEquipmentRackRepository(

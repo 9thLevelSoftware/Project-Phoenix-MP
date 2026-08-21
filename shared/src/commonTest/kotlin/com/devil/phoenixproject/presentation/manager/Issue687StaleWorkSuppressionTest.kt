@@ -54,7 +54,7 @@ class Issue687StaleWorkSuppressionTest {
     }
 
     @Test
-    fun `guard cancels only the exact lease completion job`() {
+    fun `guard replacement cancels A before B attaches and stale A cancellation preserves B`() {
         val guard = WorkoutExecutionGuard()
         val leaseA = guard.beginExecution(executionSeed("guard-a")).getOrThrow()
         val completionA = Job()
@@ -62,13 +62,13 @@ class Issue687StaleWorkSuppressionTest {
 
         val leaseB = guard.beginExecution(executionSeed("guard-b")).getOrThrow()
         val completionB = Job()
-        assertFalse(guard.attachCompletionJob(leaseB, completionB))
+        assertTrue(completionA.isCancelled)
+        assertTrue(guard.attachCompletionJob(leaseB, completionB))
 
         guard.cancelPresentationJobsFor(leaseA)
 
         assertTrue(completionA.isCancelled)
         assertFalse(completionB.isCancelled)
-        assertTrue(guard.attachCompletionJob(leaseB, completionB))
         guard.clearCompletionJobIfOwned(leaseA)
         guard.cancelPresentationJobsFor(leaseB)
         assertTrue(completionB.isCancelled)
@@ -94,7 +94,13 @@ class Issue687StaleWorkSuppressionTest {
             startExecution(harness, routine("completion-a", restSeconds = 5))
             hapticBlock = blockHapticEmissions(harness)
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
             assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
             harness.dwsm.stopWorkout(exitingWorkout = true)
@@ -165,7 +171,10 @@ class Issue687StaleWorkSuppressionTest {
             harness.setActiveSummaryCountdownSeconds(-1)
             harness.setActiveCountdownBeepsEnabled(true)
             startExecution(harness, routine("rest-haptic-a", setCount = 2, restSeconds = 10))
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+            )
             runCurrent()
             assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
 
@@ -241,7 +250,10 @@ class Issue687StaleWorkSuppressionTest {
         try {
             harness.setActiveSummaryCountdownSeconds(5)
             startExecution(harness, routine("summary-a", restSeconds = 5))
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+            )
             runCurrent()
             assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
 
@@ -266,7 +278,10 @@ class Issue687StaleWorkSuppressionTest {
         try {
             harness.setActiveSummaryCountdownSeconds(-1)
             startExecution(harness, routine("rest-a", setCount = 2, restSeconds = 2))
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+            )
             runCurrent()
             assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
 
@@ -337,7 +352,10 @@ class Issue687StaleWorkSuppressionTest {
                 isJustLift = true,
                 useAutoStart = true,
             )
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+            )
             runCurrent()
             assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
 
@@ -464,7 +482,13 @@ class Issue687StaleWorkSuppressionTest {
             startExecution(harness, warmupRoutine("warmup-a"))
             hapticBlock = blockHapticEmissions(harness)
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
             assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
 
@@ -514,7 +538,10 @@ class Issue687StaleWorkSuppressionTest {
         try {
             harness.setActiveSummaryCountdownSeconds(-1)
             startExecution(harness, routine("next-a", setCount = 2, restSeconds = 1))
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+            )
             runCurrent()
             assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
 

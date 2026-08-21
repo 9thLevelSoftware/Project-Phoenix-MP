@@ -744,6 +744,8 @@ class SqlDelightSyncRepositoryTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
             isBodyweight = null,
+            dropSetEnabled = 0L,
+            dropSetMinWeightKg = null,
         )
 
         repository.mergePortalRoutines(
@@ -826,6 +828,8 @@ class SqlDelightSyncRepositoryTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = "ESTIMATED_1RM",
             isBodyweight = null,
+            dropSetEnabled = 0L,
+            dropSetMinWeightKg = null,
         )
 
         repository.mergePortalRoutines(
@@ -857,6 +861,124 @@ class SqlDelightSyncRepositoryTest {
             .executeAsList()
             .single()
         assertEquals("ESTIMATED_1RM", exercise.scalingBasis)
+    }
+
+    @Test
+    fun `mergePortalRoutines preserves omitted drop set config and applies explicit false`() = runTest {
+        database.vitruvianDatabaseQueries.insertRoutine(
+            id = "routine-drop-set",
+            name = "Drop Set",
+            description = "",
+            createdAt = 1_700_000_000_000,
+            lastUsed = null,
+            useCount = 0,
+            profile_id = "active-profile",
+            groupId = null,
+        )
+        database.vitruvianDatabaseQueries.insertRoutineExercise(
+            id = "rex-drop-set",
+            routineId = "routine-drop-set",
+            exerciseName = "Bench Press",
+            exerciseMuscleGroup = "Chest",
+            exerciseEquipment = "Cable",
+            exerciseDefaultCableConfig = "DOUBLE",
+            exerciseId = null,
+            cableConfig = "DOUBLE",
+            orderIndex = 0,
+            setReps = "8",
+            weightPerCableKg = 20.0,
+            setWeights = "",
+            mode = "OldSchool",
+            eccentricLoad = 100,
+            echoLevel = 1,
+            progressionKg = 0.0,
+            restSeconds = 60,
+            duration = null,
+            setRestSeconds = "[]",
+            perSetRestTime = 0,
+            isAMRAP = 0,
+            supersetId = null,
+            orderInSuperset = 0,
+            usePercentOfPR = 0,
+            weightPercentOfPR = 80,
+            prTypeForScaling = "MAX_WEIGHT",
+            setWeightsPercentOfPR = null,
+            stallDetectionEnabled = 1,
+            stopAtTop = 0,
+            repCountTiming = "TOP",
+            setEchoLevels = "",
+            warmupSets = "",
+            defaultRackItemIds = "[]",
+            rackBehaviorOverrides = "{}",
+            scalingBasis = null,
+            isBodyweight = null,
+            dropSetEnabled = 1L,
+            dropSetMinWeightKg = 8.0,
+        )
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-drop-set",
+                    userId = "user",
+                    name = "Drop Set Remote",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-drop-set",
+                            routineId = "routine-drop-set",
+                            name = "Bench Press",
+                            muscleGroup = "Chest",
+                            orderIndex = 0,
+                            reps = 8,
+                            weight = 20f,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val preserved = database.vitruvianDatabaseQueries
+            .selectExercisesByRoutine("routine-drop-set")
+            .executeAsList()
+            .single()
+        assertEquals(1L, preserved.dropSetEnabled)
+        assertEquals(8.0, preserved.dropSetMinWeightKg)
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-drop-set",
+                    userId = "user",
+                    name = "Drop Set Remote",
+                    updatedAt = 1_700_000_000_300,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-drop-set",
+                            routineId = "routine-drop-set",
+                            name = "Bench Press",
+                            muscleGroup = "Chest",
+                            orderIndex = 0,
+                            reps = 8,
+                            weight = 20f,
+                            dropSetEnabled = false,
+                            dropSetMinWeightKg = null,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_200,
+            profileId = "active-profile",
+        )
+
+        val disabled = database.vitruvianDatabaseQueries
+            .selectExercisesByRoutine("routine-drop-set")
+            .executeAsList()
+            .single()
+        assertEquals(0L, disabled.dropSetEnabled)
+        assertEquals(null, disabled.dropSetMinWeightKg)
     }
 
     @Test

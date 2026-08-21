@@ -422,6 +422,8 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     defaultRackItemIds = defaultRackItemIds,
                     rackBehaviorOverrides = rackBehaviorOverrides,
                     scalingBasis = row.scalingBasis?.let { runCatching { ScalingBasis.valueOf(it) }.getOrNull() },
+                    dropSetEnabled = row.dropSetEnabled == 1L,
+                    dropSetMinWeightKg = row.dropSetMinWeightKg?.toFloat(),
                 )
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to map routine exercise: ${row.exerciseId}" }
@@ -777,6 +779,8 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             // #635: persist the explicit flag so reloads and sync keep the exact
             // classification (null = derive from equipment, pre-migration behavior)
             isBodyweight = exercise.exercise.isBodyweightOverride?.let { if (it) 1L else 0L },
+            dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
+            dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
         )
     }
 

@@ -36,6 +36,27 @@
     <!-- ==================== Rest Timer ==================== -->
     <string name="rest_eccentric_load">CARICO ECCENTRICO</string>
     <string name="rest_echo_level">LIVELLO ECHO</string>
+    <string name="drop_set_title">Drop set</string>
+    <string name="drop_set_offer_toggle">Offri un drop set dopo un fallimento.</string>
+    <string name="drop_set_min_weight">Peso minimo</string>
+    <string name="drop_set_min_weight_supporting">Minimo per cavo in %1$s</string>
+    <string name="drop_set_min_weight_error">Inserisci un peso minimo maggiore di 0</string>
+    <string name="drop_set_offer_question">Riprovare questa serie con un drop set?</string>
+    <string name="drop_set_retry_set">Riprova serie</string>
+    <string name="drop_set_skip">Salta drop set</string>
+    <string name="drop_set_candidate_unavailable">Sotto il minimo configurato</string>
+    <string name="drop_set_remaining_one">1 drop rimanente</string>
+    <string name="drop_set_remaining_many">%1$d drop rimanenti</string>
+    <string name="drop_set_accepted_waiting">Nuovo tentativo a %1$s — %2$s per cavo</string>
+    <string name="drop_set_saving">Salvataggio del tentativo fallito</string>
+    <string name="drop_set_preparing">Preparazione dell’attrezzo</string>
+    <string name="drop_set_ready">Pronto per riprovare</string>
+    <string name="drop_set_recovery">Riconnettiti per riprovare questo drop set</string>
+    <string name="drop_set_skip_rest_blocked">Scegli un drop set o saltalo prima di saltare il riposo</string>
+    <string name="drop_set_waiting_timer">Riposo completato. Scegli un drop set o saltalo per continuare.</string>
+    <string name="cd_drop_set_candidate">Drop del %1$s, %2$s per cavo</string>
+    <string name="cd_drop_set_candidate_unavailable">Drop del %1$s non disponibile</string>
+    <string name="cd_drop_set_retry_disabled">Seleziona una percentuale di drop per riprovare</string>
 
     <!-- ==================== Configuration ==================== -->
     <string name="config_echo_level">LIVELLO ECHO</string>

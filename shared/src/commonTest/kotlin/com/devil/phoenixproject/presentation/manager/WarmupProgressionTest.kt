@@ -118,7 +118,10 @@ class WarmupProgressionTest {
 
         // Complete the warm-up set -> transition to the working set.
         harness.fakeBleRepo.commandsReceived.clear()
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+        )
         advanceUntilIdle()
 
         // Warm-up phase should be over.
@@ -171,7 +174,10 @@ class WarmupProgressionTest {
         )
 
         harness.fakeBleRepo.commandsReceived.clear()
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+        )
         advanceUntilIdle()
 
         val workingPacket = harness.firstActivationPacket()

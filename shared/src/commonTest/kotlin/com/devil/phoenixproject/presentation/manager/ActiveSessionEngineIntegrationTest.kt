@@ -4,6 +4,8 @@ import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.DropSetConfiguration
+import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -14,6 +16,8 @@ import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
@@ -474,6 +478,11 @@ class ActiveSessionEngineIntegrationTest {
                 gamificationManager = harness.gamificationManager,
                 trainingCycleRepository = harness.fakeTrainingCycleRepo,
                 completedSetRepository = harness.fakeCompletedSetRepo,
+                activeWorkoutRuntimeRepository = harness.fakeActiveWorkoutRuntimeRepository,
+                dropSetEligibilityPolicy = DropSetEligibilityPolicy(DropSetFeatureGate { false }, DropSetCandidateResolver()),
+                dropSetConfigurationProvider = { DropSetConfiguration(enabled = false, minimumWeightPerCableKg = null) },
+                transitionIdGenerator = { "integration-transition" },
+                offerIdGenerator = { "integration-offer" },
                 syncTriggerManager = null,
                 repMetricRepository = harness.fakeRepMetricRepo,
                 biomechanicsRepository = harness.fakeBiomechanicsRepo,
@@ -487,7 +496,12 @@ class ActiveSessionEngineIntegrationTest {
                 elapsedRealtimeProvider = { testScheduler.currentTime },
                 wallClockMillisProvider = { harness.nowMs },
             )
-            nullUseCaseEngine.flowDelegate = harness.activeSessionEngine.flowDelegate
+            val routineFlowDelegate = requireNotNull(harness.activeSessionEngine.flowDelegate)
+            nullUseCaseEngine.flowDelegate = object : ActiveSessionEngine.WorkoutFlowDelegate by routineFlowDelegate {
+                override fun proceedFromSummary(completion: SetExecutionCompletion) {
+                    requireNotNull(nullUseCaseEngine).startRestTimer(completion)
+                }
+            }
 
             completeCycleWorkoutDay(
                 harness = harness,
@@ -687,7 +701,10 @@ class ActiveSessionEngineIntegrationTest {
             ),
         )
 
-        engine.handleSetCompletion()
+        engine.handleSetCompletion(
+            engine.currentExecutionLeaseForTest(),
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+        )
         harness.testScope.advanceUntilIdle()
     }
 
@@ -711,6 +728,11 @@ class ActiveSessionEngineIntegrationTest {
         gamificationManager = harness.gamificationManager,
         trainingCycleRepository = harness.fakeTrainingCycleRepo,
         completedSetRepository = harness.fakeCompletedSetRepo,
+        activeWorkoutRuntimeRepository = harness.fakeActiveWorkoutRuntimeRepository,
+        dropSetEligibilityPolicy = DropSetEligibilityPolicy(DropSetFeatureGate { false }, DropSetCandidateResolver()),
+        dropSetConfigurationProvider = { DropSetConfiguration(enabled = false, minimumWeightPerCableKg = null) },
+        transitionIdGenerator = { "integration-transition" },
+        offerIdGenerator = { "integration-offer" },
         syncTriggerManager = null,
         repMetricRepository = harness.fakeRepMetricRepo,
         biomechanicsRepository = harness.fakeBiomechanicsRepo,

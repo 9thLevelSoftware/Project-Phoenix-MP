@@ -352,6 +352,27 @@
     <string name="rest_continue">Continue</string>
     <string name="rest_complete_announcement">Rest complete</string>
     <string name="rest_seconds_remaining">%1$d seconds remaining</string>
+    <string name="drop_set_title">Drop set</string>
+    <string name="drop_set_offer_toggle">Offer drop set after failure.</string>
+    <string name="drop_set_min_weight">Minimum weight</string>
+    <string name="drop_set_min_weight_supporting">Per-cable minimum in %1$s</string>
+    <string name="drop_set_min_weight_error">Enter a minimum weight greater than 0</string>
+    <string name="drop_set_offer_question">Retry this set with a drop set?</string>
+    <string name="drop_set_retry_set">Retry set</string>
+    <string name="drop_set_skip">Skip drop set</string>
+    <string name="drop_set_candidate_unavailable">Below the configured minimum</string>
+    <string name="drop_set_remaining_one">1 drop remaining</string>
+    <string name="drop_set_remaining_many">%1$d drops remaining</string>
+    <string name="drop_set_accepted_waiting">Retrying at %1$s — %2$s per cable</string>
+    <string name="drop_set_saving">Saving the failed attempt</string>
+    <string name="drop_set_preparing">Preparing the trainer</string>
+    <string name="drop_set_ready">Ready to retry</string>
+    <string name="drop_set_recovery">Reconnect to retry this drop set</string>
+    <string name="drop_set_skip_rest_blocked">Choose a drop set or skip it before skipping rest</string>
+    <string name="drop_set_waiting_timer">Rest complete. Choose a drop set or skip it to continue.</string>
+    <string name="cd_drop_set_candidate">%1$s drop, %2$s per cable</string>
+    <string name="cd_drop_set_candidate_unavailable">%1$s drop unavailable</string>
+    <string name="cd_drop_set_retry_disabled">Select a drop percentage to retry</string>
 
     <!-- ==================== Weight Adjustment ==================== -->
     <string name="set_weight">Set Weight</string>

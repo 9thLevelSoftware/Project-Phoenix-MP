@@ -298,6 +298,27 @@
     <string name="rest_continue">Continuer</string>
     <string name="rest_complete_announcement">Repos terminé</string>
     <string name="rest_seconds_remaining">%1$d secondes restantes</string>
+    <string name="drop_set_title">Drop set</string>
+    <string name="drop_set_offer_toggle">Proposer un drop set après un échec.</string>
+    <string name="drop_set_min_weight">Poids minimum</string>
+    <string name="drop_set_min_weight_supporting">Minimum par câble en %1$s</string>
+    <string name="drop_set_min_weight_error">Saisissez un poids minimum supérieur à 0</string>
+    <string name="drop_set_offer_question">Réessayer cette série avec un drop set ?</string>
+    <string name="drop_set_retry_set">Réessayer la série</string>
+    <string name="drop_set_skip">Ignorer le drop set</string>
+    <string name="drop_set_candidate_unavailable">En dessous du minimum configuré</string>
+    <string name="drop_set_remaining_one">1 drop restant</string>
+    <string name="drop_set_remaining_many">%1$d drops restants</string>
+    <string name="drop_set_accepted_waiting">Nouvel essai à %1$s — %2$s par câble</string>
+    <string name="drop_set_saving">Enregistrement de la tentative échouée</string>
+    <string name="drop_set_preparing">Préparation de l’appareil</string>
+    <string name="drop_set_ready">Prêt à réessayer</string>
+    <string name="drop_set_recovery">Reconnectez-vous pour réessayer ce drop set</string>
+    <string name="drop_set_skip_rest_blocked">Choisissez un drop set ou ignorez-le avant de passer le repos</string>
+    <string name="drop_set_waiting_timer">Repos terminé. Choisissez un drop set ou ignorez-le pour continuer.</string>
+    <string name="cd_drop_set_candidate">Drop de %1$s, %2$s par câble</string>
+    <string name="cd_drop_set_candidate_unavailable">Drop de %1$s indisponible</string>
+    <string name="cd_drop_set_retry_disabled">Sélectionnez un pourcentage de drop pour réessayer</string>
     <string name="set_weight">Régler le poids</string>
 
     <!-- Connection Logs -->

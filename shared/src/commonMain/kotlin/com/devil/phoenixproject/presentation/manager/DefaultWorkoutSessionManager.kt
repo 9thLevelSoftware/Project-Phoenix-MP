@@ -5,6 +5,10 @@ import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLookupKey
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeResumeResult
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRowRevision
 import com.devil.phoenixproject.data.repository.BiomechanicsRepository
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
@@ -18,6 +22,7 @@ import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
+import com.devil.phoenixproject.domain.model.DropSetConfiguration
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -29,8 +34,10 @@ import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightAction
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -38,14 +45,18 @@ import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
-import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
+import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.DataBackupManager
+import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -126,6 +137,65 @@ data class ResumableProgressInfo(
     val totalExercises: Int,
 )
 
+data class RoutineResumeManagerGeneration(
+    val configurationInputEpoch: Long,
+    val recoveryPublicationEpoch: Long,
+)
+
+sealed interface RoutineResumeHandle {
+    val selectedProfileId: String
+    val selectedRoutine: Routine
+    val progressInfo: ResumableProgressInfo
+    val launchOrigin: RoutineLaunchOrigin
+    val cycleId: String?
+    val cycleDayNumber: Int?
+    val managerGeneration: RoutineResumeManagerGeneration
+
+    data class InMemory(
+        override val selectedProfileId: String,
+        override val selectedRoutine: Routine,
+        val activeRoutineSnapshot: Routine,
+        override val progressInfo: ResumableProgressInfo,
+        override val launchOrigin: RoutineLaunchOrigin,
+        override val cycleId: String?,
+        override val cycleDayNumber: Int?,
+        override val managerGeneration: RoutineResumeManagerGeneration,
+        val exerciseIndex: Int,
+        val setIndex: Int,
+        val routineSessionId: String?,
+        val activeLaunchOrigin: RoutineLaunchOrigin,
+        val activeCycleId: String?,
+        val activeCycleDayNumber: Int?,
+    ) : RoutineResumeHandle
+
+    data class Persisted(
+        override val selectedProfileId: String,
+        override val selectedRoutine: Routine,
+        val lookupKey: ActiveWorkoutRuntimeLookupKey,
+        val rowRevision: ActiveWorkoutRuntimeRowRevision,
+        override val progressInfo: ResumableProgressInfo,
+        override val launchOrigin: RoutineLaunchOrigin,
+        override val cycleId: String?,
+        override val cycleDayNumber: Int?,
+        override val managerGeneration: RoutineResumeManagerGeneration,
+        val manualRecoveryCoordinates: RestTransitionPlan.Coordinates?,
+    ) : RoutineResumeHandle
+}
+
+sealed interface RoutineResumeDiscovery {
+    data object Missing : RoutineResumeDiscovery
+    data object RetryableFailure : RoutineResumeDiscovery
+    data object Superseded : RoutineResumeDiscovery
+    data class Candidate(val handle: RoutineResumeHandle) : RoutineResumeDiscovery
+}
+
+sealed interface RoutineResumeDiscardResult {
+    data object Discarded : RoutineResumeDiscardResult
+    data object Missing : RoutineResumeDiscardResult
+    data object RetryableFailure : RoutineResumeDiscardResult
+    data object Superseded : RoutineResumeDiscardResult
+}
+
 /**
  * Event emitted when a training cycle day is completed after a workout.
  * Consumed by TrainingCyclesScreen to show completion feedback.
@@ -160,6 +230,16 @@ class DefaultWorkoutSessionManager(
     private val gamificationManager: GamificationManager,
     private val trainingCycleRepository: TrainingCycleRepository,
     private val completedSetRepository: CompletedSetRepository,
+    private val activeWorkoutRuntimeRepository: ActiveWorkoutRuntimeRepository,
+    private val dropSetEligibilityPolicy: DropSetEligibilityPolicy,
+    private val dropSetConfigurationProvider: (RoutineExercise) -> DropSetConfiguration = { exercise ->
+        DropSetConfiguration(
+            enabled = exercise.dropSetEnabled,
+            minimumWeightPerCableKg = exercise.dropSetMinWeightKg,
+        )
+    },
+    private val transitionIdGenerator: () -> String = KmpUtils::randomUUID,
+    private val offerIdGenerator: () -> String = KmpUtils::randomUUID,
     private val syncTriggerManager: SyncTriggerManager?,
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
@@ -176,6 +256,15 @@ class DefaultWorkoutSessionManager(
     private val workoutServiceController: WorkoutServiceController,
     private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val scope: CoroutineScope,
+    private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    private val biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
+    private val beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    private val afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    private val afterCompletionClaim: (executionId: Long, sessionId: String, reason: SetEndReason) -> Unit = { _, _, _ -> },
+    private val beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    private val afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    private val afterResetInvalidation: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    private val afterExecutionBegin: (outgoingExecutionId: Long?, executionId: Long) -> Unit = { _, _ -> },
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
     private val _hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
@@ -183,6 +272,12 @@ class DefaultWorkoutSessionManager(
         onBufferOverflow = kotlinx.coroutines.channels.BufferOverflow.SUSPEND,
     ),
 ) : WorkoutStateProvider {
+    /** Test seam for proving transition-owned successor lookup behavior. */
+    internal var restTransitionNavigationLookupsForTest: Int = 0
+
+    /** Test seam for ordering assertions around durable transition consumption. */
+    internal var restTransitionNavigationLookupObserverForTest: (() -> Unit)? = null
+
     private val isIosPlatform = getPlatform().name.startsWith("iOS")
     private var summaryAutoAdvanceJob: Job? = null
 
@@ -233,13 +328,22 @@ class DefaultWorkoutSessionManager(
             ) {
                 activeSessionEngine.requestTeardownForTransition(expectedLease, reason, afterReady)
             }
-            override fun currentExecutionLeaseOrNull(): ExecutionLease? =
-                activeSessionEngine.currentExecutionLeaseOrNull()
-            override fun isCurrentExecution(lease: ExecutionLease): Boolean =
-                activeSessionEngine.isCurrentExecution(lease)
+            override fun currentExecutionLeaseOrNull(): ExecutionLease? = activeSessionEngine.currentExecutionLeaseOrNull()
+            override fun isCurrentExecution(lease: ExecutionLease): Boolean = activeSessionEngine.isCurrentExecution(lease)
             override fun setWorkoutParametersInternal(params: WorkoutParameters) {
                 this@DefaultWorkoutSessionManager.setWorkoutParametersInternal(params)
             }
+            override fun mutateConfigurationInputs(block: () -> Unit) {
+                activeSessionEngine.mutateConfigurationInputs(block)
+            }
+            override fun mutateConfigurationInputsIf(
+                candidateStillCurrent: () -> Boolean,
+                block: () -> Unit,
+            ): Boolean = activeSessionEngine.mutateConfigurationInputsIf(candidateStillCurrent, block)
+            override fun <T> captureConfigurationInputs(block: () -> T): ConfigurationInputCapture<T> = activeSessionEngine.captureConfigurationInputs(block)
+            override fun resolveOccurrenceSetWeight(exercise: RoutineExercise, setIndex: Int): Float = activeSessionEngine.resolveOccurrenceSetWeight(exercise, setIndex)
+            override fun beginRoutineCompletedRuntimeCleanup() = activeSessionEngine.beginRoutineCompletedRuntimeCleanup()
+            override fun beginRoutineAbandonmentRuntimeCleanup() = activeSessionEngine.beginRoutineAbandonmentRuntimeCleanup()
         }
     }
 
@@ -255,6 +359,11 @@ class DefaultWorkoutSessionManager(
         gamificationManager = gamificationManager,
         trainingCycleRepository = trainingCycleRepository,
         completedSetRepository = completedSetRepository,
+        activeWorkoutRuntimeRepository = activeWorkoutRuntimeRepository,
+        dropSetEligibilityPolicy = dropSetEligibilityPolicy,
+        dropSetConfigurationProvider = dropSetConfigurationProvider,
+        transitionIdGenerator = transitionIdGenerator,
+        offerIdGenerator = offerIdGenerator,
         syncTriggerManager = syncTriggerManager,
         repMetricRepository = repMetricRepository,
         biomechanicsRepository = biomechanicsRepository,
@@ -264,6 +373,15 @@ class DefaultWorkoutSessionManager(
         settingsManager = settingsManager,
         userProfileRepository = userProfileRepository,
         scope = scope,
+        biomechanicsDispatcher = biomechanicsDispatcher,
+        biomechanicsRepProcessor = biomechanicsRepProcessor,
+        beforeVbtCommit = beforeVbtCommit,
+        afterVbtDecisionCommit = afterVbtDecisionCommit,
+        afterCompletionClaim = afterCompletionClaim,
+        beforeBodyweightCompletionClaim = beforeBodyweightCompletionClaim,
+        afterBodyweightCompletionConsume = afterBodyweightCompletionConsume,
+        afterResetInvalidation = afterResetInvalidation,
+        afterExecutionBegin = afterExecutionBegin,
         regenerateFiveThreeOneUseCase = RegenerateFiveThreeOneRoutinesUseCase(
             trainingCycleRepository = trainingCycleRepository,
             workoutRepository = workoutRepository,
@@ -294,12 +412,44 @@ class DefaultWorkoutSessionManager(
         activeSessionEngine.flowDelegate = object : ActiveSessionEngine.WorkoutFlowDelegate {
             override fun loadRoutine(routine: Routine) = routineFlowManager.loadRoutine(routine)
             override suspend fun loadRoutineAsync(routine: Routine): Boolean = routineFlowManager.loadRoutineAsync(routine)
+            override suspend fun loadRoutineForResumeAsync(
+                routine: Routine,
+                launchOrigin: RoutineLaunchOrigin,
+                cycleId: String?,
+                cycleDayNumber: Int?,
+                publicationStillCurrent: () -> Boolean,
+            ): Boolean = routineFlowManager.loadRoutineForResumeAsync(
+                routine = routine,
+                launchOrigin = launchOrigin,
+                cycleId = cycleId,
+                cycleDayNumber = cycleDayNumber,
+                publicationStillCurrent = publicationStillCurrent,
+            )
+            override suspend fun prepareRoutineForRecovery(
+                routine: Routine,
+                exerciseIndex: Int,
+                setIndex: Int,
+                launchOrigin: RoutineLaunchOrigin,
+                cycleId: String?,
+                cycleDayNumber: Int?,
+            ): RoutineRecoveryPreparation? = routineFlowManager.prepareRoutineForRecovery(
+                routine = routine,
+                exerciseIndex = exerciseIndex,
+                setIndex = setIndex,
+                launchOrigin = launchOrigin,
+                cycleId = cycleId,
+                cycleDayNumber = cycleDayNumber,
+            )
             override fun enterSetReady(exerciseIndex: Int, setIndex: Int) = routineFlowManager.enterSetReady(exerciseIndex, setIndex)
             override fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) = routineFlowManager.enterSetReadyWithAdjustments(exerciseIndex, setIndex, adjustedWeight, adjustedReps)
             override fun skipCurrentExerciseAndEnterNextStep(): Boolean = routineFlowManager.skipCurrentExerciseAndEnterNextStep()
             override fun showRoutineComplete() = routineFlowManager.showRoutineComplete()
             override fun getCurrentExercise(): RoutineExercise? = routineFlowManager.getCurrentExercise()
-            override fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>? = routineFlowManager.getNextStep(routine, exerciseIndex, setIndex)
+            override fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>? {
+                restTransitionNavigationLookupsForTest++
+                restTransitionNavigationLookupObserverForTest?.invoke()
+                return routineFlowManager.getNextStep(routine, exerciseIndex, setIndex)
+            }
             override fun isSameExercise(a: RoutineExercise, b: RoutineExercise): Boolean = routineFlowManager.isSameExercise(a, b)
             override fun isInSuperset(): Boolean = routineFlowManager.isInSuperset()
             override fun isAtEndOfSupersetCycle(): Boolean = routineFlowManager.isAtEndOfSupersetCycle()
@@ -311,8 +461,7 @@ class DefaultWorkoutSessionManager(
             override fun calculateIsLastExercise(isSingleExercise: Boolean, currentExercise: RoutineExercise?, routine: Routine?): Boolean = routineFlowManager.calculateIsLastExercise(isSingleExercise, currentExercise, routine)
             override fun clearCycleContext() = routineFlowManager.clearCycleContext()
             override fun seedRackSelectionForExercise(exerciseIndex: Int) = routineFlowManager.seedRackSelectionForExercise(exerciseIndex)
-            override fun proceedFromSummary(lease: ExecutionLease) =
-                this@DefaultWorkoutSessionManager.proceedFromSummary(lease)
+            override fun proceedFromSummary(completion: SetExecutionCompletion) = this@DefaultWorkoutSessionManager.proceedFromSummary(completion)
         }
 
         scope.launch {
@@ -370,7 +519,7 @@ class DefaultWorkoutSessionManager(
                             coordinator._workoutState.value is WorkoutState.SetSummary
                         ) {
                             Logger.d { "Summary auto-advance fallback fired - proceeding from summary in manager scope" }
-                            proceedFromSummary(lease)
+                            proceedFromSummary()
                         }
                     }
                 }
@@ -634,6 +783,16 @@ class DefaultWorkoutSessionManager(
 
     /** Issue #2 Fix: Suspend version that completes after routine is fully loaded */
     suspend fun loadRoutineAsync(routine: Routine) = routineFlowManager.loadRoutineAsync(routine)
+    internal suspend fun loadRoutineForResumeAsync(
+        routine: Routine,
+        publicationStillCurrent: () -> Boolean,
+    ) = routineFlowManager.loadRoutineForResumeAsync(
+        routine = routine,
+        launchOrigin = RoutineLaunchOrigin.DAILY_ROUTINES,
+        cycleId = null,
+        cycleDayNumber = null,
+        publicationStillCurrent = publicationStillCurrent,
+    )
     fun loadRoutineById(routineId: String) = routineFlowManager.loadRoutineById(routineId)
     fun enterRoutineOverview(routine: Routine) = routineFlowManager.enterRoutineOverview(routine)
     fun enterRoutineOverview(routine: Routine, modifier: AppliedRoutineModifier) = routineFlowManager.enterRoutineOverview(routine, modifier)
@@ -725,6 +884,13 @@ class DefaultWorkoutSessionManager(
     fun updateActiveRackBehaviorOverrides(
         overrides: Map<String, RackItemBehavior>,
     ) = activeSessionEngine.updateActiveRackBehaviorOverrides(overrides)
+    fun updateLoadedRoutineRackBehaviorOverrides(
+        updatedRoutine: Routine,
+        overrides: Map<String, RackItemBehavior>,
+    ) = activeSessionEngine.updateLoadedRoutineRackBehaviorOverrides(updatedRoutine, overrides)
+    internal fun supersedeConfigurationInputIntent() = activeSessionEngine.supersedeConfigurationInputIntent()
+    internal fun beginConfigurationInputMutation(): ConfigurationInputMutationToken = activeSessionEngine.beginConfigurationInputMutation()
+    internal fun endConfigurationInputMutation(token: ConfigurationInputMutationToken) = activeSessionEngine.endConfigurationInputMutation(token)
     fun clearActiveRackSelection() = activeSessionEngine.clearActiveRackSelection()
     fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = activeSessionEngine.startWorkout(skipCountdown, isJustLiftMode)
     fun skipCountdown() = activeSessionEngine.skipCountdown()
@@ -775,11 +941,47 @@ class DefaultWorkoutSessionManager(
 
     fun loadRoutineFromCycle(routineId: String, cycleId: String, dayNumber: Int) = activeSessionEngine.loadRoutineFromCycle(routineId, cycleId, dayNumber)
     suspend fun loadRoutineFromCycleAsync(routineId: String, cycleId: String, dayNumber: Int) = activeSessionEngine.loadRoutineFromCycleAsync(routineId, cycleId, dayNumber)
+    internal suspend fun loadRoutineFromCycleForResumeAsync(
+        routine: Routine,
+        cycleId: String,
+        dayNumber: Int,
+        publicationStillCurrent: () -> Boolean,
+    ) = activeSessionEngine.loadRoutineFromCycleForResumeAsync(
+        routine = routine,
+        cycleId = cycleId,
+        dayNumber = dayNumber,
+        publicationStillCurrent = publicationStillCurrent,
+    )
     fun clearCycleContext() = activeSessionEngine.clearCycleContext()
 
     // ===== Rest/Flow Control — delegated to ActiveSessionEngine =====
 
     fun skipRest() = activeSessionEngine.skipRest()
+    fun applyRestTransition(command: RestTransitionCommand) = activeSessionEngine.applyRestTransition(command)
+    suspend fun discoverRoutineResume(
+        routine: Routine,
+        launchOrigin: RoutineLaunchOrigin,
+        cycleId: String? = null,
+        cycleDayNumber: Int? = null,
+    ): RoutineResumeDiscovery = activeSessionEngine.discoverRoutineResume(
+        routine = routine,
+        inMemoryProgress = userProfileRepository.activeProfile.value?.id
+            ?.let { profileId -> routineFlowManager.captureResumableProgress(routine.id, profileId) },
+        launchOrigin = launchOrigin,
+        cycleId = cycleId,
+        cycleDayNumber = cycleDayNumber,
+    )
+    suspend fun resumeRoutine(handle: RoutineResumeHandle): ActiveWorkoutRuntimeResumeResult = when (handle) {
+        is RoutineResumeHandle.InMemory -> activeSessionEngine.resumeInMemoryRoutine(handle)
+        is RoutineResumeHandle.Persisted -> activeSessionEngine.resumeRoutine(handle)
+    }
+    fun isRoutineResumeHandleCurrent(handle: RoutineResumeHandle.InMemory): Boolean = activeSessionEngine.isRoutineResumeHandleCurrent(handle)
+    suspend fun discardRoutineResume(handle: RoutineResumeHandle): RoutineResumeDiscardResult = when (handle) {
+        is RoutineResumeHandle.InMemory -> activeSessionEngine.discardInMemoryRoutine(handle)
+        is RoutineResumeHandle.Persisted -> activeSessionEngine.discardRoutineResume(handle)
+    }
+    internal val restTransitionPlan: StateFlow<RestTransitionPlan?> get() = coordinator.restTransitionPlan
+    internal suspend fun applyRestTransitionAwait(command: RestTransitionCommand): RestTransitionReduction = activeSessionEngine.applyRestTransitionAwait(command)
     fun extendRestTime(seconds: Int) = activeSessionEngine.extendRestTime(seconds)
     fun toggleRestPause() = activeSessionEngine.toggleRestPause()
     fun resetRestTimer() = activeSessionEngine.resetRestTimer()
@@ -851,14 +1053,19 @@ class DefaultWorkoutSessionManager(
      * Stays in DWSM because it coordinates between RoutineFlowManager and ActiveSessionEngine.
      */
     fun proceedFromSummary() {
-        proceedFromSummaryFor(activeSessionEngine.currentExecutionLeaseOrNull())
+        val lease = activeSessionEngine.currentExecutionLeaseOrNull()
+        val completion = lease?.let(activeSessionEngine::claimedCompletion)
+        proceedFromSummaryFor(lease, completion)
     }
 
-    internal fun proceedFromSummary(lease: ExecutionLease) {
-        proceedFromSummaryFor(lease)
+    internal fun proceedFromSummary(completion: SetExecutionCompletion) {
+        proceedFromSummaryFor(completion.lease, completion)
     }
 
-    private fun proceedFromSummaryFor(expectedLease: ExecutionLease?) {
+    private fun proceedFromSummaryFor(
+        expectedLease: ExecutionLease?,
+        completion: SetExecutionCompletion? = null,
+    ) {
         if (expectedLease != null && !activeSessionEngine.isCurrentExecution(expectedLease)) return
         // Issue #355: Atomic guard to prevent duplicate calls on iOS.
         // When app foregrounds, both manager-level fallback AND UI-level countdown can fire,
@@ -885,7 +1092,9 @@ class DefaultWorkoutSessionManager(
 
                 // Issue #209: If we have a loaded routine, force isJustLift = false
                 val isJustLift = if (routine != null) {
-                    coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(isJustLift = false)
+                    activeSessionEngine.setWorkoutParametersInternal(
+                        coordinator._workoutParameters.value.copy(isJustLift = false),
+                    )
                     false
                 } else {
                     coordinator._workoutParameters.value.isJustLift
@@ -894,6 +1103,25 @@ class DefaultWorkoutSessionManager(
                 Logger.d { "proceedFromSummary: routine=${routine?.name ?: "NULL"}, isJustLift=$isJustLift, autoplay=$autoplay" }
                 Logger.d {
                     "  currentExerciseIndex=${coordinator._currentExerciseIndex.value}, currentSetIndex=${coordinator._currentSetIndex.value}"
+                }
+
+                // A routine completion owns an immutable rest transition.  Install and
+                // durably publish that plan before any completion/finality/navigation
+                // lookup, including the manual (autoplay-off) summary path.
+                if (routine != null && !isJustLift && completion?.routineIdentity != null) {
+                    val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value)
+                    val isLastSetOfExercise = coordinator._currentSetIndex.value >=
+                        (currentExercise?.setReps?.size ?: 1) - 1
+                    val summary = coordinator._workoutState.value as? WorkoutState.SetSummary
+                    val completedWorkingReps = summary?.workingReps ?: 0
+                    if (isLastSetOfExercise && completedWorkingReps > 0) {
+                        val currentExerciseIndex = coordinator._currentExerciseIndex.value
+                        coordinator._completedExercises.value = coordinator._completedExercises.value + currentExerciseIndex
+                        coordinator._skippedExercises.value = coordinator._skippedExercises.value - currentExerciseIndex
+                    }
+                    coordinator._currentSetRpe.value = null
+                    activeSessionEngine.startRestTimer(completion)
+                    return@launch
                 }
 
                 // Check if routine is complete (for routine mode, not Just Lift)
@@ -911,6 +1139,7 @@ class DefaultWorkoutSessionManager(
                     }
 
                     // Check if there are ANY more steps using superset-aware navigation
+                    restTransitionNavigationLookupsForTest++
                     val nextStep = routineFlowManager.getNextStep(
                         routine,
                         coordinator._currentExerciseIndex.value,
@@ -947,13 +1176,16 @@ class DefaultWorkoutSessionManager(
                                     }
                             }
                         }
+                        activeSessionEngine.supersedeConfigurationInputIntent()
                         coordinator._workoutState.value = WorkoutState.Idle
                         showRoutineComplete()
                         // Clear routine session context so stale IDs don't leak into next routine
-                        coordinator.currentRoutineSessionId = null
-                        coordinator.currentRoutineName = null
-                        coordinator.currentRoutineId = null
-                        coordinator._completedRoutineSetKeys.value = emptySet()
+                        activeSessionEngine.mutateConfigurationInputs {
+                            coordinator.currentRoutineSessionId = null
+                            coordinator.currentRoutineName = null
+                            coordinator.currentRoutineId = null
+                            coordinator._completedRoutineSetKeys.value = emptySet()
+                        }
                         return@launch
                     }
 
@@ -962,34 +1194,31 @@ class DefaultWorkoutSessionManager(
                         Logger.d { "proceedFromSummary: Autoplay OFF - going to SetReady for next step" }
                         val (nextExIdx, nextSetIdx) = nextStep
 
-                        // Advance to next step
-                        coordinator._currentExerciseIndex.value = nextExIdx
-                        coordinator._currentSetIndex.value = nextSetIdx
-
-                        // Clear RPE for next set
-                        coordinator._currentSetRpe.value = null
-
                         // Get next exercise and update parameters
                         val nextExercise = routine.exercises[nextExIdx]
-                        val nextSetWeight = nextExercise.setWeightsPerCableKg.getOrNull(nextSetIdx)
-                            ?: nextExercise.weightPerCableKg
+                        val nextSetWeight = activeSessionEngine.resolveOccurrenceSetWeight(nextExercise, nextSetIdx)
                         val nextSetReps = nextExercise.setReps.getOrNull(nextSetIdx)
                         val isNextSetLastSet = nextSetIdx >= nextExercise.setReps.size - 1
                         val nextIsAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet)
 
-                        coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
-                            weightPerCableKg = nextSetWeight,
-                            reps = nextSetReps ?: 0,
-                            programMode = nextExercise.programMode,
-                            echoLevel = nextExercise.echoLevel,
-                            eccentricLoad = nextExercise.eccentricLoad,
-                            progressionRegressionKg = nextExercise.progressionKg,
-                            selectedExerciseId = nextExercise.exercise.id,
-                            isAMRAP = nextIsAMRAP,
-                            stallDetectionEnabled = nextExercise.stallDetectionEnabled,
-                            stopAtTop = nextExercise.stopAtTop,
-                            repCountTiming = nextExercise.repCountTiming,
-                        )
+                        activeSessionEngine.mutateConfigurationInputs {
+                            coordinator._currentExerciseIndex.value = nextExIdx
+                            coordinator._currentSetIndex.value = nextSetIdx
+                            coordinator._currentSetRpe.value = null
+                            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+                                weightPerCableKg = nextSetWeight,
+                                reps = nextSetReps ?: 0,
+                                programMode = nextExercise.programMode,
+                                echoLevel = nextExercise.echoLevel,
+                                eccentricLoad = nextExercise.eccentricLoad,
+                                progressionRegressionKg = nextExercise.progressionKg,
+                                selectedExerciseId = nextExercise.exercise.id,
+                                isAMRAP = nextIsAMRAP,
+                                stallDetectionEnabled = nextExercise.stallDetectionEnabled,
+                                stopAtTop = nextExercise.stopAtTop,
+                                repCountTiming = nextExercise.repCountTiming,
+                            )
+                        }
                         Logger.d {
                             "proceedFromSummary: Issue #203 - Updated params for next set: ${nextExercise.exercise.name}, setIdx=$nextSetIdx, isAMRAP=$nextIsAMRAP"
                         }
@@ -1037,7 +1266,8 @@ class DefaultWorkoutSessionManager(
                 if (shouldShowRestTimer) {
                     Logger.d { "proceedFromSummary: Starting rest timer..." }
                     if (expectedLease != null) {
-                        activeSessionEngine.startRestTimer(expectedLease)
+                        completion?.let(activeSessionEngine::startRestTimer)
+                            ?: activeSessionEngine.startRestTimer(expectedLease)
                     } else {
                         activeSessionEngine.startRestTimer()
                     }

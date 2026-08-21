@@ -15,6 +15,7 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
@@ -338,7 +339,11 @@ class WorkoutMachineTeardownTest {
 
     @Test
     fun `warmup successor starts only after reset succeeds`() = runTest {
-        val harness = DWSMTestHarness(this)
+        val executionIds = mutableListOf<Long>()
+        val harness = DWSMTestHarness(
+            this,
+            afterExecutionBegin = { _, executionId -> executionIds += executionId },
+        )
         val resetResult = CompletableDeferred<Result<Unit>>()
         try {
             val routine = warmupRoutine()
@@ -352,7 +357,10 @@ class WorkoutMachineTeardownTest {
             harness.fakeBleRepo.commandsReceived.clear()
             harness.fakeBleRepo.stopWorkoutBlock = { resetResult.await() }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+            )
             runCurrent()
 
             assertEquals(0, harness.coordinator.currentWarmupSetIndex.value)
@@ -365,6 +373,12 @@ class WorkoutMachineTeardownTest {
             advanceUntilIdle()
 
             assertEquals(-1, harness.coordinator.currentWarmupSetIndex.value)
+            assertEquals(2, executionIds.size, "warmup completion must reserve exactly one successor")
+            assertNotNull(
+                harness.activeSessionEngine.currentExecutionLeaseOrNull(),
+                "warmup successor must retain execution authority through configuration; " +
+                    "runtime=${harness.activeSessionEngine.activeRuntimeDocumentForTest()}",
+            )
             assertTrue(
                 harness.fakeBleRepo.commandsReceived.any { it.firstOrNull() == 0x04.toByte() },
             )
@@ -494,7 +508,8 @@ class WorkoutMachineTeardownTest {
             ),
         )
 
-        assertEquals(2, Regex("bleRepository\\.stopWorkout\\(\\)").findAll(activeSessionSource).count())
+        assertEquals(3, Regex("bleRepository\\.stopWorkout\\(\\)").findAll(activeSessionSource).count())
+        assertTrue(activeSessionSource.contains("launchRestoredMachineTeardownReset"))
         assertTrue(activeSessionSource.contains("pause/resume non-exit RESET exception"))
         assertTrue(!defaultManagerSource.contains("bleRepository.stopWorkout()"))
         assertTrue(!routineFlowSource.contains("stopMachineWorkout"))

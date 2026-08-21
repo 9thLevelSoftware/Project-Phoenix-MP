@@ -72,6 +72,34 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `normal backup excludes local active workout runtime recovery data`() = runTest {
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "ordinary-exported-session",
+                routineSessionId = "ordinary-routine-session",
+                exerciseName = "Bench Press",
+                totalReps = 8,
+                workingReps = 8,
+            ),
+        )
+        database.vitruvianDatabaseQueries.replaceActiveWorkoutRuntime(
+            profile_id = "runtime-only-profile-key-673",
+            routine_session_id = "runtime-only-session-key-673",
+            document_version = 1,
+            runtime_json = """{"version":1,"sourceStableSessionId":"runtime-secret-673"}""",
+            updated_at_epoch_ms = 1_700_000_000_000,
+        )
+
+        val exportedJson = backupManager.exportToJson()
+        val decoded = testJson.decodeFromString<BackupData>(exportedJson)
+
+        assertEquals(listOf("ordinary-exported-session"), decoded.data.workoutSessions.map { it.id })
+        assertFalse(exportedJson.contains("runtime-only-profile-key-673"))
+        assertFalse(exportedJson.contains("runtime-only-session-key-673"))
+        assertFalse(exportedJson.contains("runtime-secret-673"))
+    }
+
+    @Test
     fun `exportAllData resolves placeholder routine name when mapping is unique`() = runTest {
         workoutRepository.saveRoutine(
             buildRoutine(
@@ -535,13 +563,16 @@ class DataBackupManagerRoutineNameTest {
             id = "cs-1",
             session_id = "session-export-test",
             planned_set_id = null,
+            routine_exercise_id = "routine-exercise-export",
             set_number = 1,
             set_type = "STANDARD",
+            attempt_number = 3,
             actual_reps = 10,
             actual_weight_kg = 50.0,
             logged_rpe = null,
             is_pr = 0,
             completed_at = 1700000060000L,
+            set_end_reason = "TARGET_REPS_REACHED",
         )
 
         // Export just this session
@@ -561,6 +592,8 @@ class DataBackupManagerRoutineNameTest {
         assertEquals(1, backupData.data.completedSets.size, "Should include completedSets for the session")
         assertEquals("cs-1", backupData.data.completedSets[0].id)
         assertEquals("session-export-test", backupData.data.completedSets[0].sessionId)
+        assertEquals("routine-exercise-export", backupData.data.completedSets[0].routineExerciseId)
+        assertEquals(3, backupData.data.completedSets[0].attemptNumber)
 
         // Verify it can be re-imported (import compatibility)
         // First delete the session so import has room
@@ -571,9 +604,186 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(importResult.isSuccess, "Should be importable")
         assertEquals(1, importResult.getOrThrow().sessionsImported)
         assertEquals(1, importResult.getOrThrow().completedSetsImported)
+        val reimported = database.vitruvianDatabaseQueries.selectCompletedSetById("cs-1").executeAsOne()
+        assertEquals("routine-exercise-export", reimported.routine_exercise_id)
+        assertEquals(3L, reimported.attempt_number)
 
         // Clean up
         File(filePath).delete()
+    }
+
+    @Test
+    fun `buffered and streaming completed set imports canonicalize unknown end reasons`() = runTest {
+        val backup = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-08-14T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-future-reason",
+                        timestamp = 1L,
+                        mode = "OldSchool",
+                        targetReps = 8,
+                        weightPerCableKg = 40f,
+                        progressionKg = 0f,
+                        duration = 0L,
+                        totalReps = 8,
+                        warmupReps = 0,
+                        workingReps = 8,
+                        isJustLift = false,
+                        stopAtTop = false,
+                    ),
+                ),
+                completedSets = listOf(
+                    CompletedSetBackup(
+                        id = "set-future-reason",
+                        sessionId = "session-future-reason",
+                        setNumber = 1,
+                        actualReps = 8,
+                        actualWeightKg = 40f,
+                        completedAt = 2L,
+                        setEndReason = "FUTURE_REASON",
+                        routineExerciseId = "routine-exercise-import",
+                        attemptNumber = 2,
+                    ),
+                ),
+            ),
+        )
+        val payload = testJson.encodeToString(backup)
+
+        assertTrue(backupManager.importFromJson(payload).isSuccess)
+        assertEquals(
+            "UNKNOWN",
+            database.vitruvianDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne().set_end_reason,
+        )
+        assertEquals(
+            "routine-exercise-import" to 2L,
+            database.vitruvianDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne()
+                .let { it.routine_exercise_id to it.attempt_number },
+        )
+
+        val streamingDatabase = createTestDatabase()
+        val streamingManager = TestDataBackupManager(streamingDatabase)
+        assertTrue(streamingManager.importFromStringStreaming(payload).isSuccess)
+        assertEquals(
+            "UNKNOWN",
+            streamingDatabase.vitruvianDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne().set_end_reason,
+        )
+        assertEquals(
+            "routine-exercise-import" to 2L,
+            streamingDatabase.vitruvianDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne()
+                .let { it.routine_exercise_id to it.attempt_number },
+        )
+    }
+
+    @Test
+    fun `buffered completed set import canonicalizes negative attempt to one`() = runTest {
+        assertBufferedInvalidAttemptCanonicalized(-4)
+    }
+
+    @Test
+    fun `streaming completed set import canonicalizes zero attempt to one`() = runTest {
+        assertStreamingInvalidAttemptCanonicalized(0)
+    }
+
+    private fun invalidAttemptPayload(sessionId: String, setId: String, invalidAttempt: Int): String =
+        testJson.encodeToString(
+            BackupData(
+                version = CURRENT_BACKUP_VERSION,
+                exportedAt = "2026-08-14T00:00:00Z",
+                appVersion = "test",
+                data = BackupContent(
+                    workoutSessions = listOf(
+                        WorkoutSessionBackup(
+                            id = sessionId,
+                            timestamp = 1L,
+                            mode = "OldSchool",
+                            targetReps = 8,
+                            weightPerCableKg = 40f,
+                            progressionKg = 0f,
+                            duration = 0L,
+                            totalReps = 8,
+                            warmupReps = 0,
+                            workingReps = 8,
+                            isJustLift = false,
+                            stopAtTop = false,
+                        ),
+                    ),
+                    completedSets = listOf(
+                        CompletedSetBackup(
+                            id = setId,
+                            sessionId = sessionId,
+                            setNumber = 0,
+                            actualReps = 8,
+                            actualWeightKg = 40f,
+                            completedAt = 2L,
+                            routineExerciseId = "invalid-import-occurrence",
+                            attemptNumber = invalidAttempt,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    private suspend fun assertBufferedInvalidAttemptCanonicalized(invalidAttempt: Int) {
+        assertTrue(backupManager.importFromJson(invalidAttemptPayload("buffered-invalid-session", "buffered-invalid-set", invalidAttempt)).isSuccess)
+        assertEquals(
+            1L,
+            database.vitruvianDatabaseQueries.selectCompletedSetById("buffered-invalid-set").executeAsOne().attempt_number,
+        )
+    }
+
+    private suspend fun assertStreamingInvalidAttemptCanonicalized(invalidAttempt: Int) {
+        val streamingDatabase = createTestDatabase()
+        val streamingManager = TestDataBackupManager(streamingDatabase)
+        assertTrue(streamingManager.importFromStringStreaming(invalidAttemptPayload("streaming-invalid-session", "streaming-invalid-set", invalidAttempt)).isSuccess)
+        assertEquals(
+            1L,
+            streamingDatabase.vitruvianDatabaseQueries.selectCompletedSetById("streaming-invalid-set").executeAsOne().attempt_number,
+        )
+    }
+
+    @Test
+    fun `buffered and streaming completed set exports canonicalize unknown end reasons`() = runTest {
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "session-export-future-reason",
+                timestamp = 1L,
+                mode = "OldSchool",
+                reps = 8,
+                weightPerCableKg = 40f,
+                totalReps = 8,
+                workingReps = 8,
+            ),
+        )
+        database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
+            id = "set-export-future-reason",
+            session_id = "session-export-future-reason",
+            planned_set_id = null,
+            routine_exercise_id = "routine-exercise-export",
+            set_number = 1L,
+            set_type = "STANDARD",
+            attempt_number = 3L,
+            actual_reps = 8L,
+            actual_weight_kg = 40.0,
+            logged_rpe = null,
+            is_pr = 0L,
+            completed_at = 2L,
+            set_end_reason = "FUTURE_REASON",
+        )
+
+        val buffered = backupManager.exportAllData()
+        val streamingPath = backupManager.exportToCachePublic()
+        val streaming = testJson.decodeFromString<BackupData>(File(streamingPath).readText())
+
+        assertEquals("UNKNOWN", buffered.data.completedSets.single().setEndReason)
+        assertEquals("UNKNOWN", streaming.data.completedSets.single().setEndReason)
+        assertEquals("routine-exercise-export", buffered.data.completedSets.single().routineExerciseId)
+        assertEquals(3, buffered.data.completedSets.single().attemptNumber)
+        assertEquals("routine-exercise-export", streaming.data.completedSets.single().routineExerciseId)
+        assertEquals(3, streaming.data.completedSets.single().attemptNumber)
+        File(streamingPath).delete()
     }
 
     @Test
@@ -643,25 +853,31 @@ class DataBackupManagerRoutineNameTest {
             id = "cs-bench",
             session_id = "routine-bench",
             planned_set_id = null,
+            routine_exercise_id = null,
             set_number = 1,
             set_type = "STANDARD",
+            attempt_number = 1,
             actual_reps = 10,
             actual_weight_kg = 50.0,
             logged_rpe = null,
             is_pr = 0,
             completed_at = 1_700_000_006_000L,
+            set_end_reason = "TARGET_REPS_REACHED",
         )
         database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
             id = "cs-row",
             session_id = "routine-row",
             planned_set_id = null,
+            routine_exercise_id = null,
             set_number = 1,
             set_type = "STANDARD",
+            attempt_number = 1,
             actual_reps = 10,
             actual_weight_kg = 40.0,
             logged_rpe = null,
             is_pr = 0,
             completed_at = 1_700_000_106_000L,
+            set_end_reason = "TARGET_REPS_REACHED",
         )
 
         val result = backupManager.exportRoutine(sharedRoutineSessionId)
@@ -1916,6 +2132,16 @@ class DataBackupManagerRoutineNameTest {
 
         suspend fun exportToCachePublic(): String = exportToCache()
 
+        suspend fun importFromStringStreaming(value: String): Result<ImportResult> {
+            val source = StringBackupStreamSource(value)
+            source.open()
+            return try {
+                importFromStream(source)
+            } finally {
+                source.close()
+            }
+        }
+
         override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
 
         override suspend fun saveToFile(backup: BackupData): Result<String> {
@@ -1944,5 +2170,22 @@ class DataBackupManagerRoutineNameTest {
 
         override fun openBackupFolder() = Unit
         override fun pruneOldBackups(keepCount: Int) = Unit
+    }
+
+    private class StringBackupStreamSource(private val value: String) : BackupStreamSource {
+        private var index = 0
+
+        override fun open() {
+            index = 0
+        }
+        override fun close() = Unit
+        override fun read(): Int = if (index < value.length) value[index++].code else -1
+        override fun read(buffer: CharArray, offset: Int, length: Int): Int {
+            if (index >= value.length) return -1
+            val count = minOf(length, value.length - index)
+            value.toCharArray(index, index + count).copyInto(buffer, offset)
+            index += count
+            return count
+        }
     }
 }

@@ -3,18 +3,24 @@ package com.devil.phoenixproject.presentation.manager
 import com.devil.phoenixproject.data.repository.ConnectionLogRepository
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.LogEventType
+import com.devil.phoenixproject.domain.model.BodyweightVariantOption
+import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.util.KmpUtils
+import kotlin.coroutines.CoroutineContext
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -23,12 +29,614 @@ import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Runnable
+import kotlinx.coroutines.channels.BufferOverflow
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.toList
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 class Issue687WorkoutExecutionIsolationTest {
+    @Test
+    fun `A crossing the VBT commit boundary cannot mutate B counters alerts or terminal state`() = runTest {
+        lateinit var harness: DWSMTestHarness
+        var replaceAtVbtCommit = false
+        harness = DWSMTestHarness(
+            testScope = this,
+            biomechanicsDispatcher = StandardTestDispatcher(testScheduler),
+            beforeVbtCommit = { _, _, repNumber ->
+                if (replaceAtVbtCommit && repNumber == 2) {
+                    replaceAtVbtCommit = false
+                    harness.dwsm.startWorkout(skipCountdown = true)
+                    val baselineMetrics = List(4) { index ->
+                        WorkoutMetric(
+                            timestamp = 10_000L + index,
+                            loadA = 20f,
+                            loadB = 20f,
+                            positionA = index * 50f,
+                            positionB = index * 50f,
+                            velocityA = 100.0,
+                            velocityB = 100.0,
+                        )
+                    }
+                    harness.coordinator.biomechanicsEngine.processRep(
+                        repNumber = 1,
+                        concentricMetrics = baselineMetrics,
+                        allRepMetrics = baselineMetrics,
+                        timestamp = 10_000L,
+                    )
+                }
+            },
+        )
+        val haptics = mutableListOf<HapticEvent>()
+        val hapticJob = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.hapticEvents.toList(haptics)
+        }
+        try {
+            harness.setActiveProfilePreferences(
+                UserPreferences(
+                    vbtEnabled = true,
+                    velocityLossThresholdPercent = 20,
+                    autoEndOnVelocityLoss = true,
+                ),
+            )
+            advanceUntilIdle()
+            startCableSet(harness, targetReps = 10)
+            harness.coordinator._repCount.value = RepCount(isWarmupComplete = true)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val cutoverA = requireNotNull(leaseA.activationCutoverTimestampMs)
+
+            queueAsyncVbtRep(harness, repNumber = 1, velocityMmS = 100.0, packetTimestamp = cutoverA + 1)
+            runCurrent()
+            haptics.clear()
+
+            replaceAtVbtCommit = true
+            queueAsyncVbtRep(harness, repNumber = 2, velocityMmS = 60.0, packetTimestamp = cutoverA + 2)
+            runCurrent()
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            assertNotEquals(leaseA, leaseB)
+            assertTrue(haptics.none { it is HapticEvent.VELOCITY_THRESHOLD_REACHED })
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+
+            harness.coordinator._repCount.value = RepCount(isWarmupComplete = true)
+            val cutoverB = requireNotNull(leaseB.activationCutoverTimestampMs)
+            queueAsyncVbtRep(harness, repNumber = 2, velocityMmS = 70.0, packetTimestamp = cutoverB + 1)
+            runCurrent()
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(1, haptics.count { it is HapticEvent.VELOCITY_THRESHOLD_REACHED })
+            assertEquals(emptyList(), harness.fakeCompletedSetRepo.getCompletedSets(leaseB.sessionId))
+        } finally {
+            hapticJob.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `suspended A biomechanics after validation cannot publish a result into B`() = runTest {
+        val processingEntered = CompletableDeferred<Unit>()
+        val releaseProcessing = CompletableDeferred<Unit>()
+        val processor = BiomechanicsRepProcessor { engine, input ->
+            processingEntered.complete(Unit)
+            releaseProcessing.await()
+            engine.processRep(
+                repNumber = input.repNumber,
+                concentricMetrics = input.concentricMetrics,
+                allRepMetrics = input.allRepMetrics,
+                timestamp = input.timestamp,
+            )
+        }
+        val harness = DWSMTestHarness(
+            testScope = this,
+            biomechanicsDispatcher = StandardTestDispatcher(testScheduler),
+            biomechanicsRepProcessor = processor,
+        )
+        val haptics = mutableListOf<HapticEvent>()
+        val hapticJob = launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.coordinator.hapticEvents.toList(haptics)
+        }
+        try {
+            harness.setActiveProfilePreferences(
+                UserPreferences(
+                    vbtEnabled = true,
+                    velocityLossThresholdPercent = 20,
+                    autoEndOnVelocityLoss = true,
+                ),
+            )
+            advanceUntilIdle()
+            startCableSet(harness, targetReps = 10)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val cutoverA = requireNotNull(leaseA.activationCutoverTimestampMs)
+
+            queueAsyncVbtRep(
+                harness = harness,
+                repNumber = 1,
+                velocityMmS = 100.0,
+                packetTimestamp = cutoverA + 1,
+            )
+            processingEntered.await()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            startCableSet(harness, targetReps = 10)
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            releaseProcessing.complete(Unit)
+            runCurrent()
+
+            assertNotEquals(leaseA.sessionId, leaseB.sessionId)
+            assertEquals(leaseB, harness.activeSessionEngine.currentExecutionLeaseForTest())
+            assertNull(harness.coordinator.biomechanicsEngine.getSetSummary())
+            assertNull(harness.coordinator.latestBiomechanicsResult.value)
+            assertTrue(haptics.none { it is HapticEvent.VELOCITY_THRESHOLD_REACHED })
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(emptyList(), harness.fakeCompletedSetRepo.getCompletedSets(leaseB.sessionId))
+        } finally {
+            releaseProcessing.complete(Unit)
+            hapticJob.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `direct reset revokes a suspended A biomechanics publication`() = runTest {
+        val processingEntered = CompletableDeferred<Unit>()
+        val releaseProcessing = CompletableDeferred<Unit>()
+        val processor = BiomechanicsRepProcessor { engine, input ->
+            processingEntered.complete(Unit)
+            releaseProcessing.await()
+            engine.processRep(
+                repNumber = input.repNumber,
+                concentricMetrics = input.concentricMetrics,
+                allRepMetrics = input.allRepMetrics,
+                timestamp = input.timestamp,
+            )
+        }
+        val harness = DWSMTestHarness(
+            testScope = this,
+            biomechanicsDispatcher = StandardTestDispatcher(testScheduler),
+            biomechanicsRepProcessor = processor,
+        )
+        try {
+            startCableSet(harness, targetReps = 10)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val cutoverA = requireNotNull(leaseA.activationCutoverTimestampMs)
+            queueAsyncVbtRep(
+                harness = harness,
+                repNumber = 1,
+                velocityMmS = 100.0,
+                packetTimestamp = cutoverA + 1,
+            )
+            processingEntered.await()
+
+            harness.activeSessionEngine.resetForNewWorkout()
+            releaseProcessing.complete(Unit)
+            runCurrent()
+
+            assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
+            assertNull(harness.coordinator.biomechanicsEngine.getSetSummary())
+            assertNull(harness.coordinator.latestBiomechanicsResult.value)
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertEquals(emptyList(), harness.fakeCompletedSetRepo.getCompletedSets(leaseA.sessionId))
+        } finally {
+            releaseProcessing.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `reset cleanup cannot erase a successor that starts after A is invalidated`() = runTest {
+        lateinit var harness: DWSMTestHarness
+        var overlapResetWithStart = false
+        var leaseB: ExecutionLease? = null
+        var engineB: BiomechanicsEngine? = null
+        val expectedRepCount = RepCount(workingReps = 4, isWarmupComplete = true)
+        val expectedHudTimestamp = 77_777L
+        val expectedSelections = mapOf(
+            "successor-selection" to BodyweightVariantOption(label = "Successor", percentage = 0.75f),
+        )
+        harness = DWSMTestHarness(
+            testScope = this,
+            afterResetInvalidation = { _, _ ->
+                if (overlapResetWithStart) {
+                    overlapResetWithStart = false
+                    startCableSet(harness, targetReps = 10)
+                    leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+                    engineB = harness.coordinator.biomechanicsEngine
+                    val successorMetrics = List(4) { index ->
+                        WorkoutMetric(
+                            timestamp = expectedHudTimestamp + index,
+                            loadA = 20f,
+                            loadB = 20f,
+                            positionA = index * 50f,
+                            positionB = index * 50f,
+                            velocityA = 100.0,
+                            velocityB = 100.0,
+                        )
+                    }
+                    val successorResult = requireNotNull(engineB).processRep(
+                        repNumber = 1,
+                        concentricMetrics = successorMetrics,
+                        allRepMetrics = successorMetrics,
+                        timestamp = expectedHudTimestamp,
+                    )
+                    assertTrue(harness.coordinator.publishBiomechanicsResult(requireNotNull(engineB), successorResult))
+                    harness.coordinator._repCount.value = expectedRepCount
+                    harness.coordinator._selectedBodyweightVariants.value = expectedSelections
+                }
+            },
+        )
+        try {
+            startCableSet(harness, targetReps = 10)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            overlapResetWithStart = true
+            harness.activeSessionEngine.resetForNewWorkout()
+
+            val successor = requireNotNull(leaseB)
+            assertNotEquals(leaseA.executionId, successor.executionId)
+            assertEquals(successor, harness.activeSessionEngine.currentExecutionLeaseForTest())
+            assertEquals(successor.sessionId, harness.coordinator.currentSessionId)
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(expectedRepCount, harness.coordinator.repCount.value)
+            assertEquals(expectedSelections, harness.coordinator.selectedBodyweightVariants.value)
+            assertTrue(engineB === harness.coordinator.biomechanicsEngine)
+            assertEquals(expectedHudTimestamp, harness.coordinator.latestBiomechanicsResult.value?.timestamp)
+
+            harness.activeSessionEngine.handleSetCompletion(successor, SetEndReason.USER_STOPPED)
+            advanceUntilIdle()
+
+            assertEquals(
+                SetEndReason.USER_STOPPED,
+                harness.fakeCompletedSetRepo.getCompletedSets(successor.sessionId).single().setEndReason,
+            )
+            assertEquals(emptyList(), harness.fakeCompletedSetRepo.getCompletedSets(leaseA.sessionId))
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `reset cleanup survives A teardown becoming ready after invalidation`() = runTest {
+        val releaseTeardown = CompletableDeferred<Result<Unit>>()
+        lateinit var harness: DWSMTestHarness
+        var finishTeardownDuringReset = false
+        harness = DWSMTestHarness(
+            testScope = this,
+            afterResetInvalidation = { _, _ ->
+                if (finishTeardownDuringReset) {
+                    finishTeardownDuringReset = false
+                    releaseTeardown.complete(Result.success(Unit))
+                    testScheduler.runCurrent()
+                }
+            },
+        )
+        val expectedSelections = mapOf(
+            "reset-selection" to BodyweightVariantOption(label = "Reset", percentage = 0.75f),
+        )
+        try {
+            startCableSet(harness, targetReps = 10)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeBleRepo.stopWorkoutBlock = { releaseTeardown.await() }
+            harness.activeSessionEngine.requestTeardownForTransition(
+                expectedLease = leaseA,
+                reason = TeardownReason.EXERCISE_JUMP,
+            ) {
+                error("Invalidated A must not resume its teardown continuation")
+            }
+            runCurrent()
+            assertIs<MachineTeardownState.TearingDown>(harness.dwsm.machineTeardownState.value)
+            harness.coordinator._repCount.value = RepCount(workingReps = 4, isWarmupComplete = true)
+            harness.coordinator._selectedBodyweightVariants.value = expectedSelections
+
+            finishTeardownDuringReset = true
+            harness.activeSessionEngine.resetForNewWorkout()
+
+            assertEquals(MachineTeardownState.Ready, harness.dwsm.machineTeardownState.value)
+            assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
+            assertNull(harness.coordinator.currentSessionId)
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertEquals(RepCount(), harness.coordinator.repCount.value)
+            assertEquals(emptyMap(), harness.coordinator.selectedBodyweightVariants.value)
+        } finally {
+            releaseTeardown.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `direct reset after a VBT decision commit prevents its terminal effect`() = runTest {
+        lateinit var harness: DWSMTestHarness
+        var resetAfterDecision = false
+        harness = DWSMTestHarness(
+            testScope = this,
+            biomechanicsDispatcher = StandardTestDispatcher(testScheduler),
+            afterVbtDecisionCommit = { _, _, repNumber ->
+                if (resetAfterDecision && repNumber == 3) {
+                    resetAfterDecision = false
+                    harness.activeSessionEngine.resetForNewWorkout()
+                }
+            },
+        )
+        try {
+            harness.setActiveProfilePreferences(
+                UserPreferences(
+                    vbtEnabled = true,
+                    velocityLossThresholdPercent = 20,
+                    autoEndOnVelocityLoss = true,
+                ),
+            )
+            advanceUntilIdle()
+            startCableSet(harness, targetReps = 10)
+            harness.coordinator._repCount.value = RepCount(isWarmupComplete = true)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val cutoverA = requireNotNull(leaseA.activationCutoverTimestampMs)
+
+            queueAsyncVbtRep(harness, repNumber = 1, velocityMmS = 100.0, packetTimestamp = cutoverA + 1)
+            runCurrent()
+            queueAsyncVbtRep(harness, repNumber = 2, velocityMmS = 60.0, packetTimestamp = cutoverA + 2)
+            runCurrent()
+            resetAfterDecision = true
+            queueAsyncVbtRep(harness, repNumber = 3, velocityMmS = 55.0, packetTimestamp = cutoverA + 3)
+            advanceUntilIdle()
+
+            assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertEquals(emptyList(), harness.fakeWorkoutRepo.saveSessionAttempts.filter { it.id == leaseA.sessionId })
+            assertEquals(emptyList(), harness.fakeCompletedSetRepo.getCompletedSets(leaseA.sessionId))
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `valid VBT alert waits for backpressure and is delivered`() = runTest {
+        val hapticFlow = MutableSharedFlow<HapticEvent>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.SUSPEND,
+        )
+        val harness = DWSMTestHarness(
+            testScope = this,
+            biomechanicsDispatcher = StandardTestDispatcher(testScheduler),
+            hapticEvents = hapticFlow,
+        )
+        val firstEventReceived = CompletableDeferred<Unit>()
+        val releaseCollector = CompletableDeferred<Unit>()
+        val haptics = mutableListOf<HapticEvent>()
+        val hapticJob = launch(UnconfinedTestDispatcher(testScheduler)) {
+            hapticFlow.collect { event ->
+                haptics += event
+                if (event == HapticEvent.REP_COMPLETED) {
+                    firstEventReceived.complete(Unit)
+                    releaseCollector.await()
+                }
+            }
+        }
+        try {
+            harness.setActiveProfilePreferences(
+                UserPreferences(
+                    vbtEnabled = true,
+                    velocityLossThresholdPercent = 20,
+                    autoEndOnVelocityLoss = false,
+                ),
+            )
+            advanceUntilIdle()
+            startCableSet(harness, targetReps = 10)
+            harness.coordinator._repCount.value = RepCount(isWarmupComplete = true)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val cutover = requireNotNull(lease.activationCutoverTimestampMs)
+            queueAsyncVbtRep(harness, repNumber = 1, velocityMmS = 100.0, packetTimestamp = cutover + 1)
+            runCurrent()
+
+            hapticFlow.emit(HapticEvent.REP_COMPLETED)
+            firstEventReceived.await()
+            hapticFlow.emit(HapticEvent.FINAL_REP)
+            assertFalse(hapticFlow.tryEmit(HapticEvent.WORKOUT_END), "fixture must hold the flow at capacity")
+
+            queueAsyncVbtRep(harness, repNumber = 2, velocityMmS = 60.0, packetTimestamp = cutover + 2)
+            runCurrent()
+            assertTrue(haptics.none { it == HapticEvent.VELOCITY_THRESHOLD_REACHED })
+
+            releaseCollector.complete(Unit)
+            runCurrent()
+
+            assertEquals(1, haptics.count { it == HapticEvent.VELOCITY_THRESHOLD_REACHED })
+        } finally {
+            releaseCollector.complete(Unit)
+            hapticJob.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `direct reset cancels a backpressured A VBT alert`() = runTest {
+        val hapticFlow = MutableSharedFlow<HapticEvent>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.SUSPEND,
+        )
+        val harness = DWSMTestHarness(
+            testScope = this,
+            biomechanicsDispatcher = StandardTestDispatcher(testScheduler),
+            hapticEvents = hapticFlow,
+        )
+        val firstEventReceived = CompletableDeferred<Unit>()
+        val releaseCollector = CompletableDeferred<Unit>()
+        val haptics = mutableListOf<HapticEvent>()
+        val hapticJob = launch(UnconfinedTestDispatcher(testScheduler)) {
+            hapticFlow.collect { event ->
+                haptics += event
+                if (event == HapticEvent.REP_COMPLETED) {
+                    firstEventReceived.complete(Unit)
+                    releaseCollector.await()
+                }
+            }
+        }
+        try {
+            harness.setActiveProfilePreferences(
+                UserPreferences(
+                    vbtEnabled = true,
+                    velocityLossThresholdPercent = 20,
+                    autoEndOnVelocityLoss = false,
+                ),
+            )
+            advanceUntilIdle()
+            startCableSet(harness, targetReps = 10)
+            harness.coordinator._repCount.value = RepCount(isWarmupComplete = true)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val cutover = requireNotNull(lease.activationCutoverTimestampMs)
+            queueAsyncVbtRep(harness, repNumber = 1, velocityMmS = 100.0, packetTimestamp = cutover + 1)
+            runCurrent()
+
+            hapticFlow.emit(HapticEvent.REP_COMPLETED)
+            firstEventReceived.await()
+            hapticFlow.emit(HapticEvent.FINAL_REP)
+            assertFalse(hapticFlow.tryEmit(HapticEvent.WORKOUT_END), "fixture must hold the flow at capacity")
+
+            queueAsyncVbtRep(harness, repNumber = 2, velocityMmS = 60.0, packetTimestamp = cutover + 2)
+            runCurrent()
+            harness.activeSessionEngine.resetForNewWorkout()
+            releaseCollector.complete(Unit)
+            runCurrent()
+
+            assertTrue(haptics.none { it == HapticEvent.VELOCITY_THRESHOLD_REACHED })
+            assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+        } finally {
+            releaseCollector.complete(Unit)
+            hapticJob.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `replacement cancels backpressured A alert before B becomes current`() = runTest {
+        val hapticFlow = MutableSharedFlow<HapticEvent>(
+            extraBufferCapacity = 1,
+            onBufferOverflow = BufferOverflow.SUSPEND,
+        )
+        val firstEventReceived = CompletableDeferred<Unit>()
+        val releaseCollector = CompletableDeferred<Unit>()
+        var releaseDuringReplacement = false
+        var replacementLease: ExecutionLease? = null
+        lateinit var harness: DWSMTestHarness
+        harness = DWSMTestHarness(
+            testScope = this,
+            biomechanicsDispatcher = StandardTestDispatcher(testScheduler),
+            afterExecutionBegin = { _, _ ->
+                if (releaseDuringReplacement) {
+                    releaseDuringReplacement = false
+                    replacementLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+                    releaseCollector.complete(Unit)
+                    testScheduler.runCurrent()
+                }
+            },
+            hapticEvents = hapticFlow,
+        )
+        val haptics = mutableListOf<HapticEvent>()
+        val hapticJob = launch(UnconfinedTestDispatcher(testScheduler)) {
+            hapticFlow.collect { event ->
+                haptics += event
+                if (event == HapticEvent.REP_COMPLETED) {
+                    firstEventReceived.complete(Unit)
+                    releaseCollector.await()
+                }
+            }
+        }
+        try {
+            harness.setActiveProfilePreferences(
+                UserPreferences(
+                    vbtEnabled = true,
+                    velocityLossThresholdPercent = 20,
+                    autoEndOnVelocityLoss = false,
+                ),
+            )
+            advanceUntilIdle()
+            startCableSet(harness, targetReps = 10)
+            harness.coordinator._repCount.value = RepCount(isWarmupComplete = true)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val cutoverA = requireNotNull(leaseA.activationCutoverTimestampMs)
+            queueAsyncVbtRep(harness, repNumber = 1, velocityMmS = 100.0, packetTimestamp = cutoverA + 1)
+            runCurrent()
+
+            hapticFlow.emit(HapticEvent.REP_COMPLETED)
+            firstEventReceived.await()
+            hapticFlow.emit(HapticEvent.FINAL_REP)
+            assertFalse(hapticFlow.tryEmit(HapticEvent.WORKOUT_END), "fixture must hold the flow at capacity")
+
+            queueAsyncVbtRep(harness, repNumber = 2, velocityMmS = 60.0, packetTimestamp = cutoverA + 2)
+            runCurrent()
+            assertTrue(haptics.none { it == HapticEvent.VELOCITY_THRESHOLD_REACHED })
+
+            releaseDuringReplacement = true
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+
+            val leaseB = requireNotNull(replacementLease)
+            assertNotEquals(leaseA.executionId, leaseB.executionId)
+            assertEquals(leaseB.executionId, harness.activeSessionEngine.currentExecutionLeaseForTest().executionId)
+            assertEquals(leaseB.sessionId, harness.activeSessionEngine.currentExecutionLeaseForTest().sessionId)
+            assertTrue(haptics.none { it == HapticEvent.VELOCITY_THRESHOLD_REACHED })
+        } finally {
+            releaseCollector.complete(Unit)
+            hapticJob.cancel()
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `suspended execution A biomechanics cannot auto end execution B`() = runTest {
+        val biomechanicsDispatcher = PausedCoroutineDispatcher()
+        val harness = DWSMTestHarness(this, biomechanicsDispatcher = biomechanicsDispatcher)
+        try {
+            harness.setActiveProfilePreferences(
+                UserPreferences(
+                    vbtEnabled = true,
+                    velocityLossThresholdPercent = 20,
+                    autoEndOnVelocityLoss = true,
+                ),
+            )
+            advanceUntilIdle()
+            startCableSet(harness, targetReps = 10)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val cutoverA = requireNotNull(leaseA.activationCutoverTimestampMs)
+
+            listOf(100.0, 60.0, 55.0).forEachIndexed { index, velocity ->
+                queueAsyncVbtRep(
+                    harness = harness,
+                    repNumber = index + 1,
+                    velocityMmS = velocity,
+                    packetTimestamp = cutoverA + index + 1,
+                )
+            }
+            assertEquals(3, biomechanicsDispatcher.queuedTaskCount)
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            startCableSet(harness, targetReps = 10)
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(isWarmupComplete = true)
+
+            biomechanicsDispatcher.runAll()
+            advanceUntilIdle()
+
+            assertNotEquals(leaseA.sessionId, leaseB.sessionId)
+            assertEquals(leaseB, harness.activeSessionEngine.currentExecutionLeaseForTest())
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(emptyList(), harness.fakeCompletedSetRepo.getCompletedSets(leaseB.sessionId))
+        } finally {
+            biomechanicsDispatcher.runAll()
+            harness.cleanup()
+        }
+    }
+
     @Test
     fun `issue 687 reporter workflow remains on execution B at zero reps`() = runTest {
         val harness = DWSMTestHarness(this)
@@ -229,7 +837,13 @@ class Issue687WorkoutExecutionIsolationTest {
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
             harness.fakeWorkoutRepo.beforeSaveSession = { releasePersistence.await() }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
 
@@ -260,7 +874,10 @@ class Issue687WorkoutExecutionIsolationTest {
             runCurrent()
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
 
-            harness.activeSessionEngine.handleSetCompletion(lease)
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+            )
             runCurrent()
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
 
@@ -270,6 +887,85 @@ class Issue687WorkoutExecutionIsolationTest {
             assertEquals(1, harness.fakeCompletedSetRepo.saved.count { it.sessionId == lease.sessionId })
         } finally {
             releasePersistence.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `auto completion A reason cannot bleed into B while A persistence is suspended`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releasePersistenceA = CompletableDeferred<Unit>()
+        try {
+            startCableSet(harness, targetReps = 8, completedReps = 2)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeWorkoutRepo.beforeSaveSession = { session ->
+                if (session.id == leaseA.sessionId) releasePersistenceA.await()
+            }
+
+            harness.activeSessionEngine.handleSetCompletion(leaseA, SetEndReason.STALL_FAILURE)
+            runCurrent()
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+            assertEquals(MachineTeardownState.Ready, harness.dwsm.machineTeardownState.value)
+
+            startCableSet(harness, targetReps = 8, completedReps = 2)
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(leaseB, SetEndReason.VBT_AUTO_END)
+            runCurrent()
+
+            releasePersistenceA.complete(Unit)
+            advanceUntilIdle()
+
+            assertNotEquals(leaseA.sessionId, leaseB.sessionId)
+            assertEquals(
+                SetEndReason.STALL_FAILURE,
+                harness.fakeCompletedSetRepo.getCompletedSets(leaseA.sessionId).single().setEndReason,
+            )
+            assertEquals(
+                SetEndReason.VBT_AUTO_END,
+                harness.fakeCompletedSetRepo.getCompletedSets(leaseB.sessionId).single().setEndReason,
+            )
+        } finally {
+            releasePersistenceA.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `End Workout A reason cannot bleed into B while A persistence is suspended`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releasePersistenceA = CompletableDeferred<Unit>()
+        try {
+            startCableSet(harness, targetReps = 8, completedReps = 2)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeWorkoutRepo.beforeSaveSession = { session ->
+                if (session.id == leaseA.sessionId) releasePersistenceA.await()
+            }
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+            assertEquals(MachineTeardownState.Ready, harness.dwsm.machineTeardownState.value)
+
+            startCableSet(harness, targetReps = 8, completedReps = 2)
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(leaseA, SetEndReason.STALL_FAILURE)
+            harness.activeSessionEngine.handleSetCompletion(leaseB, SetEndReason.TARGET_REPS_REACHED)
+            runCurrent()
+
+            releasePersistenceA.complete(Unit)
+            advanceUntilIdle()
+
+            assertNotEquals(leaseA.sessionId, leaseB.sessionId)
+            assertEquals(
+                SetEndReason.USER_STOPPED,
+                harness.fakeCompletedSetRepo.getCompletedSets(leaseA.sessionId).single().setEndReason,
+            )
+            assertEquals(
+                SetEndReason.TARGET_REPS_REACHED,
+                harness.fakeCompletedSetRepo.getCompletedSets(leaseB.sessionId).single().setEndReason,
+            )
+        } finally {
+            releasePersistenceA.complete(Unit)
             harness.cleanup()
         }
     }
@@ -645,6 +1341,35 @@ class Issue687WorkoutExecutionIsolationTest {
         assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
     }
 
+    private suspend fun queueAsyncVbtRep(
+        harness: DWSMTestHarness,
+        repNumber: Int,
+        velocityMmS: Double,
+        packetTimestamp: Long,
+    ) {
+        val metricTimestamp = KmpUtils.currentTimeMillis() - 10L
+        harness.coordinator.collectedMetrics.value = List(4) { index ->
+            WorkoutMetric(
+                timestamp = metricTimestamp + index,
+                loadA = 20f,
+                loadB = 20f,
+                positionA = index * 50f,
+                positionB = index * 50f,
+                velocityA = velocityMmS,
+                velocityB = velocityMmS,
+            )
+        }
+        harness.coordinator.repBoundaryTimestamps.value = emptyList()
+        harness.fakeBleRepo.emitRepNotification(
+            harness.modernRepPacket(
+                repsSetCount = repNumber,
+                repsSetTotal = 10,
+                timestamp = packetTimestamp,
+            ),
+        )
+        harness.testScope.testScheduler.runCurrent()
+    }
+
     private fun cableRoutine(id: String, profileId: String): Routine = Routine(
         id = id,
         name = id,
@@ -696,5 +1421,22 @@ class Issue687WorkoutExecutionIsolationTest {
         const val PRIVATE_EXERCISE_ID = "private-exercise-id-687"
         const val PRIVATE_LOAD_TOKEN = "37.25"
         const val PRIVATE_METRIC_TOKEN = "9876.5"
+    }
+}
+
+private class PausedCoroutineDispatcher : CoroutineDispatcher() {
+    private val queuedTasks = ArrayDeque<Runnable>()
+
+    val queuedTaskCount: Int
+        get() = queuedTasks.size
+
+    override fun dispatch(context: CoroutineContext, block: Runnable) {
+        queuedTasks.addLast(block)
+    }
+
+    fun runAll() {
+        while (queuedTasks.isNotEmpty()) {
+            queuedTasks.removeFirst().run()
+        }
     }
 }

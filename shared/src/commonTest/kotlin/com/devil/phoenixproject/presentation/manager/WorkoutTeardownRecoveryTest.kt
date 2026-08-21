@@ -4,7 +4,9 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.util.BleConstants
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -12,6 +14,140 @@ import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 
 class WorkoutTeardownRecoveryTest {
+
+    @Test
+    fun `stale reset cannot discard a replacement teardown continuation`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val resetB = CompletableDeferred<Result<Unit>>()
+        var callbackB = 0
+        var installReplacementDuringReset = false
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.startCableSet(targetReps = 3)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.afterResetCleanupTokenCaptureForTest = {
+                if (installReplacementDuringReset) {
+                    installReplacementDuringReset = false
+                    harness.startCableSet(targetReps = 5)
+                    val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+                    assertTrue(leaseB.executionId != leaseA.executionId)
+                    harness.fakeBleRepo.stopWorkoutBlock = { resetB.await() }
+                    harness.activeSessionEngine.requestTeardownForTransition(leaseB, TeardownReason.STOP_SET) {
+                        callbackB++
+                    }
+                    testScheduler.runCurrent()
+                    assertTrue(harness.activeSessionEngine.hasPendingTeardownReadyContinuationForTest(leaseB))
+                }
+            }
+
+            installReplacementDuringReset = true
+            harness.dwsm.resetForNewWorkout()
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(leaseB.executionId != leaseA.executionId)
+            assertTrue(harness.activeSessionEngine.hasPendingTeardownReadyContinuationForTest(leaseB))
+
+            resetB.complete(Result.success(Unit))
+            advanceUntilIdle()
+
+            assertEquals(1, callbackB)
+            assertEquals(MachineTeardownState.Ready, harness.dwsm.machineTeardownState.value)
+            assertFalse(harness.activeSessionEngine.hasPendingTeardownReadyContinuationForTest(leaseB))
+        } finally {
+            harness.activeSessionEngine.afterResetCleanupTokenCaptureForTest = null
+            if (!resetB.isCompleted) resetB.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `reset discards the exact pending teardown continuation`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val resetBarrier = CompletableDeferred<Result<Unit>>()
+        var callbackCount = 0
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.startCableSet(targetReps = 3)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeBleRepo.stopWorkoutBlock = { resetBarrier.await() }
+            harness.activeSessionEngine.requestTeardownForTransition(lease, TeardownReason.STOP_SET) {
+                callbackCount++
+            }
+            runCurrent()
+            assertTrue(harness.activeSessionEngine.hasPendingTeardownReadyContinuationForTest(lease))
+
+            harness.dwsm.resetForNewWorkout()
+
+            assertFalse(harness.activeSessionEngine.hasPendingTeardownReadyContinuationForTest(lease))
+            resetBarrier.complete(Result.success(Unit))
+            advanceUntilIdle()
+            assertEquals(0, callbackCount)
+        } finally {
+            if (!resetBarrier.isCompleted) resetBarrier.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `cleanup discards the exact pending teardown continuation`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val resetBarrier = CompletableDeferred<Result<Unit>>()
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.startCableSet(targetReps = 3)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeBleRepo.stopWorkoutBlock = { resetBarrier.await() }
+            harness.activeSessionEngine.requestTeardownForTransition(lease, TeardownReason.STOP_SET) {}
+            runCurrent()
+            assertTrue(harness.activeSessionEngine.hasPendingTeardownReadyContinuationForTest(lease))
+
+            harness.dwsm.cleanup()
+
+            assertFalse(harness.activeSessionEngine.hasPendingTeardownReadyContinuationForTest(lease))
+        } finally {
+            if (!resetBarrier.isCompleted) resetBarrier.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `stale teardown disposal cannot clear a replacement continuation`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val resetA = CompletableDeferred<Result<Unit>>()
+        val resetB = CompletableDeferred<Result<Unit>>()
+        var callbackB = 0
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.startCableSet(targetReps = 3)
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeBleRepo.stopWorkoutBlock = { resetA.await() }
+            harness.activeSessionEngine.requestTeardownForTransition(leaseA, TeardownReason.STOP_SET) {}
+            runCurrent()
+            harness.dwsm.resetForNewWorkout()
+            resetA.complete(Result.success(Unit))
+            advanceUntilIdle()
+
+            harness.startCableSet(targetReps = 3)
+            val leaseB = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.fakeBleRepo.stopWorkoutBlock = { resetB.await() }
+            harness.activeSessionEngine.requestTeardownForTransition(leaseB, TeardownReason.STOP_SET) {
+                callbackB++
+            }
+            runCurrent()
+            assertTrue(harness.activeSessionEngine.hasPendingTeardownReadyContinuationForTest(leaseB))
+
+            harness.activeSessionEngine.discardTeardownReadyContinuationForTest(leaseA)
+
+            assertTrue(harness.activeSessionEngine.hasPendingTeardownReadyContinuationForTest(leaseB))
+            resetB.complete(Result.success(Unit))
+            advanceUntilIdle()
+            assertEquals(1, callbackB)
+            assertFalse(harness.activeSessionEngine.hasPendingTeardownReadyContinuationForTest(leaseB))
+        } finally {
+            if (!resetA.isCompleted) resetA.complete(Result.success(Unit))
+            if (!resetB.isCompleted) resetB.complete(Result.success(Unit))
+            harness.cleanup()
+        }
+    }
 
     @Test
     fun `retry sends one reset and reaches ready only after reset succeeds`() = runTest {

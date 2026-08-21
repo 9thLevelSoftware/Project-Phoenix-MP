@@ -299,6 +299,27 @@
     <string name="rest_continue">Doorgaan</string>
     <string name="rest_complete_announcement">Rust voltooid</string>
     <string name="rest_seconds_remaining">Nog %1$d seconden</string>
+    <string name="drop_set_title">Drop-set</string>
+    <string name="drop_set_offer_toggle">Drop-set aanbieden na een mislukte set.</string>
+    <string name="drop_set_min_weight">Minimumgewicht</string>
+    <string name="drop_set_min_weight_supporting">Minimum per kabel in %1$s</string>
+    <string name="drop_set_min_weight_error">Voer een minimumgewicht groter dan 0 in</string>
+    <string name="drop_set_offer_question">Deze set opnieuw proberen met een drop-set?</string>
+    <string name="drop_set_retry_set">Set opnieuw</string>
+    <string name="drop_set_skip">Drop-set overslaan</string>
+    <string name="drop_set_candidate_unavailable">Onder het ingestelde minimum</string>
+    <string name="drop_set_remaining_one">1 drop resterend</string>
+    <string name="drop_set_remaining_many">%1$d drops resterend</string>
+    <string name="drop_set_accepted_waiting">Opnieuw op %1$s — %2$s per kabel</string>
+    <string name="drop_set_saving">Mislukte poging wordt opgeslagen</string>
+    <string name="drop_set_preparing">Trainer wordt voorbereid</string>
+    <string name="drop_set_ready">Klaar om opnieuw te proberen</string>
+    <string name="drop_set_recovery">Maak opnieuw verbinding om deze drop-set te herhalen</string>
+    <string name="drop_set_skip_rest_blocked">Kies een drop-set of sla die over voordat je de rust overslaat</string>
+    <string name="drop_set_waiting_timer">Rust voltooid. Kies een drop-set of sla die over om verder te gaan.</string>
+    <string name="cd_drop_set_candidate">%1$s drop, %2$s per kabel</string>
+    <string name="cd_drop_set_candidate_unavailable">%1$s drop niet beschikbaar</string>
+    <string name="cd_drop_set_retry_disabled">Selecteer een droppercentage om opnieuw te proberen</string>
     <string name="set_weight">Gewicht instellen</string>
 
     <!-- Connection Logs -->

@@ -973,6 +973,8 @@ class MigrationManagerTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
             isBodyweight = null,
+            dropSetEnabled = 0L,
+            dropSetMinWeightKg = null,
         )
     }
 

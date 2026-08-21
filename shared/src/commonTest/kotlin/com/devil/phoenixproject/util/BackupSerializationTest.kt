@@ -3,11 +3,13 @@ package com.devil.phoenixproject.util
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackItemCategory
+import com.devil.phoenixproject.domain.model.SetEndReason
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.decodeFromJsonElement
@@ -172,15 +174,17 @@ class BackupSerializationTest {
             exportedAt = "2026-06-07T12:00:00Z",
             appVersion = "0.9.0",
             data = BackupContent(
-                legacyEquipmentRackItems = json.encodeToJsonElement(listOf(
-                    RackItem(
-                        id = "vest",
-                        name = "Weighted vest",
-                        category = RackItemCategory.WEIGHTED_VEST,
-                        weightKg = 10f,
-                        behavior = RackItemBehavior.ADDED_RESISTANCE,
+                legacyEquipmentRackItems = json.encodeToJsonElement(
+                    listOf(
+                        RackItem(
+                            id = "vest",
+                            name = "Weighted vest",
+                            category = RackItemCategory.WEIGHTED_VEST,
+                            weightKg = 10f,
+                            behavior = RackItemBehavior.ADDED_RESISTANCE,
+                        ),
                     ),
-                )),
+                ),
                 routineExercises = listOf(
                     RoutineExerciseBackup(
                         id = "rex-rack",
@@ -208,6 +212,82 @@ class BackupSerializationTest {
             ).single().id,
         )
         assertEquals(listOf("vest"), deserialized.data.routineExercises.single().defaultRackItemIds)
+    }
+
+    @Test
+    fun dropSetConfigurationRoundTrip() {
+        val original = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-08-20T12:00:00Z",
+            appVersion = "0.9.0",
+            data = BackupContent(
+                routineExercises = listOf(
+                    RoutineExerciseBackup(
+                        id = "rex-drop-on",
+                        routineId = "routine-drop",
+                        exerciseName = "Bench Press",
+                        exerciseMuscleGroup = "Chest",
+                        exerciseDefaultCableConfig = "DOUBLE",
+                        cableConfig = "DOUBLE",
+                        orderIndex = 0,
+                        setReps = "8",
+                        weightPerCableKg = 20f,
+                        dropSetEnabled = true,
+                        dropSetMinWeightKg = 7.5f,
+                    ),
+                    RoutineExerciseBackup(
+                        id = "rex-drop-off",
+                        routineId = "routine-drop",
+                        exerciseName = "Row",
+                        exerciseMuscleGroup = "Back",
+                        exerciseDefaultCableConfig = "DOUBLE",
+                        cableConfig = "DOUBLE",
+                        orderIndex = 1,
+                        setReps = "10",
+                        weightPerCableKg = 15f,
+                    ),
+                ),
+            ),
+        )
+
+        val deserialized = json.decodeFromString<BackupData>(json.encodeToString(original))
+        val enabled = deserialized.data.routineExercises.first { it.id == "rex-drop-on" }
+        val disabled = deserialized.data.routineExercises.first { it.id == "rex-drop-off" }
+        assertTrue(enabled.dropSetEnabled)
+        assertEquals(7.5f, enabled.dropSetMinWeightKg)
+        assertFalse(disabled.dropSetEnabled)
+        assertNull(disabled.dropSetMinWeightKg)
+    }
+
+    @Test
+    fun legacyRoutineExerciseBackupOmittingDropSetDefaultsDisabled() {
+        val legacy = """
+            {
+              "version": 5,
+              "exportedAt": "2026-07-01T12:00:00Z",
+              "appVersion": "0.8.0",
+              "data": {
+                "routineExercises": [
+                  {
+                    "id": "rex-legacy",
+                    "routineId": "routine-legacy",
+                    "exerciseName": "Squat",
+                    "exerciseMuscleGroup": "Legs",
+                    "exerciseDefaultCableConfig": "DOUBLE",
+                    "cableConfig": "DOUBLE",
+                    "orderIndex": 0,
+                    "setReps": "5",
+                    "weightPerCableKg": 40.0
+                  }
+                ]
+              }
+            }
+        """.trimIndent()
+
+        val deserialized = json.decodeFromString<BackupData>(legacy)
+        val exercise = deserialized.data.routineExercises.single()
+        assertFalse(exercise.dropSetEnabled)
+        assertNull(exercise.dropSetMinWeightKg)
     }
 
     @Test
@@ -315,5 +395,51 @@ class BackupSerializationTest {
         assertTrue(backupData.privacy.userFacingSummary.contains("profile training preferences"))
         assertTrue(backupData.privacy.userFacingSummary.contains("voice", ignoreCase = true))
         assertTrue(backupData.privacy.userFacingSummary.contains("adult", ignoreCase = true))
+    }
+
+    @Test
+    fun completedSetEndReasonsRoundTripAndLegacyOrFutureValuesDecodeSafely() {
+        SetEndReason.entries.forEach { reason ->
+            val original = CompletedSetBackup(
+                id = "set-${reason.name}",
+                sessionId = "session-1",
+                setNumber = 1,
+                actualReps = 8,
+                actualWeightKg = 40f,
+                completedAt = 1000L,
+                setEndReason = reason.name,
+            )
+            assertEquals(reason.name, json.decodeFromString<CompletedSetBackup>(json.encodeToString(original)).setEndReason)
+        }
+
+        val legacy = json.decodeFromString<CompletedSetBackup>("""{"id":"legacy","sessionId":"s","setNumber":1,"actualReps":8,"actualWeightKg":40.0,"completedAt":1000}""")
+        val future = json.decodeFromString<CompletedSetBackup>("""{"id":"future","sessionId":"s","setNumber":1,"actualReps":8,"actualWeightKg":40.0,"completedAt":1000,"setEndReason":"FUTURE_REASON"}""")
+
+        assertEquals("UNKNOWN", legacy.setEndReason)
+        assertEquals("FUTURE_REASON", future.setEndReason)
+    }
+
+    @Test
+    fun completedSetAttemptIdentityRoundTripsAndLegacyJsonUsesSafeDefaults() {
+        val original = CompletedSetBackup(
+            id = "attempt-3",
+            sessionId = "session-1",
+            setNumber = 0,
+            actualReps = 8,
+            actualWeightKg = 40f,
+            completedAt = 1000L,
+            routineExerciseId = "routine-exercise-7",
+            attemptNumber = 3,
+        )
+
+        val restored = json.decodeFromString<CompletedSetBackup>(json.encodeToString(original))
+        val legacy = json.decodeFromString<CompletedSetBackup>(
+            """{"id":"legacy","sessionId":"s","setNumber":0,"actualReps":8,"actualWeightKg":40.0,"completedAt":1000}""",
+        )
+
+        assertEquals("routine-exercise-7", restored.routineExerciseId)
+        assertEquals(3, restored.attemptNumber)
+        assertEquals(null, legacy.routineExerciseId)
+        assertEquals(1, legacy.attemptNumber)
     }
 }

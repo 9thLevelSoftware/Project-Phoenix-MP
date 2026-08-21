@@ -10,6 +10,7 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.domain.model.WorkoutMode
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.presentation.screen.shouldShowCableOnlyExerciseControls
 import com.devil.phoenixproject.presentation.screen.shouldShowStopAtTopToggle
@@ -640,6 +641,120 @@ class ExerciseConfigViewModelTest {
         assertEquals(48f, viewModel.calculateResolvedWeight())
     }
 
+    @Test
+    fun `drop set defaults disabled with null minimum`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        viewModel.initialize(
+            exercise = benchRoutineExercise(id = "rex-drop-default", setReps = listOf(8), weightPerCableKg = 20f),
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+
+        assertFalse(viewModel.dropSetEnabled.value)
+        assertNull(viewModel.dropSetMinWeightKg.value)
+        assertTrue(viewModel.isDropSetMinWeightValid.value)
+    }
+
+    @Test
+    fun `drop set loads existing enabled floor and blocks invalid save`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        viewModel.initialize(
+            exercise = benchRoutineExercise(
+                id = "rex-drop-load",
+                setReps = listOf(8),
+                weightPerCableKg = 20f,
+                dropSetEnabled = true,
+                dropSetMinWeightKg = 8f,
+            ),
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+
+        assertTrue(viewModel.dropSetEnabled.value)
+        assertEquals(8f, viewModel.dropSetMinWeightKg.value)
+
+        viewModel.onDropSetMinWeightKgChange(0f)
+        assertFalse(viewModel.isDropSetMinWeightValid.value)
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+        assertNull(saved)
+
+        viewModel.onDropSetMinWeightKgChange(Float.NaN)
+        assertFalse(viewModel.isDropSetMinWeightValid.value)
+        viewModel.onDropSetMinWeightKgChange(-1f)
+        assertFalse(viewModel.isDropSetMinWeightValid.value)
+
+        viewModel.onDropSetMinWeightKgChange(6f)
+        assertTrue(viewModel.isDropSetMinWeightValid.value)
+        viewModel.onSave { updated -> saved = updated }
+        val persisted = requireNotNull(saved)
+        assertTrue(persisted.dropSetEnabled)
+        assertEquals(6f, persisted.dropSetMinWeightKg)
+    }
+
+    @Test
+    fun `drop set conversion stays canonical kilograms`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        viewModel.initialize(
+            exercise = benchRoutineExercise(
+                id = "rex-drop-lb",
+                setReps = listOf(8),
+                weightPerCableKg = 20f,
+                dropSetEnabled = true,
+                dropSetMinWeightKg = 10f,
+            ),
+            unit = WeightUnit.LB,
+            toDisplay = { value, _ -> value * 2f },
+            toKg = { value, _ -> value / 2f },
+        )
+
+        assertEquals(10f, viewModel.dropSetMinWeightKg.value)
+        viewModel.onDropSetMinWeightKgChange(12f)
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+        assertEquals(12f, saved?.dropSetMinWeightKg)
+    }
+
+    @Test
+    fun `changing away from Old School preserves drop set values without blocking save`() = runTest {
+        val viewModel = ExerciseConfigViewModel()
+        viewModel.initialize(
+            exercise = benchRoutineExercise(
+                id = "rex-drop-mode",
+                setReps = listOf(8),
+                weightPerCableKg = 20f,
+                dropSetEnabled = true,
+                dropSetMinWeightKg = 5f,
+            ),
+            unit = WeightUnit.KG,
+            toDisplay = { value, _ -> value },
+            toKg = { value, _ -> value },
+        )
+
+        viewModel.onDropSetMinWeightKgChange(null)
+        assertFalse(viewModel.isDropSetMinWeightValid.value)
+        viewModel.onSelectedModeChange(WorkoutMode.Pump)
+        assertTrue(viewModel.isDropSetMinWeightValid.value)
+        assertTrue(viewModel.dropSetEnabled.value)
+
+        var saved: RoutineExercise? = null
+        viewModel.onSave { updated -> saved = updated }
+        val whileInactive = requireNotNull(saved)
+        assertTrue(whileInactive.dropSetEnabled)
+        assertNull(whileInactive.dropSetMinWeightKg)
+
+        viewModel.onSelectedModeChange(WorkoutMode.OldSchool)
+        assertFalse(viewModel.isDropSetMinWeightValid.value)
+        viewModel.onDropSetMinWeightKgChange(5f)
+        saved = null
+        viewModel.onSave { updated -> saved = updated }
+        val restored = requireNotNull(saved)
+        assertEquals(5f, restored.dropSetMinWeightKg)
+        assertEquals(ProgramMode.OldSchool, restored.programMode)
+    }
+
     private fun benchRoutineExercise(
         id: String,
         setReps: List<Int?>,
@@ -651,6 +766,8 @@ class ExerciseConfigViewModelTest {
         defaultRackItemIds: List<String> = emptyList(),
         scalingBasis: ScalingBasis? = null,
         prTypeForScaling: PRType = PRType.MAX_WEIGHT,
+        dropSetEnabled: Boolean = false,
+        dropSetMinWeightKg: Float? = null,
     ) = RoutineExercise(
         id = id,
         exercise = Exercise(
@@ -673,6 +790,8 @@ class ExerciseConfigViewModelTest {
         defaultRackItemIds = defaultRackItemIds,
         scalingBasis = scalingBasis,
         prTypeForScaling = prTypeForScaling,
+        dropSetEnabled = dropSetEnabled,
+        dropSetMinWeightKg = dropSetMinWeightKg,
     )
 
     private fun weightPR(weight: Float) = PersonalRecord(
@@ -1028,8 +1147,11 @@ class ExerciseConfigViewModelTest {
 
         assertNotNull(saved)
         // Expanded: set1 (HARD) + set2×3 (HARDER each)
-        assertEquals(listOf(EchoLevel.HARD, EchoLevel.HARDER, EchoLevel.HARDER, EchoLevel.HARDER), saved!!.setEchoLevels,
-            "Per-set Echo overrides should be preserved through expansion")
+        assertEquals(
+            listOf(EchoLevel.HARD, EchoLevel.HARDER, EchoLevel.HARDER, EchoLevel.HARDER),
+            saved!!.setEchoLevels,
+            "Per-set Echo overrides should be preserved through expansion",
+        )
     }
 
     @Test

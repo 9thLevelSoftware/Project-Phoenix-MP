@@ -1016,6 +1016,8 @@ WHERE gs.rowid = (
     SELECT id FROM UserProfile""",
     )
 
+    // Migration 43: replace streamed demo videos with openly-licensed still images.
+    // Mirrors 43.sqm exactly.
     43 -> listOf(
         "DELETE FROM ExerciseVideo",
         "DROP TABLE IF EXISTS ExerciseVideo",
@@ -1028,6 +1030,34 @@ WHERE gs.rowid = (
     )""",
         "CREATE INDEX idx_exercise_image_exercise ON ExerciseImage(exerciseId)",
         "UPDATE Exercise SET archived = 1 WHERE isCustom = 0",
+    )
+
+    // Migration 44: Add set_end_reason to CompletedSet (Issue #673 PR 1)
+    // Mirrors 44.sqm exactly.
+    44 -> listOf(
+        "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'",
+    )
+
+    // Migration 45: Persist routine occurrence and logical attempt identity (Issue #673 PR 2)
+    // Mirrors 45.sqm exactly.
+    45 -> listOf(
+        "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT",
+        "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1",
+        """CREATE TABLE ActiveWorkoutRuntime (
+        profile_id TEXT NOT NULL,
+        routine_session_id TEXT NOT NULL,
+        document_version INTEGER NOT NULL,
+        runtime_json TEXT NOT NULL,
+        updated_at_epoch_ms INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, routine_session_id)
+    )""",
+    )
+
+    // Migration 46: Opt-in drop-set offer configuration (Issue #673 PR 3)
+    // Mirrors 46.sqm exactly.
+    46 -> listOf(
+        "ALTER TABLE RoutineExercise ADD COLUMN dropSetEnabled INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL",
     )
 
     else -> emptyList()

@@ -30,6 +30,7 @@ import com.devil.phoenixproject.domain.model.ProfilePreferenceSection
 import com.devil.phoenixproject.domain.model.ProfilePreferenceValidity
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackPreferences
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.UserProfilePreferences
 import com.devil.phoenixproject.domain.model.VbtPreferences
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
@@ -725,6 +726,8 @@ abstract class BaseDataBackupManager(
                                     runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
                                 }?.name,
                                 isBodyweight = resolveBackupIsBodyweight(exercise),
+                                dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
+                                dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
                             )
                         }
                         if (inserted != null) routineExercisesImported++
@@ -870,13 +873,16 @@ abstract class BaseDataBackupManager(
                             id = completedSet.id,
                             session_id = completedSet.sessionId,
                             planned_set_id = completedSet.plannedSetId,
+                            routine_exercise_id = completedSet.routineExerciseId,
                             set_number = completedSet.setNumber.toLong(),
                             set_type = completedSet.setType,
+                            attempt_number = completedSet.attemptNumber.coerceAtLeast(1).toLong(),
                             actual_reps = completedSet.actualReps.toLong(),
                             actual_weight_kg = completedSet.actualWeightKg.toDouble(),
                             logged_rpe = completedSet.loggedRpe?.toLong(),
                             is_pr = if (completedSet.isPr) 1L else 0L,
                             completed_at = completedSet.completedAt,
+                            set_end_reason = SetEndReason.fromPersisted(completedSet.setEndReason).name,
                         )
                         completedSetsImported++
                     }
@@ -1546,6 +1552,8 @@ abstract class BaseDataBackupManager(
                                                             runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
                                                         }?.name,
                                                         isBodyweight = resolveBackupIsBodyweight(exercise),
+                                                        dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
+                                                        dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
                                                     )
                                                 }
                                                 if (inserted != null) {
@@ -1790,13 +1798,16 @@ abstract class BaseDataBackupManager(
                                                     id = completedSet.id,
                                                     session_id = completedSet.sessionId,
                                                     planned_set_id = completedSet.plannedSetId,
+                                                    routine_exercise_id = completedSet.routineExerciseId,
                                                     set_number = completedSet.setNumber.toLong(),
                                                     set_type = completedSet.setType,
+                                                    attempt_number = completedSet.attemptNumber.coerceAtLeast(1).toLong(),
                                                     actual_reps = completedSet.actualReps.toLong(),
                                                     actual_weight_kg = completedSet.actualWeightKg.toDouble(),
                                                     logged_rpe = completedSet.loggedRpe?.toLong(),
                                                     is_pr = if (completedSet.isPr) 1L else 0L,
                                                     completed_at = completedSet.completedAt,
+                                                    set_end_reason = SetEndReason.fromPersisted(completedSet.setEndReason).name,
                                                 )
                                                 completedSetsImported++
                                             }
@@ -2657,6 +2668,8 @@ abstract class BaseDataBackupManager(
         scalingBasis = exercise.scalingBasis,
         // Explicit bodyweight flag (#635); null = derive from equipment.
         isBodyweight = exercise.isBodyweight?.let { it != 0L },
+        dropSetEnabled = exercise.dropSetEnabled != 0L,
+        dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toFloat(),
     )
 
     /**
@@ -2979,13 +2992,16 @@ abstract class BaseDataBackupManager(
         id = cs.id,
         sessionId = cs.session_id,
         plannedSetId = cs.planned_set_id,
+        routineExerciseId = cs.routine_exercise_id,
         setNumber = cs.set_number.toInt(),
         setType = cs.set_type,
+        attemptNumber = cs.attempt_number.toInt().coerceAtLeast(1),
         actualReps = cs.actual_reps.toInt(),
         actualWeightKg = cs.actual_weight_kg.toFloat(),
         loggedRpe = cs.logged_rpe?.toInt(),
         isPr = cs.is_pr != 0L,
         completedAt = cs.completed_at,
+        setEndReason = SetEndReason.fromPersisted(cs.set_end_reason).name,
     )
 
     private fun mapProgressionEventToBackup(pe: ProgressionEvent): ProgressionEventBackup = ProgressionEventBackup(

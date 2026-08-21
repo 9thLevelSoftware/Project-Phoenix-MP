@@ -1,5 +1,8 @@
 package com.devil.phoenixproject.presentation.manager
 
+import com.devil.phoenixproject.domain.model.DropPercentage
+import com.devil.phoenixproject.domain.model.DropSetConfiguration
+import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
@@ -10,10 +13,14 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.util.BleConstants
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
@@ -135,7 +142,13 @@ class DWSMEquipmentRackTest {
             ),
         )
 
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+        )
         advanceUntilIdle()
 
         val session = harness.fakeWorkoutRepo.getAllSessions("default").first().first()
@@ -145,6 +158,135 @@ class DWSMEquipmentRackTest {
         assertTrue(session.rackItemsJson.contains("assist"))
         assertTrue(!session.rackItemsJson.contains("vest"))
         harness.cleanup()
+    }
+
+    @Test
+    fun `completion template retains pre rack weight with resolved rack metadata`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.fakeEquipmentRackRepo.saveItems(
+                listOf(
+                    rackItem("assist", 5f, RackItemBehavior.COUNTERWEIGHT),
+                    rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE),
+                ),
+            )
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 8,
+                    warmupReps = 0,
+                    weightPerCableKg = 40f,
+                ),
+            )
+            // Cable rack selection intentionally does not mirror into live params until
+            // set start; the immutable completion template must capture that resolved snapshot.
+            harness.dwsm.updateActiveRackSelection(listOf("assist", "vest"))
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(workingReps = 8, totalReps = 8)
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+            )
+            runCurrent()
+
+            val template = harness.activeSessionEngine.executionGuard
+                .claimedCompletion(lease)
+                ?.logicalPreRackCommandTemplate
+                ?: error("Expected claimed completion")
+            assertEquals(40f, template.weightPerCableKg)
+            assertEquals(listOf("assist", "vest"), template.activeRackItemIds)
+            assertEquals(10f, template.externalAddedLoadKg)
+            assertEquals(5f, template.counterweightKg)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `drop candidates retain captured pre rack inputs after live rack mutation`() = runTest {
+        lateinit var harness: DWSMTestHarness
+        harness = DWSMTestHarness(
+            this,
+            dropSetEligibilityPolicy = DropSetEligibilityPolicy(
+                DropSetFeatureGate { true },
+                DropSetCandidateResolver(),
+            ),
+            dropSetConfigurationProvider = {
+                DropSetConfiguration(enabled = true, minimumWeightPerCableKg = 1f)
+            },
+            afterCompletionClaim = { _, _, _ ->
+                harness.coordinator._activeRackItemIds.value = listOf("mutated-rack")
+                harness.coordinator._workoutParameters.value =
+                    harness.coordinator._workoutParameters.value.copy(
+                        weightPerCableKg = 80f,
+                        activeRackItemIds = listOf("mutated-rack"),
+                        externalAddedLoadKg = 30f,
+                        counterweightKg = 20f,
+                    )
+            },
+        )
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.fakeEquipmentRackRepo.saveItems(
+                listOf(
+                    rackItem("assist", 5f, RackItemBehavior.COUNTERWEIGHT),
+                    rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE),
+                ),
+            )
+            val capturedExercise = routineExercise(
+                "rex-captured",
+                "Captured Press",
+                listOf("assist", "vest"),
+            ).let { exercise ->
+                exercise.copy(exercise = exercise.exercise.copy(isBodyweightOverride = false))
+            }
+            val routine = Routine(
+                id = "routine-captured-rack-drop",
+                name = "Captured Rack Drop",
+                exercises = listOf(capturedExercise),
+            )
+            harness.fakeExerciseRepo.addExercise(routine.exercises.single().exercise)
+            assertTrue(harness.dwsm.loadRoutineAsync(routine))
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(workingReps = 8, totalReps = 8)
+
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                com.devil.phoenixproject.domain.model.SetEndReason.STALL_FAILURE,
+            )
+            runCurrent()
+
+            val completion = harness.activeSessionEngine.executionGuard
+                .claimedCompletion(lease)
+                ?: error("Expected claimed completion")
+            val template = completion.logicalPreRackCommandTemplate
+            assertEquals(40f, template.weightPerCableKg)
+            assertEquals(listOf("assist", "vest"), template.activeRackItemIds)
+            assertEquals(10f, template.externalAddedLoadKg)
+            assertEquals(5f, template.counterweightKg)
+
+            val offer = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
+            val resolvedByPercentage = offer.candidates.associateBy { it.percentage }
+            assertEquals(36f, resolvedByPercentage.getValue(DropPercentage.TEN).resolvedWeightPerCableKg)
+            assertEquals(32f, resolvedByPercentage.getValue(DropPercentage.TWENTY).resolvedWeightPerCableKg)
+            assertEquals(28f, resolvedByPercentage.getValue(DropPercentage.THIRTY).resolvedWeightPerCableKg)
+            assertEquals(0.9f, resolvedByPercentage.getValue(DropPercentage.TEN).resultingExerciseMultiplier)
+            assertEquals(0.8f, resolvedByPercentage.getValue(DropPercentage.TWENTY).resultingExerciseMultiplier)
+            assertEquals(0.7f, resolvedByPercentage.getValue(DropPercentage.THIRTY).resultingExerciseMultiplier)
+
+            val mutatedLiveTenPercent = 80f * (1f - DropPercentage.TEN.fraction)
+            assertNotEquals(mutatedLiveTenPercent, resolvedByPercentage.getValue(DropPercentage.TEN).resolvedWeightPerCableKg)
+        } finally {
+            harness.cleanup()
+        }
     }
 
     @Test
@@ -381,7 +523,13 @@ class DWSMEquipmentRackTest {
             ),
         )
 
-        harness.activeSessionEngine.handleSetCompletion()
+        harness.activeSessionEngine.handleSetCompletion(
+
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+            com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+        )
         advanceUntilIdle()
 
         val defaults = harness.activeSessionEngine.getSingleExerciseDefaults(exerciseId)
@@ -436,7 +584,13 @@ class DWSMEquipmentRackTest {
                 }
             }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             snapshotMutationEntered.await()
 
             harness.settingsManager.setStopAtTop(true)
@@ -499,7 +653,13 @@ class DWSMEquipmentRackTest {
             )
             harness.fakeWorkoutRepo.beforeSaveSession = { releasePersistence.await() }
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             runCurrent()
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.size)
 

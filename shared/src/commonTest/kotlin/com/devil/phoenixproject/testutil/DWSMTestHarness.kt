@@ -1,25 +1,48 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeAttributionEnvelope
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeDiscoveryResult
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeDocument
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLoadResult
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLookupKey
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRejection
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
+import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRowRevision
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
+import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.DropSetConfiguration
+import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.HapticEvent
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.SetEndReason
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
+import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.presentation.manager.BiomechanicsRepProcessor
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.manager.GamificationManager
 import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceSnapshot
+import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
@@ -59,12 +82,223 @@ class FakeWorkoutServiceController : WorkoutServiceController {
     }
 }
 
-class DWSMTestHarness(
+class FakeActiveWorkoutRuntimeRepository : ActiveWorkoutRuntimeRepository {
+    data class ReplaceCall(
+        val profileId: String,
+        val routineSessionId: String,
+        val document: ActiveWorkoutRuntimeDocument,
+    )
+
+    val replacements = mutableListOf<ReplaceCall>()
+    val replaceEvents = mutableListOf<String>()
+    private val documents = mutableMapOf<Pair<String, String>, ActiveWorkoutRuntimeDocument>()
+    private val rejectedRows = mutableMapOf<Pair<String, String>, ActiveWorkoutRuntimeLoadResult.Rejected>()
+    private val documentSequences = mutableMapOf<Pair<String, String>, Long>()
+    private var nextDocumentSequence = 0L
+    var failingReplaceCallsRemaining: Int = 0
+    var discoverBlock: (suspend () -> Unit)? = null
+    var replaceBlock: (suspend () -> Unit)? = null
+    var afterReplaceCommit: (suspend (ActiveWorkoutRuntimeDocument) -> Unit)? = null
+    var cancellationOnNextReplace: CancellationException? = null
+    var loadCalls: Int = 0
+    var afterLoadSnapshot: (suspend (Int, ActiveWorkoutRuntimeLookupKey, ActiveWorkoutRuntimeLoadResult) -> Unit)? = null
+    var beforeConditionalDelete: (suspend () -> Unit)? = null
+    var failingConditionalDeleteCallsRemaining: Int = 0
+    var cancellationOnNextConditionalDelete: CancellationException? = null
+
+    fun committedDocument(profileId: String, routineSessionId: String): ActiveWorkoutRuntimeDocument? = documents[profileId to routineSessionId]
+
+    fun installRejected(
+        profileId: String,
+        routineSessionId: String,
+        reason: ActiveWorkoutRuntimeRejection,
+        attribution: ActiveWorkoutRuntimeAttributionEnvelope?,
+    ): ActiveWorkoutRuntimeLoadResult.Rejected {
+        val key = profileId to routineSessionId
+        val sequence = nextDocumentSequence++
+        val rejected = ActiveWorkoutRuntimeLoadResult.Rejected(
+            reason = reason,
+            rowRevision = ActiveWorkoutRuntimeRowRevision(
+                documentVersion = 1L,
+                updatedAtEpochMs = sequence,
+                encodedPayloadIdentity = "rejected:$profileId:$routineSessionId:$sequence",
+            ),
+            attribution = attribution,
+        )
+        documents.remove(key)
+        rejectedRows[key] = rejected
+        documentSequences[key] = sequence
+        return rejected
+    }
+
+    fun replacePreservingRevisionTimestamp(
+        profileId: String,
+        routineSessionId: String,
+        document: ActiveWorkoutRuntimeDocument,
+    ) {
+        require(document.profileId == profileId)
+        require(document.routineSessionId == routineSessionId)
+        val key = profileId to routineSessionId
+        require(documentSequences.containsKey(key))
+        documents[key] = document
+        rejectedRows.remove(key)
+    }
+
+    override suspend fun discover(profileId: String, routineId: String): ActiveWorkoutRuntimeDiscoveryResult {
+        discoverBlock?.invoke()
+        val loadedCandidates = documents.entries.mapNotNull { (key, document) ->
+            if (key.first != profileId || document.routineId != routineId) return@mapNotNull null
+            Triple(
+                key,
+                documentSequences[key] ?: Long.MIN_VALUE,
+                ActiveWorkoutRuntimeLoadResult.Loaded(document, rowRevision(key, document)),
+            )
+        }
+        val rejectedCandidates = rejectedRows.entries.mapNotNull { (key, rejected) ->
+            val attribution = rejected.attribution
+            if (key.first != profileId || attribution?.profileId != profileId || attribution.routineId != routineId) {
+                return@mapNotNull null
+            }
+            Triple(key, documentSequences[key] ?: Long.MIN_VALUE, rejected)
+        }
+        return (loadedCandidates + rejectedCandidates)
+            .maxByOrNull { (_, sequence, _) -> sequence }
+            ?.let { (key, _, loadResult) ->
+                ActiveWorkoutRuntimeDiscoveryResult.Found(
+                    lookupKey = ActiveWorkoutRuntimeLookupKey(key.first, key.second),
+                    loadResult = loadResult,
+                )
+            }
+            ?: ActiveWorkoutRuntimeDiscoveryResult.Missing
+    }
+
+    override suspend fun load(profileId: String, routineSessionId: String): ActiveWorkoutRuntimeLoadResult {
+        val key = profileId to routineSessionId
+        val result = documents[key]?.let { document ->
+            ActiveWorkoutRuntimeLoadResult.Loaded(
+                document,
+                rowRevision(key, document),
+            )
+        }
+            ?: rejectedRows[key]
+            ?: ActiveWorkoutRuntimeLoadResult.Missing
+        val call = ++loadCalls
+        afterLoadSnapshot?.invoke(
+            call,
+            ActiveWorkoutRuntimeLookupKey(profileId, routineSessionId),
+            result,
+        )
+        return result
+    }
+
+    private fun rowRevision(
+        key: Pair<String, String>,
+        document: ActiveWorkoutRuntimeDocument,
+    ) = ActiveWorkoutRuntimeRowRevision(
+        documentVersion = document.version.toLong(),
+        updatedAtEpochMs = documentSequences[key] ?: Long.MIN_VALUE,
+        encodedPayloadIdentity = document.toString(),
+    )
+
+    override suspend fun replace(
+        profileId: String,
+        routineSessionId: String,
+        document: ActiveWorkoutRuntimeDocument,
+    ) {
+        replaceEvents += "entered"
+        replacements += ReplaceCall(profileId, routineSessionId, document)
+        replaceBlock?.invoke()
+        cancellationOnNextReplace?.let { cancellation ->
+            cancellationOnNextReplace = null
+            throw cancellation
+        }
+        if (failingReplaceCallsRemaining > 0) {
+            failingReplaceCallsRemaining--
+            throw IllegalStateException("test runtime persistence failure")
+        }
+        documents[profileId to routineSessionId] = document
+        rejectedRows.remove(profileId to routineSessionId)
+        documentSequences[profileId to routineSessionId] = nextDocumentSequence++
+        replaceEvents += "persisted"
+        afterReplaceCommit?.invoke(document)
+    }
+
+    override suspend fun delete(profileId: String, routineSessionId: String) {
+        documents.remove(profileId to routineSessionId)
+        rejectedRows.remove(profileId to routineSessionId)
+        documentSequences.remove(profileId to routineSessionId)
+    }
+
+    override suspend fun deleteIfRevisionMatches(
+        profileId: String,
+        routineSessionId: String,
+        expectedRevision: ActiveWorkoutRuntimeRowRevision,
+    ): Boolean {
+        beforeConditionalDelete?.invoke()
+        cancellationOnNextConditionalDelete?.let { cancellation ->
+            cancellationOnNextConditionalDelete = null
+            throw cancellation
+        }
+        if (failingConditionalDeleteCallsRemaining > 0) {
+            failingConditionalDeleteCallsRemaining--
+            throw IllegalStateException("test runtime conditional delete failure")
+        }
+        val key = profileId to routineSessionId
+        val currentRevision = documents[key]?.let { rowRevision(key, it) }
+            ?: rejectedRows[key]?.rowRevision
+            ?: return false
+        if (currentRevision != expectedRevision) return false
+        delete(profileId, routineSessionId)
+        return true
+    }
+}
+
+internal class DWSMTestHarness(
     val testScope: TestScope,
+    workoutRepositoryOverride: WorkoutRepository? = null,
+    completedSetRepositoryOverride: CompletedSetRepository? = null,
+    biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
+    biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
+    beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    afterVbtDecisionCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
+    afterCompletionClaim: (executionId: Long, sessionId: String, reason: SetEndReason) -> Unit = { _, _, _ -> },
+    beforeBodyweightCompletionClaim: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    afterBodyweightCompletionConsume: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    afterResetInvalidation: (executionId: Long, sessionId: String) -> Unit = { _, _ -> },
+    afterExecutionBegin: (outgoingExecutionId: Long?, executionId: Long) -> Unit = { _, _ -> },
+    dropSetEligibilityPolicy: DropSetEligibilityPolicy = DropSetEligibilityPolicy(
+        DropSetFeatureGate { false },
+        DropSetCandidateResolver(),
+    ),
+    dropSetConfigurationProvider: (RoutineExercise) -> DropSetConfiguration = {
+        DropSetConfiguration(enabled = false, minimumWeightPerCableKg = null)
+    },
+    transitionIdGenerator: () -> String = { "test-transition" },
+    offerIdGenerator: () -> String = { "test-offer" },
+    wallClockMillisProvider: (() -> Long)? = null,
+    hapticEvents: MutableSharedFlow<HapticEvent> = MutableSharedFlow(
+        extraBufferCapacity = 32,
+        onBufferOverflow = BufferOverflow.SUSPEND,
+    ),
     onPostSaveComputed: suspend (exerciseId: String, profileId: String, sessionMcvMmS: Float?) -> Unit = { _, _, _ -> },
 ) {
     companion object {
         const val TEST_WALL_CLOCK_EPOCH_MS = 1_800_000_000_000L
+        const val TEST_ROUTINE_SESSION_ID = "test-routine-session"
+        const val TEST_ROUTINE_EXERCISE_ID = "test-routine-exercise"
+        const val TEST_ROUTINE_SET_INDEX = 0
+
+        fun logicalSetKeyFixture(
+            routineSessionId: String = TEST_ROUTINE_SESSION_ID,
+            routineExerciseId: String = TEST_ROUTINE_EXERCISE_ID,
+            setIndex: Int = TEST_ROUTINE_SET_INDEX,
+            setKind: SetType = SetType.STANDARD,
+        ) = LogicalSetKey(
+            routineSessionId = routineSessionId,
+            routineExerciseId = routineExerciseId,
+            setIndex = setIndex,
+            setKind = setKind,
+        )
     }
 
     val nowMs: Long
@@ -80,8 +314,11 @@ class DWSMTestHarness(
     val fakeTrainingCycleRepo = FakeTrainingCycleRepository()
     val fakeRepMetricRepo = FakeRepMetricRepository()
     val fakeBiomechanicsRepo = FakeBiomechanicsRepository()
+    val fakeActiveWorkoutRuntimeRepository = FakeActiveWorkoutRuntimeRepository()
     val fakeWorkoutServiceController = FakeWorkoutServiceController()
     val fakeUserProfileRepo = FakeUserProfileRepository().apply { setActiveProfileForTest() }
+    private val workoutRepository = workoutRepositoryOverride ?: fakeWorkoutRepo
+    private val completedSetRepository = completedSetRepositoryOverride ?: fakeCompletedSetRepo
 
     val repCounter = RepCounterFromMachine()
     val resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePRRepo, fakeExerciseRepo, FakeVelocityOneRepMaxRepository())
@@ -113,14 +350,19 @@ class DWSMTestHarness(
 
     val dwsm = DefaultWorkoutSessionManager(
         bleRepository = fakeBleRepo,
-        workoutRepository = fakeWorkoutRepo,
+        workoutRepository = workoutRepository,
         exerciseRepository = fakeExerciseRepo,
         personalRecordRepository = fakePRRepo,
         repCounter = repCounter,
         preferencesManager = fakePrefsManager,
         gamificationManager = gamificationManager,
         trainingCycleRepository = fakeTrainingCycleRepo,
-        completedSetRepository = fakeCompletedSetRepo,
+        completedSetRepository = completedSetRepository,
+        activeWorkoutRuntimeRepository = fakeActiveWorkoutRuntimeRepository,
+        dropSetEligibilityPolicy = dropSetEligibilityPolicy,
+        dropSetConfigurationProvider = dropSetConfigurationProvider,
+        transitionIdGenerator = transitionIdGenerator,
+        offerIdGenerator = offerIdGenerator,
         syncTriggerManager = null,
         repMetricRepository = fakeRepMetricRepo,
         biomechanicsRepository = fakeBiomechanicsRepo,
@@ -133,8 +375,18 @@ class DWSMTestHarness(
         userProfileRepository = fakeUserProfileRepo,
         workoutServiceController = fakeWorkoutServiceController,
         scope = dwsmScope,
+        biomechanicsDispatcher = biomechanicsDispatcher,
+        biomechanicsRepProcessor = biomechanicsRepProcessor,
+        beforeVbtCommit = beforeVbtCommit,
+        afterVbtDecisionCommit = afterVbtDecisionCommit,
+        afterCompletionClaim = afterCompletionClaim,
+        beforeBodyweightCompletionClaim = beforeBodyweightCompletionClaim,
+        afterBodyweightCompletionConsume = afterBodyweightCompletionConsume,
+        afterResetInvalidation = afterResetInvalidation,
+        afterExecutionBegin = afterExecutionBegin,
+        _hapticEvents = hapticEvents,
         elapsedRealtimeProvider = { testScope.testScheduler.currentTime },
-        wallClockMillisProvider = { nowMs },
+        wallClockMillisProvider = wallClockMillisProvider ?: { nowMs },
     )
 
     // BleConnectionManager receives errors via coordinator.bleErrorEvents (no circular dependency)
@@ -148,6 +400,9 @@ class DWSMTestHarness(
 
     /** Convenience accessor for the coordinator (shared state bus) */
     val coordinator get() = dwsm.coordinator
+
+    /** Task 6 test seam for the coordinator-owned immutable rest transition. */
+    val restTransitionPlan get() = coordinator.restTransitionPlan
 
     /** Convenience accessor for the routine flow manager (routine CRUD, navigation, supersets) */
     val routineFlowManager get() = dwsm.routineFlowManager

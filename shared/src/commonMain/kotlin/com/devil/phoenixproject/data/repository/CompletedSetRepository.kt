@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSet
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import kotlinx.coroutines.flow.Flow
@@ -89,6 +90,15 @@ interface CompletedSetRepository {
      */
     suspend fun saveCompletedSets(sets: List<CompletedSet>)
 
+    /** Return the next durable attempt number for this exact logical routine set. */
+    suspend fun nextAttemptNumber(key: LogicalSetKey): Int
+
+    /**
+     * Whether the exact attempt is durably stored under the stable workout-session id.
+     * Soft-deleted workout sessions are not authoritative.
+     */
+    suspend fun isAttemptDurable(stableSessionId: String, key: LogicalSetKey, attemptNumber: Int): Boolean
+
     /**
      * Update RPE for a completed set (user logs after the fact).
      */
@@ -108,4 +118,38 @@ interface CompletedSetRepository {
      * Delete all completed sets for a session.
      */
     suspend fun deleteCompletedSetsForSession(sessionId: String)
+}
+
+internal fun collapseCompletedSetsToLatestLogicalAttempts(
+    sets: List<CompletedSet>,
+    routineSessionIdFor: (sessionId: String) -> String?,
+): List<CompletedSet> {
+    data class LogicalKey(
+        val routineSessionId: String,
+        val routineExerciseId: String,
+        val setNumber: Int,
+    )
+    val selected = LinkedHashMap<Any, CompletedSet>()
+    for (set in sets) {
+        val routineSessionId = routineSessionIdFor(set.sessionId)
+        val routineExerciseId = set.routineExerciseId
+        val key: Any = if (routineSessionId.isNullOrBlank() || routineExerciseId.isNullOrBlank()) {
+            set.id
+        } else {
+            LogicalKey(routineSessionId, routineExerciseId, set.setNumber)
+        }
+        val existing = selected[key]
+        if (existing == null) {
+            selected[key] = set
+            continue
+        }
+        val existingAttempt = existing.attemptNumber.coerceAtLeast(1)
+        val candidateAttempt = set.attemptNumber.coerceAtLeast(1)
+        if (candidateAttempt > existingAttempt ||
+            (candidateAttempt == existingAttempt && set.completedAt > existing.completedAt)
+        ) {
+            selected[key] = set
+        }
+    }
+    return selected.values.sortedByDescending { it.completedAt }
 }

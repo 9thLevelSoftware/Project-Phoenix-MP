@@ -298,6 +298,27 @@
     <string name="rest_continue">Continuar</string>
     <string name="rest_complete_announcement">Descanso completado</string>
     <string name="rest_seconds_remaining">%1$d segundos restantes</string>
+    <string name="drop_set_title">Drop set</string>
+    <string name="drop_set_offer_toggle">Ofrecer drop set tras un fallo.</string>
+    <string name="drop_set_min_weight">Peso mínimo</string>
+    <string name="drop_set_min_weight_supporting">Mínimo por cable en %1$s</string>
+    <string name="drop_set_min_weight_error">Introduce un peso mínimo mayor que 0</string>
+    <string name="drop_set_offer_question">¿Reintentar esta serie con un drop set?</string>
+    <string name="drop_set_retry_set">Reintentar serie</string>
+    <string name="drop_set_skip">Omitir drop set</string>
+    <string name="drop_set_candidate_unavailable">Por debajo del mínimo configurado</string>
+    <string name="drop_set_remaining_one">1 drop restante</string>
+    <string name="drop_set_remaining_many">%1$d drops restantes</string>
+    <string name="drop_set_accepted_waiting">Reintento al %1$s — %2$s por cable</string>
+    <string name="drop_set_saving">Guardando el intento fallido</string>
+    <string name="drop_set_preparing">Preparando el entrenador</string>
+    <string name="drop_set_ready">Listo para reintentar</string>
+    <string name="drop_set_recovery">Vuelve a conectar para reintentar este drop set</string>
+    <string name="drop_set_skip_rest_blocked">Elige un drop set u omítelo antes de saltar el descanso</string>
+    <string name="drop_set_waiting_timer">Descanso completado. Elige un drop set u omítelo para continuar.</string>
+    <string name="cd_drop_set_candidate">Drop del %1$s, %2$s por cable</string>
+    <string name="cd_drop_set_candidate_unavailable">Drop del %1$s no disponible</string>
+    <string name="cd_drop_set_retry_disabled">Selecciona un porcentaje de drop para reintentar</string>
     <string name="set_weight">Establecer peso</string>
 
     <!-- Connection Logs -->

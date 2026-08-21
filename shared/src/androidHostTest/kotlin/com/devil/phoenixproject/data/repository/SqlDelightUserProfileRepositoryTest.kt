@@ -590,6 +590,40 @@ class SqlDelightUserProfileRepositoryTest {
     }
 
     @Test
+    fun deleteProfileRemovesActiveWorkoutRuntimeRowsForThatProfile() = runTest {
+        ready()
+        val created = repository.createAndActivateProfile("Runtime Owner", 1)
+        database.vitruvianDatabaseQueries.replaceActiveWorkoutRuntime(
+            profile_id = created.id,
+            routine_session_id = "runtime-session",
+            document_version = 2L,
+            runtime_json = "{}",
+            updated_at_epoch_ms = 1L,
+        )
+        database.vitruvianDatabaseQueries.replaceActiveWorkoutRuntime(
+            profile_id = "default",
+            routine_session_id = "default-runtime-session",
+            document_version = 2L,
+            runtime_json = "{}",
+            updated_at_epoch_ms = 1L,
+        )
+
+        assertTrue(repository.deleteProfile(created.id))
+
+        assertTrue(
+            database.vitruvianDatabaseQueries.selectActiveWorkoutRuntimesByProfile(created.id)
+                .executeAsList()
+                .isEmpty(),
+        )
+        assertEquals(
+            1,
+            database.vitruvianDatabaseQueries.selectActiveWorkoutRuntimesByProfile("default")
+                .executeAsList()
+                .size,
+        )
+    }
+
+    @Test
     fun deleteActiveProfileRejectsAStaleExpectedIdWithoutMutation() = runTest {
         ready()
         val stale = repository.createAndActivateProfile("Stale", 1)

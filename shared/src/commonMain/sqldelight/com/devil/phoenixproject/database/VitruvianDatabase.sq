@@ -261,6 +261,9 @@ CREATE TABLE RoutineExercise (
     -- NULL = derive from equipment; 0 = cable; 1 = bodyweight. Replaces the
     -- legacy pull-sync 'Bodyweight' sentinel in exerciseEquipment.
     isBodyweight INTEGER,
+    -- Drop set offer (added in migration 46, issue #673 PR 3)
+    dropSetEnabled INTEGER NOT NULL DEFAULT 0,
+    dropSetMinWeightKg REAL,
     FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
     FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -1348,9 +1351,9 @@ INSERT INTO RoutineExercise (
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
     stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
-    rackBehaviorOverrides, scalingBasis, isBodyweight
+    rackBehaviorOverrides, scalingBasis, isBodyweight, dropSetEnabled, dropSetMinWeightKg
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert with IGNORE for import (won't overwrite existing)
 insertRoutineExerciseIgnore:
@@ -1361,9 +1364,9 @@ INSERT OR IGNORE INTO RoutineExercise (
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
     stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
-    rackBehaviorOverrides, scalingBasis, isBodyweight
+    rackBehaviorOverrides, scalingBasis, isBodyweight, dropSetEnabled, dropSetMinWeightKg
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRoutineExercises:
 DELETE FROM RoutineExercise WHERE routineId = ?;
@@ -1928,13 +1931,16 @@ CREATE TABLE CompletedSet (
     id TEXT PRIMARY KEY NOT NULL,
     session_id TEXT NOT NULL,
     planned_set_id TEXT,
+    routine_exercise_id TEXT,
     set_number INTEGER NOT NULL,
     set_type TEXT NOT NULL DEFAULT 'STANDARD',
+    attempt_number INTEGER NOT NULL DEFAULT 1,
     actual_reps INTEGER NOT NULL,
     actual_weight_kg REAL NOT NULL,
     logged_rpe INTEGER,
     is_pr INTEGER NOT NULL DEFAULT 0,
     completed_at INTEGER NOT NULL,
+    set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN',
     FOREIGN KEY (session_id) REFERENCES WorkoutSession(id) ON DELETE CASCADE,
     FOREIGN KEY (planned_set_id) REFERENCES PlannedSet(id) ON DELETE SET NULL
 );
@@ -2115,15 +2121,72 @@ WHERE ws.exerciseId = ?
 ORDER BY cs.completed_at DESC;
 
 selectRecentCompletedSetsForExercise:
-SELECT cs.* FROM CompletedSet cs
+SELECT
+    cs.id,
+    cs.session_id,
+    cs.planned_set_id,
+    cs.routine_exercise_id,
+    cs.set_number,
+    cs.set_type,
+    cs.attempt_number,
+    cs.actual_reps,
+    cs.actual_weight_kg,
+    cs.logged_rpe,
+    cs.is_pr,
+    cs.completed_at,
+    cs.set_end_reason,
+    ws.routineSessionId
+FROM CompletedSet cs
 INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
 WHERE ws.exerciseId = ? AND ws.profile_id = ? AND ws.deletedAt IS NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM CompletedSet newer
+    INNER JOIN WorkoutSession newer_ws ON newer.session_id = newer_ws.id
+    WHERE newer_ws.exerciseId = ws.exerciseId
+      AND newer_ws.profile_id = ws.profile_id
+      AND newer_ws.deletedAt IS NULL
+      AND COALESCE(newer_ws.routineSessionId, newer.session_id) = COALESCE(ws.routineSessionId, cs.session_id)
+      AND COALESCE(newer.routine_exercise_id, newer.id) = COALESCE(cs.routine_exercise_id, cs.id)
+      AND newer.set_number = cs.set_number
+      AND (
+        CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+        > CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+        OR (
+          CASE WHEN newer.attempt_number < 1 THEN 1 ELSE newer.attempt_number END
+          = CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END
+          AND newer.completed_at > cs.completed_at
+        )
+      )
+  )
 ORDER BY cs.completed_at DESC
 LIMIT ?;
 
 insertCompletedSet:
-INSERT INTO CompletedSet (id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO CompletedSet (id, session_id, planned_set_id, routine_exercise_id, set_number, set_type, attempt_number, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at, set_end_reason)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+selectNextCompletedSetAttemptNumber:
+SELECT COALESCE(MAX(CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END), 0) + 1
+FROM CompletedSet cs
+INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+WHERE ws.routineSessionId = :routineSessionId
+  AND ws.deletedAt IS NULL
+  AND cs.routine_exercise_id = :routineExerciseId
+  AND cs.set_number = :setIndex
+  AND cs.set_type = :setKind;
+
+countDurableCompletedSetAttempt:
+SELECT COUNT(*)
+FROM CompletedSet cs
+INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
+WHERE cs.session_id = :stableSessionId
+  AND ws.routineSessionId = :routineSessionId
+  AND ws.deletedAt IS NULL
+  AND cs.routine_exercise_id = :routineExerciseId
+  AND cs.set_number = :setIndex
+  AND cs.set_type = :setKind
+  AND CASE WHEN cs.attempt_number < 1 THEN 1 ELSE cs.attempt_number END = :attemptNumber;
 
 updateCompletedSetRpe:
 UPDATE CompletedSet SET logged_rpe = ? WHERE id = ?;
@@ -2260,8 +2323,8 @@ INSERT OR IGNORE INTO PlannedSet (id, routine_exercise_id, set_number, set_type,
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 
 insertCompletedSetIgnore:
-INSERT OR IGNORE INTO CompletedSet (id, session_id, planned_set_id, set_number, set_type, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO CompletedSet (id, session_id, planned_set_id, routine_exercise_id, set_number, set_type, attempt_number, actual_reps, actual_weight_kg, logged_rpe, is_pr, completed_at, set_end_reason)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 insertProgressionEventIgnore:
 INSERT OR IGNORE INTO ProgressionEvent (id, exercise_id, suggested_weight_kg, previous_weight_kg, reason, user_response, actual_weight_kg, timestamp, profile_id)
@@ -2357,6 +2420,15 @@ CREATE TABLE PendingProfileContextRecovery (
     prior_profile_id TEXT NOT NULL,
     created_profile_id TEXT,
     enqueued_at INTEGER NOT NULL
+);
+
+CREATE TABLE ActiveWorkoutRuntime (
+    profile_id TEXT NOT NULL,
+    routine_session_id TEXT NOT NULL,
+    document_version INTEGER NOT NULL,
+    runtime_json TEXT NOT NULL,
+    updated_at_epoch_ms INTEGER NOT NULL,
+    PRIMARY KEY (profile_id, routine_session_id)
 );
 
 selectProfilePreferences:
@@ -2626,6 +2698,32 @@ WHERE recovery_key = 'active_profile_transition';
 clearPendingProfileContextRecovery:
 DELETE FROM PendingProfileContextRecovery
 WHERE recovery_key = 'active_profile_transition';
+
+selectActiveWorkoutRuntime:
+SELECT * FROM ActiveWorkoutRuntime
+WHERE profile_id = ? AND routine_session_id = ?;
+
+selectActiveWorkoutRuntimesByProfile:
+SELECT * FROM ActiveWorkoutRuntime
+WHERE profile_id = ?
+ORDER BY updated_at_epoch_ms DESC, routine_session_id DESC;
+
+replaceActiveWorkoutRuntime:
+INSERT OR REPLACE INTO ActiveWorkoutRuntime(
+    profile_id,
+    routine_session_id,
+    document_version,
+    runtime_json,
+    updated_at_epoch_ms
+) VALUES (?, ?, ?, ?, ?);
+
+deleteActiveWorkoutRuntime:
+DELETE FROM ActiveWorkoutRuntime
+WHERE profile_id = ? AND routine_session_id = ?;
+
+deleteActiveWorkoutRuntimeByProfile:
+DELETE FROM ActiveWorkoutRuntime
+WHERE profile_id = ?;
 
 -- Queries for UserProfile
 getActiveProfile:

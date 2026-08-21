@@ -72,7 +72,13 @@ class VbtEnabledRuntimeTest {
                 "Disabled VBT must not auto-end the active set.",
             )
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             advanceUntilIdle()
 
             assertEquals(
@@ -255,7 +261,9 @@ class VbtEnabledRuntimeTest {
             allRepMetrics = metrics,
             timestamp = repNumber * 1_000L,
         )
-        harness.activeSessionEngine.evaluateLatestVbtResult()
+        harness.activeSessionEngine.evaluateLatestVbtResult(
+            harness.activeSessionEngine.currentExecutionLeaseForTest(),
+        )
     }
 
     private fun startCableExecution(harness: DWSMTestHarness): ExecutionLease {

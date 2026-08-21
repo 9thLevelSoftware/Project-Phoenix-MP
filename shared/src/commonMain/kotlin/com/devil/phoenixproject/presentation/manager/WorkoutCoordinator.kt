@@ -13,8 +13,8 @@ import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepQualityScore
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineFlowState
-import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.RoutineGroup
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.WeightAdjustmentRecommendation
 import com.devil.phoenixproject.domain.model.WorkoutMetric
@@ -22,6 +22,7 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
+import com.devil.phoenixproject.util.withPlatformLock
 import kotlin.concurrent.Volatile
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
@@ -58,6 +59,9 @@ class WorkoutCoordinator(
     velocityLossThresholdPercent: Float = 20f,
     autoEndOnVelocityLoss: Boolean = false,
 ) {
+    internal val _restTransitionPlan = MutableStateFlow<RestTransitionPlan?>(null)
+    internal val restTransitionPlan: StateFlow<RestTransitionPlan?> = _restTransitionPlan.asStateFlow()
+
     companion object {
         /** Position-based auto-stop duration in seconds (handles in danger zone and released) */
         const val AUTO_STOP_DURATION_SECONDS = 2.5f
@@ -409,9 +413,6 @@ class WorkoutCoordinator(
     // Uses MutableStateFlow for thread-safe compareAndSet across KMP targets
     internal val stopWorkoutInProgress = MutableStateFlow(false)
 
-    // Guard to prevent duplicate auto-completion when rep target is reached
-    internal val setCompletionInProgress = MutableStateFlow(false)
-
     // Issue #355: Guard to prevent duplicate proceedFromSummary() calls on iOS
     // When app foregrounds, both manager-level fallback AND UI-level countdown can fire
     internal val proceedFromSummaryInProgress = MutableStateFlow(false)
@@ -568,7 +569,41 @@ class WorkoutCoordinator(
      * Processes each rep's MetricSamples and exposes results via StateFlow.
      * Reset between sets via ActiveSessionEngine.
      */
-    val biomechanicsEngine = BiomechanicsEngine(velocityLossThresholdPercent)
+    private val biomechanicsLock = Any()
+    private val _latestBiomechanicsResult = MutableStateFlow<BiomechanicsRepResult?>(null)
+    var biomechanicsEngine = BiomechanicsEngine(velocityLossThresholdPercent)
+        private set
+
+    internal fun installBiomechanicsEngine(engine: BiomechanicsEngine) = withPlatformLock(biomechanicsLock) {
+        biomechanicsEngine = engine
+        _latestBiomechanicsResult.value = null
+    }
+
+    internal fun publishBiomechanicsResult(
+        engine: BiomechanicsEngine,
+        result: BiomechanicsRepResult,
+    ): Boolean = withPlatformLock(biomechanicsLock) {
+        if (biomechanicsEngine !== engine) return@withPlatformLock false
+        _latestBiomechanicsResult.value = result
+        true
+    }
+
+    internal fun resetBiomechanicsEngine(engine: BiomechanicsEngine = biomechanicsEngine): Boolean = withPlatformLock(biomechanicsLock) {
+        if (biomechanicsEngine !== engine) return@withPlatformLock false
+        engine.reset()
+        _latestBiomechanicsResult.value = null
+        true
+    }
+
+    internal fun detachBiomechanicsEngine(
+        expected: BiomechanicsEngine,
+        replacement: BiomechanicsEngine,
+    ): Boolean = withPlatformLock(biomechanicsLock) {
+        if (biomechanicsEngine !== expected) return@withPlatformLock false
+        biomechanicsEngine = replacement
+        _latestBiomechanicsResult.value = null
+        true
+    }
 
     internal fun updateVbtSettings(
         vbtEnabled: Boolean,
@@ -576,12 +611,14 @@ class WorkoutCoordinator(
         autoEnd: Boolean,
     ) {
         require(thresholdPercent in 10f..50f)
-        biomechanicsEngine.updateVelocityLossThresholdPercent(thresholdPercent)
-        _vbtRuntimeSettings.value = VbtRuntimeSettings(
-            enabled = vbtEnabled,
-            velocityLossThresholdPercent = thresholdPercent,
-            autoEndOnVelocityLoss = autoEnd,
-        )
+        withPlatformLock(biomechanicsLock) {
+            biomechanicsEngine.updateVelocityLossThresholdPercent(thresholdPercent)
+            _vbtRuntimeSettings.value = VbtRuntimeSettings(
+                enabled = vbtEnabled,
+                velocityLossThresholdPercent = thresholdPercent,
+                autoEndOnVelocityLoss = autoEnd,
+            )
+        }
     }
 
     /**
@@ -594,8 +631,8 @@ class WorkoutCoordinator(
 
     /**
      * Latest biomechanics result for HUD display.
-     * Delegates to biomechanicsEngine.latestRepResult.
+     * Stable across the per-execution biomechanics engines installed by ActiveSessionEngine.
      */
-    val latestBiomechanicsResult: StateFlow<BiomechanicsRepResult?>
-        get() = biomechanicsEngine.latestRepResult
+    val latestBiomechanicsResult: StateFlow<BiomechanicsRepResult?> =
+        _latestBiomechanicsResult.asStateFlow()
 }

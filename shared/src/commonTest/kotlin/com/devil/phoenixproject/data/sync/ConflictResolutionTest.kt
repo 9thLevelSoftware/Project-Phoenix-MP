@@ -239,6 +239,8 @@ class ConflictResolutionTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
             isBodyweight = null,
+            dropSetEnabled = 0L,
+            dropSetMinWeightKg = null,
         )
 
         // Verify exercise exists

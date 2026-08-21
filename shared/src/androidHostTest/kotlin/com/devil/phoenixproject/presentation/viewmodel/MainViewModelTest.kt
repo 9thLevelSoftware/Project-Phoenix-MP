@@ -6,9 +6,12 @@ import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
+import com.devil.phoenixproject.domain.model.RackItemCategory
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.UserPreferences
@@ -19,11 +22,14 @@ import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovementsUseCase
+import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
+import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
+import com.devil.phoenixproject.testutil.FakeActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.testutil.FakeBiomechanicsRepository
 import com.devil.phoenixproject.testutil.FakeBleRepository
 import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
@@ -104,6 +110,8 @@ class MainViewModelTest {
             gamificationRepository = fakeGamificationRepository,
             trainingCycleRepository = fakeTrainingCycleRepository,
             completedSetRepository = fakeCompletedSetRepository,
+            activeWorkoutRuntimeRepository = FakeActiveWorkoutRuntimeRepository(),
+            dropSetEligibilityPolicy = DropSetEligibilityPolicy(DropSetFeatureGate { false }, DropSetCandidateResolver()),
             repMetricRepository = fakeRepMetricRepository,
             biomechanicsRepository = FakeBiomechanicsRepository(),
             resolveWeightsUseCase = resolveWeightsUseCase,
@@ -146,6 +154,10 @@ class MainViewModelTest {
         val deterministicElapsedRealtime: () -> Long = { testCoroutineRule.dispatcher.scheduler.currentTime }
         viewModel.workoutSessionManager.activeSessionEngine.javaClass
             .getDeclaredField("elapsedRealtimeProvider")
+            .apply { isAccessible = true }
+            .set(viewModel.workoutSessionManager.activeSessionEngine, deterministicElapsedRealtime)
+        viewModel.workoutSessionManager.activeSessionEngine.javaClass
+            .getDeclaredField("wallClockMillisProvider")
             .apply { isAccessible = true }
             .set(viewModel.workoutSessionManager.activeSessionEngine, deterministicElapsedRealtime)
     }
@@ -509,6 +521,41 @@ class MainViewModelTest {
         assertEquals(overrides, activeRoutine.exercises.single().rackBehaviorOverrides)
     }
 
+    @Test
+    fun `rack catalog save intent prevents a stale ordinary config command`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test")
+        viewModel.updateWorkoutParameters(
+            viewModel.workoutParameters.value.copy(weightPerCableKg = 25f),
+        )
+        var saveAtClaim = true
+        viewModel.workoutSessionManager.activeSessionEngine.beforeMachineConfigurationClaimForTest = {
+            if (saveAtClaim) {
+                saveAtClaim = false
+                viewModel.saveRackItem(
+                    RackItem(
+                        id = "claim-boundary-rack-item",
+                        name = "Claim boundary rack item",
+                        category = RackItemCategory.OTHER,
+                        weightKg = 5f,
+                    ),
+                )
+            }
+        }
+
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        assertFalse(saveAtClaim)
+        assertEquals(0, fakeBleRepository.commandsReceived.size)
+        assertEquals(null, viewModel.workoutSessionManager.activeSessionEngine.currentExecutionLeaseOrNull())
+
+        viewModel.workoutSessionManager.activeSessionEngine.beforeMachineConfigurationClaimForTest = null
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertEquals(1, fakeBleRepository.commandsReceived.size)
+        assertIs<WorkoutState.Active>(viewModel.workoutState.value)
+    }
+
     // ========== Workout History Tests ==========
 
     @Test
@@ -754,6 +801,7 @@ class MainViewModelTest {
         // EnhancedMainScreen navigation ping-pong. advanceUntilIdle() runs past the
         // 10s summary countdown, so the visible end state is Idle, not SetSummary.
         assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
+        assertNull(viewModel.workoutSessionManager.activeSessionEngine.coordinator.restTimerJob)
         assertEquals(1, fakeWorkoutRepository.getRecentSessionsSync("default", 10).size)
     }
 

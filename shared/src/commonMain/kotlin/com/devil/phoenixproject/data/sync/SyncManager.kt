@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.ExternalActivitySyncKey
 import com.devil.phoenixproject.data.local.BadgeDefinitions
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
@@ -11,6 +12,7 @@ import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.domain.model.CharacterClass
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.RpgProfile
@@ -337,6 +339,7 @@ class SyncManager(
     private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
     private val rateLimiter: ClientRateLimiter = ClientRateLimiter(),
     private val isProfilePreferenceMigrationReady: () -> Boolean,
+    private val completedSetRepository: CompletedSetRepository? = null,
 ) {
     companion object {
         /**
@@ -351,6 +354,8 @@ class SyncManager(
          * Prevents infinite retry storms when the same batch keeps failing.
          */
         const val MAX_FULL_BATCH_RETRIES = 3
+
+        private const val COMPLETED_SET_IDENTITY_CHUNK = 500
 
         /**
          * Subscription tier that entitles a user to sync 50 Hz rep telemetry
@@ -817,6 +822,7 @@ class SyncManager(
         val sessionIdByPrKey = sessionIdByDeltaPrKey + historicalSessionIdByPrKey
 
         // 3. Build SessionWithReps (fetch rep metrics per session, detect PRs, attach PR metadata)
+        val completedSetsBySessionId = logicalSetCompletedSetsBySessionId(sessions.map { it.id })
         val sessionsWithReps = sessions.map { session ->
             val repMetrics = repMetricRepository.getRepMetrics(session.id)
             val sessionKey = session.exerciseId
@@ -838,6 +844,10 @@ class SyncManager(
                 muscleGroup = muscleGroup,
                 isPr = prRecords.isNotEmpty(),
                 prRecords = prRecords,
+                logicalSetIdentity = logicalSetIdentityFor(
+                    session,
+                    completedSetsBySessionId[session.id].orEmpty(),
+                ),
             )
         }
         val personalRecordDtos = recentPRs.map { pr ->
@@ -1314,6 +1324,31 @@ class SyncManager(
 
         return Result.success(lastResponse!!)
         // No updateServerIds() -- portal uses client-provided UUIDs
+    }
+
+    private suspend fun logicalSetCompletedSetsBySessionId(
+        sessionIds: List<String>,
+    ): Map<String, List<CompletedSet>> {
+        val repository = completedSetRepository ?: return emptyMap()
+        if (sessionIds.isEmpty()) return emptyMap()
+        return sessionIds
+            .chunked(COMPLETED_SET_IDENTITY_CHUNK)
+            .flatMap { chunk -> repository.getCompletedSetsForSessions(chunk) }
+            .groupBy { it.sessionId }
+    }
+
+    private fun logicalSetIdentityFor(
+        session: WorkoutSession,
+        completedSets: List<CompletedSet>,
+    ): PortalSyncAdapter.LogicalSetSyncIdentity? {
+        val routineSessionId = session.routineSessionId ?: return null
+        val completedSet = completedSets.firstOrNull { !it.routineExerciseId.isNullOrBlank() } ?: return null
+        val routineExerciseId = completedSet.routineExerciseId ?: return null
+        return PortalSyncAdapter.LogicalSetSyncIdentity(
+            routineSessionId = routineSessionId,
+            routineExerciseId = routineExerciseId,
+            setNumber = completedSet.setNumber,
+        )
     }
 
     private suspend fun pushPayloadWithRateLimit(
