@@ -42,7 +42,7 @@
 
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/model/TrainingCycleModels.kt`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/model/Models.kt`
-- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq`
 - `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/44.sqm`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/MigrationStatements.kt`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt`
@@ -492,7 +492,7 @@ data class RoutineSetWeightRequest(
 
 ## Task 3: Persist routine occurrence and attempt number on every completed attempt
 
-**Files:** `TrainingCycleModels.kt`; `VitruvianDatabase.sq`; `migrations/44.sqm`; `MigrationStatements.kt`; `SchemaManifest.kt`; `shared/build.gradle.kts`; `CompletedSetRepository.kt`; `SqlDelightCompletedSetRepository.kt`; `BackupModels.kt`; `DataBackupManager.kt`; schema/repository/backup tests.
+**Files:** `TrainingCycleModels.kt`; `PhoenixDatabase.sq`; `migrations/44.sqm`; `MigrationStatements.kt`; `SchemaManifest.kt`; `shared/build.gradle.kts`; `CompletedSetRepository.kt`; `SqlDelightCompletedSetRepository.kt`; `BackupModels.kt`; `DataBackupManager.kt`; schema/repository/backup tests.
 
 - [ ] Verify post-PR1 schema is version 44 with migrations through `43.sqm`. If not, renumber this plan and the index before editing.
 - [ ] Write a `44 → 45` migration test inserting a historical `CompletedSet` and asserting `routine_exercise_id IS NULL` and `attempt_number == 1` after migration.
@@ -525,7 +525,7 @@ data class RoutineSetWeightRequest(
 
 ## Task 5: Add the local-only active workout runtime store
 
-**Files:** new `ActiveWorkoutRuntimeRepository.kt`; new `SqlDelightActiveWorkoutRuntimeRepository.kt`; new `RestDeadlineCalculator.kt`; `VitruvianDatabase.sq`; `44.sqm` from Task 3; `SchemaManifest.kt`; `MigrationStatements.kt`; `DataModule.kt`; new `SqlDelightActiveWorkoutRuntimeRepositoryTest.kt`; new `RestDeadlineCalculatorTest.kt`; `SchemaParityTest.kt`; `SchemaManifestTest.kt`.
+**Files:** new `ActiveWorkoutRuntimeRepository.kt`; new `SqlDelightActiveWorkoutRuntimeRepository.kt`; new `RestDeadlineCalculator.kt`; `PhoenixDatabase.sq`; `44.sqm` from Task 3; `SchemaManifest.kt`; `MigrationStatements.kt`; `DataModule.kt`; new `SqlDelightActiveWorkoutRuntimeRepositoryTest.kt`; new `RestDeadlineCalculatorTest.kt`; `SchemaParityTest.kt`; `SchemaManifestTest.kt`.
 
 - [ ] Add repository tests for replace/load/delete, profile isolation, routine-session isolation, unknown document version, corrupt JSON, and last-write replacement.
 - [ ] In `RestDeadlineCalculatorTest.kt`, add clock tests for active deadline, paused remaining seconds, backward wall-clock movement, forward jump, and expired restore. Expected remaining time is clamped to `0..originalRestDurationSeconds`.
@@ -630,7 +630,7 @@ $env:ANDROID_HOME='C:\Users\dasbl\AppData\Local\Android\Sdk'
 ```powershell
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest :androidApp:testDebugUnitTest :androidApp:assembleDebug --continue --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 --console=plain
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration :shared:validateSchemaManifest --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainPhoenixDatabaseInterface :shared:verifyCommonMainPhoenixDatabaseMigration :shared:validateSchemaManifest --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' spotlessCheck --console=plain
 git diff --check
 ```

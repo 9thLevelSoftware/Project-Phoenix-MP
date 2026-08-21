@@ -110,18 +110,18 @@ import com.devil.phoenixproject.util.setKeepScreenOn
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_analytics
-import vitruvianprojectphoenix.shared.generated.resources.cd_back
-import vitruvianprojectphoenix.shared.generated.resources.cd_home
-import vitruvianprojectphoenix.shared.generated.resources.cd_open_profile_switcher
-import vitruvianprojectphoenix.shared.generated.resources.cd_profile
-import vitruvianprojectphoenix.shared.generated.resources.cd_settings
-import vitruvianprojectphoenix.shared.generated.resources.nav_insights
-import vitruvianprojectphoenix.shared.generated.resources.nav_profile
-import vitruvianprojectphoenix.shared.generated.resources.profile_create_failed
-import vitruvianprojectphoenix.shared.generated.resources.profile_recovery_retry_failed
-import vitruvianprojectphoenix.shared.generated.resources.profile_switch_failed
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_analytics
+import projectphoenix.shared.generated.resources.cd_back
+import projectphoenix.shared.generated.resources.cd_home
+import projectphoenix.shared.generated.resources.cd_open_profile_switcher
+import projectphoenix.shared.generated.resources.cd_profile
+import projectphoenix.shared.generated.resources.cd_settings
+import projectphoenix.shared.generated.resources.nav_insights
+import projectphoenix.shared.generated.resources.nav_profile
+import projectphoenix.shared.generated.resources.profile_create_failed
+import projectphoenix.shared.generated.resources.profile_recovery_retry_failed
+import projectphoenix.shared.generated.resources.profile_switch_failed
 
 /**
  * Enhanced main screen with dynamic top bar and bottom navigation.

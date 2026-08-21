@@ -32,7 +32,7 @@ import com.devil.phoenixproject.presentation.util.rememberPlatformAccessibilityS
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.*
 
 // Phoenix fire colors
 private val FireOrange = Color(0xFFFF6B35)
@@ -43,7 +43,7 @@ private val DarkSlate = Color(0xFF0F172A)
 private val DeepNavy = Color(0xFF1E293B)
 
 /**
- * Animated splash screen with the Vitruvian Phoenix logo.
+ * Animated splash screen with the Phoenix Phoenix logo.
  * Features:
  * - Dramatic logo entrance with scale and bounce
  * - Animated fire glow behind the logo
@@ -214,7 +214,7 @@ fun SplashScreen(visible: Boolean, modifier: Modifier = Modifier) {
             ) {
                 // Phoenix logo with animations
                 Image(
-                    painter = painterResource(Res.drawable.vitphoe_logo),
+                    painter = painterResource(Res.drawable.phoenix_logo),
                     contentDescription = stringResource(Res.string.cd_phoenix_logo),
                     modifier = Modifier
                         .fillMaxWidth(0.55f)
@@ -371,7 +371,7 @@ fun SimpleSplashScreen(modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Image(
-                painter = painterResource(Res.drawable.vitphoe_logo),
+                painter = painterResource(Res.drawable.phoenix_logo),
                 contentDescription = stringResource(Res.string.cd_phoenix_logo),
                 modifier = Modifier
                     .fillMaxWidth(0.55f)

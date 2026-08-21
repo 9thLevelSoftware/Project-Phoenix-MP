@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.data.ble
 
 /**
- * Specific BLE exception types matching official Vitruvian app implementation
+ * Specific BLE exception types matching official Phoenix app implementation
  * These provide granular error handling for different BLE failure scenarios
  */
 

@@ -2,7 +2,7 @@ package com.devil.phoenixproject.data.sync
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
@@ -36,7 +36,7 @@ import org.junit.Test
 
 class SqlDelightProfilePreferenceSyncRepositoryTest {
     private lateinit var driver: JdbcSqliteDriver
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var foundationRepository: SqlDelightProfilePreferencesRepository
     private lateinit var codec: ProfilePreferenceSyncCodec
     private lateinit var repository: SqlDelightProfilePreferenceSyncRepository
@@ -44,8 +44,8 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
     @Before
     fun setup() {
         driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(driver)
-        database = VitruvianDatabase(driver)
+        PhoenixDatabase.Schema.create(driver)
+        database = PhoenixDatabase(driver)
         foundationRepository = SqlDelightProfilePreferencesRepository(database)
         codec = ProfilePreferenceSyncCodec()
         repository = SqlDelightProfilePreferenceSyncRepository(database, codec)
@@ -57,11 +57,11 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
     }
 
     private fun createProfile(id: String) {
-        database.vitruvianDatabaseQueries.insertProfile(id, id, 0, 1, 0)
+        database.phoenixDatabaseQueries.insertProfile(id, id, 0, 1, 0)
     }
 
     private fun assertProfileDoesNotExist(id: String) {
-        assertNull(database.vitruvianDatabaseQueries.getProfileById(id).executeAsOneOrNull())
+        assertNull(database.phoenixDatabaseQueries.getProfileById(id).executeAsOneOrNull())
     }
 
     @Test
@@ -97,7 +97,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
     fun `malformed dirty document is reported and valid sibling remains syncable`() = runTest {
         createProfile("profile-a")
         foundationRepository.insertDefaults("profile-a")
-        database.vitruvianDatabaseQueries.updateWorkoutProfilePreferences(
+        database.phoenixDatabaseQueries.updateWorkoutProfilePreferences(
             workout_preferences_json = "{broken",
             workout_updated_at = 20,
             profile_id = "profile-a",
@@ -353,7 +353,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
 
         createProfile("surrogate-profile")
         foundationRepository.insertDefaults("surrogate-profile")
-        database.vitruvianDatabaseQueries.updateRackProfilePreferences(
+        database.phoenixDatabaseQueries.updateRackProfilePreferences(
             equipment_rack_json =
                 """{"version":1,"items":[{"id":"rack-surrogate","name":"bad${'\\'}uD800","weightKg":20}]}""",
             rack_updated_at = 20,
@@ -496,7 +496,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
         createProfile("surrogate-template")
         foundationRepository.insertDefaults("surrogate-template")
         val surrogate = codec.encodeDirtyRow(
-            database.vitruvianDatabaseQueries.selectProfilePreferences("surrogate-template")
+            database.phoenixDatabaseQueries.selectProfilePreferences("surrogate-template")
                 .executeAsOne()
                 .copy(profile_id = "bad\uD800"),
         )
@@ -797,7 +797,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
             assertEquals(2, metadata.serverRevision)
             assertFalse(metadata.dirty)
         }
-        val row = database.vitruvianDatabaseQueries
+        val row = database.phoenixDatabaseQueries
             .selectProfilePreferenceSyncRow("push-all")
             .executeAsOne()
         assertEquals(1L, row.led_color_scheme_id)
@@ -1214,7 +1214,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
             """.trimIndent(),
             1,
         ) { bindString(0, "numeric-equality") }
-        val normalizedRow = database.vitruvianDatabaseQueries
+        val normalizedRow = database.phoenixDatabaseQueries
             .selectProfilePreferenceSyncRow("numeric-equality")
             .executeAsOne()
 

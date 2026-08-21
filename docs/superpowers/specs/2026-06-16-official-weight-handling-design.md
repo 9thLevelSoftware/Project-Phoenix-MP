@@ -2,7 +2,7 @@
 
 ## Goal
 
-Align Phoenix weight handling with the official Vitruvian app: the selected, stored, commanded, and primary displayed load is a per-cable value. Two-cable totals may be shown only as clearly labeled supplemental context and must not feed back into saved weights, personal records, recommendations, BLE commands, sync payloads, or routine configuration.
+Align Phoenix weight handling with the official Phoenix app: the selected, stored, commanded, and primary displayed load is a per-cable value. Two-cable totals may be shown only as clearly labeled supplemental context and must not feed back into saved weights, personal records, recommendations, BLE commands, sync payloads, or routine configuration.
 
 ## Current Evidence
 

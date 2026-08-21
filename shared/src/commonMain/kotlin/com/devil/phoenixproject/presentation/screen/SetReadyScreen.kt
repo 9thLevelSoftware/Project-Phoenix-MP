@@ -99,24 +99,24 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_exit
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_includes
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_more
-import vitruvianprojectphoenix.shared.generated.resources.cd_next
-import vitruvianprojectphoenix.shared.generated.resources.cd_previous
-import vitruvianprojectphoenix.shared.generated.resources.cd_stop
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_confirm
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_dismiss
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_message
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_title
-import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
-import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
-import vitruvianprojectphoenix.shared.generated.resources.set_type_warmup
-import vitruvianprojectphoenix.shared.generated.resources.set_type_working
-import vitruvianprojectphoenix.shared.generated.resources.target_reps
-import vitruvianprojectphoenix.shared.generated.resources.workout_teardown_finishing
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.action_exit
+import projectphoenix.shared.generated.resources.bodyweight_effective_load_includes
+import projectphoenix.shared.generated.resources.bodyweight_effective_load_more
+import projectphoenix.shared.generated.resources.cd_next
+import projectphoenix.shared.generated.resources.cd_previous
+import projectphoenix.shared.generated.resources.cd_stop
+import projectphoenix.shared.generated.resources.equipment_rack_save_override_confirm
+import projectphoenix.shared.generated.resources.equipment_rack_save_override_dismiss
+import projectphoenix.shared.generated.resources.equipment_rack_save_override_message
+import projectphoenix.shared.generated.resources.equipment_rack_save_override_title
+import projectphoenix.shared.generated.resources.exit_routine_message
+import projectphoenix.shared.generated.resources.exit_routine_title
+import projectphoenix.shared.generated.resources.set_type_warmup
+import projectphoenix.shared.generated.resources.set_type_working
+import projectphoenix.shared.generated.resources.target_reps
+import projectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * Set Ready Screen - Focused view for a single exercise/set.

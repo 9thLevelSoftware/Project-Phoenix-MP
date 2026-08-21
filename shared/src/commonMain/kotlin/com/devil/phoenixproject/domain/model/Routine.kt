@@ -206,7 +206,7 @@ data class RoutineExercise(
 
 /**
  * Round to nearest 0.5kg increment.
- * Vitruvian machines use 0.5kg increments, so this ensures valid weight values.
+ * Phoenix machines use 0.5kg increments, so this ensures valid weight values.
  */
 private fun Float.roundToHalfKg(): Float = (this * 2).roundToInt() / 2f
 

@@ -70,7 +70,7 @@ import com.devil.phoenixproject.ui.theme.ThemeMode
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
-import vitruvianprojectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.*
 
 internal data class ProfileIdentityOverlayOwnership(
     val editTargetProfileId: String? = null,

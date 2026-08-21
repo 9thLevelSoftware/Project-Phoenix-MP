@@ -9,7 +9,7 @@ sources:
     note: Defines active-profile-scoped routine loading, group handling, superset traversal, and routine-specific lifecycle hooks.
   - id: db-schema
     type: file
-    path: shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq
+    path: shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq
     note: Defines Routine, RoutineExercise, Superset, RoutineGroup, TrainingCycle, and related persistence columns.
   - id: cycle-models
     type: file

@@ -99,16 +99,16 @@ import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
 import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_exit
-import vitruvianprojectphoenix.shared.generated.resources.action_stop
-import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
-import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
-import vitruvianprojectphoenix.shared.generated.resources.cd_completed
-import vitruvianprojectphoenix.shared.generated.resources.pager_page_of
-import vitruvianprojectphoenix.shared.generated.resources.rest_eccentric_load
-import vitruvianprojectphoenix.shared.generated.resources.start_exercise
-import vitruvianprojectphoenix.shared.generated.resources.target_reps
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_exit
+import projectphoenix.shared.generated.resources.action_stop
+import projectphoenix.shared.generated.resources.exit_routine_message
+import projectphoenix.shared.generated.resources.exit_routine_title
+import projectphoenix.shared.generated.resources.cd_completed
+import projectphoenix.shared.generated.resources.pager_page_of
+import projectphoenix.shared.generated.resources.rest_eccentric_load
+import projectphoenix.shared.generated.resources.start_exercise
+import projectphoenix.shared.generated.resources.target_reps
 
 /**
  * Routine Overview Screen - Entry point when starting a routine.

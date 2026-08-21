@@ -31,7 +31,7 @@
 
 **Files:**
 - Create: `androidApp/src/test/kotlin/com/devil/phoenixproject/qa/Schema42FixtureContractTest.kt`
-- Create: `docs/qa/fixtures/profile-schema42/vitruvian_preferences.xml`
+- Create: `docs/qa/fixtures/profile-schema42/phoenix_preferences.xml`
 - Create: `docs/qa/profile-schema42-fixture.md`
 - Modify only in fixture worktree: `shared/build.gradle.kts`
 
@@ -68,7 +68,7 @@ The guide includes creation, offline build, install, injection, snapshot, checks
 Run the Step 2 command again. Expected: one clean passing suite. Commit:
 
 ```powershell
-git add androidApp/src/test/kotlin/com/devil/phoenixproject/qa/Schema42FixtureContractTest.kt docs/qa/fixtures/profile-schema42/vitruvian_preferences.xml docs/qa/profile-schema42-fixture.md
+git add androidApp/src/test/kotlin/com/devil/phoenixproject/qa/Schema42FixtureContractTest.kt docs/qa/fixtures/profile-schema42/phoenix_preferences.xml docs/qa/profile-schema42-fixture.md
 git commit -m "test: define schema 42 upgrade fixture"
 ```
 
@@ -105,7 +105,7 @@ Use the installed API 36 Google Play x86_64 image. Install the schema-42 debug A
 - Create: `androidApp/src/debug/kotlin/com/devil/phoenixproject/qa/ProfileQaDebugApp.kt`
 - Create: `androidApp/src/debug/kotlin/com/devil/phoenixproject/qa/ProfileQaFixtureGate.kt`
 - Create: `androidApp/src/debug/kotlin/com/devil/phoenixproject/qa/QaBlockingPortalApiClient.kt`
-- Modify: `androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt`
+- Modify: `androidApp/src/main/kotlin/com/devil/phoenixproject/PhoenixApp.kt`
 
 **Interfaces:**
 - Consumes: `PortalApiClient`, `PortalSyncPayload`, `KnownEntityIds`, `PortalTokenStorage`, `SupabaseConfig`, Koin startup.
@@ -125,7 +125,7 @@ Expected: missing debug gate/client/application classes.
 
 - [ ] **Step 3: Implement the minimum debug gate and client**
 
-`ProfileQaFixtureGate` wraps a private debug SharedPreferences file, with `isEnabled()` and synchronous `enable()`. `QaBlockingPortalApiClient` subclasses `PortalApiClient`; its push/pull overrides return the exact local failure when enabled and otherwise delegate to `super`. `ProfileQaDebugApp` subclasses an `open VitruvianApp`, calls `super.onCreate()`, then loads a Koin override for `PortalApiClient` before Activity creation. The debug manifest replaces the application name with `.qa.ProfileQaDebugApp`.
+`ProfileQaFixtureGate` wraps a private debug SharedPreferences file, with `isEnabled()` and synchronous `enable()`. `QaBlockingPortalApiClient` subclasses `PortalApiClient`; its push/pull overrides return the exact local failure when enabled and otherwise delegate to `super`. `ProfileQaDebugApp` subclasses an `open PhoenixApp`, calls `super.onCreate()`, then loads a Koin override for `PortalApiClient` before Activity creation. The debug manifest replaces the application name with `.qa.ProfileQaDebugApp`.
 
 - [ ] **Step 4: Run GREEN and verify release assembly**
 
@@ -149,7 +149,7 @@ Inspect the release merged manifest and release APK dex/string inventory; no QA 
 - Modify: `androidApp/src/debug/AndroidManifest.xml`
 
 **Interfaces:**
-- Consumes: `UserProfileRepository`, `ExerciseRepository`, `WorkoutRepository`, `RepMetricRepository`, `PersonalRecordRepository`, `AssessmentRepository`, `VelocityOneRepMaxRepository`, and `VitruvianDatabase` only for fixture-row cleanup unavailable through repository interfaces.
+- Consumes: `UserProfileRepository`, `ExerciseRepository`, `WorkoutRepository`, `RepMetricRepository`, `PersonalRecordRepository`, `AssessmentRepository`, `VelocityOneRepMaxRepository`, and `PhoenixDatabase` only for fixture-row cleanup unavailable through repository interfaces.
 - Produces: `ProfileQaSeeder.seed(): ProfileQaSeedResult` and exported debug broadcast action `com.devil.phoenixproject.QA_SEED_PROFILE`.
 
 - [ ] **Step 1: Write failing seeder and receiver tests**

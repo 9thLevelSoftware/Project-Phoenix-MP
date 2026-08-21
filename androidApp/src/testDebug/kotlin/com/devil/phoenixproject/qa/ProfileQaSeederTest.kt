@@ -10,7 +10,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxEntity
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.LedPreferences
@@ -241,7 +241,7 @@ class ProfileQaSeederTest {
         val personalRecordRepository = mockk<PersonalRecordRepository>(relaxed = true)
         val assessmentRepository = mockk<AssessmentRepository>(relaxed = true)
         val velocityRepository = mockk<VelocityOneRepMaxRepository>(relaxed = true)
-        val database = mockk<VitruvianDatabase>(relaxed = true)
+        val database = mockk<PhoenixDatabase>(relaxed = true)
 
         val allProfiles = MutableStateFlow<List<UserProfile>>(emptyList())
         val deletedProfiles = mutableListOf<String>()

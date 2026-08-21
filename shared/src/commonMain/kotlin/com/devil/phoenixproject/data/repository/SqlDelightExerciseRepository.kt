@@ -5,7 +5,7 @@ import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.preferences.PreferencesManager
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -15,12 +15,12 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
 class SqlDelightExerciseRepository(
-    db: VitruvianDatabase,
+    db: PhoenixDatabase,
     private val exerciseImporter: ExerciseImporter,
     private val preferencesManager: PreferencesManager,
 ) : ExerciseRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     // Mapper function to convert database entity to Domain Model
     // Parameters match the column order in the Exercise table

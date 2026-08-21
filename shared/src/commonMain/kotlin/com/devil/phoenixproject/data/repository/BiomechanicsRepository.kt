@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -23,9 +23,9 @@ interface BiomechanicsRepository {
  * Handles JSON serialization of FloatArray curve data to/from TEXT columns.
  * Reuses toJsonString()/toFloatArrayFromJson() from RepMetricRepository.
  */
-class SqlDelightBiomechanicsRepository(private val db: VitruvianDatabase) : BiomechanicsRepository {
+class SqlDelightBiomechanicsRepository(private val db: PhoenixDatabase) : BiomechanicsRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     override suspend fun saveRepBiomechanics(sessionId: String, results: List<BiomechanicsRepResult>) {
         withContext(Dispatchers.IO) {

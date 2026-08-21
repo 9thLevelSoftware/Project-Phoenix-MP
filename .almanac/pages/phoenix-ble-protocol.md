@@ -1,5 +1,5 @@
 ---
-title: Vitruvian BLE Protocol
+title: Phoenix BLE Protocol
 summary: BLE control is centered on a Kable-based connection manager, parser utilities that normalize multiple firmware packet formats, and shared command semantics built around per-cable loads.
 topics: [systems, ble, stack]
 sources:
@@ -24,7 +24,7 @@ verified: 2026-06-25
 ---
 `KableBleConnectionManager` owns the live `Peripheral` reference exclusively. The class comment says it was extracted from `KableBleRepository` so connection lifecycle code, notification subscriptions, readiness checks, and command sending all live in one place while repository-facing flows remain in the façade layer [@ble-manager]. [[workouts]] is the right cluster hub when the symptom might still be in routine flow, persistence, or platform behavior rather than in BLE itself.
 
-Scan filtering is conservative and hardware-specific. The manager accepts advertisement names starting with `Vee_`, `VIT`, or `Vitruvian`, which matches the supported hardware naming patterns documented in the README and keeps the scan UI from filling with unrelated devices [@ble-manager].
+Scan filtering is conservative and hardware-specific. The manager accepts advertisement names starting with `Vee_`, `VIT`, or `Phoenix`, which matches the supported hardware naming patterns documented in the README and keeps the scan UI from filling with unrelated devices [@ble-manager].
 
 The parser layer treats byte handling as a correctness boundary. `ProtocolParser.kt` calls out signed Kotlin bytes as a recurring hazard and masks every byte with `and 0xFF` before assembling integers, so changes to parser code need the same discipline to avoid sign-extension bugs [@protocol-parser].
 
@@ -38,4 +38,4 @@ Command semantics in shared code still distinguish mode families. `ProtocolConst
 
 The common BLE tests intentionally cover only what is stable without real hardware. `KableBleConnectionManagerTest` verifies opcode routing, disconnect cleanup, and empty-packet handling, while the test header explicitly says connection, scanning, and auto-reconnect behavior still need manual BLE validation [@ble-tests].
 
-Read [[project-phoenix]] before changing scan filters or packet compatibility rules because those branches preserve support for older Vitruvian hardware and firmware instead of optimizing for a narrower current-device contract. Read [[machine-diagnostics]] when the BLE symptom is specifically about fault decoding, diagnostic snapshots, or the troubleshooting export built on top of this parser. Read [[platform-hosts]] when Android and iOS disagree about BLE permissions, reconnects, or background workout continuity around the same shared protocol code.
+Read [[project-phoenix]] before changing scan filters or packet compatibility rules because those branches preserve support for older Phoenix hardware and firmware instead of optimizing for a narrower current-device contract. Read [[machine-diagnostics]] when the BLE symptom is specifically about fault decoding, diagnostic snapshots, or the troubleshooting export built on top of this parser. Read [[platform-hosts]] when Android and iOS disagree about BLE permissions, reconnects, or background workout continuity around the same shared protocol code.

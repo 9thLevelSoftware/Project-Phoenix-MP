@@ -6,7 +6,7 @@
 
 **Architecture:** Build on issue #687's execution lease and teardown barrier, then land three sequential pull requests: explicit completion reasons, a deterministic retry/recovery engine, and opt-in product configuration/UI. Each PR starts from the previous PR after it merges; PR #682 contributes no runtime code.
 
-**Tech Stack:** Kotlin Multiplatform, Compose Multiplatform, coroutines/StateFlow, SQLDelight, kotlinx.serialization, Koin, JUnit/kotlin.test, Turbine, Android host tests, Vitruvian BLE command queue.
+**Tech Stack:** Kotlin Multiplatform, Compose Multiplatform, coroutines/StateFlow, SQLDelight, kotlinx.serialization, Koin, JUnit/kotlin.test, Turbine, Android host tests, Phoenix BLE command queue.
 
 ## Global Constraints
 
@@ -142,7 +142,7 @@ $env:ANDROID_HOME='C:\Users\dasbl\AppData\Local\Android\Sdk'
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinMetadata
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --continue --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 --console=plain
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration :shared:validateSchemaManifest --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainPhoenixDatabaseInterface :shared:verifyCommonMainPhoenixDatabaseMigration :shared:validateSchemaManifest --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' spotlessCheck --console=plain
 git diff --check
 git status --short

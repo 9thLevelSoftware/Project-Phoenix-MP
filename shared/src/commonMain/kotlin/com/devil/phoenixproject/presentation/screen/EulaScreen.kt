@@ -282,7 +282,7 @@ private fun EulaContent() {
             content = null,
         )
         Text(
-            text = "Project Phoenix is an independent, community-developed project. IT IS NOT AFFILIATED WITH, ENDORSED BY, AUTHORIZED BY, OR SUPPORTED BY VITRUVIAN INVESTMENTS PTY LTD (IN LIQUIDATION), MANAGED BY MERCHANTS ADVISORY, OR ANY OTHER EQUIPMENT MANUFACTURER.",
+            text = "Project Phoenix is an independent, community-developed project. IT IS NOT AFFILIATED WITH, ENDORSED BY, AUTHORIZED BY, OR SUPPORTED BY PHOENIX INVESTMENTS PTY LTD (IN LIQUIDATION), MANAGED BY MERCHANTS ADVISORY, OR ANY OTHER EQUIPMENT MANUFACTURER.",
             style = MaterialTheme.typography.bodyMedium.copy(
                 color = onSurface,
                 fontWeight = FontWeight.Bold,

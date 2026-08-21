@@ -2,7 +2,7 @@ package com.devil.phoenixproject.data.local
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.PersonalRecord
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.Exercise
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
@@ -17,7 +17,7 @@ import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.ExperimentalResourceApi
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.Res
 
 @Serializable
 data class FreeExerciseJson(
@@ -86,8 +86,8 @@ private data class WgerLicense(
 /**
  * Imports the bundled free-exercise-db catalogue and optionally merges wger rows.
  */
-class ExerciseImporter(private val database: VitruvianDatabase) {
-    private val queries = database.vitruvianDatabaseQueries
+class ExerciseImporter(private val database: PhoenixDatabase) {
+    private val queries = database.phoenixDatabaseQueries
 
     private val json = Json {
         ignoreUnknownKeys = true

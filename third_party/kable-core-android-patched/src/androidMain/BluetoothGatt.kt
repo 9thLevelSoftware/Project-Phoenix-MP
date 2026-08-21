@@ -55,7 +55,7 @@ internal fun BluetoothGatt.writeCharacteristicOrThrow(
     // Phoenix #333: Pixel 6/7 BCM4389 devices wedge the acknowledged-write
     // completion path at workout CONFIG start when Kable uses Android 13's
     // three-argument write API. Keep Kable's guard/callback pipeline, but use
-    // the same legacy one-argument write shape as the official Vitruvian app.
+    // the same legacy one-argument write shape as the official Phoenix app.
     characteristic.value = data
     characteristic.writeType = writeType
     if (!writeCharacteristic(characteristic)) {

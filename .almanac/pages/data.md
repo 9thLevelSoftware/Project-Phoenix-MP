@@ -9,7 +9,7 @@ sources:
     note: Defines the SQLDelight database version and schema-manifest validation task.
   - id: schema-file
     type: file
-    path: shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq
+    path: shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq
     note: Defines the broad shared schema, including profile-scoped workout, routine, sync, and analytics tables.
   - id: migration-manager
     type: file
@@ -48,7 +48,7 @@ Phoenix has one shared persistence cluster, but future tasks usually hit it thro
 
 Read this hub when the symptom is about where state lives, why rows moved, or why one feature is seeing data produced by another. The data cluster spans [[local-data-model]] for schema and repair mechanics, [[profiles]] for active-profile visibility and deletion reassignment, [[data-backup-and-repair]] for backup, restore, auto-backup, and import-time adoption rules, [[routines-and-training-cycles]] for persisted workout-programming state, [[strength-assessment-and-insights]] for stored 1RM and Smart Insights state, [[gamification]] for badges, streaks, and RPG-summary state, [[equipment-rack]] for settings-backed accessory inventory plus per-session rack snapshots, and [[csv-workout-import-export]] or [[external-provider-sync]] for external data that eventually lands in local tables [@schema-file] [@profile-repo] [@backup-manager] [@csv-importer] [@sync-manager] [@gamification-page].
 
-The key boundary is that Phoenix data is shared even when features are not. `VitruvianDatabase.sq` keeps workout, routine, assessment, badge, streak, sync, and external-activity entities in one schema; `MigrationManager` then runs startup repair across that shared space; and `DataBackupManager` exports and imports nearly all of it as one backup surface [@schema-file] [@migration-manager] [@backup-manager].
+The key boundary is that Phoenix data is shared even when features are not. `PhoenixDatabase.sq` keeps workout, routine, assessment, badge, streak, sync, and external-activity entities in one schema; `MigrationManager` then runs startup repair across that shared space; and `DataBackupManager` exports and imports nearly all of it as one backup surface [@schema-file] [@migration-manager] [@backup-manager].
 
 ## Default read order
 

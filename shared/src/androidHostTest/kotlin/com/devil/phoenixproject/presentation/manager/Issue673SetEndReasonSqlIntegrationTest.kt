@@ -68,7 +68,7 @@ class Issue673SetEndReasonSqlIntegrationTest {
             assertEquals(SetEndReason.USER_STOPPED, persisted.setEndReason)
             assertEquals(
                 "USER_STOPPED",
-                database.vitruvianDatabaseQueries.selectCompletedSetById(captured.id).executeAsOne().set_end_reason,
+                database.phoenixDatabaseQueries.selectCompletedSetById(captured.id).executeAsOne().set_end_reason,
             )
         } finally {
             harness.cleanup()

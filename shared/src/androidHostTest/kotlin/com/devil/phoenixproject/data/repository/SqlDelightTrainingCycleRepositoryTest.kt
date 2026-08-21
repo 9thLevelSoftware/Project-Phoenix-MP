@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.TrainingCycle
@@ -16,7 +16,7 @@ import org.junit.Test
 
 class SqlDelightTrainingCycleRepositoryTest {
 
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var repository: SqlDelightTrainingCycleRepository
 
     @Before
@@ -231,7 +231,7 @@ class SqlDelightTrainingCycleRepositoryTest {
     }
 
     private fun insertRoutine(id: String) {
-        database.vitruvianDatabaseQueries.insertRoutine(
+        database.phoenixDatabaseQueries.insertRoutine(
             id = id,
             name = "Routine",
             description = "",
@@ -244,7 +244,7 @@ class SqlDelightTrainingCycleRepositoryTest {
     }
 
     private fun insertRoutineExercise(id: String, routineId: String, name: String) {
-        database.vitruvianDatabaseQueries.insertRoutineExercise(
+        database.phoenixDatabaseQueries.insertRoutineExercise(
             id = id,
             routineId = routineId,
             exerciseName = name,

@@ -77,7 +77,7 @@ class HealthDataMappingTest {
     @Test
     fun titleWeightDefaultsToSingleWhenCableCountNull() {
         // Legacy sessions without cableCount default to single cable (safer assumption)
-        // This matches effectiveTotalVolumeKg, InsightCards, and official Vitruvian app behavior
+        // This matches effectiveTotalVolumeKg, InsightCards, and official Phoenix app behavior
         val title = buildTitle(exerciseName = "Bench Press", weightPerCableKg = 50f, cableCount = null)
         assertEquals("Bench Press \u2014 50.0kg", title)
     }

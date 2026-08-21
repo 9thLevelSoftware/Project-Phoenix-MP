@@ -32,8 +32,8 @@ import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
-private const val ENCRYPTED_PREFS_FILE = "vitruvian_secure_preferences"
-private const val PLAINTEXT_PREFS_FILE = "vitruvian_preferences"
+private const val ENCRYPTED_PREFS_FILE = "phoenix_secure_preferences"
+private const val PLAINTEXT_PREFS_FILE = "phoenix_preferences"
 
 private val log = Logger.withTag("PlatformModule")
 

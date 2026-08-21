@@ -38,9 +38,9 @@
 		<string>it</string>
 	</array>
 	<key>NSBluetoothAlwaysUsageDescription</key>
-	<string>Project Phoenix needs Bluetooth to connect to your Vitruvian Trainer machine.</string>
+	<string>Project Phoenix needs Bluetooth to connect to your smart fitness machine.</string>
 	<key>NSBluetoothPeripheralUsageDescription</key>
-	<string>Project Phoenix needs Bluetooth to connect to your Vitruvian Trainer machine.</string>
+	<string>Project Phoenix needs Bluetooth to connect to your smart fitness machine.</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>Project Phoenix can read your health data to avoid logging duplicate workouts.</string>
 	<key>NSHealthUpdateUsageDescription</key>

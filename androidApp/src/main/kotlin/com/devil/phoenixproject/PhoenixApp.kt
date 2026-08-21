@@ -22,7 +22,7 @@ import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.dsl.module
 
-open class VitruvianApp :
+open class PhoenixApp :
     Application(),
     SingletonImageLoader.Factory {
 
@@ -49,7 +49,7 @@ open class VitruvianApp :
 
         initKoin {
             androidLogger()
-            androidContext(this@VitruvianApp)
+            androidContext(this@PhoenixApp)
             modules(
                 module {
                     single {
@@ -87,7 +87,7 @@ open class VitruvianApp :
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
         })
 
-        Logger.d(tag = "VitruvianApp") { "Application initialized" }
+        Logger.d(tag = "PhoenixApp") { "Application initialized" }
     }
 
     override fun newImageLoader(context: coil3.PlatformContext): ImageLoader = ImageLoader.Builder(context)

@@ -3,12 +3,12 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.database.EarnedBadge
 import com.devil.phoenixproject.database.ExerciseMvt
 import com.devil.phoenixproject.database.PersonalRecord
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 
 class ProfileScopedDataMerger(
-    database: VitruvianDatabase,
+    database: PhoenixDatabase,
 ) {
-    private val queries = database.vitruvianDatabaseQueries
+    private val queries = database.phoenixDatabaseQueries
 
     fun mergeForProfileDeletion(sourceProfileId: String, targetProfileId: String) {
         mergePersonalRecords(sourceProfileId, targetProfileId)

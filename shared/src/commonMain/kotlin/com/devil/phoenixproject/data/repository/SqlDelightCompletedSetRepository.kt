@@ -2,7 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSet
@@ -19,9 +19,9 @@ import kotlinx.coroutines.withContext
  * SQLDelight implementation of CompletedSetRepository.
  * Handles both planned sets (templates) and completed sets (actual performance).
  */
-class SqlDelightCompletedSetRepository(db: VitruvianDatabase) : CompletedSetRepository {
+class SqlDelightCompletedSetRepository(db: PhoenixDatabase) : CompletedSetRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     // ==================== Mapping Functions ====================
 

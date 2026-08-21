@@ -30,9 +30,9 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.presentation.util.TestTags
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.add_profile
-import vitruvianprojectphoenix.shared.generated.resources.profiles_title
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.add_profile
+import projectphoenix.shared.generated.resources.profiles_title
 
 internal fun canDismissProfileSwitcher(switchingInFlight: Boolean): Boolean =
     !switchingInFlight

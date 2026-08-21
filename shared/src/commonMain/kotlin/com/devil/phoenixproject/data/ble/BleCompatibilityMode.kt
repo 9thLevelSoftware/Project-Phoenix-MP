@@ -14,7 +14,7 @@ import kotlin.concurrent.Volatile
  * the controller's write lane wedges (WriteRequestBusy forever), then surfaces
  * GATT_ERROR(133) and drops the link the moment a workout starts.
  *
- * The official Vitruvian app never calls requestMtu(), so it stays at the default
+ * The official Phoenix app never calls requestMtu(), so it stays at the default
  * 23-byte ATT MTU and its 96/34-byte writes are automatically chunked by the
  * ATT long-write procedure (Prepare Write + Execute Write), which those
  * controllers handle fine. Compatibility mode reproduces that behavior:

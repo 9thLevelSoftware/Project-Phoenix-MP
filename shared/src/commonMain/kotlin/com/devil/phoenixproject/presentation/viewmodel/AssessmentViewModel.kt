@@ -70,7 +70,7 @@ sealed interface AssessmentUiEvent {
  * Manages wizard state transitions: ExerciseSelection -> Instruction ->
  * ProgressiveLoading -> Results -> Saving -> Complete.
  *
- * The user physically performs sets on the Vitruvian machine and logs
+ * The user physically performs sets on the Phoenix machine and logs
  * weight + velocity after each set. The engine estimates 1RM from
  * the load-velocity profile.
  */

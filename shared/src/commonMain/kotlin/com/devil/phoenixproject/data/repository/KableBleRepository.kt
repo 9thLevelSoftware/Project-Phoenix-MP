@@ -15,7 +15,7 @@ import com.devil.phoenixproject.data.ble.decodeDiagnosticFaults
 import com.devil.phoenixproject.data.ble.formatDiagnosticUInt32
 import com.devil.phoenixproject.data.ble.parseMonitorPacket
 import com.devil.phoenixproject.data.ble.parseRepPacket
-import com.devil.phoenixproject.data.ble.toVitruvianHex
+import com.devil.phoenixproject.data.ble.toPhoenixHex
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
@@ -366,13 +366,13 @@ class KableBleRepository : BleRepository {
             if (notification.isLegacyFormat) {
                 log.w { "Rep notification (LEGACY 6-byte format - Issue #187 fallback):" }
                 log.w { "  top=${notification.topCounter}, complete=${notification.completeCounter}" }
-                log.w { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
+                log.w { "  hex=${data.joinToString(" ") { it.toPhoenixHex() }}" }
             } else {
                 log.d { "Rep notification (24-byte format, RX):" }
                 log.d { "  up=${notification.topCounter}, down=${notification.completeCounter}" }
                 log.d { "  repsRomCount=${notification.repsRomCount} (warmup done), repsRomTotal=${notification.repsRomTotal} (warmup target)" }
                 log.d { "  repsSetCount=${notification.repsSetCount} (working done), repsSetTotal=${notification.repsSetTotal} (working target)" }
-                log.d { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
+                log.d { "  hex=${data.joinToString(" ") { it.toPhoenixHex() }}" }
             }
 
             val emitted = publishRepEvent(notification, source = "rx")
@@ -394,7 +394,7 @@ class KableBleRepository : BleRepository {
             }
 
             log.i { "REPS CHAR notification: ${data.size} bytes" }
-            log.d { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
+            log.d { "  hex=${data.joinToString(" ") { it.toPhoenixHex() }}" }
 
             if (notification.isLegacyFormat) {
                 log.w { "REPS (LEGACY 6-byte format):" }

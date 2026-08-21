@@ -6,7 +6,7 @@ import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlSchema
 import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import co.touchlab.sqliter.DatabaseConfiguration
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
@@ -25,14 +25,14 @@ import platform.Foundation.NSUserDomainMask
 actual class DriverFactory {
 
     companion object {
-        private const val DATABASE_NAME = "vitruvian.db"
+        private const val DATABASE_NAME = "phoenix.db"
     }
 
     actual fun createDriver(): SqlDriver {
-        val targetVersion = VitruvianDatabase.Schema.version
+        val targetVersion = PhoenixDatabase.Schema.version
         NSLog("iOS DB: Initializing database (schema version $targetVersion)")
 
-        val resilientSchema = ResilientMigratingSchema(VitruvianDatabase.Schema)
+        val resilientSchema = ResilientMigratingSchema(PhoenixDatabase.Schema)
 
         val driver = NativeSqliteDriver(
             schema = resilientSchema,

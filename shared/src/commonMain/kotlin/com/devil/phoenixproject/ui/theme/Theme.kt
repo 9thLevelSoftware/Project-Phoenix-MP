@@ -100,7 +100,7 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun VitruvianTheme(
+fun PhoenixTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     dynamicColorEnabled: Boolean = false,
     content: @Composable () -> Unit,

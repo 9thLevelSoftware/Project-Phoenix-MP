@@ -22,7 +22,7 @@ import com.devil.phoenixproject.database.StreakHistory
 import com.devil.phoenixproject.database.Superset
 import com.devil.phoenixproject.database.TrainingCycle
 import com.devil.phoenixproject.database.UserProfile
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.WorkoutSession
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
@@ -131,7 +131,7 @@ interface DataBackupManager {
  * Platform implementations extend this and add file I/O.
  */
 abstract class BaseDataBackupManager(
-    private val database: VitruvianDatabase,
+    private val database: PhoenixDatabase,
     private val profilePreferencesRepository: ProfilePreferencesRepository,
     private val userProfileRepository: UserProfileRepository,
 ) : DataBackupManager {
@@ -143,7 +143,7 @@ abstract class BaseDataBackupManager(
         explicitNulls = false
     }
 
-    private val queries get() = database.vitruvianDatabaseQueries
+    private val queries get() = database.phoenixDatabaseQueries
 
     /**
      * Create a platform-specific JSON writer for streaming export.
@@ -2506,7 +2506,7 @@ abstract class BaseDataBackupManager(
     }
 
     /**
-     * Generic placeholder routine names set by external imports (e.g. Vitruvian cloud).
+     * Generic placeholder routine names set by external imports (e.g. Phoenix cloud).
      * These don't identify a real routine and should be treated as null/unknown.
      */
     private val GARBAGE_ROUTINE_NAMES = setOf(

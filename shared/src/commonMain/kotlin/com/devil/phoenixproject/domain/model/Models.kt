@@ -3,12 +3,12 @@ package com.devil.phoenixproject.domain.model
 import kotlinx.serialization.Serializable
 
 /**
- * Vitruvian Hardware Model
+ * Phoenix Hardware Model
  */
-enum class VitruvianModel(val displayName: String) {
+enum class PhoenixModel(val displayName: String) {
     VFormTrainer("V-Form Trainer"),
     TrainerPlus("Trainer+"),
-    Unknown("Unknown Vitruvian Device"),
+    Unknown("Unknown Phoenix Device"),
 }
 
 /**
@@ -65,7 +65,7 @@ sealed class ConnectionState {
     data class Connected(
         val deviceName: String,
         val deviceAddress: String,
-        val hardwareModel: VitruvianModel = VitruvianModel.Unknown,
+        val hardwareModel: PhoenixModel = PhoenixModel.Unknown,
     ) : ConnectionState()
     data class Error(val message: String, val throwable: Throwable? = null) : ConnectionState()
 }

@@ -39,7 +39,7 @@ import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * Manages the BLE connection lifecycle for Vitruvian machines.
+ * Manages the BLE connection lifecycle for Phoenix machines.
  *
  * Extracted from KableBleRepository (Phase 12) — owns the Peripheral reference exclusively.
  * All connection lifecycle code (scan, connect with retry, disconnect, auto-reconnect,
@@ -100,7 +100,7 @@ class KableBleConnectionManager(
     // -------------------------------------------------------------------------
     private val txCharacteristic = BleConstants.txCharacteristic
 
-    @Suppress("unused") // Vitruvian doesn't use standard NUS RX (6e400003)
+    @Suppress("unused") // Phoenix doesn't use standard NUS RX (6e400003)
     private val rxCharacteristic = BleConstants.rxCharacteristic
     private val monitorCharacteristic = BleConstants.monitorCharacteristic
     private val repsCharacteristic = BleConstants.repsCharacteristic
@@ -273,8 +273,8 @@ class KableBleConnectionManager(
     // -------------------------------------------------------------------------
 
     suspend fun startScanning(): Result<Unit> {
-        log.i { "Starting BLE scan for Vitruvian devices" }
-        logRepo.info(LogEventType.SCAN_START, "Starting BLE scan for Vitruvian devices")
+        log.i { "Starting BLE scan for Phoenix devices" }
+        logRepo.info(LogEventType.SCAN_START, "Starting BLE scan for Phoenix devices")
 
         return try {
             // Cancel any existing scan job to prevent duplicates
@@ -305,32 +305,32 @@ class KableBleConnectionManager(
                                 // Filter by name if available
                                 val name = advertisement.name
                                 if (name != null) {
-                                    val isVitruvian = name.startsWith("Vee_", ignoreCase = true) ||
+                                    val isPhoenix = name.startsWith("Vee_", ignoreCase = true) ||
                                         name.startsWith("VIT", ignoreCase = true) ||
-                                        name.startsWith("Vitruvian", ignoreCase = true)
-                                    if (isVitruvian) {
-                                        log.i { "Found Vitruvian by name: $name" }
+                                        name.startsWith("Phoenix", ignoreCase = true)
+                                    if (isPhoenix) {
+                                        log.i { "Found Phoenix by name: $name" }
                                     } else {
-                                        log.d { "Ignoring device: $name (not Vitruvian)" }
+                                        log.d { "Ignoring device: $name (not Phoenix)" }
                                     }
-                                    return@filter isVitruvian
+                                    return@filter isPhoenix
                                 }
 
-                                // Check for Vitruvian service UUIDs (mServiceUuids)
+                                // Check for Phoenix service UUIDs (mServiceUuids)
                                 val serviceUuids = advertisement.uuids
-                                val hasVitruvianServiceUuid = serviceUuids.any { uuid ->
+                                val hasPhoenixServiceUuid = serviceUuids.any { uuid ->
                                     val uuidStr = uuid.toString().lowercase()
                                     uuidStr.startsWith("0000fef3") ||
                                         uuidStr == BleConstants.NUS_SERVICE_UUID_STRING
                                 }
 
-                                if (hasVitruvianServiceUuid) {
-                                    log.i { "Found Vitruvian by service UUID: ${advertisement.identifier}" }
+                                if (hasPhoenixServiceUuid) {
+                                    log.i { "Found Phoenix by service UUID: ${advertisement.identifier}" }
                                     return@filter true
                                 }
 
                                 // CRITICAL: Check for FEF3 service data
-                                // The Vitruvian device advertises FEF3 in serviceData, not serviceUuids!
+                                // The Phoenix device advertises FEF3 in serviceData, not serviceUuids!
                                 // In Kable, serviceData is accessed differently - try to get FEF3 directly
                                 val fef3Uuid = try {
                                     Uuid.parse("0000fef3-0000-1000-8000-00805f9b34fb")
@@ -338,12 +338,12 @@ class KableBleConnectionManager(
                                     null
                                 }
 
-                                val hasVitruvianServiceData = if (fef3Uuid != null) {
+                                val hasPhoenixServiceData = if (fef3Uuid != null) {
                                     // Try to get data for FEF3 service UUID
                                     val fef3Data = advertisement.serviceData(fef3Uuid)
                                     if (fef3Data != null && fef3Data.isNotEmpty()) {
                                         log.i {
-                                            "Found Vitruvian by FEF3 serviceData: ${advertisement.identifier}, data size: ${fef3Data.size}"
+                                            "Found Phoenix by FEF3 serviceData: ${advertisement.identifier}, data size: ${fef3Data.size}"
                                         }
                                         true
                                     } else {
@@ -353,7 +353,7 @@ class KableBleConnectionManager(
                                     false
                                 }
 
-                                hasVitruvianServiceData
+                                hasPhoenixServiceData
                             }
                             .onEach { advertisement ->
                                 @Suppress("REDUNDANT_CALL_OF_CONVERSION_METHOD") // Needed for iOS where identifier is Uuid
@@ -366,16 +366,16 @@ class KableBleConnectionManager(
                                         )
 
                                 // Use name if available, otherwise use identifier as placeholder
-                                val name = advertisedName ?: "Vitruvian ($identifier)"
+                                val name = advertisedName ?: "Phoenix ($identifier)"
 
-                                // Skip devices without a real Vitruvian name if we already have one
+                                // Skip devices without a real Phoenix name if we already have one
                                 if (!hasRealName) {
                                     val alreadyHaveRealDevice = currentScannedDevices.any { existing ->
                                         existing.name.startsWith("Vee_", ignoreCase = true) ||
                                             existing.name.startsWith("VIT", ignoreCase = true)
                                     }
                                     if (alreadyHaveRealDevice) {
-                                        log.d { "Skipping nameless device $identifier - already have named Vitruvian device" }
+                                        log.d { "Skipping nameless device $identifier - already have named Phoenix device" }
                                         return@onEach
                                     }
                                 }
@@ -385,7 +385,7 @@ class KableBleConnectionManager(
                                     log.d { "Discovered device: $name ($identifier) RSSI: ${advertisement.rssi}" }
                                     logRepo.info(
                                         LogEventType.DEVICE_FOUND,
-                                        "Found Vitruvian device",
+                                        "Found Phoenix device",
                                         name,
                                         identifier,
                                         "RSSI: ${advertisement.rssi} dBm",
@@ -469,7 +469,7 @@ class KableBleConnectionManager(
         logRepo.info(
             LogEventType.SCAN_STOP,
             "BLE scan stopped",
-            details = "Found ${discoveredAdvertisements.size} Vitruvian device(s)",
+            details = "Found ${discoveredAdvertisements.size} Phoenix device(s)",
         )
         scanJob?.cancel()
         scanJob = null
@@ -511,7 +511,7 @@ class KableBleConnectionManager(
     // -------------------------------------------------------------------------
 
     /**
-     * Scan for first Vitruvian device and connect immediately.
+     * Scan for first Phoenix device and connect immediately.
      * This is the simple flow matching parent repo behavior.
      */
     suspend fun scanAndConnect(timeoutMs: Long = 30000L): Result<Unit> {
@@ -524,7 +524,7 @@ class KableBleConnectionManager(
         discoveredAdvertisements.clear()
 
         return try {
-            // Find first Vitruvian device with a real name
+            // Find first Phoenix device with a real name
             val advertisement = withTimeoutOrNull(timeoutMs) {
                 Scanner {}
                     .advertisements
@@ -539,15 +539,15 @@ class KableBleConnectionManager(
             }
 
             if (advertisement == null) {
-                log.w { "scanAndConnect: No Vitruvian device found within timeout" }
+                log.w { "scanAndConnect: No Phoenix device found within timeout" }
                 logRepo.error(LogEventType.SCAN_STOP, "No device found", details = "Timeout after ${timeoutMs}ms")
                 reportConnectionState(ConnectionState.Disconnected)
-                return Result.failure(Exception("No Vitruvian device found"))
+                return Result.failure(Exception("No Phoenix device found"))
             }
 
             @Suppress("REDUNDANT_CALL_OF_CONVERSION_METHOD") // Needed for iOS where identifier is Uuid
             val identifier = advertisement.identifier.toString()
-            val name = advertisement.name ?: "Vitruvian"
+            val name = advertisement.name ?: "Phoenix"
             log.i { "scanAndConnect: Found device $name ($identifier), connecting..." }
 
             // Store for connection
@@ -902,7 +902,7 @@ class KableBleConnectionManager(
             // BCM4389 controller on Pixel 6/7 (write lane stuck busy → GATT 133 →
             // disconnect). Making NO MTU request keeps the default 23-byte MTU, so
             // large writes are chunked by the ATT long-write procedure instead —
-            // the same path the official Vitruvian app uses.
+            // the same path the official Phoenix app uses.
             negotiatedMtu = null
             log.i { "[#333 compat] Small-MTU compatibility path active (${BleCompatibilityMode.summary()})" }
             logRepo.info(
@@ -933,7 +933,7 @@ class KableBleConnectionManager(
 
             // Request MTU negotiation (Android only - iOS handles automatically)
             // CRITICAL: Without MTU negotiation, BLE uses default 23-byte MTU (20 usable)
-            // Vitruvian commands require up to 96 bytes for activation frames
+            // Phoenix commands require up to 96 bytes for activation frames
             val mtu = p.requestMtuIfSupported(BleConstants.Timing.DESIRED_MTU)
             if (mtu != null) {
                 negotiatedMtu = mtu
@@ -1076,7 +1076,7 @@ class KableBleConnectionManager(
             connectedDeviceAddress,
         )
 
-        // NOTE: Standard NUS RX (6e400003) does NOT exist on Vitruvian devices.
+        // NOTE: Standard NUS RX (6e400003) does NOT exist on Phoenix devices.
         // The device uses custom characteristics for notifications instead.
         // Skipping observation of non-existent rxCharacteristic to avoid errors.
         // Command responses (if any) come through device-specific characteristics.
@@ -1113,7 +1113,7 @@ class KableBleConnectionManager(
             // their up-to-2s timeouts never delay polling start.
             scope.launch {
                 tryReadFirmwareVersion(p)
-                tryReadVitruvianVersion(p)
+                tryReadPhoenixVersion(p)
             }
         } else {
             // Issue #333: the compatibility path stays quiet before ready-up —
@@ -1296,25 +1296,25 @@ class KableBleConnectionManager(
     }
 
     // -------------------------------------------------------------------------
-    // 8. tryReadVitruvianVersion()
+    // 8. tryReadPhoenixVersion()
     // -------------------------------------------------------------------------
 
     /**
-     * Try to read proprietary Vitruvian VERSION characteristic.
+     * Try to read proprietary Phoenix VERSION characteristic.
      * Contains hardware/firmware info in a proprietary format.
      */
-    private suspend fun tryReadVitruvianVersion(p: Peripheral) {
+    private suspend fun tryReadPhoenixVersion(p: Peripheral) {
         try {
             val data = withTimeoutOrNull(2000L) {
                 bleQueue.read { p.read(versionCharacteristic) }
             }
             if (data != null && data.isNotEmpty()) {
                 val hexString = data.joinToString(" ") { it.toHexString() }
-                log.i { "Vitruvian VERSION characteristic: ${data.size} bytes - $hexString" }
+                log.i { "Phoenix VERSION characteristic: ${data.size} bytes - $hexString" }
             }
         } catch (e: Exception) {
             e.rethrowIfCancellation()
-            log.d { "Vitruvian VERSION characteristic not readable (expected): ${e.message}" }
+            log.d { "Phoenix VERSION characteristic not readable (expected): ${e.message}" }
         }
     }
 

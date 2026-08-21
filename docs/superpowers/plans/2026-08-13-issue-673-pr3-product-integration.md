@@ -30,7 +30,7 @@
 **Routine configuration and persistence**
 
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/model/Routine.kt`
-- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq`
 - `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/45.sqm`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/MigrationStatements.kt`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt`
@@ -180,7 +180,7 @@ fun onSkipRest(
 
 ## Task 1: Add disabled-by-default routine-exercise configuration to SQL and domain
 
-**Files:** `Routine.kt`; `VitruvianDatabase.sq`; `migrations/45.sqm`; `MigrationStatements.kt`; `SchemaManifest.kt`; `shared/build.gradle.kts`; `SqlDelightWorkoutRepository.kt`; schema/repository tests.
+**Files:** `Routine.kt`; `PhoenixDatabase.sq`; `migrations/45.sqm`; `MigrationStatements.kt`; `SchemaManifest.kt`; `shared/build.gradle.kts`; `SqlDelightWorkoutRepository.kt`; schema/repository tests.
 
 - [ ] Verify PR 2 left schema version 45 with migrations through `44.sqm`. If not, renumber this plan and the index before editing.
 - [ ] Write a `45 → 46` migration test that inserts a pre-feature `RoutineExercise` and asserts `dropSetEnabled == 0` and `dropSetMinWeightKg == null` after migration.
@@ -325,7 +325,7 @@ $env:ANDROID_HOME='C:\Users\dasbl\AppData\Local\Android\Sdk'
 ```powershell
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest :androidApp:testDebugUnitTest :androidApp:assembleDebug --continue --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 --console=plain
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration :shared:validateSchemaManifest --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainPhoenixDatabaseInterface :shared:verifyCommonMainPhoenixDatabaseMigration :shared:validateSchemaManifest --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' spotlessCheck --console=plain
 git diff --check
 ```

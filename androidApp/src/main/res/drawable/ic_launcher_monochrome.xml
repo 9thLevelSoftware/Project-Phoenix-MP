@@ -6,6 +6,6 @@
     android:insetBottom="20dp">
     <bitmap
         android:gravity="center"
-        android:src="@drawable/vitphoe_logo_foreground"
+        android:src="@drawable/phoenix_logo_foreground"
         android:tint="#FFFFFFFF" />
 </inset>

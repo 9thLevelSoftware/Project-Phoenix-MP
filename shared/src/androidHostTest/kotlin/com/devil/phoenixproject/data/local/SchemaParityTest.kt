@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.local
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlin.test.assertEquals
 import kotlin.test.fail
 import org.junit.Test
@@ -28,7 +28,7 @@ class SchemaParityTest {
     fun `fresh install and full upgrade produce identical schemas`() {
         // Database A: canonical fresh install
         val freshDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(freshDriver)
+        PhoenixDatabase.Schema.create(freshDriver)
 
         // Database B: v1 base -> migrate 1..27 with resilient fallback -> reconcile
         val upgradeDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
@@ -187,7 +187,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 32, 33)
+        PhoenixDatabase.Schema.migrate(driver, 32, 33)
 
         assertEquals(1L, countExerciseVideos(driver, isTutorial = false))
         assertEquals(0L, countExerciseVideos(driver, isTutorial = true))
@@ -214,7 +214,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 33, 34)
+        PhoenixDatabase.Schema.migrate(driver, 33, 34)
 
         assertEquals(true, columnExistsInDriver(driver, "WorkoutSession", "externalAddedLoadKg"))
         assertEquals(true, columnExistsInDriver(driver, "WorkoutSession", "counterweightKg"))
@@ -272,7 +272,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 34, 35)
+        PhoenixDatabase.Schema.migrate(driver, 34, 35)
 
         assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "defaultRackItemIds"))
         var defaultRackItemIds = ""
@@ -313,7 +313,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 35, 36)
+        PhoenixDatabase.Schema.migrate(driver, 35, 36)
 
         assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "rackBehaviorOverrides"))
         var rackBehaviorOverrides = ""
@@ -422,7 +422,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 39, 40)
+        PhoenixDatabase.Schema.migrate(driver, 39, 40)
 
         assertEquals(true, columnExistsInDriver(driver, "Exercise", "isBodyweight"))
         assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "isBodyweight"))
@@ -541,7 +541,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 40, 41)
+        PhoenixDatabase.Schema.migrate(driver, 40, 41)
 
         assertEquals(true, columnExistsInDriver(driver, "PersonalRecord", "uuid"))
         assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord"))
@@ -587,7 +587,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 41, 42)
+        PhoenixDatabase.Schema.migrate(driver, 41, 42)
 
         assertEquals(true, columnExistsInDriver(driver, "TrainingCycle", "template_id"))
         assertEquals(true, columnExistsInDriver(driver, "TrainingCycle", "week_number"))
@@ -597,7 +597,7 @@ class SchemaParityTest {
 
     @Test
     fun `generated schema exposes expected version`() {
-        assertEquals(EXPECTED_SCHEMA_VERSION, VitruvianDatabase.Schema.version)
+        assertEquals(EXPECTED_SCHEMA_VERSION, PhoenixDatabase.Schema.version)
     }
 
     @Test
@@ -610,7 +610,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 42, EXPECTED_SCHEMA_VERSION)
+        PhoenixDatabase.Schema.migrate(driver, 42, EXPECTED_SCHEMA_VERSION)
 
         assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM UserProfilePreferences WHERE profile_id = 'a'"))
         assertEquals("1", queryScalar(driver, "SELECT CAST(vbt_enabled AS TEXT) FROM UserProfilePreferences WHERE profile_id = 'a'"))
@@ -685,7 +685,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 43, 44)
+        PhoenixDatabase.Schema.migrate(driver, 43, 44)
 
         assertEquals(false, getTables(driver).contains("ExerciseVideo"))
         assertEquals(true, getTables(driver).contains("ExerciseImage"))
@@ -744,7 +744,7 @@ class SchemaParityTest {
 
         // This test proves generated migration 44.sqm itself; resilient recovery
         // behavior is covered separately below.
-        VitruvianDatabase.Schema.migrate(driver, 44, 45)
+        PhoenixDatabase.Schema.migrate(driver, 44, 45)
 
         assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "set_end_reason"))
 
@@ -796,7 +796,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 45, 46)
+        PhoenixDatabase.Schema.migrate(driver, 45, 46)
 
         assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "routine_exercise_id"))
         assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "attempt_number"))
@@ -892,7 +892,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 46, 47)
+        PhoenixDatabase.Schema.migrate(driver, 46, 47)
 
         assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "dropSetEnabled"))
         assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "dropSetMinWeightKg"))
@@ -1114,7 +1114,7 @@ class SchemaParityTest {
     private fun migrateWithResilience(driver: SqlDriver, from: Long, to: Long) {
         for (v in from until to) {
             try {
-                VitruvianDatabase.Schema.migrate(driver, v, v + 1)
+                PhoenixDatabase.Schema.migrate(driver, v, v + 1)
             } catch (_: Exception) {
                 // Keyed by the .sqm file number (the version migrated FROM) — matches
                 // the production DriverFactory callers.

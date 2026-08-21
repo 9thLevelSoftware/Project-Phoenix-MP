@@ -2,7 +2,7 @@ package com.devil.phoenixproject.di
 
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.data.repository.SqlDelightActiveWorkoutRuntimeRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertIs
 import org.junit.Test
@@ -17,7 +17,7 @@ class ActiveWorkoutRuntimeRepositoryBindingTest {
             allowOverride(true)
             modules(
                 dataModule,
-                module { single<VitruvianDatabase> { database } },
+                module { single<PhoenixDatabase> { database } },
             )
         }
 

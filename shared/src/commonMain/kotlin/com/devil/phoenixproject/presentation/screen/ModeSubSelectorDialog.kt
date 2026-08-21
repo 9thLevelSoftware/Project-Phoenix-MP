@@ -11,8 +11,8 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Mode Sub-Selector Dialog for hierarchical workout modes (TUT and Echo)

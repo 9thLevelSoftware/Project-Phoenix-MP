@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -15,14 +15,14 @@ import kotlinx.serialization.json.intOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 class SqlDelightActiveWorkoutRuntimeRepository internal constructor(
-    database: VitruvianDatabase,
+    database: PhoenixDatabase,
     private val nowEpochMs: () -> Long,
     private val codec: ActiveWorkoutRuntimeJsonCodec,
 ) : ActiveWorkoutRuntimeRepository {
-    private val queries = database.vitruvianDatabaseQueries
+    private val queries = database.phoenixDatabaseQueries
 
     constructor(
-        database: VitruvianDatabase,
+        database: PhoenixDatabase,
         nowEpochMs: () -> Long = ::currentTimeMillis,
     ) : this(database, nowEpochMs, StrictActiveWorkoutRuntimeJsonCodec)
 

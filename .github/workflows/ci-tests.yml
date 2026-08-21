@@ -65,7 +65,7 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Verify SQLDelight migrations
-        run: ./gradlew :shared:verifyCommonMainVitruvianDatabaseMigration --continue -Pskip.supabase.check=true
+        run: ./gradlew :shared:verifyCommonMainPhoenixDatabaseMigration --continue -Pskip.supabase.check=true
 
       - name: Run shared module unit tests
         run: ./gradlew :shared:testAndroidHostTest --continue -Pskip.supabase.check=true

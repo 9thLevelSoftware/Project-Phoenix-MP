@@ -42,8 +42,8 @@ import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySett
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import kotlinx.coroutines.delay
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Celebratory dialog shown when a user earns a new badge

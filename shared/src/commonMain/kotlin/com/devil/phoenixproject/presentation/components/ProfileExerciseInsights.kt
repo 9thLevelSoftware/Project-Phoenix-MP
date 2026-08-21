@@ -41,7 +41,7 @@ import com.devil.phoenixproject.presentation.viewmodel.ProfilePrHighlights
 import com.devil.phoenixproject.util.KmpUtils
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.*
 
 data class ProfileRecentHistory(
     val sessionsNewestFirst: List<WorkoutSession>,

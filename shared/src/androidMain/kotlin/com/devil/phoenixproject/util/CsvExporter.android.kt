@@ -174,7 +174,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/csv"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Vitruvian Export: $fileName")
+                putExtra(Intent.EXTRA_SUBJECT, "Phoenix Export: $fileName")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

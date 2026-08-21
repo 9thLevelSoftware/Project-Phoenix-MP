@@ -17,7 +17,7 @@ class Schema42FixtureContractTest {
             "\$migrationDeadline = [DateTime]::UtcNow.AddSeconds(60)",
             "\$migrationReady = \$false",
             "do {",
-            "    \$migrationLine = & \$adb shell run-as \$package grep -F profile_preferences_legacy_migration_complete_v1 shared_prefs/vitruvian_preferences.xml 2>\$null",
+            "    \$migrationLine = & \$adb shell run-as \$package grep -F profile_preferences_legacy_migration_complete_v1 shared_prefs/phoenix_preferences.xml 2>\$null",
             "    \$migrationReady = \$LASTEXITCODE -eq 0 -and \$migrationLine -match 'value=\"true\"'",
             "    if (-not \$migrationReady) { Start-Sleep -Seconds 1 }",
             "} while (-not \$migrationReady -and [DateTime]::UtcNow -lt \$migrationDeadline)",
@@ -31,7 +31,7 @@ class Schema42FixtureContractTest {
         )
         val readinessEnd = readinessStart + readinessBlock.length
         val forceStop = guide.indexOf("& \$adb shell am force-stop \$package", startIndex = readinessEnd)
-        val sqlInspection = guide.indexOf("sqlite3 databases/vitruvian.db", startIndex = forceStop)
+        val sqlInspection = guide.indexOf("sqlite3 databases/phoenix.db", startIndex = forceStop)
         assertTrue(
             "Guide must wait for migration before force-stop and SQL inspection",
             readinessEnd <= forceStop && forceStop < sqlInspection,
@@ -43,7 +43,7 @@ class Schema42FixtureContractTest {
         val repoRoot = findRepoRoot()
         val fixtureFile = File(
             repoRoot,
-            "docs/qa/fixtures/profile-schema42/vitruvian_preferences.xml",
+            "docs/qa/fixtures/profile-schema42/phoenix_preferences.xml",
         )
         val guideFile = File(repoRoot, "docs/qa/profile-schema42-fixture.md")
 

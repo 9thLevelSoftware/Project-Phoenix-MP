@@ -2,7 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
@@ -130,14 +130,14 @@ interface UserProfileRepository {
 }
 
 class SqlDelightUserProfileRepository(
-    private val database: VitruvianDatabase,
+    private val database: PhoenixDatabase,
     private val profilePreferencesRepository: ProfilePreferencesRepository,
     private val profileLocalSafetyStore: ProfileLocalSafetyStore,
     private val gamificationRepository: GamificationRepository,
     private val profileScopedDataMerger: ProfileScopedDataMerger = ProfileScopedDataMerger(database),
     private val beforeProfileDeletionCommit: () -> Unit = {},
 ) : UserProfileRepository {
-    private val queries = database.vitruvianDatabaseQueries
+    private val queries = database.phoenixDatabaseQueries
     private val profileContextMutex = Mutex()
     private val profileCleanupMutex = Mutex()
 

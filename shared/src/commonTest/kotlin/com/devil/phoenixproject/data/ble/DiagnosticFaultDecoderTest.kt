@@ -8,7 +8,7 @@ import kotlin.test.assertTrue
 class DiagnosticFaultDecoderTest {
 
     @Test
-    fun `decodes official Vitruvian fault labels`() {
+    fun `decodes official Phoenix fault labels`() {
         val expected = mapOf(
             0 to "None",
             1 to "No comms",
@@ -21,16 +21,16 @@ class DiagnosticFaultDecoderTest {
         )
 
         expected.forEach { (code, label) ->
-            val decoded = decodeDiagnosticFault(DiagnosticFaultCategory.VITRUVIAN, code)
+            val decoded = decodeDiagnosticFault(DiagnosticFaultCategory.PHOENIX, code)
             assertEquals(label, decoded.label, "code=$code")
             assertEquals(formatDiagnosticFaultCode(code), decoded.rawHex)
         }
     }
 
     @Test
-    fun `decodes combined Vitruvian fault bit flags`() {
-        val decoded = decodeDiagnosticFault(DiagnosticFaultCategory.VITRUVIAN, 0x0043)
-        val duplicateMessageFailureBits = decodeDiagnosticFault(DiagnosticFaultCategory.VITRUVIAN, 0x0018)
+    fun `decodes combined Phoenix fault bit flags`() {
+        val decoded = decodeDiagnosticFault(DiagnosticFaultCategory.PHOENIX, 0x0043)
+        val duplicateMessageFailureBits = decodeDiagnosticFault(DiagnosticFaultCategory.PHOENIX, 0x0018)
 
         assertEquals("No comms, Init failure, Overtemp failure", decoded.label)
         assertEquals("0x0043", decoded.rawHex)
@@ -95,7 +95,7 @@ class DiagnosticFaultDecoderTest {
 
         val faults = decodeDiagnosticFaults(packet)
 
-        assertEquals(DiagnosticFaultCategory.VITRUVIAN, faults[0].category)
+        assertEquals(DiagnosticFaultCategory.PHOENIX, faults[0].category)
         assertEquals("TI restarted", faults[0].label)
         assertEquals(DiagnosticFaultCategory.OTHER, faults[1].category)
         assertEquals("Other", faults[1].label)

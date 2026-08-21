@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -27,9 +27,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
-class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val exerciseRepository: ExerciseRepository) : WorkoutRepository {
+class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val exerciseRepository: ExerciseRepository) : WorkoutRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     private val json = Json {
         ignoreUnknownKeys = true

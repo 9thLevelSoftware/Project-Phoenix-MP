@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.RepMetricData
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -24,9 +24,9 @@ interface RepMetricRepository {
  * Handles JSON serialization of FloatArray/LongArray curve data to/from TEXT columns.
  * Arrays are stored as JSON arrays (e.g., "[1.0,2.0,3.0]") in the database.
  */
-class SqlDelightRepMetricRepository(private val db: VitruvianDatabase) : RepMetricRepository {
+class SqlDelightRepMetricRepository(private val db: PhoenixDatabase) : RepMetricRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     override suspend fun saveRepMetrics(sessionId: String, metrics: List<RepMetricData>) {
         withContext(Dispatchers.IO) {

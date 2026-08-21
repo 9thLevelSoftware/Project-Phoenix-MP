@@ -130,7 +130,7 @@ class ExerciseConfigViewModelTest {
     @Test
     fun `percent of PR syncs visible set weights and saves resolved snapshots`() = runTest {
         val database = createTestDatabase()
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         val repository = SqlDelightPersonalRecordRepository(database)
         val viewModel = ExerciseConfigViewModel(repository)
         val exercise = benchRoutineExercise(
@@ -173,7 +173,7 @@ class ExerciseConfigViewModelTest {
     @Test
     fun `percent of PR uses nearest half kg rounding when syncing set weights`() = runTest {
         val database = createTestDatabase()
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         val repository = SqlDelightPersonalRecordRepository(database)
         val viewModel = ExerciseConfigViewModel(repository)
         val exercise = benchRoutineExercise(
@@ -352,7 +352,7 @@ class ExerciseConfigViewModelTest {
     @Test
     fun `initialize reloads PR lookup when active profile changes`() = runTest {
         val database = createTestDatabase()
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         val repository = SqlDelightPersonalRecordRepository(database)
         val viewModel = ExerciseConfigViewModel(repository)
         val exercise = RoutineExercise(
@@ -433,7 +433,7 @@ class ExerciseConfigViewModelTest {
     @Test
     fun `initialize uses concentric PR for normal workout setup and ignores higher eccentric PR`() = runTest {
         val database = createTestDatabase()
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         val repository = SqlDelightPersonalRecordRepository(database)
         val viewModel = ExerciseConfigViewModel(repository)
         val exercise = benchRoutineExercise(
@@ -492,7 +492,7 @@ class ExerciseConfigViewModelTest {
     @Test
     fun `legacy null scalingBasis with MAX_VOLUME prType resolves basis and baseline to volume PR`() = runTest {
         val database = createTestDatabase()
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         val repository = SqlDelightPersonalRecordRepository(database)
         val viewModel = ExerciseConfigViewModel(repository)
         val exercise = benchRoutineExercise(
@@ -807,7 +807,7 @@ class ExerciseConfigViewModelTest {
         volume = weight * 6,
     )
 
-    private fun insertExercise(queries: com.devil.phoenixproject.database.VitruvianDatabaseQueries, id: String, name: String) {
+    private fun insertExercise(queries: com.devil.phoenixproject.database.PhoenixDatabaseQueries, id: String, name: String) {
         queries.insertExercise(
             id = id,
             name = name,
@@ -838,7 +838,7 @@ class ExerciseConfigViewModelTest {
     }
 
     private fun insertWeightPR(
-        queries: com.devil.phoenixproject.database.VitruvianDatabaseQueries,
+        queries: com.devil.phoenixproject.database.PhoenixDatabaseQueries,
         weight: Double,
         phase: WorkoutPhase = WorkoutPhase.COMBINED,
     ) {

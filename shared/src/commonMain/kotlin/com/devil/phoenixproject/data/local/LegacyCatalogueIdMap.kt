@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.data.local
 
 /**
- * Maps archived Vitruvian catalogue IDs onto the replacement free-exercise-db slugs
+ * Maps archived Phoenix catalogue IDs onto the replacement free-exercise-db slugs
  * used by cycle templates and 5/3/1 detection. Name matching covers remaining stock
  * rows whose names are unchanged; [nameAliases] and [stemKey] cover reviewed
  * singular/plural renames such as Rack Pull → Rack Pulls.

@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.createTestDatabase
 import java.util.concurrent.atomic.AtomicInteger
@@ -23,7 +23,7 @@ import org.junit.Before
 import org.junit.Test
 
 class SqlDelightAssessmentRepositoryTest {
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var exerciseRepository: SqlDelightExerciseRepository
     private lateinit var workoutRepository: SqlDelightWorkoutRepository
     private lateinit var repository: SqlDelightAssessmentRepository
@@ -505,7 +505,7 @@ class SqlDelightAssessmentRepositoryTest {
     )
 
     private fun insertExercise(id: String, name: String) {
-        database.vitruvianDatabaseQueries.insertExercise(
+        database.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = name,
             displayName = null,

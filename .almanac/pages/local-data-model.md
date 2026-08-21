@@ -9,7 +9,7 @@ sources:
     note: Defines SQLDelight schema versioning and the schema manifest validation task.
   - id: schema-file
     type: file
-    path: shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq
+    path: shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq
     note: Defines the current database schema and many migration-added columns.
   - id: migration-manager
     type: file
@@ -38,7 +38,7 @@ The shared database uses SQLDelight, but numbered migrations are not the whole p
 
 ## Persistence contract
 
-The schema itself is broad and profile-aware. `VitruvianDatabase.sq` persists workout sessions, metric samples, PRs, routines, supersets, routine groups, training cycles, completed sets, progressions, gamification state, connection logs, diagnostics snapshots, sync metadata, and external integration entities, with many tables carrying `profile_id`, `updatedAt`, `serverId`, and `deletedAt` fields [@schema-file]. Read [[profiles]] alongside this page when the bug is really about active-profile filtering, delete-time reassignment, or why the same local database can show different slices of data after a profile switch.
+The schema itself is broad and profile-aware. `PhoenixDatabase.sq` persists workout sessions, metric samples, PRs, routines, supersets, routine groups, training cycles, completed sets, progressions, gamification state, connection logs, diagnostics snapshots, sync metadata, and external integration entities, with many tables carrying `profile_id`, `updatedAt`, `serverId`, and `deletedAt` fields [@schema-file]. Read [[profiles]] alongside this page when the bug is really about active-profile filtering, delete-time reassignment, or why the same local database can show different slices of data after a profile switch.
 
 ## Repair layers
 
@@ -52,7 +52,7 @@ This makes database safety here more about idempotent repair than about trusting
 
 Backup, restore, and startup-repair behavior are first-class parts of this persistence layer, but they now have their own retrieval page. Read [[data-backup-and-repair]] when the task is about streamed export or import, auto-backup timing, profile-scope repair, or other user-visible data recovery behavior [@backup-manager] [@migration-manager].
 
-`DiagnosticsHistory` is currently reserved schema, not an active feature path. `VitruvianDatabase.sq` and `SchemaManifest.kt` still define the table plus recent or fault-only queries, but the live diagnostics flow in `KableBleRepository` only updates the in-memory `BleRepository.diagnostics` state and connection-log stream, and `DiagnosticsViewModel` renders directly from that live state instead of reading SQLDelight history rows [@schema-file] [@kable-repo] [@diagnostics-vm]. Read [[machine-diagnostics]] with this in mind when a future task proposes persisting diagnostic snapshots, because the schema surface already exists but the current product path is live-only.
+`DiagnosticsHistory` is currently reserved schema, not an active feature path. `PhoenixDatabase.sq` and `SchemaManifest.kt` still define the table plus recent or fault-only queries, but the live diagnostics flow in `KableBleRepository` only updates the in-memory `BleRepository.diagnostics` state and connection-log stream, and `DiagnosticsViewModel` renders directly from that live state instead of reading SQLDelight history rows [@schema-file] [@kable-repo] [@diagnostics-vm]. Read [[machine-diagnostics]] with this in mind when a future task proposes persisting diagnostic snapshots, because the schema surface already exists but the current product path is live-only.
 
 ## Reading boundary
 

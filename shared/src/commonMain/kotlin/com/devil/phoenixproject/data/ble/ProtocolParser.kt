@@ -7,7 +7,7 @@ import kotlin.io.encoding.Base64
 import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
- * Pure byte parsing utility functions for the Vitruvian BLE protocol.
+ * Pure byte parsing utility functions for the Phoenix BLE protocol.
  *
  * These functions extract integers and floats from ByteArray data received
  * from the trainer hardware. All functions are stateless and handle endianness
@@ -19,7 +19,7 @@ import kotlin.io.encoding.ExperimentalEncodingApi
 
 /**
  * Read unsigned 16-bit integer in LITTLE-ENDIAN format (LSB first).
- * This is the primary format used by the Vitruvian BLE protocol.
+ * This is the primary format used by the Phoenix BLE protocol.
  *
  * @param data The byte array to read from
  * @param offset The starting position in the array
@@ -95,7 +95,7 @@ fun getFloatLE(data: ByteArray, offset: Int): Float {
  *
  * @return Two-character uppercase hex string (e.g., "FF", "0A", "00")
  */
-fun Byte.toVitruvianHex(): String {
+fun Byte.toPhoenixHex(): String {
     val hex = "0123456789ABCDEF"
     val value = this.toInt() and 0xFF
     return "${hex[value shr 4]}${hex[value and 0x0F]}"
@@ -131,7 +131,7 @@ private const val DIAGNOSTIC_WARNING_BYTES = 4
  * Issue #388 / #174 / #187: V-Form ("Vee_*") firmware sends rep packets in the 6..23 byte
  * range (most likely 16 bytes per official `Reps.read()` spec). Earlier Phoenix MP code
  * accepted only `==6` or `>=24` and returned null for everything else, regressing the
- * parent repo fix (VitruvianRedux PR #190 / commit 980df08) that timuh60/IshyEvenTrying
+ * parent repo fix (PhoenixRedux PR #190 / commit 980df08) that timuh60/IshyEvenTrying
  * confirmed working in v0.6.2-beta. This restores the catch-all legacy branch.
  *
  * @param data The raw byte array
@@ -172,7 +172,7 @@ fun parseRepPacket(data: ByteArray, hasOpcodePrefix: Boolean, timestamp: Long): 
     } else {
         // LEGACY format — any 6..23 byte size from older firmware (V-Form / Beta 4).
         // topCounter at bytes 0-1, completeCounter at bytes 4-5; bytes 2-3 are padding.
-        // Matches VitruvianRedux/VitruvianBleManager.kt handleRepNotification (PR #190).
+        // Matches PhoenixRedux/PhoenixBleManager.kt handleRepNotification (PR #190).
         val topCounter = getUInt16LE(data, offset + 0)
         val completeCounter = getUInt16LE(data, offset + 4)
 

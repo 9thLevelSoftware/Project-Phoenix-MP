@@ -113,26 +113,26 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_close_workout
-import vitruvianprojectphoenix.shared.generated.resources.config_mode_tut_beast_desc
-import vitruvianprojectphoenix.shared.generated.resources.config_mode_tut_desc
-import vitruvianprojectphoenix.shared.generated.resources.eccentric_load
-import vitruvianprojectphoenix.shared.generated.resources.eccentric_load_helper
-import vitruvianprojectphoenix.shared.generated.resources.echo_level
-import vitruvianprojectphoenix.shared.generated.resources.just_lift_tut_beast
-import vitruvianprojectphoenix.shared.generated.resources.just_lift_tut_standard
-import vitruvianprojectphoenix.shared.generated.resources.label_live
-import vitruvianprojectphoenix.shared.generated.resources.mode_echo
-import vitruvianprojectphoenix.shared.generated.resources.mode_old_school
-import vitruvianprojectphoenix.shared.generated.resources.mode_pump
-import vitruvianprojectphoenix.shared.generated.resources.mode_tut
-import vitruvianprojectphoenix.shared.generated.resources.autostart_connect_prompt
-import vitruvianprojectphoenix.shared.generated.resources.autostart_grab_handles
-import vitruvianprojectphoenix.shared.generated.resources.autostart_ready
-import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing
-import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing_bottom
-import vitruvianprojectphoenix.shared.generated.resources.rep_count_timing_top
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_close_workout
+import projectphoenix.shared.generated.resources.config_mode_tut_beast_desc
+import projectphoenix.shared.generated.resources.config_mode_tut_desc
+import projectphoenix.shared.generated.resources.eccentric_load
+import projectphoenix.shared.generated.resources.eccentric_load_helper
+import projectphoenix.shared.generated.resources.echo_level
+import projectphoenix.shared.generated.resources.just_lift_tut_beast
+import projectphoenix.shared.generated.resources.just_lift_tut_standard
+import projectphoenix.shared.generated.resources.label_live
+import projectphoenix.shared.generated.resources.mode_echo
+import projectphoenix.shared.generated.resources.mode_old_school
+import projectphoenix.shared.generated.resources.mode_pump
+import projectphoenix.shared.generated.resources.mode_tut
+import projectphoenix.shared.generated.resources.autostart_connect_prompt
+import projectphoenix.shared.generated.resources.autostart_grab_handles
+import projectphoenix.shared.generated.resources.autostart_ready
+import projectphoenix.shared.generated.resources.rep_count_timing
+import projectphoenix.shared.generated.resources.rep_count_timing_bottom
+import projectphoenix.shared.generated.resources.rep_count_timing_top
 
 /**
  * Just Lift screen - quick workout configuration.

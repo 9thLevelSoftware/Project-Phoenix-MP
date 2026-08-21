@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.data.ble
 
 enum class DiagnosticFaultCategory(val displayName: String) {
-    VITRUVIAN("Vee"),
+    PHOENIX("Vee"),
     OTHER("Other"),
     MOTOR_A("Motor A"),
     MOTOR_B("Motor B"),
@@ -19,7 +19,7 @@ data class DiagnosticFault(
 fun decodeDiagnosticFaults(packet: DiagnosticPacket): List<DiagnosticFault> {
     val words = packet.faultWords
     return listOf(
-        decodeDiagnosticFault(DiagnosticFaultCategory.VITRUVIAN, words.getOrElse(0) { 0 }),
+        decodeDiagnosticFault(DiagnosticFaultCategory.PHOENIX, words.getOrElse(0) { 0 }),
         decodeDiagnosticFault(DiagnosticFaultCategory.OTHER, words.getOrElse(1) { 0 }),
         decodeDiagnosticFault(DiagnosticFaultCategory.MOTOR_A, words.getOrElse(2) { 0 }),
         decodeDiagnosticFault(DiagnosticFaultCategory.MOTOR_B, words.getOrElse(3) { 0 }),
@@ -29,7 +29,7 @@ fun decodeDiagnosticFaults(packet: DiagnosticPacket): List<DiagnosticFault> {
 fun decodeDiagnosticFault(category: DiagnosticFaultCategory, code: Int): DiagnosticFault {
     val normalizedCode = code and 0xFFFF
     val label = when (category) {
-        DiagnosticFaultCategory.VITRUVIAN -> decodeVitruvianFault(normalizedCode)
+        DiagnosticFaultCategory.PHOENIX -> decodePhoenixFault(normalizedCode)
 
         DiagnosticFaultCategory.OTHER -> decodeOtherFault(normalizedCode)
 
@@ -44,7 +44,7 @@ fun formatDiagnosticFaultCode(code: Int): String = "0x${(code and 0xFFFF).toStri
 
 fun formatDiagnosticUInt32(value: Long): String = "0x${(value and 0xFFFF_FFFFL).toString(16).uppercase().padStart(8, '0')}"
 
-private fun decodeVitruvianFault(code: Int): String = decodeFlaggedFault(
+private fun decodePhoenixFault(code: Int): String = decodeFlaggedFault(
     code = code,
     flags = listOf(
         1 to "No comms",

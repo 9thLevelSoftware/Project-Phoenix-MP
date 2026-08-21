@@ -13,7 +13,7 @@ import app.cash.sqldelight.db.SqlDriver
 // Every table that needs guaranteed existence (both bootstrap tables and
 // migration-created tables vulnerable to branch-merge gaps), every column
 // added after its table's initial CREATE, and every index from
-// VitruvianDatabase.sq is declared here with provenance comments tracing
+// PhoenixDatabase.sq is declared here with provenance comments tracing
 // back to migration numbers.
 // ============================================================
 
@@ -220,7 +220,7 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
 //    applied" on a device that never actually ran the SQL, leaving the table missing.
 //    CREATE TABLE IF NOT EXISTS is idempotent and safe to run on every open.
 //
-// C) Initial-schema tables (16): Tables defined in VitruvianDatabase.sq from the
+// C) Initial-schema tables (16): Tables defined in PhoenixDatabase.sq from the
 //    initial schema. Included with their FULL current shape (all columns including
 //    those added by later migrations). applyColumnHeal in manifestColumns handles
 //    "duplicate column" errors gracefully, so having ALL columns is safe and ensures
@@ -824,7 +824,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     ),
 
     // ── Initial-schema tables ──────────────────────────────────────────
-    // Tables below are defined in VitruvianDatabase.sq from the initial schema.
+    // Tables below are defined in PhoenixDatabase.sq from the initial schema.
     // They use the FULL current shape (all columns including migration-added ones)
     // because applyColumnHeal handles "duplicate column" errors gracefully.
 
@@ -1492,7 +1492,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
 // ============================================================
 // TASK 5: manifestIndexes -- 36 index operations
 //
-// Every CREATE INDEX and CREATE UNIQUE INDEX from VitruvianDatabase.sq.
+// Every CREATE INDEX and CREATE UNIQUE INDEX from PhoenixDatabase.sq.
 // All use IF NOT EXISTS. idx_pr_unique needs preDropSql because its
 // shape changed across migrations 19 and 21.
 // ============================================================

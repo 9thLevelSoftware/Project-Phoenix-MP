@@ -7,7 +7,7 @@ import com.devil.phoenixproject.domain.model.RepPhase
 import com.devil.phoenixproject.domain.model.RepType
 
 /**
- * Handles rep counting based on notifications emitted by the Vitruvian machine.
+ * Handles rep counting based on notifications emitted by the Phoenix machine.
  *
  * REP COUNTING APPROACH (Matches Official App):
  * - warmupReps = repsRomCount (directly from machine)
@@ -386,7 +386,7 @@ class RepCounterFromMachine {
     }
 
     /**
-     * MODERN rep counting - MATCHES PARENT REPO (VitruvianRedux) EXACTLY.
+     * MODERN rep counting - MATCHES PARENT REPO (PhoenixRedux) EXACTLY.
      *
      * Issue #210 ROOT CAUSE FIX: Previous implementation used custom down counter
      * calculations with safety nets. The parent repo simply TRUSTS THE MACHINE:

@@ -116,25 +116,25 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_delete
-import vitruvianprojectphoenix.shared.generated.resources.action_edit
-import vitruvianprojectphoenix.shared.generated.resources.action_ok
-import vitruvianprojectphoenix.shared.generated.resources.assign_routine
-import vitruvianprojectphoenix.shared.generated.resources.cd_create_cycle
-import vitruvianprojectphoenix.shared.generated.resources.cd_expand
-import vitruvianprojectphoenix.shared.generated.resources.create_cycle
-import vitruvianprojectphoenix.shared.generated.resources.delete_cycle_message
-import vitruvianprojectphoenix.shared.generated.resources.delete_cycle_title
-import vitruvianprojectphoenix.shared.generated.resources.edit_cycle
-import vitruvianprojectphoenix.shared.generated.resources.empty_no_cycles_message
-import vitruvianprojectphoenix.shared.generated.resources.empty_no_cycles_title
-import vitruvianprojectphoenix.shared.generated.resources.exercises_not_found
-import vitruvianprojectphoenix.shared.generated.resources.jump_to_day
-import vitruvianprojectphoenix.shared.generated.resources.label_error
-import vitruvianprojectphoenix.shared.generated.resources.skip_rest_day
-import vitruvianprojectphoenix.shared.generated.resources.start_workout
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.action_delete
+import projectphoenix.shared.generated.resources.action_edit
+import projectphoenix.shared.generated.resources.action_ok
+import projectphoenix.shared.generated.resources.assign_routine
+import projectphoenix.shared.generated.resources.cd_create_cycle
+import projectphoenix.shared.generated.resources.cd_expand
+import projectphoenix.shared.generated.resources.create_cycle
+import projectphoenix.shared.generated.resources.delete_cycle_message
+import projectphoenix.shared.generated.resources.delete_cycle_title
+import projectphoenix.shared.generated.resources.edit_cycle
+import projectphoenix.shared.generated.resources.empty_no_cycles_message
+import projectphoenix.shared.generated.resources.empty_no_cycles_title
+import projectphoenix.shared.generated.resources.exercises_not_found
+import projectphoenix.shared.generated.resources.jump_to_day
+import projectphoenix.shared.generated.resources.label_error
+import projectphoenix.shared.generated.resources.skip_rest_day
+import projectphoenix.shared.generated.resources.start_workout
 
 // Shared failure copy for the fresh-start and restart workout paths (issue #620:
 // failures must always be surfaced, never silent).

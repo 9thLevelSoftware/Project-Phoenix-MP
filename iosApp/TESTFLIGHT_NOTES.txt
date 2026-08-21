@@ -1,6 +1,6 @@
 Project Phoenix - iOS Beta 1
 
-Community-built app to keep Vitruvian Trainer machines working after company closure.
+Community-built app to keep Phoenix Trainer machines working after company closure.
 
 CORE FEATURES:
 - BLE connection to V-Form Trainer and Trainer+ machines
@@ -27,5 +27,5 @@ TRACKING:
 - Workout history and analytics
 - Badge achievements and streak tracking
 
-Early beta - requires physical Vitruvian Trainer.
-Report issues: github.com/DasBluEyedDevil/VitruvianProjectPhoenix
+Early beta - requires physical Phoenix Trainer.
+Report issues: github.com/DasBluEyedDevil/ProjectPhoenix

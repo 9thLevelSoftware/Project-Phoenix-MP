@@ -81,7 +81,7 @@ import com.devil.phoenixproject.util.UnitConverter
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.*
 
 @Composable
 fun ProfilePreferenceSections(

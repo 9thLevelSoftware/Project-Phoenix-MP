@@ -7,7 +7,7 @@ import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.concurrent.Volatile
 
 /**
- * BLE Packet Factory - Builds binary protocol frames for Vitruvian device communication
+ * BLE Packet Factory - Builds binary protocol frames for Phoenix device communication
  * Ported from protocol.js and modes.js in the reference web application
  *
  * KMP-compatible version using manual byte manipulation (no java.nio.ByteBuffer)

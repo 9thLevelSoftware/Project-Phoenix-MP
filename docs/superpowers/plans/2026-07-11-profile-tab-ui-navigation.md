@@ -120,7 +120,7 @@ Every presentation mutation passes the `Ready.profile.id` captured with the edit
 
 ### Modify
 
-- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq` — assessment 1RM compare-and-set compensation plus profile/exercise-limited completed-session queries.
+- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq` — assessment 1RM compare-and-set compensation plus profile/exercise-limited completed-session queries.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/WorkoutRepository.kt` — expose most-recent exercise and limited recent-session reads.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt` — map the new SQLDelight reads.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/AssessmentRepository.kt` — make profile ID required.
@@ -171,7 +171,7 @@ Every presentation mutation passes the `Ready.profile.id` captured with the edit
 - Create: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModelProfileScopeTest.kt`
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/AssessmentProfileOwnershipTest.kt`
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentResourceContractTest.kt`
-- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq:2004-2006`
+- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq:2004-2006`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/AssessmentRepository.kt:38-95`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepository.kt:56-171`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/assessment/AssessmentEngine.kt:46-52`
@@ -960,7 +960,7 @@ Each line goes only in its named locale file. The route behavior is:
 
 - [ ] **Step 7: Make persistence atomic under error/cancellation and prove profile/unit isolation**
 
-In `VitruvianDatabase.sq`, add a compare-and-set restore beside `updateOneRepMax`:
+In `PhoenixDatabase.sq`, add a compare-and-set restore beside `updateOneRepMax`:
 
 ```sql
 restoreOneRepMaxIfCurrent:
@@ -976,12 +976,12 @@ In `SqlDelightAssessmentRepository`, add a defaulted dispatcher seam and one rep
 
 ```kotlin
 class SqlDelightAssessmentRepository(
-    db: VitruvianDatabase,
+    db: PhoenixDatabase,
     private val workoutRepository: WorkoutRepository,
     private val exerciseRepository: ExerciseRepository,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AssessmentRepository {
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
     private val assessmentWriteMutex = Mutex()
 ```
 
@@ -1538,7 +1538,7 @@ Expected: all guards exit normally. No assessment API/entity profile default, gl
 - [ ] **Step 9: Commit the assessment ownership slice**
 
 ```powershell
-git add shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/AssessmentRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/assessment/AssessmentEngine.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentWizardScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/AnalyticsScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavigationRoutes.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeAssessmentRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModelProfileScopeTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/AssessmentProfileOwnershipTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/NavigationRoutesTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentResourceContractTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepositoryTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/assessment/AssessmentEngineTest.kt shared/src/commonMain/composeResources/values/strings.xml shared/src/commonMain/composeResources/values-nl/strings.xml shared/src/commonMain/composeResources/values-de/strings.xml shared/src/commonMain/composeResources/values-es/strings.xml shared/src/commonMain/composeResources/values-fr/strings.xml
+git add shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/AssessmentRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/assessment/AssessmentEngine.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModel.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentWizardScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/AnalyticsScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavigationRoutes.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/navigation/NavGraph.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeAssessmentRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/presentation/viewmodel/AssessmentViewModelProfileScopeTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/AssessmentProfileOwnershipTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/navigation/NavigationRoutesTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/AssessmentResourceContractTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightAssessmentRepositoryTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/assessment/AssessmentEngineTest.kt shared/src/commonMain/composeResources/values/strings.xml shared/src/commonMain/composeResources/values-nl/strings.xml shared/src/commonMain/composeResources/values-de/strings.xml shared/src/commonMain/composeResources/values-es/strings.xml shared/src/commonMain/composeResources/values-fr/strings.xml
 git commit -m "fix: scope strength assessments to active profile"
 ```
 
@@ -1550,7 +1550,7 @@ git commit -m "fix: scope strength assessments to active profile"
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCase.kt`
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCaseTest.kt`
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailOneRepMaxLoadTest.kt`
-- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/WorkoutRepository.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt`
 - Modify: `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeWorkoutRepository.kt`
@@ -1580,7 +1580,7 @@ fun `recent completed sessions are profile exercise scoped newest first and limi
     repository.saveSession(workoutSession("wrong-profile", "b", "bench", 60L, workingReps = 5))
     repository.saveSession(workoutSession("zero", "a", "bench", 70L, workingReps = 0, totalReps = 0))
     repository.saveSession(workoutSession("deleted", "a", "bench", 80L, workingReps = 5))
-    database.vitruvianDatabaseQueries.softDeleteSession(
+    database.phoenixDatabaseQueries.softDeleteSession(
         id = "deleted",
         deletedAt = 81L,
         updatedAt = 81L,
@@ -1603,7 +1603,7 @@ fun `most recent completed exercise uses deterministic live eligible row`() = ru
     repository.saveSession(workoutSession("blank-exercise", "a", " ", 55L, workingReps = 5))
     repository.saveSession(workoutSession("other-profile", "b", "row", 60L, workingReps = 5))
     repository.saveSession(workoutSession("deleted", "a", "press", 70L, workingReps = 5))
-    database.vitruvianDatabaseQueries.softDeleteSession(
+    database.phoenixDatabaseQueries.softDeleteSession(
         id = "deleted",
         deletedAt = 71L,
         updatedAt = 71L,
@@ -1670,7 +1670,7 @@ Expected: FAIL to compile because both repository methods are absent.
 
 - [ ] **Step 3: Add the bounded SQL queries and repository contract**
 
-Add to `VitruvianDatabase.sq` next to other WorkoutSession reads:
+Add to `PhoenixDatabase.sq` next to other WorkoutSession reads:
 
 ```sql
 selectRecentCompletedSessionsForExercise:
@@ -1801,7 +1801,7 @@ Also clear `recentCompletedRequests` and reset both failures to null inside the 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:testAndroidHostTest --tests "*SqlDelightWorkoutRepositoryTest*" --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainPhoenixDatabaseInterface :shared:testAndroidHostTest --tests "*SqlDelightWorkoutRepositoryTest*" --console=plain
 ```
 
 Expected: BUILD SUCCESSFUL; all three new repository tests pass, including deterministic ties, tombstones, total-reps-only eligibility, and validation parity.
@@ -2559,7 +2559,7 @@ Change `OneRepMaxCard` to accept `state: ExerciseDetailOneRepMaxState` and `prev
 Run generation plus focused tests:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:testAndroidHostTest --tests "*SqlDelightWorkoutRepositoryTest*" --tests "*ResolveCurrentOneRepMaxUseCaseTest*" --tests "*ExerciseDetailOneRepMaxLoadTest*" --tests "*KoinModuleVerifyTest*" --tests "*VelocityOneRepMaxRepositoryTest*" --tests "*OneRepMaxCalculatorTest*" --rerun --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainPhoenixDatabaseInterface :shared:testAndroidHostTest --tests "*SqlDelightWorkoutRepositoryTest*" --tests "*ResolveCurrentOneRepMaxUseCaseTest*" --tests "*ExerciseDetailOneRepMaxLoadTest*" --tests "*KoinModuleVerifyTest*" --tests "*VelocityOneRepMaxRepositoryTest*" --tests "*OneRepMaxCalculatorTest*" --rerun --console=plain
 ```
 
 Expected: BUILD SUCCESSFUL. Verify every exact requested class executed at least one JUnit case:
@@ -2663,7 +2663,7 @@ Expected at Task 2 completion: bounded-method callers are the interface, product
 - [ ] **Step 13: Commit the query/resolver slice**
 
 ```powershell
-git add shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/WorkoutRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCase.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCaseTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailOneRepMaxLoadTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeWorkoutRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeVelocityOneRepMaxRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeAssessmentRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepositoryTest.kt
+git add shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/WorkoutRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCase.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailScreen.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/domain/usecase/ResolveCurrentOneRepMaxUseCaseTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/presentation/screen/ExerciseDetailOneRepMaxLoadTest.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeWorkoutRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeVelocityOneRepMaxRepository.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeAssessmentRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepositoryTest.kt
 git commit -m "feat: resolve profile scoped exercise one rep max"
 ```
 
@@ -7638,7 +7638,7 @@ Expected: 32, 109, 158, and 34 tests respectively, each with zero failures, erro
 - [ ] **Step 4: Regenerate SQLDelight and prove the exact schema-43/42.sqm migration boundary**
 
 ~~~powershell
-$schemaOutput = & .\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration :shared:validateSchemaManifest --rerun-tasks --console=plain 2>&1
+$schemaOutput = & .\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainPhoenixDatabaseInterface :shared:verifyCommonMainPhoenixDatabaseMigration :shared:validateSchemaManifest --rerun-tasks --console=plain 2>&1
 $schemaExit = $LASTEXITCODE
 $schemaOutput | ForEach-Object { Write-Host $_ }
 if ($schemaExit -ne 0) { throw 'SQLDelight generation/migration/manifest gate failed' }

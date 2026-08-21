@@ -123,7 +123,7 @@ data class WorkoutUiState(
  * and make testing easier.
  */
 interface WorkoutActions {
-    /** Start BLE scanning for Vitruvian machines */
+    /** Start BLE scanning for Phoenix machines */
     fun onScan()
 
     /** Cancel ongoing scan or connection attempt */

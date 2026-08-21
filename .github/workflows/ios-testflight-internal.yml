@@ -12,8 +12,8 @@ concurrency:
 
 env:
   BUNDLE_ID: com.devil.phoenixproject.projectphoenix
-  SCHEME: VitruvianPhoenix
-  PROJECT_PATH: iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj
+  SCHEME: PhoenixApp
+  PROJECT_PATH: iosApp/PhoenixApp/PhoenixApp.xcodeproj
   GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx8g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g"
 
 jobs:
@@ -29,7 +29,7 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
         run: |
-          mkdir -p iosApp/VitruvianPhoenix/Config
+          mkdir -p iosApp/PhoenixApp/Config
           # xcconfig treats `//` as an inline comment, so URLs like `https://foo`
           # must be written as `https:/$()/foo` (empty xcconfig substitution) or
           # the value gets truncated to `https:` at parse time. Apply to both
@@ -39,7 +39,7 @@ jobs:
           {
             echo "SUPABASE_URL = $url_escaped"
             echo "SUPABASE_ANON_KEY = $key_escaped"
-          } > iosApp/VitruvianPhoenix/Config/Supabase.xcconfig
+          } > iosApp/PhoenixApp/Config/Supabase.xcconfig
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -69,10 +69,10 @@ jobs:
 
           # Update Xcode project with new build number
           sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9][0-9]*/CURRENT_PROJECT_VERSION = $BUILD_NUM/g" \
-            iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj
+            iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj
 
           # Show what was set
-          grep "CURRENT_PROJECT_VERSION" iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj | head -2
+          grep "CURRENT_PROJECT_VERSION" iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | head -2
 
       - name: Build shared framework and resources
         run: |
@@ -95,12 +95,12 @@ jobs:
           # are lost during static linking. They must be in the app bundle root.
           #
           # Resources are placed OUTSIDE the Xcode fileSystemSynchronizedGroups
-          # directory (at iosApp/VitruvianPhoenix/compose-resources/, not inside
-          # VitruvianPhoenix/VitruvianPhoenix/) to prevent auto-inclusion that
+          # directory (at iosApp/PhoenixApp/compose-resources/, not inside
+          # PhoenixApp/PhoenixApp/) to prevent auto-inclusion that
           # flattens locale folders and causes .cvr filename collisions.
           # A Run Script Build Phase in the Xcode project copies them to the
           # bundle preserving directory structure.
-          RESOURCE_DST="iosApp/VitruvianPhoenix/compose-resources"
+          RESOURCE_DST="iosApp/PhoenixApp/compose-resources"
           rm -rf "$RESOURCE_DST"
           mkdir -p "$RESOURCE_DST"
 
@@ -187,7 +187,7 @@ jobs:
             -scheme "$SCHEME" \
             -configuration Release \
             -destination 'generic/platform=iOS' \
-            -archivePath $RUNNER_TEMP/VitruvianPhoenix.xcarchive \
+            -archivePath $RUNNER_TEMP/PhoenixApp.xcarchive \
             DEVELOPMENT_TEAM="${{ secrets.TEAM_ID }}" \
             CODE_SIGN_STYLE=Manual \
             CODE_SIGN_IDENTITY="Apple Distribution" \
@@ -196,7 +196,7 @@ jobs:
       - name: Export .ipa
         run: |
           xcodebuild -exportArchive \
-            -archivePath $RUNNER_TEMP/VitruvianPhoenix.xcarchive \
+            -archivePath $RUNNER_TEMP/PhoenixApp.xcarchive \
             -exportPath $RUNNER_TEMP/export \
             -exportOptionsPlist iosApp/ExportOptions.plist
 
@@ -210,9 +210,9 @@ jobs:
           mkdir -p ~/.appstoreconnect/private_keys
           echo "$APPSTORE_API_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_API_KEY_ID}.p8
 
-          IPA_PATH="$RUNNER_TEMP/export/VitruvianPhoenix.ipa"
+          IPA_PATH="$RUNNER_TEMP/export/PhoenixApp.ipa"
           BUILD_VERSION="${{ steps.build_number.outputs.build_number }}"
-          MARKETING_VERSION=$(grep 'MARKETING_VERSION' iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj | head -1 | sed 's/.*= //;s/;.*//')
+          MARKETING_VERSION=$(grep 'MARKETING_VERSION' iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | head -1 | sed 's/.*= //;s/;.*//')
 
           echo "=== Validating IPA before upload ==="
           echo "IPA: $IPA_PATH ($(du -h "$IPA_PATH" | cut -f1))"

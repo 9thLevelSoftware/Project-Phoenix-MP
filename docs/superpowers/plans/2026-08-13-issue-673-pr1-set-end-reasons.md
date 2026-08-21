@@ -29,7 +29,7 @@
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngine.kt`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/WorkoutExecutionGuard.kt`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/WorkoutExitSnapshot.kt` (create in PR 1 only if #687 merged the snapshot as a private/nested declaration; extract it here without behavior change before enriching it)
-- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq`
 - `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/43.sqm`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/MigrationStatements.kt`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt`
@@ -170,7 +170,7 @@ Expected: compilation passes after the rebase and scope reset; there are no erro
 
 ## Task 3: Migrate and round-trip end reasons through every persistence path
 
-**Files:** `VitruvianDatabase.sq`; `migrations/43.sqm`; `MigrationStatements.kt`; `SchemaManifest.kt`; `shared/build.gradle.kts`; `SqlDelightCompletedSetRepository.kt`; `BackupModels.kt`; `DataBackupManager.kt`; `SchemaParityTest.kt`; `SchemaManifestTest.kt`; `SqlDelightCompletedSetRepositoryTest.kt`; `DataBackupManagerRoutineNameTest.kt`; `BackupSerializationTest.kt`.
+**Files:** `PhoenixDatabase.sq`; `migrations/43.sqm`; `MigrationStatements.kt`; `SchemaManifest.kt`; `shared/build.gradle.kts`; `SqlDelightCompletedSetRepository.kt`; `BackupModels.kt`; `DataBackupManager.kt`; `SchemaParityTest.kt`; `SchemaManifestTest.kt`; `SqlDelightCompletedSetRepositoryTest.kt`; `DataBackupManagerRoutineNameTest.kt`; `BackupSerializationTest.kt`.
 
 - [ ] Recalculate `N` from post-#687 `main`. If it is not 43, renumber this task and the index/PR 2/PR 3 migration allocation before editing.
 - [ ] First add a migration test that builds schema 43, inserts a valid historical `CompletedSet`, migrates `43 → 44`, and asserts `set_end_reason == "UNKNOWN"`.
@@ -264,7 +264,7 @@ git diff --exit-code origin/main -- shared/src/commonMain/kotlin/com/devil/phoen
 ```powershell
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest :androidApp:testDebugUnitTest :androidApp:assembleDebug --continue --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinIosArm64 :shared:compileTestKotlinIosArm64 --console=plain
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration :shared:validateSchemaManifest --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainPhoenixDatabaseInterface :shared:verifyCommonMainPhoenixDatabaseMigration :shared:validateSchemaManifest --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' spotlessCheck --console=plain
 git diff --check
 git status --short

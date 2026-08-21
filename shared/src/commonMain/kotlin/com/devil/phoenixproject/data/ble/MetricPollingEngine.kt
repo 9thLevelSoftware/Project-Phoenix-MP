@@ -195,7 +195,7 @@ class MetricPollingEngine(
      *
      * Issue #333: on the small-MTU compatibility path the GATT heartbeat is
      * suppressed — BLE link-layer keepalive happens at the connection interval,
-     * and the official Vitruvian app runs no GATT heartbeat at all.
+     * and the official Phoenix app runs no GATT heartbeat at all.
      */
     fun startAll(peripheral: Peripheral, includeHeartbeat: Boolean = true) {
         log.i { "Starting polling loops (includeHeartbeat=$includeHeartbeat)" }

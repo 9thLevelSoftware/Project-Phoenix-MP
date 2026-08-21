@@ -5,7 +5,7 @@ import app.cash.sqldelight.db.SqlCursor
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.db.SqlPreparedStatement
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.ExerciseLoadOverlay
 import com.devil.phoenixproject.domain.model.LogicalSetKey
@@ -38,7 +38,7 @@ import org.junit.Test
 
 class SqlDelightActiveWorkoutRuntimeRepositoryTest {
     private lateinit var driver: JdbcSqliteDriver
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var repository: ActiveWorkoutRuntimeRepository
     private var now = 1_700_000_000_123L
     private val json = Json { encodeDefaults = true }
@@ -46,8 +46,8 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
     @Before
     fun setup() {
         driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(driver)
-        database = VitruvianDatabase(driver)
+        PhoenixDatabase.Schema.create(driver)
+        database = PhoenixDatabase(driver)
         repository = SqlDelightActiveWorkoutRuntimeRepository(database, nowEpochMs = { now })
     }
 
@@ -394,7 +394,7 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
             runtime(profileId = "profile-b", routineSessionId = "routine-session-c"),
         )
 
-        database.vitruvianDatabaseQueries.deleteActiveWorkoutRuntimeByProfile("profile-a")
+        database.phoenixDatabaseQueries.deleteActiveWorkoutRuntimeByProfile("profile-a")
 
         assertIs<ActiveWorkoutRuntimeLoadResult.Missing>(repository.load("profile-a", "routine-session-a"))
         assertIs<ActiveWorkoutRuntimeLoadResult.Missing>(repository.load("profile-a", "routine-session-b"))
@@ -405,7 +405,7 @@ class SqlDelightActiveWorkoutRuntimeRepositoryTest {
     fun replaceExecutesOneWriteAndNoPreliminaryRead() = runTest {
         val countingDriver = CountingSqlDriver(driver)
         val countedRepository = SqlDelightActiveWorkoutRuntimeRepository(
-            VitruvianDatabase(countingDriver),
+            PhoenixDatabase(countingDriver),
             nowEpochMs = { now },
         )
 

@@ -120,7 +120,7 @@
     <string name="connection_failed">Connection Failed</string>
     <string name="disconnect">Disconnect</string>
     <string name="disconnect_title">Disconnect?</string>
-    <string name="disconnect_message">Are you sure you want to disconnect from the Vitruvian machine?</string>
+    <string name="disconnect_message">Are you sure you want to disconnect from the Phoenix machine?</string>
     <string name="disconnect_integration_title">Disconnect integration?</string>
     <string name="disconnect_integration_message">Are you sure you want to disconnect %1$s? This will remove the integration and may interrupt a scheduled sync.</string>
     <string name="banner_not_connected_to_machine">Not connected to machine</string>

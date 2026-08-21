@@ -86,7 +86,7 @@ This plan adds a focused internal `ProfilePreferenceSyncRepository` and `SqlDeli
 
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/SyncModels.kt` — non-wire section keys, snapshots, canonicals, outcomes, and diagnostics.
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalSyncDtos.kt` — additive serializable mutation/canonical/rejection DTOs and push/pull fields.
-- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq` — dirty snapshot and generation/revision-guarded canonical merge queries.
+- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq` — dirty snapshot and generation/revision-guarded canonical merge queries.
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncRepository.kt` — internal persistence boundary and SQLDelight implementation grouped transactionally per profile.
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncCodec.kt` — strict typed-row-to-wire and canonical-to-column codec, including LED/VBT row-owned wrappers.
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt` — one byte-identical JSON configuration for planning and transport.
@@ -3652,7 +3652,7 @@ git commit -m "feat(sync): add profile preference wire contract"
 ### Task 4: Add the Focused SQLDelight Sync Persistence Adapter
 
 **Files:**
-- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalSyncDtos.kt`
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt`
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncRepository.kt`
@@ -3670,7 +3670,7 @@ Create `SqlDelightProfilePreferenceSyncRepositoryTest.kt` with an owned in-memor
 
 ```kotlin
 private lateinit var driver: JdbcSqliteDriver
-private lateinit var database: VitruvianDatabase
+private lateinit var database: PhoenixDatabase
 private lateinit var foundationRepository: SqlDelightProfilePreferencesRepository
 private lateinit var codec: ProfilePreferenceSyncCodec
 private lateinit var repository: SqlDelightProfilePreferenceSyncRepository
@@ -3678,8 +3678,8 @@ private lateinit var repository: SqlDelightProfilePreferenceSyncRepository
 @Before
 fun setup() {
     driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-    VitruvianDatabase.Schema.create(driver)
-    database = VitruvianDatabase(driver)
+    PhoenixDatabase.Schema.create(driver)
+    database = PhoenixDatabase(driver)
     foundationRepository = SqlDelightProfilePreferencesRepository(database)
     codec = ProfilePreferenceSyncCodec()
     repository = SqlDelightProfilePreferenceSyncRepository(database, codec)
@@ -3691,11 +3691,11 @@ fun tearDown() {
 }
 
 private fun createProfile(id: String) {
-    database.vitruvianDatabaseQueries.insertProfile(id, id, 0, 1, 0)
+    database.phoenixDatabaseQueries.insertProfile(id, id, 0, 1, 0)
 }
 
 private fun assertProfileDoesNotExist(id: String) {
-    assertNull(database.vitruvianDatabaseQueries.getProfileById(id).executeAsOneOrNull())
+    assertNull(database.phoenixDatabaseQueries.getProfileById(id).executeAsOneOrNull())
 }
 ```
 
@@ -3735,7 +3735,7 @@ fun `dirty snapshot reconstructs row owned LED and VBT values as objects`() = ru
 fun `malformed dirty document is reported and valid sibling remains syncable`() = runTest {
     createProfile("profile-a")
     foundationRepository.insertDefaults("profile-a")
-    database.vitruvianDatabaseQueries.updateWorkoutProfilePreferences(
+    database.phoenixDatabaseQueries.updateWorkoutProfilePreferences(
         workout_preferences_json = "{broken",
         workout_updated_at = 20,
         profile_id = "profile-a",
@@ -4326,7 +4326,7 @@ fun `matching generation push persists all five sections and row owned columns`(
         assertEquals(2, metadata.serverRevision)
         assertFalse(metadata.dirty)
     }
-    val row = database.vitruvianDatabaseQueries
+    val row = database.phoenixDatabaseQueries
         .selectProfilePreferenceSyncRow("push-all")
         .executeAsOne()
     assertEquals(1L, row.led_color_scheme_id)
@@ -4580,7 +4580,7 @@ fun `semantic numeric equality does not become equal revision divergence`() = ru
         """.trimIndent(),
         1,
     ) { bindString(0, "numeric-equality") }
-    val normalizedRow = database.vitruvianDatabaseQueries
+    val normalizedRow = database.phoenixDatabaseQueries
         .selectProfilePreferenceSyncRow("numeric-equality")
         .executeAsOne()
 
@@ -4608,7 +4608,7 @@ Expected: FAIL because the sync repository, codec, and guarded SQLDelight querie
 
 - [ ] **Step 4: Add the exact dirty, acknowledgement, and pull query matrix**
 
-Add `selectDirtyProfilePreferenceRows` and `selectProfilePreferenceSyncRow` to `VitruvianDatabase.sq`:
+Add `selectDirtyProfilePreferenceRows` and `selectProfilePreferenceSyncRow` to `PhoenixDatabase.sq`:
 
 ```sql
 selectDirtyProfilePreferenceRows:
@@ -5063,10 +5063,10 @@ interface ProfilePreferenceSyncRepository {
 }
 
 internal class SqlDelightProfilePreferenceSyncRepository(
-    private val database: VitruvianDatabase,
+    private val database: PhoenixDatabase,
     private val codec: ProfilePreferenceSyncCodec,
 ) : ProfilePreferenceSyncRepository {
-    private val queries = database.vitruvianDatabaseQueries
+    private val queries = database.phoenixDatabaseQueries
 
     override suspend fun snapshotDirtySections(): ProfilePreferenceDirtySnapshot {
         val encoded = queries.selectDirtyProfilePreferenceRows().executeAsList()
@@ -5270,7 +5270,7 @@ Expected: PASS, including category-only malformed-local dead letters, valid-sibl
 - [ ] **Step 8: Commit the sync persistence boundary**
 
 ```powershell
-git add shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalSyncDtos.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncCodec.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/SqlDelightProfilePreferenceSyncRepositoryTest.kt
+git add shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalSyncDtos.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/PortalWireJson.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/ProfilePreferenceSyncCodec.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/SqlDelightProfilePreferenceSyncRepositoryTest.kt
 git commit -m "feat(sync): add profile preference sync repository"
 ```
 
@@ -8617,7 +8617,7 @@ Expected: BUILD SUCCESSFUL. Task 9 is check-only: do not run broad `spotlessAppl
 Run:
 
 ```powershell
-.\gradlew.bat :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration :shared:validateSchemaManifest -Pskip.supabase.check=true
+.\gradlew.bat :shared:generateCommonMainPhoenixDatabaseInterface :shared:verifyCommonMainPhoenixDatabaseMigration :shared:validateSchemaManifest -Pskip.supabase.check=true
 if ($LASTEXITCODE -ne 0) { throw 'SQLDelight/schema verification failed' }
 $sharedBuild = Get-Content -Raw 'shared/build.gradle.kts'
 if ($sharedBuild -notmatch 'version\s*=\s*43') { throw 'SQLDelight schema version is not 43' }
@@ -8752,7 +8752,7 @@ $unexpected = @($rangeFiles | Where-Object {
     $_ -ne 'shared/build.gradle.kts' -and
     $_ -notmatch '^shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync/' -and
     $_ -ne 'shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt' -and
-    $_ -ne 'shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq' -and
+    $_ -ne 'shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq' -and
     $_ -notmatch '^shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync/' -and
     $_ -notmatch '^shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/(FakePortalApiClient(Test)?|FakeProfilePreferenceSyncRepository|FakeSyncRepository)\.kt$' -and
     $_ -notmatch '^shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync/' -and
@@ -8770,7 +8770,7 @@ git diff "$syncBase..HEAD" -- `
     shared/build.gradle.kts `
     shared/src/commonMain/kotlin/com/devil/phoenixproject/data/sync `
     shared/src/commonMain/kotlin/com/devil/phoenixproject/di/SyncModule.kt `
-    shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq `
+    shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq `
     shared/src/commonTest/kotlin/com/devil/phoenixproject/data/sync `
     shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil `
     shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/sync `

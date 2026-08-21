@@ -52,9 +52,9 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.single_exercise_unavailable
-import vitruvianprojectphoenix.shared.generated.resources.workout_teardown_finishing
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.single_exercise_unavailable
+import projectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * Single Exercise screen - allows user to pick and configure a single exercise

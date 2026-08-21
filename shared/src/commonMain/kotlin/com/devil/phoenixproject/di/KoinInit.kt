@@ -37,7 +37,7 @@ internal fun doInitKoinInternal() {
 /**
  * Helper function for iOS to run migrations after Koin initialization.
  * Call this from Swift: KoinInitKt.runMigrations()
- * This mirrors Android's VitruvianApp.onCreate() migration call.
+ * This mirrors Android's PhoenixApp.onCreate() migration call.
  */
 fun runMigrations() {
     Logger.i { "iOS: Starting required migration gate..." }

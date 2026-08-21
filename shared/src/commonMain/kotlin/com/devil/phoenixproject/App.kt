@@ -42,15 +42,15 @@ import com.devil.phoenixproject.presentation.screen.SplashScreen
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
-import com.devil.phoenixproject.ui.theme.VitruvianTheme
+import com.devil.phoenixproject.ui.theme.PhoenixTheme
 import com.devil.phoenixproject.ui.theme.isDynamicColorAvailable
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_retry
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_retry
 
 private const val LAUNCH_SPLASH_DURATION_MS = 2_500L
 
@@ -204,7 +204,7 @@ fun AppContent(
 
     AppLifecycleObserver(syncTriggerManager, migrationManager)
 
-    VitruvianTheme(themeMode = themeMode, dynamicColorEnabled = dynamicColorEnabled) {
+    PhoenixTheme(themeMode = themeMode, dynamicColorEnabled = dynamicColorEnabled) {
         Box(modifier = Modifier.fillMaxSize()) {
             when (startupSurface(eulaAccepted, launchSplashCompleted, migrationState)) {
                 StartupSurface.EULA -> EulaScreen(onAccept = eulaViewModel::acceptEula)

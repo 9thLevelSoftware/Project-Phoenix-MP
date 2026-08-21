@@ -18,7 +18,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "VitruvianProjectPhoenix"
+rootProject.name = "ProjectPhoenix"
 
 include(":shared")
 include(":androidApp")

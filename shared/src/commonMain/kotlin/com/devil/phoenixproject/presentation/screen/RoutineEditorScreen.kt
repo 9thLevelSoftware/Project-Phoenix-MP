@@ -92,24 +92,24 @@ import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableColumn
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_delete
-import vitruvianprojectphoenix.shared.generated.resources.action_discard
-import vitruvianprojectphoenix.shared.generated.resources.action_edit
-import vitruvianprojectphoenix.shared.generated.resources.action_save
-import vitruvianprojectphoenix.shared.generated.resources.add_exercise
-import vitruvianprojectphoenix.shared.generated.resources.cannot_be_undone
-import vitruvianprojectphoenix.shared.generated.resources.choose_color
-import vitruvianprojectphoenix.shared.generated.resources.delete_all
-import vitruvianprojectphoenix.shared.generated.resources.delete_selected_exercises
-import vitruvianprojectphoenix.shared.generated.resources.delete_superset_message
-import vitruvianprojectphoenix.shared.generated.resources.delete_superset_title
-import vitruvianprojectphoenix.shared.generated.resources.discard_changes_message
-import vitruvianprojectphoenix.shared.generated.resources.discard_changes_title
-import vitruvianprojectphoenix.shared.generated.resources.label_name
-import vitruvianprojectphoenix.shared.generated.resources.rename_superset
-import vitruvianprojectphoenix.shared.generated.resources.routine_name
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.action_delete
+import projectphoenix.shared.generated.resources.action_discard
+import projectphoenix.shared.generated.resources.action_edit
+import projectphoenix.shared.generated.resources.action_save
+import projectphoenix.shared.generated.resources.add_exercise
+import projectphoenix.shared.generated.resources.cannot_be_undone
+import projectphoenix.shared.generated.resources.choose_color
+import projectphoenix.shared.generated.resources.delete_all
+import projectphoenix.shared.generated.resources.delete_selected_exercises
+import projectphoenix.shared.generated.resources.delete_superset_message
+import projectphoenix.shared.generated.resources.delete_superset_title
+import projectphoenix.shared.generated.resources.discard_changes_message
+import projectphoenix.shared.generated.resources.discard_changes_title
+import projectphoenix.shared.generated.resources.label_name
+import projectphoenix.shared.generated.resources.rename_superset
+import projectphoenix.shared.generated.resources.routine_name
 
 // State holder for the editor
 data class RoutineEditorState(

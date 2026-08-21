@@ -68,7 +68,7 @@ fun buildDiagnosticsExportText(
     faults: List<DiagnosticFault>,
     exportedAtMillis: Long,
 ): String = buildString {
-    appendLine("=== Vitruvian Machine Diagnostics ===")
+    appendLine("=== Phoenix Machine Diagnostics ===")
     appendLine("App version: ${Constants.APP_VERSION}")
     appendLine("Exported: ${formatTimestamp(exportedAtMillis)}")
     appendLine("Classification: REDACTED_DIAGNOSTICS")

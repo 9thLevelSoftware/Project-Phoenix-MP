@@ -10,7 +10,7 @@ import com.devil.phoenixproject.data.repository.SqlDelightGamificationRepository
 import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -255,14 +255,14 @@ class ProfilePreferencesMigrationTest {
     }
 
     private data class Fixture(
-        val database: VitruvianDatabase,
+        val database: PhoenixDatabase,
         val settings: MapSettings,
         val preferenceRepository: ProfilePreferencesRepository,
         val safetyStore: FaultingProfileLocalSafetyStore,
         val profiles: UserProfileRepository,
         val migration: MigrationManager,
     ) {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
 
         suspend fun createProfiles(vararg ids: String) {
             ids.forEachIndexed { index, id ->

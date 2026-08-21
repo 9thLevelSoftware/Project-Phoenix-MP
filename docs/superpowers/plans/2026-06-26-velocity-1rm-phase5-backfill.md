@@ -23,7 +23,7 @@ Builds on the foundation + Phases 3–4 (this branch). Reuses `ComputeVelocityOn
 ## File Structure
 
 **Modify:**
-- `sqldelight/.../VitruvianDatabase.sq` — `selectExerciseIdsWithVelocityData` + `countVelocityOneRepMaxByExercise` queries.
+- `sqldelight/.../PhoenixDatabase.sq` — `selectExerciseIdsWithVelocityData` + `countVelocityOneRepMaxByExercise` queries.
 - `data/repository/VelocityOneRepMaxRepository.kt` — `hasEstimates(exerciseId, profileId)`.
 - `data/repository/WorkoutRepository.kt` + `SqlDelightWorkoutRepository.kt` — `getExerciseIdsWithVelocityData(profileId)`.
 - `domain/usecase/ComputeVelocityOneRepMaxUseCase.kt` — optional `windowDays` param (default unchanged).
@@ -38,14 +38,14 @@ Builds on the foundation + Phases 3–4 (this branch). Reuses `ComputeVelocityOn
 ### Task 1: Enumerate exercises with MCV data + `hasEstimates`
 
 **Files:**
-- Modify: `VitruvianDatabase.sq`, `WorkoutRepository.kt` + `SqlDelightWorkoutRepository.kt`, `VelocityOneRepMaxRepository.kt`
+- Modify: `PhoenixDatabase.sq`, `WorkoutRepository.kt` + `SqlDelightWorkoutRepository.kt`, `VelocityOneRepMaxRepository.kt`
 - Test: extend `SqlDelightVelocityOneRepMaxRepositoryTest.kt` + a workout-repo test.
 
 **Interfaces:**
 - `suspend fun WorkoutRepository.getExerciseIdsWithVelocityData(profileId: String): List<String>`
 - `suspend fun VelocityOneRepMaxRepository.hasEstimates(exerciseId: String, profileId: String): Boolean`
 
-- [ ] **Step 1: Add queries to `VitruvianDatabase.sq`**
+- [ ] **Step 1: Add queries to `PhoenixDatabase.sq`**
 
 ```sql
 selectExerciseIdsWithVelocityData:

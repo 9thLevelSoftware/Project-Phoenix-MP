@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.SessionSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -42,9 +42,9 @@ interface SmartSuggestionsRepository {
  * Maps generated query result types to [SessionSummary] domain models,
  * handling NULL values from LEFT JOINs gracefully.
  */
-class SqlDelightSmartSuggestionsRepository(private val database: VitruvianDatabase) : SmartSuggestionsRepository {
+class SqlDelightSmartSuggestionsRepository(private val database: PhoenixDatabase) : SmartSuggestionsRepository {
 
-    private val queries = database.vitruvianDatabaseQueries
+    private val queries = database.phoenixDatabaseQueries
 
     override suspend fun getSessionSummariesSince(sinceTimestamp: Long, profileId: String): List<SessionSummary> = withContext(Dispatchers.IO) {
         queries.selectSessionSummariesSince(

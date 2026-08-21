@@ -6,7 +6,7 @@
 
 ## Summary
 
-Use Mean Concentric Velocity (MCV) captured by the Vitruvian machine to estimate a
+Use Mean Concentric Velocity (MCV) captured by the Phoenix machine to estimate a
 per-exercise one-rep max (1RM) automatically from normal workout sets, track that
 estimate over time alongside the existing PR system, fire distinct gamification when it
 increases, and allow `% of estimated-1RM` as a weight-programming basis alongside the

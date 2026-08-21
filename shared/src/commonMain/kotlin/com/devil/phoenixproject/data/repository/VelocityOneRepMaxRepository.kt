@@ -2,7 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator
 import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxResult
 import kotlinx.coroutines.Dispatchers
@@ -32,8 +32,8 @@ interface VelocityOneRepMaxRepository {
     suspend fun hasEstimates(exerciseId: String, profileId: String): Boolean
 }
 
-class SqlDelightVelocityOneRepMaxRepository(private val db: VitruvianDatabase) : VelocityOneRepMaxRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightVelocityOneRepMaxRepository(private val db: PhoenixDatabase) : VelocityOneRepMaxRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     private fun map(
         id: Long, exerciseId: String, estimatedPerCableKg: Double, mvtUsedMs: Double, r2: Double,

@@ -96,22 +96,22 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_delete
-import vitruvianprojectphoenix.shared.generated.resources.cd_delete_routine
-import vitruvianprojectphoenix.shared.generated.resources.cd_delete_workout
-import vitruvianprojectphoenix.shared.generated.resources.cd_workout_session_icon
-import vitruvianprojectphoenix.shared.generated.resources.delete_all_sets
-import vitruvianprojectphoenix.shared.generated.resources.delete_routine_session_message
-import vitruvianprojectphoenix.shared.generated.resources.delete_routine_session_title
-import vitruvianprojectphoenix.shared.generated.resources.delete_workout_message
-import vitruvianprojectphoenix.shared.generated.resources.delete_workout_title
-import vitruvianprojectphoenix.shared.generated.resources.detailed_metrics_not_captured
-import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_all
-import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_period
-import vitruvianprojectphoenix.shared.generated.resources.empty_no_history_title
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_inline_context
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_title
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_delete
+import projectphoenix.shared.generated.resources.cd_delete_routine
+import projectphoenix.shared.generated.resources.cd_delete_workout
+import projectphoenix.shared.generated.resources.cd_workout_session_icon
+import projectphoenix.shared.generated.resources.delete_all_sets
+import projectphoenix.shared.generated.resources.delete_routine_session_message
+import projectphoenix.shared.generated.resources.delete_routine_session_title
+import projectphoenix.shared.generated.resources.delete_workout_message
+import projectphoenix.shared.generated.resources.delete_workout_title
+import projectphoenix.shared.generated.resources.detailed_metrics_not_captured
+import projectphoenix.shared.generated.resources.empty_no_history_all
+import projectphoenix.shared.generated.resources.empty_no_history_period
+import projectphoenix.shared.generated.resources.empty_no_history_title
+import projectphoenix.shared.generated.resources.equipment_rack_inline_context
+import projectphoenix.shared.generated.resources.equipment_rack_title
 
 private val historyRackJson = Json { ignoreUnknownKeys = true }
 

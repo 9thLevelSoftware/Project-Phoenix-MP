@@ -22,7 +22,7 @@ Relevant files:
   - `WorkoutSession` stores session history.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/ActiveSessionEngine.kt`
   - receives and applies workout parameters.
-- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq`
   - stores `WorkoutSession` and related history/sync fields.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/SetReadyScreen.kt`
   - natural surface for active equipment adjustment before a set.
@@ -190,7 +190,7 @@ Objective: preserve analytics/history correctness.
 
 Files:
 
-- Modify: `VitruvianDatabase.sq`
+- Modify: `PhoenixDatabase.sq`
 - Add migration under `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/`
 - Modify repository mapping code.
 - Modify sync DTOs if sessions sync.
@@ -207,7 +207,7 @@ Steps:
 Verification:
 
 ```bash
-./gradlew :shared:generateCommonMainVitruvianDatabaseInterface
+./gradlew :shared:generateCommonMainPhoenixDatabaseInterface
 ./gradlew :shared:allTests --tests '*Schema*' --tests '*Migration*'
 ```
 

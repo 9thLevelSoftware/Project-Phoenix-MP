@@ -106,7 +106,7 @@
     <string name="connection_failed">Verbindung fehlgeschlagen</string>
     <string name="disconnect">Trennen</string>
     <string name="disconnect_title">Trennen?</string>
-    <string name="disconnect_message">Bist du sicher, dass du die Verbindung zum Vitruvian-Gerät trennen möchtest?</string>
+    <string name="disconnect_message">Bist du sicher, dass du die Verbindung zum Phoenix-Gerät trennen möchtest?</string>
 
     <!-- Settings -->
     <string name="settings_title">Einstellungen</string>

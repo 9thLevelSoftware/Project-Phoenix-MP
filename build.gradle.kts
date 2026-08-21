@@ -1,4 +1,4 @@
-// Top-level build file for Vitruvian Project Phoenix - Multiplatform
+// Top-level build file for Phoenix Project Phoenix - Multiplatform
 plugins {
     // Android plugins - apply false to configure in submodules
     alias(libs.plugins.android.application) apply false

@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.local
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -251,7 +251,7 @@ class SchemaManifestTest {
     @Test
     fun `reconcileFullSchema restores profile preference and cleanup tables with all columns`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(driver)
+        PhoenixDatabase.Schema.create(driver)
         driver.execute(null, "DROP TABLE IF EXISTS UserProfilePreferences", 0)
         driver.execute(null, "DROP TABLE IF EXISTS PendingProfileContextRecovery", 0)
         driver.execute(null, "DROP TABLE IF EXISTS PendingProfileLocalCleanup", 0)

@@ -3,7 +3,7 @@ import shared
 import os.log
 
 @main
-struct VitruvianPhoenixApp: App {
+struct PhoenixAppEntry: App {
 
     private let logger = Logger(subsystem: "com.devil.phoenixproject", category: "AppInit")
 
@@ -22,7 +22,7 @@ struct VitruvianPhoenixApp: App {
             // Re-throw to see crash in logs
         }
 
-        // Run migrations after Koin is initialized (mirrors Android VitruvianApp.onCreate())
+        // Run migrations after Koin is initialized (mirrors Android PhoenixApp.onCreate())
         logger.info("[STEP 2/3] Running migrations...")
         KoinInitKt.runMigrations()
         logger.info("[STEP 2/3] Migrations completed")

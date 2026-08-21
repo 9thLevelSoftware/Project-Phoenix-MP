@@ -28,7 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Kotlin Multiplatform app for controlling Vitruvian Trainer workout machines via BLE. Community rescue project to keep machines functional after company bankruptcy.
+Kotlin Multiplatform app for controlling Phoenix Trainer workout machines via BLE. Community rescue project to keep machines functional after company bankruptcy.
 
 ## Build Commands
 
@@ -81,7 +81,7 @@ Nordic UART Service UUIDs in `BleInterfaces.kt`:
 Device names start with `Vee_` (V-Form) or `VIT` (Trainer+).
 
 ### Database Schema
-SQLDelight schema at `shared/src/commonMain/sqldelight/.../VitruvianDatabase.sq`:
+SQLDelight schema at `shared/src/commonMain/sqldelight/.../PhoenixDatabase.sq`:
 - **WorkoutSession** - Exercise sessions with mode, weight, reps
 - **MetricSample** - Real-time metrics (position, velocity, load, power)
 - **PersonalRecord** - PR tracking with 1RM calculations
@@ -108,8 +108,8 @@ Located in `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/model/`
 - Coroutines 1.10.2
 
 ## Hardware Support
-- **Vitruvian V-Form Trainer** (VIT-200): 200kg max, device name `Vee_*`
-- **Vitruvian Trainer+**: 220kg max
+- **Phoenix V-Form Trainer** (VIT-200): 200kg max, device name `Vee_*`
+- **Phoenix Trainer+**: 220kg max
 
 ## Sync Architecture
 

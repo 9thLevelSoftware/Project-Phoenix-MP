@@ -6,20 +6,20 @@ import android.util.Log
 import androidx.sqlite.db.SupportSQLiteDatabase
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.android.AndroidSqliteDriver
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 
 actual class DriverFactory(private val context: Context) {
 
     companion object {
         private const val TAG = "DriverFactory"
-        private const val DATABASE_NAME = "vitruvian.db"
+        private const val DATABASE_NAME = "phoenix.db"
     }
 
     actual fun createDriver(): SqlDriver = AndroidSqliteDriver(
-        schema = VitruvianDatabase.Schema,
+        schema = PhoenixDatabase.Schema,
         context = context,
         name = DATABASE_NAME,
-        callback = object : AndroidSqliteDriver.Callback(VitruvianDatabase.Schema) {
+        callback = object : AndroidSqliteDriver.Callback(PhoenixDatabase.Schema) {
             override fun onOpen(db: SupportSQLiteDatabase) {
                 db.execSQL("PRAGMA foreign_keys = ON")
                 val report = reconcileFullSchema(callbackDriver(db))
@@ -56,7 +56,7 @@ actual class DriverFactory(private val context: Context) {
                 Log.i(TAG, "Upgrading database from version $oldVersion to $newVersion")
                 for (version in oldVersion until newVersion) {
                     try {
-                        VitruvianDatabase.Schema.migrate(
+                        PhoenixDatabase.Schema.migrate(
                             driver = callbackDriver(db),
                             oldVersion = version.toLong(),
                             newVersion = (version + 1).toLong(),

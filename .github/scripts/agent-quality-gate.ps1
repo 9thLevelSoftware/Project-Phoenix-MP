@@ -29,7 +29,7 @@ if (-not (Test-AndroidSdkConfigured)) {
     "-Pskip.supabase.check=true" `
     "spotlessCheck" `
     "validateSchemaManifest" `
-    ":shared:verifyCommonMainVitruvianDatabaseMigration" `
+    ":shared:verifyCommonMainPhoenixDatabaseMigration" `
     ":shared:testAndroidHostTest" `
     "--console=plain" `
     "--no-daemon"
