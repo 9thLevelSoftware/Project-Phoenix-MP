@@ -364,7 +364,6 @@ fun ExercisePickerDialog(
  *   height should still be capped by the caller (e.g. [MiniExercisePickerDialog]).
  *   Defaults to true so existing call sites are unaffected.
  */
-@Suppress("UNUSED_PARAMETER")
 @Composable
 fun ExercisePickerContent(
     exercises: List<Exercise>,
@@ -409,7 +408,7 @@ fun ExercisePickerContent(
         selectedMuscles.isNotEmpty() ||
         selectedEquipment.isNotEmpty()
 
-    if (showVideoDialog && videoDialogImages.isNotEmpty() && videoDialogExercise != null) {
+    if (enableVideoPlayback && showVideoDialog && videoDialogImages.isNotEmpty() && videoDialogExercise != null) {
         ExerciseImageDialog(
             exerciseName = videoDialogExercise!!.name,
             images = videoDialogImages,
@@ -527,12 +526,15 @@ fun ExercisePickerContent(
             GroupedExerciseList(
                 exercises = exercises,
                 exerciseRepository = exerciseRepository,
+                enableVideoPlayback = enableVideoPlayback,
                 onExerciseSelected = onExerciseSelected,
                 onToggleFavorite = onToggleFavorite,
                 onShowVideo = { exercise, images ->
-                    videoDialogExercise = exercise
-                    videoDialogImages = images
-                    showVideoDialog = true
+                    if (enableVideoPlayback) {
+                        videoDialogExercise = exercise
+                        videoDialogImages = images
+                        showVideoDialog = true
+                    }
                 },
                 onEditExercise = if (enableCustomExercises) onEditExercise else null,
                 onViewExerciseDetail = onViewExerciseDetail,

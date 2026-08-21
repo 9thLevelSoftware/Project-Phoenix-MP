@@ -47,6 +47,7 @@ fun GroupedExerciseList(
     onExerciseSelected: (Exercise) -> Unit,
     onToggleFavorite: (Exercise) -> Unit,
     onShowVideo: (Exercise, List<ExerciseImageEntity>) -> Unit,
+    enableVideoPlayback: Boolean = true,
     onEditExercise: ((Exercise) -> Unit)? = null,
     onViewExerciseDetail: ((Exercise) -> Unit)? = null,
     listState: LazyListState = rememberLazyListState(),
@@ -103,6 +104,7 @@ fun GroupedExerciseList(
                     ExerciseItemWithImage(
                         exercise = exercise,
                         exerciseRepository = exerciseRepository,
+                        enableVideoPlayback = enableVideoPlayback,
                         onSelect = { onExerciseSelected(exercise) },
                         onToggleFavorite = { onToggleFavorite(exercise) },
                         onShowVideo = { images -> onShowVideo(exercise, images) },
@@ -150,6 +152,7 @@ fun GroupedExerciseList(
 private fun ExerciseItemWithImage(
     exercise: Exercise,
     exerciseRepository: ExerciseRepository,
+    enableVideoPlayback: Boolean,
     onSelect: () -> Unit,
     onToggleFavorite: () -> Unit,
     onShowVideo: (List<ExerciseImageEntity>) -> Unit,
@@ -159,9 +162,15 @@ private fun ExerciseItemWithImage(
     onRevealChange: (Boolean) -> Unit = {},
 ) {
     var images by remember { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
-    var isLoadingImage by remember { mutableStateOf(true) }
+    var isLoadingImage by remember { mutableStateOf(enableVideoPlayback) }
 
-    LaunchedEffect(exercise.id) {
+    LaunchedEffect(exercise.id, enableVideoPlayback) {
+        if (!enableVideoPlayback) {
+            images = emptyList()
+            isLoadingImage = false
+            return@LaunchedEffect
+        }
+        isLoadingImage = true
         try {
             exercise.id?.let {
                 images = exerciseRepository.getImages(it)
@@ -172,7 +181,9 @@ private fun ExerciseItemWithImage(
         }
     }
 
-    val thumbnailUrl = remember(images) { images.firstOrNull()?.url }
+    val thumbnailUrl = remember(images, enableVideoPlayback) {
+        if (enableVideoPlayback) images.firstOrNull()?.url else null
+    }
 
     SwipeableExerciseRow(
         exercise = exercise,
@@ -182,7 +193,7 @@ private fun ExerciseItemWithImage(
         onToggleFavorite = onToggleFavorite,
         onLongPress = onLongPress,
         onLongPressLabel = onLongPressLabel,
-        onThumbnailClick = if (images.isNotEmpty()) {
+        onThumbnailClick = if (enableVideoPlayback && images.isNotEmpty()) {
             { onShowVideo(images) }
         } else {
             null
