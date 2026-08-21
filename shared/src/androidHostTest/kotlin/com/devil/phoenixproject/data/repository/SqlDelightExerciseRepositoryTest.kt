@@ -199,6 +199,33 @@ class SqlDelightExerciseRepositoryTest {
         assertEquals(ExerciseCableIntent.EITHER, plank.cableIntent)
     }
 
+    @Test
+    fun `import leaves non-cable equipment bodyweight derivation unset`() = runTest {
+        val result = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Foam_Roll",
+                "name": "Foam Roll",
+                "equipment": "foam roll",
+                "primaryMuscles": ["lower back"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "stretching",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        assertTrue(result.isSuccess)
+        val foamRoll = repository.getExerciseById("Foam_Roll")
+        assertNotNull(foamRoll)
+        assertEquals("foam roll", foamRoll.equipment)
+        assertEquals(true, foamRoll.isBodyweight)
+        assertEquals(false, foamRoll.hasCableAccessory)
+    }
+
     private fun insertExercise(
         id: String,
         name: String,

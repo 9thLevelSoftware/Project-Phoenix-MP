@@ -96,7 +96,7 @@ data class Exercise(
 
     companion object {
         /** Equipment that implies a loaded/cable movement rather than bodyweight-only. */
-        private val CABLE_ACCESSORIES = setOf(
+        internal val CABLE_ACCESSORIES = setOf(
             "CABLE",
             "BARBELL",
             "DUMBBELL",

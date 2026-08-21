@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.local
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.domain.model.Exercise
 import io.ktor.client.HttpClient
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.request.get
@@ -122,7 +123,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             .distinct()
                         val primaryMuscle = muscleNames.firstOrNull() ?: "Other"
                         val equipmentLabel = canonicalEquipmentLabel(exercise.equipment)
-                        val isBodyweight = equipmentLabel == BODYWEIGHT_EQUIPMENT
+                        val isBodyweight = storedIsBodyweightFlag(equipmentLabel)
                         val (sidedness, cableConfig) = cableMetadataForEquipment(equipmentLabel)
 
                         queries.insertExercise(
@@ -152,7 +153,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             defaultCableConfig = cableConfig,
                             one_rep_max_kg = null,
                             mvtOverrideMs = null,
-                            isBodyweight = if (isBodyweight) 1L else 0L,
+                            isBodyweight = isBodyweight,
                         )
                         importedCount++
 
@@ -227,7 +228,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                         val equipmentLabel = canonicalEquipmentLabel(
                             info.equipment.mapNotNull { it.name }.joinToString(",") { it.lowercase() },
                         )
-                        val isBodyweight = equipmentLabel == BODYWEIGHT_EQUIPMENT
+                        val isBodyweight = storedIsBodyweightFlag(equipmentLabel)
                         val (sidedness, cableConfig) = cableMetadataForEquipment(equipmentLabel)
                         val licenseName = info.license?.shortName ?: info.license?.fullName ?: "CC-BY-SA 4.0"
                         val author = info.licenseAuthor?.takeIf { it.isNotBlank() }
@@ -273,7 +274,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             defaultCableConfig = cableConfig,
                             one_rep_max_kg = null,
                             mvtOverrideMs = null,
-                            isBodyweight = if (isBodyweight) 1L else 0L,
+                            isBodyweight = isBodyweight,
                         )
                         info.images
                             .sortedByDescending { it.isMain }
@@ -338,6 +339,16 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                 it == "BARBELL" || it == "E-Z CURL BAR" || it == "BAR" || it == "BELT"
             }
             return if (unified) "bilateral" to "DOUBLE" else null to "EITHER"
+        }
+
+        internal fun storedIsBodyweightFlag(equipmentLabel: String): Long? {
+            if (equipmentLabel.equals(BODYWEIGHT_EQUIPMENT, ignoreCase = true)) {
+                return 1L
+            }
+            val hasCableAccessory = equipmentLabel.split(",").any { token ->
+                token.trim().uppercase() in Exercise.CABLE_ACCESSORIES
+            }
+            return if (hasCableAccessory) 0L else null
         }
 
         internal fun canonicalEquipmentLabel(raw: String?): String {
