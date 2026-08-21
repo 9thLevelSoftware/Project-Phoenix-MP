@@ -22,12 +22,12 @@ import platform.Foundation.NSURL
 import platform.Foundation.NSURLIsExcludedFromBackupKey
 
 actual class DriverFactory {
+    private val coordinator = DatabaseFileMigrationCoordinator(IosDatabaseFileOperations())
+
     actual fun createDriver(): SqlDriver {
         val targetVersion = PhoenixDatabase.Schema.version
         NSLog("iOS DB: Initializing database (schema version $targetVersion)")
 
-        val operations = IosDatabaseFileOperations()
-        val coordinator = DatabaseFileMigrationCoordinator(operations)
         val preparation = coordinator.prepareTarget()
         val resilientSchema = ResilientMigratingSchema(PhoenixDatabase.Schema)
 

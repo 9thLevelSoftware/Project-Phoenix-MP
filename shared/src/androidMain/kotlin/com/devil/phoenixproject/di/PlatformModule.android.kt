@@ -185,10 +185,15 @@ private fun migrateTokensToEncrypted(plain: SharedPreferences, encrypted: Shared
     for (key in keysToWrite) {
         when (val value = plain.all[key]) {
             is String -> editor.putString(key, value)
+
             is Boolean -> editor.putBoolean(key, value)
+
             is Long -> editor.putLong(key, value)
+
             is Int -> editor.putInt(key, value)
+
             is Float -> editor.putFloat(key, value)
+
             is Set<*> -> {
                 if (value.all { item -> item is String }) {
                     @Suppress("UNCHECKED_CAST")

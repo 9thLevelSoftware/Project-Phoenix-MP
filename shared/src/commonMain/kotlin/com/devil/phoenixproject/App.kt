@@ -219,13 +219,16 @@ fun AppContent(
         Box(modifier = Modifier.fillMaxSize()) {
             when (startupSurface(eulaAccepted, launchSplashCompleted, migrationState)) {
                 StartupSurface.EULA -> EulaScreen(onAccept = eulaViewModel::acceptEula)
+
                 StartupSurface.SPLASH -> SplashScreen(visible = true)
+
                 StartupSurface.MIGRATION_RETRY -> MigrationRetryScreen(
                     message = (migrationState as RequiredMigrationState.Failed).message,
                     onRetry = {
                         scope.launch { migrationManager.retryRequiredMigrations() }
                     },
                 )
+
                 StartupSurface.MAIN -> EnhancedMainScreen(
                     viewModel = mainViewModel,
                     exerciseRepository = exerciseRepository,

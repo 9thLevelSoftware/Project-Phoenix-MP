@@ -1,8 +1,8 @@
 package com.devil.phoenixproject.data.preferences
 
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import org.junit.Test
 

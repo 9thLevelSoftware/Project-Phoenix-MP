@@ -8,6 +8,11 @@ import co.touchlab.sqliter.DatabaseFileContext
 import co.touchlab.sqliter.NO_VERSION_CHECK
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
+import kotlinx.cinterop.ObjCObjectVar
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.value
 import platform.Foundation.*
 import platform.posix.LOCK_EX
 import platform.posix.LOCK_UN
@@ -84,6 +89,7 @@ internal class IosDatabaseFileOperations : DatabaseFileOperations {
         check(fileManager.copyItemAtPath(path(from), path(to), error = null)) {
             "Could not copy $from to $to"
         }
+        excludePathFromBackup(path(to))
     }
 
     override fun sync(artifact: DatabaseArtifact) {
@@ -100,6 +106,9 @@ internal class IosDatabaseFileOperations : DatabaseFileOperations {
     override fun atomicMove(from: DatabaseArtifact, to: DatabaseArtifact) {
         check(!exists(to)) { "Refusing to replace existing $to database artifact" }
         deleteSidecars(from)
+        // Apply the attribute before rename so a successfully promoted file is
+        // never left eligible for backup if a later startup step fails.
+        excludePathFromBackup(path(from))
         check(fileManager.moveItemAtPath(path(from), toPath = path(to), error = null)) {
             "Could not atomically move $from to $to"
         }
@@ -197,6 +206,23 @@ internal class IosDatabaseFileOperations : DatabaseFileOperations {
     }
 
     private fun exists(artifact: DatabaseArtifact): Boolean = fileManager.fileExistsAtPath(path(artifact))
+
+    private fun excludePathFromBackup(filePath: String) {
+        val url = NSURL.fileURLWithPath(filePath)
+        memScoped {
+            val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+            errorPtr.value = null
+            val excluded = url.setResourceValue(
+                NSNumber(bool = true),
+                forKey = NSURLIsExcludedFromBackupKey,
+                error = errorPtr.ptr,
+            )
+            check(excluded) {
+                "Could not exclude a database migration artifact from backup: " +
+                    (errorPtr.value?.localizedDescription ?: "unknown error")
+            }
+        }
+    }
 
     private fun deleteSidecars(artifact: DatabaseArtifact) {
         for (suffix in LEGACY_SIDECAR_SUFFIXES) {

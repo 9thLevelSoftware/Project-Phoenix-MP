@@ -46,6 +46,7 @@ fun AndroidAppHost() {
         is StartupDependencyResolution.Failed -> {
             PersistedFileStartupFailureScreen(resolution) { retryAttempt++ }
         }
+
         is StartupDependencyResolution.Ready -> RequireBlePermissions {
             AndroidAppContent(resolution.dependencies)
         }

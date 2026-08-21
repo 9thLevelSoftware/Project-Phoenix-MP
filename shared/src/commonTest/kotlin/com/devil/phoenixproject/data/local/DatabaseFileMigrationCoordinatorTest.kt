@@ -2,8 +2,8 @@ package com.devil.phoenixproject.data.local
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class DatabaseFileMigrationCoordinatorTest {
@@ -398,6 +398,27 @@ class DatabaseFileMigrationCoordinatorTest {
         assertFalse(operations.calls.any { it == "delete:RECOVERY" })
     }
 
+    @Test
+    fun `same process retry after cutover retains recovery until a real restart`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY),
+            fingerprints = mapOf(DatabaseArtifact.LEGACY to fingerprint),
+        )
+        val coordinator = DatabaseFileMigrationCoordinator(operations)
+
+        val migrated = coordinator.prepareTarget()
+        assertTrue(migrated.migratedThisLaunch)
+
+        // Simulate SQLDelight or reconciliation failing after physical cutover.
+        // Koin retries this singleton in the same process with the same coordinator.
+        val retry = coordinator.prepareTarget()
+        coordinator.targetValidated(retry)
+
+        assertFalse(retry.recoveryCleanupDue)
+        assertTrue(operations.exists(DatabaseArtifact.RECOVERY))
+        assertFalse(operations.calls.any { it == "delete:RECOVERY" })
+    }
+
     private class FakeDatabaseFileOperations(
         artifacts: Set<DatabaseArtifact> = emptySet(),
         private var legacySidecarsExist: Boolean = false,
@@ -453,7 +474,9 @@ class DatabaseFileMigrationCoordinatorTest {
         override fun copy(from: DatabaseArtifact, to: DatabaseArtifact) {
             record("copy:$from:$to")
             present += to
-            fingerprints.putIfAbsent(to, fingerprints[from] ?: fallbackFingerprint)
+            if (to !in fingerprints) {
+                fingerprints[to] = fingerprints[from] ?: fallbackFingerprint
+            }
         }
 
         override fun sync(artifact: DatabaseArtifact) {

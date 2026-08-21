@@ -11,13 +11,15 @@ import com.devil.phoenixproject.database.PhoenixDatabase
 
 actual class DriverFactory(private val context: Context) {
 
+    private val coordinator = DatabaseFileMigrationCoordinator(
+        AndroidDatabaseFileOperations(context),
+    )
+
     companion object {
         private const val TAG = "DriverFactory"
     }
 
     actual fun createDriver(): SqlDriver {
-        val operations = AndroidDatabaseFileOperations(context)
-        val coordinator = DatabaseFileMigrationCoordinator(operations)
         val preparation = coordinator.prepareTarget()
         var reconciliationReport: SchemaReconciliationReport? = null
 

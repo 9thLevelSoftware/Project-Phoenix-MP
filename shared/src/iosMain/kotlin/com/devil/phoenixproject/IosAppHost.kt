@@ -50,6 +50,7 @@ fun IosAppHost() {
             Logger.e { "iOS app dependency resolution blocked: ${resolution.diagnosticCode}" }
             PersistedFileStartupFailureScreen(resolution) { retryAttempt++ }
         }
+
         is StartupDependencyResolution.Ready -> RequireBlePermissions {
             IosAppContent(resolution.dependencies)
         }

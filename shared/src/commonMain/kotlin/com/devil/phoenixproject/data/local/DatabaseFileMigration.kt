@@ -46,7 +46,8 @@ internal class DatabaseFileMigrationException(
     val code: DatabaseMigrationFailureCode,
     message: String,
     cause: Throwable? = null,
-) : IllegalStateException(message, cause), StartupDiagnosticFailure {
+) : IllegalStateException(message, cause),
+    StartupDiagnosticFailure {
     override val startupDiagnosticCode: String = "DB_${code.name}"
     override val startupRetryAllowed: Boolean = code != DatabaseMigrationFailureCode.DUAL_DATABASES
 }
@@ -84,6 +85,8 @@ internal interface DatabaseFileOperations {
 internal class DatabaseFileMigrationCoordinator(
     private val operations: DatabaseFileOperations,
 ) {
+    private var recoveryCreatedThisProcess = false
+
     fun prepareTarget(): DatabasePreparation = operations.withExclusiveMigrationLock {
         val layout = operations.inspect()
 
@@ -94,7 +97,7 @@ internal class DatabaseFileMigrationCoordinator(
             )
         }
 
-        when {
+        val preparation = when {
             layout.targetExists -> prepareExistingTarget(layout)
 
             layout.legacyExists -> migrateLegacy(layout)
@@ -110,6 +113,16 @@ internal class DatabaseFileMigrationCoordinator(
                 migratedThisLaunch = false,
                 recoveryCleanupDue = false,
             )
+        }
+
+        if (preparation.migratedThisLaunch) {
+            recoveryCreatedThisProcess = true
+        }
+
+        if (preparation.recoveryCleanupDue && recoveryCreatedThisProcess) {
+            preparation.copy(recoveryCleanupDue = false)
+        } else {
+            preparation
         }
     }
 

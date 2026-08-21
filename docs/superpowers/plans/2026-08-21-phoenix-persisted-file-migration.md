@@ -6,14 +6,14 @@
 
 ## Constraints
 
-- [ ] Preserve Android application ID, iOS bundle ID, signing identities, and sandbox continuity.
-- [ ] Never open a fresh Phoenix database while an unresolved legacy database exists.
-- [ ] Preserve both candidates and block when target and legacy databases coexist.
-- [ ] Keep a neutral recovery copy for one validated restart.
-- [ ] Keep compatibility lookup indefinitely for skipped-release upgrades.
-- [ ] Do not change SQLDelight schema contents or add an `.sqm` migration.
-- [ ] Restrict legacy literals to compatibility constants, backup exclusions, and migration tests.
-- [ ] Preserve the main checkout and its existing `gradle/libs.versions.toml` modification.
+- [x] Preserve Android application ID, iOS bundle ID, signing identities, and sandbox continuity.
+- [x] Never open a fresh Phoenix database while an unresolved legacy database exists.
+- [x] Preserve both candidates and block when target and legacy databases coexist.
+- [x] Keep a neutral recovery copy for one validated restart.
+- [x] Keep compatibility lookup indefinitely for skipped-release upgrades.
+- [x] Do not change SQLDelight schema contents or add an `.sqm` migration.
+- [x] Restrict legacy literals to compatibility constants, backup exclusions, and migration tests.
+- [x] Preserve the main checkout and its existing `gradle/libs.versions.toml` modification.
 
 ## Task 1: State machine
 
@@ -58,11 +58,13 @@
 
 ## Task 6: Upgrade validation and PR integration
 
-- [ ] Add an Android last-release upgrade harness and cover representative rows/preferences, WAL, fresh/skipped upgrades, low storage, corruption, interruption, and dual databases.
+- [x] Add an Android last-release upgrade harness and cover representative rows/preferences, WAL, fresh install, low storage, corruption, interruption, and dual databases.
+- [x] Run all six automated debug-lineage scenarios on a disposable API 35 AVD and record the evidence.
+- [ ] Run a true skipped-version upgrade with production-signed APKs when a signed candidate and controlled device are available.
 - [ ] Run physical iOS upgrade validation and second-launch cleanup checks where device access exists.
-- [ ] Confirm identifiers and signing configuration are unchanged.
+- [x] Confirm identifiers and signing configuration are unchanged.
 - [ ] Update PR 709 description with compatibility literals, evidence, and remaining device gates.
-- [ ] Commit as `test: verify Phoenix persisted-file upgrade path`.
+- [x] Commit as `test: verify Phoenix persisted-file upgrade path`.
 
 ## Focused verification
 

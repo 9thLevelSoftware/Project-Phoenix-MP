@@ -37,7 +37,8 @@ internal class PreferenceFileMigrationException(
     val code: PreferenceMigrationFailureCode,
     message: String,
     cause: Throwable? = null,
-) : IllegalStateException(message, cause), StartupDiagnosticFailure {
+) : IllegalStateException(message, cause),
+    StartupDiagnosticFailure {
     override val startupDiagnosticCode: String = "PREFERENCES_${code.name}"
     override val startupRetryAllowed: Boolean = true
 }
@@ -283,30 +284,42 @@ internal class AndroidPreferenceFileOperations(
 
     private fun normalizeValue(value: Any?): Any = when (value) {
         is String -> value
+
         is Boolean -> value
+
         is Int -> value
+
         is Long -> value
+
         is Float -> value
+
         is Set<*> -> {
             check(value.all { item -> item is String }) { "Preference string set contains a non-string value" }
             @Suppress("UNCHECKED_CAST")
             (value as Set<String>).toSet()
         }
+
         else -> error("Unsupported preference value type: ${value?.let { it::class.simpleName } ?: "null"}")
     }
 
     private fun SharedPreferences.Editor.putSupportedValue(key: String, value: Any) {
         when (value) {
             is String -> putString(key, value)
+
             is Boolean -> putBoolean(key, value)
+
             is Int -> putInt(key, value)
+
             is Long -> putLong(key, value)
+
             is Float -> putFloat(key, value)
+
             is Set<*> -> {
                 check(value.all { item -> item is String }) { "Preference string set contains a non-string value" }
                 @Suppress("UNCHECKED_CAST")
                 putStringSet(key, (value as Set<String>).toSet())
             }
+
             else -> error("Unsupported preference value type: ${value::class.simpleName}")
         }
     }
