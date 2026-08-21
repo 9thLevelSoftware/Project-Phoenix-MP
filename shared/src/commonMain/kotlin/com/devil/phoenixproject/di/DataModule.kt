@@ -37,7 +37,7 @@ val dataModule = module {
     // Repositories
     // BleRepository is provided by platformModule
     // Order matters: ExerciseRepository must be created before WorkoutRepository
-    single<ExerciseRepository> { SqlDelightExerciseRepository(get(), get()) }
+    single<ExerciseRepository> { SqlDelightExerciseRepository(get(), get(), get()) }
     single<WorkoutRepository> { SqlDelightWorkoutRepository(get(), get()) }
     single<PersonalRecordRepository> { SqlDelightPersonalRecordRepository(get()) }
     single<GamificationRepository> { SqlDelightGamificationRepository(get()) }

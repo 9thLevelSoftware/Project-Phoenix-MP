@@ -40,16 +40,16 @@ CREATE TABLE Exercise (
 CREATE INDEX idx_exercise_popularity ON Exercise(popularity DESC, name ASC);
 CREATE INDEX idx_exercise_last_performed ON Exercise(lastPerformed DESC);
 
--- Exercise Videos
-CREATE TABLE ExerciseVideo (
+-- Exercise demonstration stills (openly-licensed remote images)
+CREATE TABLE ExerciseImage (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     exerciseId TEXT NOT NULL,
-    angle TEXT NOT NULL,
-    videoUrl TEXT NOT NULL,
-    thumbnailUrl TEXT NOT NULL,
-    isTutorial INTEGER NOT NULL DEFAULT 0,
+    url TEXT NOT NULL,
+    sortOrder INTEGER NOT NULL,
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
 );
+
+CREATE INDEX idx_exercise_image_exercise ON ExerciseImage(exerciseId);
 
 -- Workout sessions table (Matches Domain Model)
 CREATE TABLE WorkoutSession (
@@ -534,6 +534,9 @@ VALUES (:exerciseId, :profileId, :personalMvtMs, :sampleCount, :updatedAt);
 selectAllExerciseMvtByProfile:
 SELECT * FROM ExerciseMvt WHERE profile_id = :profileId ORDER BY exerciseId;
 
+selectExerciseMvtByExerciseId:
+SELECT * FROM ExerciseMvt WHERE exerciseId = :exerciseId;
+
 deleteExerciseMvt:
 DELETE FROM ExerciseMvt WHERE exerciseId = :exerciseId AND profile_id = :profileId;
 
@@ -552,24 +555,27 @@ UPDATE ExerciseMvt SET profile_id = :targetProfileId WHERE profile_id = :sourceP
 
 -- Exercise Queries
 selectAllExercises:
-SELECT * FROM Exercise ORDER BY name ASC;
+SELECT * FROM Exercise WHERE archived = 0 ORDER BY name ASC;
 
 searchExercises:
 SELECT * FROM Exercise
-WHERE name LIKE ('%' || :query || '%')
-   OR muscleGroups LIKE ('%' || :query || '%')
-   OR description LIKE ('%' || :query || '%')
-   OR aliases LIKE ('%' || :query || '%')
+WHERE archived = 0
+  AND (
+    name LIKE ('%' || :query || '%')
+    OR muscleGroups LIKE ('%' || :query || '%')
+    OR description LIKE ('%' || :query || '%')
+    OR aliases LIKE ('%' || :query || '%')
+  )
 ORDER BY popularity DESC, name ASC;
 
 filterExercisesByMuscle:
-SELECT * FROM Exercise WHERE muscleGroups LIKE ('%' || :muscle || '%') ORDER BY name ASC;
+SELECT * FROM Exercise WHERE archived = 0 AND muscleGroups LIKE ('%' || :muscle || '%') ORDER BY name ASC;
 
 filterExercisesByEquipment:
-SELECT * FROM Exercise WHERE equipment LIKE ('%' || :equipment || '%') ORDER BY name ASC;
+SELECT * FROM Exercise WHERE archived = 0 AND equipment LIKE ('%' || :equipment || '%') ORDER BY name ASC;
 
 selectFavorites:
-SELECT * FROM Exercise WHERE isFavorite = 1 ORDER BY name ASC;
+SELECT * FROM Exercise WHERE archived = 0 AND isFavorite = 1 ORDER BY name ASC;
 
 selectExerciseById:
 SELECT * FROM Exercise WHERE id = ?;
@@ -586,8 +592,98 @@ INSERT OR REPLACE INTO Exercise (
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+insertExerciseIfAbsent:
+INSERT OR IGNORE INTO Exercise (
+    id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+    equipment, movement, sidedness, grip, gripWidth, minRepRange,
+    popularity, archived, isFavorite, isCustom, timesPerformed, lastPerformed,
+    aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs, isBodyweight
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateCatalogExercise:
+UPDATE Exercise SET
+    name = ?,
+    displayName = ?,
+    description = ?,
+    muscleGroup = ?,
+    muscleGroups = ?,
+    muscles = ?,
+    equipment = ?,
+    movement = ?,
+    sidedness = ?,
+    grip = ?,
+    gripWidth = ?,
+    minRepRange = ?,
+    aliases = ?,
+    defaultCableConfig = ?,
+    isBodyweight = ?
+WHERE id = ? AND isCustom = 0;
+
 countExercises:
 SELECT COUNT(*) FROM Exercise;
+
+selectStockExercisesForRemap:
+SELECT id, name, archived FROM Exercise WHERE isCustom = 0;
+
+reassignWorkoutSessionExerciseId:
+UPDATE WorkoutSession SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+reassignRoutineExerciseId:
+UPDATE RoutineExercise SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+selectPersonalRecordsByExerciseId:
+SELECT * FROM PersonalRecord WHERE exerciseId = :exerciseId;
+
+reassignPersonalRecordExerciseId:
+UPDATE PersonalRecord SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+reassignExerciseSignatureExerciseId:
+UPDATE ExerciseSignature SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+reassignAssessmentResultExerciseId:
+UPDATE AssessmentResult SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+reassignVelocityOneRepMaxExerciseId:
+UPDATE VelocityOneRepMaxEstimate SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+reassignExerciseMvtExerciseId:
+UPDATE ExerciseMvt SET exerciseId = :newId WHERE exerciseId = :oldId;
+
+reassignProgressionEventExerciseId:
+UPDATE ProgressionEvent SET exercise_id = :newId WHERE exercise_id = :oldId;
+
+mergeLegacyExerciseUserFields:
+UPDATE Exercise SET
+    isFavorite = CASE
+        WHEN isFavorite = 1 THEN 1
+        WHEN (SELECT isFavorite FROM Exercise WHERE id = :oldId) = 1 THEN 1
+        ELSE isFavorite
+    END,
+    timesPerformed = timesPerformed + COALESCE((SELECT timesPerformed FROM Exercise WHERE id = :oldId), 0),
+    lastPerformed = CASE
+        WHEN lastPerformed IS NULL THEN (SELECT lastPerformed FROM Exercise WHERE id = :oldId)
+        WHEN (SELECT lastPerformed FROM Exercise WHERE id = :oldId) IS NULL THEN lastPerformed
+        WHEN lastPerformed >= (SELECT lastPerformed FROM Exercise WHERE id = :oldId) THEN lastPerformed
+        ELSE (SELECT lastPerformed FROM Exercise WHERE id = :oldId)
+    END,
+    one_rep_max_kg = CASE
+        WHEN one_rep_max_kg IS NULL THEN (SELECT one_rep_max_kg FROM Exercise WHERE id = :oldId)
+        WHEN (SELECT one_rep_max_kg FROM Exercise WHERE id = :oldId) IS NULL THEN one_rep_max_kg
+        WHEN one_rep_max_kg >= (SELECT one_rep_max_kg FROM Exercise WHERE id = :oldId) THEN one_rep_max_kg
+        ELSE (SELECT one_rep_max_kg FROM Exercise WHERE id = :oldId)
+    END,
+    mvtOverrideMs = COALESCE(mvtOverrideMs, (SELECT mvtOverrideMs FROM Exercise WHERE id = :oldId))
+WHERE id = :newId AND isCustom = 0;
+
+consumeLegacyExerciseUserFields:
+UPDATE Exercise SET
+    timesPerformed = 0,
+    isFavorite = 0,
+    one_rep_max_kg = NULL,
+    mvtOverrideMs = NULL,
+    lastPerformed = NULL
+WHERE id = :oldId AND isCustom = 0;
 
 -- Increment times performed and update last performed timestamp
 incrementPerformed:
@@ -603,7 +699,7 @@ SELECT * FROM Exercise WHERE archived = 0 ORDER BY popularity DESC, name ASC;
 
 -- Get recently performed exercises
 selectRecentlyPerformed:
-SELECT * FROM Exercise WHERE lastPerformed IS NOT NULL ORDER BY lastPerformed DESC LIMIT ?;
+SELECT * FROM Exercise WHERE archived = 0 AND lastPerformed IS NOT NULL ORDER BY lastPerformed DESC LIMIT ?;
 
 -- Get exercises excluding archived
 selectActiveExercises:
@@ -652,22 +748,25 @@ WHERE routineSessionId = ?
 deleteAllSessions:
 DELETE FROM WorkoutSession;
 
--- Exercise Video Queries
-selectVideosByExercise:
-SELECT * FROM ExerciseVideo WHERE exerciseId = ? AND isTutorial = 0;
+-- Exercise image queries
+selectImagesByExercise:
+SELECT * FROM ExerciseImage WHERE exerciseId = ? ORDER BY sortOrder ASC, id ASC;
 
-countVideos:
-SELECT COUNT(*) FROM ExerciseVideo;
+countImages:
+SELECT COUNT(*) FROM ExerciseImage;
 
-insertVideo:
-INSERT INTO ExerciseVideo (exerciseId, angle, videoUrl, thumbnailUrl, isTutorial)
-VALUES (?, ?, ?, ?, ?);
+insertImage:
+INSERT INTO ExerciseImage (exerciseId, url, sortOrder)
+VALUES (?, ?, ?);
+
+deleteImagesForExercise:
+DELETE FROM ExerciseImage WHERE exerciseId = ?;
 
 deleteAllExercises:
 DELETE FROM Exercise;
 
-deleteAllVideos:
-DELETE FROM ExerciseVideo;
+deleteAllImages:
+DELETE FROM ExerciseImage;
 
 -- Workout Session Queries
 -- Issue #591 follow-up (chatgpt-codex-connector P2): filter soft-
@@ -2081,15 +2180,15 @@ getExercisesWithOneRepMax:
 SELECT * FROM Exercise WHERE one_rep_max_kg IS NOT NULL;
 
 findExerciseByName:
-SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) LIMIT 1;
+SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) ORDER BY archived ASC LIMIT 1;
 
 -- Exercise lookup for sync pull: exact match on name and muscle group
 findExerciseByNameAndMuscle:
-SELECT * FROM Exercise WHERE TRIM(name) = TRIM(:name) AND TRIM(muscleGroup) = TRIM(:muscleGroup) LIMIT 1;
+SELECT * FROM Exercise WHERE TRIM(name) = TRIM(:name) AND TRIM(muscleGroup) = TRIM(:muscleGroup) ORDER BY archived ASC LIMIT 1;
 
 -- Exercise lookup for sync pull: case-insensitive fallback by name only
 findExerciseByNameCaseInsensitive:
-SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) LIMIT 1;
+SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) ORDER BY archived ASC LIMIT 1;
 
 -- ==================== BACKUP SYNC QUERIES ====================
 -- These queries select all data from tables for backup/restore functionality

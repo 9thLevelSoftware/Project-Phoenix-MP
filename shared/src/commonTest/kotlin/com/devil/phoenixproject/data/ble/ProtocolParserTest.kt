@@ -630,7 +630,7 @@ class ProtocolParserTest {
 
     @Test
     fun `parseRepPacket parses 16-byte legacy V-Form format - Issue 388`() {
-        // Most likely V-Form rep size per official com.vitruvian.formtrainer.Reps spec
+        // Most likely V-Form rep size per the observed Reps characteristic layout
         // (4-byte int up + 4-byte int down + 4-byte float rangeTop + 4-byte float rangeBottom
         // = 16 bytes minimum, with optional 4× short trailer making 24).
         // Phoenix's legacy parser only reads bytes 0-1 and 4-5, so the float bytes 8-15 are

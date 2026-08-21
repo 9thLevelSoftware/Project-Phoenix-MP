@@ -8,7 +8,7 @@
 ALTER TABLE Exercise ADD COLUMN isBodyweight INTEGER;
 ALTER TABLE RoutineExercise ADD COLUMN isBodyweight INTEGER;
 
--- Catalog fix: cable lifts that ship with equipment=[] in exercise_dump.json.
+-- Catalog fix: cable lifts that shipped with an empty equipment list.
 UPDATE Exercise SET isBodyweight = 0 WHERE id IN (
     'UjIGHxCav-lS9B2I',  -- Squat
     'enuJ_FgAzXDLAweK',  -- Good Morning

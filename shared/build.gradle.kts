@@ -152,11 +152,6 @@ kotlin {
                 // Ktor OkHttp engine for Android
                 implementation(libs.ktor.client.okhttp)
 
-                // Media3 ExoPlayer (for HLS video playback)
-                implementation(libs.media3.exoplayer)
-                implementation(libs.media3.exoplayer.hls)
-                implementation(libs.media3.ui)
-
                 // Compose Preview Tooling (for @Preview in shared module)
                 implementation(libs.cmp.ui.tooling)
 
@@ -210,8 +205,8 @@ sqldelight {
     databases {
         create("VitruvianDatabase") {
             packageName.set("com.devil.phoenixproject.database")
-            // Version 43 = initial schema (1) + 42 migrations (1.sqm through 42.sqm).
-            version = 43
+            // Version 44 = initial schema (1) + 43 migrations (1.sqm through 43.sqm).
+            version = 44
         }
     }
 }

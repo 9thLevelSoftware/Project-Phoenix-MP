@@ -83,6 +83,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
@@ -96,6 +97,7 @@ import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.rememberBackupLocationPicker
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import vitruvianprojectphoenix.shared.generated.resources.Res
@@ -151,6 +153,11 @@ import vitruvianprojectphoenix.shared.generated.resources.settings_dynamic_color
 import vitruvianprojectphoenix.shared.generated.resources.settings_language
 import vitruvianprojectphoenix.shared.generated.resources.settings_language_help
 import vitruvianprojectphoenix.shared.generated.resources.settings_machine_diagnostics_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_refresh_wger_catalog
+import vitruvianprojectphoenix.shared.generated.resources.settings_refresh_wger_catalog_description
+import vitruvianprojectphoenix.shared.generated.resources.settings_refresh_wger_catalog_error
+import vitruvianprojectphoenix.shared.generated.resources.settings_refresh_wger_catalog_in_progress
+import vitruvianprojectphoenix.shared.generated.resources.settings_refresh_wger_catalog_success
 import vitruvianprojectphoenix.shared.generated.resources.settings_show_exercise_videos
 import vitruvianprojectphoenix.shared.generated.resources.settings_show_exercise_videos_description
 import vitruvianprojectphoenix.shared.generated.resources.settings_theme_dark
@@ -308,6 +315,9 @@ fun SettingsTab(
     val scope = rememberCoroutineScope()
     // Inject DataBackupManager for manual backup/restore operations
     val backupManager: DataBackupManager = koinInject()
+    val exerciseRepository: ExerciseRepository = koinInject()
+    var wgerRefreshInProgress by remember { mutableStateOf(false) }
+    var wgerRefreshMessage by remember { mutableStateOf<String?>(null) }
     // Inject SyncTriggerManager for sync error indicator
     val syncTriggerManager: SyncTriggerManager = koinInject()
     val hasSyncError by syncTriggerManager.hasPersistentError.collectAsState()
@@ -741,6 +751,46 @@ fun SettingsTab(
                 checked = enableVideoPlayback,
                 onCheckedChange = onEnableVideoPlaybackChange,
             )
+            Spacer(modifier = Modifier.height(Spacing.small))
+            OutlinedButton(
+                onClick = {
+                    if (wgerRefreshInProgress) return@OutlinedButton
+                    scope.launch {
+                        wgerRefreshInProgress = true
+                        wgerRefreshMessage = null
+                        val result = exerciseRepository.updateFromWger()
+                        wgerRefreshInProgress = false
+                        wgerRefreshMessage = result.fold(
+                            onSuccess = { count ->
+                                getString(Res.string.settings_refresh_wger_catalog_success, count)
+                            },
+                            onFailure = { getString(Res.string.settings_refresh_wger_catalog_error) },
+                        )
+                    }
+                },
+                enabled = !wgerRefreshInProgress,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    if (wgerRefreshInProgress) {
+                        stringResource(Res.string.settings_refresh_wger_catalog_in_progress)
+                    } else {
+                        stringResource(Res.string.settings_refresh_wger_catalog)
+                    },
+                )
+            }
+            Text(
+                stringResource(Res.string.settings_refresh_wger_catalog_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            wgerRefreshMessage?.let { message ->
+                Text(
+                    message,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.primary,
+                )
+            }
         }
 
         // Data Management Section - Material 3 Expressive

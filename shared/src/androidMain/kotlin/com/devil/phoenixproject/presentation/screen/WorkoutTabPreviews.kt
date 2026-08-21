@@ -8,8 +8,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
@@ -83,7 +83,7 @@ private fun WorkoutTabActivePreview() {
             repRanges = mockRepRanges,
             autoStopState = AutoStopUiState(isActive = false, secondsRemaining = 5, progress = 0f),
             weightUnit = WeightUnit.KG,
-            enableVideoPlayback = true, // Show video placeholder
+            enableVideoPlayback = true,
             exerciseRepository = PreviewExerciseRepository(),
             isWorkoutSetupDialogVisible = false,
             hapticEvents = null,
@@ -1091,10 +1091,10 @@ private class PreviewExerciseRepository : ExerciseRepository {
     override fun getFavorites(): Flow<List<Exercise>> = flowOf(emptyList())
     override suspend fun toggleFavorite(id: String) {}
     override suspend fun getExerciseById(id: String): Exercise? = null
-    override suspend fun getVideos(exerciseId: String): List<ExerciseVideoEntity> = emptyList()
+    override suspend fun getImages(exerciseId: String): List<ExerciseImageEntity> = emptyList()
     override suspend fun importExercises(): Result<Unit> = Result.success(Unit)
     override suspend fun isExerciseLibraryEmpty(): Boolean = true
-    override suspend fun updateFromGitHub(): Result<Int> = Result.success(0)
+    override suspend fun updateFromWger(): Result<Int> = Result.success(0)
 
     // Custom exercise methods
     override fun getCustomExercises(): Flow<List<Exercise>> = flowOf(emptyList())

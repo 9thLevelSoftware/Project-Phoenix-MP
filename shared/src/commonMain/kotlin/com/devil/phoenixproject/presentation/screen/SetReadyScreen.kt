@@ -62,8 +62,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -77,11 +77,11 @@ import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
+import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExerciseQuickHistoryCard
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.StartGateLabel
-import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
 import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
 import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
@@ -224,20 +224,16 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
         viewModel.updateTopBarTitle("")
     }
 
-    // Load video for exercise
+    // Load demonstration images for exercise
     // Issue #142: Key the remember on exerciseIndex so state resets when exercise changes.
-    // This ensures the video entity is cleared and reloaded for each exercise.
-    var videoEntity by remember(setReadyState.exerciseIndex) { mutableStateOf<ExerciseVideoEntity?>(null) }
+    var images by remember(setReadyState.exerciseIndex) { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
     LaunchedEffect(setReadyState.exerciseIndex, currentExercise.exercise.id) {
-        // Clear any stale video first
-        videoEntity = null
-        // Load new video if exercise has an ID
+        images = emptyList()
         currentExercise.exercise.id?.let { exerciseId ->
             try {
-                val videos = exerciseRepository.getVideos(exerciseId)
-                videoEntity = videos.firstOrNull()
+                images = exerciseRepository.getImages(exerciseId)
             } catch (_: Exception) {
-                // Video loading failed - videoEntity stays null
+                // Image loading failed - images stay empty
             }
         }
     }
@@ -795,14 +791,14 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
             Spacer(Modifier.height(12.dp))
 
-            // Video thumbnail stays available but no longer pushes primary set configuration down.
             if (enableVideoPlayback) {
-                VideoPlayer(
-                    videoUrl = videoEntity?.videoUrl,
+                ExerciseDemoImage(
+                    imageUrls = images.map { it.url },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(96.dp)
                         .clip(MaterialTheme.shapes.small),
+                    contentDescription = currentExercise.exercise.displayName,
                 )
                 Spacer(Modifier.height(12.dp))
             }
