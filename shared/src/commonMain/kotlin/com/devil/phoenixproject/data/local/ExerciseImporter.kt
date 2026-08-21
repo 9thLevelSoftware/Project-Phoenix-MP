@@ -355,15 +355,26 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
             .toMap()
 
         val mappings = LinkedHashMap<String, String>()
+        val mappedTargetByName = LinkedHashMap<String, String>()
         for (row in archived) {
             val explicit = LegacyCatalogueIdMap.explicit[row.id]
             if (explicit != null && activeById.containsKey(explicit)) {
                 mappings[row.id] = explicit
-                continue
+                val key = LegacyCatalogueIdMap.matchKey(row.name)
+                val existing = mappedTargetByName[key]
+                if (existing == null) {
+                    mappedTargetByName[key] = explicit
+                } else if (existing != explicit) {
+                    mappedTargetByName.remove(key)
+                }
             }
+        }
+        for (row in archived) {
+            if (row.id in mappings) continue
             val exact = LegacyCatalogueIdMap.matchKey(row.name)
             val byName = activeByName[exact]
                 ?: LegacyCatalogueIdMap.nameAliases[exact]?.let { activeByName[it] }
+                ?: mappedTargetByName[exact]
                 ?: activeByStem[LegacyCatalogueIdMap.stemKey(row.name)]
             if (byName != null && byName != row.id) {
                 mappings[row.id] = byName
@@ -402,8 +413,13 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                 "MAX_VOLUME" -> compareBy<PersonalRecord>({ it.volume }, { it.achievedAt })
                 else -> compareBy<PersonalRecord>({ it.weight }, { it.oneRepMax }, { it.achievedAt })
             }
-            // Bigger metric wins; complete ties keep the legacy row so remap can reassign it.
-            val oldWins = comparator.compare(old, rival) >= 0
+            val oldLive = old.deletedAt == null
+            val rivalLive = rival.deletedAt == null
+            // Live rows beat tombstones before metrics, matching ProfileDeletionMergePolicy.
+            val oldWins = when {
+                oldLive != rivalLive -> oldLive
+                else -> comparator.compare(old, rival) >= 0
+            }
             queries.deletePersonalRecordById(if (oldWins) rival.id else old.id)
         }
     }

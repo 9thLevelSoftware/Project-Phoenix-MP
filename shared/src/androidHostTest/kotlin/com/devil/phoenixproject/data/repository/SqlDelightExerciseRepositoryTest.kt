@@ -454,6 +454,103 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
+    fun `remap maps duplicate bench press catalogue id`() = runTest {
+        insertExercise(
+            id = "b5d0f3d1-994b-4589-9d2b-b3f36f1412c7",
+            name = "Bench Press ",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+            timesPerformed = 3L,
+        )
+        insertPr(
+            exerciseId = "b5d0f3d1-994b-4589-9d2b-b3f36f1412c7",
+            exerciseName = "Bench Press",
+            weight = 92.5,
+        )
+
+        val imported = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Barbell_Bench_Press_-_Medium_Grip",
+                "name": "Barbell Bench Press - Medium Grip",
+                "equipment": "barbell",
+                "primaryMuscles": ["chest"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "strength",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
+        assertTrue(imported.isSuccess)
+        importer.remapLegacyCatalogueIds()
+
+        val replacement = "Barbell_Bench_Press_-_Medium_Grip"
+        val prs = database.vitruvianDatabaseQueries
+            .selectAllPRsForExercise(replacement, "default")
+            .executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals(92.5, prs.single().weight)
+        val leftover = database.vitruvianDatabaseQueries
+            .selectPersonalRecordsByExerciseId("b5d0f3d1-994b-4589-9d2b-b3f36f1412c7")
+            .executeAsList()
+        assertTrue(leftover.isEmpty())
+        val exercise = repository.getExerciseById(replacement)
+        assertNotNull(exercise)
+        assertEquals(3, exercise.timesPerformed)
+    }
+
+    @Test
+    fun `remap keeps a live PR over a heavier tombstone`() = runTest {
+        insertExercise(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+        )
+        insertPr(exerciseId = "ZZ92N8QsBdp6HCh3", exerciseName = "Bench Press", weight = 140.0, oneRepMax = 155.0)
+        val tombstone = database.vitruvianDatabaseQueries
+            .selectPersonalRecordsByExerciseId("ZZ92N8QsBdp6HCh3")
+            .executeAsOne()
+        database.vitruvianDatabaseQueries.softDeletePRById(
+            deletedAt = 1_900_000_000_000L,
+            updatedAt = 1_900_000_000_000L,
+            id = tombstone.id,
+            profileId = "default",
+        )
+        insertExercise(
+            id = "Barbell_Bench_Press_-_Medium_Grip",
+            name = "Barbell Bench Press - Medium Grip",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+        )
+        insertPr(
+            exerciseId = "Barbell_Bench_Press_-_Medium_Grip",
+            exerciseName = "Barbell Bench Press - Medium Grip",
+            weight = 95.0,
+            oneRepMax = 100.0,
+        )
+
+        importer.remapLegacyCatalogueIds()
+
+        val prs = database.vitruvianDatabaseQueries
+            .selectAllPRsForExercise("Barbell_Bench_Press_-_Medium_Grip", "default")
+            .executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals(95.0, prs.single().weight)
+        assertEquals(100.0, prs.single().oneRepMax)
+        assertEquals(null, prs.single().deletedAt)
+        val leftover = database.vitruvianDatabaseQueries
+            .selectPersonalRecordsByExerciseId("ZZ92N8QsBdp6HCh3")
+            .executeAsList()
+        assertTrue(leftover.isEmpty())
+    }
+
+    @Test
     fun `remap maps renamed rack pull onto rack pulls`() = runTest {
         insertExercise(
             id = "legacy-rack-pull",
