@@ -25,7 +25,7 @@ import platform.Foundation.NSUserDomainMask
 actual class DriverFactory {
 
     companion object {
-        private const val DATABASE_NAME = "phoenix.db"
+        private const val DATABASE_NAME = "vitruvian.db"
     }
 
     actual fun createDriver(): SqlDriver {

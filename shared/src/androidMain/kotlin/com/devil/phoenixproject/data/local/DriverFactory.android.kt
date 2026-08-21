@@ -12,7 +12,7 @@ actual class DriverFactory(private val context: Context) {
 
     companion object {
         private const val TAG = "DriverFactory"
-        private const val DATABASE_NAME = "phoenix.db"
+        private const val DATABASE_NAME = "vitruvian.db"
     }
 
     actual fun createDriver(): SqlDriver = AndroidSqliteDriver(

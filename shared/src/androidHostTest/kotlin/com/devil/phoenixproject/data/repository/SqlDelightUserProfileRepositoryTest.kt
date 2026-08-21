@@ -1457,9 +1457,9 @@ class SqlDelightUserProfileRepositoryTest {
         }
 
         private companion object {
-            const val SET_ACTIVE_PROFILE_IDENTIFIER = 373_348_112
-            const val DELETE_PROFILE_IDENTIFIER = 787_673_935
-            const val CLEAR_RECOVERY_JOURNAL_IDENTIFIER = 1_230_173_044
+            const val SET_ACTIVE_PROFILE_IDENTIFIER = 415_176_795
+            const val DELETE_PROFILE_IDENTIFIER = -1_674_170_908
+            const val CLEAR_RECOVERY_JOURNAL_IDENTIFIER = 1_812_830_207
         }
     }
 
