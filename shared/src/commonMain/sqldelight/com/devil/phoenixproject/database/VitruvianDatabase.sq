@@ -589,6 +589,35 @@ INSERT OR REPLACE INTO Exercise (
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
+insertExerciseIfAbsent:
+INSERT OR IGNORE INTO Exercise (
+    id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+    equipment, movement, sidedness, grip, gripWidth, minRepRange,
+    popularity, archived, isFavorite, isCustom, timesPerformed, lastPerformed,
+    aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs, isBodyweight
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+updateCatalogExercise:
+UPDATE Exercise SET
+    name = ?,
+    displayName = ?,
+    description = ?,
+    muscleGroup = ?,
+    muscleGroups = ?,
+    muscles = ?,
+    equipment = ?,
+    movement = ?,
+    sidedness = ?,
+    grip = ?,
+    gripWidth = ?,
+    minRepRange = ?,
+    aliases = ?,
+    defaultCableConfig = ?,
+    isBodyweight = ?,
+    archived = 0
+WHERE id = ? AND isCustom = 0;
+
 countExercises:
 SELECT COUNT(*) FROM Exercise;
 
@@ -2091,11 +2120,11 @@ SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) ORDER BY archived ASC LIMIT 1;
 
 -- Exercise lookup for sync pull: exact match on name and muscle group
 findExerciseByNameAndMuscle:
-SELECT * FROM Exercise WHERE TRIM(name) = TRIM(:name) AND TRIM(muscleGroup) = TRIM(:muscleGroup) LIMIT 1;
+SELECT * FROM Exercise WHERE TRIM(name) = TRIM(:name) AND TRIM(muscleGroup) = TRIM(:muscleGroup) ORDER BY archived ASC LIMIT 1;
 
 -- Exercise lookup for sync pull: case-insensitive fallback by name only
 findExerciseByNameCaseInsensitive:
-SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) LIMIT 1;
+SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) ORDER BY archived ASC LIMIT 1;
 
 -- ==================== BACKUP SYNC QUERIES ====================
 -- These queries select all data from tables for backup/restore functionality

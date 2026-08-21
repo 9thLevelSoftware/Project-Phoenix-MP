@@ -118,6 +118,9 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
             queries.transaction {
                 for (exercise in exercises) {
                     try {
+                        if (queries.selectExerciseById(exercise.id).executeAsOneOrNull()?.isCustom == 1L) {
+                            continue
+                        }
                         val muscleNames = (exercise.primaryMuscles + exercise.secondaryMuscles)
                             .map { mapMuscleGroup(it) }
                             .distinct()
@@ -125,18 +128,23 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                         val equipmentLabel = canonicalEquipmentLabel(exercise.equipment)
                         val isBodyweight = storedIsBodyweightFlag(equipmentLabel)
                         val (sidedness, cableConfig) = cableMetadataForEquipment(equipmentLabel)
+                        val name = exercise.name.trim()
+                        val displayName = displayNames[exercise.id]
+                        val description = exercise.instructions.joinToString("\n").ifBlank { null }
+                        val muscles = (exercise.primaryMuscles + exercise.secondaryMuscles)
+                            .joinToString(",")
+                            .ifBlank { null }
+                        val muscleGroups = muscleNames.joinToString(",")
 
-                        queries.insertExercise(
+                        queries.insertExerciseIfAbsent(
                             id = exercise.id,
-                            name = exercise.name.trim(),
-                            displayName = displayNames[exercise.id],
-                            description = exercise.instructions.joinToString("\n").ifBlank { null },
+                            name = name,
+                            displayName = displayName,
+                            description = description,
                             created = 0L,
                             muscleGroup = primaryMuscle,
-                            muscleGroups = muscleNames.joinToString(","),
-                            muscles = (exercise.primaryMuscles + exercise.secondaryMuscles)
-                                .joinToString(",")
-                                .ifBlank { null },
+                            muscleGroups = muscleGroups,
+                            muscles = muscles,
                             equipment = equipmentLabel,
                             movement = exercise.category,
                             sidedness = sidedness,
@@ -154,6 +162,24 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             one_rep_max_kg = null,
                             mvtOverrideMs = null,
                             isBodyweight = isBodyweight,
+                        )
+                        queries.updateCatalogExercise(
+                            name = name,
+                            displayName = displayName,
+                            description = description,
+                            muscleGroup = primaryMuscle,
+                            muscleGroups = muscleGroups,
+                            muscles = muscles,
+                            equipment = equipmentLabel,
+                            movement = exercise.category,
+                            sidedness = sidedness,
+                            grip = null,
+                            gripWidth = null,
+                            minRepRange = null,
+                            aliases = null,
+                            defaultCableConfig = cableConfig,
+                            isBodyweight = isBodyweight,
+                            id = exercise.id,
                         )
                         importedCount++
 
@@ -175,6 +201,13 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                         Logger.w { "Failed to import exercise ${exercise.name}: ${e.message}" }
                     }
                 }
+            }
+
+            if (exercises.isNotEmpty() && importedCount == 0) {
+                Logger.e { "Imported 0 of ${exercises.size} free-exercise-db rows" }
+                return@withContext Result.failure(
+                    Exception("Imported 0 of ${exercises.size} exercises"),
+                )
             }
 
             Logger.d { "Successfully imported $importedCount exercises with $imageCount images" }
