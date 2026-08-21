@@ -126,7 +126,7 @@ class MonitorDataProcessor(
 
         // ===== STAGE 1: POSITION CLAMPING (last-good fallback) =====
         // Replace out-of-range positions with last known good values (BLE noise recovery).
-        // Valid range: -1000 to +1000 mm per official app documentation.
+        // Valid range: -1000 to +1000 mm (observed device position envelope).
         if (posA !in MIN_POS..MAX_POS) {
             log.w { "Position A out of range: $posA, using last good: $lastGoodPosA" }
             posA = lastGoodPosA

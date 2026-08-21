@@ -57,7 +57,7 @@ enum class HandleState {
  * - isLegacyFormat = true
  * - Uses topCounter increments for rep counting (Beta 4 method)
  *
- * OFFICIAL APP FORMAT (24 bytes):
+ * MODERN FIRMWARE FORMAT (24 bytes):
  * - topCounter (u32): Concentric/up phase completions
  * - completeCounter (u32): Eccentric/down phase completions
  * - rangeTop (float): Maximum ROM boundary
@@ -148,7 +148,7 @@ interface BleRepository {
     // Heuristic/phase statistics from machine (for Echo mode force feedback)
     val heuristicData: StateFlow<com.devil.phoenixproject.domain.model.HeuristicStatistics?>
 
-    // Machine diagnostics from the official diagnostic characteristic.
+    // Machine diagnostics from the diagnostic characteristic.
     val diagnostics: StateFlow<DiagnosticPacket?>
 
     suspend fun startScanning(): Result<Unit>

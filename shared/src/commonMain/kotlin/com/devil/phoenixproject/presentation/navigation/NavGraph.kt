@@ -564,7 +564,7 @@ fun NavGraph(
                 )
             }
 
-            // Diagnostics screen - official-style machine diagnostics
+            // Diagnostics screen - machine diagnostics
             composable(
                 route = NavigationRoutes.Diagnostics.route,
                 enterTransition = {

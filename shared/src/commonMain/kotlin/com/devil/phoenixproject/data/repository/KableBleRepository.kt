@@ -266,7 +266,7 @@ class KableBleRepository : BleRepository {
     override suspend fun sendStopCommand(): Result<Unit> {
         log.i { "Sending stop command (polling continues)" }
         return try {
-            val stopPacket = BlePacketFactory.createOfficialStopPacket()
+            val stopPacket = BlePacketFactory.createSoftStopPacket()
             log.d { "Sending StopPacket (0x50)..." }
             sendWorkoutCommand(stopPacket)
         } catch (e: Exception) {
@@ -400,7 +400,7 @@ class KableBleRepository : BleRepository {
                 log.w { "REPS (LEGACY 6-byte format):" }
                 log.w { "  top=${notification.topCounter}, complete=${notification.completeCounter}" }
             } else {
-                log.i { "REPS (24-byte official format):" }
+                log.i { "REPS (24-byte modern format):" }
                 log.i { "  up=${notification.topCounter}, down=${notification.completeCounter}" }
                 log.i { "  repsRomCount=${notification.repsRomCount} (warmup done), repsRomTotal=${notification.repsRomTotal} (warmup target)" }
                 log.i { "  repsSetCount=${notification.repsSetCount} (working done), repsSetTotal=${notification.repsSetTotal} (working target)" }

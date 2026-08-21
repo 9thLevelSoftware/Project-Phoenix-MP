@@ -2506,7 +2506,7 @@ abstract class BaseDataBackupManager(
     }
 
     /**
-     * Generic placeholder routine names set by external imports (e.g. Phoenix cloud).
+     * Generic placeholder routine names set by external imports (e.g. legacy cloud exports).
      * These don't identify a real routine and should be treated as null/unknown.
      */
     private val GARBAGE_ROUTINE_NAMES = setOf(

@@ -988,7 +988,7 @@ class SqlDelightSyncRepositoryTest {
         // snapshot Exercises re-derived isBodyweight from the equipment string.
         // Catalog cable lift with empty equipment and an explicit stored flag (Squat)
         database.phoenixDatabaseQueries.insertExercise(
-            id = "UjIGHxCav-lS9B2I",
+            id = "legacy-squat",
             name = "Squat",
             displayName = "Squat",
             description = null,
@@ -1063,7 +1063,7 @@ class SqlDelightSyncRepositoryTest {
                             routineId = "routine-635",
                             name = "Squat",
                             muscleGroup = "LEGS",
-                            exerciseId = "UjIGHxCav-lS9B2I",
+                            exerciseId = "legacy-squat",
                             orderIndex = 3,
                             reps = 5,
                             weight = 60f,

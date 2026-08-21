@@ -352,7 +352,7 @@ class WorkoutFlowE2ETest {
         advanceUntilIdle()
 
         localRobot.verifyWorkoutActive()
-        // Official activation starts send CONFIG (0x04) only, without legacy START (0x03).
+        // Activation sends CONFIG (0x04) only; the legacy START (0x03) command is not sent.
         kotlin.test.assertEquals(1, fakeBleRepository.commandsReceived.size)
         kotlin.test.assertEquals(0x04.toByte(), fakeBleRepository.commandsReceived[0][0])
         kotlin.test.assertFalse(fakeBleRepository.commandsReceived.any { it.firstOrNull() == 0x03.toByte() })

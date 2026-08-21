@@ -4,7 +4,7 @@ Community-built app to keep Phoenix Trainer machines working after company closu
 
 CORE FEATURES:
 - BLE connection to V-Form Trainer and Trainer+ machines
-- 572 exercises with video demonstrations
+- 870+ openly licensed exercises (free-exercise-db) with demonstration images
 - Real-time workout metrics (load, position, velocity, power)
 
 WORKOUT MODES:
@@ -27,5 +27,8 @@ TRACKING:
 - Workout history and analytics
 - Badge achievements and streak tracking
 
-Early beta - requires physical Phoenix Trainer.
-Report issues: github.com/DasBluEyedDevil/ProjectPhoenix
+Early beta - requires a compatible V-Form or Trainer+ machine.
+Report issues: github.com/9thLevelSoftware/Project-Phoenix-MP
+
+Project Phoenix is an independent community project and is not affiliated with,
+endorsed by, or sponsored by Vitruvian. All trademarks belong to their owners.

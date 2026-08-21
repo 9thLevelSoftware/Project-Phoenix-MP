@@ -9,7 +9,7 @@ import com.devil.phoenixproject.domain.model.RepType
 /**
  * Handles rep counting based on notifications emitted by the Phoenix machine.
  *
- * REP COUNTING APPROACH (Matches Official App):
+ * REP COUNTING APPROACH (trust the machine counters):
  * - warmupReps = repsRomCount (directly from machine)
  * - workingReps = down - repsRomCount (down counter minus warmup count)
  *

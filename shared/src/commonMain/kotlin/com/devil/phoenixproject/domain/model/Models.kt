@@ -32,7 +32,7 @@ enum class WorkoutPhase {
 /**
  * Personal record for an exercise.
  *
- * [weightPerCableKg] is the official-app display contract for PR load. [cableCount]
+ * [weightPerCableKg] is the per-cable display contract for PR load. [cableCount]
  * is retained for legacy metadata and analytics context; ordinary PR display must
  * not multiply by it.
  */
@@ -387,7 +387,7 @@ data class WorkoutMetric(
     val positionA: Float, // Position in mm (changed from Int in Issue #197)
     val positionB: Float, // Position in mm (changed from Int in Issue #197)
     val ticks: Long = 0L,
-    val velocityA: Double = 0.0, // Velocity for handle detection (official app protocol)
+    val velocityA: Double = 0.0, // Firmware-provided velocity used for handle detection
     val velocityB: Double = 0.0, // Velocity for right handle detection (for single-handle exercises)
     val status: Int = 0, // Machine status flags (0x8000=Deload Occurred, 0x0040=Deload Warn)
 ) {
@@ -637,7 +637,7 @@ fun WorkoutSession.displayHeaviestKgPerCable(isBodyweight: Boolean = false): Flo
 /**
  * Legacy multiplier metadata for explicit total/compatibility paths.
  *
- * Ordinary saved-session load display matches the official app and stays per-cable.
+ * Ordinary saved-session load display stays per-cable.
  * Do not use this helper to format primary selected/heaviest load values.
  */
 fun WorkoutSession.displayLoadMultiplier(): Int = displayMultiplier ?: cableCount ?: 1

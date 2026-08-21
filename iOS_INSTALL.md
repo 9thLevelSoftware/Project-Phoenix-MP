@@ -1,6 +1,6 @@
 # iOS Installation Guide
 
-This guide explains how to install Phoenix Phoenix on your iPhone or iPad.
+This guide explains how to install Project Phoenix on your iPhone or iPad.
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ The app is currently in beta. Join our TestFlight beta program for easy installa
 
 ### Step 2: Join the Beta
 
-1. [Tap here to join the Phoenix Phoenix beta](https://testflight.apple.com/join/TFw1m89R)
+1. [Tap here to join the Project Phoenix beta](https://testflight.apple.com/join/TFw1m89R)
 2. Or open this link on your device: `https://testflight.apple.com/join/TFw1m89R`
 3. Tap **Accept** to join the beta program
 4. Tap **Install** to download the beta version
@@ -64,7 +64,7 @@ AltStore is a free app that lets you sideload apps using your Apple ID.
 5. Enter your Apple ID and password when prompted
 6. AltStore will appear on your iPhone home screen
 
-#### Step 3: Install Phoenix Phoenix
+#### Step 3: Install Project Phoenix
 
 1. Download the `PhoenixApp.ipa` file from [GitHub Releases](../../releases)
 2. Open AltStore on your iPhone
@@ -99,7 +99,7 @@ When you first launch the app, you'll be asked to grant permissions:
 - Required to scan for and connect to your Phoenix trainer
 - Tap **OK** or **Allow** when prompted
 
-**Note:** If you deny Bluetooth permission, the app cannot connect to your trainer. You can grant it later in Settings > Phoenix Phoenix > Bluetooth.
+**Note:** If you deny Bluetooth permission, the app cannot connect to your trainer. You can grant it later in Settings > Project Phoenix > Bluetooth.
 
 ---
 

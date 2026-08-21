@@ -35,8 +35,8 @@ Findings: 11 total
 - Category: bug
 - Severity: medium
 - Line numbers: 75-86
-- Description: `createStopCommand()` is documented as the primary STOP command but emits legacy opcode `0x05`, while `BleConstants.Commands.STOP_COMMAND` and `createOfficialStopPacket()` use official stop opcode `0x50`. This creates an attractive but unsafe API footgun: callers choosing `createStopCommand()` by name/comment may send a different stop semantics than the official stop/clear-fault packet.
-- Suggested fix direction: Rename/deprecate the legacy helper (for example `createLegacyStopCommand()`), make the primary helper delegate to `createOfficialStopPacket()`, and keep tests explicit about the legacy opcode only where it is intentionally required.
+- Description: `createStopCommand()` is documented as the primary STOP command but emits legacy opcode `0x05`, while `BleConstants.Commands.STOP_COMMAND` and `createSoftStopPacket()` use 0x50 soft-stop opcode `0x50`. This creates an attractive but unsafe API footgun: callers choosing `createStopCommand()` by name/comment may send a different stop semantics than the 0x50 soft-stop/clear-fault packet.
+- Suggested fix direction: Rename/deprecate the legacy helper (for example `createLegacyStopCommand()`), make the primary helper delegate to `createSoftStopPacket()`, and keep tests explicit about the legacy opcode only where it is intentionally required.
 
 #### Finding 3
 - Category: bug

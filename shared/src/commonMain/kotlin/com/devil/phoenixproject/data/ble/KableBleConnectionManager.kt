@@ -366,7 +366,7 @@ class KableBleConnectionManager(
                                         )
 
                                 // Use name if available, otherwise use identifier as placeholder
-                                val name = advertisedName ?: "Phoenix ($identifier)"
+                                val name = advertisedName ?: "Trainer ($identifier)"
 
                                 // Skip devices without a real Phoenix name if we already have one
                                 if (!hasRealName) {
@@ -542,12 +542,12 @@ class KableBleConnectionManager(
                 log.w { "scanAndConnect: No Phoenix device found within timeout" }
                 logRepo.error(LogEventType.SCAN_STOP, "No device found", details = "Timeout after ${timeoutMs}ms")
                 reportConnectionState(ConnectionState.Disconnected)
-                return Result.failure(Exception("No Phoenix device found"))
+                return Result.failure(Exception("No trainer found"))
             }
 
             @Suppress("REDUNDANT_CALL_OF_CONVERSION_METHOD") // Needed for iOS where identifier is Uuid
             val identifier = advertisement.identifier.toString()
-            val name = advertisement.name ?: "Phoenix"
+            val name = advertisement.name ?: "Trainer"
             log.i { "scanAndConnect: Found device $name ($identifier), connecting..." }
 
             // Store for connection
@@ -896,13 +896,13 @@ class KableBleConnectionManager(
         val useCompatibilityPath = compatibilityPathActive
 
         if (useCompatibilityPath) {
-            // Issue #333: official small-MTU path. Android 14+ coerces the FIRST
+            // Issue #333: small-MTU compatibility path. Android 14+ coerces the FIRST
             // app-side requestMtu() to ATT MTU 517, and at 517 the 96-byte workout
             // CONFIG write goes out as a single large ATT PDU that wedges the
             // BCM4389 controller on Pixel 6/7 (write lane stuck busy → GATT 133 →
             // disconnect). Making NO MTU request keeps the default 23-byte MTU, so
             // large writes are chunked by the ATT long-write procedure instead —
-            // the same path the official Phoenix app uses.
+            // a path these controllers handle reliably.
             negotiatedMtu = null
             log.i { "[#333 compat] Small-MTU compatibility path active (${BleCompatibilityMode.summary()})" }
             logRepo.info(
@@ -1607,8 +1607,8 @@ class KableBleConnectionManager(
             ", profileTail[0x4C]=${readFloatLE(command, 0x4C)}" +
             ", forceMin[0x50]=${readFloatLE(command, 0x50)}" +
             ", forceMax[0x54]=${readFloatLE(command, 0x54)}" +
-            ", officialSoftMax[0x58]=${readFloatLE(command, 0x58)}" +
-            ", officialIncrement[0x5C]=${readFloatLE(command, 0x5C)}"
+            ", softMax[0x58]=${readFloatLE(command, 0x58)}" +
+            ", increment[0x5C]=${readFloatLE(command, 0x5C)}"
     }
 
     private fun readFloatLE(data: ByteArray, offset: Int): Float {

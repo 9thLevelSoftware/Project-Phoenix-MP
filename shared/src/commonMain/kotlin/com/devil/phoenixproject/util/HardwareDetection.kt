@@ -3,9 +3,9 @@ package com.devil.phoenixproject.util
 import com.devil.phoenixproject.domain.model.PhoenixModel
 
 /**
- * Phoenix Hardware Detection
+ * Trainer Hardware Detection
  *
- * Previously attempted to identify hardware models (Euclid, Trainer+) from device name prefixes,
+ * Previously attempted to identify hardware models (V-Form, Trainer+) from device name prefixes,
  * but this approach was flawed - device name patterns don't reliably indicate hardware capabilities.
  *
  * Current approach: Report only what we can actually detect (device name) and avoid making
@@ -31,7 +31,7 @@ object HardwareDetection {
     /**
      * Get device display info without making capability assumptions
      */
-    fun getDeviceDisplayInfo(deviceName: String): String = "Phoenix Trainer ($deviceName)"
+    fun getDeviceDisplayInfo(deviceName: String): String = "Trainer ($deviceName)"
 
     /**
      * Get hardware capabilities - currently returns defaults since we can't
@@ -44,7 +44,7 @@ object HardwareDetection {
 }
 
 /**
- * Hardware capabilities for Phoenix trainers
+ * Hardware capabilities for supported trainers
  *
  * Note: Without firmware version detection, we assume all features are available.
  * This is safer than incorrectly disabling features based on flawed model detection.

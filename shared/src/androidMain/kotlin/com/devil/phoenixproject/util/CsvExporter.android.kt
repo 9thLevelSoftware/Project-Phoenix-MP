@@ -81,7 +81,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                     ?: exerciseNames[session.exerciseId]
                     ?: "Unknown"
                 val date = formatDate(session.timestamp)
-                // For Echo mode, use peak weight (matches official app behavior); otherwise use configured weight
+                // For Echo mode, peak weight is the meaningful load; otherwise use configured weight
                 val isEchoMode = session.mode.contains("Echo", ignoreCase = true)
                 val effectiveWeight = if (isEchoMode) {
                     session.peakWeightKg ?: session.workingAvgWeightKg ?: session.weightPerCableKg
@@ -174,7 +174,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "text/csv"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Phoenix Export: $fileName")
+                putExtra(Intent.EXTRA_SUBJECT, "Project Phoenix Export: $fileName")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

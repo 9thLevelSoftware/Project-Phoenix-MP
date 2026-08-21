@@ -28,7 +28,7 @@ body:
     id: app-version
     attributes:
       label: App Version
-      description: What version of Phoenix Phoenix are you using?
+      description: What version of Project Phoenix are you using?
       placeholder: "e.g., 1.0.0"
     validations:
       required: true

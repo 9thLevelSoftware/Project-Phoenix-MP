@@ -292,7 +292,7 @@ class AndroidDataBackupManager(
                 val contentValues = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                     put(MediaStore.Downloads.MIME_TYPE, "application/json")
-                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/PhoenixApp")
+                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/ProjectPhoenix")
                 }
 
                 val resolver = context.contentResolver
@@ -317,7 +317,7 @@ class AndroidDataBackupManager(
                 @Suppress("DEPRECATION")
                 val downloadsDir = File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "PhoenixApp",
+                    "ProjectPhoenix",
                 )
                 downloadsDir.mkdirs()
                 val destFile = File(downloadsDir, fileName)
@@ -348,7 +348,7 @@ class AndroidDataBackupManager(
                 val contentValues = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                     put(MediaStore.Downloads.MIME_TYPE, "application/json")
-                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/PhoenixApp")
+                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/ProjectPhoenix")
                 }
 
                 val resolver = context.contentResolver
@@ -365,7 +365,7 @@ class AndroidDataBackupManager(
                 @Suppress("DEPRECATION")
                 val downloadsDir = File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "PhoenixApp",
+                    "ProjectPhoenix",
                 )
                 downloadsDir.mkdirs()
 
@@ -457,7 +457,7 @@ class AndroidDataBackupManager(
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/json"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Phoenix Phoenix Backup")
+                putExtra(Intent.EXTRA_SUBJECT, "Project Phoenix Backup")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

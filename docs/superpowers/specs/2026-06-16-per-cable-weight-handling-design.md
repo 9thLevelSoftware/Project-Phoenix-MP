@@ -1,12 +1,12 @@
-# Official Weight Handling Alignment Design
+# Per-Cable Weight Handling Design
 
 ## Goal
 
-Align Phoenix weight handling with the official Phoenix app: the selected, stored, commanded, and primary displayed load is a per-cable value. Two-cable totals may be shown only as clearly labeled supplemental context and must not feed back into saved weights, personal records, recommendations, BLE commands, sync payloads, or routine configuration.
+Make Phoenix weight handling consistent with the machine contract: the selected, stored, commanded, and primary displayed load is a per-cable value. Two-cable totals may be shown only as clearly labeled supplemental context and must not feed back into saved weights, personal records, recommendations, BLE commands, sync payloads, or routine configuration.
 
 ## Current Evidence
 
-Hardware captures show a single scalar force value in kilograms flowing through set storage and BLE command encoding. Cable count is exercise metadata and does not branch load math. The only doubling found is a display-only caption: "Total weight for 2 cables".
+Hardware captures show a single scalar force value in kilograms flowing through set storage and BLE command encoding. Cable count is exercise metadata and does not branch load math. No doubling occurs at the protocol level; any two-cable total is display-only.
 
 Phoenix already mostly matches this at the machine contract:
 
@@ -123,7 +123,7 @@ Recommended verification commands:
 
 ## Acceptance Criteria
 
-- Main user-visible load values match the official app's per-cable convention.
+- Main user-visible load values are per-cable, matching the value sent to the device.
 - The app can still show an explicitly labeled two-cable total helper where useful.
 - Stored/session/PR/recommendation/sync/backup contracts remain per-cable.
 - BLE packet tests still prove machine commands are per-cable.

@@ -106,7 +106,7 @@
     <string name="connection_failed">Échec de la connexion</string>
     <string name="disconnect">Déconnecter</string>
     <string name="disconnect_title">Déconnecter ?</string>
-    <string name="disconnect_message">Êtes-vous sûr de vouloir vous déconnecter de la machine Phoenix ?</string>
+    <string name="disconnect_message">Êtes-vous sûr de vouloir vous déconnecter de la machine ?</string>
 
     <!-- Settings -->
     <string name="settings_title">Paramètres</string>
@@ -522,7 +522,6 @@
     <string name="cd_previous_exercise">Previous exercise</string>
     <string name="cd_next_exercise">Next exercise</string>
     <string name="cd_completed">Completed</string>
-    <string name="cd_video_thumbnail">Video thumbnail</string>
     <string name="cd_thumbnail_for">Thumbnail for %1$s</string>
     <string name="cd_clear_filters">Clear filters</string>
     <string name="cd_alphabet_nav">Alphabet navigation. Tap a letter to jump to exercises starting with that letter.</string>
@@ -769,10 +768,10 @@
     <string name="profile_recovery_message">Phoenix n’a pas pu confirmer quel profil est actif. Réessayez avant de continuer.</string>
     <string name="profile_recovery_retry_failed">La récupération du profil est toujours indisponible</string>
     <string name="profile_delete_reassign_message">Supprimer « %1$s » ? Ses entraînements, routines, records, badges, évaluations et données de progression seront transférés vers Default. Cette action est irréversible.</string>
-    <string name="settings_video_behavior">Comportement vidéo</string>
-    <string name="settings_show_exercise_videos">Afficher les vidéos d'exercice</string>
+    <string name="settings_video_behavior">Démonstrations d'exercices</string>
+    <string name="settings_show_exercise_videos">Afficher les démonstrations d'exercices</string>
     <string name="settings_show_exercise_videos_description">Afficher les démonstrations ; désactivez-les sur les appareils plus lents</string>
-    <string name="settings_exercise_demos_disabled">Lecture vidéo désactivée</string>
+    <string name="settings_exercise_demos_disabled">Démonstrations désactivées</string>
     <string name="profile_weight_increment">Incrément de poids</string>
     <string name="profile_body_weight">Poids corporel</string>
     <string name="profile_set_summary">Durée du résumé de série</string>

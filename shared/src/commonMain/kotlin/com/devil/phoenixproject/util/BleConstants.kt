@@ -5,8 +5,8 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 /**
- * BLE Constants - UUIDs and configuration values for Phoenix device communication
- * Nordic UART service UUIDs and Phoenix protocol constants.
+ * BLE Constants - UUIDs and configuration values for trainer device communication
+ * Nordic UART service UUIDs and trainer protocol constants.
  */
 @Suppress("unused") // Protocol reference constants - many are kept for documentation
 @OptIn(ExperimentalUuidApi::class)
@@ -32,7 +32,7 @@ object BleConstants {
     const val DIAGNOSTIC_CHAR_UUID_STRING = "5fa538ec-d041-42f6-bbd6-c30d475387b7" // Variable
     const val PROPERTY_CHAR_UUID_STRING = DIAGNOSTIC_CHAR_UUID_STRING // Alias
 
-    // Unknown/Auth characteristic - present in web apps notification list
+    // Unknown/Auth characteristic - observed in the device's notification set
     // Purpose unclear but may be needed for proper device communication
     const val UNKNOWN_AUTH_CHAR_UUID_STRING = "36e6c2ee-21c7-404e-aa9b-f74ca4728ad4"
 
@@ -43,17 +43,16 @@ object BleConstants {
         REPS_CHAR_UUID_STRING,
         HEURISTIC_CHAR_UUID_STRING,
         BLE_UPDATE_REQUEST_CHAR_UUID_STRING,
-        UNKNOWN_AUTH_CHAR_UUID_STRING, // Web apps subscribe to this
+        UNKNOWN_AUTH_CHAR_UUID_STRING, // Subscribed for parity with observed device behavior
     )
 
     // Device name pattern for filtering - matches "Phoenix*" devices
     const val DEVICE_NAME_PREFIX = "Vee"
-    const val DEVICE_NAME_PATTERN = "^Phoenix.*$"
 
     // Command IDs (machine protocol)
     object Commands {
         const val STOP_COMMAND: Byte = 0x50 // Stop/halt
-        const val RESET_COMMAND: Byte = 0x0A // Reset/init (web app stop) - recovery fallback
+        const val RESET_COMMAND: Byte = 0x0A // Reset/init - accepted by the device as a recovery stop
         const val REGULAR_COMMAND: Byte = 0x4F // 25-byte packet (79 decimal)
         const val ECHO_COMMAND: Byte = 0x4E // 32-byte packet (78 decimal)
         const val ACTIVATION_COMMAND: Byte = 0x04 // 96-byte packet

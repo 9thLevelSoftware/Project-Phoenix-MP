@@ -129,7 +129,7 @@ private const val DIAGNOSTIC_WARNING_BYTES = 4
  * - Bytes 22-23: repsSetTotal (u16 LE)
  *
  * Issue #388 / #174 / #187: V-Form ("Vee_*") firmware sends rep packets in the 6..23 byte
- * range (most likely 16 bytes per official `Reps.read()` spec). Earlier Phoenix MP code
+ * range (16-byte payloads observed on V-Form firmware). Earlier Phoenix MP code
  * accepted only `==6` or `>=24` and returned null for everything else, regressing the
  * parent repo fix (PhoenixRedux PR #190 / commit 980df08) that timuh60/IshyEvenTrying
  * confirmed working in v0.6.2-beta. This restores the catch-all legacy branch.
@@ -255,7 +255,7 @@ fun parseMonitorPacket(data: ByteArray): MonitorPacket? {
 /**
  * Parse diagnostic characteristic data into DiagnosticPacket.
  *
- * Official app format (Little Endian):
+ * Diagnostic characteristic layout (Little Endian):
  * - Empty payload: default/zero diagnostic snapshot
  * - Bytes 0-3: uptime seconds (uint32)
  * - Bytes 4-11: 4 fault codes (uint16)

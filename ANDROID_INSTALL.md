@@ -1,6 +1,6 @@
 # Android Installation Guide
 
-This guide explains how to install Phoenix Phoenix on your Android device.
+This guide explains how to install Project Phoenix on your Android device.
 
 ## Prerequisites
 
@@ -47,7 +47,7 @@ Android requires permission to install apps from outside the Play Store.
 1. Open the downloaded APK file
 2. Tap **Install**
 3. Wait for installation to complete
-4. Tap **Open** or find **Phoenix Phoenix** in your app drawer
+4. Tap **Open** or find **Project Phoenix** in your app drawer
 
 ---
 
@@ -64,7 +64,7 @@ When you first launch the app, you'll be asked to grant permissions:
 - This is an Android requirement - the app does not track your location
 - Tap **Allow** when prompted
 
-**Note:** If you deny permissions, the app cannot connect to your trainer. You can always grant permissions later in Settings > Apps > Phoenix Phoenix > Permissions.
+**Note:** If you deny permissions, the app cannot connect to your trainer. You can always grant permissions later in Settings > Apps > Project Phoenix > Permissions.
 
 ---
 
@@ -95,12 +95,12 @@ When a new version is released:
 ### App Crashes on Launch
 
 - Make sure your device is running Android 8.0 or later
-- Try clearing app data: Settings > Apps > Phoenix Phoenix > Storage > Clear data
+- Try clearing app data: Settings > Apps > Project Phoenix > Storage > Clear data
 - Report the issue on GitHub with your device model and Android version
 
 ### Bluetooth Permission Denied
 
-1. Go to **Settings > Apps > Phoenix Phoenix > Permissions**
+1. Go to **Settings > Apps > Project Phoenix > Permissions**
 2. Enable **Nearby devices** (Android 12+) or **Location** (Android 11 and below)
 3. Restart the app
 

@@ -138,7 +138,7 @@ fun WorkoutHud(
                 onUpdateParameters = onUpdateParameters,
                 onNextExercise = onStartNextExercise,
                 // Issue #125: Never show Next button during Active state - exercise navigation
-                // should only be allowed when the machine is not engaged. Official app behavior.
+                // should only be allowed when the machine is not engaged.
                 showNextButton = false,
                 isCurrentExerciseBodyweight = isCurrentExerciseBodyweight,
                 rackLoadAdjustment = rackLoadAdjustment,
@@ -685,7 +685,7 @@ private fun ExecutionPage(
         if (metric != null && !isCurrentExerciseBodyweight) {
             // Current Load - default to per-cable resistance, or show total only for
             // explicit unified-accessory exercises.
-            // Always use max(loadA, loadB) to show peak force (matches official app)
+            // Always use max(loadA, loadB) to show peak force (peak of both cables)
             // For Echo mode: use heuristic kgMax (actual measured force)
             //
             // The heuristic data provides actual measured force via the machine's

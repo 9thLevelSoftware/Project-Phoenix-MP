@@ -354,7 +354,7 @@ class ProtocolParserTest {
 
     @Test
     fun `parseDiagnosticPacket returns null for short data`() {
-        val data = ByteArray(17) // Need 18 bytes minimum for non-empty official payloads
+        val data = ByteArray(17) // Need 18 bytes minimum for non-empty diagnostic payloads
         assertNull(parseDiagnosticPacket(data))
     }
 
@@ -535,12 +535,12 @@ class ProtocolParserTest {
 
     @Test
     fun `decodeDiagnosticFault maps 0x0004 by category`() {
-        val phoenix = decodeDiagnosticFault(DiagnosticFaultCategory.PHOENIX, 0x0004)
+        val controller = decodeDiagnosticFault(DiagnosticFaultCategory.CONTROLLER, 0x0004)
         val motor = decodeDiagnosticFault(DiagnosticFaultCategory.MOTOR_A, 0x0004)
 
-        assertEquals("TI restarted", phoenix.label)
-        assertEquals("Over voltage", motor.label)
-        assertEquals("0x0004", phoenix.rawHex)
+        assertEquals("Controller restarted", controller.label)
+        assertEquals("Overvoltage", motor.label)
+        assertEquals("0x0004", controller.rawHex)
         assertEquals("0x0004", motor.rawHex)
     }
 

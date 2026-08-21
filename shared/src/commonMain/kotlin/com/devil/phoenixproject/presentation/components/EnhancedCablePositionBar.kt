@@ -108,13 +108,13 @@ fun EnhancedCablePositionBar(
     )
 
     // Position display normalization - ROM-relative scaling (matches parent repo)
-    // Per official app behavior observed in video:
+    // Display behaviour:
     // - During warmup, ROM is dynamically calibrated from actual movement
     // - Once ROM established, position is normalized relative to ROM range
     // - ROM markers appear at ~25% and ~90% of the bar, leaving headroom
     // - Going below ROM bottom triggers deload/spotter mode
 
-    // ROM padding: Based on official app screenshots, ROM boundaries appear at ~25% and ~90%
+    // ROM padding: ROM boundaries are drawn at 25% and 90% of the bar
     val romPaddingBottom = 0.25f // ROM bottom appears at 25% (leaves room for deload detection below)
     val romPaddingTop = 0.90f // ROM top appears at 90% (small headroom at top)
     val romDisplayRange = romPaddingTop - romPaddingBottom // 0.65 (65% of bar for ROM)
@@ -130,7 +130,7 @@ fun EnhancedCablePositionBar(
             (romPaddingBottom + positionInRom * romDisplayRange).coerceIn(0f, 1f)
         } else {
             // ROM not yet established: use wide range for initial display
-            // Start with large range so initial movements appear small (like official app)
+            // Start with large range so initial movements appear small
             val wideRangeMax = 1000f // Full validation range
             (currentPosition / wideRangeMax).coerceIn(0f, 1f)
         },

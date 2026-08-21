@@ -5,7 +5,7 @@ import com.devil.phoenixproject.util.DeviceInfo
 import kotlin.concurrent.Volatile
 
 /**
- * Issue #333: BLE compatibility mode ("official small-MTU path").
+ * Issue #333: BLE compatibility mode (small-MTU path).
  *
  * Root cause: on BCM4389 Pixels (Tensor G1/G2 generation — Pixel 6/7 phones,
  * Pixel Fold, Pixel Tablet — all with the Broadcom BCM4389 Bluetooth controller),
@@ -14,10 +14,10 @@ import kotlin.concurrent.Volatile
  * the controller's write lane wedges (WriteRequestBusy forever), then surfaces
  * GATT_ERROR(133) and drops the link the moment a workout starts.
  *
- * The official Phoenix app never calls requestMtu(), so it stays at the default
- * 23-byte ATT MTU and its 96/34-byte writes are automatically chunked by the
- * ATT long-write procedure (Prepare Write + Execute Write), which those
- * controllers handle fine. Compatibility mode reproduces that behavior:
+ * Leaving the ATT MTU at the default 23 bytes means the 96/34-byte writes are
+ * automatically chunked by the ATT long-write procedure (Prepare Write +
+ * Execute Write), which those controllers handle fine. Compatibility mode
+ * uses that path:
  *  - no app-side requestMtu() call
  *  - high connection priority after service discovery
  *  - no GATT heartbeat loop

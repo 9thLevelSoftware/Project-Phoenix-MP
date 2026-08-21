@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- API 23-30 backup exclusion rules (android:fullBackupContent) -->
-<!-- Excludes Phoenix database and sensitive preferences from Android auto-backup -->
+<!-- Excludes the app database and sensitive preferences from Android auto-backup -->
 <full-backup-content>
     <exclude domain="database" path="vitruvian.db" />
     <exclude domain="database" path="vitruvian.db-journal" />

@@ -33,7 +33,7 @@ import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
  * @property autoStopState Auto-stop countdown state for Just Lift mode
  * @property autoStartCountdown Countdown seconds when auto-starting
  * @property weightUnit User's preferred weight display unit
- * @property enableVideoPlayback Whether to show exercise demo videos
+ * @property enableVideoPlayback Whether to show exercise demonstration images
  * @property loadedRoutine Currently loaded routine (null for single exercise)
  * @property currentExerciseIndex Index in routine's exercise list
  * @property currentSetIndex Index of current set (0-based) within current exercise
