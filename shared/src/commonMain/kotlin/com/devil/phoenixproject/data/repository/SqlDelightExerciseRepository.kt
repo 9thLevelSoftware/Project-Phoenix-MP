@@ -153,13 +153,14 @@ class SqlDelightExerciseRepository(
 
             Logger.d { "Importing bundled free-exercise-db catalogue..." }
             val result = exerciseImporter.importExercises()
-            if (result.isSuccess) {
+            val importedCount = result.getOrNull() ?: 0
+            if (result.isSuccess && importedCount > 0) {
                 preferencesManager.setExerciseCatalogSource(ExerciseImporter.BUNDLED_CATALOG_SOURCE)
-                Logger.d { "Successfully imported ${result.getOrNull()} exercises" }
+                Logger.d { "Successfully imported $importedCount exercises" }
                 Result.success(Unit)
             } else {
                 result.exceptionOrNull()?.let { Result.failure(it) }
-                    ?: Result.failure(Exception("Import failed"))
+                    ?: Result.failure(Exception("Import produced no exercises"))
             }
         } catch (e: Exception) {
             Logger.e(e) { "Failed to import exercises" }
