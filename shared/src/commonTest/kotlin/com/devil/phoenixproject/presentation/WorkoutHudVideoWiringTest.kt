@@ -27,7 +27,7 @@ class WorkoutHudVideoWiringTest {
         )
         assertTrue(
             src.contains("if (!enableVideoPlayback)") &&
-                src.contains("Video Playback Disabled") &&
+                src.contains("settings_exercise_demos_disabled") &&
                 src.contains("ExerciseDemoImage("),
             "InstructionPage must honor enableVideoPlayback and render ExerciseDemoImage when demos are on.",
         )
