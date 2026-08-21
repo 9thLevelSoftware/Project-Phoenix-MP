@@ -31,7 +31,7 @@ private object ExerciseIds {
     const val LYING_HAMSTRING_CURL = "Lying_Leg_Curls"
     const val SKULL_CRUSHER = "Lying_Triceps_Press"
     const val BENT_OVER_ROW_WIDE_GRIP = "Bent_Over_Two-Dumbbell_Row"
-    const val GLUTE_KICKBACKS = "Glute_Kickback"
+    const val GLUTE_KICKBACKS = "One-Legged_Cable_Kickback"
     const val CRUNCH = "Crunches"
     const val GOOD_MORNING = "Good_Morning"
 }
