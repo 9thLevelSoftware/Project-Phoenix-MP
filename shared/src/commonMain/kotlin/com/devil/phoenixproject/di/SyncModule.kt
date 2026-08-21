@@ -46,6 +46,7 @@ val syncModule = module {
                 migrationManager.requiredMigrationState.value is
                     com.devil.phoenixproject.data.migration.RequiredMigrationState.Ready
             },
+            completedSetRepository = get<CompletedSetRepository>(),
         )
     }
     single<HealthBodyWeightReader> { HealthIntegrationBodyWeightReader(get()) }

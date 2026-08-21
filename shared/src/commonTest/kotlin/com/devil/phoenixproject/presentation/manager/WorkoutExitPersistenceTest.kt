@@ -25,6 +25,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNotEquals
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.atomicfu.atomic
@@ -123,6 +124,49 @@ class WorkoutExitPersistenceTest {
             assertEquals(originalKey.setKind, persisted.setType)
             assertEquals(3, persisted.attemptNumber)
             assertTrue(harness.fakeCompletedSetRepo.isAttemptDurable(lease.sessionId, originalKey, 3))
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `zero-rep stall failure persists durable attempt identity`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = WorkoutStateFixtures.createTestRoutine(
+                exerciseCount = 1,
+                setsPerExercise = 1,
+                repsPerSet = 3,
+            ).copy(id = "zero-rep-stall", name = "zero-rep-stall")
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val routineSessionId = assertNotNull(harness.coordinator.currentRoutineSessionId)
+            harness.fakeCompletedSetRepo.setSessionRoutine(lease.sessionId, routineSessionId)
+            harness.coordinator._repCount.value = RepCount(workingReps = 0, hasPendingRep = true)
+
+            harness.activeSessionEngine.handleSetCompletion(lease, SetEndReason.STALL_FAILURE)
+            advanceUntilIdle()
+
+            val persisted = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId).single()
+            assertEquals(0, persisted.actualReps)
+            assertEquals(SetEndReason.STALL_FAILURE, persisted.setEndReason)
+            assertEquals(routine.exercises.single().id, persisted.routineExerciseId)
+            assertFalse(persisted.isPr)
+            val key = LogicalSetKey(
+                routineSessionId = routineSessionId,
+                routineExerciseId = routine.exercises.single().id,
+                setIndex = 0,
+                setKind = SetType.STANDARD,
+            )
+            assertTrue(harness.fakeCompletedSetRepo.isAttemptDurable(lease.sessionId, key, 1))
+            val session = harness.fakeWorkoutRepo.saveSessionAttempts.single { it.id == lease.sessionId }
+            assertEquals(0, session.workingReps)
         } finally {
             harness.cleanup()
         }

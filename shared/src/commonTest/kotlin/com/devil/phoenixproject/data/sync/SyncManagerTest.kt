@@ -10,8 +10,12 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.SetEndReason
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
@@ -50,6 +54,7 @@ class SyncManagerTest {
     private val fakeExternalActivityRepo = FakeExternalActivityRepository()
     private val fakeVelocityRepo = FakeVelocityOneRepMaxRepository()
     private val fakeProfilePreferenceSyncRepo = FakeProfilePreferenceSyncRepository()
+    private val fakeCompletedSetRepo = FakeCompletedSetRepository()
     private val json = Json { encodeDefaults = true }
 
     private fun createManager() = SyncManager(
@@ -63,6 +68,7 @@ class SyncManagerTest {
         externalActivityRepository = fakeExternalActivityRepo,
         velocityOneRepMaxRepository = fakeVelocityRepo,
         isProfilePreferenceMigrationReady = { true },
+        completedSetRepository = fakeCompletedSetRepo,
     )
 
     /**
@@ -307,6 +313,62 @@ class SyncManagerTest {
         assertTrue(payload.sessions.isEmpty(), "Sessions should be empty")
         assertTrue(payload.routines.isEmpty(), "Routines should be empty")
         assertEquals(1, fakeApi.pushCallCount, "Push should still be called even with empty data")
+    }
+
+    @Test
+    fun pushCollapsesRetryAttemptsThatShareLogicalSetIdentity() = runTest {
+        setupAuthenticated()
+        val routineSessionId = "routine-session-1"
+        val routineExerciseId = "occurrence-1"
+        val firstAttempt = makeWorkoutSession(
+            id = "11111111-1111-4111-8111-111111111111",
+            timestamp = 1000L,
+            reps = 8,
+            totalReps = 3,
+            exerciseName = "Bench Press",
+            routineSessionId = routineSessionId,
+        )
+        val retryAttempt = makeWorkoutSession(
+            id = "22222222-2222-4222-8222-222222222222",
+            timestamp = 2000L,
+            reps = 8,
+            totalReps = 8,
+            exerciseName = "Bench Press",
+            routineSessionId = routineSessionId,
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(firstAttempt, retryAttempt)
+        listOf(firstAttempt, retryAttempt).forEach { session ->
+            fakeCompletedSetRepo.setSessionRoutine(session.id, routineSessionId)
+            fakeCompletedSetRepo.saveCompletedSet(
+                CompletedSet(
+                    id = "set-${session.id}",
+                    sessionId = session.id,
+                    plannedSetId = null,
+                    setNumber = 0,
+                    setType = SetType.STANDARD,
+                    actualReps = session.totalReps,
+                    actualWeightKg = 20f,
+                    loggedRpe = null,
+                    isPr = false,
+                    completedAt = session.timestamp,
+                    setEndReason = SetEndReason.STALL_FAILURE,
+                    routineExerciseId = routineExerciseId,
+                    attemptNumber = if (session.id == firstAttempt.id) 1 else 2,
+                ),
+            )
+        }
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess)
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Push payload should be captured")
+        assertEquals(1, payload.sessions.size)
+        assertEquals(1, payload.sessions.single().setCount)
+        assertEquals(2, payload.sessions.single().exerciseCount)
     }
 
     @Test

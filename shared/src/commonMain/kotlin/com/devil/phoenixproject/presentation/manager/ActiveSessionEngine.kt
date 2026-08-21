@@ -57,6 +57,7 @@ import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
+import com.devil.phoenixproject.domain.model.RepEvent
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepType
 import com.devil.phoenixproject.domain.model.Routine
@@ -5026,13 +5027,14 @@ class ActiveSessionEngine(
                         // Playing both was causing multiple sounds to fire at once (sound stacking bug).
                         // Issue #182: Trigger set completion immediately on WORKOUT_COMPLETE event.
                         if (executionGuard.isCurrent(eventLease) && coordinator._workoutState.value is WorkoutState.Active) {
-                            // Issue #703: Flush _repCount.value BEFORE handleSetCompletion reads it.
-                            // repCounter.process() has already updated its internal workingReps,
-                            // but coordinator._repCount.value is still stale (the StateFlow write in
-                            // handleRepNotification happens after this callback returns). handleSetCompletion
-                            // -> captureExitSnapshot reads _repCount.value, so we must ensure it reflects
-                            // the final rep count before the snapshot is captured.
-                            coordinator._repCount.value = repCounter.getRepCount()
+                            // Issue #703: Merge the counter flush with any already-published or
+                            // event-carried count so a lagging StateFlow cannot persist N-1, and a
+                            // lagging counter cannot clobber a completed count of N.
+                            coordinator._repCount.value = mergedWorkoutCompleteRepCount(
+                                published = coordinator._repCount.value,
+                                counter = repCounter.getRepCount(),
+                                event = event,
+                            )
                             Logger.d("WORKOUT_COMPLETE event received - triggering immediate set completion")
                             handleSetCompletion(eventLease, SetEndReason.TARGET_REPS_REACHED)
                         }
@@ -8732,6 +8734,21 @@ class ActiveSessionEngine(
         buildExitSnapshot(completion, terminalPath)
     }
 
+    private fun mergedWorkoutCompleteRepCount(
+        published: RepCount,
+        counter: RepCount,
+        event: RepEvent,
+    ): RepCount {
+        val warmup = maxOf(published.warmupReps, counter.warmupReps, event.warmupCount)
+        val working = maxOf(published.workingReps, counter.workingReps, event.workingCount)
+        return counter.copy(
+            warmupReps = warmup,
+            workingReps = working,
+            totalReps = maxOf(published.totalReps, counter.totalReps, working),
+            isWarmupComplete = published.isWarmupComplete || counter.isWarmupComplete || warmup > 0 || working > 0,
+        )
+    }
+
     private fun completionFor(
         lease: ExecutionLease,
         reason: SetEndReason,
@@ -8895,7 +8912,11 @@ class ActiveSessionEngine(
             strengthProfile = biomechanicsSummary?.strengthProfile?.name,
             profileId = lease.profileId,
         )
-        val completedSet = if (repCount.workingReps > 0 && (params.selectedExerciseId != null || params.isJustLift)) {
+        val hasExerciseIdentity = params.selectedExerciseId != null || params.isJustLift
+        val persistZeroRepStallAttempt = completion.reason == SetEndReason.STALL_FAILURE &&
+            completion.routineIdentity != null &&
+            hasExerciseIdentity
+        val completedSet = if (hasExerciseIdentity && (repCount.workingReps > 0 || persistZeroRepStallAttempt)) {
             CompletedSet(
                 id = generateUUID(),
                 sessionId = lease.sessionId,
