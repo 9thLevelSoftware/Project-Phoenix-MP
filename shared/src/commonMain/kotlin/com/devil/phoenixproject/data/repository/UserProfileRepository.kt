@@ -248,6 +248,7 @@ class SqlDelightUserProfileRepository(
             Logger.i { "PROFILE_DELETE: Reassigning data from profile '$id' to '$targetProfileId'" }
             database.transaction {
                 queries.enqueueProfileLocalCleanup(id, currentTimeMillis())
+                queries.deleteActiveWorkoutRuntimeByProfile(id)
                 profileScopedDataMerger.mergeForProfileDeletion(id, targetProfileId)
                 queries.reassignRoutineGroupProfile(targetProfileId, id)
                 queries.reassignRoutineProfile(targetProfileId, id)

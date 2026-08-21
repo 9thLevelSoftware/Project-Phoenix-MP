@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
+import com.devil.phoenixproject.data.repository.collapseCompletedSetsToLatestLogicalAttempts
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSet
@@ -125,7 +126,10 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     // profileId is accepted to match the interface; this fake does not model
     // per-session profiles, so profile scoping is exercised by the SQL-backed
     // repository, not here.
-    override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> = getCompletedSetsForExercise(exerciseId).take(limit)
+    override suspend fun getRecentCompletedSetsForExercise(exerciseId: String, limit: Int, profileId: String): List<CompletedSet> {
+        val recent = getCompletedSetsForExercise(exerciseId).filter { it.sessionId !in deletedSessionIds }
+        return collapseCompletedSetsToLatestLogicalAttempts(recent, sessionRoutineIds::get).take(limit)
+    }
 
     override suspend fun saveCompletedSet(set: CompletedSet) {
         val canonicalSet = set.copy(attemptNumber = set.attemptNumber.coerceAtLeast(1))

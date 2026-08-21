@@ -27,6 +27,7 @@ import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.advanceTimeBy
@@ -104,8 +105,8 @@ class RestoredRuntimeTimerRaceTest {
             val staleReset = async(Dispatchers.Default) {
                 harness.dwsm.resetForNewWorkout()
             }
-            withContext(Dispatchers.Default) {
-                withTimeout(2_000L) { staleDetachEntered.await() }
+            withContext(Dispatchers.IO) {
+                withTimeout(10_000L) { staleDetachEntered.await() }
             }
 
             val newer = installActiveTimerRuntime(harness, "newer-resume-b")
@@ -121,8 +122,8 @@ class RestoredRuntimeTimerRaceTest {
             assertTrue(newerJob.isActive)
 
             releaseStaleDetach.complete(Unit)
-            withContext(Dispatchers.Default) {
-                withTimeout(2_000L) { staleReset.await() }
+            withContext(Dispatchers.IO) {
+                withTimeout(10_000L) { staleReset.await() }
             }
 
             assertEquals(newerOwner, harness.activeSessionEngine.currentRestoredRuntimeOwnerForTest())

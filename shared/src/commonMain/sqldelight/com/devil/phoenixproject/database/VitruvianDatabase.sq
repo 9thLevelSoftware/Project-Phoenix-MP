@@ -2121,7 +2121,22 @@ WHERE ws.exerciseId = ?
 ORDER BY cs.completed_at DESC;
 
 selectRecentCompletedSetsForExercise:
-SELECT cs.* FROM CompletedSet cs
+SELECT
+    cs.id,
+    cs.session_id,
+    cs.planned_set_id,
+    cs.routine_exercise_id,
+    cs.set_number,
+    cs.set_type,
+    cs.attempt_number,
+    cs.actual_reps,
+    cs.actual_weight_kg,
+    cs.logged_rpe,
+    cs.is_pr,
+    cs.completed_at,
+    cs.set_end_reason,
+    ws.routineSessionId
+FROM CompletedSet cs
 INNER JOIN WorkoutSession ws ON cs.session_id = ws.id
 WHERE ws.exerciseId = ? AND ws.profile_id = ? AND ws.deletedAt IS NULL
 ORDER BY cs.completed_at DESC

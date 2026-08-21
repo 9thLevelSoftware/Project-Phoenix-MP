@@ -272,6 +272,28 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     @Test
+    fun `getRecentCompletedSetsForExercise keeps highest attempt per logical set`() = runTest {
+        insertWorkoutSession("attempt-1", "bench", routineSessionId = "run-1")
+        insertWorkoutSession("attempt-2", "bench", routineSessionId = "run-1")
+        insertWorkoutSession("other-set", "bench", routineSessionId = "run-1")
+        repository.saveCompletedSets(
+            listOf(
+                completedSet("failed", "attempt-1", 0, routineExerciseId = "exercise-1", attemptNumber = 1)
+                    .copy(actualWeightKg = 50f, actualReps = 3, completedAt = 1000L),
+                completedSet("retry", "attempt-2", 0, routineExerciseId = "exercise-1", attemptNumber = 2)
+                    .copy(actualWeightKg = 40f, actualReps = 8, completedAt = 2000L),
+                completedSet("other", "other-set", 1, routineExerciseId = "exercise-1", attemptNumber = 1)
+                    .copy(completedAt = 1500L),
+            ),
+        )
+
+        val recent = repository.getRecentCompletedSetsForExercise("bench", 20, "default")
+
+        assertEquals(listOf("retry", "other"), recent.map { it.id })
+        assertEquals(40f, recent.first().actualWeightKg)
+    }
+
+    @Test
     fun `isAttemptDurable requires exact stable session logical key and attempt on authoritative session`() = runTest {
         insertWorkoutSession("durable-session", "bench", routineSessionId = "routine-session-a")
         insertWorkoutSession("other-stable-session", "bench", routineSessionId = "routine-session-a")
