@@ -224,7 +224,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
         }
     }
 
-    // Enable handle detection for auto-start when connected (matches official app)
+    // Enable handle detection for auto-start when connected
     val connectionState by viewModel.connectionState.collectAsState()
 
     // Single consolidated effect for handle detection (Issue: iOS autostart race condition fix)
@@ -238,7 +238,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
         }
     }
 
-    // Reset workout state if entering Just Lift with any non-Idle state (matches official app)
+    // Reset workout state if entering Just Lift with any non-Idle state
     LaunchedEffect(workoutState) {
         if (workoutState !is WorkoutState.Idle && workoutState !is WorkoutState.Active) {
             viewModel.prepareForJustLift()

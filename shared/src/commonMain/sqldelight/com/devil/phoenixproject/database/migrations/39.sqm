@@ -8,14 +8,16 @@
 ALTER TABLE Exercise ADD COLUMN isBodyweight INTEGER;
 ALTER TABLE RoutineExercise ADD COLUMN isBodyweight INTEGER;
 
--- Catalog fix: cable lifts that shipped with an empty equipment list.
-UPDATE Exercise SET isBodyweight = 0 WHERE id IN (
-    'UjIGHxCav-lS9B2I',  -- Squat
-    'enuJ_FgAzXDLAweK',  -- Good Morning
-    'KoL_gx00nuf2wncV',  -- Medial Delt Twist
-    'kSLyRg4bjLuzTeIM',  -- Medial Delt Twist (duplicate catalog entry)
-    '2nTn2QR6MyezFYmK',  -- Kneeling 45 Degree Kickback
-    'fAglxv8VMaisUTyo'   -- Just Lift exercise
+-- Catalog fix: bundled cable lifts that shipped with an empty equipment list.
+-- Matched by catalogue name on non-custom rows; TRIM handles a trailing-space
+-- variant of 'Kneeling 45 Degree Kickback' present in older installs.
+UPDATE Exercise SET isBodyweight = 0
+WHERE isCustom = 0 AND TRIM(name) IN (
+    'Squat',
+    'Good Morning',
+    'Medial Delt Twist',
+    'Kneeling 45 Degree Kickback',
+    'Just Lift exercise'
 );
 
 -- Convert the legacy pull-sync sentinel to the new column and clear the fake
@@ -24,18 +26,9 @@ UPDATE RoutineExercise SET isBodyweight = 1, exerciseEquipment = ''
 WHERE exerciseEquipment = 'Bodyweight';
 
 -- Force-correct routine exercises referencing the misclassified cable lifts.
-UPDATE RoutineExercise SET isBodyweight = 0 WHERE exerciseId IN (
-    'UjIGHxCav-lS9B2I',
-    'enuJ_FgAzXDLAweK',
-    'KoL_gx00nuf2wncV',
-    'kSLyRg4bjLuzTeIM',
-    '2nTn2QR6MyezFYmK',
-    'fAglxv8VMaisUTyo'
-);
-
 -- Legacy rows can carry a NULL or stale exerciseId (the loader heals them by
--- name at load time), so also match the known cable lifts by snapshot name.
--- TRIM handles the catalog's trailing-space 'Kneeling 45 Degree Kickback '.
+-- name at load time), so match the known cable lifts by snapshot name.
+-- TRIM handles a trailing-space variant of 'Kneeling 45 Degree Kickback'.
 -- The IS NULL guard preserves explicit flags set above (e.g. a portal
 -- bodyweight toggle converted from the sentinel).
 UPDATE RoutineExercise SET isBodyweight = 0

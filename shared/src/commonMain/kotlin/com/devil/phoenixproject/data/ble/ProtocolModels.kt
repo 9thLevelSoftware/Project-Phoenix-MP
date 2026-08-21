@@ -42,7 +42,7 @@ data class DiagnosticPacket(
 }
 
 /**
- * Optional crash details from extended official diagnostics payloads.
+ * Optional crash details from extended diagnostics payloads.
  */
 data class DiagnosticCrash(
     val seconds: Long,

@@ -106,7 +106,7 @@
     <string name="connection_failed">Conexión fallida</string>
     <string name="disconnect">Desconectar</string>
     <string name="disconnect_title">¿Desconectar?</string>
-    <string name="disconnect_message">¿Estás seguro de que deseas desconectarte de la máquina Vitruvian?</string>
+    <string name="disconnect_message">¿Estás seguro de que deseas desconectarte de la máquina?</string>
 
     <!-- Settings -->
     <string name="settings_title">Configuración</string>
@@ -522,7 +522,6 @@
     <string name="cd_previous_exercise">Previous exercise</string>
     <string name="cd_next_exercise">Next exercise</string>
     <string name="cd_completed">Completed</string>
-    <string name="cd_video_thumbnail">Video thumbnail</string>
     <string name="cd_thumbnail_for">Thumbnail for %1$s</string>
     <string name="cd_clear_filters">Clear filters</string>
     <string name="cd_alphabet_nav">Alphabet navigation. Tap a letter to jump to exercises starting with that letter.</string>
@@ -769,10 +768,10 @@
     <string name="profile_recovery_message">Phoenix no pudo confirmar qué perfil está activo. Vuelve a intentarlo antes de continuar.</string>
     <string name="profile_recovery_retry_failed">La recuperación del perfil sigue sin estar disponible</string>
     <string name="profile_delete_reassign_message">¿Eliminar &quot;%1$s&quot;? Sus entrenamientos, rutinas, récords, insignias, evaluaciones y datos de progreso pasarán a Default. Esta acción no se puede deshacer.</string>
-    <string name="settings_video_behavior">Comportamiento del vídeo</string>
-    <string name="settings_show_exercise_videos">Mostrar vídeos de ejercicios</string>
+    <string name="settings_video_behavior">Demostraciones de ejercicios</string>
+    <string name="settings_show_exercise_videos">Mostrar demostraciones de ejercicios</string>
     <string name="settings_show_exercise_videos_description">Mostrar demostraciones; desactívalo en dispositivos más lentos</string>
-    <string name="settings_exercise_demos_disabled">Reproducción de vídeo desactivada</string>
+    <string name="settings_exercise_demos_disabled">Demostraciones desactivadas</string>
     <string name="profile_weight_increment">Incremento de peso</string>
     <string name="profile_body_weight">Peso corporal</string>
     <string name="profile_set_summary">Duración del resumen de serie</string>

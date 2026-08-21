@@ -51,7 +51,7 @@ fun ConnectingOverlay(onCancel: () -> Unit = {}) {
                         style = MaterialTheme.typography.titleMedium,
                     )
                     Text(
-                        "Scanning for Vitruvian Trainer",
+                        "Scanning for trainer",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

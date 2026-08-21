@@ -43,7 +43,7 @@ private val DarkSlate = Color(0xFF0F172A)
 private val DeepNavy = Color(0xFF1E293B)
 
 /**
- * Animated splash screen with the Vitruvian Phoenix logo.
+ * Animated splash screen with the Project Phoenix logo.
  * Features:
  * - Dramatic logo entrance with scale and bounce
  * - Animated fire glow behind the logo

@@ -1,4 +1,4 @@
-# Vitruvian Phoenix - iOS App
+# Project Phoenix - iOS App
 
 iOS application for controlling Vitruvian Trainer workout machines via BLE.
 
@@ -44,7 +44,7 @@ it in Supabase and update the GitHub secrets.
 1. Open Xcode and create a new iOS App project:
    - Product Name: `VitruvianPhoenix`
    - Team: Your development team
-   - Organization Identifier: `com.example.vitruvianredux`
+   - Organization Identifier: `com.devil.phoenixproject`
    - Interface: SwiftUI
    - Language: Swift
 
@@ -95,7 +95,7 @@ iosApp/
     └── Info.plist                 # App configuration
 
 shared/src/iosMain/
-├── kotlin/com/example/vitruvianredux/
+├── kotlin/com/devil/phoenixproject/
 │   ├── MainViewController.kt      # Compose UI entry point
 │   ├── Platform.ios.kt           # Platform info
 │   ├── data/
@@ -108,7 +108,6 @@ shared/src/iosMain/
 │   ├── presentation/components/
 │   │   ├── CompactNumberPicker.ios.kt   # Wheel picker
 │   │   ├── HapticFeedbackEffect.ios.kt  # Haptic feedback
-│   │   └── VideoPlayer.ios.kt           # Video player stub
 │   └── util/CsvExporter.ios.kt   # CSV export & sharing
 ```
 

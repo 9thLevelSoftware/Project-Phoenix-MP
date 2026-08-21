@@ -71,7 +71,7 @@ class WorkoutCoordinator(
 
         /**
          * Two-tier velocity hysteresis for stall detection (Issue #204, #216)
-         * Matches official app behavior to prevent timer toggling near threshold:
+         * Hysteresis prevents the stall timer toggling near the threshold:
          * - Below LOW (<2.5): start/continue stall timer (user is stopped)
          * - Above HIGH (>10): reset stall timer (user is clearly moving)
          * - Between LOW and HIGH (>=2.5 and <=10): maintain current state (hysteresis band)

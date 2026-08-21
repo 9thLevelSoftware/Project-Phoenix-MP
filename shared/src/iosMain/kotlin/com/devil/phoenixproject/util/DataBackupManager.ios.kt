@@ -272,7 +272,7 @@ class IosDataBackupManager(
             .replace("-", "") + "_" +
             KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
                 .replace(":", "")
-        val fileName = "vitruvian_backup_$timestamp.json"
+        val fileName = "phoenix_backup_$timestamp.json"
         val tempDir = NSTemporaryDirectory()
         return BackupJsonWriter("$tempDir$fileName")
     }
@@ -317,7 +317,7 @@ class IosDataBackupManager(
                 .replace("-", "") + "_" +
                 KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
                     .replace(":", "")
-            val fileName = "vitruvian_backup_$timestamp.json"
+            val fileName = "phoenix_backup_$timestamp.json"
             val filePath = "$backupDirectory/$fileName"
 
             val data = NSString.create(string = jsonString).dataUsingEncoding(NSUTF8StringEncoding)

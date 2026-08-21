@@ -77,8 +77,8 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `createOfficialStopPacket returns 2-byte soft stop`() {
-        val packet = BlePacketFactory.createOfficialStopPacket()
+    fun `createSoftStopPacket returns 2-byte soft stop`() {
+        val packet = BlePacketFactory.createSoftStopPacket()
 
         assertEquals(2, packet.size)
         assertEquals(0x50.toByte(), packet[0])
@@ -743,7 +743,7 @@ class BlePacketFactoryTest {
         assertEquals(3, packet[0x04].toInt(), "warmupReps / romRepCount")
         assertEquals(2, packet[0x05].toInt(), "targetReps / repCount")
 
-        // EchoForceConfig fields (matching Echo force-config serialization order)
+        // Echo force-config fields (serialization order)
         assertEquals(0, readUShortLE(packet, 0x06), "spotter (always 0)")
         assertEquals(75, readUShortLE(packet, 0x08), "eccentricOverload")
         assertEquals(50, readUShortLE(packet, 0x0A), "referenceMapBlend (always 50)")
@@ -755,7 +755,7 @@ class BlePacketFactoryTest {
 
         // Eccentric EchoPhase: fixed on the machine
         assertEquals(0.0f, readFloatLE(packet, 0x18), "eccentricDurationSeconds (always 0.0)")
-        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity (official=-200.0)")
+        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity (firmware default=-200.0)")
     }
 
     @Test
@@ -811,7 +811,7 @@ class BlePacketFactoryTest {
     }
 
     // ========== Old School Mode: Expected Byte Layout Tests ==========
-    // Official mode mapping: Phoenix OldSchool = Official STATIC
+    // Firmware profile mapping: OldSchool uses the STATIC activation profile
 
     @Test
     fun `Old School packet matches expected byte layout RepConfig header`() {
@@ -1000,7 +1000,7 @@ class BlePacketFactoryTest {
     }
 
     // ========== TUT Mode: Expected Byte Layout Tests ==========
-    // Phoenix TUT maps to official FOCUSED mode — identical activation profile values
+    // TUT uses the FOCUSED firmware activation profile — identical activation profile values
 
     @Test
     fun `TUT packet matches expected byte layout RepConfig header`() {
@@ -1122,7 +1122,7 @@ class BlePacketFactoryTest {
         // bottom RepBound — ECCENTRIC-SPECIFIC OVERRIDE
         assertEquals(5.0f, readFloatLE(packet, 0x1C), "bottom.threshold")
         assertEquals(0.0f, readFloatLE(packet, 0x20), "bottom.drift")
-        // Official: bottom.inner = L(50, 250) — NOT the default L(250, 250)
+        // Eccentric profile: bottom.inner = L(50, 250) — NOT the default L(250, 250)
         assertEquals(50.toShort(), readShortLE(packet, 0x24), "bottom.inner.mmPerM (ECCENTRIC=50)")
         assertEquals(250.toShort(), readShortLE(packet, 0x26), "bottom.inner.mmMax")
         assertEquals(200.toShort(), readShortLE(packet, 0x28), "bottom.outer.mmPerM")
@@ -1628,7 +1628,7 @@ class BlePacketFactoryTest {
     @Test
     fun `issue390 AMRAP mode keeps target weight at selected per-cable weight`() {
         // AMRAP uses reps=0xFF for unlimited reps. The force controller still
-        // receives the selected per-cable force in the official trailing force block.
+        // receives the selected per-cable force in the trailing force config block.
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
