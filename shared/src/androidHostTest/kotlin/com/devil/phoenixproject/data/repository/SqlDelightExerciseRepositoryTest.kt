@@ -226,6 +226,113 @@ class SqlDelightExerciseRepositoryTest {
         assertEquals(false, foamRoll.hasCableAccessory)
     }
 
+    @Test
+    fun `reimport preserves user-owned catalogue fields`() = runTest {
+        insertExercise(
+            id = "Plank",
+            name = "Old Plank",
+            muscleGroup = "Core",
+            equipment = "BODYWEIGHT",
+            isFavorite = 1L,
+            oneRepMaxKg = 42.5,
+            timesPerformed = 9L,
+            lastPerformed = 1_700_000_000_000L,
+        )
+
+        val result = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Plank",
+                "name": "Plank",
+                "equipment": "body only",
+                "primaryMuscles": ["abdominals"],
+                "secondaryMuscles": [],
+                "instructions": ["Hold a straight line."],
+                "category": "strength",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        assertTrue(result.isSuccess)
+        val plank = repository.getExerciseById("Plank")
+        assertNotNull(plank)
+        assertEquals("Plank", plank.name)
+        assertEquals(true, plank.isFavorite)
+        assertEquals(42.5f, plank.oneRepMaxKg)
+        assertEquals(9, plank.timesPerformed)
+        val row = database.vitruvianDatabaseQueries.selectExerciseById("Plank").executeAsOne()
+        assertEquals(1_700_000_000_000L, row.lastPerformed)
+        assertEquals("Hold a straight line.", row.description)
+        assertEquals("BODYWEIGHT", plank.equipment)
+    }
+
+    @Test
+    fun `import fails when every catalogue id is already a custom exercise`() = runTest {
+        insertExercise(
+            id = "Plank",
+            name = "My Plank",
+            muscleGroup = "Core",
+            equipment = "BODYWEIGHT",
+            isCustom = 1L,
+        )
+
+        val result = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Plank",
+                "name": "Plank",
+                "equipment": "body only",
+                "primaryMuscles": ["abdominals"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "strength",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        assertTrue(result.isFailure)
+        val custom = repository.getExerciseById("Plank")
+        assertNotNull(custom)
+        assertEquals("My Plank", custom.name)
+        assertEquals(true, custom.isCustom)
+    }
+
+    @Test
+    fun `name fallbacks prefer active rows over archived legacy ids`() = runTest {
+        insertExercise(
+            id = "legacy-plank",
+            name = "Plank",
+            muscleGroup = "Core",
+            equipment = "BODYWEIGHT",
+            archived = 1L,
+        )
+        insertExercise(
+            id = "Plank",
+            name = "Plank",
+            muscleGroup = "Core",
+            equipment = "BODYWEIGHT",
+            archived = 0L,
+        )
+
+        val byName = database.vitruvianDatabaseQueries.findExerciseByName("Plank").executeAsOne()
+        val byMuscle = database.vitruvianDatabaseQueries
+            .findExerciseByNameAndMuscle("Plank", "Core")
+            .executeAsOne()
+        val byCase = database.vitruvianDatabaseQueries
+            .findExerciseByNameCaseInsensitive("plank")
+            .executeAsOne()
+
+        assertEquals("Plank", byName.id)
+        assertEquals("Plank", byMuscle.id)
+        assertEquals("Plank", byCase.id)
+    }
+
     private fun insertExercise(
         id: String,
         name: String,
@@ -236,6 +343,9 @@ class SqlDelightExerciseRepositoryTest {
         isFavorite: Long = 0L,
         isCustom: Long = 0L,
         oneRepMaxKg: Double? = null,
+        timesPerformed: Long = 0L,
+        lastPerformed: Long? = null,
+        archived: Long = 0L,
     ) {
         database.vitruvianDatabaseQueries.insertExercise(
             id = id,
@@ -253,11 +363,11 @@ class SqlDelightExerciseRepositoryTest {
             gripWidth = null,
             minRepRange = null,
             popularity = 0.0,
-            archived = 0L,
+            archived = archived,
             isFavorite = isFavorite,
             isCustom = isCustom,
-            timesPerformed = 0L,
-            lastPerformed = null,
+            timesPerformed = timesPerformed,
+            lastPerformed = lastPerformed,
             aliases = null,
             defaultCableConfig = defaultCableConfig,
             one_rep_max_kg = oneRepMaxKg,
