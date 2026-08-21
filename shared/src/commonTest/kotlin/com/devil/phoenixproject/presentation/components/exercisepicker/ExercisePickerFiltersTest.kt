@@ -114,4 +114,18 @@ class ExercisePickerFiltersTest {
 
         assertEquals(listOf(bodyOnly, token), result)
     }
+
+    @Test
+    fun cableFilterMatchesImportedCableToken() {
+        val facePull = exercise("face-pull", equipment = "cable")
+        val handles = exercise("row", equipment = "HANDLES")
+        val bodyweight = exercise("plank", equipment = "BODYWEIGHT").copy(isBodyweightOverride = true)
+
+        val result = filterExercisePickerCandidates(
+            candidates = listOf(facePull, handles, bodyweight),
+            filters = ExercisePickerFilterState(selectedEquipment = setOf("Cable")),
+        )
+
+        assertEquals(listOf(facePull), result)
+    }
 }

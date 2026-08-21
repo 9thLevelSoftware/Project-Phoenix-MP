@@ -82,6 +82,7 @@ internal fun getEquipmentDatabaseValues(displayName: String): List<String> = whe
     "Bench" -> listOf("BENCH")
     "Rope" -> listOf("ROPE")
     "Belt" -> listOf("BELT")
+    "Cable" -> listOf("CABLE")
     "Bodyweight" -> listOf("BODYWEIGHT")
     else -> emptyList()
 }
