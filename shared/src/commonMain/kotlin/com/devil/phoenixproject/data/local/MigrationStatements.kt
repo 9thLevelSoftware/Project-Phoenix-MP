@@ -1053,5 +1053,12 @@ WHERE gs.rowid = (
     )""",
     )
 
+    // Migration 46: Opt-in drop-set offer configuration (Issue #673 PR 3)
+    // Mirrors 46.sqm exactly.
+    46 -> listOf(
+        "ALTER TABLE RoutineExercise ADD COLUMN dropSetEnabled INTEGER NOT NULL DEFAULT 0",
+        "ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL",
+    )
+
     else -> emptyList()
 }

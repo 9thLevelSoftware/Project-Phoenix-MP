@@ -101,6 +101,10 @@ data class RoutineExercise(
     val perSetRestTime: Boolean = false,
     // Stall detection toggle - when true, auto-stops set after 5s movement stall/de-load
     val stallDetectionEnabled: Boolean = true,
+    // Offer a drop-set retry after stall failure (Issue #673). Default off.
+    val dropSetEnabled: Boolean = false,
+    // Per-cable kg floor for drop-set candidates; required when dropSetEnabled is true.
+    val dropSetMinWeightKg: Float? = null,
     // Rep count timing - when to count working reps (TOP=concentric peak, BOTTOM=eccentric valley)
     val repCountTiming: RepCountTiming = RepCountTiming.TOP,
     // Stop at top (contracted position) — applies to fixed-rep sets only, not AMRAP/Just Lift

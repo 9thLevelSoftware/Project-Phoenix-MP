@@ -2298,6 +2298,8 @@ class SqlDelightSyncRepository(
                 // Exercise from this row alone, without a catalog lookup (#635).
                 isBodyweight = exercise.isBodyweight?.let { if (it) 1L else 0L }
                     ?: catalogExercise?.isBodyweight,
+                dropSetEnabled = 0L,
+                dropSetMinWeightKg = null,
             )
         }
     }

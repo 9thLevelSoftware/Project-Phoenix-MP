@@ -474,6 +474,8 @@ class SqlDelightCompletedSetRepositoryTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
             isBodyweight = null,
+            dropSetEnabled = 0L,
+            dropSetMinWeightKg = null,
         )
     }
 

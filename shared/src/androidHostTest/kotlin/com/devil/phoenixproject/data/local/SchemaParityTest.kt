@@ -880,10 +880,30 @@ class SchemaParityTest {
         }
     }
 
+    @Test
+    fun `migration 46 to 47 adds drop set configuration defaults`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 46)
+        driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
+        driver.execute(
+            null,
+            "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)",
+            0,
+        )
+
+        VitruvianDatabase.Schema.migrate(driver, 46, 47)
+
+        assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "dropSetEnabled"))
+        assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "dropSetMinWeightKg"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(dropSetEnabled AS TEXT) FROM RoutineExercise WHERE id = 're1'"))
+        assertEquals(null, queryScalar(driver, "SELECT CAST(dropSetMinWeightKg AS TEXT) FROM RoutineExercise WHERE id = 're1'"))
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 46L
+        private const val EXPECTED_SCHEMA_VERSION = 47L
         private val CREATE_ACTIVE_RUNTIME_SQL = """
             CREATE TABLE ActiveWorkoutRuntime (
                 profile_id TEXT NOT NULL,

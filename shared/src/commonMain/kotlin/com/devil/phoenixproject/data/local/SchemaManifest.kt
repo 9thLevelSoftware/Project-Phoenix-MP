@@ -1018,7 +1018,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 
     // RoutineExercise -- initial schema, full current shape
     // Columns added by later migrations: superset fields (m4), PR scaling (m7),
-    // routine programming (m18), behavior overrides (m20), scalingBasis (m38), isBodyweight (m39)
+    // routine programming (m18), behavior overrides (m20), scalingBasis (m38), isBodyweight (m39),
+    // drop-set offer (m46)
     SchemaTableOperation(
         table = "RoutineExercise",
         createSql = """
@@ -1059,6 +1060,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 defaultRackItemIds TEXT NOT NULL DEFAULT '[]',
                 rackBehaviorOverrides TEXT NOT NULL DEFAULT '{}',
                 isBodyweight INTEGER,
+                dropSetEnabled INTEGER NOT NULL DEFAULT 0,
+                dropSetMinWeightKg REAL,
                 FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
                 FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -1412,6 +1415,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("RoutineExercise", "stallDetectionEnabled", "ALTER TABLE RoutineExercise ADD COLUMN stallDetectionEnabled INTEGER NOT NULL DEFAULT 1"),
     SchemaHealOperation("RoutineExercise", "stopAtTop", "ALTER TABLE RoutineExercise ADD COLUMN stopAtTop INTEGER NOT NULL DEFAULT 0"),
     SchemaHealOperation("RoutineExercise", "repCountTiming", "ALTER TABLE RoutineExercise ADD COLUMN repCountTiming TEXT NOT NULL DEFAULT 'TOP'"),
+    SchemaHealOperation("RoutineExercise", "dropSetEnabled", "ALTER TABLE RoutineExercise ADD COLUMN dropSetEnabled INTEGER NOT NULL DEFAULT 0"),
+    SchemaHealOperation("RoutineExercise", "dropSetMinWeightKg", "ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL"),
 
     // ── UserProfile (4 columns) ─────────────────────────────────────────
 

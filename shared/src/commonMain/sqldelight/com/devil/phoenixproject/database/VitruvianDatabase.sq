@@ -261,6 +261,9 @@ CREATE TABLE RoutineExercise (
     -- NULL = derive from equipment; 0 = cable; 1 = bodyweight. Replaces the
     -- legacy pull-sync 'Bodyweight' sentinel in exerciseEquipment.
     isBodyweight INTEGER,
+    -- Drop set offer (added in migration 46, issue #673 PR 3)
+    dropSetEnabled INTEGER NOT NULL DEFAULT 0,
+    dropSetMinWeightKg REAL,
     FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
     FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -1348,9 +1351,9 @@ INSERT INTO RoutineExercise (
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
     stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
-    rackBehaviorOverrides, scalingBasis, isBodyweight
+    rackBehaviorOverrides, scalingBasis, isBodyweight, dropSetEnabled, dropSetMinWeightKg
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Insert with IGNORE for import (won't overwrite existing)
 insertRoutineExerciseIgnore:
@@ -1361,9 +1364,9 @@ INSERT OR IGNORE INTO RoutineExercise (
     perSetRestTime, isAMRAP, supersetId, orderInSuperset,
     usePercentOfPR, weightPercentOfPR, prTypeForScaling, setWeightsPercentOfPR,
     stallDetectionEnabled, stopAtTop, repCountTiming, setEchoLevels, warmupSets, defaultRackItemIds,
-    rackBehaviorOverrides, scalingBasis, isBodyweight
+    rackBehaviorOverrides, scalingBasis, isBodyweight, dropSetEnabled, dropSetMinWeightKg
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 deleteRoutineExercises:
 DELETE FROM RoutineExercise WHERE routineId = ?;

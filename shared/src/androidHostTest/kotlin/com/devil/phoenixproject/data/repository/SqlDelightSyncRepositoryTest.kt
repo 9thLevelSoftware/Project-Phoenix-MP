@@ -744,6 +744,8 @@ class SqlDelightSyncRepositoryTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = null,
             isBodyweight = null,
+            dropSetEnabled = 0L,
+            dropSetMinWeightKg = null,
         )
 
         repository.mergePortalRoutines(
@@ -826,6 +828,8 @@ class SqlDelightSyncRepositoryTest {
             rackBehaviorOverrides = "{}",
             scalingBasis = "ESTIMATED_1RM",
             isBodyweight = null,
+            dropSetEnabled = 0L,
+            dropSetMinWeightKg = null,
         )
 
         repository.mergePortalRoutines(

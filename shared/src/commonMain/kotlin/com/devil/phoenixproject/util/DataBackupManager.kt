@@ -726,6 +726,8 @@ abstract class BaseDataBackupManager(
                                     runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
                                 }?.name,
                                 isBodyweight = resolveBackupIsBodyweight(exercise),
+                                dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
+                                dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
                             )
                         }
                         if (inserted != null) routineExercisesImported++
@@ -1550,6 +1552,8 @@ abstract class BaseDataBackupManager(
                                                             runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
                                                         }?.name,
                                                         isBodyweight = resolveBackupIsBodyweight(exercise),
+                                                        dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
+                                                        dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
                                                     )
                                                 }
                                                 if (inserted != null) {
@@ -2664,6 +2668,8 @@ abstract class BaseDataBackupManager(
         scalingBasis = exercise.scalingBasis,
         // Explicit bodyweight flag (#635); null = derive from equipment.
         isBodyweight = exercise.isBodyweight?.let { it != 0L },
+        dropSetEnabled = exercise.dropSetEnabled != 0L,
+        dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toFloat(),
     )
 
     /**
