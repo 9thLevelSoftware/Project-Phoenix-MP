@@ -26,8 +26,10 @@ class WorkoutHudVideoWiringTest {
             "WorkoutHud must keep the demo page between metrics and stats.",
         )
         assertTrue(
-            !src.contains("Video Playback Disabled") && src.contains("ExerciseDemoImage("),
-            "InstructionPage must always render ExerciseDemoImage instead of the disabled-video UI.",
+            src.contains("if (!enableVideoPlayback)") &&
+                src.contains("Video Playback Disabled") &&
+                src.contains("ExerciseDemoImage("),
+            "InstructionPage must honor enableVideoPlayback and render ExerciseDemoImage when demos are on.",
         )
         assertTrue(
             src.contains("selectedExerciseId = workoutParameters.selectedExerciseId") &&

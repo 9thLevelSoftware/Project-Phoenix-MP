@@ -729,7 +729,6 @@ private fun ExecutionPage(
     }
 }
 
-@Suppress("UNUSED_PARAMETER")
 @Composable
 private fun InstructionPage(
     loadedRoutine: Routine?,
@@ -744,8 +743,9 @@ private fun InstructionPage(
         mutableStateOf<List<ExerciseImageEntity>>(emptyList())
     }
 
-    LaunchedEffect(currentExerciseIndex, exerciseId) {
+    LaunchedEffect(currentExerciseIndex, exerciseId, enableVideoPlayback) {
         images = emptyList()
+        if (!enableVideoPlayback) return@LaunchedEffect
         if (exerciseId != null) {
             try {
                 images = exerciseRepository.getImages(exerciseId)
@@ -753,6 +753,33 @@ private fun InstructionPage(
                 co.touchlab.kermit.Logger.e("WorkoutHud") { "Failed to load images for $exerciseId: ${e.message}" }
             }
         }
+    }
+
+    if (!enableVideoPlayback) {
+        Column(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterVertically),
+        ) {
+            Icon(
+                Icons.Default.VideocamOff,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+            )
+            Text(
+                "Video Playback Disabled",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                stringResource(Res.string.settings_show_exercise_videos_description),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+            )
+        }
+        return
     }
 
     Column(

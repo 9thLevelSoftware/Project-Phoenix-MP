@@ -123,6 +123,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                         val primaryMuscle = muscleNames.firstOrNull() ?: "Other"
                         val equipmentLabel = canonicalEquipmentLabel(exercise.equipment)
                         val isBodyweight = equipmentLabel == BODYWEIGHT_EQUIPMENT
+                        val (sidedness, cableConfig) = cableMetadataForEquipment(equipmentLabel)
 
                         queries.insertExercise(
                             id = exercise.id,
@@ -137,7 +138,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                                 .ifBlank { null },
                             equipment = equipmentLabel,
                             movement = exercise.category,
-                            sidedness = null,
+                            sidedness = sidedness,
                             grip = null,
                             gripWidth = null,
                             minRepRange = null,
@@ -148,7 +149,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             timesPerformed = 0L,
                             lastPerformed = null,
                             aliases = null,
-                            defaultCableConfig = "EITHER",
+                            defaultCableConfig = cableConfig,
                             one_rep_max_kg = null,
                             mvtOverrideMs = null,
                             isBodyweight = if (isBodyweight) 1L else 0L,
@@ -226,9 +227,8 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                         val equipmentLabel = canonicalEquipmentLabel(
                             info.equipment.mapNotNull { it.name }.joinToString(",") { it.lowercase() },
                         )
-                        val isBodyweight = equipmentLabel == BODYWEIGHT_EQUIPMENT ||
-                            equipmentLabel.contains("bodyweight") ||
-                            equipmentLabel.contains("body only")
+                        val isBodyweight = equipmentLabel == BODYWEIGHT_EQUIPMENT
+                        val (sidedness, cableConfig) = cableMetadataForEquipment(equipmentLabel)
                         val licenseName = info.license?.shortName ?: info.license?.fullName ?: "CC-BY-SA 4.0"
                         val author = info.licenseAuthor?.takeIf { it.isNotBlank() }
                         val attribution = buildString {
@@ -259,7 +259,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                                 .ifBlank { null },
                             equipment = equipmentLabel,
                             movement = info.category?.name,
-                            sidedness = null,
+                            sidedness = sidedness,
                             grip = null,
                             gripWidth = null,
                             minRepRange = null,
@@ -270,7 +270,7 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
                             timesPerformed = 0L,
                             lastPerformed = null,
                             aliases = null,
-                            defaultCableConfig = "EITHER",
+                            defaultCableConfig = cableConfig,
                             one_rep_max_kg = null,
                             mvtOverrideMs = null,
                             isBodyweight = if (isBodyweight) 1L else 0L,
@@ -328,6 +328,17 @@ class ExerciseImporter(private val database: VitruvianDatabase) {
         private const val WGER_EXERCISE_INFO_URL =
             "https://wger.de/api/v2/exerciseinfo/?language=2&limit=100"
         private const val WGER_ENGLISH_LANGUAGE = 2
+
+        /**
+         * Unified bar/belt attachments use both cables as one load. Everything else
+         * stays EITHER so runtime heuristics decide.
+         */
+        internal fun cableMetadataForEquipment(equipment: String): Pair<String?, String> {
+            val unified = equipment.split(",").map { it.trim().uppercase() }.any {
+                it == "BARBELL" || it == "E-Z CURL BAR" || it == "BAR" || it == "BELT"
+            }
+            return if (unified) "bilateral" to "DOUBLE" else null to "EITHER"
+        }
 
         internal fun canonicalEquipmentLabel(raw: String?): String {
             val trimmed = raw.orEmpty().trim()

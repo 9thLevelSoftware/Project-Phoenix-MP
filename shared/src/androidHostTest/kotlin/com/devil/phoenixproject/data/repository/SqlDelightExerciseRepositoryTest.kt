@@ -142,6 +142,8 @@ class SqlDelightExerciseRepositoryTest {
         assertNotNull(exercise)
         assertEquals("Chest", exercise.muscleGroup)
         assertEquals(false, exercise.isBodyweight)
+        assertEquals(ExerciseCableIntent.DUAL, exercise.cableIntent)
+        assertEquals(2, exercise.displayMultiplier)
         val images = repository.getImages("Barbell_Bench_Press_-_Medium_Grip")
         assertEquals(1, images.size)
         assertTrue(images.single().url.contains("Barbell_Bench_Press_-_Medium_Grip/0.jpg"))
@@ -194,6 +196,7 @@ class SqlDelightExerciseRepositoryTest {
         assertEquals("Core", plank.muscleGroup)
         assertEquals(true, plank.isBodyweight)
         assertEquals("BODYWEIGHT", plank.equipment)
+        assertEquals(ExerciseCableIntent.EITHER, plank.cableIntent)
     }
 
     private fun insertExercise(
