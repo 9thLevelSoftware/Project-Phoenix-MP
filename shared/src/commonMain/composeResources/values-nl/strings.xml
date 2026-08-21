@@ -730,6 +730,7 @@
     <string name="settings_video_behavior">Videogedrag</string>
     <string name="settings_show_exercise_videos">Oefeningsvideo's tonen</string>
     <string name="settings_show_exercise_videos_description">Toon oefendemonstraties; schakel dit uit op tragere apparaten</string>
+    <string name="settings_exercise_demos_disabled">Videoweergave uitgeschakeld</string>
     <string name="profile_weight_increment">Gewichtsstap</string>
     <string name="profile_body_weight">Lichaamsgewicht</string>
     <string name="profile_set_summary">Duur setoverzicht</string>
