@@ -50,7 +50,9 @@ class RegenerateFiveThreeOneRoutinesUseCase(
                     targetWeek = targetWeek,
                     onMatchedLift = { canonicalId, storedId ->
                         matchedLiftIds += canonicalId
-                        storedLiftIdsByCanonical.putIfAbsent(canonicalId, storedId)
+                        if (canonicalId !in storedLiftIdsByCanonical) {
+                            storedLiftIdsByCanonical[canonicalId] = storedId
+                        }
                     },
                 )
             } catch (e: IllegalStateException) {
