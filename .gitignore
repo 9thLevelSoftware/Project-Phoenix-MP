@@ -77,12 +77,6 @@ CHANGELOG.md
 opencode.json
 review-prompt.txt
 
-# Reference/decompiled code (not for distribution)
-/reference/
-/vitruvian-decompiled/
-/scripts/
-/apktool.jar
-/vitruvian-official.apk
 /parent repo/
 
 # Git worktrees

@@ -154,6 +154,103 @@ class RepNotificationFreshnessGateTest {
         )
     }
 
+    // --- Issue #698: Just Lift target mismatch exemption ---
+
+    @Test
+    fun `just lift lease accepts repsSetTotal 252 despite finite UI target`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 10, cutover = 1_000L).copy(isJustLift = true)
+
+        // First packet establishes baseline and arms
+        assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, modernPacket(timestamp = 1_001L)))
+        assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
+
+        // repsSetTotal=252 (unlimited) should NOT be dropped as TARGET_MISMATCH
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 252, timestamp = 1_002L)),
+        )
+    }
+
+    @Test
+    fun `just lift lease does not treat repsSetCount as terminal`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 3, cutover = 1_000L).copy(isJustLift = true)
+
+        // repsSetCount=3 >= workingRepTarget=3 would be terminal for finite,
+        // but Just Lift should process it normally after baseline
+        assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, modernPacket(timestamp = 1_001L)))
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(lease, modernPacket(repsSetCount = 3, repsSetTotal = 252, timestamp = 1_002L)),
+        )
+    }
+
+    @Test
+    fun `finite lease still rejects mismatched repsSetTotal after fix`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 3, cutover = 1_000L) // isJustLift = false
+
+        assertEquals(
+            RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH),
+            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 252, timestamp = 1_001L)),
+        )
+    }
+
+    // --- Issue #700: AMRAP target mismatch exemption (mirrors #698 Just Lift tests) ---
+
+    @Test
+    fun `amrap lease accepts repsSetTotal 252 despite finite UI target`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 0, cutover = 1_000L).copy(isAmrap = true)
+
+        // First packet establishes baseline and arms
+        assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, modernPacket(timestamp = 1_001L)))
+        assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
+
+        // repsSetTotal=252 (unlimited) should NOT be dropped as TARGET_MISMATCH for AMRAP
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 252, timestamp = 1_002L)),
+        )
+    }
+
+    @Test
+    fun `amrap lease does not treat repsSetCount as terminal`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 0, cutover = 1_000L).copy(isAmrap = true)
+
+        // AMRAP should never treat repsSetCount as terminal, same as Just Lift
+        assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, modernPacket(timestamp = 1_001L)))
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(lease, modernPacket(repsSetCount = 5, repsSetTotal = 252, timestamp = 1_002L)),
+        )
+    }
+
+    @Test
+    fun `finite amrap lease still rejects mismatched repsSetTotal`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 3, cutover = 1_000L).copy(isAmrap = true)
+
+        // Even with isAmrap=true, a mismatched finite repsSetTotal should be rejected
+        assertEquals(
+            RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH),
+            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 4, timestamp = 1_001L)),
+        )
+    }
+
+    @Test
+    fun `pre-cutover amrap packet is still rejected`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 0, cutover = 1_000L).copy(isAmrap = true)
+
+        assertEquals(
+            RepFreshnessDecision.Drop(RepDropReason.PRE_CUTOVER_TIMESTAMP),
+            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 252, timestamp = 999L)),
+        )
+    }
+
     private fun activeLease(target: Int, cutover: Long) = ExecutionLease(
         executionId = 1L,
         sessionId = "session-a",

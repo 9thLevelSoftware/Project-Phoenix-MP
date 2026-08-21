@@ -70,8 +70,8 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
@@ -88,13 +88,13 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
+import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
 import com.devil.phoenixproject.presentation.components.StartGateLabel
-import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
 import com.devil.phoenixproject.presentation.components.toStartGatePresentation
@@ -153,7 +153,7 @@ import vitruvianprojectphoenix.shared.generated.resources.workout_teardown_finis
  *
  * @param state Consolidated UI state
  * @param actions Callback interface for UI events
- * @param exerciseRepository Repository for loading exercise details/videos
+ * @param exerciseRepository Repository for loading exercise details/images
  * @param hapticEvents Optional flow for triggering haptic feedback
  */
 @Composable
@@ -1787,27 +1787,26 @@ fun CurrentExerciseCard(
     // Get current exercise from routine if available
     val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
 
-    // Get exercise entity and video for display
+    // Get exercise entity and demonstration images for display
     // Issue #142: Key the remember on currentExerciseIndex so state resets when exercise changes.
     var exerciseEntity by remember(currentExerciseIndex) { mutableStateOf<Exercise?>(null) }
-    var videoEntity by remember(currentExerciseIndex) { mutableStateOf<ExerciseVideoEntity?>(null) }
+    var images by remember(currentExerciseIndex) { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
 
-    // Load exercise and video data
-    // Issue #142: Include currentExerciseIndex in the key to ensure video reloads when
+    // Load exercise and image data
+    // Issue #142: Include currentExerciseIndex in the key to ensure images reload when
     // navigating to a different exercise position. This handles cases where the same
     // exercise appears multiple times in a routine (same exercise.id but different index).
     LaunchedEffect(currentExerciseIndex, currentExercise?.exercise?.id, workoutParameters.selectedExerciseId) {
         // Clear stale data first
         exerciseEntity = null
-        videoEntity = null
-        // Load new exercise and video data
+        images = emptyList()
         val exerciseId = currentExercise?.exercise?.id ?: workoutParameters.selectedExerciseId
         if (exerciseId != null) {
             try {
                 exerciseEntity = exerciseRepository.getExerciseById(exerciseId)
-                videoEntity = exerciseRepository.getVideos(exerciseId).firstOrNull()
+                images = exerciseRepository.getImages(exerciseId)
             } catch (e: Exception) {
-                co.touchlab.kermit.Logger.e("WorkoutTab") { "Failed to load exercise/video for $exerciseId: ${e.message}" }
+                co.touchlab.kermit.Logger.e("WorkoutTab") { "Failed to load exercise/images for $exerciseId: ${e.message}" }
             }
         }
     }
@@ -1887,15 +1886,15 @@ fun CurrentExerciseCard(
                 )
             }
 
-            // Video player - shows exercise demonstration video or placeholder
             if (enableVideoPlayback) {
                 Spacer(modifier = Modifier.height(Spacing.medium))
-                VideoPlayer(
-                    videoUrl = videoEntity?.videoUrl,
+                ExerciseDemoImage(
+                    imageUrls = images.map { it.url },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp)
                         .clip(MaterialTheme.shapes.small),
+                    contentDescription = currentExercise?.exercise?.name ?: exerciseEntity?.name,
                 )
             }
         }

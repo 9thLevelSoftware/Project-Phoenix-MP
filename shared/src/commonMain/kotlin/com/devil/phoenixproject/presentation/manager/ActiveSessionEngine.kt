@@ -5026,6 +5026,13 @@ class ActiveSessionEngine(
                         // Playing both was causing multiple sounds to fire at once (sound stacking bug).
                         // Issue #182: Trigger set completion immediately on WORKOUT_COMPLETE event.
                         if (executionGuard.isCurrent(eventLease) && coordinator._workoutState.value is WorkoutState.Active) {
+                            // Issue #703: Flush _repCount.value BEFORE handleSetCompletion reads it.
+                            // repCounter.process() has already updated its internal workingReps,
+                            // but coordinator._repCount.value is still stale (the StateFlow write in
+                            // handleRepNotification happens after this callback returns). handleSetCompletion
+                            // -> captureExitSnapshot reads _repCount.value, so we must ensure it reflects
+                            // the final rep count before the snapshot is captured.
+                            coordinator._repCount.value = repCounter.getRepCount()
                             Logger.d("WORKOUT_COMPLETE event received - triggering immediate set completion")
                             handleSetCompletion(eventLease, SetEndReason.TARGET_REPS_REACHED)
                         }

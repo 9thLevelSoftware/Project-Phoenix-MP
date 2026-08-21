@@ -28,10 +28,14 @@ internal fun filterExercisePickerCandidates(
         }
     val matchesEquipment = filters.selectedEquipment.isEmpty() ||
         filters.selectedEquipment.any { equipment ->
-            val databaseValues = getEquipmentDatabaseValues(equipment)
-            val exerciseEquipment = exercise.equipment.uppercase().split(",").map { it.trim() }
-            databaseValues.any { databaseValue ->
-                databaseValue.uppercase() in exerciseEquipment
+            if (equipment == "Bodyweight" && exercise.isBodyweight) {
+                true
+            } else {
+                val databaseValues = getEquipmentDatabaseValues(equipment)
+                val exerciseEquipment = exercise.equipment.uppercase().split(",").map { it.trim() }
+                databaseValues.any { databaseValue ->
+                    databaseValue.uppercase() in exerciseEquipment
+                }
             }
         }
     val matchesPreviouslyCompleted = !filters.showPreviouslyCompletedOnly ||

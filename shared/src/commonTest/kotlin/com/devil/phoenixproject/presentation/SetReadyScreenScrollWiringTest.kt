@@ -250,14 +250,14 @@ class SetReadyScreenScrollWiringTest {
         val src = readSetReadyScreenSource()
         val configIdx = src.indexOf("if (isEchoMode) \"ECHO SETTINGS\" else \"SET CONFIGURATION\"")
         val rackIdx = src.indexOf("testTag(SetReadyTestTags.RACK_CARD)")
-        val videoIdx = src.indexOf("Video thumbnail stays available")
+        val mediaIdx = src.indexOf("ExerciseDemoImage(")
 
         assertTrue(configIdx >= 0, "SetReady SET CONFIGURATION label must exist.")
         assertTrue(rackIdx >= 0, "SetReady equipment rack tag must exist.")
-        assertTrue(videoIdx >= 0, "SetReady compact/lower video block must exist.")
+        assertTrue(mediaIdx >= 0, "SetReady compact/lower demo image block must exist.")
         assertTrue(
-            configIdx < rackIdx && rackIdx < videoIdx,
-            "Issue #604 signed-off layout requires Set Configuration before Equipment Rack, with video moved below primary controls.",
+            configIdx < rackIdx && rackIdx < mediaIdx,
+            "Issue #604 signed-off layout requires Set Configuration before Equipment Rack, with demo media moved below primary controls.",
         )
     }
 

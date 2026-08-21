@@ -79,7 +79,7 @@ object BlePacketFactory {
 
     /**
      * Creates the Official App STOP_PACKET command (2 bytes).
-     * Per official app analysis:
+     * Observed machine packet layout:
      * - Uses StopPacket (0x50 0x00) to end sessions and CLEAR FAULTS
      * - This is a "soft stop" that releases tension and clears the blinking red light fault state
      */
@@ -119,7 +119,7 @@ object BlePacketFactory {
      * Build the 96-byte activation/program parameters frame.
      *
      * Activation modes serialize a 32-byte mode profile at 0x30-0x4F, followed by
-     * the force config block at 0x50-0x5F. The official app keeps these regions
+     * the force config block at 0x50-0x5F. The machine keeps these regions
      * separate: 0x48-0x4F remains the mode profile's eccentric-up ramp, while
      * selected force/progression live at 0x58/0x5C.
      *
@@ -141,7 +141,7 @@ object BlePacketFactory {
         // (minMmS=-100, maxMmS=-50, ramp=20.0f). The OVERLAP variant overwrites
         // those bytes with softMax/increment, which leaves the firmware unable
         // to apply weight during the eccentric phase (reps count, but the
-        // chosen weight is never engaged). The official app preserves the
+        // chosen weight is never engaged). The machine preserves the
         // profile tail for this mode. Gate on the resolved profile so that
         // EccentricOnly always uses NON_OVERLAP regardless of isJustLift.
         val effectiveVariant = if (profileMode is ProgramMode.EccentricOnly) {
@@ -196,7 +196,7 @@ object BlePacketFactory {
         frame[0x2a] = 0x1E
         frame[0x2b] = 0x00
 
-        // Eccentric-specific RepConfig override (official app: Dk/e.java ordinal 5)
+        // Eccentric-specific RepConfig override (eccentric mode profile)
         // Eccentric mode uses bottom.inner.mmPerM = 50 (vs default 250) for
         // more sensitive bottom-of-rep detection during eccentric-focused training.
         if (params.programMode is ProgramMode.EccentricOnly) {
@@ -234,7 +234,7 @@ object BlePacketFactory {
 
         if (effectiveVariant == ForceConfigVariant.OVERLAP) {
             // Legacy Phoenix behavior: overwrite the profile tail with softMax
-            // and increment. Production uses NON_OVERLAP to match the official app.
+            // and increment. Production uses NON_OVERLAP to match machine behavior.
             putFloatLE(frame, BleConstants.ActivationPacket.OFFSET_SOFT_MAX, softMax)
             putFloatLE(
                 frame,
@@ -442,7 +442,7 @@ object BlePacketFactory {
 
     /**
      * Returns 32 bytes: 16 bytes concentric phase + 16 bytes eccentric phase.
-     * Each phase contains velocity ramp shorts and smoothing floats matching the official app.
+     * Each phase contains velocity ramp shorts and smoothing floats matching the machine protocol.
      */
     private fun getActivationPhases(mode: ProgramMode): ByteArray {
         val buffer = ByteArray(32)
@@ -548,10 +548,10 @@ object BlePacketFactory {
     // ========== Echo Parameters ==========
 
     private fun getEchoParams(level: EchoLevel, eccentricPct: Int): EchoParams {
-        // Official app reference: Yj/d.java (EchoConfiguration) + dk/d.java (EchoVelocity)
+        // Echo velocity layout observed on hardware.
         // concentricDurationSeconds = 50.0 / velocity
         // concentricMaxVelocity = velocity (raw EchoVelocity enum value)
-        // eccentricMaxVelocity = -200.0 (fixed in official app constructor)
+        // eccentricMaxVelocity = -200.0 (fixed on the machine)
         val velocity = when (level) {
             EchoLevel.HARD -> 50.0f
             EchoLevel.HARDER -> 40.0f

@@ -63,8 +63,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
@@ -82,9 +82,9 @@ import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.usecase.RoutineScalingBaselineSource
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
+import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
-import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseConfigViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseType
 import com.devil.phoenixproject.presentation.viewmodel.SetConfiguration
@@ -132,18 +132,16 @@ fun ExerciseEditBottomSheet(
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val activeProfileId = activeProfile?.id ?: "default"
 
-    // Fetch videos for exercise
-    var videos by remember { mutableStateOf<List<ExerciseVideoEntity>>(emptyList()) }
+    var images by remember { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
     LaunchedEffect(exercise.exercise.id) {
         exercise.exercise.id?.let { exerciseId ->
             try {
-                videos = exerciseRepository.getVideos(exerciseId)
+                images = exerciseRepository.getImages(exerciseId)
             } catch (_: Exception) {
-                // Handle error - videos will remain empty
+                // Handle error - images will remain empty
             }
         }
     }
-    val preferredVideo = videos.firstOrNull { it.angle == "FRONT" } ?: videos.firstOrNull()
 
     // Initialize the ViewModel - PR loading is now handled internally by the ViewModel
     LaunchedEffect(exercise, weightUnit, activeProfileId) {
@@ -308,24 +306,22 @@ fun ExerciseEditBottomSheet(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
-                // Video Player
-                if (enableVideoPlayback) {
-                    preferredVideo?.let { video ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(16f / 9f),
-                            shape = MaterialTheme.shapes.medium,
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                        ) {
-                            VideoPlayer(
-                                videoUrl = video.videoUrl,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
+                if (enableVideoPlayback && images.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(16f / 9f),
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                    ) {
+                        ExerciseDemoImage(
+                            imageUrls = images.map { it.url },
+                            modifier = Modifier.fillMaxSize(),
+                            contentDescription = exercise.exercise.displayName,
+                        )
                     }
                 }
 

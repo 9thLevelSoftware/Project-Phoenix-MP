@@ -1442,6 +1442,7 @@ class SyncManager(
         val rawRoutineIds = syncRepository.getAllRoutineIds(mergeProfileId)
         val rawCycleIds = syncRepository.getAllCycleIds(mergeProfileId)
         val rawBadgeIds = syncRepository.getAllBadgeIds(mergeProfileId)
+        val rawPersonalRecordIds = syncRepository.getAllPersonalRecordIds(mergeProfileId)
 
         // fix(pull 400): TemplateConverter mints cycle-derived routine IDs as
         // "cycle_routine_<uuid>" which aren't valid UUIDs. The server's
@@ -1475,19 +1476,29 @@ class SyncManager(
             list.takeLast(SyncConfig.MAX_PARITY_IDS)
         }
 
-        val knownEntityIds = KnownEntityIds(
+        val knownPersonalRecordIds = capParity(
+            filterUuids(rawPersonalRecordIds, "personalRecordIds"),
+            "personalRecordIds",
+        ).toMutableList()
+
+        fun currentKnownEntityIds(): KnownEntityIds = KnownEntityIds(
             sessionIds = capParity(filteredSessionIds, "sessionIds"),
             routineIds = capParity(filteredRoutineIds, "routineIds"),
             cycleIds = capParity(filteredCycleIds, "cycleIds"),
             badgeIds = capParity(filteredBadgeIds, "badgeIds"),
-            // PRs use timestamp LWW, so the portal must return newer states even
-            // for UUIDs already present locally (including remote tombstones).
-            personalRecordIds = emptyList(),
+            // Send known PR UUIDs so the portal can page with
+            // get_personal_records_excluding_ids and still return tombstones
+            // via get_personal_record_tombstones. Empty lists force the server
+            // to rely only on the cursor, which loops when many PRs share one
+            // microsecond timestamp.
+            personalRecordIds = capParity(knownPersonalRecordIds.toList(), "personalRecordIds"),
         )
 
+        val entityIds = currentKnownEntityIds()
         Logger.i("SyncManager") {
-            "Parity sync: sending ${knownEntityIds.sessionIds.size} session IDs, " +
-                "${knownEntityIds.routineIds.size} routine IDs, ${knownEntityIds.cycleIds.size} cycle IDs"
+            "Parity sync: sending ${entityIds.sessionIds.size} session IDs, " +
+                "${entityIds.routineIds.size} routine IDs, ${entityIds.cycleIds.size} cycle IDs, " +
+                "${entityIds.personalRecordIds.size} personal record IDs"
         }
 
         var pagesProcessed = 0
@@ -1544,11 +1555,14 @@ class SyncManager(
                 )
             }
 
+            val knownEntityIds = currentKnownEntityIds()
+
             // Fetch next page
             // DIAGNOSTIC: Log pull request parameters to trace sync issues
             Logger.d("SyncManager") {
                 "PULL REQUEST: deviceId=$deviceId, profileId=$activeProfileId, " +
                     "knownSessions=${knownEntityIds.sessionIds.size}, knownRoutines=${knownEntityIds.routineIds.size}, " +
+                    "knownPersonalRecords=${knownEntityIds.personalRecordIds.size}, " +
                     "cursor=$currentCursor"
             }
 
@@ -1651,6 +1665,13 @@ class SyncManager(
             if (mergeResult.isFailure) {
                 // Map Result<Unit> to Result<Long> for consistent return type
                 return Result.failure(mergeResult.exceptionOrNull() ?: PortalApiException("Merge failed"))
+            }
+
+            for (record in pullResponse.personalRecords) {
+                val id = record.id
+                if (CANONICAL_UUID_REGEX.matches(id) && id !in knownPersonalRecordIds) {
+                    knownPersonalRecordIds += id
+                }
             }
 
             // Update pagination state

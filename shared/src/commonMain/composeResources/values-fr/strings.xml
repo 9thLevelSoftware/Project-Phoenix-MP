@@ -751,6 +751,7 @@
     <string name="settings_video_behavior">Comportement vidéo</string>
     <string name="settings_show_exercise_videos">Afficher les vidéos d'exercice</string>
     <string name="settings_show_exercise_videos_description">Afficher les démonstrations ; désactivez-les sur les appareils plus lents</string>
+    <string name="settings_exercise_demos_disabled">Lecture vidéo désactivée</string>
     <string name="profile_weight_increment">Incrément de poids</string>
     <string name="profile_body_weight">Poids corporel</string>
     <string name="profile_set_summary">Durée du résumé de série</string>

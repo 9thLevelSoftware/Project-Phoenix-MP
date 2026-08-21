@@ -175,8 +175,25 @@ internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): Reco
 
 // ==================== ENTRY POINT ====================
 
+internal fun applyTableDrop(driver: SqlDriver, table: String): ReconciliationResult {
+    val existed = tableExists(driver, table)
+    return try {
+        driver.execute(identifier = null, sql = "DROP TABLE IF EXISTS $table", parameters = 0)
+        if (existed) {
+            ReconciliationResult("drop", table, ReconciliationStatus.CREATED, "dropped")
+        } else {
+            ReconciliationResult("drop", table, ReconciliationStatus.ALREADY_PRESENT)
+        }
+    } catch (e: Exception) {
+        ReconciliationResult("drop", table, ReconciliationStatus.FAILED, e.message)
+    }
+}
+
 internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport {
     val report = SchemaReconciliationReport()
+    for (table in manifestDroppedTables) {
+        report.add(applyTableDrop(driver, table))
+    }
     for (op in manifestTables) {
         report.add(applyTableCreate(driver, op))
     }
@@ -209,6 +226,11 @@ internal fun reconcileFullSchema(driver: SqlDriver): SchemaReconciliationReport 
 //    "duplicate column" errors gracefully, so having ALL columns is safe and ensures
 //    fresh installs get the complete schema immediately.
 // ============================================================
+
+internal val manifestDroppedTables: List<String> = listOf(
+    // Migration 43: streamed demo URLs must not be re-created by schema heal.
+    "ExerciseVideo",
+)
 
 internal val manifestTables: List<SchemaTableOperation> = listOf(
     // UserProfile -- initial schema, full current shape
@@ -298,7 +320,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // ActiveWorkoutRuntime -- migration 44, device-local retry recovery state.
+    // ActiveWorkoutRuntime -- migration 45, device-local retry recovery state.
     SchemaTableOperation(
         table = "ActiveWorkoutRuntime",
         createSql = """
@@ -844,17 +866,15 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // ExerciseVideo -- initial schema, full shape (no later migrations add columns)
+    // ExerciseImage -- migration 43, still images for the replacement catalogue
     SchemaTableOperation(
-        table = "ExerciseVideo",
+        table = "ExerciseImage",
         createSql = """
-            CREATE TABLE IF NOT EXISTS ExerciseVideo (
+            CREATE TABLE IF NOT EXISTS ExerciseImage (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 exerciseId TEXT NOT NULL,
-                angle TEXT NOT NULL,
-                videoUrl TEXT NOT NULL,
-                thumbnailUrl TEXT NOT NULL,
-                isTutorial INTEGER NOT NULL DEFAULT 0,
+                url TEXT NOT NULL,
+                sortOrder INTEGER NOT NULL,
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
             )
         """.trimIndent(),
@@ -1156,7 +1176,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
-    // CompletedSet -- migration 10, columns added later: set_end_reason (m43), attempt identity (m44)
+    // CompletedSet -- migration 10, columns added later: set_end_reason (m44), attempt identity (m45)
     SchemaTableOperation(
         table = "CompletedSet",
         createSql = """
@@ -1476,6 +1496,7 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── Exercise ─────────────────────────────────────────────────────────
     SchemaIndexOperation("idx_exercise_popularity", "CREATE INDEX IF NOT EXISTS idx_exercise_popularity ON Exercise(popularity DESC, name ASC)"),
     SchemaIndexOperation("idx_exercise_last_performed", "CREATE INDEX IF NOT EXISTS idx_exercise_last_performed ON Exercise(lastPerformed DESC)"),
+    SchemaIndexOperation("idx_exercise_image_exercise", "CREATE INDEX IF NOT EXISTS idx_exercise_image_exercise ON ExerciseImage(exerciseId)"),
 
     // ── WorkoutSession ──────────────────────────────────────────────────
     SchemaIndexOperation("idx_workout_session_timestamp", "CREATE INDEX IF NOT EXISTS idx_workout_session_timestamp ON WorkoutSession(timestamp)"),

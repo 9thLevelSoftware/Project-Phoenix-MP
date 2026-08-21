@@ -3,8 +3,8 @@ package com.devil.phoenixproject.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.Exercise
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -16,7 +16,7 @@ import kotlinx.coroutines.launch
 
 /**
  * ViewModel for exercise library.
- * Handles exercise listing, filtering, and video retrieval.
+ * Handles exercise listing, filtering, and demonstration-image retrieval.
  */
 class ExerciseLibraryViewModel(private val exerciseRepository: ExerciseRepository) : ViewModel() {
     private val _exercises = MutableStateFlow<List<Exercise>>(emptyList())
@@ -34,7 +34,7 @@ class ExerciseLibraryViewModel(private val exerciseRepository: ExerciseRepositor
     private val _selectedMuscleGroup = MutableStateFlow<String?>(null)
     val selectedMuscleGroup: StateFlow<String?> = _selectedMuscleGroup.asStateFlow()
 
-    private val _exerciseVideos = MutableStateFlow<Map<String, List<ExerciseVideoEntity>>>(emptyMap())
+    private val _exerciseImages = MutableStateFlow<Map<String, List<ExerciseImageEntity>>>(emptyMap())
 
     init {
         loadExercises()
@@ -85,28 +85,28 @@ class ExerciseLibraryViewModel(private val exerciseRepository: ExerciseRepositor
     }
 
     /**
-     * Get videos for an exercise synchronously from cache.
-     * Call loadVideosForExercise() first to populate the cache.
+     * Get demonstration images for an exercise synchronously from cache.
+     * Call loadImagesForExercise() first to populate the cache.
      */
-    fun getVideos(exerciseId: String): List<ExerciseVideoEntity> = _exerciseVideos.value[exerciseId] ?: emptyList()
+    fun getImages(exerciseId: String): List<ExerciseImageEntity> = _exerciseImages.value[exerciseId] ?: emptyList()
 
     /**
-     * Load videos for an exercise asynchronously.
-     * Results are cached and accessible via getVideos().
+     * Load demonstration images for an exercise asynchronously.
+     * Results are cached and accessible via getImages().
      */
-    fun loadVideosForExercise(exerciseId: String) {
+    fun loadImagesForExercise(exerciseId: String) {
         viewModelScope.launch {
             try {
-                val videos = exerciseRepository.getVideos(exerciseId)
-                _exerciseVideos.value = _exerciseVideos.value + (exerciseId to videos)
+                val images = exerciseRepository.getImages(exerciseId)
+                _exerciseImages.value = _exerciseImages.value + (exerciseId to images)
             } catch (e: Exception) {
-                Logger.w("ExerciseLibraryVM", e) { "Failed to load videos for $exerciseId: ${e.message}" }
+                Logger.w("ExerciseLibraryVM", e) { "Failed to load images for $exerciseId: ${e.message}" }
             }
         }
     }
 
     /**
-     * Get videos as a suspend function for direct async access.
+     * Get demonstration images as a suspend function for direct async access.
      */
-    suspend fun getVideosAsync(exerciseId: String): List<ExerciseVideoEntity> = exerciseRepository.getVideos(exerciseId)
+    suspend fun getImagesAsync(exerciseId: String): List<ExerciseImageEntity> = exerciseRepository.getImages(exerciseId)
 }

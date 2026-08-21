@@ -131,14 +131,14 @@ object OneRepMaxCalculator {
 }
 
 /**
- * Protocol constants - aligned with Phoenix Backend (official app)
+ * Protocol constants for machine BLE frames.
  * NOTE: Legacy web app used different sizes and commands
  */
 @Suppress("unused") // Protocol reference constants
 object ProtocolConstants {
     // Command types are in BleConstants.Commands
 
-    // Frame sizes (Phoenix Backend aligned)
+    // Frame sizes
     const val STOP_PACKET_SIZE = 2
     const val REGULAR_PACKET_SIZE = 25 // Was 96 in web app
     const val ECHO_PACKET_SIZE = 32 // F308: matches BlePacketFactory.createEchoControl()

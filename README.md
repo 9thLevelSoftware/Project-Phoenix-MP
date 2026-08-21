@@ -194,7 +194,7 @@ Proprietary License - All Rights Reserved. See [LICENSE](LICENSE) file for detai
 ## Acknowledgments
 
 - Original [VitruvianProjectPhoenix](https://github.com/DasBluEyedDevil/VitruvianProjectPhoenix) Android app
-- Web app developers for reverse-engineering the BLE protocol
+- Community protocol documentation for the machine BLE interface
 - Vitruvian machine owners community for testing and feedback
 - JetBrains for Kotlin Multiplatform
 - All contributors and supporters

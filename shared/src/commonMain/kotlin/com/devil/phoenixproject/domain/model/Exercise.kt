@@ -34,7 +34,7 @@ data class Exercise(
     val mvtOverrideMs: Float? = null, // User-set Minimum Velocity Threshold override (m/s) for velocity-1RM
     /**
      * Explicit stored bodyweight classification (issue #635). Sourced from the catalog
-     * (Exercise.isBodyweight column / exercise_dump.json) or the RoutineExercise snapshot
+     * (Exercise.isBodyweight column / bundled catalogue) or the RoutineExercise snapshot
      * (portal per-exercise toggle). Null = no explicit flag; derive from [hasCableAccessory]
      * (custom exercises and rows predating migration 39).
      */
@@ -75,7 +75,9 @@ data class Exercise(
     val usesUnifiedAttachment: Boolean
         get() {
             val equipmentParts = equipment.split(",").map { it.trim().uppercase() }
-            return equipmentParts.any { it == "BAR" || it == "BELT" }
+            return equipmentParts.any {
+                it == "BAR" || it == "BELT" || it == "BARBELL" || it == "E-Z CURL BAR"
+            }
         }
 
     /**
@@ -93,8 +95,21 @@ data class Exercise(
         }
 
     companion object {
-        /** Equipment that physically attaches to the machine's cables */
-        private val CABLE_ACCESSORIES = setOf("HANDLES", "BAR", "ROPE", "SHORT_BAR", "BELT", "STRAPS")
+        /** Equipment that implies a loaded/cable movement rather than bodyweight-only. */
+        internal val CABLE_ACCESSORIES = setOf(
+            "CABLE",
+            "BARBELL",
+            "DUMBBELL",
+            "KETTLEBELLS",
+            "MACHINE",
+            "E-Z CURL BAR",
+            "HANDLES",
+            "BAR",
+            "ROPE",
+            "SHORT_BAR",
+            "BELT",
+            "STRAPS",
+        )
     }
 }
 

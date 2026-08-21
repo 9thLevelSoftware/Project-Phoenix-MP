@@ -4,16 +4,13 @@ import com.devil.phoenixproject.domain.model.Exercise
 import kotlinx.coroutines.flow.Flow
 
 /**
- * Video entity for exercise demonstrations.
- * Instructional tutorial videos are intentionally excluded from repository reads.
+ * Still-image entity for exercise demonstrations.
  */
-data class ExerciseVideoEntity(
+data class ExerciseImageEntity(
     val id: Long = 0,
     val exerciseId: String,
-    val angle: String, // FRONT, SIDE, ISOMETRIC, or another demo angle
-    val videoUrl: String,
-    val thumbnailUrl: String,
-    val isTutorial: Boolean = false,
+    val url: String,
+    val sortOrder: Int = 0,
 )
 
 /**
@@ -70,11 +67,11 @@ interface ExerciseRepository {
     suspend fun getExerciseById(id: String): Exercise?
 
     /**
-     * Get videos for an exercise
+     * Get demonstration images for an exercise
      * @param exerciseId Exercise ID
-     * @return List of video entities for the exercise
+     * @return List of image entities for the exercise
      */
-    suspend fun getVideos(exerciseId: String): List<ExerciseVideoEntity>
+    suspend fun getImages(exerciseId: String): List<ExerciseImageEntity>
 
     /**
      * Import exercises from platform-specific source (e.g., assets, bundle)
@@ -90,11 +87,10 @@ interface ExerciseRepository {
     suspend fun isExerciseLibraryEmpty(): Boolean
 
     /**
-     * Update exercise library from GitHub
-     * Fetches the latest exercise_dump.json from the repository and updates the database
-     * @return Result with count of exercises updated, or error
+     * Merge additional exercises from wger (CC-BY-SA). Never overwrites bundled rows.
+     * @return Result with count of exercises inserted, or error
      */
-    suspend fun updateFromGitHub(): Result<Int>
+    suspend fun updateFromWger(): Result<Int>
 
     // ========== Custom Exercise Management ==========
 

@@ -58,6 +58,7 @@ fun ExerciseFilterShelf(
             "Rope",
             "Belt",
             "Ankle Strap",
+            "Cable",
             "Bench",
             "Bodyweight",
         )

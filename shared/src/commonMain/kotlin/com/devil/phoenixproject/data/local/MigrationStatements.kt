@@ -1016,16 +1016,31 @@ WHERE gs.rowid = (
     SELECT id FROM UserProfile""",
     )
 
-    // Migration 43: Add set_end_reason to CompletedSet (Issue #673 PR 1)
-    // Records why a set ended for workout history analytics.
+    // Migration 43: replace streamed demo videos with openly-licensed still images.
     // Mirrors 43.sqm exactly.
     43 -> listOf(
+        "DELETE FROM ExerciseVideo",
+        "DROP TABLE IF EXISTS ExerciseVideo",
+        """CREATE TABLE ExerciseImage (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        exerciseId TEXT NOT NULL,
+        url TEXT NOT NULL,
+        sortOrder INTEGER NOT NULL,
+        FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+    )""",
+        "CREATE INDEX idx_exercise_image_exercise ON ExerciseImage(exerciseId)",
+        "UPDATE Exercise SET archived = 1 WHERE isCustom = 0",
+    )
+
+    // Migration 44: Add set_end_reason to CompletedSet (Issue #673 PR 1)
+    // Mirrors 44.sqm exactly.
+    44 -> listOf(
         "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'",
     )
 
-    // Migration 44: Persist routine occurrence and logical attempt identity (Issue #673 PR 2)
-    // Mirrors 44.sqm exactly.
-    44 -> listOf(
+    // Migration 45: Persist routine occurrence and logical attempt identity (Issue #673 PR 2)
+    // Mirrors 45.sqm exactly.
+    45 -> listOf(
         "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT",
         "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1",
         """CREATE TABLE ActiveWorkoutRuntime (

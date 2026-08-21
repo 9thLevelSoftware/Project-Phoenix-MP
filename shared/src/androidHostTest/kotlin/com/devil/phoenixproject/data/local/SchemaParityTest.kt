@@ -639,12 +639,94 @@ class SchemaParityTest {
     }
 
     @Test
-    fun `migration 43 to 44 adds set_end_reason column and preserves historical rows as UNKNOWN`() {
+    fun migration43To44ReplacesExerciseVideoWithExerciseImageAndArchivesStockRows() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         buildSchemaAtVersion(driver, 43)
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+                equipment, movement, sidedness, grip, gripWidth, minRepRange, popularity, archived,
+                isFavorite, isCustom, timesPerformed, lastPerformed, aliases, defaultCableConfig,
+                one_rep_max_kg, updatedAt, serverId, deletedAt
+            ) VALUES (
+                'legacy-1', 'Squat', 'Squat', '', 0, 'Legs', 'Legs', '',
+                'BAR', '', '', '', '', 1, 0, 0,
+                0, 0, 0, NULL, '', 'DOUBLE',
+                NULL, NULL, NULL, NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+                equipment, movement, sidedness, grip, gripWidth, minRepRange, popularity, archived,
+                isFavorite, isCustom, timesPerformed, lastPerformed, aliases, defaultCableConfig,
+                one_rep_max_kg, updatedAt, serverId, deletedAt
+            ) VALUES (
+                'custom-1', 'My Lift', 'My Lift', '', 0, 'Chest', 'Chest', '',
+                '', '', '', '', '', 1, 0, 0,
+                0, 1, 0, NULL, '', 'EITHER',
+                NULL, NULL, NULL, NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO ExerciseVideo (exerciseId, angle, videoUrl, thumbnailUrl, isTutorial)
+            VALUES ('legacy-1', 'front', 'https://example.com/demo.mp4', 'https://example.com/demo.jpg', 0)
+            """.trimIndent(),
+            0,
+        )
 
-        // Create prerequisite rows using columns available at schema v43,
-        // before migration 43 adds the reason column.
+        VitruvianDatabase.Schema.migrate(driver, 43, 44)
+
+        assertEquals(false, getTables(driver).contains("ExerciseVideo"))
+        assertEquals(true, getTables(driver).contains("ExerciseImage"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(archived AS TEXT) FROM Exercise WHERE id = 'legacy-1'"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(archived AS TEXT) FROM Exercise WHERE id = 'custom-1'"))
+    }
+
+    @Test
+    fun `resilient migration 43 fallback drops video table and archives stock rows`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 43)
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+                equipment, movement, sidedness, grip, gripWidth, minRepRange, popularity, archived,
+                isFavorite, isCustom, timesPerformed, lastPerformed, aliases, defaultCableConfig,
+                one_rep_max_kg, updatedAt, serverId, deletedAt
+            ) VALUES (
+                'legacy-2', 'Squat', 'Squat', '', 0, 'Legs', 'Legs', '',
+                'BAR', '', '', '', '', 1, 0, 0,
+                0, 0, 0, NULL, '', 'DOUBLE',
+                NULL, NULL, NULL, NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        applyMigrationResilient(driver, 43)
+        assertEquals(false, getTables(driver).contains("ExerciseVideo"))
+        assertEquals(true, getTables(driver).contains("ExerciseImage"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(archived AS TEXT) FROM Exercise WHERE id = 'legacy-2'"))
+    }
+
+    @Test
+    fun `migration 44 to 45 adds set_end_reason column and preserves historical rows as UNKNOWN`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 44)
+
+        // Create prerequisite rows using columns available at schema v44,
+        // before migration 44 adds the reason column.
         driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
         driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
         driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)", 0)
@@ -660,9 +742,9 @@ class SchemaParityTest {
             0,
         )
 
-        // This test proves generated migration 43.sqm itself; resilient recovery
+        // This test proves generated migration 44.sqm itself; resilient recovery
         // behavior is covered separately below.
-        VitruvianDatabase.Schema.migrate(driver, 43, 44)
+        VitruvianDatabase.Schema.migrate(driver, 44, 45)
 
         assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "set_end_reason"))
 
@@ -671,9 +753,9 @@ class SchemaParityTest {
     }
 
     @Test
-    fun `resilient migration 43 fallback preserves an already-healed set_end_reason`() {
+    fun `resilient migration 44 fallback preserves an already-healed set_end_reason`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        buildSchemaAtVersion(driver, 43)
+        buildSchemaAtVersion(driver, 44)
 
         // Simulate schema drift: column already added by heal
         driver.execute(null, "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'", 0)
@@ -692,15 +774,15 @@ class SchemaParityTest {
         )
 
         // Resilient fallback should succeed even though the column already exists.
-        applyMigrationResilient(driver, 43)
+        applyMigrationResilient(driver, 44)
 
         assertEquals("STALL_FAILURE", queryScalar(driver, "SELECT set_end_reason FROM CompletedSet WHERE id = 'cs-resilient'"))
     }
 
     @Test
-    fun `migration 44 to 45 adds attempt identity and active runtime while preserving historical defaults`() {
+    fun `migration 45 to 46 adds attempt identity and active runtime while preserving historical defaults`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        buildSchemaAtVersion(driver, 44)
+        buildSchemaAtVersion(driver, 45)
         driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
         driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
         driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)", 0)
@@ -714,7 +796,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 44, 45)
+        VitruvianDatabase.Schema.migrate(driver, 45, 46)
 
         assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "routine_exercise_id"))
         assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "attempt_number"))
@@ -749,7 +831,7 @@ class SchemaParityTest {
     }
 
     @Test
-    fun `resilient migration 44 independently converges every meaningful partial state`() {
+    fun `resilient migration 45 independently converges every meaningful partial state`() {
         val scenarios = listOf(
             PartialMigration44State(
                 name = "routine identity column already present and runtime missing",
@@ -782,12 +864,12 @@ class SchemaParityTest {
 
         scenarios.forEachIndexed { index, scenario ->
             val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-            buildSchemaAtVersion(driver, 44)
+            buildSchemaAtVersion(driver, 45)
             scenario.preAppliedSql.forEach { driver.execute(null, it, 0) }
-            val completedSetId = "cs-resilient-44-$index"
+            val completedSetId = "cs-resilient-45-$index"
             insertHistoricalCompletedSet(driver, completedSetId)
 
-            val results = applyMigrationResilient(driver, 44)
+            val results = applyMigrationResilient(driver, 45)
 
             assertEquals(3, results.size, scenario.name)
             assertEquals(scenario.expectedSuccess, results.map { it.success }, scenario.name)
@@ -801,7 +883,7 @@ class SchemaParityTest {
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 45L
+        private const val EXPECTED_SCHEMA_VERSION = 46L
         private val CREATE_ACTIVE_RUNTIME_SQL = """
             CREATE TABLE ActiveWorkoutRuntime (
                 profile_id TEXT NOT NULL,

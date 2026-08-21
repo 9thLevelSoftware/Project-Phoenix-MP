@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
@@ -80,7 +81,7 @@ class ExerciseLibraryViewModelTest {
     }
 
     @Test
-    fun `loadVideosForExercise caches results`() = runTest {
+    fun `loadImagesForExercise caches results`() = runTest {
         val exercise = Exercise(
             id = "ex-1",
             name = "Bench Press",
@@ -89,23 +90,21 @@ class ExerciseLibraryViewModelTest {
             equipment = "BAR",
         )
         repository.addExercise(exercise)
-        repository.addVideos(
+        repository.addImages(
             exerciseId = "ex-1",
-            videoList = listOf(
-                com.devil.phoenixproject.data.repository.ExerciseVideoEntity(
+            imageList = listOf(
+                ExerciseImageEntity(
                     id = 1,
                     exerciseId = "ex-1",
-                    angle = "front",
-                    videoUrl = "https://example.com/video.mp4",
-                    thumbnailUrl = "https://example.com/thumb.jpg",
-                    isTutorial = false,
+                    url = "https://example.com/image.jpg",
+                    sortOrder = 0,
                 ),
             ),
         )
 
-        viewModel.loadVideosForExercise("ex-1")
+        viewModel.loadImagesForExercise("ex-1")
         advanceUntilIdle()
 
-        assertEquals(1, viewModel.getVideos("ex-1").size)
+        assertEquals(1, viewModel.getImages("ex-1").size)
     }
 }
