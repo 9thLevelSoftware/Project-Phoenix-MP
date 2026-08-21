@@ -42,11 +42,11 @@
 
 ## Task 4: Android preference filenames
 
-- [ ] Add `AndroidPreferenceFileMigrator` tests for all supported value types, empty/target/source/conflict states, commit and encryption failures, interruption, and second-launch cleanup.
-- [ ] Migrate plaintext and encrypted stores through their APIs before Settings resolution.
-- [ ] Use only Phoenix target names in direct readers.
-- [ ] Expand backup/data-extraction exclusions and verify no legacy XML or `.bak` remains after success.
-- [ ] Commit as `feat(android): migrate legacy preference filenames`.
+- [x] Add `AndroidPreferenceFileMigrator` tests for all supported value types, empty/target/source/conflict states, commit and encryption failures, interruption, and second-launch cleanup.
+- [x] Migrate plaintext and encrypted stores through their APIs before Settings resolution.
+- [x] Use only Phoenix target names in direct readers.
+- [x] Expand backup/data-extraction exclusions and verify no legacy XML or `.bak` remains after success.
+- [x] Commit as `feat(android): migrate legacy preference filenames`.
 
 ## Task 5: Startup safety and Retry
 

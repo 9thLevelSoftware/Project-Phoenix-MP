@@ -475,4 +475,6 @@ dependencies {
     testImplementation(libs.multiplatform.settings.test)
     androidTestImplementation(libs.androidx.test.junit)
     androidTestImplementation(libs.androidx.test.espresso)
+    androidTestImplementation(libs.androidx.security.crypto)
+    androidTestImplementation(libs.multiplatform.settings)
 }
