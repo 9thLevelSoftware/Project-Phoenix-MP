@@ -768,7 +768,7 @@ private fun InstructionPage(
                 tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
             )
             Text(
-                "Video Playback Disabled",
+                stringResource(Res.string.settings_exercise_demos_disabled),
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
