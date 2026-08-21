@@ -11,6 +11,7 @@
 -->
 <resources>
     <string name="app_name">Phoenix</string>
+    <string name="cd_phoenix_logo">Logo Phoenix</string>
 
     <string name="action_cancel">Annulla</string>
     <string name="action_ok">OK</string>

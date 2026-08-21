@@ -49,7 +49,7 @@ The app icon source image is located at:
    - Set the color to match the app theme background:
      - Light mode: `#F8FAFC` (SurfaceContainerLight)
      - Dark mode: `#0F172A` (SurfaceContainerDark)
-   - Or use the color from `androidApp/src/main/res/drawable/ic_launcher_background.xml` (#0F172A)
+   - Or use the color from `androidApp/src/main/res/drawable/ic_launcher_background.xml` (#000000)
 
 2. **Verify Info.plist**
    - Ensure `Info.plist` references these assets:
