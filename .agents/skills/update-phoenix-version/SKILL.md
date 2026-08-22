@@ -15,13 +15,13 @@ The four app-version values to keep aligned are:
 
 - `androidApp/build.gradle.kts`: Android `versionName`.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/util/Constants.kt`: `Constants.APP_VERSION`, used by Android `DeviceInfo`, Settings display, and backup metadata.
-- `iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj`: Debug `MARKETING_VERSION`.
-- `iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj`: Release `MARKETING_VERSION`.
+- `iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj`: Debug `MARKETING_VERSION`.
+- `iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj`: Release `MARKETING_VERSION`.
 
 The helper can also update build-number fields near those values:
 
 - `androidApp/build.gradle.kts`: default `versionCode = injectedVersionCode ?: ...` when `--android-code` is supplied.
-- `iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj`: both `CURRENT_PROJECT_VERSION` entries when `--ios-build` is supplied.
+- `iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj`: both `CURRENT_PROJECT_VERSION` entries when `--ios-build` is supplied.
 
 Do not edit `shared/src/commonMain/composeResources/*/strings.xml` for a version bump. `settings_version` is only the localized label template. Do not edit `androidApp/release/output-metadata.json`; it is generated release output.
 

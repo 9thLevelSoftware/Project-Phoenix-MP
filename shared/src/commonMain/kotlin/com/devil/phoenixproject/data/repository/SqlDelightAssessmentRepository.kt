@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
@@ -20,18 +20,18 @@ import kotlinx.coroutines.withContext
 /**
  * SQLDelight implementation of [AssessmentRepository].
  *
- * Uses existing AssessmentResult queries from VitruvianDatabase.sq,
+ * Uses existing AssessmentResult queries from PhoenixDatabase.sq,
  * delegates session creation to [WorkoutRepository], and updates
  * exercise 1RM via [ExerciseRepository].
  */
 class SqlDelightAssessmentRepository(
-    db: VitruvianDatabase,
+    db: PhoenixDatabase,
     private val workoutRepository: WorkoutRepository,
     private val exerciseRepository: ExerciseRepository,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AssessmentRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
     private val assessmentWriteMutex = Mutex()
 
     companion object {

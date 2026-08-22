@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.util
 
-import com.devil.phoenixproject.domain.model.VitruvianModel
+import com.devil.phoenixproject.domain.model.PhoenixModel
 
 /**
  * Trainer Hardware Detection
@@ -22,10 +22,10 @@ object HardwareDetection {
      * - "Vee_" prefix -> V-Form Trainer
      * - "VIT" prefix -> Trainer+
      */
-    fun detectModel(deviceName: String): VitruvianModel = when {
-        deviceName.startsWith("Vee_", ignoreCase = true) -> VitruvianModel.VFormTrainer
-        deviceName.startsWith("VIT", ignoreCase = true) -> VitruvianModel.TrainerPlus
-        else -> VitruvianModel.Unknown
+    fun detectModel(deviceName: String): PhoenixModel = when {
+        deviceName.startsWith("Vee_", ignoreCase = true) -> PhoenixModel.VFormTrainer
+        deviceName.startsWith("VIT", ignoreCase = true) -> PhoenixModel.TrainerPlus
+        else -> PhoenixModel.Unknown
     }
 
     /**

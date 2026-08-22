@@ -7,7 +7,7 @@ import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 import com.devil.phoenixproject.ui.theme.ThemeMode as SharedThemeMode
-import com.devil.phoenixproject.ui.theme.VitruvianTheme as SharedVitruvianTheme
+import com.devil.phoenixproject.ui.theme.PhoenixTheme as SharedPhoenixTheme
 
 /**
  * Android-specific theme wrapper.
@@ -15,17 +15,17 @@ import com.devil.phoenixproject.ui.theme.VitruvianTheme as SharedVitruvianTheme
  * Note: enableEdgeToEdge() in MainActivity handles status bar coloring.
  */
 @Deprecated(
-    message = "Use the shared VitruvianTheme(themeMode = ..., dynamicColorEnabled = ...) overload so ThemeMode.SYSTEM is preserved.",
+    message = "Use the shared PhoenixTheme(themeMode = ..., dynamicColorEnabled = ...) overload so ThemeMode.SYSTEM is preserved.",
 )
 @Composable
-fun VitruvianTheme(
+fun PhoenixTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit,
 ) {
     val themeMode = if (darkTheme) SharedThemeMode.DARK else SharedThemeMode.LIGHT
 
-    SharedVitruvianTheme(themeMode = themeMode, dynamicColorEnabled = dynamicColor) {
+    SharedPhoenixTheme(themeMode = themeMode, dynamicColorEnabled = dynamicColor) {
         val view = LocalView.current
 
         if (!view.isInEditMode) {

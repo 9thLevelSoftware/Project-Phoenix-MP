@@ -57,13 +57,13 @@ import com.devil.phoenixproject.presentation.components.AppleIcon
 import com.devil.phoenixproject.presentation.components.GoogleIcon
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.auth_apple
-import vitruvianprojectphoenix.shared.generated.resources.auth_google
-import vitruvianprojectphoenix.shared.generated.resources.cd_back
-import vitruvianprojectphoenix.shared.generated.resources.label_confirm_password
-import vitruvianprojectphoenix.shared.generated.resources.label_email
-import vitruvianprojectphoenix.shared.generated.resources.label_password
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.auth_apple
+import projectphoenix.shared.generated.resources.auth_google
+import projectphoenix.shared.generated.resources.cd_back
+import projectphoenix.shared.generated.resources.label_confirm_password
+import projectphoenix.shared.generated.resources.label_email
+import projectphoenix.shared.generated.resources.label_password
 
 enum class AuthMode {
     SIGN_IN,

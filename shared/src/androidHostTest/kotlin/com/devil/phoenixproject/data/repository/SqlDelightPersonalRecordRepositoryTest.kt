@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
 import com.devil.phoenixproject.util.OneRepMaxCalculator
@@ -15,7 +15,7 @@ import org.junit.Test
 
 class SqlDelightPersonalRecordRepositoryTest {
 
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var repository: SqlDelightPersonalRecordRepository
 
     @Before
@@ -63,7 +63,7 @@ class SqlDelightPersonalRecordRepositoryTest {
 
         val weightPr = repository.getWeightPR("bench", "Old School", profileId = "default")
         val volumePr = repository.getVolumePR("bench", "Old School", profileId = "default")
-        val exercise = database.vitruvianDatabaseQueries.selectExerciseById(
+        val exercise = database.phoenixDatabaseQueries.selectExerciseById(
             "bench",
         ).executeAsOneOrNull()
 
@@ -112,7 +112,7 @@ class SqlDelightPersonalRecordRepositoryTest {
 
     @Test
     fun `normalized lookup reads legacy mode rows before migration cleanup`() = runTest {
-        database.vitruvianDatabaseQueries.insertRecord(
+        database.phoenixDatabaseQueries.insertRecord(
             exerciseId = "bench",
             exerciseName = "Bench Press",
             weight = 55.0,
@@ -134,7 +134,7 @@ class SqlDelightPersonalRecordRepositoryTest {
         assertEquals(55f, canonical?.weightPerCableKg)
         assertEquals(canonical?.id, legacy?.id)
         assertNull(
-            database.vitruvianDatabaseQueries.selectPR(
+            database.phoenixDatabaseQueries.selectPR(
                 "bench",
                 "Old School",
                 PRType.MAX_WEIGHT.name,
@@ -156,11 +156,11 @@ class SqlDelightPersonalRecordRepositoryTest {
     fun `Issue 319 transaction rollback prevents partial PR writes when downstream write fails`() = runTest {
         // Create a dedicated database with driver reference for raw SQL trigger injection
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(driver)
-        val testDb = VitruvianDatabase(driver)
+        PhoenixDatabase.Schema.create(driver)
+        val testDb = PhoenixDatabase(driver)
         val testRepo = SqlDelightPersonalRecordRepository(testDb)
 
-        testDb.vitruvianDatabaseQueries.insertExercise(
+        testDb.phoenixDatabaseQueries.insertExercise(
             id = "squat", name = "Squat", displayName = null, description = null,
             created = 0L, muscleGroup = "Legs", muscleGroups = "Legs",
             muscles = null, equipment = "BAR", movement = null,
@@ -207,7 +207,7 @@ class SqlDelightPersonalRecordRepositoryTest {
         )
 
         // Exercise 1RM should remain null (trigger prevented the UPDATE)
-        val exercise = testDb.vitruvianDatabaseQueries.selectExerciseById("squat").executeAsOneOrNull()
+        val exercise = testDb.phoenixDatabaseQueries.selectExerciseById("squat").executeAsOneOrNull()
         assertNull(exercise?.one_rep_max_kg, "Exercise 1RM should still be null after rollback")
 
         // Positive control: remove trigger, verify the exact same call now succeeds
@@ -245,7 +245,7 @@ class SqlDelightPersonalRecordRepositoryTest {
         repository.deletePR(weightPr.id, "default")
 
         assertNull(repository.getWeightPR("bench", "Old School", "default"))
-        val retainedTombstone = database.vitruvianDatabaseQueries
+        val retainedTombstone = database.phoenixDatabaseQueries
             .selectPRsModifiedSince(0L, profileId = "default")
             .executeAsList()
             .single { it.id == weightPr.id }
@@ -315,7 +315,7 @@ class SqlDelightPersonalRecordRepositoryTest {
     }
 
     private fun insertExercise(id: String, name: String) {
-        database.vitruvianDatabaseQueries.insertExercise(
+        database.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = name,
             displayName = null,

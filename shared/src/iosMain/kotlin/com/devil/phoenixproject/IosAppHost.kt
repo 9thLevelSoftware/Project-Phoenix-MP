@@ -1,11 +1,17 @@
 package com.devil.phoenixproject
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.di.PersistedFileStartupPrerequisite
+import com.devil.phoenixproject.presentation.components.RequireBlePermissions
 import com.devil.phoenixproject.presentation.viewmodel.EulaViewModel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
@@ -22,10 +28,12 @@ private data class IosAppDependencies(
 
 @Composable
 fun IosAppHost() {
-    val koin = KoinPlatform.getKoin()
-    val depsResult = remember {
-        runCatching {
+    var retryAttempt by rememberSaveable { mutableIntStateOf(0) }
+    val resolution = remember(retryAttempt) {
+        resolveStartupDependencies {
+            val koin = KoinPlatform.getKoin()
             Logger.i { "iOS AppHost: Resolving app dependencies via Koin" }
+            koin.get<PersistedFileStartupPrerequisite>()
             IosAppDependencies(
                 mainViewModel = koin.get(),
                 themeViewModel = koin.get(),
@@ -37,15 +45,20 @@ fun IosAppHost() {
         }
     }
 
-    if (depsResult.isFailure) {
-        val exception = depsResult.exceptionOrNull()!!
-        val error = formatCauseChain(exception)
-        Logger.e(exception) { "FATAL iOS app dependency resolution:\n$error" }
-        CrashErrorScreen(error)
-        return
-    }
+    when (resolution) {
+        is StartupDependencyResolution.Failed -> {
+            Logger.e { "iOS app dependency resolution blocked: ${resolution.diagnosticCode}" }
+            PersistedFileStartupFailureScreen(resolution) { retryAttempt++ }
+        }
 
-    val deps = depsResult.getOrThrow()
+        is StartupDependencyResolution.Ready -> RequireBlePermissions {
+            IosAppContent(resolution.dependencies)
+        }
+    }
+}
+
+@Composable
+private fun IosAppContent(deps: IosAppDependencies) {
     AppContent(
         mainViewModel = deps.mainViewModel,
         themeViewModel = deps.themeViewModel,
@@ -54,15 +67,4 @@ fun IosAppHost() {
         syncTriggerManager = deps.syncTriggerManager,
         migrationManager = deps.migrationManager,
     )
-}
-
-private fun formatCauseChain(error: Throwable): String = buildString {
-    var current: Throwable? = error
-    var depth = 0
-    while (current != null && depth < 10) {
-        if (depth > 0) append("\n")
-        append("[$depth] ${current::class.simpleName}: ${current.message?.take(200)}")
-        current = current.cause
-        depth++
-    }
 }

@@ -46,7 +46,7 @@ object BleConstants {
         UNKNOWN_AUTH_CHAR_UUID_STRING, // Subscribed for parity with observed device behavior
     )
 
-    // Device name pattern for filtering - matches "Vitruvian*" devices
+    // Device name pattern for filtering - matches "Phoenix*" devices
     const val DEVICE_NAME_PREFIX = "Vee"
 
     // Command IDs (machine protocol)
@@ -147,7 +147,7 @@ object BleConstants {
 
     // Primary Characteristic UUIDs
     val NUS_TX_UUID = Uuid.parse(NUS_RX_CHAR_UUID_STRING) // Write to device (app TX = device RX, hence NUS_RX_CHAR_UUID_STRING for 6e400002)
-    val NUS_RX_UUID = Uuid.parse("6e400003-b5a3-f393-e0a9-e50e24dcca9e") // Standard NUS RX (not used by Vitruvian)
+    val NUS_RX_UUID = Uuid.parse("6e400003-b5a3-f393-e0a9-e50e24dcca9e") // Standard NUS RX (not used by Phoenix)
     val MONITOR_UUID = Uuid.parse(SAMPLE_CHAR_UUID_STRING)
     val REPS_UUID = Uuid.parse(REPS_CHAR_UUID_STRING)
 

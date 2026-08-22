@@ -22,9 +22,9 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.Exercise
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.tag_exercise_action
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.tag_exercise_action
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

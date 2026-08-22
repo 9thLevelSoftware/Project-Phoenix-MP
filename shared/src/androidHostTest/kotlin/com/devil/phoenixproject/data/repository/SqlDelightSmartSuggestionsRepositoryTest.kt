@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
 import kotlinx.coroutines.test.runTest
@@ -9,7 +9,7 @@ import org.junit.Test
 
 class SqlDelightSmartSuggestionsRepositoryTest {
 
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var repository: SqlDelightSmartSuggestionsRepository
 
     @Before
@@ -118,7 +118,7 @@ class SqlDelightSmartSuggestionsRepositoryTest {
         workingReps: Long = totalReps,
         routineName: String? = null,
     ) {
-        database.vitruvianDatabaseQueries.insertSession(
+        database.phoenixDatabaseQueries.insertSession(
             id = id,
             timestamp = timestamp,
             mode = "Old School",

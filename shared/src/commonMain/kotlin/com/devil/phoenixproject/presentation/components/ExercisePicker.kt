@@ -63,13 +63,13 @@ import com.devil.phoenixproject.presentation.util.isCompactAccessibilityLayout
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_back
-import vitruvianprojectphoenix.shared.generated.resources.cd_clear_search
-import vitruvianprojectphoenix.shared.generated.resources.cd_close
-import vitruvianprojectphoenix.shared.generated.resources.cd_search
-import vitruvianprojectphoenix.shared.generated.resources.search_exercises
-import vitruvianprojectphoenix.shared.generated.resources.select_exercise
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_back
+import projectphoenix.shared.generated.resources.cd_clear_search
+import projectphoenix.shared.generated.resources.cd_close
+import projectphoenix.shared.generated.resources.cd_search
+import projectphoenix.shared.generated.resources.search_exercises
+import projectphoenix.shared.generated.resources.select_exercise
 
 /**
  * Map display equipment names back to database values for filtering

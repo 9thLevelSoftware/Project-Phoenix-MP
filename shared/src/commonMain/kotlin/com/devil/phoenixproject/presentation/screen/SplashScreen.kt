@@ -32,7 +32,7 @@ import com.devil.phoenixproject.presentation.util.rememberPlatformAccessibilityS
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.*
 
 // Phoenix fire colors
 private val FireOrange = Color(0xFFFF6B35)
@@ -214,7 +214,7 @@ fun SplashScreen(visible: Boolean, modifier: Modifier = Modifier) {
             ) {
                 // Phoenix logo with animations
                 Image(
-                    painter = painterResource(Res.drawable.vitphoe_logo),
+                    painter = painterResource(Res.drawable.phoenix_logo),
                     contentDescription = stringResource(Res.string.cd_phoenix_logo),
                     modifier = Modifier
                         .fillMaxWidth(0.55f)
@@ -371,7 +371,7 @@ fun SimpleSplashScreen(modifier: Modifier = Modifier) {
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             Image(
-                painter = painterResource(Res.drawable.vitphoe_logo),
+                painter = painterResource(Res.drawable.phoenix_logo),
                 contentDescription = stringResource(Res.string.cd_phoenix_logo),
                 modifier = Modifier
                     .fillMaxWidth(0.55f)

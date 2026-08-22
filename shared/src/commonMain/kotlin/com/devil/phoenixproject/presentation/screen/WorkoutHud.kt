@@ -47,7 +47,7 @@ import com.devil.phoenixproject.ui.theme.workoutCounterStyle
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.*
 
 /**
  * Workout Heads-Up Display (HUD)

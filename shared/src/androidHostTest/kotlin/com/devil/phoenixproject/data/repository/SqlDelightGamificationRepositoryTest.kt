@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -11,7 +11,7 @@ import org.junit.Test
 
 class SqlDelightGamificationRepositoryTest {
 
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var repository: SqlDelightGamificationRepository
     private val profileId = "default"
 
@@ -122,7 +122,7 @@ class SqlDelightGamificationRepositoryTest {
         exerciseId: String? = "bench",
         routineSessionId: String? = null,
     ) {
-        database.vitruvianDatabaseQueries.insertSession(
+        database.phoenixDatabaseQueries.insertSession(
             id = id,
             timestamp = 1_000_000L,
             mode = "OldSchool",

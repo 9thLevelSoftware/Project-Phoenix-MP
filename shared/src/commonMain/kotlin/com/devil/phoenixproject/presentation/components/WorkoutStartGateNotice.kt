@@ -16,11 +16,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.reconnect
-import vitruvianprojectphoenix.shared.generated.resources.workout_teardown_failed
-import vitruvianprojectphoenix.shared.generated.resources.workout_teardown_finishing
-import vitruvianprojectphoenix.shared.generated.resources.workout_teardown_retry
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.reconnect
+import projectphoenix.shared.generated.resources.workout_teardown_failed
+import projectphoenix.shared.generated.resources.workout_teardown_finishing
+import projectphoenix.shared.generated.resources.workout_teardown_retry
 
 enum class StartGateLabel {
     START,

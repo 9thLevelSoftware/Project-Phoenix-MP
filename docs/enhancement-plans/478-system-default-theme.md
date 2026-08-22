@@ -16,12 +16,12 @@ The domain model is mostly already present:
 
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/ui/theme/Theme.kt`
   - `ThemeMode { SYSTEM, LIGHT, DARK }` exists.
-  - `VitruvianTheme(themeMode, dynamicColorEnabled, content)` already maps SYSTEM to `isSystemInDarkTheme()`.
+  - `PhoenixTheme(themeMode, dynamicColorEnabled, content)` already maps SYSTEM to `isSystemInDarkTheme()`.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/ThemeViewModel.kt`
   - persists `ThemeMode.name` in settings key `theme_mode`.
   - defaults to SYSTEM when missing/corrupt.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/App.kt`
-  - observes theme mode and passes it into `VitruvianTheme`.
+  - observes theme mode and passes it into `PhoenixTheme`.
 
 The missing pieces are presentation and platform plumbing:
 
@@ -33,7 +33,7 @@ The missing pieces are presentation and platform plumbing:
   - binary Light/Dark toggle; SYSTEM is not represented.
 - `shared/src/iosMain/kotlin/com/devil/phoenixproject/ui/theme/Theme.ios.kt`
   - needs verification/update so persisted `ThemeMode` is honored, not just a raw boolean.
-- `iosApp/VitruvianPhoenix/VitruvianPhoenix/ContentView.swift`
+- `iosApp/PhoenixApp/PhoenixApp/ContentView.swift`
   - likely needs trait/colorScheme forwarding or host refresh for live iOS system-theme changes.
 
 ## Architecture
@@ -164,12 +164,12 @@ Files:
 - Modify/inspect: `shared/src/iosMain/kotlin/com/devil/phoenixproject/ui/theme/Theme.ios.kt`
 - Modify/inspect: `shared/src/iosMain/kotlin/com/devil/phoenixproject/IosAppHost.kt`
 - Modify/inspect: `shared/src/iosMain/kotlin/com/devil/phoenixproject/MainViewController.kt`
-- Modify/inspect: `iosApp/VitruvianPhoenix/VitruvianPhoenix/ContentView.swift`
+- Modify/inspect: `iosApp/PhoenixApp/PhoenixApp/ContentView.swift`
 
 Steps:
 
 1. Verify iOS shared entrypoint receives or loads `ThemeMode`.
-2. If iOS wrapper accepts only `darkTheme: Boolean`, change it to enum mode or route through common `VitruvianTheme(themeMode = ...)`.
+2. If iOS wrapper accepts only `darkTheme: Boolean`, change it to enum mode or route through common `PhoenixTheme(themeMode = ...)`.
 3. In SwiftUI host, observe `@Environment(\.colorScheme)` or trait changes and trigger Compose host refresh only when mode is SYSTEM.
 4. Keep LIGHT/DARK forced modes independent of OS changes.
 

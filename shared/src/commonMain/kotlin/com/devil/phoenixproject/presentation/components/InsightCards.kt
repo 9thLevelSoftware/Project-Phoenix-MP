@@ -61,7 +61,7 @@ import com.devil.phoenixproject.util.KmpLocalDate
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Insight card components for workout analytics

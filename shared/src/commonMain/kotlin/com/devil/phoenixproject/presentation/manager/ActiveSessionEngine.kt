@@ -12488,7 +12488,7 @@ class ActiveSessionEngine(
             // OldSchool" -> "Sumo Belt Squat 1x8 TUT" the user intends as a single
             // logical movement with a mode change between sets), treat this as a
             // same-exercise continuation. We do NOT want to send a fresh 0x04 BLE CONFIG
-            // frame mid-movement, because the Vitruvian firmware de-energises the cable
+            // frame mid-movement, because the Phoenix firmware de-energises the cable
             // on a mode change, which the user perceives as "the set deloads". The mode
             // change (OldSchool -> TUT) is still surfaced to the on-screen label, but
             // the CONFIG frame is deferred until the user explicitly starts that set.

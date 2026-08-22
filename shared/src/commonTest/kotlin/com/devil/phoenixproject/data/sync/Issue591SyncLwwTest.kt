@@ -31,7 +31,7 @@ class Issue591SyncLwwTest {
     private val testProfileId = "test-profile"
     private val now = 1_700_000_000_000L
 
-    private lateinit var database: com.devil.phoenixproject.database.VitruvianDatabase
+    private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
     private lateinit var userProfileRepository: FakeUserProfileRepository
     private lateinit var repository: SqlDelightSyncRepository
 
@@ -105,7 +105,7 @@ class Issue591SyncLwwTest {
         )
 
         // THEN: Local detailed metric columns are preserved.
-        val after = database.vitruvianDatabaseQueries
+        val after = database.phoenixDatabaseQueries
             .selectSessionById(sessionId)
             .executeAsOneOrNull()
         assertNotNull(after, "session must exist after merge")
@@ -176,7 +176,7 @@ class Issue591SyncLwwTest {
 
         // THEN: True local peaks are preserved, while incoming non-peak
         // metrics still apply.
-        val after = database.vitruvianDatabaseQueries
+        val after = database.phoenixDatabaseQueries
             .selectSessionById(sessionId)
             .executeAsOneOrNull()
         assertNotNull(after)
@@ -227,7 +227,7 @@ class Issue591SyncLwwTest {
             updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
         )
 
-        val after = database.vitruvianDatabaseQueries
+        val after = database.phoenixDatabaseQueries
             .selectSessionById(sessionId)
             .executeAsOneOrNull()
         assertNotNull(after)
@@ -261,7 +261,7 @@ class Issue591SyncLwwTest {
             updatedAtBySessionId = mapOf(sessionId to now),
         )
 
-        val after = database.vitruvianDatabaseQueries
+        val after = database.phoenixDatabaseQueries
             .selectSessionById(sessionId)
             .executeAsOneOrNull()
         assertNotNull(after, "first-time pull must insert the row")
@@ -270,7 +270,7 @@ class Issue591SyncLwwTest {
     }
 
     private fun insertLocalSession(session: WorkoutSession, updatedAt: Long) {
-        database.vitruvianDatabaseQueries.insertSessionIgnore(
+        database.phoenixDatabaseQueries.insertSessionIgnore(
             id = session.id,
             timestamp = session.timestamp,
             mode = session.mode,
@@ -389,7 +389,7 @@ class Issue591SyncLwwTest {
         // one of these will land on the wrong row.
         val samples = listOf(0, chunkSize - 1, chunkSize, chunkSize * 2 - 1, chunkSize * 2, totalCount - 1)
         for (i in samples) {
-            val after = database.vitruvianDatabaseQueries
+            val after = database.phoenixDatabaseQueries
                 .selectSessionById("chunked-$i")
                 .executeAsOneOrNull()
             assertNotNull(after, "chunked-$i must exist after merge")

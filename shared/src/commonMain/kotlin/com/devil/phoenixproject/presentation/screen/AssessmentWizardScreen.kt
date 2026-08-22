@@ -43,8 +43,8 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.flow.StateFlow
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Multi-step assessment wizard screen for guided VBT strength testing.

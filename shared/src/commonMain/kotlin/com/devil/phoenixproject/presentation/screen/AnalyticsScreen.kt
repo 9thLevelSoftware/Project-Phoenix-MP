@@ -42,8 +42,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 // Helper function for timestamp formatting
 private fun formatTimestamp(timestamp: Long): String = KmpUtils.formatTimestamp(timestamp, "MMM dd, yyyy")

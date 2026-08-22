@@ -49,8 +49,8 @@ import com.devil.phoenixproject.presentation.components.ShimmerBox
 import kotlin.coroutines.cancellation.CancellationException
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 internal data class ExerciseDetailOneRepMaxRequest(
     val exerciseId: String,

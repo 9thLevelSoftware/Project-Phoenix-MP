@@ -204,7 +204,7 @@ The JSON columns are versioned Kotlin documents decoded with `ignoreUnknownKeys 
 
 The schema change must be represented in all project migration paths:
 
-- `VitruvianDatabase.sq` canonical table and queries;
+- `PhoenixDatabase.sq` canonical table and queries;
 - `migrations/42.sqm`, including default rows for existing profiles;
 - fallback migration statements for source schema 42;
 - `SchemaManifest` table/column reconciliation entries;
@@ -327,7 +327,7 @@ The existing fire-and-forget `MigrationManager.checkAndRunMigrations()` call is 
 
 The same gate protects non-UI consumers. `SyncManager` may continue syncing unrelated workout entities while migration is not `Ready`, but it must neither read nor send profile-preference sections. Health imports and every background reader/writer of the new profile aggregate suspend or queue work until `Ready`; no consumer can observe or upload the temporary SQL defaults created by Stage 1.
 
-Route the current Android `VitruvianApp` and common `KoinInit` migration triggers through one idempotent coordinator so initialization cannot run twice. Android and iOS/shared entry paths must both reach the same required state before rendering the main app.
+Route the current Android `PhoenixApp` and common `KoinInit` migration triggers through one idempotent coordinator so initialization cannot run twice. Android and iOS/shared entry paths must both reach the same required state before rendering the main app.
 
 Legacy keys remain in place for one release as downgrade protection, but all writes switch immediately to the new stores.
 

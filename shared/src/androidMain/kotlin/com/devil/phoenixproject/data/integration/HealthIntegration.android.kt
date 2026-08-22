@@ -23,8 +23,8 @@ import java.util.Locale
 
 private val log = Logger.withTag("HealthIntegration.Android")
 
-private val VITRUVIAN_DEVICE = Device(
-    manufacturer = "Vitruvian",
+private val PHOENIX_DEVICE = Device(
+    manufacturer = "Phoenix",
     model = "Trainer",
     type = Device.TYPE_UNKNOWN,
 )
@@ -207,7 +207,7 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
                         startZoneOffset = zoneOffset,
                         endTime = endInstant,
                         endZoneOffset = zoneOffset,
-                        metadata = Metadata.activelyRecorded(VITRUVIAN_DEVICE, data.externalId, 0L),
+                        metadata = Metadata.activelyRecorded(PHOENIX_DEVICE, data.externalId, 0L),
                         exerciseType = ExerciseSessionRecord.EXERCISE_TYPE_STRENGTH_TRAINING,
                         title = data.title,
                         notes = null,
@@ -230,7 +230,7 @@ actual class HealthIntegration(private val context: Context) : HealthWorkoutWrit
                                 endZoneOffset = zoneOffset,
                                 energy = Energy.kilocalories(calories.toDouble()),
                                 metadata = Metadata.activelyRecorded(
-                                    VITRUVIAN_DEVICE,
+                                    PHOENIX_DEVICE,
                                     HealthWorkoutExportBuilder.calorieClientRecordId(data.externalId),
                                     0L,
                                 ),

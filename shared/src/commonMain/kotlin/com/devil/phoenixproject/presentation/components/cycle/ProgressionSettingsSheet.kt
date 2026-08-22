@@ -11,8 +11,8 @@ import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

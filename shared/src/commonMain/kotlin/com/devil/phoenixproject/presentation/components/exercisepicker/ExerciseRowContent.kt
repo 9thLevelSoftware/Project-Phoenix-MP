@@ -32,8 +32,8 @@ import coil3.request.ImageRequest
 import coil3.request.crossfade
 import com.devil.phoenixproject.domain.model.Exercise
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Enhanced exercise row content with larger thumbnail, inline favorite indicator,

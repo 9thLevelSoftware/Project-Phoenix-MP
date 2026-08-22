@@ -76,11 +76,11 @@ class Issue677WindowThemeContractTest {
 
     @Test
     fun application_appliesPersistedNightModeBeforeActivity() {
-        val app = read("androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt")
+        val app = read("androidApp/src/main/kotlin/com/devil/phoenixproject/PhoenixApp.kt")
         assertTrue(
             app.contains("applyPersistedApplicationNightMode(") &&
                 app.contains("attachBaseContext"),
-            "VitruvianApp must apply persisted night mode in attachBaseContext so the OS starting window uses the matching values/values-night qualifier.",
+            "PhoenixApp must apply persisted night mode in attachBaseContext so the OS starting window uses the matching values/values-night qualifier.",
         )
         val helper = read("shared/src/androidMain/kotlin/com/devil/phoenixproject/ui/theme/PlatformNightMode.android.kt")
         assertTrue(helper.contains("setApplicationNightMode"))

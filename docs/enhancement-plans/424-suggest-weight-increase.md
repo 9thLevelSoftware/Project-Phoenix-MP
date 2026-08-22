@@ -18,7 +18,7 @@ Relevant files:
   - computes per-rep quality and set summaries.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/model/Models.kt`
   - includes `RepQualityScore`, `SetQualitySummary`, `WorkoutSession`, `WorkoutParameters`, `HapticEvent`.
-- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq`
   - includes `RepMetric` and biomechanics/velocity-loss fields.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/manager/WorkoutCoordinator.kt`
   - exposes `latestRepQuality`, `latestBiomechanicsResult`, workout parameters/state.

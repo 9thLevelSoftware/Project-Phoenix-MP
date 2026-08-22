@@ -244,7 +244,7 @@ class BleConnectionManager(
     }
 
     /**
-     * Ensures connection to a Vitruvian device.
+     * Ensures connection to a Phoenix device.
      * If already connected, immediately calls onConnected.
      * If not connected, starts scan and auto-connects to first device found.
      * Matches parent repo behavior with proper timeouts and cleanup.

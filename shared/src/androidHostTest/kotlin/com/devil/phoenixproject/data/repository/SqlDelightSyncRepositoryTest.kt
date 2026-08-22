@@ -19,7 +19,7 @@ import org.junit.Test
 
 class SqlDelightSyncRepositoryTest {
 
-    private lateinit var database: com.devil.phoenixproject.database.VitruvianDatabase
+    private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
     private lateinit var userProfileRepository: FakeUserProfileRepository
     private lateinit var repository: SqlDelightSyncRepository
 
@@ -52,7 +52,7 @@ class SqlDelightSyncRepositoryTest {
             ),
         )
 
-        val session = database.vitruvianDatabaseQueries
+        val session = database.phoenixDatabaseQueries
             .selectSessionById("session-profile-b")
             .executeAsOneOrNull()
 
@@ -78,7 +78,7 @@ class SqlDelightSyncRepositoryTest {
             counterweightKg = 3.0,
             rackItemsJson = rackItemsJson,
         )
-        database.vitruvianDatabaseQueries.updateSessionServerId("server-rack-session", "local-rack-session")
+        database.phoenixDatabaseQueries.updateSessionServerId("server-rack-session", "local-rack-session")
 
         repository.mergeSessions(
             sessions = listOf(
@@ -99,7 +99,7 @@ class SqlDelightSyncRepositoryTest {
             ),
         )
 
-        val session = database.vitruvianDatabaseQueries
+        val session = database.phoenixDatabaseQueries
             .selectSessionById("local-rack-session")
             .executeAsOne()
 
@@ -131,7 +131,7 @@ class SqlDelightSyncRepositoryTest {
             ),
         )
 
-        val profileRecord = database.vitruvianDatabaseQueries.selectPR(
+        val profileRecord = database.phoenixDatabaseQueries.selectPR(
             exerciseId = "deadlift",
             workoutMode = "Old School",
             prType = PRType.MAX_WEIGHT.name,
@@ -145,7 +145,7 @@ class SqlDelightSyncRepositoryTest {
 
     @Test
     fun `getFullPRsModifiedSince preserves profile id and cable count`() = runTest {
-        database.vitruvianDatabaseQueries.insertRecord(
+        database.phoenixDatabaseQueries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "Deadlift",
             weight = 85.0,
@@ -193,7 +193,7 @@ class SqlDelightSyncRepositoryTest {
         repository.mergePersonalRecords(listOf(syncDto(200L, 200L, weight = 0f)), "active-profile")
         repository.mergePersonalRecords(listOf(syncDto(150L, null)), "active-profile")
 
-        val row = database.vitruvianDatabaseQueries.selectAllRecordsSync().executeAsOne()
+        val row = database.phoenixDatabaseQueries.selectAllRecordsSync().executeAsOne()
         assertEquals(200L, row.updatedAt)
         assertEquals(200L, row.deletedAt)
         assertEquals(85.0, row.weight)
@@ -223,7 +223,7 @@ class SqlDelightSyncRepositoryTest {
         repository.mergePersonalRecords(listOf(syncDto(85f, 200L, 200L)), "active-profile")
         repository.mergePersonalRecords(listOf(syncDto(90f, 300L, null)), "active-profile")
 
-        val row = database.vitruvianDatabaseQueries.selectAllRecordsSync().executeAsOne()
+        val row = database.phoenixDatabaseQueries.selectAllRecordsSync().executeAsOne()
         assertEquals(300L, row.updatedAt)
         assertNull(row.deletedAt)
         assertEquals(90.0, row.weight)
@@ -255,7 +255,7 @@ class SqlDelightSyncRepositoryTest {
             "active-profile",
         )
 
-        val row = database.vitruvianDatabaseQueries.selectAllRecordsSync().executeAsOne()
+        val row = database.phoenixDatabaseQueries.selectAllRecordsSync().executeAsOne()
         assertEquals(prId, row.uuid)
         assertEquals(200L, row.updatedAt)
         assertEquals(200L, row.deletedAt)
@@ -264,7 +264,7 @@ class SqlDelightSyncRepositoryTest {
     @Test
     fun `mergePersonalRecords adopts server uuid on key match even when workoutMode differs`() = runTest {
         val serverUuid = "12345678-1234-4abc-8def-1234567890ab"
-        database.vitruvianDatabaseQueries.insertRecord(
+        database.phoenixDatabaseQueries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "Deadlift",
             weight = 85.0,
@@ -303,7 +303,7 @@ class SqlDelightSyncRepositoryTest {
             profileId = "active-profile",
         )
 
-        val rows = database.vitruvianDatabaseQueries
+        val rows = database.phoenixDatabaseQueries
             .selectAllRecords(profileId = "active-profile")
             .executeAsList()
 
@@ -315,7 +315,7 @@ class SqlDelightSyncRepositoryTest {
     @Test
     fun `mergePersonalRecords adopts server uuid onto one duplicate key candidate`() = runTest {
         val serverUuid = "13345678-1234-4abc-8def-1234567890ab"
-        database.vitruvianDatabaseQueries.insertRecord(
+        database.phoenixDatabaseQueries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "Deadlift",
             weight = 85.0,
@@ -330,7 +330,7 @@ class SqlDelightSyncRepositoryTest {
             cable_count = 2L,
             uuid = null,
         )
-        database.vitruvianDatabaseQueries.insertRecord(
+        database.phoenixDatabaseQueries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "Deadlift",
             weight = 85.0,
@@ -369,7 +369,7 @@ class SqlDelightSyncRepositoryTest {
             profileId = "active-profile",
         )
 
-        val rows = database.vitruvianDatabaseQueries
+        val rows = database.phoenixDatabaseQueries
             .selectAllRecords(profileId = "active-profile")
             .executeAsList()
 
@@ -405,7 +405,7 @@ class SqlDelightSyncRepositoryTest {
             profileId = "active-profile",
         )
 
-        val row = database.vitruvianDatabaseQueries
+        val row = database.phoenixDatabaseQueries
             .selectAllRecords(profileId = "active-profile")
             .executeAsList()
             .single()
@@ -437,7 +437,7 @@ class SqlDelightSyncRepositoryTest {
         repository.mergePersonalRecords(records = listOf(dto), profileId = "active-profile")
         repository.mergePersonalRecords(records = listOf(dto), profileId = "active-profile")
 
-        val rows = database.vitruvianDatabaseQueries
+        val rows = database.phoenixDatabaseQueries
             .selectAllRecords(profileId = "active-profile")
             .executeAsList()
 
@@ -448,7 +448,7 @@ class SqlDelightSyncRepositoryTest {
     @Test
     fun `getAllPersonalRecordIds returns canonical uuids only`() = runTest {
         val canonicalUuid = "42345678-1234-4abc-8def-1234567890ab"
-        database.vitruvianDatabaseQueries.insertRecord(
+        database.phoenixDatabaseQueries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "Deadlift",
             weight = 85.0,
@@ -463,7 +463,7 @@ class SqlDelightSyncRepositoryTest {
             cable_count = 2L,
             uuid = canonicalUuid,
         )
-        database.vitruvianDatabaseQueries.insertRecord(
+        database.phoenixDatabaseQueries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "Deadlift",
             weight = 80.0,
@@ -489,7 +489,7 @@ class SqlDelightSyncRepositoryTest {
         // muscleGroups, muscles, equipment, movement, sidedness, grip, gripWidth,
         // minRepRange, popularity, archived, isFavorite, isCustom, timesPerformed,
         // lastPerformed, aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs.
-        database.vitruvianDatabaseQueries.insertExercise(
+        database.phoenixDatabaseQueries.insertExercise(
             "bench-press",
             "Bench Press",
             "Bench Press",
@@ -564,28 +564,28 @@ class SqlDelightSyncRepositoryTest {
         assertEquals(2, firstBackfill.changedRows, "Only the missing eccentric weight and volume PRs should be created")
         assertEquals(1_700_000_000_000L, firstBackfill.maxScannedSessionTimestamp)
         assertEquals(0, secondBackfill.changedRows, "Backfill should be idempotent")
-        val concentricWeight = database.vitruvianDatabaseQueries.selectPR(
+        val concentricWeight = database.phoenixDatabaseQueries.selectPR(
             exerciseId = "bicep-curl",
             workoutMode = "Old School",
             prType = PRType.MAX_WEIGHT.name,
             phase = WorkoutPhase.CONCENTRIC.name,
             profileId = "active-profile",
         ).executeAsOne()
-        val concentricVolume = database.vitruvianDatabaseQueries.selectPR(
+        val concentricVolume = database.phoenixDatabaseQueries.selectPR(
             exerciseId = "bicep-curl",
             workoutMode = "Old School",
             prType = PRType.MAX_VOLUME.name,
             phase = WorkoutPhase.CONCENTRIC.name,
             profileId = "active-profile",
         ).executeAsOne()
-        val eccentricWeight = database.vitruvianDatabaseQueries.selectPR(
+        val eccentricWeight = database.phoenixDatabaseQueries.selectPR(
             exerciseId = "bicep-curl",
             workoutMode = "Old School",
             prType = PRType.MAX_WEIGHT.name,
             phase = WorkoutPhase.ECCENTRIC.name,
             profileId = "active-profile",
         ).executeAsOne()
-        val eccentricVolume = database.vitruvianDatabaseQueries.selectPR(
+        val eccentricVolume = database.phoenixDatabaseQueries.selectPR(
             exerciseId = "bicep-curl",
             workoutMode = "Old School",
             prType = PRType.MAX_VOLUME.name,
@@ -687,7 +687,7 @@ class SqlDelightSyncRepositoryTest {
             ),
         )
 
-        val routine = database.vitruvianDatabaseQueries
+        val routine = database.phoenixDatabaseQueries
             .selectRoutineById("routine-profile-b")
             .executeAsOneOrNull()
 
@@ -697,7 +697,7 @@ class SqlDelightSyncRepositoryTest {
 
     @Test
     fun `mergePortalRoutines preserves local rack defaults for matching routine exercises`() = runTest {
-        database.vitruvianDatabaseQueries.insertRoutine(
+        database.phoenixDatabaseQueries.insertRoutine(
             id = "routine-rack-defaults",
             name = "Rack Defaults",
             description = "",
@@ -707,7 +707,7 @@ class SqlDelightSyncRepositoryTest {
             profile_id = "active-profile",
             groupId = null,
         )
-        database.vitruvianDatabaseQueries.insertRoutineExercise(
+        database.phoenixDatabaseQueries.insertRoutineExercise(
             id = "rex-rack-defaults",
             routineId = "routine-rack-defaults",
             exerciseName = "Bench Press",
@@ -772,7 +772,7 @@ class SqlDelightSyncRepositoryTest {
             profileId = "active-profile",
         )
 
-        val exercise = database.vitruvianDatabaseQueries
+        val exercise = database.phoenixDatabaseQueries
             .selectExercisesByRoutine("routine-rack-defaults")
             .executeAsList()
             .single()
@@ -781,7 +781,7 @@ class SqlDelightSyncRepositoryTest {
 
     @Test
     fun `mergePortalRoutines preserves local scalingBasis across portal pull`() = runTest {
-        database.vitruvianDatabaseQueries.insertRoutine(
+        database.phoenixDatabaseQueries.insertRoutine(
             id = "routine-scaling-basis",
             name = "Scaling Basis",
             description = "",
@@ -791,7 +791,7 @@ class SqlDelightSyncRepositoryTest {
             profile_id = "active-profile",
             groupId = null,
         )
-        database.vitruvianDatabaseQueries.insertRoutineExercise(
+        database.phoenixDatabaseQueries.insertRoutineExercise(
             id = "rex-scaling-basis",
             routineId = "routine-scaling-basis",
             exerciseName = "Deadlift",
@@ -856,7 +856,7 @@ class SqlDelightSyncRepositoryTest {
             profileId = "active-profile",
         )
 
-        val exercise = database.vitruvianDatabaseQueries
+        val exercise = database.phoenixDatabaseQueries
             .selectExercisesByRoutine("routine-scaling-basis")
             .executeAsList()
             .single()
@@ -865,7 +865,7 @@ class SqlDelightSyncRepositoryTest {
 
     @Test
     fun `mergePortalRoutines preserves omitted drop set config and applies explicit false`() = runTest {
-        database.vitruvianDatabaseQueries.insertRoutine(
+        database.phoenixDatabaseQueries.insertRoutine(
             id = "routine-drop-set",
             name = "Drop Set",
             description = "",
@@ -875,7 +875,7 @@ class SqlDelightSyncRepositoryTest {
             profile_id = "active-profile",
             groupId = null,
         )
-        database.vitruvianDatabaseQueries.insertRoutineExercise(
+        database.phoenixDatabaseQueries.insertRoutineExercise(
             id = "rex-drop-set",
             routineId = "routine-drop-set",
             exerciseName = "Bench Press",
@@ -940,7 +940,7 @@ class SqlDelightSyncRepositoryTest {
             profileId = "active-profile",
         )
 
-        val preserved = database.vitruvianDatabaseQueries
+        val preserved = database.phoenixDatabaseQueries
             .selectExercisesByRoutine("routine-drop-set")
             .executeAsList()
             .single()
@@ -973,7 +973,7 @@ class SqlDelightSyncRepositoryTest {
             profileId = "active-profile",
         )
 
-        val disabled = database.vitruvianDatabaseQueries
+        val disabled = database.phoenixDatabaseQueries
             .selectExercisesByRoutine("routine-drop-set")
             .executeAsList()
             .single()
@@ -987,7 +987,7 @@ class SqlDelightSyncRepositoryTest {
         // into exerciseEquipment, which permanently poisoned classification because
         // snapshot Exercises re-derived isBodyweight from the equipment string.
         // Catalog cable lift with empty equipment and an explicit stored flag (Squat)
-        database.vitruvianDatabaseQueries.insertExercise(
+        database.phoenixDatabaseQueries.insertExercise(
             id = "legacy-squat",
             name = "Squat",
             displayName = "Squat",
@@ -1075,7 +1075,7 @@ class SqlDelightSyncRepositoryTest {
             profileId = "active-profile",
         )
 
-        val exercises = database.vitruvianDatabaseQueries
+        val exercises = database.phoenixDatabaseQueries
             .selectExercisesByRoutine("routine-635")
             .executeAsList()
             .sortedBy { it.orderIndex }
@@ -1111,7 +1111,7 @@ class SqlDelightSyncRepositoryTest {
         counterweightKg: Double = 0.0,
         rackItemsJson: String = "[]",
     ) {
-        database.vitruvianDatabaseQueries.insertSession(
+        database.phoenixDatabaseQueries.insertSession(
             id = id,
             timestamp = timestamp,
             mode = "OldSchool",

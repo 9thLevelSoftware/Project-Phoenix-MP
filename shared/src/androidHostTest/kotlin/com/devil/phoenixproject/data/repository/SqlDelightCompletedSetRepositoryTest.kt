@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSet
@@ -17,7 +17,7 @@ import org.junit.Test
 
 class SqlDelightCompletedSetRepositoryTest {
 
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var repository: SqlDelightCompletedSetRepository
 
     @Before
@@ -168,7 +168,7 @@ class SqlDelightCompletedSetRepositoryTest {
             completedSet("invalid-ordinary", "session-1", 0, routineExerciseId = "exercise-1", attemptNumber = -4),
         )
 
-        assertEquals(1L, database.vitruvianDatabaseQueries.selectCompletedSetById("invalid-ordinary").executeAsOne().attempt_number)
+        assertEquals(1L, database.phoenixDatabaseQueries.selectCompletedSetById("invalid-ordinary").executeAsOne().attempt_number)
         assertEquals(1, repository.getCompletedSets("session-1").single().attemptNumber)
     }
 
@@ -178,14 +178,14 @@ class SqlDelightCompletedSetRepositoryTest {
             listOf(completedSet("invalid-bulk", "session-1", 1, routineExerciseId = "exercise-1", attemptNumber = 0)),
         )
 
-        assertEquals(1L, database.vitruvianDatabaseQueries.selectCompletedSetById("invalid-bulk").executeAsOne().attempt_number)
+        assertEquals(1L, database.phoenixDatabaseQueries.selectCompletedSetById("invalid-bulk").executeAsOne().attempt_number)
         assertEquals(1, repository.getCompletedSets("session-1").single().attemptNumber)
     }
 
     @Test
     fun `invalid stored attempt numbers are coerced to one on read`() = runTest {
         listOf(0L, -4L).forEachIndexed { index, invalidAttempt ->
-            database.vitruvianDatabaseQueries.insertCompletedSet(
+            database.phoenixDatabaseQueries.insertCompletedSet(
                 id = "cset-invalid-attempt-$index",
                 session_id = "session-1",
                 planned_set_id = null,
@@ -225,7 +225,7 @@ class SqlDelightCompletedSetRepositoryTest {
             setKind = SetType.STANDARD,
         )
         insertWorkoutSession(sessionId, "bench", routineSessionId = key.routineSessionId)
-        database.vitruvianDatabaseQueries.insertCompletedSet(
+        database.phoenixDatabaseQueries.insertCompletedSet(
             id = "invalid-api-attempt-$suffix",
             session_id = sessionId,
             planned_set_id = null,
@@ -266,7 +266,7 @@ class SqlDelightCompletedSetRepositoryTest {
                 completedSet("soft-deleted", "deleted-attempt-session", 0, routineExerciseId = "exercise-1", attemptNumber = 24),
             ),
         )
-        database.vitruvianDatabaseQueries.softDeleteSession(123L, 123L, "deleted-attempt-session")
+        database.phoenixDatabaseQueries.softDeleteSession(123L, 123L, "deleted-attempt-session")
 
         assertEquals(3, repository.nextAttemptNumber(key))
     }
@@ -332,7 +332,7 @@ class SqlDelightCompletedSetRepositoryTest {
                 completedSet("deleted-durable", "soft-deleted-durable", 0, routineExerciseId = "exercise-1", attemptNumber = 3),
             ),
         )
-        database.vitruvianDatabaseQueries.softDeleteSession(123L, 123L, "soft-deleted-durable")
+        database.phoenixDatabaseQueries.softDeleteSession(123L, 123L, "soft-deleted-durable")
         val key = LogicalSetKey("routine-session-a", "exercise-1", 0, SetType.STANDARD)
 
         assertTrue(repository.isAttemptDurable("durable-session", key, 3))
@@ -347,7 +347,7 @@ class SqlDelightCompletedSetRepositoryTest {
 
     @Test
     fun `unknown persisted end reason reads as UNKNOWN`() = runTest {
-        database.vitruvianDatabaseQueries.insertCompletedSet(
+        database.phoenixDatabaseQueries.insertCompletedSet(
             id = "cset-future",
             session_id = "session-1",
             planned_set_id = null,
@@ -413,7 +413,7 @@ class SqlDelightCompletedSetRepositoryTest {
         assertEquals(SetEndReason.UNKNOWN, persisted.setEndReason)
         assertEquals(
             "UNKNOWN",
-            database.vitruvianDatabaseQueries.selectCompletedSetById(persisted.id).executeAsOne().set_end_reason,
+            database.phoenixDatabaseQueries.selectCompletedSetById(persisted.id).executeAsOne().set_end_reason,
         )
     }
 
@@ -473,7 +473,7 @@ class SqlDelightCompletedSetRepositoryTest {
     )
 
     private fun insertRoutine(id: String) {
-        database.vitruvianDatabaseQueries.insertRoutine(
+        database.phoenixDatabaseQueries.insertRoutine(
             id = id,
             name = "Test Routine",
             description = "",
@@ -486,7 +486,7 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     private fun insertRoutineExercise(id: String, routineId: String, name: String) {
-        database.vitruvianDatabaseQueries.insertRoutineExercise(
+        database.phoenixDatabaseQueries.insertRoutineExercise(
             id = id,
             routineId = routineId,
             exerciseName = name,
@@ -536,7 +536,7 @@ class SqlDelightCompletedSetRepositoryTest {
         isJustLift: Long = 0L,
         routineSessionId: String? = null,
     ) {
-        database.vitruvianDatabaseQueries.insertSession(
+        database.phoenixDatabaseQueries.insertSession(
             id = id,
             timestamp = 0L,
             mode = "OldSchool",

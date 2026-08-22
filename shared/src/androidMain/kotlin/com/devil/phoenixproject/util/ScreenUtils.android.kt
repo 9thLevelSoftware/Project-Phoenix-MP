@@ -6,7 +6,7 @@ import java.lang.ref.WeakReference
 
 /**
  * Holder for the current Activity reference.
- * Managed automatically via ActivityLifecycleCallbacks registered in VitruvianApp.
+ * Managed automatically via ActivityLifecycleCallbacks registered in PhoenixApp.
  */
 object ActivityHolder {
     private var activityRef: WeakReference<Activity>? = null

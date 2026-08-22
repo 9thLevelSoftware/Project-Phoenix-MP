@@ -48,8 +48,8 @@ import com.devil.phoenixproject.ui.theme.Slate900
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -2,7 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.local.ExerciseImporter
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
@@ -15,7 +15,7 @@ import org.junit.Test
 
 class SqlDelightExerciseRepositoryTest {
 
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var importer: ExerciseImporter
     private lateinit var repository: SqlDelightExerciseRepository
 
@@ -100,12 +100,12 @@ class SqlDelightExerciseRepositoryTest {
     @Test
     fun `getImages returns exercise demonstration stills`() = runTest {
         insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "barbell")
-        database.vitruvianDatabaseQueries.insertImage(
+        database.phoenixDatabaseQueries.insertImage(
             exerciseId = "ex-1",
             url = "https://example.com/0.jpg",
             sortOrder = 0L,
         )
-        database.vitruvianDatabaseQueries.insertImage(
+        database.phoenixDatabaseQueries.insertImage(
             exerciseId = "ex-1",
             url = "https://example.com/1.jpg",
             sortOrder = 1L,
@@ -263,7 +263,7 @@ class SqlDelightExerciseRepositoryTest {
         assertEquals(true, plank.isFavorite)
         assertEquals(42.5f, plank.oneRepMaxKg)
         assertEquals(9, plank.timesPerformed)
-        val row = database.vitruvianDatabaseQueries.selectExerciseById("Plank").executeAsOne()
+        val row = database.phoenixDatabaseQueries.selectExerciseById("Plank").executeAsOne()
         assertEquals(1_700_000_000_000L, row.lastPerformed)
         assertEquals("Hold a straight line.", row.description)
         assertEquals("BODYWEIGHT", plank.equipment)
@@ -320,11 +320,11 @@ class SqlDelightExerciseRepositoryTest {
             archived = 0L,
         )
 
-        val byName = database.vitruvianDatabaseQueries.findExerciseByName("Plank").executeAsOne()
-        val byMuscle = database.vitruvianDatabaseQueries
+        val byName = database.phoenixDatabaseQueries.findExerciseByName("Plank").executeAsOne()
+        val byMuscle = database.phoenixDatabaseQueries
             .findExerciseByNameAndMuscle("Plank", "Core")
             .executeAsOne()
-        val byCase = database.vitruvianDatabaseQueries
+        val byCase = database.phoenixDatabaseQueries
             .findExerciseByNameCaseInsensitive("plank")
             .executeAsOne()
 
@@ -345,7 +345,7 @@ class SqlDelightExerciseRepositoryTest {
             oneRepMaxKg = 100.0,
             timesPerformed = 4L,
         )
-        database.vitruvianDatabaseQueries.insertRecord(
+        database.phoenixDatabaseQueries.insertRecord(
             exerciseId = "ZZ92N8QsBdp6HCh3",
             exerciseName = "Bench Press",
             weight = 80.0,
@@ -360,7 +360,7 @@ class SqlDelightExerciseRepositoryTest {
             cable_count = 2,
             uuid = null,
         )
-        database.vitruvianDatabaseQueries.insertSession(
+        database.phoenixDatabaseQueries.insertSession(
             id = "session-legacy-bench",
             timestamp = 1_700_000_000_000L,
             mode = "OldSchool",
@@ -434,9 +434,9 @@ class SqlDelightExerciseRepositoryTest {
         importer.remapLegacyCatalogueIds()
 
         val replacement = "Barbell_Bench_Press_-_Medium_Grip"
-        val session = database.vitruvianDatabaseQueries.selectSessionById("session-legacy-bench").executeAsOne()
+        val session = database.phoenixDatabaseQueries.selectSessionById("session-legacy-bench").executeAsOne()
         assertEquals(replacement, session.exerciseId)
-        val prs = database.vitruvianDatabaseQueries.selectAllPRsForExercise(replacement, "default").executeAsList()
+        val prs = database.phoenixDatabaseQueries.selectAllPRsForExercise(replacement, "default").executeAsList()
         assertEquals(1, prs.size)
         assertEquals(80.0, prs.single().weight)
         val exercise = repository.getExerciseById(replacement)
@@ -489,12 +489,12 @@ class SqlDelightExerciseRepositoryTest {
         importer.remapLegacyCatalogueIds()
 
         val replacement = "Barbell_Bench_Press_-_Medium_Grip"
-        val prs = database.vitruvianDatabaseQueries
+        val prs = database.phoenixDatabaseQueries
             .selectAllPRsForExercise(replacement, "default")
             .executeAsList()
         assertEquals(1, prs.size)
         assertEquals(92.5, prs.single().weight)
-        val leftover = database.vitruvianDatabaseQueries
+        val leftover = database.phoenixDatabaseQueries
             .selectPersonalRecordsByExerciseId("b5d0f3d1-994b-4589-9d2b-b3f36f1412c7")
             .executeAsList()
         assertTrue(leftover.isEmpty())
@@ -513,10 +513,10 @@ class SqlDelightExerciseRepositoryTest {
             archived = 1L,
         )
         insertPr(exerciseId = "ZZ92N8QsBdp6HCh3", exerciseName = "Bench Press", weight = 140.0, oneRepMax = 155.0)
-        val tombstone = database.vitruvianDatabaseQueries
+        val tombstone = database.phoenixDatabaseQueries
             .selectPersonalRecordsByExerciseId("ZZ92N8QsBdp6HCh3")
             .executeAsOne()
-        database.vitruvianDatabaseQueries.softDeletePRById(
+        database.phoenixDatabaseQueries.softDeletePRById(
             deletedAt = 1_900_000_000_000L,
             updatedAt = 1_900_000_000_000L,
             id = tombstone.id,
@@ -537,14 +537,14 @@ class SqlDelightExerciseRepositoryTest {
 
         importer.remapLegacyCatalogueIds()
 
-        val prs = database.vitruvianDatabaseQueries
+        val prs = database.phoenixDatabaseQueries
             .selectAllPRsForExercise("Barbell_Bench_Press_-_Medium_Grip", "default")
             .executeAsList()
         assertEquals(1, prs.size)
         assertEquals(95.0, prs.single().weight)
         assertEquals(100.0, prs.single().oneRepMax)
         assertEquals(null, prs.single().deletedAt)
-        val leftover = database.vitruvianDatabaseQueries
+        val leftover = database.phoenixDatabaseQueries
             .selectPersonalRecordsByExerciseId("ZZ92N8QsBdp6HCh3")
             .executeAsList()
         assertTrue(leftover.isEmpty())
@@ -581,12 +581,12 @@ class SqlDelightExerciseRepositoryTest {
         assertTrue(imported.isSuccess)
         importer.remapLegacyCatalogueIds()
 
-        val prs = database.vitruvianDatabaseQueries
+        val prs = database.phoenixDatabaseQueries
             .selectAllPRsForExercise("Rack_Pulls", "default")
             .executeAsList()
         assertEquals(1, prs.size)
         assertEquals(180.0, prs.single().weight)
-        val leftover = database.vitruvianDatabaseQueries
+        val leftover = database.phoenixDatabaseQueries
             .selectPersonalRecordsByExerciseId("legacy-rack-pull")
             .executeAsList()
         assertTrue(leftover.isEmpty())
@@ -620,13 +620,13 @@ class SqlDelightExerciseRepositoryTest {
 
         importer.remapLegacyCatalogueIds()
 
-        val prs = database.vitruvianDatabaseQueries
+        val prs = database.phoenixDatabaseQueries
             .selectAllPRsForExercise("Barbell_Bench_Press_-_Medium_Grip", "default")
             .executeAsList()
         assertEquals(1, prs.size)
         assertEquals(110.0, prs.single().weight)
         assertEquals(120.0, prs.single().oneRepMax)
-        val leftover = database.vitruvianDatabaseQueries
+        val leftover = database.phoenixDatabaseQueries
             .selectPersonalRecordsByExerciseId("ZZ92N8QsBdp6HCh3")
             .executeAsList()
         assertTrue(leftover.isEmpty())
@@ -657,7 +657,7 @@ class SqlDelightExerciseRepositoryTest {
 
         importer.remapLegacyCatalogueIds()
 
-        val prs = database.vitruvianDatabaseQueries
+        val prs = database.phoenixDatabaseQueries
             .selectAllPRsForExercise("Barbell_Bench_Press_-_Medium_Grip", "default")
             .executeAsList()
         assertEquals(1, prs.size)
@@ -697,7 +697,7 @@ class SqlDelightExerciseRepositoryTest {
 
         importer.remapLegacyCatalogueIds()
 
-        val prs = database.vitruvianDatabaseQueries
+        val prs = database.phoenixDatabaseQueries
             .selectAllPRsForExercise("Barbell_Bench_Press_-_Medium_Grip", "default")
             .executeAsList()
         assertEquals(1, prs.size)
@@ -720,14 +720,14 @@ class SqlDelightExerciseRepositoryTest {
             muscleGroup = "Chest",
             equipment = "BAR",
         )
-        database.vitruvianDatabaseQueries.upsertExerciseMvt(
+        database.phoenixDatabaseQueries.upsertExerciseMvt(
             exerciseId = "ZZ92N8QsBdp6HCh3",
             profileId = "default",
             personalMvtMs = 400.0,
             sampleCount = 3,
             updatedAt = 1_700_000_000_000L,
         )
-        database.vitruvianDatabaseQueries.upsertExerciseMvt(
+        database.phoenixDatabaseQueries.upsertExerciseMvt(
             exerciseId = "Barbell_Bench_Press_-_Medium_Grip",
             profileId = "default",
             personalMvtMs = 200.0,
@@ -737,19 +737,19 @@ class SqlDelightExerciseRepositoryTest {
 
         importer.remapLegacyCatalogueIds()
 
-        val merged = database.vitruvianDatabaseQueries
+        val merged = database.phoenixDatabaseQueries
             .selectExerciseMvt("Barbell_Bench_Press_-_Medium_Grip", "default")
             .executeAsOne()
         assertEquals(4, merged.sampleCount)
         assertEquals(350.0, merged.personalMvtMs)
         assertEquals(1_800_000_000_000L, merged.updatedAt)
-        val leftover = database.vitruvianDatabaseQueries
+        val leftover = database.phoenixDatabaseQueries
             .selectExerciseMvtByExerciseId("ZZ92N8QsBdp6HCh3")
             .executeAsList()
         assertTrue(leftover.isEmpty())
 
         importer.remapLegacyCatalogueIds()
-        val afterSecondPass = database.vitruvianDatabaseQueries
+        val afterSecondPass = database.phoenixDatabaseQueries
             .selectExerciseMvt("Barbell_Bench_Press_-_Medium_Grip", "default")
             .executeAsOne()
         assertEquals(4, afterSecondPass.sampleCount)
@@ -769,7 +769,7 @@ class SqlDelightExerciseRepositoryTest {
         profileId: String = "default",
         reps: Long = 5,
     ) {
-        database.vitruvianDatabaseQueries.insertRecord(
+        database.phoenixDatabaseQueries.insertRecord(
             exerciseId = exerciseId,
             exerciseName = exerciseName,
             weight = weight,
@@ -800,7 +800,7 @@ class SqlDelightExerciseRepositoryTest {
         lastPerformed: Long? = null,
         archived: Long = 0L,
     ) {
-        database.vitruvianDatabaseQueries.insertExercise(
+        database.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = name,
             displayName = null,

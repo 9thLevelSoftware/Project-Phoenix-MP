@@ -97,19 +97,19 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_add_set
-import vitruvianprojectphoenix.shared.generated.resources.cd_close
-import vitruvianprojectphoenix.shared.generated.resources.cd_delete_set
-import vitruvianprojectphoenix.shared.generated.resources.cd_personal_record
-import vitruvianprojectphoenix.shared.generated.resources.drop_set_min_weight
-import vitruvianprojectphoenix.shared.generated.resources.drop_set_min_weight_error
-import vitruvianprojectphoenix.shared.generated.resources.drop_set_min_weight_supporting
-import vitruvianprojectphoenix.shared.generated.resources.drop_set_offer_toggle
-import vitruvianprojectphoenix.shared.generated.resources.drop_set_title
-import vitruvianprojectphoenix.shared.generated.resources.label_duration
-import vitruvianprojectphoenix.shared.generated.resources.label_reps
-import vitruvianprojectphoenix.shared.generated.resources.percent_label
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_add_set
+import projectphoenix.shared.generated.resources.cd_close
+import projectphoenix.shared.generated.resources.cd_delete_set
+import projectphoenix.shared.generated.resources.cd_personal_record
+import projectphoenix.shared.generated.resources.drop_set_min_weight
+import projectphoenix.shared.generated.resources.drop_set_min_weight_error
+import projectphoenix.shared.generated.resources.drop_set_min_weight_supporting
+import projectphoenix.shared.generated.resources.drop_set_offer_toggle
+import projectphoenix.shared.generated.resources.drop_set_title
+import projectphoenix.shared.generated.resources.label_duration
+import projectphoenix.shared.generated.resources.label_reps
+import projectphoenix.shared.generated.resources.percent_label
 
 /**
  * Exercise configuration bottom sheet for SingleExerciseScreen

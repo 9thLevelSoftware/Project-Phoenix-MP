@@ -11,7 +11,7 @@ class OAuthIosUrlSchemeConfigTest {
         val repoRoot = findRepoRoot()
         val infoPlist = File(
             repoRoot,
-            "iosApp/VitruvianPhoenix/VitruvianPhoenix/Info.plist",
+            "iosApp/PhoenixApp/PhoenixApp/Info.plist",
         )
 
         assertTrue("Expected iOS Info.plist to exist at ${infoPlist.path}", infoPlist.isFile)

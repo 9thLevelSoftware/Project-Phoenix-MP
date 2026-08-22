@@ -17,7 +17,7 @@ Builds on the merged foundation (Phases 1–2): `VelocityOneRepMaxRepository.get
 - `usePercentOfPR` remains the on/off gate for percentage scaling; `effectiveScalingBasis` only chooses the baseline.
 - Weights are per-cable throughout. Resolution order for `ESTIMATED_1RM`: latest **passing** velocity estimate (per-cable) → `Exercise.oneRepMaxKg` → matching PR → absolute weight.
 - Adding a column requires the project's coordinated update: `.sq` CREATE + both `insertRoutineExercise`/`insertRoutineExerciseIgnore` + the RoutineExercise select mapper, a new `38.sqm`, `MigrationStatements` `38 ->`, `SchemaManifest` (heal op), **`shared/build.gradle.kts` `version = 38 → 39`**, and **`SchemaParityTest.CURRENT_VERSION 38L → 39L`**. The build's schema-manifest validator + `SchemaParityTest`/`SchemaManifestTest` enforce consistency.
-- Module test task is `:shared:testAndroidHostTest` (NOT `testDebugUnitTest`). SQLDelight regen: `./gradlew :shared:generateCommonMainVitruvianDatabaseInterface`.
+- Module test task is `:shared:testAndroidHostTest` (NOT `testDebugUnitTest`). SQLDelight regen: `./gradlew :shared:generateCommonMainPhoenixDatabaseInterface`.
 - Branch: `fix/issue-517-review-followups` (this work lands on PR #598). Only `git add` files you change.
 
 ---
@@ -30,7 +30,7 @@ Builds on the merged foundation (Phases 1–2): `VelocityOneRepMaxRepository.get
 
 **Modify:**
 - `domain/model/Routine.kt` — `RoutineExercise.scalingBasis` field + `effectiveScalingBasis`.
-- `sqldelight/.../VitruvianDatabase.sq` — RoutineExercise CREATE + both inserts + select.
+- `sqldelight/.../PhoenixDatabase.sq` — RoutineExercise CREATE + both inserts + select.
 - `data/local/MigrationStatements.kt`, `data/local/SchemaManifest.kt`, `shared/build.gradle.kts`, the `SchemaParityTest` version constant.
 - `data/repository/SqlDelightWorkoutRepository.kt` — RoutineExercise read/write mapper for the new column.
 - `domain/usecase/ResolveRoutineWeightsUseCase.kt` — `ESTIMATED_1RM` branch (+ inject `VelocityOneRepMaxRepository`).
@@ -133,7 +133,7 @@ git commit -m "feat(1rm): add ScalingBasis enum + RoutineExercise.scalingBasis (
 ### Task 2: Persist `scalingBasis` on RoutineExercise (schema + migration + mapper)
 
 **Files:**
-- Modify: `VitruvianDatabase.sq` (RoutineExercise CREATE + `insertRoutineExercise` + `insertRoutineExerciseIgnore` + the RoutineExercise SELECT mapper), `MigrationStatements.kt`, `SchemaManifest.kt`, `shared/build.gradle.kts`, the `SchemaParityTest` version file, `SqlDelightWorkoutRepository.kt` (RoutineExercise read/write).
+- Modify: `PhoenixDatabase.sq` (RoutineExercise CREATE + `insertRoutineExercise` + `insertRoutineExerciseIgnore` + the RoutineExercise SELECT mapper), `MigrationStatements.kt`, `SchemaManifest.kt`, `shared/build.gradle.kts`, the `SchemaParityTest` version file, `SqlDelightWorkoutRepository.kt` (RoutineExercise read/write).
 - Create: `migrations/38.sqm`
 - Test: existing `SchemaParityTest`/`SchemaManifestTest`, plus a round-trip test in `androidHostTest` (`SqlDelightWorkoutRepositoryRoutineScalingTest.kt`).
 
@@ -142,7 +142,7 @@ git commit -m "feat(1rm): add ScalingBasis enum + RoutineExercise.scalingBasis (
 
 - [ ] **Step 1: Schema — add the column**
 
-In `VitruvianDatabase.sq` `CREATE TABLE RoutineExercise (...)`, add a nullable column (near `prTypeForScaling`):
+In `PhoenixDatabase.sq` `CREATE TABLE RoutineExercise (...)`, add a nullable column (near `prTypeForScaling`):
 ```sql
 scalingBasis TEXT,
 ```
@@ -192,7 +192,7 @@ Adapt to the repository's real save/read method names and the in-memory harness 
 
 - [ ] **Step 6: Regen + run parity + round-trip tests**
 
-Run: `./gradlew :shared:generateCommonMainVitruvianDatabaseInterface :shared:testAndroidHostTest --tests "*SchemaManifestTest*" --tests "*SchemaParityTest*" --tests "*RoutineScalingTest*"`
+Run: `./gradlew :shared:generateCommonMainPhoenixDatabaseInterface :shared:testAndroidHostTest --tests "*SchemaManifestTest*" --tests "*SchemaParityTest*" --tests "*RoutineScalingTest*"`
 Expected: PASS. Reconcile `.sq` vs `SchemaManifest` if parity fails.
 
 - [ ] **Step 7: Commit**

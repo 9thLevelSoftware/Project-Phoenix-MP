@@ -6,6 +6,29 @@
     <exclude domain="database" path="vitruvian.db-journal" />
     <exclude domain="database" path="vitruvian.db-wal" />
     <exclude domain="database" path="vitruvian.db-shm" />
+    <exclude domain="database" path="phoenix.db" />
+    <exclude domain="database" path="phoenix.db-journal" />
+    <exclude domain="database" path="phoenix.db-wal" />
+    <exclude domain="database" path="phoenix.db-shm" />
+    <exclude domain="database" path="phoenix.db.migrating" />
+    <exclude domain="database" path="phoenix.db.migrating-journal" />
+    <exclude domain="database" path="phoenix.db.migrating-wal" />
+    <exclude domain="database" path="phoenix.db.migrating-shm" />
+    <exclude domain="database" path="phoenix-recovery.db" />
+    <exclude domain="database" path="phoenix-recovery.db-journal" />
+    <exclude domain="database" path="phoenix-recovery.db-wal" />
+    <exclude domain="database" path="phoenix-recovery.db-shm" />
+    <exclude domain="database" path="phoenix-db-migration.lock" />
     <exclude domain="sharedpref" path="vitruvian_preferences.xml" />
+    <exclude domain="sharedpref" path="vitruvian_preferences.xml.bak" />
     <exclude domain="sharedpref" path="vitruvian_secure_preferences.xml" />
+    <exclude domain="sharedpref" path="vitruvian_secure_preferences.xml.bak" />
+    <exclude domain="sharedpref" path="phoenix_preferences.xml" />
+    <exclude domain="sharedpref" path="phoenix_preferences.xml.bak" />
+    <exclude domain="sharedpref" path="phoenix_secure_preferences.xml" />
+    <exclude domain="sharedpref" path="phoenix_secure_preferences.xml.bak" />
+    <exclude domain="sharedpref" path="phoenix_preferences_recovery.xml" />
+    <exclude domain="sharedpref" path="phoenix_preferences_recovery.xml.bak" />
+    <exclude domain="sharedpref" path="phoenix_secure_preferences_recovery.xml" />
+    <exclude domain="sharedpref" path="phoenix_secure_preferences_recovery.xml.bak" />
 </full-backup-content>

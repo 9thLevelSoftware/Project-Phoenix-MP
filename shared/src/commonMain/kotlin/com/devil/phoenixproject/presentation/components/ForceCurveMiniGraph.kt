@@ -20,8 +20,8 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.ForceCurveResult
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Compact mini-graph rendering a 101-point normalized force curve.

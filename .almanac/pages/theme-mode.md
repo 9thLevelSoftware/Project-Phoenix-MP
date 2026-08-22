@@ -37,7 +37,7 @@ sources:
     note: Shows the legacy boolean Android wrapper is deprecated because it coerces ThemeMode.SYSTEM into light or dark.
   - id: ios-content
     type: file
-    path: iosApp/VitruvianPhoenix/VitruvianPhoenix/ContentView.swift
+    path: iosApp/PhoenixApp/PhoenixApp/ContentView.swift
     note: Shows SwiftUI only hosts the shared Compose controller and does not own separate theme preference state.
   - id: theme-plan
     type: file
@@ -46,7 +46,7 @@ sources:
 status: active
 verified: 2026-06-22
 ---
-Theme selection in [[project-phoenix]] is a shared runtime setting, not a platform-host preference. `ThemeMode` is a three-state enum with `SYSTEM`, `LIGHT`, and `DARK`, and the shared `VitruvianTheme` maps `SYSTEM` to `isSystemInDarkTheme()` so the app can follow OS appearance changes without a separate Android or iOS settings model [@theme-model].
+Theme selection in [[project-phoenix]] is a shared runtime setting, not a platform-host preference. `ThemeMode` is a three-state enum with `SYSTEM`, `LIGHT`, and `DARK`, and the shared `PhoenixTheme` maps `SYSTEM` to `isSystemInDarkTheme()` so the app can follow OS appearance changes without a separate Android or iOS settings model [@theme-model].
 
 ## Source of truth
 
@@ -56,9 +56,9 @@ Dynamic color is a separate preference. The same view model stores `dynamic_colo
 
 ## Shared propagation path
 
-`AppContent` is the point where theme state becomes runtime UI state. It collects `themeMode` and `dynamicColorEnabled` from `ThemeViewModel`, passes both into `VitruvianTheme`, and also passes `themeMode` plus `onThemeModeChange` into `EnhancedMainScreen` so shared settings and toolbar affordances mutate the same source of truth [@app-content].
+`AppContent` is the point where theme state becomes runtime UI state. It collects `themeMode` and `dynamicColorEnabled` from `ThemeViewModel`, passes both into `PhoenixTheme`, and also passes `themeMode` plus `onThemeModeChange` into `EnhancedMainScreen` so shared settings and toolbar affordances mutate the same source of truth [@app-content].
 
-The shared theme function is the load-bearing API. The older Android and iOS overloads that accept only `darkTheme: Boolean` are both marked deprecated because converting a platform signal into a boolean destroys `ThemeMode.SYSTEM` as a persisted user choice before the shared theme sees it [@android-theme-wrapper] [@ios-theme-wrapper]. Future theming work should stay on the common `VitruvianTheme(themeMode = ..., dynamicColorEnabled = ...)` path even when the change starts from a host-specific file.
+The shared theme function is the load-bearing API. The older Android and iOS overloads that accept only `darkTheme: Boolean` are both marked deprecated because converting a platform signal into a boolean destroys `ThemeMode.SYSTEM` as a persisted user choice before the shared theme sees it [@android-theme-wrapper] [@ios-theme-wrapper]. Future theming work should stay on the common `PhoenixTheme(themeMode = ..., dynamicColorEnabled = ...)` path even when the change starts from a host-specific file.
 
 ## UI contract
 

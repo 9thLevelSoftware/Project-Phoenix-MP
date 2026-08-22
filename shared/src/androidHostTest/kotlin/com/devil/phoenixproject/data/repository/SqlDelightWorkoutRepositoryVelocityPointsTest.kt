@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.local.ExerciseImporter
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -10,10 +10,10 @@ import kotlinx.coroutines.test.runTest
 
 class SqlDelightWorkoutRepositoryVelocityPointsTest {
 
-    private fun createInMemoryTestDatabase(): VitruvianDatabase = createTestDatabase()
+    private fun createInMemoryTestDatabase(): PhoenixDatabase = createTestDatabase()
 
-    private fun seedExercise(db: VitruvianDatabase, id: String) {
-        db.vitruvianDatabaseQueries.insertExercise(
+    private fun seedExercise(db: PhoenixDatabase, id: String) {
+        db.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = id,
             displayName = null,
@@ -45,7 +45,7 @@ class SqlDelightWorkoutRepositoryVelocityPointsTest {
     private var sessionCounter = 0
 
     private fun seedSession(
-        db: VitruvianDatabase,
+        db: PhoenixDatabase,
         exerciseId: String,
         weightPerCableKg: Float,
         workingAvgWeightKg: Float?,
@@ -54,7 +54,7 @@ class SqlDelightWorkoutRepositoryVelocityPointsTest {
         workingReps: Int,
         profileId: String,
     ) {
-        db.vitruvianDatabaseQueries.insertSession(
+        db.phoenixDatabaseQueries.insertSession(
             id = "session-${++sessionCounter}",
             timestamp = timestamp,
             mode = "Program:OldSchool",

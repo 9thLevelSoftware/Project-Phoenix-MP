@@ -1,4 +1,4 @@
-# Project Phoenix — Vitruvian Trainer Control App
+# Project Phoenix — Phoenix Trainer Control App
 
 [![Latest Release](https://img.shields.io/github/v/release/9thLevelSoftware/Project-Phoenix-MP)](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/latest)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
@@ -6,7 +6,7 @@
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-green.svg)](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases)
 [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/9thLevelSoftware/Project-Phoenix-MP)
 
-**Keep your Vitruvian Trainer alive.** This community-developed app restores full functionality to Vitruvian V-Form and Trainer+ machines after the company's closure. Don't let your investment become e-waste.
+**Keep your Phoenix Trainer alive.** This community-developed app restores full functionality to Phoenix V-Form and Trainer+ machines after the company's closure. Don't let your investment become e-waste.
 
 ---
 
@@ -14,7 +14,7 @@
 
 If Project Phoenix has helped keep your machine running, please consider supporting continued development:
 
-**[☕ Support on Ko-fi](https://ko-fi.com/vitruvianredux)**
+**[☕ Support on Ko-fi](https://ko-fi.com/phoenixredux)**
 
 Your support helps cover development, testing, and platform costs and keeps this community rescue project going.
 
@@ -95,8 +95,8 @@ Current release: **[v0.9.6](https://github.com/9thLevelSoftware/Project-Phoenix-
 
 | Machine | Device Name | Max Resistance | Status |
 |---------|-------------|----------------|--------|
-| **Vitruvian V-Form Trainer** (VIT-200) | `Vee_*` | 200 kg (440 lbs) | ✅ Fully Supported |
-| **Vitruvian Trainer+** | `VIT*` | 220 kg (485 lbs) | ✅ Fully Supported |
+| **Phoenix V-Form Trainer** (VIT-200) | `Vee_*` | 200 kg (440 lbs) | ✅ Fully Supported |
+| **Phoenix Trainer+** | `VIT*` | 220 kg (485 lbs) | ✅ Fully Supported |
 
 ---
 
@@ -131,7 +131,7 @@ Recent highlights:
 ### iOS
 ```bash
 ./gradlew :shared:assembleXCFramework
-open iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj
+open iosApp/PhoenixApp/PhoenixApp.xcodeproj
 ```
 
 ---
@@ -181,7 +181,7 @@ Please open an issue before starting large changes so the approach can be coordi
 - **Issues**: [GitHub Issues](https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/9thLevelSoftware/Project-Phoenix-MP/discussions)
 - **Project Portal**: [phoenix-portal.com](https://phoenix-portal.com)
-- **Support Development**: [Ko-fi](https://ko-fi.com/vitruvianredux)
+- **Support Development**: [Ko-fi](https://ko-fi.com/phoenixredux)
 
 ---
 
@@ -193,12 +193,12 @@ Proprietary License - All Rights Reserved. See [LICENSE](LICENSE) file for detai
 
 ## Acknowledgments
 
-- Original [VitruvianProjectPhoenix](https://github.com/DasBluEyedDevil/VitruvianProjectPhoenix) Android app
+- Original [ProjectPhoenix](https://github.com/9thLevelSoftware/Project-Phoenix-MP) Android app
 - Community protocol documentation for the machine BLE interface
-- Vitruvian machine owners community for testing and feedback
+- Phoenix machine owners community for testing and feedback
 - JetBrains for Kotlin Multiplatform
 - All contributors and supporters
 
 ---
 
-*Project Phoenix is a community rescue project to keep Vitruvian Trainer machines functional. It is not affiliated with or endorsed by Vitruvian.*
+*Project Phoenix is a community rescue project to keep Phoenix Trainer machines functional. It is not affiliated with or endorsed by Phoenix.*

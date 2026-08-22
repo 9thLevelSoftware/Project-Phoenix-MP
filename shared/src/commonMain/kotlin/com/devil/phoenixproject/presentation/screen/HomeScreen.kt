@@ -87,10 +87,10 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_start_workout
-import vitruvianprojectphoenix.shared.generated.resources.cd_streak
-import vitruvianprojectphoenix.shared.generated.resources.start_workout
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_start_workout
+import projectphoenix.shared.generated.resources.cd_streak
+import projectphoenix.shared.generated.resources.start_workout
 
 private const val HOME_CONTENT_MAX_WIDTH = 720
 internal const val ONE_REP_MAX_COMING_SOON_TITLE = "Coming Soon!"

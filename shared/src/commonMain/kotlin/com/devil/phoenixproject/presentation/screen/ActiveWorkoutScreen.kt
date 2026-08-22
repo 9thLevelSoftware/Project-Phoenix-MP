@@ -51,17 +51,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_continue_set
-import vitruvianprojectphoenix.shared.generated.resources.action_exit
-import vitruvianprojectphoenix.shared.generated.resources.end_workout
-import vitruvianprojectphoenix.shared.generated.resources.exit_workout_message
-import vitruvianprojectphoenix.shared.generated.resources.exit_workout_title
-import vitruvianprojectphoenix.shared.generated.resources.skip_exercise
-import vitruvianprojectphoenix.shared.generated.resources.stop_current_set_message
-import vitruvianprojectphoenix.shared.generated.resources.stop_current_set_title
-import vitruvianprojectphoenix.shared.generated.resources.stop_set
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.action_continue_set
+import projectphoenix.shared.generated.resources.action_exit
+import projectphoenix.shared.generated.resources.end_workout
+import projectphoenix.shared.generated.resources.exit_workout_message
+import projectphoenix.shared.generated.resources.exit_workout_title
+import projectphoenix.shared.generated.resources.skip_exercise
+import projectphoenix.shared.generated.resources.stop_current_set_message
+import projectphoenix.shared.generated.resources.stop_current_set_title
+import projectphoenix.shared.generated.resources.stop_set
 
 /**
  * Active Workout screen - displays workout controls and metrics during an active workout.

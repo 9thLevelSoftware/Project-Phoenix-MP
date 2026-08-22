@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "DFE6BD462EEDF42200886589"
-               BuildableName = "VitruvianPhoenix.app"
-               BlueprintName = "VitruvianPhoenix"
-               ReferencedContainer = "container:VitruvianPhoenix.xcodeproj">
+               BuildableName = "PhoenixApp.app"
+               BlueprintName = "PhoenixApp"
+               ReferencedContainer = "container:PhoenixApp.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -45,9 +45,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "DFE6BD462EEDF42200886589"
-            BuildableName = "VitruvianPhoenix.app"
-            BlueprintName = "VitruvianPhoenix"
-            ReferencedContainer = "container:VitruvianPhoenix.xcodeproj">
+            BuildableName = "PhoenixApp.app"
+            BlueprintName = "PhoenixApp"
+            ReferencedContainer = "container:PhoenixApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
       <EnvironmentVariables>
@@ -69,9 +69,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "DFE6BD462EEDF42200886589"
-            BuildableName = "VitruvianPhoenix.app"
-            BlueprintName = "VitruvianPhoenix"
-            ReferencedContainer = "container:VitruvianPhoenix.xcodeproj">
+            BuildableName = "PhoenixApp.app"
+            BlueprintName = "PhoenixApp"
+            ReferencedContainer = "container:PhoenixApp.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

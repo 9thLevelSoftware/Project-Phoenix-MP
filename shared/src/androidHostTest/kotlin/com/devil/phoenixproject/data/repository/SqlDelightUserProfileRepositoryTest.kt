@@ -6,7 +6,7 @@ import app.cash.sqldelight.db.SqlPreparedStatement
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
@@ -52,7 +52,7 @@ import org.junit.Test
 @OptIn(ExperimentalCoroutinesApi::class)
 class SqlDelightUserProfileRepositoryTest {
     private lateinit var sqlDriver: SqlDriver
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var preferenceStore: FaultingProfilePreferencesRepository
     private lateinit var settings: MapSettings
     private lateinit var safetyStore: FaultingProfileLocalSafetyStore
@@ -76,7 +76,7 @@ class SqlDelightUserProfileRepositoryTest {
     fun constructorKeepsContextSwitchingUntilExplicitReconciliation() = runTest {
         assertEquals("default", repository.activeProfile.value?.id)
         assertNull(
-            database.vitruvianDatabaseQueries.selectProfilePreferences("default")
+            database.phoenixDatabaseQueries.selectProfilePreferences("default")
                 .executeAsOneOrNull(),
         )
         val switching = assertIs<ActiveProfileContext.Switching>(repository.activeProfileContext.value)
@@ -141,14 +141,14 @@ class SqlDelightUserProfileRepositoryTest {
 
         assertFalse(created.isActive)
         assertEquals("default", repository.activeProfile.value?.id)
-        assertNotNull(database.vitruvianDatabaseQueries.getProfileById(created.id).executeAsOneOrNull())
+        assertNotNull(database.phoenixDatabaseQueries.getProfileById(created.id).executeAsOneOrNull())
         assertNotNull(
-            database.vitruvianDatabaseQueries.selectProfilePreferences(created.id)
+            database.phoenixDatabaseQueries.selectProfilePreferences(created.id)
                 .executeAsOneOrNull(),
         )
         assertEquals(
             1L,
-            database.vitruvianDatabaseQueries.selectProfilePreferences(created.id)
+            database.phoenixDatabaseQueries.selectProfilePreferences(created.id)
                 .executeAsOne()
                 .legacy_migration_version,
         )
@@ -158,7 +158,7 @@ class SqlDelightUserProfileRepositoryTest {
     @Test
     fun seededExistingProfilesRemainEligibleForLegacyMigration() = runTest {
         assertNull(
-            database.vitruvianDatabaseQueries.selectProfilePreferences("default")
+            database.phoenixDatabaseQueries.selectProfilePreferences("default")
                 .executeAsOneOrNull(),
         )
 
@@ -166,7 +166,7 @@ class SqlDelightUserProfileRepositoryTest {
 
         assertEquals(
             0L,
-            database.vitruvianDatabaseQueries.selectProfilePreferences("default")
+            database.phoenixDatabaseQueries.selectProfilePreferences("default")
                 .executeAsOne()
                 .legacy_migration_version,
         )
@@ -180,12 +180,12 @@ class SqlDelightUserProfileRepositoryTest {
 
         assertEquals("Alex", created.name)
         assertTrue(created.isActive)
-        assertEquals(created.id, database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id)
+        assertEquals(created.id, database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id)
         val context = assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value)
         assertEquals(created.id, context.profile.id)
         assertEquals(created.id, context.preferences.profileId)
         assertEquals(safetyStore.read(created.id), context.localSafety)
-        assertNull(database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery().executeAsOneOrNull())
+        assertNull(database.phoenixDatabaseQueries.selectPendingProfileContextRecovery().executeAsOneOrNull())
     }
 
     @Test
@@ -321,11 +321,11 @@ class SqlDelightUserProfileRepositoryTest {
 
         assertFails { repository.createAndActivateProfile("Cannot publish", 2) }
 
-        assertEquals(previous.profile.id, database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id)
+        assertEquals(previous.profile.id, database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id)
         assertEquals(previous, repository.activeProfileContext.value)
         assertEquals(profileIdsBefore, repository.allProfiles.value.map { it.id }.toSet())
         assertEquals(preferenceIdsBefore, preferenceIds())
-        assertNull(database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery().executeAsOneOrNull())
+        assertNull(database.phoenixDatabaseQueries.selectPendingProfileContextRecovery().executeAsOneOrNull())
     }
 
     @Test
@@ -337,9 +337,9 @@ class SqlDelightUserProfileRepositoryTest {
 
         assertFails { repository.setActiveProfile(target.id) }
 
-        assertEquals(previous.profile.id, database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id)
+        assertEquals(previous.profile.id, database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id)
         assertEquals(previous, repository.activeProfileContext.value)
-        assertNull(database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery().executeAsOneOrNull())
+        assertNull(database.phoenixDatabaseQueries.selectPendingProfileContextRecovery().executeAsOneOrNull())
     }
 
     @Test
@@ -356,19 +356,19 @@ class SqlDelightUserProfileRepositoryTest {
             fixture.repository.setActiveProfile(target.id)
         }
         assertNotNull(
-            fixture.database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery()
+            fixture.database.phoenixDatabaseQueries.selectPendingProfileContextRecovery()
                 .executeAsOneOrNull(),
         )
 
         fixture.repository.reconcileActiveProfileContext()
 
         assertNull(
-            fixture.database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery()
+            fixture.database.phoenixDatabaseQueries.selectPendingProfileContextRecovery()
                 .executeAsOneOrNull(),
         )
         assertEquals(
             previous.profile.id,
-            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+            fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id,
         )
         assertEquals(
             previous.profile.id,
@@ -382,45 +382,45 @@ class SqlDelightUserProfileRepositoryTest {
         fixture.preferenceStore.seedMissingProfiles()
         fixture.repository.reconcileActiveProfileContext()
         val profileIdsBefore = fixture.repository.allProfiles.value.map { it.id }.toSet()
-        val activeIdBefore = fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id
+        val activeIdBefore = fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id
         fixture.preferenceStore.failNextGet = true
         fixture.transitionFaults.failNextProfileDelete = true
 
         assertFailsWith<ProfileContextRecoveryException> {
             fixture.repository.createAndActivateProfile("Failed create", 2)
         }
-        val pending = fixture.database.vitruvianDatabaseQueries
+        val pending = fixture.database.phoenixDatabaseQueries
             .selectPendingProfileContextRecovery()
             .executeAsOne()
         val failedId = assertNotNull(pending.created_profile_id)
         assertEquals(
             failedId,
-            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+            fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id,
         )
         assertNotNull(
-            fixture.database.vitruvianDatabaseQueries.getProfileById(failedId)
+            fixture.database.phoenixDatabaseQueries.getProfileById(failedId)
                 .executeAsOneOrNull(),
         )
         assertNotNull(
-            fixture.database.vitruvianDatabaseQueries.selectProfilePreferences(failedId)
+            fixture.database.phoenixDatabaseQueries.selectProfilePreferences(failedId)
                 .executeAsOneOrNull(),
         )
 
         fixture.repository.reconcileActiveProfileContext()
 
         assertNull(
-            fixture.database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery()
+            fixture.database.phoenixDatabaseQueries.selectPendingProfileContextRecovery()
                 .executeAsOneOrNull(),
         )
-        assertNull(fixture.database.vitruvianDatabaseQueries.getProfileById(failedId).executeAsOneOrNull())
+        assertNull(fixture.database.phoenixDatabaseQueries.getProfileById(failedId).executeAsOneOrNull())
         assertNull(
-            fixture.database.vitruvianDatabaseQueries.selectProfilePreferences(failedId)
+            fixture.database.phoenixDatabaseQueries.selectProfilePreferences(failedId)
                 .executeAsOneOrNull(),
         )
         assertEquals(profileIdsBefore, fixture.repository.allProfiles.value.map { it.id }.toSet())
         assertEquals(
             activeIdBefore,
-            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+            fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id,
         )
     }
 
@@ -429,8 +429,8 @@ class SqlDelightUserProfileRepositoryTest {
         ready()
         val target = repository.createProfile("Target", 2)
         database.transaction {
-            database.vitruvianDatabaseQueries.enqueueProfileContextRecovery("default", null, 100)
-            database.vitruvianDatabaseQueries.setActiveProfile(target.id)
+            database.phoenixDatabaseQueries.enqueueProfileContextRecovery("default", null, 100)
+            database.phoenixDatabaseQueries.setActiveProfile(target.id)
         }
         preferenceStore.failNextGetFor = "default"
 
@@ -438,16 +438,16 @@ class SqlDelightUserProfileRepositoryTest {
             repository.reconcileActiveProfileContext()
         }
 
-        assertEquals("default", database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id)
+        assertEquals("default", database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id)
         assertNotNull(
-            database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery()
+            database.phoenixDatabaseQueries.selectPendingProfileContextRecovery()
                 .executeAsOneOrNull(),
         )
         assertIs<ActiveProfileContext.Switching>(repository.activeProfileContext.value)
 
         repository.reconcileActiveProfileContext()
 
-        assertNull(database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery().executeAsOneOrNull())
+        assertNull(database.phoenixDatabaseQueries.selectPendingProfileContextRecovery().executeAsOneOrNull())
         assertEquals(
             "default",
             assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value).profile.id,
@@ -461,12 +461,12 @@ class SqlDelightUserProfileRepositoryTest {
         fixture.repository.reconcileActiveProfileContext()
         val target = fixture.repository.createProfile("Target", 2)
         fixture.database.transaction {
-            fixture.database.vitruvianDatabaseQueries.enqueueProfileContextRecovery(
+            fixture.database.phoenixDatabaseQueries.enqueueProfileContextRecovery(
                 "default",
                 null,
                 100,
             )
-            fixture.database.vitruvianDatabaseQueries.setActiveProfile(target.id)
+            fixture.database.phoenixDatabaseQueries.setActiveProfile(target.id)
         }
         fixture.transitionFaults.failNextJournalClear = true
 
@@ -476,10 +476,10 @@ class SqlDelightUserProfileRepositoryTest {
 
         assertEquals(
             "default",
-            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+            fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id,
         )
         assertNotNull(
-            fixture.database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery()
+            fixture.database.phoenixDatabaseQueries.selectPendingProfileContextRecovery()
                 .executeAsOneOrNull(),
         )
         val switching = assertIs<ActiveProfileContext.Switching>(
@@ -490,7 +490,7 @@ class SqlDelightUserProfileRepositoryTest {
         fixture.repository.reconcileActiveProfileContext()
 
         assertNull(
-            fixture.database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery()
+            fixture.database.phoenixDatabaseQueries.selectPendingProfileContextRecovery()
                 .executeAsOneOrNull(),
         )
         val ready = assertIs<ActiveProfileContext.Ready>(
@@ -505,14 +505,14 @@ class SqlDelightUserProfileRepositoryTest {
         ready()
         val target = repository.createProfile("Target", 2)
         database.transaction {
-            database.vitruvianDatabaseQueries.enqueueProfileContextRecovery("default", null, 100)
-            database.vitruvianDatabaseQueries.setActiveProfile(target.id)
+            database.phoenixDatabaseQueries.enqueueProfileContextRecovery("default", null, 100)
+            database.phoenixDatabaseQueries.setActiveProfile(target.id)
         }
 
         repository.recoverPendingProfileTransitionForStartup()
 
-        assertNull(database.vitruvianDatabaseQueries.selectPendingProfileContextRecovery().executeAsOneOrNull())
-        assertEquals("default", database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id)
+        assertNull(database.phoenixDatabaseQueries.selectPendingProfileContextRecovery().executeAsOneOrNull())
+        assertEquals("default", database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id)
         val switching = assertIs<ActiveProfileContext.Switching>(repository.activeProfileContext.value)
         assertEquals("default", switching.targetProfileId)
 
@@ -524,13 +524,13 @@ class SqlDelightUserProfileRepositoryTest {
     fun pendingLocalCleanupDequeuesOnlyAfterEverySafetyKeyIsRemoved() = runTest {
         val value = ProfileLocalSafetyPreferences("do-not-log", true, true, true)
         safetyStore.write("source", value)
-        database.vitruvianDatabaseQueries.enqueueProfileLocalCleanup("source", 100)
+        database.phoenixDatabaseQueries.enqueueProfileLocalCleanup("source", 100)
         safetyStore.failDeletes = true
 
         repository.retryPendingLocalCleanup()
         assertEquals(
             listOf("source"),
-            database.vitruvianDatabaseQueries.selectPendingProfileLocalCleanup()
+            database.phoenixDatabaseQueries.selectPendingProfileLocalCleanup()
                 .executeAsList()
                 .map { it.profile_id },
         )
@@ -539,7 +539,7 @@ class SqlDelightUserProfileRepositoryTest {
         safetyStore.failDeletes = false
         repository.retryPendingLocalCleanup()
         assertTrue(
-            database.vitruvianDatabaseQueries.selectPendingProfileLocalCleanup()
+            database.phoenixDatabaseQueries.selectPendingProfileLocalCleanup()
                 .executeAsList()
                 .isEmpty(),
         )
@@ -553,19 +553,19 @@ class SqlDelightUserProfileRepositoryTest {
         val partialRepository = createRepository(database, preferenceStore, partialSafetyStore)
         val value = ProfileLocalSafetyPreferences("partial", true, true, true)
         partialSafetyStore.write("source", value)
-        database.vitruvianDatabaseQueries.enqueueProfileLocalCleanup("source", 100)
+        database.phoenixDatabaseQueries.enqueueProfileLocalCleanup("source", 100)
 
         partialRepository.retryPendingLocalCleanup()
 
         assertNotNull(
-            database.vitruvianDatabaseQueries.selectPendingProfileLocalCleanup()
+            database.phoenixDatabaseQueries.selectPendingProfileLocalCleanup()
                 .executeAsOneOrNull(),
         )
 
         partialRepository.retryPendingLocalCleanup()
 
         assertNull(
-            database.vitruvianDatabaseQueries.selectPendingProfileLocalCleanup()
+            database.phoenixDatabaseQueries.selectPendingProfileLocalCleanup()
                 .executeAsOneOrNull(),
         )
         assertEquals(ProfileLocalSafetyPreferences(), partialSafetyStore.read("source"))
@@ -581,10 +581,10 @@ class SqlDelightUserProfileRepositoryTest {
 
         assertFalse(deleteDefault)
         assertTrue(deleteCreated)
-        assertEquals("default", database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id)
+        assertEquals("default", database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id)
         assertEquals("default", assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value).profile.id)
         assertNull(
-            database.vitruvianDatabaseQueries.selectProfilePreferences(created.id)
+            database.phoenixDatabaseQueries.selectProfilePreferences(created.id)
                 .executeAsOneOrNull(),
         )
     }
@@ -593,14 +593,14 @@ class SqlDelightUserProfileRepositoryTest {
     fun deleteProfileRemovesActiveWorkoutRuntimeRowsForThatProfile() = runTest {
         ready()
         val created = repository.createAndActivateProfile("Runtime Owner", 1)
-        database.vitruvianDatabaseQueries.replaceActiveWorkoutRuntime(
+        database.phoenixDatabaseQueries.replaceActiveWorkoutRuntime(
             profile_id = created.id,
             routine_session_id = "runtime-session",
             document_version = 2L,
             runtime_json = "{}",
             updated_at_epoch_ms = 1L,
         )
-        database.vitruvianDatabaseQueries.replaceActiveWorkoutRuntime(
+        database.phoenixDatabaseQueries.replaceActiveWorkoutRuntime(
             profile_id = "default",
             routine_session_id = "default-runtime-session",
             document_version = 2L,
@@ -611,13 +611,13 @@ class SqlDelightUserProfileRepositoryTest {
         assertTrue(repository.deleteProfile(created.id))
 
         assertTrue(
-            database.vitruvianDatabaseQueries.selectActiveWorkoutRuntimesByProfile(created.id)
+            database.phoenixDatabaseQueries.selectActiveWorkoutRuntimesByProfile(created.id)
                 .executeAsList()
                 .isEmpty(),
         )
         assertEquals(
             1,
-            database.vitruvianDatabaseQueries.selectActiveWorkoutRuntimesByProfile("default")
+            database.phoenixDatabaseQueries.selectActiveWorkoutRuntimesByProfile("default")
                 .executeAsList()
                 .size,
         )
@@ -633,8 +633,8 @@ class SqlDelightUserProfileRepositoryTest {
             repository.deleteActiveProfile(stale.id)
         }
 
-        assertNotNull(database.vitruvianDatabaseQueries.getProfileById(stale.id).executeAsOneOrNull())
-        assertNotNull(database.vitruvianDatabaseQueries.getProfileById(current.id).executeAsOneOrNull())
+        assertNotNull(database.phoenixDatabaseQueries.getProfileById(stale.id).executeAsOneOrNull())
+        assertNotNull(database.phoenixDatabaseQueries.getProfileById(current.id).executeAsOneOrNull())
         assertEquals(
             current.id,
             assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value).profile.id,
@@ -671,10 +671,10 @@ class SqlDelightUserProfileRepositoryTest {
         assertTrue(deletion.await())
         switch.await()
 
-        assertNull(database.vitruvianDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
+        assertNull(database.phoenixDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
         assertEquals(
             "default",
-            database.vitruvianDatabaseQueries.selectSessionById("atomic-delete-session")
+            database.phoenixDatabaseQueries.selectSessionById("atomic-delete-session")
                 .executeAsOne().profile_id,
         )
         assertEquals(
@@ -708,7 +708,7 @@ class SqlDelightUserProfileRepositoryTest {
         assertEquals("default", assertIs<ActiveProfileContext.Ready>(observed[1]).profile.id)
         assertEquals(ProfileLocalSafetyPreferences(), safetyStore.read(source.id))
         assertEquals(targetSafety, safetyStore.read("default"))
-        assertTrue(database.vitruvianDatabaseQueries.selectPendingProfileLocalCleanup().executeAsList().isEmpty())
+        assertTrue(database.phoenixDatabaseQueries.selectPendingProfileLocalCleanup().executeAsList().isEmpty())
         job.cancel()
     }
 
@@ -732,10 +732,10 @@ class SqlDelightUserProfileRepositoryTest {
 
         assertEquals(cancellation.message, thrown.message)
         assertSame(cancellation, propagatedByRepository)
-        assertNull(database.vitruvianDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
+        assertNull(database.phoenixDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
         assertEquals(
             "default",
-            database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+            database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id,
         )
         assertEquals(
             "default",
@@ -768,10 +768,10 @@ class SqlDelightUserProfileRepositoryTest {
         assertSame(cancellation, recovery.cause)
         assertEquals(1, cancellation.suppressed.size)
         assertIs<InjectedTransitionFailure>(cancellation.suppressed.single())
-        assertNull(database.vitruvianDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
+        assertNull(database.phoenixDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
         assertEquals(
             "default",
-            database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+            database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id,
         )
         assertEquals(
             "default",
@@ -808,7 +808,7 @@ class SqlDelightUserProfileRepositoryTest {
             preferenceStore,
             safetyStore,
             beforeProfileDeletionCommit = {
-                sawJournalInsideTransaction = database.vitruvianDatabaseQueries
+                sawJournalInsideTransaction = database.phoenixDatabaseQueries
                     .selectPendingProfileLocalCleanup()
                     .executeAsOneOrNull() != null
                 throw InjectedTransitionFailure()
@@ -836,13 +836,13 @@ class SqlDelightUserProfileRepositoryTest {
             observed,
         )
         assertEquals(source.id, assertIs<ActiveProfileContext.Ready>(observed[1]).profile.id)
-        assertNotNull(database.vitruvianDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
-        assertNotNull(database.vitruvianDatabaseQueries.selectProfilePreferences(source.id).executeAsOneOrNull())
+        assertNotNull(database.phoenixDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
+        assertNotNull(database.phoenixDatabaseQueries.selectProfilePreferences(source.id).executeAsOneOrNull())
         assertEquals(83f, preferenceStore.get(source.id).core.value.bodyWeightKg)
         assertEquals(sourceSafety, safetyStore.read(source.id))
-        assertEquals(source.id, database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id)
+        assertEquals(source.id, database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id)
         assertEquals(1, countRows("WorkoutSession", "profile_id", source.id))
-        assertTrue(database.vitruvianDatabaseQueries.selectPendingProfileLocalCleanup().executeAsList().isEmpty())
+        assertTrue(database.phoenixDatabaseQueries.selectPendingProfileLocalCleanup().executeAsList().isEmpty())
         job.cancel()
     }
 
@@ -945,7 +945,7 @@ class SqlDelightUserProfileRepositoryTest {
         assertEquals(0, countRows("IntegrationSyncCursor", "profileId", sourceId))
         assertEquals("target-state", textValue("SELECT errorMessage FROM IntegrationStatus WHERE profileId = 'default'"))
         assertEquals("target-cursor", textValue("SELECT cursorValue FROM IntegrationSyncCursor WHERE profileId = 'default'"))
-        assertNull(database.vitruvianDatabaseQueries.selectProfilePreferences(sourceId).executeAsOneOrNull())
+        assertNull(database.phoenixDatabaseQueries.selectProfilePreferences(sourceId).executeAsOneOrNull())
     }
 
     @Test
@@ -961,19 +961,19 @@ class SqlDelightUserProfileRepositoryTest {
 
         assertTrue(repository.deleteProfile(source.id))
 
-        val pr = database.vitruvianDatabaseQueries.selectAllRecords("default").executeAsList().single { it.exerciseId == "bench" }
+        val pr = database.phoenixDatabaseQueries.selectAllRecords("default").executeAsList().single { it.exerciseId == "bench" }
         assertEquals(800, pr.id)
         assertEquals(70.0, pr.weight)
         assertEquals("Target Bench", pr.exerciseName)
         assertEquals("Old School", pr.workoutMode)
         assertEquals("source-server", pr.serverId)
         assertEquals("source-uuid", pr.uuid)
-        val badge = database.vitruvianDatabaseQueries.selectAllEarnedBadges("default").executeAsList().single { it.badgeId == "shared" }
+        val badge = database.phoenixDatabaseQueries.selectAllEarnedBadges("default").executeAsList().single { it.badgeId == "shared" }
         assertEquals(810, badge.id)
         assertEquals(100, badge.earnedAt)
         assertEquals(250, badge.celebratedAt)
         assertEquals("target-badge", badge.serverId)
-        val mvt = database.vitruvianDatabaseQueries.selectExerciseMvt("bench", "default").executeAsOne()
+        val mvt = database.phoenixDatabaseQueries.selectExerciseMvt("bench", "default").executeAsOne()
         assertEquals(350.0, mvt.personalMvtMs)
         assertEquals(8, mvt.sampleCount)
     }
@@ -1021,8 +1021,8 @@ class SqlDelightUserProfileRepositoryTest {
 
         assertTrue(repository.deleteProfile(created.id))
 
-        assertNull(database.vitruvianDatabaseQueries.getProfileById(created.id).executeAsOneOrNull())
-        assertEquals("default", database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id)
+        assertNull(database.phoenixDatabaseQueries.getProfileById(created.id).executeAsOneOrNull())
+        assertEquals("default", database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id)
         assertEquals(
             "default",
             assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value).profile.id,
@@ -1173,16 +1173,16 @@ class SqlDelightUserProfileRepositoryTest {
         insertWorkoutSession("session-created", 12, 25.0, created.id)
         gamificationRepository.updateStats("default")
         gamificationRepository.updateStats(created.id)
-        assertEquals(2, database.vitruvianDatabaseQueries.selectGamificationStatsSync().executeAsList().size)
+        assertEquals(2, database.phoenixDatabaseQueries.selectGamificationStatsSync().executeAsList().size)
 
         assertTrue(repository.deleteProfile(created.id))
 
-        val remainingRows = database.vitruvianDatabaseQueries
+        val remainingRows = database.phoenixDatabaseQueries
             .selectGamificationStatsSync()
             .executeAsList()
             .filter { it.profile_id == "default" }
         assertEquals(1, remainingRows.size)
-        val merged = database.vitruvianDatabaseQueries
+        val merged = database.phoenixDatabaseQueries
             .selectGamificationStats("default")
             .executeAsOneOrNull()
         assertNotNull(merged)
@@ -1195,19 +1195,19 @@ class SqlDelightUserProfileRepositoryTest {
         repository.reconcileActiveProfileContext()
     }
 
-    private fun preferenceIds(): Set<String> = database.vitruvianDatabaseQueries
+    private fun preferenceIds(): Set<String> = database.phoenixDatabaseQueries
         .selectAllProfilePreferences()
         .executeAsList()
         .map { it.profile_id }
         .toSet()
 
-    private fun createDatabase(driver: SqlDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)): VitruvianDatabase {
-        VitruvianDatabase.Schema.create(driver)
-        return VitruvianDatabase(driver)
+    private fun createDatabase(driver: SqlDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)): PhoenixDatabase {
+        PhoenixDatabase.Schema.create(driver)
+        return PhoenixDatabase(driver)
     }
 
     private fun createRepository(
-        database: VitruvianDatabase,
+        database: PhoenixDatabase,
         preferences: ProfilePreferencesRepository,
         safety: ProfileLocalSafetyStore,
         beforeProfileDeletionCommit: () -> Unit = {},
@@ -1315,7 +1315,7 @@ class SqlDelightUserProfileRepositoryTest {
         weightPerCableKg: Double,
         profileId: String,
     ) {
-        database.vitruvianDatabaseQueries.insertSession(
+        database.phoenixDatabaseQueries.insertSession(
             id = id,
             timestamp = 1_000_000L,
             mode = "OldSchool",
@@ -1371,7 +1371,7 @@ class SqlDelightUserProfileRepositoryTest {
     }
 
     private data class FaultingFixture(
-        val database: VitruvianDatabase,
+        val database: PhoenixDatabase,
         val preferenceStore: FaultingProfilePreferencesRepository,
         val repository: SqlDelightUserProfileRepository,
         val transitionFaults: TransitionFaults,
@@ -1457,9 +1457,9 @@ class SqlDelightUserProfileRepositoryTest {
         }
 
         private companion object {
-            const val SET_ACTIVE_PROFILE_IDENTIFIER = 373_348_112
-            const val DELETE_PROFILE_IDENTIFIER = 787_673_935
-            const val CLEAR_RECOVERY_JOURNAL_IDENTIFIER = 1_230_173_044
+            const val SET_ACTIVE_PROFILE_IDENTIFIER = 415_176_795
+            const val DELETE_PROFILE_IDENTIFIER = -1_674_170_908
+            const val CLEAR_RECOVERY_JOURNAL_IDENTIFIER = 1_812_830_207
         }
     }
 

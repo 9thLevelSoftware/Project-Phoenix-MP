@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.DropSetCandidate
 import com.devil.phoenixproject.domain.model.ExerciseLoadOverlay
@@ -32,7 +32,7 @@ import org.junit.Test
 
 class ActiveWorkoutRuntimeCodecInvariantTest {
     private lateinit var driver: JdbcSqliteDriver
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var repository: ActiveWorkoutRuntimeRepository
     private val json = Json {
         ignoreUnknownKeys = false
@@ -45,8 +45,8 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
     @Before
     fun setup() {
         driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(driver)
-        database = VitruvianDatabase(driver)
+        PhoenixDatabase.Schema.create(driver)
+        database = PhoenixDatabase(driver)
         repository = SqlDelightActiveWorkoutRuntimeRepository(database)
     }
 

@@ -2,7 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ProgressionEvent
 import com.devil.phoenixproject.domain.model.ProgressionReason
 import com.devil.phoenixproject.domain.model.ProgressionResponse
@@ -15,9 +15,9 @@ import kotlinx.coroutines.withContext
  * SQLDelight implementation of ProgressionRepository for auto-progression tracking.
  * Manages weight increase suggestions and user responses using the database.
  */
-class SqlDelightProgressionRepository(db: VitruvianDatabase) : ProgressionRepository {
+class SqlDelightProgressionRepository(db: PhoenixDatabase) : ProgressionRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     /**
      * Maps a database row to a ProgressionEvent domain model.

@@ -83,7 +83,7 @@
     </queries>
 
     <application
-        android:name=".VitruvianApp"
+        android:name=".PhoenixApp"
         android:allowBackup="false"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules"
@@ -92,14 +92,14 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
-        android:theme="@style/Theme.VitruvianProjectPhoenix"
+        android:theme="@style/Theme.PhoenixProject"
         tools:targetApi="36">
 
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|density"
-            android:theme="@style/Theme.VitruvianProjectPhoenix">
+            android:theme="@style/Theme.PhoenixProject">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

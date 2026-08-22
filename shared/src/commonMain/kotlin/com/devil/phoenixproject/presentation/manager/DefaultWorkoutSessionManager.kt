@@ -643,7 +643,7 @@ class DefaultWorkoutSessionManager(
                 return false
             }
             // Issue #693: Suppress connection alerts for bodyweight-only workouts.
-            // When all exercises in the loaded routine are bodyweight, the Vitruvian
+            // When all exercises in the loaded routine are bodyweight, the Phoenix
             // trainer is not needed and its auto-power-off should not interrupt the user.
             val routine = coordinator._loadedRoutine.value
             if (routine != null && routine.exercises.isNotEmpty() &&

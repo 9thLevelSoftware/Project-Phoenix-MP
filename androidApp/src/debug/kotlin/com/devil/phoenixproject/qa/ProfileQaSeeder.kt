@@ -8,7 +8,7 @@ import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
 import com.devil.phoenixproject.domain.model.LedPreferences
@@ -45,9 +45,9 @@ interface ProfileQaFixtureRowCleanup {
 }
 
 private class DatabaseProfileQaFixtureRowCleanup(
-    database: VitruvianDatabase,
+    database: PhoenixDatabase,
 ) : ProfileQaFixtureRowCleanup {
-    private val queries = database.vitruvianDatabaseQueries
+    private val queries = database.phoenixDatabaseQueries
 
     override fun deletePersonalRecord(id: Long) {
         queries.deletePersonalRecordById(id)
@@ -66,7 +66,7 @@ class ProfileQaSeeder(
     private val personalRecordRepository: PersonalRecordRepository,
     private val assessmentRepository: AssessmentRepository,
     private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
-    database: VitruvianDatabase,
+    database: PhoenixDatabase,
     private val fixtureRowCleanup: ProfileQaFixtureRowCleanup =
         DatabaseProfileQaFixtureRowCleanup(database),
 ) {

@@ -11,22 +11,18 @@ import coil3.SingletonImageLoader
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.util.DebugLogger
-import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.di.initKoin
 import com.devil.phoenixproject.ui.theme.applyPersistedApplicationNightMode
 import com.devil.phoenixproject.util.ActivityHolder
 import com.devil.phoenixproject.util.DeviceInfo
-import org.koin.android.ext.android.inject
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
 import org.koin.dsl.module
 
-open class VitruvianApp :
+open class PhoenixApp :
     Application(),
     SingletonImageLoader.Factory {
-
-    private val migrationManager: MigrationManager by inject()
 
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
@@ -49,7 +45,7 @@ open class VitruvianApp :
 
         initKoin {
             androidLogger()
-            androidContext(this@VitruvianApp)
+            androidContext(this@PhoenixApp)
             modules(
                 module {
                     single {
@@ -61,9 +57,6 @@ open class VitruvianApp :
                 },
             )
         }
-
-        // Start the required profile preference migration gate after Koin is initialized.
-        migrationManager.checkAndRunMigrations()
 
         // H11: Register ActivityHolder via lifecycle callbacks instead of manual
         // calls in each Activity. Ensures the reference is always current across
@@ -87,7 +80,7 @@ open class VitruvianApp :
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) {}
         })
 
-        Logger.d(tag = "VitruvianApp") { "Application initialized" }
+        Logger.d(tag = "PhoenixApp") { "Application initialized" }
     }
 
     override fun newImageLoader(context: coil3.PlatformContext): ImageLoader = ImageLoader.Builder(context)

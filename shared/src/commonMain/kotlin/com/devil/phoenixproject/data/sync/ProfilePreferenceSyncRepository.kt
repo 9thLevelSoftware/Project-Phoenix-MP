@@ -2,7 +2,7 @@ package com.devil.phoenixproject.data.sync
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesCodec
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 
 /** Sync-layer boundary; bind only in SyncModule and do not expose through profile/domain APIs. */
@@ -19,7 +19,7 @@ interface ProfilePreferenceSyncRepository {
 }
 
 internal class SqlDelightProfilePreferenceSyncRepository(
-    private val database: VitruvianDatabase,
+    private val database: PhoenixDatabase,
     private val codec: ProfilePreferenceSyncCodec,
     private val logCanonicalDivergence: (ProfilePreferenceSectionName) -> Unit = { section ->
         Logger.w(tag = "ProfilePreferenceSync") {
@@ -27,7 +27,7 @@ internal class SqlDelightProfilePreferenceSyncRepository(
         }
     },
 ) : ProfilePreferenceSyncRepository {
-    private val queries = database.vitruvianDatabaseQueries
+    private val queries = database.phoenixDatabaseQueries
 
     override suspend fun snapshotDirtySections(): ProfilePreferenceDirtySnapshot {
         val encoded = queries.selectDirtyProfilePreferenceRows().executeAsList()

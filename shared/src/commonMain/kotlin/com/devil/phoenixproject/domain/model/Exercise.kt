@@ -1,13 +1,13 @@
 package com.devil.phoenixproject.domain.model
 
 /**
- * Exercise model - represents any exercise that can be performed on the Vitruvian Trainer
+ * Exercise model - represents any exercise that can be performed on the Phoenix Trainer
  *
  * MIGRATION NOTE: This was converted from an enum to a data class to support the exercise library
  * with 100+ exercises instead of being limited to hardcoded values.
  *
  * NOTES:
- * - Vitruvian cables only pull UPWARD from floor platform
+ * - Phoenix cables only pull UPWARD from floor platform
  * - Compatible: Rows, presses, curls, squats, deadlifts, raises
  * - NOT compatible: Pulldowns, pushdowns (require overhead anchor)
  * - Machine tracks each cable independently (loadA, loadB, posA, posB)

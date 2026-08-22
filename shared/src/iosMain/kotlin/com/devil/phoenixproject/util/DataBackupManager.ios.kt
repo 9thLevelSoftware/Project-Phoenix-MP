@@ -4,7 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.Dispatchers
@@ -50,7 +50,7 @@ import platform.darwin.dispatch_get_main_queue
  */
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
 class IosDataBackupManager(
-    database: VitruvianDatabase,
+    database: PhoenixDatabase,
     private val preferencesManager: PreferencesManager,
     private val destinationResolver: BackupDestinationResolver,
     profilePreferencesRepository: ProfilePreferencesRepository,

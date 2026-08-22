@@ -319,6 +319,7 @@ android {
         applicationId = "com.devil.phoenixproject"
         minSdk = 26
         targetSdk = 37
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         // Fail fast if CI injects an invalid version code instead of silently shipping a default.
         versionCode = injectedVersionCode ?: 5
         versionName = "1.0.0"
@@ -472,4 +473,8 @@ dependencies {
     testImplementation(libs.ktor.client.mock)
     testImplementation(libs.multiplatform.settings)
     testImplementation(libs.multiplatform.settings.test)
+    androidTestImplementation(libs.androidx.test.junit)
+    androidTestImplementation(libs.androidx.test.espresso)
+    androidTestImplementation(libs.androidx.security.crypto)
+    androidTestImplementation(libs.multiplatform.settings)
 }

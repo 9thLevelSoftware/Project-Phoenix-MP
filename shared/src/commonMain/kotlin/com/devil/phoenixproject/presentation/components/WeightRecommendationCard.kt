@@ -36,13 +36,13 @@ import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_apply
-import vitruvianprojectphoenix.shared.generated.resources.action_dismiss
-import vitruvianprojectphoenix.shared.generated.resources.weight_recommendation_decrease
-import vitruvianprojectphoenix.shared.generated.resources.weight_recommendation_increase
-import vitruvianprojectphoenix.shared.generated.resources.weight_recommendation_maintain
-import vitruvianprojectphoenix.shared.generated.resources.weight_recommendation_weight_change
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_apply
+import projectphoenix.shared.generated.resources.action_dismiss
+import projectphoenix.shared.generated.resources.weight_recommendation_decrease
+import projectphoenix.shared.generated.resources.weight_recommendation_increase
+import projectphoenix.shared.generated.resources.weight_recommendation_maintain
+import projectphoenix.shared.generated.resources.weight_recommendation_weight_change
 
 @Composable
 fun WeightRecommendationCard(

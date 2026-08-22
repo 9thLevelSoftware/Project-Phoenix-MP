@@ -56,7 +56,7 @@ Android requires permission to install apps from outside the Play Store.
 When you first launch the app, you'll be asked to grant permissions:
 
 ### Bluetooth Permissions
-- **Nearby devices** - Required to scan for and connect to your Vitruvian trainer
+- **Nearby devices** - Required to scan for and connect to your Phoenix trainer
 - Tap **Allow** when prompted
 
 ### Location Permission
@@ -89,7 +89,7 @@ When a new version is released:
 - Ensure Bluetooth is enabled on your device
 - Make sure you granted Bluetooth/Nearby devices permission
 - On Android 11 and below, ensure Location is enabled (required for BLE scanning)
-- Move closer to your Vitruvian trainer
+- Move closer to your Phoenix trainer
 - Try turning your trainer off and on again
 
 ### App Crashes on Launch
@@ -137,10 +137,10 @@ A: Yes, as long as it has Bluetooth Low Energy support and runs Android 8.0+.
 **Q: Why does it need location permission?**
 A: Android requires location permission for Bluetooth scanning on Android 11 and below. This is a platform limitation, not something we can change. The app never accesses your actual location.
 
-**Q: What Vitruvian devices are supported?**
+**Q: What Phoenix devices are supported?**
 A:
-- Vitruvian V-Form Trainer (VIT-200) - devices starting with `Vee_`
-- Vitruvian Trainer+ - devices starting with `VIT`
+- Phoenix V-Form Trainer (VIT-200) - devices starting with `Vee_`
+- Phoenix Trainer+ - devices starting with `VIT`
 
 ---
 

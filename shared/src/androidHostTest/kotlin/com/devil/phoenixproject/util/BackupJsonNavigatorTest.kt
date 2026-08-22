@@ -9,7 +9,7 @@ import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepo
 import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.LedPreferences
@@ -434,7 +434,7 @@ class StreamingImportRoundTripTest {
     }
 
     private class TestDataBackupManager(
-        database: com.devil.phoenixproject.database.VitruvianDatabase,
+        database: com.devil.phoenixproject.database.PhoenixDatabase,
         val profilePreferencesRepository: ProfilePreferencesRepository = SqlDelightProfilePreferencesRepository(database),
         val userProfileRepository: UserProfileRepository = createTestUserProfileRepository(
             database,
@@ -689,7 +689,7 @@ class StreamingImportRoundTripTest {
                 ),
             )
             assertTrue(fixture.manager.importFromStringStreaming(payload).isSuccess)
-            val profiles = fixture.database.vitruvianDatabaseQueries.getAllProfiles().executeAsList()
+            val profiles = fixture.database.phoenixDatabaseQueries.getAllProfiles().executeAsList()
             assertEquals(PROFILE_A, profiles.single { it.isActive == 1L }.id)
             assertEquals(1, fixture.recordingUserProfiles.reconcileCalls)
         }
@@ -713,7 +713,7 @@ class StreamingImportRoundTripTest {
         val result = failed.manager.importFromStringStreaming(malformedAfterIdentityCommit)
 
         assertTrue(result.isFailure)
-        val profiles = failed.database.vitruvianDatabaseQueries.getAllProfiles().executeAsList()
+        val profiles = failed.database.phoenixDatabaseQueries.getAllProfiles().executeAsList()
         assertEquals(PROFILE_A, profiles.single { it.isActive == 1L }.id)
         assertEquals(1, failed.recordingUserProfiles.reconcileCalls)
     }
@@ -753,12 +753,12 @@ class StreamingImportRoundTripTest {
         assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
         assertEquals(
             represented,
-            fixture.database.vitruvianDatabaseQueries
+            fixture.database.phoenixDatabaseQueries
                 .selectSessionById(session.id)
                 .executeAsOne()
                 .profile_id,
         )
-        assertEquals(represented, fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id)
+        assertEquals(represented, fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id)
     }
 
     @Test
@@ -810,25 +810,25 @@ class StreamingImportRoundTripTest {
         assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
         assertEquals(
             "first-represented",
-            fixture.database.vitruvianDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
+            fixture.database.phoenixDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
         )
         assertEquals(
             "first-represented",
-            fixture.database.vitruvianDatabaseQueries
+            fixture.database.phoenixDatabaseQueries
                 .selectSessionById(representedSession.id)
                 .executeAsOne()
                 .profile_id,
         )
         assertEquals(
             "first-represented",
-            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+            fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id,
         )
     }
 
     @Test
     fun `streaming session import adopts explicit owner when its profile is absent`() = runTest {
         val fixture = preferenceFixture()
-        val activeProfileId = fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id
+        val activeProfileId = fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id
         val session = WorkoutSessionBackup(
             id = "stream-missing-profile-session",
             timestamp = 1L,
@@ -858,7 +858,7 @@ class StreamingImportRoundTripTest {
         assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
         assertEquals(
             activeProfileId,
-            fixture.database.vitruvianDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
+            fixture.database.phoenixDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
         )
     }
 
@@ -978,8 +978,8 @@ class StreamingImportRoundTripTest {
         reconciliationFailure: Throwable? = null,
     ): PreferenceFixture {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(driver)
-        val database = VitruvianDatabase(driver)
+        PhoenixDatabase.Schema.create(driver)
+        val database = PhoenixDatabase(driver)
         val preferences = preferenceDecorator(SqlDelightProfilePreferencesRepository(database))
         val safetyStore = SettingsProfileLocalSafetyStore(MapSettings())
         val realUserProfiles = SqlDelightUserProfileRepository(
@@ -988,7 +988,7 @@ class StreamingImportRoundTripTest {
             profileLocalSafetyStore = safetyStore,
             gamificationRepository = SqlDelightGamificationRepository(database),
         )
-        database.vitruvianDatabaseQueries.seedMissingProfilePreferences()
+        database.phoenixDatabaseQueries.seedMissingProfilePreferences()
         val recording = RecordingUserProfileRepository(realUserProfiles, reconciliationFailure)
         return PreferenceFixture(
             driver = driver,
@@ -1003,7 +1003,7 @@ class StreamingImportRoundTripTest {
     private suspend fun seedProfiles(fixture: PreferenceFixture) {
         insertProfile(fixture.database, PROFILE_A, 100L)
         insertProfile(fixture.database, PROFILE_B, 200L)
-        fixture.database.vitruvianDatabaseQueries.setActiveProfile(PROFILE_A)
+        fixture.database.phoenixDatabaseQueries.setActiveProfile(PROFILE_A)
         fixture.preferences.updateCore(PROFILE_A, CoreProfilePreferences(70f, WeightUnit.KG, 2.5f), 10L)
         fixture.preferences.updateRack(
             PROFILE_A,
@@ -1039,11 +1039,11 @@ class StreamingImportRoundTripTest {
         fixture.preferences.updateVbt(PROFILE_B, VbtPreferences(enabled = true, velocityLossThresholdPercent = 40), 24L)
     }
 
-    private fun insertProfile(database: VitruvianDatabase, id: String, createdAt: Long) {
-        if (database.vitruvianDatabaseQueries.getProfileById(id).executeAsOneOrNull() == null) {
-            database.vitruvianDatabaseQueries.insertProfile(id, id, 0L, createdAt, 0L)
+    private fun insertProfile(database: PhoenixDatabase, id: String, createdAt: Long) {
+        if (database.phoenixDatabaseQueries.getProfileById(id).executeAsOneOrNull() == null) {
+            database.phoenixDatabaseQueries.insertProfile(id, id, 0L, createdAt, 0L)
         }
-        database.vitruvianDatabaseQueries.insertDefaultProfilePreferences(id, 1L)
+        database.phoenixDatabaseQueries.insertDefaultProfilePreferences(id, 1L)
     }
 
     private inline fun <reified T> jsonElement(value: T): JsonElement = testJson.encodeToJsonElement(value)
@@ -1116,7 +1116,7 @@ class StreamingImportRoundTripTest {
 
     private data class PreferenceFixture(
         val driver: SqlDriver,
-        val database: VitruvianDatabase,
+        val database: PhoenixDatabase,
         val preferences: ProfilePreferencesRepository,
         val safetyStore: SettingsProfileLocalSafetyStore,
         val recordingUserProfiles: RecordingUserProfileRepository,
@@ -1151,7 +1151,7 @@ class StreamingImportRoundTripTest {
         const val PROFILE_B = "profile-b"
 
         fun createTestUserProfileRepository(
-            database: VitruvianDatabase,
+            database: PhoenixDatabase,
             preferences: ProfilePreferencesRepository,
         ): UserProfileRepository = SqlDelightUserProfileRepository(
             database = database,
@@ -1159,7 +1159,7 @@ class StreamingImportRoundTripTest {
             profileLocalSafetyStore = SettingsProfileLocalSafetyStore(MapSettings()),
             gamificationRepository = SqlDelightGamificationRepository(database),
         ).also {
-            database.vitruvianDatabaseQueries.seedMissingProfilePreferences()
+            database.phoenixDatabaseQueries.seedMissingProfilePreferences()
         }
     }
 
@@ -1203,7 +1203,7 @@ class StreamingImportRoundTripTest {
         )
 
         // Insert metrics for first session
-        originalDb.vitruvianDatabaseQueries.insertMetric(
+        originalDb.phoenixDatabaseQueries.insertMetric(
             sessionId = "rt-session-1",
             timestamp = 1_700_000_000_100L,
             position = 0.5,
@@ -1215,7 +1215,7 @@ class StreamingImportRoundTripTest {
             power = 200.0,
             status = 0,
         )
-        originalDb.vitruvianDatabaseQueries.insertMetric(
+        originalDb.phoenixDatabaseQueries.insertMetric(
             sessionId = "rt-session-1",
             timestamp = 1_700_000_000_200L,
             position = 0.8,
@@ -1249,7 +1249,7 @@ class StreamingImportRoundTripTest {
         )
 
         // Insert a personal record
-        originalDb.vitruvianDatabaseQueries.insertRecord(
+        originalDb.phoenixDatabaseQueries.insertRecord(
             exerciseId = "rt-exercise-bench",
             exerciseName = "Bench Press",
             weight = 100.0,

@@ -73,7 +73,7 @@ class ThemeViewModel(private val settings: Settings) : ViewModel() {
 
     companion object {
         const val THEME_MODE_KEY = "theme_mode"
-        const val THEME_PREFS_FILE = "vitruvian_preferences"
+        const val THEME_PREFS_FILE = "phoenix_preferences"
         private const val DYNAMIC_COLOR_ENABLED_KEY = "dynamic_color_enabled"
     }
 }

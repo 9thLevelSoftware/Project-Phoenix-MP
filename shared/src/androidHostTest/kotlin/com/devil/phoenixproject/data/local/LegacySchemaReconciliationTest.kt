@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.local
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import org.junit.Test
@@ -85,7 +85,7 @@ class LegacySchemaReconciliationTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 13, 14)
+        PhoenixDatabase.Schema.migrate(driver, 13, 14)
 
         assertTrue(indexExists(driver, "idx_metric_sample_session"))
         assertTrue(columnNames(driver, "WorkoutSession").contains("cableCount"))
@@ -135,7 +135,7 @@ class LegacySchemaReconciliationTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 18, 19)
+        PhoenixDatabase.Schema.migrate(driver, 18, 19)
 
         val columns = columnNames(driver, "RoutineExercise")
         assertTrue(columns.contains("setEchoLevels"))
@@ -196,7 +196,7 @@ class LegacySchemaReconciliationTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 20, 21)
+        PhoenixDatabase.Schema.migrate(driver, 20, 21)
 
         val columns = columnNames(driver, "RoutineExercise")
         assertTrue(columns.contains("stallDetectionEnabled"))
@@ -289,7 +289,7 @@ class LegacySchemaReconciliationTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 21, 22)
+        PhoenixDatabase.Schema.migrate(driver, 21, 22)
 
         assertTrue(indexExists(driver, "idx_session_profile"))
         assertTrue(indexExists(driver, "idx_pr_profile"))
@@ -351,7 +351,7 @@ class LegacySchemaReconciliationTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 22, 23)
+        PhoenixDatabase.Schema.migrate(driver, 22, 23)
 
         assertTrue(indexExists(driver, "idx_earned_badge_profile"))
         assertTrue(indexExists(driver, "idx_streak_history_profile"))
@@ -400,7 +400,7 @@ class LegacySchemaReconciliationTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 25, 26)
+        PhoenixDatabase.Schema.migrate(driver, 25, 26)
 
         assertTrue(indexExists(driver, "idx_gamification_stats_profile"))
         assertEquals(1, countGamificationStatsRows(driver, "default"))

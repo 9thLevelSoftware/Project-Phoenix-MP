@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 
 /**
  * Tests for BLE Packet Factory - validates binary protocol frame construction
- * for Vitruvian device communication.
+ * for Phoenix device communication.
  */
 class BlePacketFactoryTest {
 
@@ -718,7 +718,7 @@ class BlePacketFactoryTest {
     }
 
     // ========== Echo Mode: Expected Byte Layout Tests ==========
-    // These tests verify Phoenix Echo packets match the expected Vitruvian BLE protocol byte layout.
+    // These tests verify Phoenix Echo packets match the expected Phoenix BLE protocol byte layout.
 
     /** Helper: read a little-endian unsigned short from a byte array */
     private fun readUShortLE(data: ByteArray, offset: Int): Int = (data[offset].toInt() and 0xFF) or

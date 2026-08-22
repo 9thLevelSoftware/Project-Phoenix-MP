@@ -44,7 +44,7 @@ import androidx.compose.material3.ColorScheme
  * error states) instead of on ambient background tints that should stay
  * brand-controlled.
  *
- * Only the dark branch of `VitruvianTheme` invokes this helper; light + Material You
+ * Only the dark branch of `PhoenixTheme` invokes this helper; light + Material You
  * is unchanged. iOS never invokes it because `platformDynamicColorScheme` returns
  * `null` on iOS and the `DarkColorScheme` fallback is used directly.
  *

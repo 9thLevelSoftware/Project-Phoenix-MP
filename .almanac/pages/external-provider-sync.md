@@ -37,7 +37,7 @@ sources:
     note: Shows activity storage, provider status storage, and provider-scoped deletes.
   - id: db-schema
     type: file
-    path: shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq
+    path: shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq
     note: Defines integration status and cursor tables and the provider-scoped local schema surface.
 status: active
 verified: 2026-06-25

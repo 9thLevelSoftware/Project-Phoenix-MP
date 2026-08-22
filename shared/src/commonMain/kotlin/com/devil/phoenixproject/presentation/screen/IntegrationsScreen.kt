@@ -44,10 +44,10 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.disconnect
-import vitruvianprojectphoenix.shared.generated.resources.disconnect_integration_message
-import vitruvianprojectphoenix.shared.generated.resources.disconnect_integration_title
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.disconnect
+import projectphoenix.shared.generated.resources.disconnect_integration_message
+import projectphoenix.shared.generated.resources.disconnect_integration_title
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

@@ -45,7 +45,7 @@ sources:
     note: Defines the persisted default-versus-custom destination model and iOS bookmark storage.
   - id: app-startup
     type: file
-    path: androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt
+    path: androidApp/src/main/kotlin/com/devil/phoenixproject/PhoenixApp.kt
     note: Shows that startup migration and repair runs immediately after Koin initialization on Android.
   - id: backup-routing-test
     type: file
@@ -82,7 +82,7 @@ Pruning behavior is also platform-specific. Android queries Downloads entries an
 
 ## Startup repair
 
-Startup repair is part of normal app boot. Android calls `migrationManager.checkAndRunMigrations()` during `VitruvianApp.onCreate()`, and the migration manager then refreshes profiles, strips fabricated `legacy_session_<id>` routine session IDs, normalizes legacy workout-mode names, backfills bad routine names on old workout rows, repairs PRs from workout history, audits profile-scoped data, and checks for orphaned records [@app-startup] [@migration-manager] [@migration-tests].
+Startup repair is part of normal app boot. Android calls `migrationManager.checkAndRunMigrations()` during `PhoenixApp.onCreate()`, and the migration manager then refreshes profiles, strips fabricated `legacy_session_<id>` routine session IDs, normalizes legacy workout-mode names, backfills bad routine names on old workout rows, repairs PRs from workout history, audits profile-scoped data, and checks for orphaned records [@app-startup] [@migration-manager] [@migration-tests].
 
 Profile-scope repair can become interactive when old default-profile rows and current active-profile rows both exist. `ProfileScopeRepairState.NeedsChoice` carries both row counts plus the active profile identity so the app can either move legacy `default`-scoped data into the active profile or switch back to the default profile without moving rows [@migration-state] [@migration-manager]. Read [[profiles]] with this page when the symptom is "data disappeared after I changed profiles" rather than a failed restore or broken file export.
 

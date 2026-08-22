@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <style name="Theme.VitruvianProjectPhoenix" parent="android:Theme.Material.NoActionBar">
+    <style name="Theme.PhoenixProject" parent="android:Theme.Material.NoActionBar">
         <item name="android:windowBackground">@color/phoenix_window_background</item>
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>

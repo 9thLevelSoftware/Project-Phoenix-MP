@@ -26,8 +26,8 @@ Findings: 11 total
 - Category: failure-point
 - Severity: low
 - Line numbers: 49-51
-- Description: The device-name constants are internally inconsistent and stale. `DEVICE_NAME_PREFIX` is `"Vee"`, while `DEVICE_NAME_PATTERN` is `"^Vitruvian.*$"`; the active scanner/hardware detection code also treats `"Vee_"` and `"VIT"` as Vitruvian names. Any future code that relies on `DEVICE_NAME_PATTERN` would reject the same devices that the scanner currently accepts.
-- Suggested fix direction: Replace the single regex with one canonical matcher shared by scanning and hardware detection, e.g. covering `Vee_`, `VIT`, and `Vitruvian`, or remove unused/stale constants so future filters cannot drift.
+- Description: The device-name constants are internally inconsistent and stale. `DEVICE_NAME_PREFIX` is `"Vee"`, while `DEVICE_NAME_PATTERN` is `"^Phoenix.*$"`; the active scanner/hardware detection code also treats `"Vee_"` and `"VIT"` as Phoenix names. Any future code that relies on `DEVICE_NAME_PATTERN` would reject the same devices that the scanner currently accepts.
+- Suggested fix direction: Replace the single regex with one canonical matcher shared by scanning and hardware detection, e.g. covering `Vee_`, `VIT`, and `Phoenix`, or remove unused/stale constants so future filters cannot drift.
 
 ### `shared/src/commonMain/kotlin/com/devil/phoenixproject/util/BlePacketFactory.kt`
 

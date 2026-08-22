@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
@@ -16,8 +16,8 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
-class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : PersonalRecordRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightPersonalRecordRepository(private val db: PhoenixDatabase) : PersonalRecordRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     // SQLDelight mapper - parameters must match query columns even if not all are used
     private fun mapToPR(

@@ -26,8 +26,8 @@ import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 internal const val WorkoutSetupTargetRepsRemoteStep = 1f
 

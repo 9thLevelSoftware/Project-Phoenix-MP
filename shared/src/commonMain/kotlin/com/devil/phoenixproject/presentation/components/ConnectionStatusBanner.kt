@@ -11,10 +11,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.ui.theme.Spacing
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.banner_action_connect
-import vitruvianprojectphoenix.shared.generated.resources.banner_not_connected_to_machine
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.banner_action_connect
+import projectphoenix.shared.generated.resources.banner_not_connected_to_machine
 
 /**
  * Connection status banner that displays when not connected to the machine.

@@ -46,7 +46,7 @@ enum class HandleState {
 }
 
 /**
- * Rep notification from the Vitruvian machine.
+ * Rep notification from the Phoenix machine.
  *
  * Supports TWO packet formats for backwards compatibility (Issue #187):
  *
@@ -125,7 +125,7 @@ data class RepNotification(
 data class ReconnectionRequest(val deviceName: String?, val deviceAddress: String, val reason: String, val timestamp: Long)
 
 /**
- * BLE Repository interface for Vitruvian machine communication.
+ * BLE Repository interface for Phoenix machine communication.
  *
  * Implementation: KableBleRepository (commonMain) - Kable-based implementation for Android/iOS
  */
@@ -166,7 +166,7 @@ interface BleRepository {
     }
 
     /**
-     * Scan for first Vitruvian device and connect to it immediately.
+     * Scan for first Phoenix device and connect to it immediately.
      * Matches parent repo behavior - no manual device selection needed.
      * @param timeoutMs Maximum time to scan before giving up (default 30 seconds)
      * @return Result.success if connected, Result.failure if timeout or error

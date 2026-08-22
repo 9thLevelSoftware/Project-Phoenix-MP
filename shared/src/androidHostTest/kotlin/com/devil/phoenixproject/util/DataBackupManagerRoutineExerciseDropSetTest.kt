@@ -19,7 +19,7 @@ import org.junit.Before
 import org.junit.Test
 
 class DataBackupManagerRoutineExerciseDropSetTest {
-    private lateinit var database: com.devil.phoenixproject.database.VitruvianDatabase
+    private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
     private lateinit var workoutRepository: SqlDelightWorkoutRepository
 
     @Before

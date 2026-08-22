@@ -80,7 +80,7 @@ No findings.
 - Severity: low
 - Line numbers: 24-35
 - Description: `screenBackgroundBrush()` infers dark mode by checking `MaterialTheme.colorScheme.background.luminance() < 0.5f`. This duplicates theme-mode logic indirectly and can choose the wrong gradient if a future dynamic/custom scheme uses an unusually bright dark background, a dim light background, or a transitional/system-provided palette near the threshold. The helper already controls prominent screen backgrounds, so a misclassification would be visible across many screens.
-- Suggested fix direction: Pass the resolved `useDarkColors`/`ThemeMode` into the helper or provide a `CompositionLocal` for the resolved dark flag from `VitruvianTheme`, rather than deriving it from a single color's luminance.
+- Suggested fix direction: Pass the resolved `useDarkColors`/`ThemeMode` into the helper or provide a `CompositionLocal` for the resolved dark flag from `PhoenixTheme`, rather than deriving it from a single color's luminance.
 
 ## `shared/src/commonMain/kotlin/com/devil/phoenixproject/ui/theme/Type.kt`
 

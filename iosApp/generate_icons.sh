@@ -12,7 +12,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_IMAGE="$SCRIPT_DIR/AppIcon1024.png"
-OUTPUT_DIR="$SCRIPT_DIR/VitruvianPhoenix/VitruvianPhoenix/Assets.xcassets/AppIcon.appiconset"
+OUTPUT_DIR="$SCRIPT_DIR/PhoenixApp/PhoenixApp/Assets.xcassets/AppIcon.appiconset"
 
 # Check source image exists
 if [ ! -f "$SOURCE_IMAGE" ]; then
