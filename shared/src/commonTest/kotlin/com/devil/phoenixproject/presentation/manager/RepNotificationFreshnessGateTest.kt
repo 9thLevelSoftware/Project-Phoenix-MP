@@ -202,7 +202,9 @@ class RepNotificationFreshnessGateTest {
     @Test
     fun `amrap lease accepts repsSetTotal 252 despite finite UI target`() {
         val gate = RepNotificationFreshnessGate()
-        val lease = activeLease(target = 0, cutover = 1_000L).copy(isAmrap = true)
+        // Routine AMRAP retains its configured UI fallback target on the lease
+        // even though the machine command uses the unlimited 0xFF sentinel.
+        val lease = activeLease(target = 10, cutover = 1_000L).copy(isAmrap = true)
 
         // First packet establishes baseline and arms
         assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, modernPacket(timestamp = 1_001L)))

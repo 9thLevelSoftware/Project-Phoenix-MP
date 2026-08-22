@@ -2,6 +2,8 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.data.repository.RepNotification
 
+private const val UNLIMITED_REPS_SET_TOTAL = 252
+
 internal sealed interface RepFreshnessState {
     data object AwaitingEvidence : RepFreshnessState
     data class LegacyBaseline(val topCounter: Int, val completeCounter: Int) : RepFreshnessState
@@ -56,13 +58,15 @@ internal class RepNotificationFreshnessGate {
         val identity = lease.identity()
         if (notification.isLegacyFormat) return evaluateLegacy(identity, notification)
 
-        // Issue #698/#700: Just Lift and AMRAP with target=0 use unlimited
-        // target semantics (0xFF/252), so the device-reported repsSetTotal
-        // will never match the finite UI lease target. Exempt both from
-        // target equality check. AMRAP with a finite target (>0) must still
-        // match — only unlimited AMRAP gets the exemption.
+        // Issue #698/#700/#712: Just Lift and AMRAP use unlimited target
+        // semantics on the wire (0xFF, reported back as 252). Routine AMRAP
+        // leases retain their configured finite UI fallback target (for
+        // example 10), so lease.workingRepTarget == 0 is not a reliable
+        // unlimited discriminator. The notification sentinel is.
+        val isUnlimitedAmrapPacket = lease.isAmrap &&
+            notification.repsSetTotal == UNLIMITED_REPS_SET_TOTAL
         val targetMatches = lease.isJustLift ||
-            (lease.isAmrap && lease.workingRepTarget == 0) ||
+            isUnlimitedAmrapPacket ||
             notification.repsSetTotal == 0 ||
             notification.repsSetTotal == lease.workingRepTarget
         if (!targetMatches) return RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH)
