@@ -64,6 +64,7 @@ internal class RepNotificationFreshnessGate {
         // example 10), so lease.workingRepTarget == 0 is not a reliable
         // unlimited discriminator. The notification sentinel is.
         val isUnlimitedAmrapPacket = lease.isAmrap &&
+            lease.usesUnlimitedRepTarget &&
             notification.repsSetTotal == UNLIMITED_REPS_SET_TOTAL
         val targetMatches = lease.isJustLift ||
             isUnlimitedAmrapPacket ||

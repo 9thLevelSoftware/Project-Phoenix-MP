@@ -204,7 +204,10 @@ class RepNotificationFreshnessGateTest {
         val gate = RepNotificationFreshnessGate()
         // Routine AMRAP retains its configured UI fallback target on the lease
         // even though the machine command uses the unlimited 0xFF sentinel.
-        val lease = activeLease(target = 10, cutover = 1_000L).copy(isAmrap = true)
+        val lease = activeLease(target = 10, cutover = 1_000L).copy(
+            isAmrap = true,
+            usesUnlimitedRepTarget = true,
+        )
 
         // First packet establishes baseline and arms
         assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, modernPacket(timestamp = 1_001L)))
@@ -220,13 +223,30 @@ class RepNotificationFreshnessGateTest {
     @Test
     fun `amrap lease does not treat repsSetCount as terminal`() {
         val gate = RepNotificationFreshnessGate()
-        val lease = activeLease(target = 0, cutover = 1_000L).copy(isAmrap = true)
+        val lease = activeLease(target = 0, cutover = 1_000L).copy(
+            isAmrap = true,
+            usesUnlimitedRepTarget = true,
+        )
 
         // AMRAP should never treat repsSetCount as terminal, same as Just Lift
         assertEquals(RepFreshnessDecision.BaselineOnly, gate.evaluate(lease, modernPacket(timestamp = 1_001L)))
         assertEquals(
             RepFreshnessDecision.Process,
             gate.evaluate(lease, modernPacket(repsSetCount = 5, repsSetTotal = 252, timestamp = 1_002L)),
+        )
+    }
+
+    @Test
+    fun `amrap variable warmup execution rejects delayed unlimited packet`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 3, cutover = 1_000L).copy(
+            isAmrap = true,
+            usesUnlimitedRepTarget = false,
+        )
+
+        assertEquals(
+            RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH),
+            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 252, timestamp = 1_001L)),
         )
     }
 

@@ -7752,6 +7752,11 @@ class ActiveSessionEngine(
         } else {
             variableWarmupTarget ?: seedParams.reps
         }
+        val usesUnlimitedRepTarget = requiresMachine &&
+            !isBodyweightAtStart &&
+            !isTimedCableAtStart &&
+            variableWarmupTarget == null &&
+            (isJustLiftMode || seedParams.isJustLift || seedParams.isAMRAP)
         val outgoingLease = executionGuard.currentLease
         val executionSeed = ExecutionSeed(
             sessionId = KmpUtils.randomUUID(),
@@ -7762,6 +7767,7 @@ class ActiveSessionEngine(
             isJustLift = isJustLiftMode || seedParams.isJustLift,
             isAmrap = seedParams.isAMRAP,
             isTimedCable = isTimedCableAtStart,
+            usesUnlimitedRepTarget = usesUnlimitedRepTarget,
         )
         beforeExecutionBeginForTest?.invoke()
         val leaseResult = when {
