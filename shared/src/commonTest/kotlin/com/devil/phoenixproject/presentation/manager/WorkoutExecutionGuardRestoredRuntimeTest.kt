@@ -256,7 +256,7 @@ class WorkoutExecutionGuardRestoredRuntimeTest {
         var ownerWasCurrentBeforeCallbackReturned = false
         var publications = 0
 
-        val publication = async(Dispatchers.IO) {
+        val publication = async(Dispatchers.Default) {
             guard.commitRestoredTimerPublication(
                 owner = owner,
                 candidateStillCurrent = { true },
@@ -270,7 +270,7 @@ class WorkoutExecutionGuardRestoredRuntimeTest {
         }
 
         withTimeout(2_000) { callbackEntered.await() }
-        val supersession = async(Dispatchers.IO) {
+        val supersession = async(Dispatchers.Default) {
             supersessionStarted.complete(Unit)
             guard.supersedeRecoveryPublication()
             supersessionFinished.complete(Unit)

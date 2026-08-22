@@ -14,7 +14,7 @@ class RoutineSetWeightResolverTest {
     )
 
     @Test
-    fun `resolves programmed, scaled, and manually adjusted routine set weights`() {
+    fun `resolves programmed scaled and manually adjusted routine set weights`() {
         data class Case(
             val name: String,
             val routineExercise: RoutineExercise,
