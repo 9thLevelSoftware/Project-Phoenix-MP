@@ -1423,4 +1423,119 @@ class WorkoutExitPersistenceTest {
             harness.cleanup()
         }
     }
+
+    // ===== Issue #714 (Codex P1 follow-up): Just Lift defaults must be persisted
+    // SYNCHRONOUSLY before WorkoutState flips to Idle in the skipSummary path, so
+    // the return-to-setup reload on `LaunchedEffect(readyProfileId)` reads the
+    // freshly captured Old School defaults instead of the stale TUT. The async
+    // `persistSnapshot` write completes AFTER the state transition and cannot
+    // beat the UI observer, so it cannot satisfy this ordering on its own.
+    @Test
+    fun `Issue714 Just Lift defaults persist before WorkoutState becomes Idle in skipSummary path`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            // 1. Seed TUT defaults — the user's original problem state.
+            val readyBefore = harness.fakeUserProfileRepo.activeProfileContext.value
+                as com.devil.phoenixproject.data.repository.ActiveProfileContext.Ready
+            val seededTut = com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument(
+                workoutModeId = ProgramMode.TUT.modeValue,
+                weightPerCableKg = 18f,
+                restSeconds = 60,
+            )
+            harness.fakeUserProfileRepo.updateWorkout(
+                readyBefore.profile.id,
+                readyBefore.preferences.workout.value.copy(justLiftDefaults = seededTut),
+            )
+            advanceUntilIdle()
+
+            // 2. Connect, pick Old School, start a Just Lift set. The harness starts
+            //    in the no-summary trajectory by default; we also set restSeconds=0
+            //    so the egg timer doesn't introduce a delay window after Idle.
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 3,
+                    warmupReps = 0,
+                    weightPerCableKg = 32f,
+                    progressionRegressionKg = 1f,
+                    stallDetectionEnabled = true,
+                    repCountTiming = com.devil.phoenixproject.domain.model.RepCountTiming.TOP,
+                    justLiftRestSeconds = 0,
+                    isJustLift = true,
+                    useAutoStart = true,
+                    isAMRAP = false,
+                    selectedExerciseId = null,
+                ),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(workingReps = 3)
+
+            // 3. Install a mutation observer that records, for every `mutateWorkout`
+            //    call, what `WorkoutState` was at the moment of the call. The fix's
+            //    synchronous Just Lift write happens INSIDE the completion job BEFORE
+            //    the Idle flip; the async `persistSnapshot` write happens AFTER the
+            //    flip. So with the fix we should observe at least one
+            //    MUTATE_BEFORE_IDLE event followed eventually by MUTATE_AFTER_IDLE.
+            //    Without the fix, every mutation would be MUTATE_AFTER_IDLE because
+            //    the completion job would no longer write the Just Lift defaults
+            //    synchronously.
+            val eventLog = mutableListOf<String>()
+            harness.fakeUserProfileRepo.beforeWorkoutMutation = { _ ->
+                val state = harness.coordinator._workoutState.value
+                val label = if (state is WorkoutState.Idle) "MUTATE_AFTER_IDLE" else "MUTATE_BEFORE_IDLE"
+                eventLog += "$label(state=$state)"
+            }
+
+            // 4. Trigger the auto-completion. The completion job synchronously writes
+            //    the Just Lift defaults (via the new `persistCapturedJustLiftDefaultsSnapshot`
+            //    call in the `isJustLift` branch), then flips the workout state to
+            //    Idle. The async `persistSnapshot` coroutine runs in parallel and
+            //    re-writes the same value idempotently.
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                SetEndReason.TARGET_REPS_REACHED,
+            )
+
+            // 5. Drain everything. We need advanceUntilIdle because `teardownReady.await()`
+            //    in the completion job blocks until machine teardown completes, which is
+            //    itself an async operation.
+            advanceUntilIdle()
+
+            // 6. Assertions:
+            //    a) At least one Just Lift defaults write happened BEFORE the state
+            //       flipped to Idle — the synchronous write from the completion job.
+            //    b) At least one happened AFTER Idle — the redundant async write from
+            //       persistSnapshot (proves both paths exercised the helper).
+            //    c) The final persisted value reflects Old School.
+            val beforeIdleCount = eventLog.count { it.startsWith("MUTATE_BEFORE_IDLE") }
+            val afterIdleCount = eventLog.count { it.startsWith("MUTATE_AFTER_IDLE") }
+            assertTrue(
+                beforeIdleCount >= 1,
+                "Expected at least one synchronous Just Lift write before WorkoutState.Idle. " +
+                    "Events: $eventLog",
+            )
+            assertTrue(
+                afterIdleCount >= 1,
+                "Expected at least one async persistSnapshot write after WorkoutState.Idle. " +
+                    "Events: $eventLog",
+            )
+            assertTrue(
+                harness.coordinator._workoutState.value is WorkoutState.Idle,
+                "WorkoutState should be Idle after the Just Lift skipSummary completion",
+            )
+            val finalPersisted = harness.settingsManager.getJustLiftDefaultsDocument()
+            assertEquals(
+                ProgramMode.OldSchool.modeValue,
+                finalPersisted.workoutModeId,
+                "Final persisted Just Lift defaults must reflect Old School",
+            )
+            assertEquals(32f, finalPersisted.weightPerCableKg)
+            assertEquals(1f, finalPersisted.weightChangePerRep)
+        } finally {
+            harness.cleanup()
+        }
+    }
 }
