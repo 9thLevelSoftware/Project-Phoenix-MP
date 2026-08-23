@@ -13,7 +13,9 @@ import com.devil.phoenixproject.data.sync.SqlDelightProfilePreferenceSyncReposit
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.data.sync.SyncManager
+import com.devil.phoenixproject.data.sync.SyncTriggerHost
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
+import com.devil.phoenixproject.util.ConnectivityChecker
 import org.koin.dsl.module
 
 val syncModule = module {
@@ -59,7 +61,15 @@ val syncModule = module {
             userProfileRepository = get(),
         )
     }
-    single { SyncTriggerManager(get(), get(), get()) }
+    single<SyncTriggerHost> { get<SyncManager>() }
+    single {
+        val connectivity = get<ConnectivityChecker>()
+        SyncTriggerManager(
+            syncManager = get<SyncManager>(),
+            isOnline = { connectivity.isOnline() },
+            healthBodyWeightSyncManager = get(),
+        )
+    }
     single { IntegrationManager(get(), get(), get(), get(), get(), get(), get()) }
 
     // Auth (using Supabase GoTrue)

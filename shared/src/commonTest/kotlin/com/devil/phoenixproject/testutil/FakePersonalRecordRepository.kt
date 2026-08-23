@@ -6,6 +6,7 @@ import com.devil.phoenixproject.data.repository.normalizeWorkoutModeKey
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.map
@@ -63,10 +64,8 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
         _recordsFlow.value = records.values.toList()
     }
 
-    private fun calculateOneRepMax(weightKg: Float, reps: Int): Float {
-        // Brzycki formula: 1RM = weight * (36 / (37 - reps))
-        return if (reps >= 37) weightKg else weightKg * (36f / (37 - reps))
-    }
+    private fun calculateOneRepMax(weightKg: Float, reps: Int): Float =
+        OneRepMaxCalculator.estimate(weightKg, reps)
 
     // ========== PersonalRecordRepository interface implementation ==========
 

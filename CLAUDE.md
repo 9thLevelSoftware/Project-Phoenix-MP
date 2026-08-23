@@ -47,7 +47,8 @@ Kotlin Multiplatform app for controlling Phoenix Trainer workout machines via BL
 ./gradlew clean
 
 # Run tests
-./gradlew :androidApp:testDebugUnitTest       # Android unit tests
+./gradlew :shared:testAndroidHostTest -Pskip.supabase.check=true   # Shared module host tests
+./gradlew :androidApp:testDebugUnitTest                             # Android app unit tests
 ```
 
 ## Architecture

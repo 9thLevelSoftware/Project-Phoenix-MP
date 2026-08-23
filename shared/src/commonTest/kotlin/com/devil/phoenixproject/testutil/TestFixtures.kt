@@ -12,6 +12,7 @@ import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 
 /**
  * Pre-built test fixtures for use in tests.
@@ -239,13 +240,6 @@ object TestFixtures {
 
     // ========== Helper Functions ==========
 
-    /**
-     * Calculate one-rep max using Brzycki formula.
-     * 1RM = weight × (36 / (37 - reps))
-     */
-    private fun calculateOneRepMax(weight: Float, reps: Int): Float {
-        if (reps <= 0) return weight
-        if (reps >= 37) return weight * 2 // Cap at reasonable value
-        return weight * (36f / (37f - reps))
-    }
+    private fun calculateOneRepMax(weight: Float, reps: Int): Float =
+        OneRepMaxCalculator.estimate(weight, reps)
 }

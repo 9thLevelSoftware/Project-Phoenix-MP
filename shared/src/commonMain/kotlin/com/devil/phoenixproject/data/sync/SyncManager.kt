@@ -340,7 +340,7 @@ class SyncManager(
     private val rateLimiter: ClientRateLimiter = ClientRateLimiter(),
     private val isProfilePreferenceMigrationReady: () -> Boolean,
     private val completedSetRepository: CompletedSetRepository? = null,
-) {
+) : SyncTriggerHost {
     companion object {
         /**
          * Maximum sessions per sync batch. Keeps HTTP payload well under the Edge Function
@@ -388,13 +388,13 @@ class SyncManager(
 
     private val syncMutex = Mutex()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
-    val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
+    override val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
     private val _lastSyncTime = MutableStateFlow(tokenStorage.getLastSyncTimestamp())
-    val lastSyncTime: StateFlow<Long> = _lastSyncTime.asStateFlow()
+    override val lastSyncTime: StateFlow<Long> = _lastSyncTime.asStateFlow()
 
-    val isAuthenticated: StateFlow<Boolean> = tokenStorage.isAuthenticated
-    val currentUser: StateFlow<PortalUser?> = tokenStorage.currentUser
+    override val isAuthenticated: StateFlow<Boolean> = tokenStorage.isAuthenticated
+    override val currentUser: StateFlow<PortalUser?> = tokenStorage.currentUser
 
     /** Auth events for UI notification (session expiry, refresh failure, logout). */
     val authEvents = tokenStorage.authEvents
@@ -523,7 +523,7 @@ class SyncManager(
      * Refreshes [PortalUser.isPremium] from the server subscription endpoint.
      * Prefer this on app foreground; do not infer entitlement from sync HTTP status alone.
      */
-    suspend fun refreshPremiumStatusFromServer() {
+    override suspend fun refreshPremiumStatusFromServer() {
         if (!tokenStorage.hasToken()) return
 
         val existingPremium = tokenStorage.currentUser.value?.isPremium ?: false
@@ -582,7 +582,7 @@ class SyncManager(
      *
      * @see SyncState.PartialSuccess for incomplete sync handling
      */
-    suspend fun sync(): Result<Long> = syncMutex.withLock {
+    override suspend fun sync(): Result<Long> = syncMutex.withLock {
         if (!tokenStorage.hasToken()) {
             _syncState.value = SyncState.NotAuthenticated
             return@withLock Result.failure(PortalApiException("Not authenticated"))

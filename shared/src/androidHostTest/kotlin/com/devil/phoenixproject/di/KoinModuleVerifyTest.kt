@@ -5,6 +5,7 @@ import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
 import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.sync.SupabaseConfig
+import com.devil.phoenixproject.data.sync.SyncTriggerHost
 import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.util.ConnectivityChecker
@@ -40,6 +41,7 @@ class KoinModuleVerifyTest {
                 WorkoutServiceController::class,
                 // Lambda types used in constructor injection (e.g. PortalApiClient tokenProvider)
                 Function0::class,
+                SyncTriggerHost::class,
                 // Function-typed collaborators of ComputeVelocityOneRepMaxUseCase (issue #517):
                 // supplied as lambdas inside the module, not resolved from the graph.
                 Function2::class,

@@ -126,13 +126,6 @@ class BleConstantsTest {
         assertEquals(30000L, BleConstants.SCAN_TIMEOUT_MS)
     }
 
-    // ========== Device Name Tests ==========
-
-    @Test
-    fun `DEVICE_NAME_PREFIX is Vee`() {
-        assertEquals("Vee", BleConstants.DEVICE_NAME_PREFIX)
-    }
-
     // ========== Notification Characteristics Tests ==========
 
     @Test

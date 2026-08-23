@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.di
 
+import com.devil.phoenixproject.testutil.readProjectFile
 import com.google.common.truth.Truth.assertThat
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
@@ -199,4 +200,58 @@ class SecureTokenStorageTest {
         assertThat(secure.getStringOrNull("user_theme")).isNull()
         assertThat(secure.getStringOrNull("preferred_units")).isNull()
     }
+
+    @Test
+    fun androidSecureSettingsQualifierUsesEncryptedSharedPreferences() {
+        val source = readRequired(
+            "src/androidMain/kotlin/com/devil/phoenixproject/di/PlatformModule.android.kt",
+        )
+        val block = secureSettingsBinding(source)
+        assertThat(block).contains(".encrypted")
+        assertThat(block).doesNotContain(".plaintext")
+        assertThat(block).doesNotContain("NSUserDefaultsSettings")
+        assertThat(source).contains("createEncryptedPreferences(context, name)")
+        val factory = createEncryptedPreferencesBody(source)
+        assertThat(factory).contains("EncryptedSharedPreferences.create")
+        assertThat(factory).contains("Do NOT fall back to unencrypted storage")
+        assertThat(factory).contains("throw SecurityException")
+    }
+
+    @Test
+    fun iosSecureSettingsQualifierUsesKeychainSettings() {
+        val source = readRequired(
+            "src/iosMain/kotlin/com/devil/phoenixproject/di/PlatformModule.ios.kt",
+        )
+        assertThat(source).contains("private const val KEYCHAIN_SERVICE_NAME = \"com.devil.phoenixproject.auth\"")
+        val block = secureSettingsBinding(source)
+        assertThat(block).contains("KeychainSettings(service = KEYCHAIN_SERVICE_NAME)")
+        assertThat(block).doesNotContain("NSUserDefaultsSettings(")
+        assertThat(lastNonBraceStatement(block)).isEqualTo("keychainSettings")
+    }
+
+    private fun readRequired(relativePath: String): String {
+        val source = readProjectFile(relativePath)
+        assertThat(source).isNotNull()
+        return source!!
+    }
+
+    private fun secureSettingsBinding(source: String): String {
+        val start = source.indexOf("single<Settings>(SecureSettingsQualifier)")
+        assertThat(start).isAtLeast(0)
+        val fromBinding = source.substring(start)
+        val nextSingle = Regex("\\n    single(?:<|\\s|\\{)").find(fromBinding, startIndex = 1)
+        return if (nextSingle != null) fromBinding.substring(0, nextSingle.range.first) else fromBinding
+    }
+
+    private fun createEncryptedPreferencesBody(source: String): String {
+        val start = source.indexOf("private fun createEncryptedPreferences")
+        assertThat(start).isAtLeast(0)
+        return source.substring(start)
+    }
+
+    private fun lastNonBraceStatement(block: String): String =
+        block.lineSequence()
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && it != "}" && !it.startsWith("//") }
+            .last()
 }

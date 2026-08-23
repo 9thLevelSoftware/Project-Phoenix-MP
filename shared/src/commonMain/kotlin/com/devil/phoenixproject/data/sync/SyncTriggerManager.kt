@@ -2,13 +2,22 @@ package com.devil.phoenixproject.data.sync
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.HealthBodyWeightSyncManager
-import com.devil.phoenixproject.util.ConnectivityChecker
 import com.devil.phoenixproject.util.withPlatformLock
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+
+/** SyncManager surface consumed by [SyncTriggerManager]. */
+interface SyncTriggerHost {
+    val isAuthenticated: StateFlow<Boolean>
+    val currentUser: StateFlow<PortalUser?>
+    val lastSyncTime: StateFlow<Long>
+    val syncState: StateFlow<SyncState>
+    suspend fun sync(): Result<Long>
+    suspend fun refreshPremiumStatusFromServer()
+}
 
 /**
  * Retry state exposed for UI to display backoff status.
@@ -46,9 +55,10 @@ data class RetryState(
  * - Backoff resets on successful sync
  */
 class SyncTriggerManager(
-    private val syncManager: SyncManager,
-    private val connectivityChecker: ConnectivityChecker,
+    private val syncManager: SyncTriggerHost,
+    private val isOnline: () -> Boolean,
     private val healthBodyWeightSyncManager: HealthBodyWeightSyncManager? = null,
+    private val nowMillis: () -> Long = { Clock.System.now().toEpochMilliseconds() },
 ) {
     companion object {
         private const val DEFAULT_THROTTLE_MILLIS = 5 * 60 * 1000L // 5 minutes
@@ -281,7 +291,7 @@ class SyncTriggerManager(
         }
 
         // Check connectivity
-        if (!connectivityChecker.isOnline()) {
+        if (!isOnline()) {
             Logger.d { "SyncTrigger: Skipping sync - offline" }
             withPlatformLock(stateLock) { isWaitingForConnectivity = true }
             updateRetryState()
@@ -298,7 +308,7 @@ class SyncTriggerManager(
         // Check throttle/backoff (unless bypassed for workout complete).
         // currentBackoffIndex is read inside the lock to avoid a race where
         // onSyncFailure increments it between the read and the comparison.
-        val now = Clock.System.now().toEpochMilliseconds()
+        val now = nowMillis()
         val shouldSkip = withPlatformLock(stateLock) {
             val currentThrottle = getCurrentThrottleMillis()
             if (!bypassThrottle && (now - lastSyncAttemptMillis) < currentThrottle) {
