@@ -29,6 +29,9 @@ import androidx.compose.material.icons.outlined.FitnessCenter
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -117,6 +120,15 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
     val resumeOperationGate = remember { RoutineResumeOperationGate() }
     var showOneRepMaxComingSoonDialog by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val snackbarHostState = remember { SnackbarHostState() }
+    LaunchedEffect(Unit) {
+        viewModel.userFeedbackEvents.collect { message ->
+            snackbarHostState.showSnackbar(
+                message = message,
+                duration = SnackbarDuration.Short,
+            )
+        }
+    }
 
     LaunchedEffect(activeCycle) {
         // Issue #549: route the Home banner through `checkAndAutoAdvance` so the cycle banner
@@ -398,6 +410,11 @@ fun HomeScreen(navController: NavController, viewModel: MainViewModel) {
                 confirmEnabled = !resumeOperationInFlight && !discardRetryPending,
             )
         }
+
+        SnackbarHost(
+            hostState = snackbarHostState,
+            modifier = Modifier.align(Alignment.BottomCenter),
+        )
     }
 }
 

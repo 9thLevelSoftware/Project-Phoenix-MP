@@ -1021,15 +1021,20 @@ class MainViewModelTest {
         // stopWorkout() arms the CAS guard synchronously; teardown coroutine is queued but not yet run.
         viewModel.stopWorkout(exitingWorkout = true)
         assertTrue(viewModel.isStoppingWorkout(), "Flag armed by stopWorkout() while paused")
-        assertIs<WorkoutState.Idle>(viewModel.workoutState.value)
+        assertTrue(
+            viewModel.workoutState.value !is WorkoutState.Active,
+            "Resume must not have restarted the paused set",
+        )
 
         // resumeWorkout() must be refused: state, guard, and command counts stay unchanged.
         val workoutCommandCount = fakeBleRepository.commandsReceived.size
         val resetCommandCount = fakeBleRepository.stopWorkoutCallCount
+        val stateAfterStop = viewModel.workoutState.value
         viewModel.resumeWorkout()
-        assertIs<WorkoutState.Idle>(
+        assertEquals(
+            stateAfterStop,
             viewModel.workoutState.value,
-            "State must stay Idle — resume refused while End teardown is in flight",
+            "State must stay unchanged — resume refused while End teardown is in flight",
         )
         assertEquals(workoutCommandCount, fakeBleRepository.commandsReceived.size)
         assertEquals(resetCommandCount, fakeBleRepository.stopWorkoutCallCount)

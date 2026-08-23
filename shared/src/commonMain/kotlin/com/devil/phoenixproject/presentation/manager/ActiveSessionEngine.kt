@@ -1619,6 +1619,7 @@ class ActiveSessionEngine(
     private val resetMachineTeardownOwner = atomic<ResetMachineTeardownOwner?>(null)
     private val pendingResetStart = atomic<PendingResetStart?>(null)
     private val exitSnapshotStore = WorkoutExitSnapshotStore()
+    private val persistCommitBySessionId = atomic(emptyMap<String, CompletableDeferred<Boolean>>())
     private val restTransitionMutex = Mutex()
     private val runtimeResumeMutex = Mutex()
     private var pendingRuntimeResume: PendingRuntimeResume? = null
@@ -7614,8 +7615,7 @@ class ActiveSessionEngine(
             else -> Unit
         }
         if (acceptedRetryStartClaim.value != null) return
-        val exercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(coordinator._currentExerciseIndex.value)
-        if (!isBodyweightExercise(exercise) && deferStartUntilOwnedResetCompletes(skipCountdown, isJustLiftMode)) {
+        if (deferStartUntilOwnedResetCompletes(skipCountdown, isJustLiftMode)) {
             return
         }
         executionGuard.supersedeQueuedSuccessors()
@@ -7727,20 +7727,18 @@ class ActiveSessionEngine(
         }
         val isBodyweightAtStart = isBodyweightExercise(currentExercise)
         val requiresMachine = !isBodyweightAtStart
-        if (requiresMachine) {
-            when (executionGuard.machineTeardownState.value) {
-                is MachineTeardownState.TearingDown -> {
-                    rejectStart(StartRejectionReason.TEARING_DOWN)
-                    return null
-                }
-
-                is MachineTeardownState.RecoveryRequired -> {
-                    rejectStart(StartRejectionReason.RECOVERY_REQUIRED)
-                    return null
-                }
-
-                MachineTeardownState.Ready -> Unit
+        when (executionGuard.machineTeardownState.value) {
+            is MachineTeardownState.TearingDown -> {
+                rejectStart(StartRejectionReason.TEARING_DOWN)
+                return null
             }
+
+            is MachineTeardownState.RecoveryRequired -> {
+                rejectStart(StartRejectionReason.RECOVERY_REQUIRED)
+                return null
+            }
+
+            MachineTeardownState.Ready -> Unit
         }
         if (requiresMachine && bleRepository.connectionState.value !is ConnectionState.Connected) {
             rejectStart(StartRejectionReason.NOT_CONNECTED)
@@ -9024,14 +9022,52 @@ class ActiveSessionEngine(
         }
     }
 
-    private fun launchSnapshotPersistence(snapshot: WorkoutExitSnapshot) {
-        val stableSessionId = snapshot.completion.lease.sessionId
-        when (executionGuard.claimPersistence(stableSessionId, snapshot.terminalPath)) {
-            PersistenceClaimResult.Claimed -> scope.launch { persistSnapshot(snapshot) }
+    private fun persistCommitDeferred(sessionId: String): CompletableDeferred<Boolean> {
+        while (true) {
+            val current = persistCommitBySessionId.value
+            current[sessionId]?.let { return it }
+            val created = CompletableDeferred<Boolean>()
+            if (persistCommitBySessionId.compareAndSet(current, current + (sessionId to created))) {
+                return created
+            }
+        }
+    }
 
-            PersistenceClaimResult.DuplicateInProgress,
-            PersistenceClaimResult.AlreadyPersisted,
-            -> logPersistenceDeduplicated(snapshot)
+    private fun clearPersistCommit(sessionId: String, commit: CompletableDeferred<Boolean>) {
+        while (true) {
+            val current = persistCommitBySessionId.value
+            if (current[sessionId] !== commit) return
+            if (persistCommitBySessionId.compareAndSet(current, current - sessionId)) return
+        }
+    }
+
+    private fun launchSnapshotPersistence(snapshot: WorkoutExitSnapshot): CompletableDeferred<Boolean> {
+        val stableSessionId = snapshot.completion.lease.sessionId
+        val commit = persistCommitDeferred(stableSessionId)
+        when (executionGuard.claimPersistence(stableSessionId, snapshot.terminalPath)) {
+            PersistenceClaimResult.Claimed -> scope.launch { persistSnapshot(snapshot, commit) }
+
+            PersistenceClaimResult.AlreadyPersisted -> {
+                commit.complete(true)
+                logPersistenceDeduplicated(snapshot)
+            }
+
+            PersistenceClaimResult.DuplicateInProgress -> logPersistenceDeduplicated(snapshot)
+        }
+        return commit
+    }
+
+    private suspend fun publishIdleAfterPersistedExit(commit: CompletableDeferred<Boolean>) {
+        if (!commit.await()) return
+        if (executionGuard.currentLease != null) return
+        when (coordinator._workoutState.value) {
+            is WorkoutState.Idle,
+            is WorkoutState.SetSummary,
+            -> return
+            else -> {
+                coordinator._workoutState.value = WorkoutState.Idle
+                coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
+            }
         }
     }
 
@@ -9060,7 +9096,8 @@ class ActiveSessionEngine(
         val stableSessionId = snapshot.completion.lease.sessionId
         return when (executionGuard.claimPersistence(stableSessionId, snapshot.terminalPath)) {
             PersistenceClaimResult.Claimed -> {
-                scope.launch { persistSnapshot(snapshot) }
+                val commit = persistCommitDeferred(stableSessionId)
+                scope.launch { persistSnapshot(snapshot, commit) }
                 true
             }
 
@@ -9070,7 +9107,10 @@ class ActiveSessionEngine(
         }
     }
 
-    private suspend fun persistSnapshot(snapshot: WorkoutExitSnapshot) {
+    private suspend fun persistSnapshot(
+        snapshot: WorkoutExitSnapshot,
+        persistCommit: CompletableDeferred<Boolean>,
+    ) {
         val sessionId = snapshot.completion.lease.sessionId
         require(snapshot.session.id == sessionId) {
             "Workout exit snapshot session must match its completion lease"
@@ -9092,13 +9132,30 @@ class ActiveSessionEngine(
                     )
                 }
             }
-            // Issue #714: persist Just Lift defaults captured in the immutable
-            // exit snapshot so the user's confirmed Just Lift mode survives the
-            // return-to-setup reload. Uses the same profile-scoped mutateWorkout
-            // and the snapshot's lease profile id, so it cannot read mutable
-            // coordinator state after teardown.
             persistCapturedJustLiftDefaultsSnapshot(snapshot)
-
+            currentCoroutineContext().ensureActive()
+            withContext(NonCancellable) {
+                executionGuard.markPersistenceSucceeded(sessionId)
+                exitSnapshotStore.remove(snapshot)
+                executionGuard.prunePersistedClaims(retainNewest = 32)
+            }
+            persistenceSucceeded = true
+        } catch (error: CancellationException) {
+            executionGuard.markPersistenceFailed(sessionId)
+            persistCommit.complete(false)
+            clearPersistCommit(sessionId, persistCommit)
+            throw error
+        } catch (error: Exception) {
+            executionGuard.markPersistenceFailed(sessionId)
+            Logger.e(error) { "Failed to persist workout snapshot for session $sessionId" }
+            coordinator._userFeedbackEvents.tryEmit("Workout data couldn't be saved. Please try again.")
+            persistCommit.complete(false)
+            clearPersistCommit(sessionId, persistCommit)
+            return
+        }
+        persistCommit.complete(true)
+        clearPersistCommit(sessionId, persistCommit)
+        try {
             val postSave = snapshot.postSaveInput
             val hasPR = gamificationManager.processPostSaveEvents(
                 exerciseId = postSave.exerciseId,
@@ -9128,20 +9185,10 @@ class ActiveSessionEngine(
             updateCycleProgressFromSnapshot(snapshot)
             workoutCompletedSyncCallsForTest++
             scope.launch { syncTriggerManager?.onWorkoutCompleted() }
-            currentCoroutineContext().ensureActive()
-            withContext(NonCancellable) {
-                executionGuard.markPersistenceSucceeded(sessionId)
-                exitSnapshotStore.remove(snapshot)
-                executionGuard.prunePersistedClaims(retainNewest = 32)
-            }
-            persistenceSucceeded = true
         } catch (error: CancellationException) {
-            executionGuard.markPersistenceFailed(sessionId)
             throw error
         } catch (error: Exception) {
-            executionGuard.markPersistenceFailed(sessionId)
-            Logger.e(error) { "Failed to persist workout snapshot for session $sessionId" }
-            coordinator._userFeedbackEvents.tryEmit("Workout data couldn't be saved. Please try again.")
+            Logger.e(error) { "Failed post-save after persisted session $sessionId" }
         }
         if (!persistenceSucceeded) return
         try {
@@ -10027,16 +10074,15 @@ class ActiveSessionEngine(
             executionGuard.invalidateCurrent(ExecutionInvalidationReason.END_WORKOUT)
             cancelSetOwnedPresentationJobs(completion.lease)
             detachEndedRoutineFromCoordinator()
-            coordinator._workoutState.value = WorkoutState.Idle
-            coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
-            launchSnapshotPersistence(snapshot)
+            val persistCommit = launchSnapshotPersistence(snapshot)
             cleanupTarget?.let(::launchRuntimeCleanup)
             beginMachineTeardown(completion.lease, TeardownReason.END_WORKOUT)
+            scope.launch { publishIdleAfterPersistedExit(persistCommit) }
             return
         }
 
         val manualSnapshot = completion?.let { captureExitSnapshot(it, TerminalPath.MANUAL_STOP) }
-        manualSnapshot?.let(::launchSnapshotPersistence)
+        val persistCommit = manualSnapshot?.let(::launchSnapshotPersistence)
         val shouldExitToIdle = exitingWorkout
         coordinator._weightAdjustmentRecommendation.value = null
 
@@ -10084,6 +10130,12 @@ class ActiveSessionEngine(
                     }
 
                     if (!hasCurrentAuthority(manualSnapshot.lease, "manual_stop_summary")) {
+                        return@launchPresentationContinuation
+                    }
+                    if (persistCommit?.await() != true) {
+                        return@launchPresentationContinuation
+                    }
+                    if (!hasCurrentAuthority(manualSnapshot.lease, "manual_stop_summary_after_persist")) {
                         return@launchPresentationContinuation
                     }
                     coordinator._workoutState.value = manualSnapshot.presentationSummary
@@ -10843,6 +10895,7 @@ class ActiveSessionEngine(
         val isWarmupTransition = coordinator._currentWarmupSetIndex.value >= 0 &&
             currentExerciseAtCapture != null
         if (!executionGuard.isCurrent(lease)) return
+        var persistCommit: CompletableDeferred<Boolean>? = null
         val terminalSnapshot = if (shouldPromptBodyweightAtCapture || isWarmupTransition) {
             if (shouldPromptBodyweightAtCapture && !bodyweightCompletionGate.tryPublish(completion)) {
                 executionGuard.releaseCompletionClaim(lease)
@@ -10850,7 +10903,9 @@ class ActiveSessionEngine(
             }
             null
         } else {
-            captureExitSnapshot(completion, TerminalPath.AUTO_COMPLETE).also(::launchSnapshotPersistence)
+            captureExitSnapshot(completion, TerminalPath.AUTO_COMPLETE).also {
+                persistCommit = launchSnapshotPersistence(it)
+            }
         }
         val teardownReady = CompletableDeferred<Unit>()
         launchCompletionJob(lease) {
@@ -10979,6 +11034,7 @@ class ActiveSessionEngine(
             if (!hasCurrentAuthority(lease, "completion_after_workout_end_haptic")) return@launchCompletionJob
             val snapshot = terminalSnapshot
                 ?: captureExitSnapshot(completion, TerminalPath.AUTO_COMPLETE)
+            val exitPersist = persistCommit ?: launchSnapshotPersistence(snapshot)
             coordinator.setRepMetrics.value = emptyList()
             val biomechanicsSummary = snapshot.presentationSummary.biomechanicsSummary
             val qualitySummary = snapshot.presentationSummary.qualitySummary
@@ -11093,6 +11149,11 @@ class ActiveSessionEngine(
                             "retained-snapshot retry will recover"
                     }
                 }
+            }
+
+            if (!preservePlanOwnedResting) {
+                if (!exitPersist.await()) return@launchCompletionJob
+                if (!hasCurrentAuthority(lease, "completion_after_persist")) return@launchCompletionJob
             }
 
             if (!effectiveSkipSummary && !preservePlanOwnedResting) {

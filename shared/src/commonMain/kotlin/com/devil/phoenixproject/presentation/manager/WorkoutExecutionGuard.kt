@@ -390,7 +390,7 @@ internal class WorkoutExecutionGuard(
             recoveryPublicationClaim != null ||
             queuedSuccessorSetup != null ||
             restoredTeardownRecord != null ||
-            (seed.requiresMachine && _machineTeardownState.value !is MachineTeardownState.Ready)
+            _machineTeardownState.value !is MachineTeardownState.Ready
         ) {
             return Result.failure(
                 IllegalStateException("Machine command boundary must be ready before beginning an execution"),

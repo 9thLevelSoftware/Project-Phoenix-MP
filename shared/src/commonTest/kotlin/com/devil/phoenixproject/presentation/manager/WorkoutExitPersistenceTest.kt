@@ -4,6 +4,8 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.QualityTrend
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepMetricData
@@ -95,12 +97,188 @@ class WorkoutExitPersistenceTest {
             assertEquals(1, harness.fakeWorkoutRepo.persistWorkoutExitAttempts.size)
             assertTrue(harness.fakeWorkoutRepo.allSessions().isEmpty())
             assertEquals(0, harness.activeSessionEngine.workoutCompletedSyncCallsForTest)
+            assertTrue(harness.coordinator.workoutState.value !is WorkoutState.Idle)
+            assertTrue(harness.coordinator.workoutState.value !is WorkoutState.SetSummary)
             assertTrue(
                 harness.activeSessionEngine.hasRetainedWorkoutExitSnapshotForTest(
                     harness.fakeWorkoutRepo.persistWorkoutExitAttempts.single().id,
                 ),
             )
         } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `End Workout Idle waits on persist while RESET starts immediately`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releaseSave = CompletableDeferred<Unit>()
+        try {
+            startTrackedCableSet(harness)
+            harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+
+            assertTrue(harness.fakeBleRepo.stopWorkoutCallCount >= 1)
+            assertEquals(1, harness.fakeWorkoutRepo.persistWorkoutExitAttempts.size)
+            assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
+            assertTrue(harness.coordinator.workoutState.value !is WorkoutState.Idle)
+            assertTrue(harness.coordinator.workoutState.value !is WorkoutState.SetSummary)
+
+            releaseSave.complete(Unit)
+            advanceUntilIdle()
+
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertEquals(
+                1,
+                harness.fakeWorkoutRepo.allSessions().count {
+                    it.id == harness.fakeWorkoutRepo.persistWorkoutExitAttempts.single().id
+                },
+            )
+        } finally {
+            releaseSave.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `auto-complete SetSummary waits on persist while RESET starts immediately`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releaseSave = CompletableDeferred<Unit>()
+        try {
+            harness.setActiveSummaryCountdownSeconds(5)
+            startTrackedCableSet(harness)
+            harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
+
+            harness.activeSessionEngine.handleSetCompletion(
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+                SetEndReason.TARGET_REPS_REACHED,
+            )
+            runCurrent()
+
+            assertTrue(harness.fakeBleRepo.stopWorkoutCallCount >= 1)
+            assertEquals(1, harness.fakeWorkoutRepo.persistWorkoutExitAttempts.size)
+            assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
+            assertTrue(harness.coordinator.workoutState.value !is WorkoutState.SetSummary)
+            assertTrue(harness.coordinator.workoutState.value !is WorkoutState.Idle)
+
+            releaseSave.complete(Unit)
+            advanceUntilIdle()
+
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+        } finally {
+            releaseSave.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Just Lift skip-summary Idle waits on persist while RESET starts immediately`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releaseSave = CompletableDeferred<Unit>()
+        try {
+            harness.setActiveSummaryCountdownSeconds(-1)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 3,
+                    warmupReps = 0,
+                    weightPerCableKg = 25f,
+                    isJustLift = true,
+                    useAutoStart = true,
+                    selectedExerciseId = null,
+                ),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+            advanceUntilIdle()
+            harness.coordinator._repCount.value = RepCount(workingReps = 3)
+            harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
+
+            harness.activeSessionEngine.handleSetCompletion(
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+                SetEndReason.TARGET_REPS_REACHED,
+            )
+            runCurrent()
+
+            assertTrue(harness.fakeBleRepo.stopWorkoutCallCount >= 1)
+            assertEquals(1, harness.fakeWorkoutRepo.persistWorkoutExitAttempts.size)
+            assertTrue(harness.coordinator.workoutState.value !is WorkoutState.Idle)
+            assertTrue(harness.coordinator.workoutState.value !is WorkoutState.SetSummary)
+
+            releaseSave.complete(Unit)
+            advanceUntilIdle()
+
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+        } finally {
+            releaseSave.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `persist failure does not publish SetSummary or Idle and retains snapshot`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startTrackedCableSet(harness)
+            harness.fakeWorkoutRepo.persistWorkoutExitFailure = IllegalStateException("forced txn failure")
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertTrue(harness.coordinator.workoutState.value !is WorkoutState.Idle)
+            assertTrue(harness.coordinator.workoutState.value !is WorkoutState.SetSummary)
+            assertTrue(harness.fakeWorkoutRepo.allSessions().isEmpty())
+            assertTrue(
+                harness.activeSessionEngine.hasRetainedWorkoutExitSnapshotForTest(
+                    harness.fakeWorkoutRepo.persistWorkoutExitAttempts.single().id,
+                ),
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `bodyweight start is rejected while cable teardown is in progress`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releaseReset = CompletableDeferred<Result<Unit>>()
+        try {
+            startTrackedCableSet(harness)
+            harness.fakeBleRepo.stopWorkoutBlock = { releaseReset.await() }
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+            assertIs<MachineTeardownState.TearingDown>(harness.activeSessionEngine.machineTeardownState.value)
+
+            val pushUp = TestFixtures.benchPress.copy(
+                id = "push-up-bodyweight",
+                name = "Push Up",
+                equipment = "",
+            )
+            harness.fakeExerciseRepo.addExercise(pushUp)
+            val routine = Routine(
+                id = "bodyweight-during-teardown",
+                name = "Bodyweight During Teardown",
+                exercises = listOf(
+                    RoutineExercise(
+                        id = "bodyweight-push-up",
+                        exercise = pushUp,
+                        orderIndex = 0,
+                        setReps = listOf(10),
+                        weightPerCableKg = 0f,
+                        duration = 30,
+                    ),
+                ),
+            )
+            harness.dwsm.loadRoutine(routine)
+            runCurrent()
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+
+            assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
+            assertIs<MachineTeardownState.TearingDown>(harness.activeSessionEngine.machineTeardownState.value)
+        } finally {
+            releaseReset.complete(Result.success(Unit))
             harness.cleanup()
         }
     }
@@ -396,7 +574,7 @@ class WorkoutExitPersistenceTest {
             harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
 
             harness.dwsm.stopWorkout(exitingWorkout = true)
-            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertTrue(harness.coordinator.workoutState.value !is WorkoutState.Idle)
             harness.fakeUserProfileRepo.seedReadyProfileForTest("profile-b")
             runCurrent()
 
@@ -485,6 +663,7 @@ class WorkoutExitPersistenceTest {
             )
             runCurrent()
             harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
 
             releaseReset.complete(Result.success(Unit))
@@ -632,13 +811,13 @@ class WorkoutExitPersistenceTest {
             advanceUntilIdle()
 
             assertTrue(harness.fakeTrainingCycleRepo.getCycleProgress(cycle.id)?.completedDays.orEmpty().isEmpty())
-            assertTrue(harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId))
-            advanceUntilIdle()
-
-            assertEquals(2, harness.fakeTrainingCycleRepo.updateCycleProgressAttempts.size)
-            assertEquals(setOf(1), harness.fakeTrainingCycleRepo.getCycleProgress(cycle.id)?.completedDays)
+            assertFalse(
+                harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId),
+                "SQL commit is persist success; cycle cancellation must not reopen the claim",
+            )
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
             assertEquals(1, harness.fakeCompletedSetRepo.saved.count { it.sessionId == lease.sessionId })
+            assertFalse(harness.activeSessionEngine.hasRetainedWorkoutExitSnapshotForTest(lease.sessionId))
         } finally {
             harness.cleanup()
         }
@@ -674,6 +853,9 @@ class WorkoutExitPersistenceTest {
                 it.sessionId == lease.sessionId
             }
 
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertFalse(harness.activeSessionEngine.hasRetainedWorkoutExitSnapshotForTest(lease.sessionId))
+
             releaseCancellation.complete(Unit)
             runCurrent()
 
@@ -683,20 +865,12 @@ class WorkoutExitPersistenceTest {
                 weightPerCableKg = 99f,
                 selectedExerciseId = "replacement-exercise",
             )
-            assertTrue(
+            assertFalse(
                 harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId),
-                "Cancellation must reopen the persistence claim and retain its snapshot",
+                "SQL commit is persist success; post-save cancellation must not reopen the claim",
             )
-            advanceUntilIdle()
-
-            assertEquals(2, hookAttempts)
-            assertEquals(
-                listOf(
-                    TestFixtures.benchPress.id to lease.profileId,
-                    TestFixtures.benchPress.id to lease.profileId,
-                ),
-                hookInputs,
-            )
+            assertEquals(1, hookAttempts)
+            assertEquals(listOf(TestFixtures.benchPress.id to lease.profileId), hookInputs)
             assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
             assertEquals(savedSession, harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId })
             assertEquals(
@@ -705,7 +879,6 @@ class WorkoutExitPersistenceTest {
                     it.sessionId == lease.sessionId && it.id == savedCompletedSet.id
                 },
             )
-            assertTrue(!harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId))
         } finally {
             releaseCancellation.complete(Unit)
             harness.cleanup()

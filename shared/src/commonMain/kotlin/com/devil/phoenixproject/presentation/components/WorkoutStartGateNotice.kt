@@ -34,9 +34,11 @@ data class WorkoutStartGatePresentation(
 )
 
 fun MachineTeardownState.toStartGatePresentation(
-    requiresMachine: Boolean = true,
+    @Suppress("UNUSED_PARAMETER") requiresMachine: Boolean = true,
 ): WorkoutStartGatePresentation {
-    val machinePresentation = when (this) {
+    // Bodyweight starts wait for teardown Ready (D-4). `requiresMachine` remains
+    // at call sites for successor identity; it no longer bypasses the gate.
+    return when (this) {
         MachineTeardownState.Ready -> WorkoutStartGatePresentation(
             startEnabled = true,
             label = StartGateLabel.START,
@@ -53,14 +55,6 @@ fun MachineTeardownState.toStartGatePresentation(
             startEnabled = false,
             label = StartGateLabel.START,
             showRecoveryActions = true,
-        )
-    }
-    return if (requiresMachine) {
-        machinePresentation
-    } else {
-        machinePresentation.copy(
-            startEnabled = true,
-            label = StartGateLabel.START,
         )
     }
 }

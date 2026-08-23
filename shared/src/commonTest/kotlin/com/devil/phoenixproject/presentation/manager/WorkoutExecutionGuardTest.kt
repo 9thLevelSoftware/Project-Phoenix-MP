@@ -460,6 +460,22 @@ class WorkoutExecutionGuardTest {
     }
 
     @Test
+    fun `bodyweight start is rejected while cable teardown is in progress`() {
+        val guard = WorkoutExecutionGuard()
+        val cableLease = guard.beginExecution(seed("cable")).getOrThrow()
+        assertTrue(guard.beginTeardown(cableLease))
+        assertIs<MachineTeardownState.TearingDown>(guard.machineTeardownState.value)
+
+        assertTrue(
+            guard.beginExecution(seed("bodyweight").copy(requiresMachine = false, isBodyweight = true)).isFailure,
+        )
+        assertTrue(guard.markTeardownReady(cableLease))
+        assertTrue(
+            guard.beginExecution(seed("bodyweight-after-ready").copy(requiresMachine = false, isBodyweight = true)).isSuccess,
+        )
+    }
+
+    @Test
     fun `bodyweight successor cannot replace a cable lease during configuration`() {
         val guard = WorkoutExecutionGuard()
         val cableLease = guard.beginExecution(seed("cable")).getOrThrow()

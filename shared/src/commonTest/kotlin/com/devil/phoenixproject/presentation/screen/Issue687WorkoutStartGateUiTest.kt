@@ -48,30 +48,30 @@ class Issue687WorkoutStartGateUiTest {
     }
 
     @Test
-    fun `bodyweight start remains enabled while cable teardown is in progress`() {
+    fun `bodyweight start is disabled while cable teardown is in progress`() {
         val presentation = MachineTeardownState.TearingDown(
             executionId = 7L,
             attempt = 1,
         ).toStartGatePresentation(requiresMachine = false)
 
-        assertTrue(presentation.startEnabled)
-        assertEquals(StartGateLabel.START, presentation.label)
+        assertFalse(presentation.startEnabled)
+        assertEquals(StartGateLabel.FINISHING_PREVIOUS_WORKOUT, presentation.label)
         assertFalse(presentation.showRecoveryActions)
     }
 
     @Test
-    fun `bodyweight start remains enabled while recovery actions stay visible`() {
+    fun `bodyweight start is disabled while recovery actions stay visible`() {
         val presentation = MachineTeardownState.RecoveryRequired(
             executionId = 7L,
         ).toStartGatePresentation(requiresMachine = false)
 
-        assertTrue(presentation.startEnabled)
+        assertFalse(presentation.startEnabled)
         assertEquals(StartGateLabel.START, presentation.label)
         assertTrue(presentation.showRecoveryActions)
     }
 
     @Test
-    fun `post completion bodyweight successor remains enabled through cable teardown states`() {
+    fun `post completion bodyweight successor waits for cable teardown Ready`() {
         val nextExercise = successor(isBodyweight = true)
         val states = listOf(
             MachineTeardownState.TearingDown(executionId = 7L, attempt = 1) to false,
@@ -83,8 +83,7 @@ class Issue687WorkoutStartGateUiTest {
                 requiresMachine = !nextExercise.exercise.isBodyweight,
             )
 
-            assertTrue(presentation.startEnabled)
-            assertEquals(StartGateLabel.START, presentation.label)
+            assertFalse(presentation.startEnabled)
             assertEquals(expectsRecoveryActions, presentation.showRecoveryActions)
         }
     }
