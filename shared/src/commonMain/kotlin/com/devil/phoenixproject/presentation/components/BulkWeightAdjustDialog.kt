@@ -39,8 +39,10 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
+import com.devil.phoenixproject.util.ChassisLimits
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
@@ -79,7 +81,7 @@ sealed class BulkAdjustMode {
  *   (their weight is PR-derived at runtime; adjusting the absolute field would be misleading).
  * - [RoutineExercise.weightPerCableKg] is adjusted.
  * - [RoutineExercise.setWeightsPerCableKg], if non-empty, has each entry adjusted.
- * - Results are clamped to [Constants.MIN_WEIGHT_KG]..[Constants.MAX_WEIGHT_PER_CABLE_KG] (110kg).
+ * - Results are clamped to [Constants.MIN_WEIGHT_KG]..[ChassisLimits.maxKgPerCable].
  * - Results are rounded to the 0.5kg machine increment via [UnitConverter.roundToMachineIncrement].
  * - All non-weight fields (id, exercise, orderIndex, etc.) are preserved unchanged.
  *
@@ -88,6 +90,7 @@ sealed class BulkAdjustMode {
 fun applyBulkAdjust(
     exercises: List<RoutineExercise>,
     mode: BulkAdjustMode,
+    hardwareModel: PhoenixModel,
 ): List<RoutineExercise> = exercises.map { ex ->
     if (ex.usePercentOfPR) return@map ex
 
@@ -97,7 +100,7 @@ fun applyBulkAdjust(
             is BulkAdjustMode.Absolute -> weight + mode.deltaKg
         }
         return UnitConverter.roundToMachineIncrement(
-            raw.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG),
+            raw.coerceIn(Constants.MIN_WEIGHT_KG, ChassisLimits.maxKgPerCable(hardwareModel)),
         )
     }
 
@@ -138,6 +141,7 @@ fun applyBulkAdjust(
 fun BulkWeightAdjustDialog(
     exercises: List<RoutineExercise>,
     weightUnit: WeightUnit,
+    hardwareModel: PhoenixModel,
     formatWeight: (Float, WeightUnit) -> String,
     onApply: (List<RoutineExercise>) -> Unit,
     onDismiss: () -> Unit,
@@ -178,7 +182,7 @@ fun BulkWeightAdjustDialog(
     // Compute preview
     val preview by remember(currentMode, exercises) {
         derivedStateOf {
-            currentMode?.let { mode -> applyBulkAdjust(exercises, mode) }
+            currentMode?.let { mode -> applyBulkAdjust(exercises, mode, hardwareModel) }
         }
     }
 
@@ -283,6 +287,7 @@ fun BulkWeightAdjustDialog(
                             exercise = original,
                             newWeight = adjusted?.weightPerCableKg,
                             weightUnit = weightUnit,
+                            hardwareModel = hardwareModel,
                             formatWeight = formatWeight,
                         )
                     }
@@ -393,12 +398,14 @@ private fun PreviewRow(
     exercise: RoutineExercise,
     newWeight: Float?,
     weightUnit: WeightUnit,
+    hardwareModel: PhoenixModel,
     formatWeight: (Float, WeightUnit) -> String,
 ) {
     val isPRScaled = exercise.usePercentOfPR
     val currentFormatted = formatWeight(exercise.weightPerCableKg, weightUnit)
+    val maxKg = ChassisLimits.maxKgPerCable(hardwareModel)
     val isClamped = newWeight != null && (
-        newWeight <= Constants.MIN_WEIGHT_KG || newWeight > Constants.MAX_WEIGHT_PER_CABLE_KG
+        newWeight <= Constants.MIN_WEIGHT_KG || newWeight > maxKg
         )
     val hasChanged = newWeight != null && newWeight != exercise.weightPerCableKg
 

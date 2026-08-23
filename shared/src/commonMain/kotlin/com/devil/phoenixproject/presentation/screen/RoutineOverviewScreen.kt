@@ -72,6 +72,7 @@ import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
@@ -96,7 +97,7 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
-import com.devil.phoenixproject.util.Constants
+import com.devil.phoenixproject.util.ChassisLimits
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
@@ -337,6 +338,7 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                     eccentricLoadPercent = adjustments.eccentricLoadPercent,
                     sizing = overviewSizing,
                     weightStepKg = userPreferences.effectiveWeightIncrementKg, // Issue #266/#410
+                    hardwareModel = ChassisLimits.modelOf(connectionState),
                     onWeightChange = { newWeight ->
                         if (newWeight >= 0f) {
                             adjustmentState.value = adjustmentState.value.copy(weight = newWeight)
@@ -556,12 +558,13 @@ private fun ExerciseOverviewCard(
     eccentricLoadPercent: Int,
     sizing: RoutineOverviewSizing,
     weightStepKg: Float = 0.25f, // Issue #266/#410: Configurable weight step
+    hardwareModel: PhoenixModel,
     onWeightChange: (Float) -> Unit,
     onRepsChange: (Int) -> Unit,
     onEchoLevelChange: (EchoLevel) -> Unit,
     onEccentricLoadChange: (Int) -> Unit,
 ) {
-    val maxWeightKg = Constants.MAX_WEIGHT_PER_CABLE_KG
+    val maxWeightKg = ChassisLimits.maxKgPerCable(hardwareModel)
 
     // #635: explicit stored flag with equipment-derivation fallback
     val isBodyweight = exercise.exercise.isBodyweight

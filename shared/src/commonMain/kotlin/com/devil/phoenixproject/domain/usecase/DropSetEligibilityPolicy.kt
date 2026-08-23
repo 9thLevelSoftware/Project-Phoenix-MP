@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.DropSetEligibilityResult
 import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.DropSetIneligibleReason
 import com.devil.phoenixproject.domain.model.DropSetOffer
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
 import com.devil.phoenixproject.domain.model.SetEndReason
@@ -19,6 +20,7 @@ internal data class DropSetEligibilityRequest(
     val configuration: DropSetConfiguration,
     val expectedLiveIdentity: RoutineExecutionIdentity?,
     val commandTemplate: WorkoutParameters,
+    val hardwareModel: PhoenixModel,
 )
 
 class DropSetEligibilityPolicy(
@@ -63,6 +65,7 @@ class DropSetEligibilityPolicy(
                         programmedBaseWeightPerCableKg = completion.programmedBaseWeightPerCableKg,
                         minimumWeightPerCableKg = minimum,
                         commandTemplate = request.commandTemplate,
+                        hardwareModel = request.hardwareModel,
                     ),
                 )
             ) {

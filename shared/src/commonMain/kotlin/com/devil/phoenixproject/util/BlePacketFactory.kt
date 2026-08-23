@@ -2,6 +2,7 @@ package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.concurrent.Volatile
@@ -98,8 +99,14 @@ object BlePacketFactory {
      * Creates a simplified workout command for backward compatibility.
      * For full protocol support, use createProgramParams() instead.
      */
-    fun createWorkoutCommand(programMode: ProgramMode, weightPerCableKg: Float, targetReps: Int): ByteArray {
-        WorkoutCommandValidator.validateLegacyWorkoutCommand(programMode, weightPerCableKg, targetReps).getOrThrow()
+    fun createWorkoutCommand(
+        programMode: ProgramMode,
+        weightPerCableKg: Float,
+        targetReps: Int,
+        model: PhoenixModel,
+    ): ByteArray {
+        WorkoutCommandValidator.validateLegacyWorkoutCommand(programMode, weightPerCableKg, targetReps, model)
+            .getOrThrow()
 
         val buffer = ByteArray(25)
         buffer[0] = BleConstants.Commands.REGULAR_COMMAND
@@ -127,8 +134,12 @@ object BlePacketFactory {
      * [ForceConfigVariant.OVERLAP] is retained only to reproduce the legacy Phoenix
      * behavior that overwrote 0x48/0x4C after copying the profile.
      */
-    fun createProgramParams(params: WorkoutParameters, variant: ForceConfigVariant = defaultForceConfigVariant): ByteArray {
-        WorkoutCommandValidator.validateProgramParams(params).getOrThrow()
+    fun createProgramParams(
+        params: WorkoutParameters,
+        model: PhoenixModel,
+        variant: ForceConfigVariant = defaultForceConfigVariant,
+    ): ByteArray {
+        WorkoutCommandValidator.validateProgramParams(params, model).getOrThrow()
 
         // Resolve the profile up front so the variant decision can key off it.
         val profileMode = if (params.isEchoMode) {
@@ -214,9 +225,10 @@ object BlePacketFactory {
 
         // The activation force config block keeps the selected force separate
         // from per-rep progression. The increment field controls progression;
-        // targetWeight and forceMax stay anchored to the selected force.
+        // targetWeight stays at the selected force; forceMax is selected + 10
+        // capped at the chassis ceiling so V-Form never sees 110 kg.
         val targetWeightPerCable = params.weightPerCableKg
-        val effectiveKg = targetWeightPerCable + 10.0f
+        val effectiveKg = ChassisLimits.forceMaxKg(targetWeightPerCable, model)
 
         // Normal force modes keep softMax tied to the selected force
         // per cable. Unlimited-rep behavior is controlled by the reps field
@@ -328,6 +340,9 @@ object BlePacketFactory {
 
     /**
      * Build Echo mode control frame (32 bytes) with full parameters.
+     *
+     * Echo 0x4E is timing/profile only — kilograms are not encoded here. Selected
+     * force lives on the 0x04 CONFIG packet (and is not sent for Echo sessions).
      *
      * @param eccentricPct Eccentric load percentage (0-150%). Values outside this range
      *                     are clamped for safety - machine hardware limit is 150%.

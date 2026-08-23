@@ -14,9 +14,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.ChassisLimits
 import com.devil.phoenixproject.util.format
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.*
@@ -29,8 +31,8 @@ import projectphoenix.shared.generated.resources.Res
  * @param weight Current weight value in kg
  * @param onWeightChange Callback when weight is changed
  * @param modifier Modifier for the composable
+ * @param hardwareModel Connected chassis; unknown fail-closes to 100 kg/cable
  * @param minWeight Minimum allowed weight (default 0)
- * @param maxWeight Maximum allowed weight per cable (default 100kg)
  * @param step Weight increment/decrement step (default 2.5kg).
  *   Note: WeightStepper does NOT apply [UnitConverter.roundToMachineIncrement] after stepping.
  *   Callers that transmit the result over BLE should round to the machine's 0.5kg increment
@@ -42,14 +44,15 @@ import projectphoenix.shared.generated.resources.Res
 fun WeightStepper(
     weight: Float,
     onWeightChange: (Float) -> Unit,
+    hardwareModel: PhoenixModel,
     modifier: Modifier = Modifier,
     minWeight: Float = 0f,
-    maxWeight: Float = 100f, // Per cable max (V-Form: 100kg, Trainer+: 110kg)
     step: Float = 2.5f,
     label: String = "Weight",
     prWeight: Float? = null,
     prPhaseLabel: String? = null,
 ) {
+    val maxWeight = ChassisLimits.maxKgPerCable(hardwareModel)
     Column(modifier = modifier) {
         // Header row with label and PR indicator
         Row(

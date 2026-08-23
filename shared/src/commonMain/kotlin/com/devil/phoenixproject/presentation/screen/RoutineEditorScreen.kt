@@ -86,6 +86,7 @@ import com.devil.phoenixproject.presentation.components.SupersetHeader
 import com.devil.phoenixproject.presentation.components.SupersetPickerDialog
 import com.devil.phoenixproject.presentation.routine.buildDefaultRoutineExerciseForEditor
 import com.devil.phoenixproject.ui.theme.SupersetTheme
+import com.devil.phoenixproject.util.ChassisLimits
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -137,6 +138,8 @@ fun RoutineEditorScreen(
 ) {
     // Issue #266/#410: Get user preferences for weight increment
     val userPreferences by viewModel.userPreferences.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val hardwareModel = ChassisLimits.modelOf(connectionState)
     val rackItems by viewModel.rackItems.collectAsState()
     val activeProfileId by viewModel.activeProfileId.collectAsState()
     val completedExerciseIdsState by viewModel.completedExerciseIdsState.collectAsState()
@@ -868,6 +871,7 @@ fun RoutineEditorScreen(
         ExerciseEditBottomSheet(
             exercise = exercise,
             weightUnit = weightUnit,
+            hardwareModel = hardwareModel,
             enableVideoPlayback = enableVideoPlayback,
             kgToDisplay = kgToDisplay,
             displayToKg = displayToKg,
@@ -1052,6 +1056,7 @@ fun RoutineEditorScreen(
         BulkWeightAdjustDialog(
             exercises = targetExercises,
             weightUnit = weightUnit,
+            hardwareModel = hardwareModel,
             formatWeight = { weight, unit ->
                 val displayWeight = kgToDisplay(weight, unit)
                 if (unit == WeightUnit.LB) "${UnitConverter.formatDecimal(displayWeight)} lbs" else "${UnitConverter.formatDecimal(displayWeight)} kg"

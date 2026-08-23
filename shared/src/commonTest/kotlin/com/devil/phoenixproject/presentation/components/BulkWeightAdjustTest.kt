@@ -1,8 +1,10 @@
 package com.devil.phoenixproject.presentation.components
 
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.util.ChassisLimits
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import kotlin.math.abs
@@ -16,7 +18,7 @@ import kotlin.test.assertTrue
  * Covers:
  * - Percentage mode (positive, negative, zero)
  * - Absolute mode (positive, negative, zero)
- * - Clamping to [0, MAX_WEIGHT_PER_CABLE_KG] (110kg Trainer+ ceiling)
+ * - Clamping to chassis max (100kg V-Form/unknown fail-closed, 110kg Trainer+)
  * - Rounding to 0.5kg machine increment
  * - PR-scaled exercise skipping
  * - Per-set weight adjustment
@@ -46,19 +48,25 @@ class BulkWeightAdjustTest {
         programMode = ProgramMode.OldSchool,
     )
 
+    private fun bulkAdjust(
+        exercises: List<RoutineExercise>,
+        mode: BulkAdjustMode,
+        model: PhoenixModel = PhoenixModel.TrainerPlus,
+    ) = applyBulkAdjust(exercises, mode, model)
+
     // ── Percentage mode ─────────────────────────────────────────────
 
     @Test
     fun percentage_positiveTenPercent_increasesWeight() {
         val exercises = listOf(exercise(weightKg = 50f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
         assertEquals(55f, result[0].weightPerCableKg)
     }
 
     @Test
     fun percentage_negativeFivePercent_decreasesWeight() {
         val exercises = listOf(exercise(weightKg = 40f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(-5f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Percentage(-5f))
         // 40 * 0.95 = 38.0
         assertEquals(38f, result[0].weightPerCableKg)
     }
@@ -66,7 +74,7 @@ class BulkWeightAdjustTest {
     @Test
     fun percentage_zeroPercent_noChange() {
         val exercises = listOf(exercise(weightKg = 50f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(0f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Percentage(0f))
         assertEquals(50f, result[0].weightPerCableKg)
     }
 
@@ -74,7 +82,7 @@ class BulkWeightAdjustTest {
     fun percentage_roundsToHalfKg() {
         // 33 * 1.10 = 36.3 -> rounds to 36.5
         val exercises = listOf(exercise(weightKg = 33f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
         assertEquals(36.5f, result[0].weightPerCableKg)
     }
 
@@ -82,7 +90,7 @@ class BulkWeightAdjustTest {
     fun percentage_roundsDownToHalfKg() {
         // 33 * 1.05 = 34.65 -> rounds to 34.5
         val exercises = listOf(exercise(weightKg = 33f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(5f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Percentage(5f))
         assertEquals(34.5f, result[0].weightPerCableKg)
     }
 
@@ -91,21 +99,21 @@ class BulkWeightAdjustTest {
     @Test
     fun absolute_positiveDelta_increasesWeight() {
         val exercises = listOf(exercise(weightKg = 50f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
         assertEquals(55f, result[0].weightPerCableKg)
     }
 
     @Test
     fun absolute_negativeDelta_decreasesWeight() {
         val exercises = listOf(exercise(weightKg = 50f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(-5f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(-5f))
         assertEquals(45f, result[0].weightPerCableKg)
     }
 
     @Test
     fun absolute_zeroDelta_noChange() {
         val exercises = listOf(exercise(weightKg = 50f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(0f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(0f))
         assertEquals(50f, result[0].weightPerCableKg)
     }
 
@@ -113,39 +121,55 @@ class BulkWeightAdjustTest {
     fun absolute_roundsToMachineIncrement() {
         // 50 + 1.3 = 51.3 -> rounds to 51.5
         val exercises = listOf(exercise(weightKg = 50f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(1.3f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(1.3f))
         assertEquals(51.5f, result[0].weightPerCableKg)
     }
 
     // ── Clamping ────────────────────────────────────────────────────
 
     @Test
-    fun clamps_toMaxWeight() {
+    fun clamps_toTrainerPlusMax() {
         val exercises = listOf(exercise(weightKg = 105f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(10f))
-        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].weightPerCableKg)
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(10f), PhoenixModel.TrainerPlus)
+        assertEquals(ChassisLimits.TRAINER_PLUS_KG_PER_CABLE, result[0].weightPerCableKg)
+    }
+
+    @Test
+    fun clamps_toVFormMax_notAlways110() {
+        val exercises = listOf(exercise(weightKg = 95f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(10f), PhoenixModel.VFormTrainer)
+        assertEquals(ChassisLimits.V_FORM_KG_PER_CABLE, result[0].weightPerCableKg)
+    }
+
+    @Test
+    fun unknownModel_failClosesToVFormMax() {
+        val exercises = listOf(exercise(weightKg = 95f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(20f), PhoenixModel.Unknown)
+        assertEquals(ChassisLimits.UNKNOWN_FAIL_CLOSED_KG_PER_CABLE, result[0].weightPerCableKg)
     }
 
     @Test
     fun clamps_toMinWeight() {
         val exercises = listOf(exercise(weightKg = 3f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(-10f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(-10f))
         assertEquals(Constants.MIN_WEIGHT_KG, result[0].weightPerCableKg)
     }
 
     @Test
     fun clamps_percentageExceedingMax() {
         val exercises = listOf(exercise(weightKg = 80f))
-        // 80 * 1.50 = 120 -> clamped to 110
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(50f))
-        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].weightPerCableKg)
+        // 80 * 1.50 = 120 -> clamped to Trainer+ 110
+        val result = bulkAdjust(exercises, BulkAdjustMode.Percentage(50f), PhoenixModel.TrainerPlus)
+        assertEquals(ChassisLimits.TRAINER_PLUS_KG_PER_CABLE, result[0].weightPerCableKg)
+        val vForm = bulkAdjust(exercises, BulkAdjustMode.Percentage(50f), PhoenixModel.VFormTrainer)
+        assertEquals(ChassisLimits.V_FORM_KG_PER_CABLE, vForm[0].weightPerCableKg)
     }
 
     @Test
     fun clamps_largeNegativePercentage() {
         val exercises = listOf(exercise(weightKg = 50f))
         // 50 * (1 + -200/100) = 50 * -1 = -50 -> clamped to 0
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(-200f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Percentage(-200f))
         assertEquals(Constants.MIN_WEIGHT_KG, result[0].weightPerCableKg)
     }
 
@@ -161,7 +185,7 @@ class BulkWeightAdjustTest {
         val normalExercise = exercise(id = "normal-ex", weightKg = 50f)
         val exercises = listOf(prExercise, normalExercise)
 
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
 
         // PR exercise unchanged
         assertEquals(40f, result[0].weightPerCableKg)
@@ -180,7 +204,7 @@ class BulkWeightAdjustTest {
                 setWeightsKg = listOf(45f, 50f, 55f),
             ),
         )
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
         assertEquals(55f, result[0].weightPerCableKg)
         assertEquals(listOf(49.5f, 55f, 60.5f), result[0].setWeightsPerCableKg)
     }
@@ -193,7 +217,7 @@ class BulkWeightAdjustTest {
                 setWeightsKg = listOf(45f, 50f, 55f),
             ),
         )
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(2.5f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(2.5f))
         assertEquals(52.5f, result[0].weightPerCableKg)
         assertEquals(listOf(47.5f, 52.5f, 57.5f), result[0].setWeightsPerCableKg)
     }
@@ -201,7 +225,7 @@ class BulkWeightAdjustTest {
     @Test
     fun perSetWeights_emptyList_staysEmpty() {
         val exercises = listOf(exercise(weightKg = 50f, setWeightsKg = emptyList()))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
         assertEquals(emptyList(), result[0].setWeightsPerCableKg)
     }
 
@@ -213,12 +237,13 @@ class BulkWeightAdjustTest {
                 setWeightsKg = listOf(102f, 105f, 108f),
             ),
         )
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(10f))
-        // All clamped to 110 (Trainer+ hardware ceiling)
-        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].weightPerCableKg)
-        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].setWeightsPerCableKg[0])
-        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].setWeightsPerCableKg[1])
-        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].setWeightsPerCableKg[2])
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(10f), PhoenixModel.TrainerPlus)
+        assertEquals(ChassisLimits.TRAINER_PLUS_KG_PER_CABLE, result[0].weightPerCableKg)
+        assertEquals(ChassisLimits.TRAINER_PLUS_KG_PER_CABLE, result[0].setWeightsPerCableKg[0])
+        assertEquals(ChassisLimits.TRAINER_PLUS_KG_PER_CABLE, result[0].setWeightsPerCableKg[1])
+        assertEquals(ChassisLimits.TRAINER_PLUS_KG_PER_CABLE, result[0].setWeightsPerCableKg[2])
+        val vForm = bulkAdjust(exercises, BulkAdjustMode.Absolute(10f), PhoenixModel.VFormTrainer)
+        assertEquals(ChassisLimits.V_FORM_KG_PER_CABLE, vForm[0].weightPerCableKg)
     }
 
     // ── ID and field preservation ───────────────────────────────────
@@ -239,7 +264,7 @@ class BulkWeightAdjustTest {
             orderInSuperset = 2,
         )
         val exercises = listOf(original)
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
 
         assertEquals("preserve-test", result[0].id)
         assertEquals("Squat", result[0].exercise.name)
@@ -257,7 +282,7 @@ class BulkWeightAdjustTest {
             exercise(id = "ex-2", weightKg = 40f),
             exercise(id = "ex-3", weightKg = 50f),
         )
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
         assertEquals(listOf("ex-1", "ex-2", "ex-3"), result.map { it.id })
     }
 
@@ -268,7 +293,7 @@ class BulkWeightAdjustTest {
             exercise(id = "b", weightKg = 20f),
             exercise(id = "c", weightKg = 30f),
         )
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
         assertEquals(3, result.size)
     }
 
@@ -277,7 +302,7 @@ class BulkWeightAdjustTest {
     @Test
     fun progressionKg_notScaled() {
         val exercises = listOf(exercise(weightKg = 50f, progressionKg = 1.5f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(20f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Percentage(20f))
         assertEquals(1.5f, result[0].progressionKg)
     }
 
@@ -285,7 +310,7 @@ class BulkWeightAdjustTest {
 
     @Test
     fun emptyList_returnsEmptyList() {
-        val result = applyBulkAdjust(emptyList(), BulkAdjustMode.Absolute(5f))
+        val result = bulkAdjust(emptyList(), BulkAdjustMode.Absolute(5f))
         assertTrue(result.isEmpty())
     }
 
@@ -295,7 +320,7 @@ class BulkWeightAdjustTest {
             exercise(id = "pr-1", weightKg = 30f, usePercentOfPR = true),
             exercise(id = "pr-2", weightKg = 40f, usePercentOfPR = true),
         )
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(10f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(10f))
         assertEquals(30f, result[0].weightPerCableKg)
         assertEquals(40f, result[1].weightPerCableKg)
     }
@@ -307,7 +332,7 @@ class BulkWeightAdjustTest {
             exercise(id = "pr", weightKg = 50f, usePercentOfPR = true),
             exercise(id = "normal2", weightKg = 60f),
         )
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
         assertEquals(55f, result[0].weightPerCableKg) // adjusted
         assertEquals(50f, result[1].weightPerCableKg) // skipped
         assertEquals(65f, result[2].weightPerCableKg) // adjusted
@@ -316,7 +341,7 @@ class BulkWeightAdjustTest {
     @Test
     fun weightAtZero_positiveAdjust_works() {
         val exercises = listOf(exercise(weightKg = 0f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(5f))
         assertEquals(5f, result[0].weightPerCableKg)
     }
 
@@ -324,15 +349,21 @@ class BulkWeightAdjustTest {
     fun weightAtZero_percentageIncrease_staysZero() {
         // 0 * 1.10 = 0 — percentage of zero is still zero
         val exercises = listOf(exercise(weightKg = 0f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
         assertEquals(Constants.MIN_WEIGHT_KG, result[0].weightPerCableKg)
     }
 
     @Test
     fun weightAtMax_percentageIncrease_staysAtMax() {
-        val exercises = listOf(exercise(weightKg = Constants.MAX_WEIGHT_PER_CABLE_KG))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Percentage(10f))
-        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, result[0].weightPerCableKg)
+        val exercises = listOf(exercise(weightKg = ChassisLimits.TRAINER_PLUS_KG_PER_CABLE))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Percentage(10f), PhoenixModel.TrainerPlus)
+        assertEquals(ChassisLimits.TRAINER_PLUS_KG_PER_CABLE, result[0].weightPerCableKg)
+        val vForm = bulkAdjust(
+            listOf(exercise(weightKg = ChassisLimits.V_FORM_KG_PER_CABLE)),
+            BulkAdjustMode.Percentage(10f),
+            PhoenixModel.VFormTrainer,
+        )
+        assertEquals(ChassisLimits.V_FORM_KG_PER_CABLE, vForm[0].weightPerCableKg)
     }
 
     // ── lb-to-kg conversion path (simulates BulkWeightAdjustDialog) ────
@@ -346,7 +377,7 @@ class BulkWeightAdjustTest {
         assertTrue(abs(deltaKg - 2.268f) < 0.01f, "5lb should convert to ~2.268kg, got $deltaKg")
 
         val exercises = listOf(exercise(weightKg = 50f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(deltaKg))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(deltaKg))
         // 50 + 2.268 = 52.268 -> roundToMachineIncrement -> 52.5
         assertEquals(52.5f, result[0].weightPerCableKg)
     }
@@ -360,7 +391,7 @@ class BulkWeightAdjustTest {
         assertTrue(abs(deltaKg - (-1.134f)) < 0.01f, "-2.5lb should convert to ~-1.134kg, got $deltaKg")
 
         val exercises = listOf(exercise(weightKg = 50f))
-        val result = applyBulkAdjust(exercises, BulkAdjustMode.Absolute(deltaKg))
+        val result = bulkAdjust(exercises, BulkAdjustMode.Absolute(deltaKg))
         // 50 + (-1.134) = 48.866 -> roundToMachineIncrement -> 49.0
         assertEquals(49f, result[0].weightPerCableKg)
     }

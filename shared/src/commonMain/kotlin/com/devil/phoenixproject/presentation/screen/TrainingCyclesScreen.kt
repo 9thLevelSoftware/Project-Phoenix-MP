@@ -98,6 +98,7 @@ import com.devil.phoenixproject.presentation.manager.RoutineResumeHandle
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.util.ChassisLimits
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeActionAuthority
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeCompletionDisposition
 import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeEntryPoint
@@ -185,6 +186,8 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     // User preferences for weight unit and increment
     val weightUnit by viewModel.weightUnit.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val hardwareModel = ChassisLimits.modelOf(connectionState)
 
     // Collect cycles from repository
     val cycles by cycleRepository.getAllCycles(profileId).collectAsState(initial = emptyList())
@@ -755,6 +758,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                 prWeightValues = state.prWeightValues,
                 weightUnit = weightUnit,
                 kgToDisplay = viewModel::kgToDisplay,
+                hardwareModel = hardwareModel,
                 weightStepKg = userPreferences.effectiveWeightIncrementKg,
                 onConfirm = { exerciseConfigs ->
                     creationState = CycleCreationState.Creating(state.template)

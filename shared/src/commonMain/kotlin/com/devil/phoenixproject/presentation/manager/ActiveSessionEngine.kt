@@ -97,6 +97,7 @@ import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
+import com.devil.phoenixproject.util.ChassisLimits
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
@@ -1460,6 +1461,7 @@ class ActiveSessionEngine(
                 configuration = dropSetConfigurationProvider(preparation.sourceExercise),
                 expectedLiveIdentity = source.routineIdentity,
                 commandTemplate = source.commandTemplate,
+                hardwareModel = chassisModel(),
             ),
         )
         buildRestTransitionPlan(plan.normalAdvance, eligibility) == plan
@@ -3608,12 +3610,15 @@ class ActiveSessionEngine(
                 programmedBaseWeightPerCableKg = programmedBaseWeightPerCableKg,
                 minimumWeightPerCableKg = minimum,
                 commandTemplate = sourceCommandTemplate,
+                hardwareModel = chassisModel(),
             ),
         ) as? DropSetCandidateResolution.Valid ?: return false
         return sameMachineWeight(resolution.candidate.resolvedWeightPerCableKg, expectedWeightPerCableKg) &&
             sameMachineWeight(resolution.candidate.resultingExerciseMultiplier, expectedMultiplier) &&
             expectedWeightPerCableKg < sourceConfiguredStartWeightPerCableKg
     }
+
+    private fun chassisModel() = ChassisLimits.modelOf(bleRepository.connectionState.value)
 
     private fun validateWorkoutCommand(params: WorkoutParameters): Result<Unit> = if (params.isEchoMode) {
         WorkoutCommandValidator.validateEchoControl(
@@ -3625,7 +3630,7 @@ class ActiveSessionEngine(
             eccentricPct = params.eccentricLoad.percentage,
         )
     } else {
-        WorkoutCommandValidator.validateProgramParams(params)
+        WorkoutCommandValidator.validateProgramParams(params, chassisModel())
     }
 
     private suspend fun failAcceptedRetryClosed(
@@ -6495,15 +6500,18 @@ class ActiveSessionEngine(
             val params = coordinator._workoutParameters.value
 
             val command = if (!params.isEchoMode) {
+                val model = chassisModel()
                 WorkoutCommandValidator.validateLegacyWorkoutCommand(
                     params.programMode,
                     weightKg,
                     params.reps,
+                    model,
                 ).getOrThrow()
                 BlePacketFactory.createWorkoutCommand(
                     params.programMode,
                     weightKg,
                     params.reps,
+                    model,
                 )
             } else {
                 return
@@ -6528,11 +6536,10 @@ class ActiveSessionEngine(
      * machine can't receive new exercise packet until active one fully ends).
      */
     fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) {
-        // Upper bound is 110kg per cable to support both hardware variants:
-        //   V-Form (VIT-200): 100kg max per cable
-        //   Trainer+:         110kg max per cable
-        // Do NOT replace with Constants.MAX_WEIGHT_KG (100f) — that would regress Trainer+ users.
-        val clampedWeight = newWeightKg.coerceIn(0f, 110f)
+        val clampedWeight = newWeightKg.coerceIn(
+            Constants.MIN_WEIGHT_KG,
+            ChassisLimits.maxKgPerCable(chassisModel()),
+        )
 
         Logger.d("ActiveSessionEngine: Adjusting weight to $clampedWeight kg (sendToMachine=$sendToMachine)")
 
@@ -7510,7 +7517,8 @@ class ActiveSessionEngine(
         warmupSet: com.devil.phoenixproject.domain.model.WarmupSet,
         reps: Int,
     ): WorkoutParameters {
-        val warmupWeight = (workingWeightKg * warmupSet.percentOfWorking / 100f).coerceIn(0f, 110f)
+        val warmupWeight = (workingWeightKg * warmupSet.percentOfWorking / 100f)
+            .coerceIn(Constants.MIN_WEIGHT_KG, ChassisLimits.maxKgPerCable(chassisModel()))
         return baseParams.copy(
             weightPerCableKg = warmupWeight,
             reps = reps,
@@ -8209,7 +8217,7 @@ class ActiveSessionEngine(
                     val warmupSet = currentExercise.warmupSets.getOrNull(warmupSetIndex)
                     if (warmupSet != null) {
                         val warmupWeight = (effectiveParams.weightPerCableKg * warmupSet.percentOfWorking / 100f)
-                            .coerceIn(0f, 110f)
+                            .coerceIn(Constants.MIN_WEIGHT_KG, ChassisLimits.maxKgPerCable(chassisModel()))
                         Logger.d {
                             "WarmupSet ${warmupSetIndex + 1}/${currentExercise.warmupSets.size}: " +
                                 "${warmupSet.reps} reps @ ${warmupSet.percentOfWorking}% = ${warmupWeight}kg (working=${effectiveParams.weightPerCableKg}kg)"
@@ -8348,7 +8356,7 @@ class ActiveSessionEngine(
                         eccentricPct = bleParams.eccentricLoad.percentage,
                     )
                 } else {
-                    WorkoutCommandValidator.validateProgramParams(bleParams)
+                    WorkoutCommandValidator.validateProgramParams(bleParams, chassisModel())
                 }
                 commandValidation.onFailure { error ->
                     Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
@@ -8371,7 +8379,7 @@ class ActiveSessionEngine(
                         eccentricPct = bleParams.eccentricLoad.percentage,
                     )
                 } else {
-                    BlePacketFactory.createProgramParams(bleParams)
+                    BlePacketFactory.createProgramParams(bleParams, chassisModel())
                 }
                 Logger.d { "Built ${command.size}-byte workout command for ${bleParams.programMode}" }
 
@@ -12314,6 +12322,7 @@ class ActiveSessionEngine(
                 configuration = dropSetConfigurationProvider(sourceExercise),
                 expectedLiveIdentity = identity,
                 commandTemplate = completion.logicalPreRackCommandTemplate,
+                hardwareModel = chassisModel(),
             ),
         )
         val prior = activeRuntimeDocument?.takeIf {

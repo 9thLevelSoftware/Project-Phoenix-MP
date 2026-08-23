@@ -229,6 +229,7 @@ class DropSetCandidateResolverTest {
             programmedBaseWeightPerCableKg = base,
             minimumWeightPerCableKg = floor,
             commandTemplate = template,
+            hardwareModel = com.devil.phoenixproject.domain.model.PhoenixModel.TrainerPlus,
         ),
     )
 

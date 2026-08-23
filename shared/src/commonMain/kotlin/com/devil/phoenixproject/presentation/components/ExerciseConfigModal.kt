@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ExerciseConfig
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.ui.theme.Spacing
@@ -53,6 +54,7 @@ fun ExerciseConfigModal(
     templateSets: Int,
     templateReps: Int?,
     oneRepMaxKg: Float?,
+    hardwareModel: PhoenixModel,
     prWeight: Float? = null,
     initialConfig: ExerciseConfig,
     onConfirm: (ExerciseConfig) -> Unit,
@@ -117,6 +119,7 @@ fun ExerciseConfigModal(
                             ProgramMode.OldSchool -> OldSchoolConfigPanel(
                                 weight = config.weightPerCableKg,
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
+                                hardwareModel = hardwareModel,
                                 prWeight = prWeight,
                                 stepKg = weightStepKg,
                             )
@@ -124,6 +127,7 @@ fun ExerciseConfigModal(
                             ProgramMode.TUT -> TutConfigPanel(
                                 weight = config.weightPerCableKg,
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
+                                hardwareModel = hardwareModel,
                                 isBeastMode = config.mode == ProgramMode.TUTBeast,
                                 onBeastModeChange = { enabled ->
                                     config = config.copy(
@@ -137,6 +141,7 @@ fun ExerciseConfigModal(
                             ProgramMode.Pump -> PumpConfigPanel(
                                 weight = config.weightPerCableKg,
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
+                                hardwareModel = hardwareModel,
                                 prWeight = prWeight,
                                 stepKg = weightStepKg,
                             )
@@ -144,6 +149,7 @@ fun ExerciseConfigModal(
                             ProgramMode.EccentricOnly -> EccentricConfigPanel(
                                 weight = config.weightPerCableKg,
                                 onWeightChange = { config = config.copy(weightPerCableKg = it) },
+                                hardwareModel = hardwareModel,
                                 eccentricPercent = config.eccentricLoadPercent,
                                 onEccentricPercentChange = { config = config.copy(eccentricLoadPercent = it) },
                                 prWeight = prWeight,
@@ -243,10 +249,17 @@ private fun MetaChip(label: String, value: String) {
 // ==================== MODE-SPECIFIC PANELS ====================
 
 @Composable
-private fun OldSchoolConfigPanel(weight: Float, onWeightChange: (Float) -> Unit, prWeight: Float? = null, stepKg: Float = 2.5f) {
+private fun OldSchoolConfigPanel(
+    weight: Float,
+    onWeightChange: (Float) -> Unit,
+    hardwareModel: PhoenixModel,
+    prWeight: Float? = null,
+    stepKg: Float = 2.5f,
+) {
     WeightStepper(
         weight = weight,
         onWeightChange = onWeightChange,
+        hardwareModel = hardwareModel,
         label = stringResource(Res.string.starting_weight),
         prWeight = prWeight,
         step = stepKg,
@@ -261,12 +274,20 @@ private fun OldSchoolConfigPanel(weight: Float, onWeightChange: (Float) -> Unit,
 private fun TutConfigPanel(
     weight: Float,
     onWeightChange: (Float) -> Unit,
+    hardwareModel: PhoenixModel,
     isBeastMode: Boolean,
     onBeastModeChange: (Boolean) -> Unit,
     prWeight: Float? = null,
     stepKg: Float = 2.5f,
 ) {
-    WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight, step = stepKg)
+    WeightStepper(
+        weight = weight,
+        onWeightChange = onWeightChange,
+        hardwareModel = hardwareModel,
+        label = stringResource(Res.string.starting_weight),
+        prWeight = prWeight,
+        step = stepKg,
+    )
 
     // Beast Mode Toggle
     Row(
@@ -322,8 +343,21 @@ private fun TutConfigPanel(
 }
 
 @Composable
-private fun PumpConfigPanel(weight: Float, onWeightChange: (Float) -> Unit, prWeight: Float? = null, stepKg: Float = 2.5f) {
-    WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight, step = stepKg)
+private fun PumpConfigPanel(
+    weight: Float,
+    onWeightChange: (Float) -> Unit,
+    hardwareModel: PhoenixModel,
+    prWeight: Float? = null,
+    stepKg: Float = 2.5f,
+) {
+    WeightStepper(
+        weight = weight,
+        onWeightChange = onWeightChange,
+        hardwareModel = hardwareModel,
+        label = stringResource(Res.string.starting_weight),
+        prWeight = prWeight,
+        step = stepKg,
+    )
     ModeInfoCard(
         title = stringResource(Res.string.config_mode_pump_title),
         description = stringResource(Res.string.config_mode_pump_desc),
@@ -334,12 +368,20 @@ private fun PumpConfigPanel(weight: Float, onWeightChange: (Float) -> Unit, prWe
 private fun EccentricConfigPanel(
     weight: Float,
     onWeightChange: (Float) -> Unit,
+    hardwareModel: PhoenixModel,
     eccentricPercent: Int,
     onEccentricPercentChange: (Int) -> Unit,
     prWeight: Float? = null,
     stepKg: Float = 2.5f,
 ) {
-    WeightStepper(weight = weight, onWeightChange = onWeightChange, label = stringResource(Res.string.starting_weight), prWeight = prWeight, step = stepKg)
+    WeightStepper(
+        weight = weight,
+        onWeightChange = onWeightChange,
+        hardwareModel = hardwareModel,
+        label = stringResource(Res.string.starting_weight),
+        prWeight = prWeight,
+        step = stepKg,
+    )
     EccentricSlider(
         percent = eccentricPercent,
         onPercentChange = onEccentricPercentChange,

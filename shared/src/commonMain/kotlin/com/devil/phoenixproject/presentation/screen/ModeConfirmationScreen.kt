@@ -15,6 +15,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.ExerciseConfig
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.TemplateExercise
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -51,6 +52,7 @@ fun ModeConfirmationScreen(
     kgToDisplay: (Float, WeightUnit) -> Float = { kg, _ -> kg },
     onConfirm: (Map<String, ExerciseConfig>) -> Unit,
     onCancel: () -> Unit,
+    hardwareModel: PhoenixModel,
     weightStepKg: Float = 2.5f, // Issue #266: Configurable weight step in kg
 ) {
     // State: Map of exercise name to ExerciseConfig
@@ -202,6 +204,7 @@ fun ModeConfirmationScreen(
                                         newConfig.weightPerCableKg != displayedConfig.weightPerCableKg,
                                 )
                             },
+                            hardwareModel = hardwareModel,
                             weightStepKg = weightStepKg,
                         )
                     }
@@ -271,6 +274,7 @@ private fun ConfigurableExerciseCard(
     weightUnit: WeightUnit = WeightUnit.KG,
     kgToDisplay: (Float, WeightUnit) -> Float = { kg, _ -> kg },
     onConfigUpdated: (ExerciseConfig) -> Unit,
+    hardwareModel: PhoenixModel,
     weightStepKg: Float = 2.5f, // Issue #266
 ) {
     var showConfigModal by remember { mutableStateOf(false) }
@@ -361,6 +365,7 @@ private fun ConfigurableExerciseCard(
             templateSets = exercise.sets,
             templateReps = exercise.reps,
             oneRepMaxKg = oneRepMaxKg,
+            hardwareModel = hardwareModel,
             prWeight = prWeight,
             initialConfig = config,
             onConfirm = { newConfig ->

@@ -45,6 +45,7 @@ class Issue673DropSetProductFlowTest {
                     configuration = DropSetConfiguration(enabled.dropSetEnabled, enabled.dropSetMinWeightKg),
                     expectedLiveIdentity = identity,
                     commandTemplate = WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 50f),
+                    hardwareModel = com.devil.phoenixproject.domain.model.PhoenixModel.TrainerPlus,
                 ),
             ),
         )
@@ -61,6 +62,7 @@ class Issue673DropSetProductFlowTest {
                         configuration = DropSetConfiguration(disabled.dropSetEnabled, disabled.dropSetMinWeightKg),
                         expectedLiveIdentity = identity,
                         commandTemplate = WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 50f),
+                        hardwareModel = com.devil.phoenixproject.domain.model.PhoenixModel.TrainerPlus,
                     ),
                 ),
             ).reason,

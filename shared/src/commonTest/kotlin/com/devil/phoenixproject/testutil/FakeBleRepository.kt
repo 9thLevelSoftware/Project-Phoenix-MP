@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.util.HardwareDetection
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -102,6 +103,7 @@ class FakeBleRepository : BleRepository {
             ConnectionState.Connected(
                 deviceName = deviceName,
                 deviceAddress = deviceAddress,
+                hardwareModel = HardwareDetection.detectModel(deviceName),
             ),
         )
     }
@@ -220,6 +222,7 @@ class FakeBleRepository : BleRepository {
                 ConnectionState.Connected(
                     deviceName = device.name,
                     deviceAddress = device.address,
+                    hardwareModel = HardwareDetection.detectModel(device.name),
                 ),
             )
             Result.success(Unit)

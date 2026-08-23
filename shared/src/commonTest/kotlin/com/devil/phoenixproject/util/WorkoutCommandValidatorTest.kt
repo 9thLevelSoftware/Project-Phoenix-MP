@@ -1,16 +1,23 @@
 package com.devil.phoenixproject.util
 
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.test.Test
+import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 class WorkoutCommandValidatorTest {
 
+    private fun validateParams(
+        params: WorkoutParameters,
+        model: PhoenixModel = PhoenixModel.TrainerPlus,
+    ) = WorkoutCommandValidator.validateProgramParams(params, model)
+
     @Test
     fun `program params accept normal finite bounded command`() {
-        val result = WorkoutCommandValidator.validateProgramParams(
+        val result = validateParams(
             WorkoutParameters(
                 programMode = ProgramMode.OldSchool,
                 reps = 8,
@@ -25,7 +32,7 @@ class WorkoutCommandValidatorTest {
     @Test
     fun `normal workout commands allow fractional positive weight`() {
         assertTrue(
-            WorkoutCommandValidator.validateProgramParams(
+            validateParams(
                 WorkoutParameters(
                     programMode = ProgramMode.OldSchool,
                     reps = 8,
@@ -38,6 +45,7 @@ class WorkoutCommandValidatorTest {
                 programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 0.5f,
                 targetReps = 8,
+                model = PhoenixModel.TrainerPlus,
             ).isSuccess,
         )
     }
@@ -45,19 +53,19 @@ class WorkoutCommandValidatorTest {
     @Test
     fun `program params reject non-finite and out-of-range weights`() {
         assertFailureContains(
-            WorkoutCommandValidator.validateProgramParams(
+            validateParams(
                 WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = Float.NaN),
             ),
             "finite",
         )
         assertFailureContains(
-            WorkoutCommandValidator.validateProgramParams(
+            validateParams(
                 WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 111f),
             ),
             "weightPerCableKg",
         )
         assertFailureContains(
-            WorkoutCommandValidator.validateProgramParams(
+            validateParams(
                 WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 0f),
             ),
             "greater than",
@@ -65,9 +73,85 @@ class WorkoutCommandValidatorTest {
     }
 
     @Test
+    fun `V-Form rejects 100_5 kg and accepts 100 kg`() {
+        assertTrue(
+            validateParams(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 100f),
+                model = PhoenixModel.VFormTrainer,
+            ).isSuccess,
+        )
+        assertFailureContains(
+            validateParams(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 100.5f),
+                model = PhoenixModel.VFormTrainer,
+            ),
+            "100.5",
+        )
+        assertFailureContains(
+            validateParams(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 110f),
+                model = PhoenixModel.VFormTrainer,
+            ),
+            "weightPerCableKg",
+        )
+    }
+
+    @Test
+    fun `Trainer+ accepts 100_5 and 110 but rejects 111`() {
+        assertTrue(
+            validateParams(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 100.5f),
+                model = PhoenixModel.TrainerPlus,
+            ).isSuccess,
+        )
+        assertTrue(
+            validateParams(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 110f),
+                model = PhoenixModel.TrainerPlus,
+            ).isSuccess,
+        )
+        assertFailureContains(
+            validateParams(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 111f),
+                model = PhoenixModel.TrainerPlus,
+            ),
+            "weightPerCableKg",
+        )
+    }
+
+    @Test
+    fun `unknown model fail-closes at 100 kg per cable`() {
+        assertTrue(
+            validateParams(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 100f),
+                model = PhoenixModel.Unknown,
+            ).isSuccess,
+        )
+        assertFailureContains(
+            validateParams(
+                WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 100.5f),
+                model = PhoenixModel.Unknown,
+            ),
+            "100.5",
+        )
+        assertEquals(
+            ChassisLimits.V_FORM_KG_PER_CABLE,
+            ChassisLimits.maxKgPerCable(PhoenixModel.Unknown),
+        )
+        assertEquals(
+            ChassisLimits.V_FORM_KG_PER_CABLE,
+            ChassisLimits.maxKgPerCable(PhoenixModel.VFormTrainer),
+        )
+        assertEquals(
+            ChassisLimits.TRAINER_PLUS_KG_PER_CABLE,
+            ChassisLimits.maxKgPerCable(PhoenixModel.TrainerPlus),
+        )
+    }
+
+    @Test
     fun `just lift requires minimum nonzero weight`() {
         assertFailureContains(
-            WorkoutCommandValidator.validateProgramParams(
+            validateParams(
                 WorkoutParameters(
                     programMode = ProgramMode.OldSchool,
                     reps = 1,
@@ -81,7 +165,7 @@ class WorkoutCommandValidatorTest {
 
     @Test
     fun `amrap allows zero target reps but finite bounded weight still applies`() {
-        val result = WorkoutCommandValidator.validateProgramParams(
+        val result = validateParams(
             WorkoutParameters(
                 programMode = ProgramMode.Pump,
                 reps = 0,
@@ -96,7 +180,7 @@ class WorkoutCommandValidatorTest {
     @Test
     fun `rep and warmup bytes must fit one byte`() {
         assertFailureContains(
-            WorkoutCommandValidator.validateProgramParams(
+            validateParams(
                 WorkoutParameters(
                     programMode = ProgramMode.Pump,
                     reps = 253,
@@ -124,7 +208,7 @@ class WorkoutCommandValidatorTest {
         // 0xFF (255) is the unlimited/Just Lift/AMRAP sentinel; a finite total of
         // 255 must be rejected so it cannot serialize to an unlimited workout.
         assertTrue(
-            WorkoutCommandValidator.validateProgramParams(
+            validateParams(
                 WorkoutParameters(
                     programMode = ProgramMode.Pump,
                     reps = 251,
@@ -135,7 +219,7 @@ class WorkoutCommandValidatorTest {
             "reps+warmup == 254 should be accepted",
         )
         assertFailureContains(
-            WorkoutCommandValidator.validateProgramParams(
+            validateParams(
                 WorkoutParameters(
                     programMode = ProgramMode.Pump,
                     reps = 252,

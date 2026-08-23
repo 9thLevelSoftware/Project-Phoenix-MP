@@ -177,7 +177,14 @@ class DropSetEligibilityPolicyTest {
         configuration: DropSetConfiguration = DropSetConfiguration(true, 1f),
         expectedLiveIdentity: RoutineExecutionIdentity? = identity(),
         commandTemplate: WorkoutParameters = commandTemplate(),
-    ) = DropSetEligibilityRequest(offerId, completion, configuration, expectedLiveIdentity, commandTemplate)
+    ) = DropSetEligibilityRequest(
+        offerId,
+        completion,
+        configuration,
+        expectedLiveIdentity,
+        commandTemplate,
+        com.devil.phoenixproject.domain.model.PhoenixModel.TrainerPlus,
+    )
 
     private fun completion(
         reason: SetEndReason = SetEndReason.STALL_FAILURE,

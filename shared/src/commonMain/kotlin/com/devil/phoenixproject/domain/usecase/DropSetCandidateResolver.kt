@@ -4,6 +4,7 @@ import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.DropSetCandidate
 import com.devil.phoenixproject.domain.model.DropSetCandidateInvalidReason
 import com.devil.phoenixproject.domain.model.DropSetCandidateResolution
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.WorkoutCommandValidator
@@ -14,6 +15,7 @@ data class DropSetCandidateRequest(
     val programmedBaseWeightPerCableKg: Float,
     val minimumWeightPerCableKg: Float,
     val commandTemplate: WorkoutParameters,
+    val hardwareModel: PhoenixModel,
 )
 
 class DropSetCandidateResolver {
@@ -38,7 +40,7 @@ class DropSetCandidateResolver {
             return DropSetCandidateResolution.Invalid(DropSetCandidateInvalidReason.BELOW_MINIMUM)
         }
         val candidateCommand = request.commandTemplate.copy(weightPerCableKg = candidateWeight)
-        if (WorkoutCommandValidator.validateProgramParams(candidateCommand).isFailure) {
+        if (WorkoutCommandValidator.validateProgramParams(candidateCommand, request.hardwareModel).isFailure) {
             return DropSetCandidateResolution.Invalid(DropSetCandidateInvalidReason.INVALID_COMMAND)
         }
         if (candidateWeight >= start) {

@@ -73,6 +73,7 @@ import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -92,6 +93,7 @@ import com.devil.phoenixproject.presentation.viewmodel.ExerciseType
 import com.devil.phoenixproject.presentation.viewmodel.SetConfiguration
 import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.ChassisLimits
 import com.devil.phoenixproject.util.parseLocalizedDecimal
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -119,6 +121,7 @@ import projectphoenix.shared.generated.resources.percent_label
 fun ExerciseEditBottomSheet(
     exercise: RoutineExercise,
     weightUnit: WeightUnit,
+    hardwareModel: PhoenixModel,
     enableVideoPlayback: Boolean,
     kgToDisplay: (Float, WeightUnit) -> Float,
     displayToKg: (Float, WeightUnit) -> Float,
@@ -233,7 +236,7 @@ fun ExerciseEditBottomSheet(
         sharedBaselineKg != null
 
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-    val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
+    val maxWeight = ChassisLimits.maxDisplay(hardwareModel, weightUnit)
     // Issue #266/#410: Use configured increment if provided, otherwise default for unit
     val weightStep = if (weightStepOverride > 0f) {
         kgToDisplay(weightStepOverride, weightUnit)

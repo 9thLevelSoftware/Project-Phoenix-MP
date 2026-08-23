@@ -1217,6 +1217,7 @@ private fun RestTimerDropSetUnresolvedPreview() {
             nextExerciseReps = 8,
             onSkipRest = {},
             onEndWorkout = {},
+            hardwareModel = com.devil.phoenixproject.domain.model.PhoenixModel.Unknown,
             dropSetOffer = DropSetOfferUiState.Unresolved(
                 context = DropSetOfferContext(
                     identity = com.devil.phoenixproject.presentation.manager.RestActionIdentity(

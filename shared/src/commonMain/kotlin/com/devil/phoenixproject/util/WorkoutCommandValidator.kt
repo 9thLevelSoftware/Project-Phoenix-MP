@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.util
 
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 
@@ -18,9 +19,11 @@ object WorkoutCommandValidator {
         programMode: ProgramMode,
         weightPerCableKg: Float,
         targetReps: Int,
+        model: PhoenixModel,
     ): Result<Unit> {
         validateFiniteWeight(weightPerCableKg).onFailure { return Result.failure(it) }
-        validateWeightRange(weightPerCableKg, allowZero = false).onFailure { return Result.failure(it) }
+        validateWeightRange(weightPerCableKg, allowZero = false, model = model)
+            .onFailure { return Result.failure(it) }
         validateRepByte("targetReps", targetReps, allowZero = false).onFailure { return Result.failure(it) }
         if (programMode == ProgramMode.Echo) {
             return failure("Legacy workout command must not be used for Echo mode")
@@ -28,7 +31,7 @@ object WorkoutCommandValidator {
         return Result.success(Unit)
     }
 
-    fun validateProgramParams(params: WorkoutParameters): Result<Unit> {
+    fun validateProgramParams(params: WorkoutParameters, model: PhoenixModel): Result<Unit> {
         if (params.isEchoMode) {
             return failure("Program parameter packet must not be used for Echo mode")
         }
@@ -44,6 +47,7 @@ object WorkoutCommandValidator {
         validateWeightRange(
             params.weightPerCableKg,
             allowZero = params.isAMRAP && !params.isJustLift,
+            model = model,
         ).onFailure { return Result.failure(it) }
 
         validateRepByte("warmupReps", params.warmupReps, allowZero = true)
@@ -99,13 +103,18 @@ object WorkoutCommandValidator {
 
     private fun isFinite(value: Float): Boolean = !value.isNaN() && !value.isInfinite()
 
-    private fun validateWeightRange(weightPerCableKg: Float, allowZero: Boolean): Result<Unit> {
+    private fun validateWeightRange(
+        weightPerCableKg: Float,
+        allowZero: Boolean,
+        model: PhoenixModel,
+    ): Result<Unit> {
+        val maxKg = ChassisLimits.maxKgPerCable(model)
         if (!allowZero && weightPerCableKg <= Constants.MIN_WEIGHT_KG) {
             return failure("weightPerCableKg must be greater than ${Constants.MIN_WEIGHT_KG}kg, got $weightPerCableKg")
         }
-        if (weightPerCableKg < Constants.MIN_WEIGHT_KG || weightPerCableKg > Constants.MAX_WEIGHT_PER_CABLE_KG) {
+        if (weightPerCableKg < Constants.MIN_WEIGHT_KG || weightPerCableKg > maxKg) {
             return failure(
-                "weightPerCableKg must be ${Constants.MIN_WEIGHT_KG}..${Constants.MAX_WEIGHT_PER_CABLE_KG}kg, got $weightPerCableKg",
+                "weightPerCableKg must be ${Constants.MIN_WEIGHT_KG}..${maxKg}kg, got $weightPerCableKg",
             )
         }
         return Result.success(Unit)

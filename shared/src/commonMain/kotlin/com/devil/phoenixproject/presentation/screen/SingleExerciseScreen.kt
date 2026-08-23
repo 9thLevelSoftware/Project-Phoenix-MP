@@ -48,6 +48,7 @@ import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManage
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.util.ChassisLimits
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
@@ -76,6 +77,8 @@ fun SingleExerciseScreen(
     val activeProfileId by viewModel.activeProfileId.collectAsState()
     val completedExerciseIdsState by viewModel.completedExerciseIdsState.collectAsState()
     val machineTeardownState by viewModel.machineTeardownState.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val hardwareModel = ChassisLimits.modelOf(connectionState)
     val pickerCompletedExerciseIds = completedExerciseIdsState.ids.takeIf {
         completedExerciseIdsState.profileId == activeProfileId
     } ?: emptySet()
@@ -350,6 +353,7 @@ fun SingleExerciseScreen(
                     ExerciseEditBottomSheet(
                         exercise = routineExercise,
                         weightUnit = weightUnit,
+                        hardwareModel = hardwareModel,
                         enableVideoPlayback = enableVideoPlayback,
                         kgToDisplay = viewModel::kgToDisplay,
                         displayToKg = viewModel::displayToKg,

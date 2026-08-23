@@ -64,6 +64,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.percentLabel
@@ -74,7 +75,7 @@ import com.devil.phoenixproject.presentation.components.WeightChangePerRepContro
 import com.devil.phoenixproject.presentation.manager.RestActionIdentity
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
-import com.devil.phoenixproject.util.Constants
+import com.devil.phoenixproject.util.ChassisLimits
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.cd_add_30_seconds
@@ -168,6 +169,7 @@ fun RestTimerCard(
     isNextExerciseBodyweight: Boolean = false,
     // Issue #266/#410: Configurable weight step from user preferences
     weightStepKg: Float = 0.25f,
+    hardwareModel: PhoenixModel,
     dropSetOffer: DropSetOfferUiState? = null,
     onAcceptDropSet: (RestActionIdentity, DropPercentage) -> Unit = { _, _ -> },
     onDeclineDropSet: (RestActionIdentity) -> Unit = {},
@@ -533,7 +535,7 @@ fun RestTimerCard(
                         } else {
                             // Non-Echo modes: Show weight adjuster
                             if (nextExerciseWeight != null && formatWeightWithUnit != null) {
-                                val maxWeightKg = Constants.MAX_WEIGHT_PER_CABLE_KG
+                                val maxWeightKg = ChassisLimits.maxKgPerCable(hardwareModel)
                                 // Issue #266/#410: weightStepKg now comes from parameter
 
                                 // Delta from baseline (nextExerciseWeight is the routine-configured weight in kg)

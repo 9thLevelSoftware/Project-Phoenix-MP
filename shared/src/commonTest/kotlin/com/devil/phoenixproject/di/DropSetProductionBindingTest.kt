@@ -44,6 +44,7 @@ class DropSetProductionBindingTest {
                 configuration = configuration,
                 expectedLiveIdentity = null,
                 commandTemplate = WorkoutParameters(ProgramMode.OldSchool, reps = 8, weightPerCableKg = 20f),
+                hardwareModel = com.devil.phoenixproject.domain.model.PhoenixModel.TrainerPlus,
             ),
         )
         assertEquals(

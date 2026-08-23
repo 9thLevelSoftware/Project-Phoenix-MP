@@ -11,14 +11,12 @@ object Constants {
     // Users must re-accept when this version increases
     const val EULA_VERSION = 1
 
-    // Weight limits (in kg) - per cable, not total
-    // V-Form Trainer: 100kg max per cable (200kg total)
-    // Trainer+: 110kg max per cable (220kg total) - use 100kg as safe default
+    // Weight limits (in kg) - per cable, not total.
+    // Model-aware send/slider caps live in [ChassisLimits]; these aliases are
+    // the V-Form fail-closed floor and the Trainer+ absolute ceiling.
     const val MIN_WEIGHT_KG = 0f
-    const val MAX_WEIGHT_KG = 100f
-
-    // Trainer+ hardware ceiling — used by UI sliders to enforce absolute maximum
-    const val MAX_WEIGHT_PER_CABLE_KG = 110f
+    const val MAX_WEIGHT_KG = ChassisLimits.V_FORM_KG_PER_CABLE
+    const val MAX_WEIGHT_PER_CABLE_KG = ChassisLimits.TRAINER_PLUS_KG_PER_CABLE
 
     // Configurable weight increment options per unit system (Issue #266)
     val WEIGHT_INCREMENT_OPTIONS_KG = listOf(0.5f, 1.0f, 2.5f, 5.0f)

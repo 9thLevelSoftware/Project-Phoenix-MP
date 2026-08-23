@@ -96,7 +96,7 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
-import com.devil.phoenixproject.util.Constants
+import com.devil.phoenixproject.util.ChassisLimits
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
@@ -187,7 +187,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     val resolvedBodyWeightKg = sessionBodyweightState.sessionBodyWeightKg ?: userPreferences.bodyWeightKg
     val bodyweightPromptPending = sessionBodyweightState.routineHasBodyweight &&
         !sessionBodyweightState.promptHandled
-    val maxWeightKg = Constants.MAX_WEIGHT_PER_CABLE_KG
+    val maxWeightKg = ChassisLimits.maxKgPerCable(ChassisLimits.modelOf(connectionState))
     val weightStepKg = userPreferences.effectiveWeightIncrementKg
 
     // Navigation state - uses superset-aware helpers from ViewModel

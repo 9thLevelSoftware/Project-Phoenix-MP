@@ -111,6 +111,7 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.util.ChassisLimits
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
@@ -148,6 +149,8 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     val autoStopState by viewModel.autoStopState.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
+    val connectionState by viewModel.connectionState.collectAsState()
+    val hardwareModel = ChassisLimits.modelOf(connectionState)
 
     val connectionError by viewModel.connectionError.collectAsState()
 
@@ -224,9 +227,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
         }
     }
 
-    // Enable handle detection for auto-start when connected
-    val connectionState by viewModel.connectionState.collectAsState()
-
+    // Enable handle detection for auto-start when connected.
     // Single consolidated effect for handle detection (Issue: iOS autostart race condition fix)
     // Previously had two effects (Unit + connectionState) that could both fire and reset
     // the state machine mid-grab on iOS due to different recomposition timing.
@@ -499,7 +500,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-                        val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f
+                        val maxWeight = ChassisLimits.maxDisplay(hardwareModel, weightUnit)
                         val weightStep = viewModel.kgToDisplay(userPreferences.effectiveWeightIncrementKg, weightUnit)
                         val displayWeight = viewModel.kgToDisplay(weightPerCable, weightUnit)
 
