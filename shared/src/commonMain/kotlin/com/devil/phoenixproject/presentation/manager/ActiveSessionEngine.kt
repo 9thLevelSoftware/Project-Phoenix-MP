@@ -11261,7 +11261,10 @@ class ActiveSessionEngine(
 
             Logger.d("handleSetCompletion: summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, wasBodyweight=$wasBodyweight, effectiveSkipSummary=$effectiveSkipSummary, isJustLift=$isJustLift, isAMRAP=${params.isAMRAP}")
 
-            // Issue #714 (Codex P1 follow-up): JustLiftScreen's return-to-setup reload
+            // Issue #714 (Codex P1 follow-up): write synchronously so
+            // JustLiftScreen's reload sees fresh defaults before any navigation
+            // fires; try/catch so a transient prefs failure doesn't strand the
+            // user mid-teardown.
             // reads persisted defaults on `LaunchedEffect(readyProfileId)` — once per
             // profile-id change — and the async `persistSnapshot` coroutine does not
             // finish writing the captured Just Lift defaults until AFTER this
