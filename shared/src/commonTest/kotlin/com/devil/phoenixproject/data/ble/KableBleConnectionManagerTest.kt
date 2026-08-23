@@ -1,12 +1,14 @@
 package com.devil.phoenixproject.data.ble
 
 import com.devil.phoenixproject.data.repository.ConnectionLogRepository
+import com.devil.phoenixproject.data.repository.LogEventType
 import com.devil.phoenixproject.data.repository.ReconnectionRequest
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CoroutineScope
@@ -262,6 +264,94 @@ class KableBleConnectionManagerTest {
         assertEquals(4, packet.faultWords[0])
         assertEquals(25, packet.temperatures[0])
         assertTrue(packet.receivedAtMillis > 0L)
+    }
+
+    // =========================================================================
+    // connect() fail-closed identity (D-12 / FP-2)
+    // =========================================================================
+
+    @Test
+    fun `connect rejects non-trainer names without sending CONFIG`() = runTest {
+        val logRepo = ConnectionLogRepository.instance
+        logRepo.clearAll()
+        val (manager, tracker) = createTestManager()
+        val rejected = listOf(
+            ScannedDevice("Vitruvian", "AA:BB:CC:DD:EE:01", -40),
+            ScannedDevice("Trainer (AA:BB:CC:DD:EE:02)", "AA:BB:CC:DD:EE:02", -40),
+            ScannedDevice("", "AA:BB:CC:DD:EE:03", -40),
+            ScannedDevice("Phoenix", "AA:BB:CC:DD:EE:04", -40),
+        )
+
+        for (device in rejected) {
+            val result = manager.connect(device)
+            assertTrue(result.isFailure, "connect(${device.name}) should fail closed")
+            assertIs<IllegalArgumentException>(result.exceptionOrNull())
+            assertTrue(
+                result.exceptionOrNull()?.message?.contains("Not a trainer device") == true,
+                result.exceptionOrNull()?.message,
+            )
+        }
+
+        assertNull(manager.currentPeripheral)
+        assertTrue(tracker.connectionStates.none { it is ConnectionState.Connected })
+        assertTrue(tracker.connectionStates.none { it is ConnectionState.Connecting })
+        assertEquals(ConnectionState.Disconnected, tracker.connectionStates.last())
+
+        val config = ByteArray(96).also { it[0] = 0x04 }
+        val send = manager.sendWorkoutCommand(config)
+        assertTrue(send.isFailure, "CONFIG must not be sent after identity reject")
+        assertEquals("Not connected", send.exceptionOrNull()?.message)
+
+        val rejects = logRepo.getLogsByEventType(LogEventType.CONNECT_FAIL)
+        assertTrue(
+            rejects.any { it.message.contains("Vee_/VIT") },
+            "Reject-on-connect must be logged",
+        )
+    }
+
+    @Test
+    fun `connect allows Vee_ and VIT names past identity and does not RESET`() = runTest {
+        val (manager, tracker) = createTestManager()
+
+        val missingAdv = manager.connect(ScannedDevice("Vee_foo", "AA:BB:CC:DD:EE:10", -40))
+        assertTrue(missingAdv.isFailure)
+        assertEquals(
+            "Device not found in scanned list",
+            missingAdv.exceptionOrNull()?.message,
+        )
+
+        val vitMissing = manager.connect(ScannedDevice("VITBAR", "AA:BB:CC:DD:EE:11", -40))
+        assertTrue(vitMissing.isFailure)
+        assertEquals(
+            "Device not found in scanned list",
+            vitMissing.exceptionOrNull()?.message,
+        )
+
+        assertNull(manager.currentPeripheral)
+        assertTrue(tracker.connectionStates.any { it is ConnectionState.Connecting })
+        assertTrue(tracker.connectionStates.none { it is ConnectionState.Connected })
+        assertEquals(ConnectionState.Disconnected, tracker.connectionStates.last())
+        val reset = ByteArray(4).also { it[0] = 0x0A }
+        val send = manager.sendWorkoutCommand(reset)
+        assertTrue(send.isFailure)
+    }
+
+    @Test
+    fun `connect last-successful identifier is opt-in for placeholder names`() = runTest {
+        val (manager, _) = createTestManager()
+        val placeholder = ScannedDevice("Trainer (AA:BB:CC:DD:EE:FF)", "AA:BB:CC:DD:EE:FF", -50)
+
+        val rejected = manager.connect(placeholder)
+        assertIs<IllegalArgumentException>(rejected.exceptionOrNull())
+
+        manager.rememberLastSuccessfulIdentifierForTest("AA:BB:CC:DD:EE:FF")
+        assertEquals("AA:BB:CC:DD:EE:FF", manager.lastSuccessfulIdentifierForTest())
+        val optedIn = manager.connect(placeholder)
+        assertEquals(
+            "Device not found in scanned list",
+            optedIn.exceptionOrNull()?.message,
+        )
+        assertNull(manager.currentPeripheral)
     }
 
     // =========================================================================

@@ -172,6 +172,13 @@ class KableBleConnectionManager(
     private var connectedDeviceAddress: String = ""
 
     /**
+     * Identifier of the last successful trainer GATT session. Unnamed NUS/FEF3
+     * candidates may connect only when this matches (D-12 opt-in).
+     */
+    @Volatile
+    private var lastSuccessfulIdentifier: String? = null
+
+    /**
      * Flag to track explicit disconnect (to avoid auto-reconnect).
      * @Volatile: set by disconnect()/cancelConnection() on the caller's
      * dispatcher while the ready-up teardown guard reads it on [scope].
@@ -224,6 +231,12 @@ class KableBleConnectionManager(
         LifecycleJob.STATE_OBSERVER -> stateObserverJob?.isActive == true
     }
 
+    internal fun lastSuccessfulIdentifierForTest(): String? = lastSuccessfulIdentifier
+
+    internal fun rememberLastSuccessfulIdentifierForTest(identifier: String?) {
+        lastSuccessfulIdentifier = identifier
+    }
+
     internal fun startFakeLifecycleJobsForTest() {
         scanJob?.cancel()
         scanJob = scope.launch {
@@ -252,6 +265,34 @@ class KableBleConnectionManager(
     private fun reportConnectionState(state: ConnectionState) {
         lastReportedState = state
         onConnectionStateChanged(state)
+    }
+
+    private fun shouldListAdvertisement(advertisement: Advertisement): Boolean {
+        val name = advertisement.name
+        val uuidStrings = advertisement.uuids.map { it.toString() }
+        val hasFef3 = advertisementHasFef3ServiceData(advertisement)
+        val list = BleAdvertisementFilter.shouldListDuringScan(name, uuidStrings, hasFef3)
+        when {
+            BleAdvertisementFilter.isConnectableName(name) ->
+                log.i { "Found trainer by name: $name" }
+
+            list ->
+                log.i { "Listing unnamed NUS/FEF3 candidate (not auto-bind): ${advertisement.identifier}" }
+
+            name != null ->
+                log.d { "Ignoring device: $name (not Vee_/VIT)" }
+        }
+        return list
+    }
+
+    private fun advertisementHasFef3ServiceData(advertisement: Advertisement): Boolean {
+        val fef3Uuid = try {
+            Uuid.parse(BleAdvertisementFilter.FEF3_UUID_STRING)
+        } catch (_: Exception) {
+            return false
+        }
+        val data = advertisement.serviceData(fef3Uuid)
+        return data != null && data.isNotEmpty()
     }
 
     private fun clearConnectionState(clearScannedDevices: Boolean = false) {
@@ -301,81 +342,23 @@ class KableBleConnectionManager(
                                     "RAW ADV: name=${advertisement.name}, id=${advertisement.identifier}, uuids=${advertisement.uuids}, rssi=${advertisement.rssi}"
                                 }
                             }
-                            .filter { advertisement ->
-                                // Filter by name if available
-                                val name = advertisement.name
-                                if (name != null) {
-                                    val isPhoenix = name.startsWith("Vee_", ignoreCase = true) ||
-                                        name.startsWith("VIT", ignoreCase = true) ||
-                                        name.startsWith("Phoenix", ignoreCase = true)
-                                    if (isPhoenix) {
-                                        log.i { "Found Phoenix by name: $name" }
-                                    } else {
-                                        log.d { "Ignoring device: $name (not Phoenix)" }
-                                    }
-                                    return@filter isPhoenix
-                                }
-
-                                // Check for Phoenix service UUIDs (mServiceUuids)
-                                val serviceUuids = advertisement.uuids
-                                val hasPhoenixServiceUuid = serviceUuids.any { uuid ->
-                                    val uuidStr = uuid.toString().lowercase()
-                                    uuidStr.startsWith("0000fef3") ||
-                                        uuidStr == BleConstants.NUS_SERVICE_UUID_STRING
-                                }
-
-                                if (hasPhoenixServiceUuid) {
-                                    log.i { "Found Phoenix by service UUID: ${advertisement.identifier}" }
-                                    return@filter true
-                                }
-
-                                // CRITICAL: Check for FEF3 service data
-                                // The Phoenix device advertises FEF3 in serviceData, not serviceUuids!
-                                // In Kable, serviceData is accessed differently - try to get FEF3 directly
-                                val fef3Uuid = try {
-                                    Uuid.parse("0000fef3-0000-1000-8000-00805f9b34fb")
-                                } catch (_: Exception) {
-                                    null
-                                }
-
-                                val hasPhoenixServiceData = if (fef3Uuid != null) {
-                                    // Try to get data for FEF3 service UUID
-                                    val fef3Data = advertisement.serviceData(fef3Uuid)
-                                    if (fef3Data != null && fef3Data.isNotEmpty()) {
-                                        log.i {
-                                            "Found Phoenix by FEF3 serviceData: ${advertisement.identifier}, data size: ${fef3Data.size}"
-                                        }
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                } else {
-                                    false
-                                }
-
-                                hasPhoenixServiceData
-                            }
+                            .filter { advertisement -> shouldListAdvertisement(advertisement) }
                             .onEach { advertisement ->
                                 @Suppress("REDUNDANT_CALL_OF_CONVERSION_METHOD") // Needed for iOS where identifier is Uuid
                                 val identifier = advertisement.identifier.toString()
                                 val advertisedName = advertisement.name
-                                val hasRealName = advertisedName != null &&
-                                    (
-                                        advertisedName.startsWith("Vee_", ignoreCase = true) ||
-                                            advertisedName.startsWith("VIT", ignoreCase = true)
-                                        )
+                                val hasRealName = BleAdvertisementFilter.isConnectableName(advertisedName)
 
                                 // Use name if available, otherwise use identifier as placeholder
                                 val name = advertisedName ?: "Trainer ($identifier)"
 
-                                // Skip devices without a real Phoenix name if we already have one
+                                // Skip unnamed NUS/FEF3 candidates if we already have a named trainer
                                 if (!hasRealName) {
                                     val alreadyHaveRealDevice = currentScannedDevices.any { existing ->
-                                        existing.name.startsWith("Vee_", ignoreCase = true) ||
-                                            existing.name.startsWith("VIT", ignoreCase = true)
+                                        BleAdvertisementFilter.isConnectableName(existing.name)
                                     }
                                     if (alreadyHaveRealDevice) {
-                                        log.d { "Skipping nameless device $identifier - already have named Phoenix device" }
+                                        log.d { "Skipping nameless device $identifier - already have named trainer" }
                                         return@onEach
                                     }
                                 }
@@ -407,8 +390,7 @@ class KableBleConnectionManager(
                                 // (same physical device can advertise with different identifiers)
                                 if (hasRealName) {
                                     devices = devices.filter { existing ->
-                                        existing.name.startsWith("Vee_", ignoreCase = true) ||
-                                            existing.name.startsWith("VIT", ignoreCase = true) ||
+                                        BleAdvertisementFilter.isConnectableName(existing.name) ||
                                             existing.address == identifier // Keep if same address (will update below)
                                     }.toMutableList()
                                 }
@@ -524,17 +506,11 @@ class KableBleConnectionManager(
         discoveredAdvertisements.clear()
 
         return try {
-            // Find first Phoenix device with a real name
+            // First named trainer wins. Unnamed NUS/FEF3 are not auto-bound.
             val advertisement = withTimeoutOrNull(timeoutMs) {
                 Scanner {}
                     .advertisements
-                    .filter { adv ->
-                        val name = adv.name
-                        name != null && (
-                            name.startsWith("Vee_", ignoreCase = true) ||
-                                name.startsWith("VIT", ignoreCase = true)
-                            )
-                    }
+                    .filter { adv -> BleAdvertisementFilter.isConnectableName(adv.name) }
                     .first()
             }
 
@@ -570,6 +546,29 @@ class KableBleConnectionManager(
     // -------------------------------------------------------------------------
 
     suspend fun connect(device: ScannedDevice): Result<Unit> {
+        val advertisementForIdentity = discoveredAdvertisements[device.address]
+        val advertisedName = advertisementForIdentity?.name
+        val allowed = BleAdvertisementFilter.mayConnect(
+            name = device.name,
+            identifier = device.address,
+            lastSuccessfulIdentifier = lastSuccessfulIdentifier,
+        ) || BleAdvertisementFilter.mayConnect(
+            name = advertisedName,
+            identifier = device.address,
+            lastSuccessfulIdentifier = lastSuccessfulIdentifier,
+        )
+        if (!allowed) {
+            log.w { "Rejecting connect: '${device.name}' is not Vee_/VIT" }
+            logRepo.warning(
+                LogEventType.CONNECT_FAIL,
+                "Rejecting connect: name fails Vee_/VIT predicate",
+                device.name,
+                device.address,
+            )
+            reportConnectionState(ConnectionState.Disconnected)
+            return Result.failure(IllegalArgumentException("Not a trainer device: ${device.name}"))
+        }
+
         log.i { "Connecting to device: ${device.name}" }
         logRepo.info(
             LogEventType.CONNECT_START,
@@ -591,7 +590,7 @@ class KableBleConnectionManager(
 
         reportConnectionState(ConnectionState.Connecting)
 
-        val advertisement = discoveredAdvertisements[device.address]
+        val advertisement = advertisementForIdentity
         if (advertisement == null) {
             log.e { "Advertisement not found for device: ${device.address}" }
             logRepo.error(
@@ -669,6 +668,7 @@ class KableBleConnectionManager(
                                             )
                                             return@launch
                                         }
+                                        lastSuccessfulIdentifier = device.address
                                         reportConnectionState(
                                             ConnectionState.Connected(
                                                 deviceName = device.name,
@@ -825,7 +825,11 @@ class KableBleConnectionManager(
                         // Finding [49]: disconnect before retry — Kable Peripheral may still be
                         // in State.Connecting after a timeout; a fresh connect() on a half-open
                         // Peripheral can wedge the GATT stack. Disconnect first to reset state.
-                        try { peripheral?.disconnect() } catch (e: Exception) { e.rethrowIfCancellation() }
+                        try {
+                            peripheral?.disconnect()
+                        } catch (e: Exception) {
+                            e.rethrowIfCancellation()
+                        }
                         delay(BleConstants.Timing.CONNECTION_RETRY_DELAY_MS)
                     }
                 } catch (e: BleDeviceInitializationException) {
@@ -841,7 +845,11 @@ class KableBleConnectionManager(
                     if (attempt < BleConstants.Timing.CONNECTION_RETRY_COUNT) {
                         // Finding [49]: disconnect before retry to ensure Kable Peripheral
                         // is not stuck in State.Connecting before the next connect() call.
-                        try { peripheral?.disconnect() } catch (e2: Exception) { e2.rethrowIfCancellation() }
+                        try {
+                            peripheral?.disconnect()
+                        } catch (e2: Exception) {
+                            e2.rethrowIfCancellation()
+                        }
                         delay(BleConstants.Timing.CONNECTION_RETRY_DELAY_MS)
                     }
                 }
@@ -1245,8 +1253,7 @@ class KableBleConnectionManager(
      * Exponential backoff (ms) for reps resubscribe attempts: 100, 200, 400, 800,
      * capped at [BleConstants.Timing.REPS_SUBSCRIBE_BACKOFF_MAX_MS].
      */
-    internal fun repsBackoffMs(attempt: Int): Long =
-        // coerceIn(0, 30) guards the shift amount: a stray large attempt can never
+    internal fun repsBackoffMs(attempt: Int): Long = // coerceIn(0, 30) guards the shift amount: a stray large attempt can never
         // wrap the Long shift (Kotlin shifts mod 64); 30 bits is far beyond the cap.
         (BleConstants.Timing.REPS_SUBSCRIBE_BACKOFF_BASE_MS shl (attempt - 1).coerceIn(0, 30))
             .coerceAtMost(BleConstants.Timing.REPS_SUBSCRIBE_BACKOFF_MAX_MS)
