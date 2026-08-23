@@ -577,14 +577,26 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
     ) {
         withContext(Dispatchers.IO) {
             db.transaction {
-                val profileId = session.profileId
-                if (profileId.isBlank() || queries.getProfileById(profileId).executeAsOneOrNull() == null) {
-                    // No FK from WorkoutSession.profile_id to UserProfile; refuse orphans.
+                if (completedSet != null && completedSet.sessionId != session.id) {
                     throw IllegalStateException(
-                        "Cannot persist workout exit for missing profile '$profileId'",
+                        "Cannot persist workout exit: completed set '${completedSet.id}' " +
+                            "belongs to session '${completedSet.sessionId}', not '${session.id}'",
                     )
                 }
-                if (queries.selectSessionById(session.id, ::mapToSession).executeAsOneOrNull() == null) {
+                val profileId = session.profileId
+                // No FK from WorkoutSession.profile_id to UserProfile; refuse orphans
+                // and refuse to hang metrics/sets off a row owned by someone else.
+                requireLiveProfile(profileId)
+                val existing = queries.selectSessionById(session.id, ::mapToSession).executeAsOneOrNull()
+                if (existing != null) {
+                    if (existing.profileId != profileId) {
+                        throw IllegalStateException(
+                            "Cannot persist workout exit for session '${session.id}': " +
+                                "stored profile '${existing.profileId}' does not match '$profileId'",
+                        )
+                    }
+                    requireLiveProfile(existing.profileId)
+                } else {
                     insertSessionRow(session)
                 }
                 if (metrics.isNotEmpty()) {
@@ -600,6 +612,14 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                 queries.deleteRepBiomechanicsBySession(session.id)
                 insertRepBiomechanicsRows(session.id, biomechanics)
             }
+        }
+    }
+
+    private fun requireLiveProfile(profileId: String) {
+        if (profileId.isBlank() || queries.getProfileById(profileId).executeAsOneOrNull() == null) {
+            throw IllegalStateException(
+                "Cannot persist workout exit for missing profile '$profileId'",
+            )
         }
     }
 

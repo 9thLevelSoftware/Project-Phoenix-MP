@@ -929,7 +929,7 @@ class WorkoutExitPersistenceTest {
     }
 
     @Test
-    fun `retry after session partial write leaves one stable session and completed set`() = runTest {
+    fun `retry after persistWorkoutExit rollback leaves one stable session and completed set`() = runTest {
         val harness = DWSMTestHarness(this)
         var failOnce = true
         try {
@@ -938,7 +938,7 @@ class WorkoutExitPersistenceTest {
             harness.fakeWorkoutRepo.afterSaveSession = {
                 if (failOnce) {
                     failOnce = false
-                    error("forced failure after session insert")
+                    error("forced failure before persistWorkoutExit commit")
                 }
             }
 
@@ -952,12 +952,13 @@ class WorkoutExitPersistenceTest {
             advanceUntilIdle()
 
             assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
+            assertTrue(harness.fakeWorkoutRepo.allSessions().none { it.id == lease.sessionId })
+            assertTrue(harness.fakeCompletedSetRepo.saved.none { it.sessionId == lease.sessionId })
 
             assertTrue(harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId))
             advanceUntilIdle()
 
             assertEquals(1, harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId })
-            assertEquals(1, harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId })
             assertEquals(1, harness.fakeCompletedSetRepo.saved.count { it.sessionId == lease.sessionId })
         } finally {
             harness.cleanup()

@@ -213,6 +213,12 @@ class FakeWorkoutRepository : WorkoutRepository {
     ) {
         persistWorkoutExitAttempts += session
         persistWorkoutExitFailure?.let { throw it }
+        if (completedSet != null && completedSet.sessionId != session.id) {
+            throw IllegalStateException(
+                "Cannot persist workout exit: completed set '${completedSet.id}' " +
+                    "belongs to session '${completedSet.sessionId}', not '${session.id}'",
+            )
+        }
         val knownProfiles = existingProfileIds
         if (knownProfiles != null && session.profileId !in knownProfiles) {
             throw IllegalStateException("Cannot persist workout exit for missing profile '${session.profileId}'")
@@ -220,6 +226,17 @@ class FakeWorkoutRepository : WorkoutRepository {
 
         val previousSession = sessions[session.id]
         val sessionExisted = previousSession != null
+        if (previousSession != null && previousSession.profileId != session.profileId) {
+            throw IllegalStateException(
+                "Cannot persist workout exit for session '${session.id}': " +
+                    "stored profile '${previousSession.profileId}' does not match '${session.profileId}'",
+            )
+        }
+        if (knownProfiles != null && previousSession != null && previousSession.profileId !in knownProfiles) {
+            throw IllegalStateException(
+                "Cannot persist workout exit for missing profile '${previousSession.profileId}'",
+            )
+        }
         if (!sessionExisted) {
             saveSessionAttempts += session
         }
@@ -254,6 +271,7 @@ class FakeWorkoutRepository : WorkoutRepository {
             if (biomechanics.isNotEmpty()) {
                 biomechanicsSink?.saveRepBiomechanics(session.id, biomechanics)
             }
+            afterSaveSession(session)
         } catch (error: Throwable) {
             if (!sessionExisted) {
                 sessions.remove(session.id)
@@ -279,7 +297,6 @@ class FakeWorkoutRepository : WorkoutRepository {
             updateSessionsFlow()
             throw error
         }
-        afterSaveSession(session)
     }
 
     override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {

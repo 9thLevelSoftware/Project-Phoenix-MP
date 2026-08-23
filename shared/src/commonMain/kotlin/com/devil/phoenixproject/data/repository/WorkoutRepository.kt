@@ -39,9 +39,10 @@ interface WorkoutRepository {
      * composing [saveSession]/[saveMetrics] with other repositories' suspend `save*`.
      *
      * Implementations must open one SQLDelight `db.transaction` and write through
-     * the generated `phoenixDatabaseQueries` object directly. Fail closed if
-     * [WorkoutSession.profileId] has no UserProfile row — do not insert under a
-     * dead profile_id.
+     * the generated `phoenixDatabaseQueries` object directly. Fail closed if the
+     * incoming or stored [WorkoutSession.profileId] has no UserProfile row, if an
+     * existing session row's profile_id does not match, or if [completedSet] is
+     * for a different session id — do not insert under a dead or foreign profile_id.
      */
     suspend fun persistWorkoutExit(
         session: WorkoutSession,
