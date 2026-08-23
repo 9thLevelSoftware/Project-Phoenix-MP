@@ -1448,13 +1448,20 @@ class WorkoutExitPersistenceTest {
             )
             advanceUntilIdle()
 
-            // 2. Connect, force skipSummary ON by setting summaryCountdownSeconds < 0,
-            //    pick Old School, start a Just Lift set. With skipSummary=true the
-            //    completion job flips WorkoutState to Idle synchronously without any
-            //    SetSummary / delay window, so the test exercises the exact race the
-            //    fix targets: the Just Lift defaults write must land BEFORE the Idle
-    //    transition.
-            harness.fakePrefsManager.setSummaryCountdownSeconds(-1)
+            // 2. Connect, force skipSummary ON by setting the profile-scoped
+            //    summaryCountdownSeconds to -1 (SettingsManager.overlayProfile reads
+            //    the value from the active profile's workout preferences, not the
+            //    global UserPreferences, so fakePrefsManager.setSummaryCountdownSeconds
+            //    does NOT reach ActiveSessionEngine.skipSummary). pick Old School,
+            //    start a Just Lift set. With skipSummary=true the completion job flips
+            //    WorkoutState to Idle synchronously without any SetSummary / delay
+            //    window, so the test exercises the exact race the fix targets: the
+            //    Just Lift defaults write must land BEFORE the Idle transition.
+            harness.setActiveCountdownSeconds(-1)
+            // Allow the SettingsManager.combine flow to absorb the new preference
+            // value before the workout starts; otherwise the completion job's
+            // summaryCountdownSeconds read sees the previous default.
+            advanceUntilIdle()
             harness.fakeBleRepo.simulateConnect("Vee_Test")
             harness.dwsm.updateWorkoutParameters(
                 WorkoutParameters(
