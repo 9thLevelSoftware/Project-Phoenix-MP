@@ -1457,7 +1457,7 @@ class WorkoutExitPersistenceTest {
             //    WorkoutState to Idle synchronously without any SetSummary / delay
             //    window, so the test exercises the exact race the fix targets: the
             //    Just Lift defaults write must land BEFORE the Idle transition.
-            harness.setActiveCountdownSeconds(-1)
+            harness.setActiveSummaryCountdownSeconds(-1)
             // Allow the SettingsManager.combine flow to absorb the new preference
             // value before the workout starts; otherwise the completion job's
             // summaryCountdownSeconds read sees the previous default.
