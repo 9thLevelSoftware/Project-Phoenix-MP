@@ -101,7 +101,7 @@ class RestoredRuntimeTimerRaceTest {
             val staleReset = async(Dispatchers.Default) {
                 harness.dwsm.resetForNewWorkout()
             }
-            withContext(Dispatchers.IO) {
+            withContext(Dispatchers.Default) {
                 withTimeout(2_000L) { staleDetachEntered.await() }
             }
 
@@ -118,7 +118,7 @@ class RestoredRuntimeTimerRaceTest {
             assertTrue(newerJob.isActive)
 
             releaseStaleDetach.complete(Unit)
-            withContext(Dispatchers.IO) {
+            withContext(Dispatchers.Default) {
                 withTimeout(2_000L) { staleReset.await() }
             }
 

@@ -55,6 +55,7 @@ internal data class ExecutionSeed(
     val isJustLift: Boolean = false,
     val isAmrap: Boolean = false,
     val isTimedCable: Boolean = false,
+    val usesUnlimitedRepTarget: Boolean = false,
 )
 
 internal data class ExecutionLease(
@@ -67,6 +68,7 @@ internal data class ExecutionLease(
     val isJustLift: Boolean,
     val isAmrap: Boolean,
     val isTimedCable: Boolean,
+    val usesUnlimitedRepTarget: Boolean = false,
     val activationCutoverTimestampMs: Long? = null,
 )
 
@@ -405,6 +407,7 @@ internal class WorkoutExecutionGuard(
             isJustLift = seed.isJustLift,
             isAmrap = seed.isAmrap,
             isTimedCable = seed.isTimedCable,
+            usesUnlimitedRepTarget = seed.usesUnlimitedRepTarget,
         )
         currentLeaseRef.value?.let { outgoingLease ->
             if (sameIdentity(completionClaim?.lease, outgoingLease)) {
