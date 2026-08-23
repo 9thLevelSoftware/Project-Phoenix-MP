@@ -51,6 +51,7 @@ import com.devil.phoenixproject.domain.usecase.RegenerateFiveThreeOneRoutinesUse
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.getPlatform
+import com.devil.phoenixproject.util.ChassisLimits
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.CancellationException
@@ -344,6 +345,7 @@ class DefaultWorkoutSessionManager(
             override fun resolveOccurrenceSetWeight(exercise: RoutineExercise, setIndex: Int): Float = activeSessionEngine.resolveOccurrenceSetWeight(exercise, setIndex)
             override fun beginRoutineCompletedRuntimeCleanup() = activeSessionEngine.beginRoutineCompletedRuntimeCleanup()
             override fun beginRoutineAbandonmentRuntimeCleanup() = activeSessionEngine.beginRoutineAbandonmentRuntimeCleanup()
+            override fun chassisModel() = ChassisLimits.modelOf(bleRepository.connectionState.value)
         }
     }
 

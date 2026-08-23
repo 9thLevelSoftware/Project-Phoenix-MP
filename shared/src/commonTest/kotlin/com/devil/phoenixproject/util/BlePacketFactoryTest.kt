@@ -37,7 +37,7 @@ class BlePacketFactoryTest {
 
     private fun programParams(
         params: WorkoutParameters,
-        model: PhoenixModel = PhoenixModel.TrainerPlus,
+        model: PhoenixModel = PhoenixModel.Unknown,
         variant: BlePacketFactory.ForceConfigVariant = BlePacketFactory.defaultForceConfigVariant,
     ): ByteArray = BlePacketFactory.createProgramParams(params, model, variant)
 
@@ -1585,7 +1585,7 @@ class BlePacketFactoryTest {
         assertEquals(0.0f, readFloatLE(packet, 0x4C), "OldSchool ecc.up.ramp at 0x4C")
 
         // Protocol force config (0x50-0x5F)
-        val forceMax = ChassisLimits.forceMaxKg(weightPerCableKg, PhoenixModel.TrainerPlus)
+        val forceMax = 90.0f
 
         assertEquals(0.0f, readFloatLE(packet, 0x50), "forceMin at 0x50 must be 0")
         assertEquals(
@@ -1599,9 +1599,9 @@ class BlePacketFactoryTest {
             "targetWeight at 0x58 must be selected weight",
         )
         assertEquals(
-            progressionKg,
+            (100f - 80f) / 9f,
             readFloatLE(packet, 0x5C),
-            "progression at 0x5C must be progressionKg",
+            "80 kg × 10 reps × +4.536 must clamp to V-Form/Unknown headroom, not encode 4.536",
         )
 
         // Verify the weight is NOT near-zero (the actual bug symptom)
@@ -1690,6 +1690,78 @@ class BlePacketFactoryTest {
     }
 
     @Test
+    fun `forceMax at 95 kg V-Form is chassis max not weight plus 10`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 8,
+            weightPerCableKg = 95f,
+        )
+        val packet = programParams(params, model = PhoenixModel.VFormTrainer)
+        assertEquals(95f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
+        assertEquals(
+            100f,
+            readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_FORCE_MAX),
+            "95+10 would be 105; V-Form forceMax must cap at 100",
+        )
+    }
+
+    @Test
+    fun `forceMax at Trainer+ 110 start is 110 not 120`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 8,
+            weightPerCableKg = 110f,
+        )
+        val packet = programParams(params, model = PhoenixModel.TrainerPlus)
+        assertEquals(110f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
+        assertEquals(
+            110f,
+            readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_FORCE_MAX),
+            "110+10 would be 120; Trainer+ forceMax must cap at 110",
+        )
+    }
+
+    @Test
+    fun `finite-rep progression is clamped to V-Form chassis headroom`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 8,
+            weightPerCableKg = 100f,
+            progressionRegressionKg = 3f,
+        )
+        val packet = programParams(params, model = PhoenixModel.VFormTrainer)
+        assertEquals(
+            0f,
+            readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
+            "100 kg × 8 reps × +3 kg/rep must not encode +3 on V-Form",
+        )
+
+        val underCap = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 8,
+            weightPerCableKg = 90f,
+            progressionRegressionKg = 5f,
+        )
+        val underCapPacket = programParams(underCap, model = PhoenixModel.VFormTrainer)
+        val encoded = readFloatLE(underCapPacket, BleConstants.ActivationPacket.OFFSET_PROGRESSION)
+        assertTrue(encoded < 5f, "90 kg × +5 kg/rep on V-Form must not encode 5; got $encoded")
+        assertEquals(10f / 7f, encoded)
+    }
+
+    @Test
+    fun `Just Lift leaves requested progression unclamped by finite-rep headroom`() {
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 8,
+            weightPerCableKg = 40f,
+            progressionRegressionKg = 3f,
+            isJustLift = true,
+        )
+        val packet = programParams(params, model = PhoenixModel.VFormTrainer)
+        assertEquals(3f, readFloatLE(packet, BleConstants.ActivationPacket.OFFSET_PROGRESSION))
+    }
+
+    @Test
     fun `forceMax is capped at Trainer+ chassis max`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
@@ -1735,9 +1807,21 @@ class BlePacketFactoryTest {
         )
         assertEquals(32, packet.size)
         assertEquals(0x4E.toByte(), packet[0], "Echo opcode must stay 0x4E")
-        // 0x4E is timing/profile only; selected kg lives on CONFIG 0x04, not here.
-        for (offset in 0x50 until 0x60) {
-            assertTrue(offset >= packet.size, "Echo packet must not contain CONFIG force offsets")
+        assertEquals(0.1f, readFloatLE(packet, 0x0C), "concentricDelayS")
+        assertEquals(1.0f, readFloatLE(packet, 0x10), "HARD concentricDurationSeconds = 50/50")
+        assertEquals(50.0f, readFloatLE(packet, 0x14), "HARD concentricMaxVelocity")
+        assertEquals(0.0f, readFloatLE(packet, 0x18), "eccentricDurationSeconds")
+        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity")
+        val kgBitPatterns = listOf(100.5f, 110f, 105f).map { it.toRawBits() }
+        for (offset in 0 until 29) {
+            val bits = (packet[offset].toInt() and 0xFF) or
+                ((packet[offset + 1].toInt() and 0xFF) shl 8) or
+                ((packet[offset + 2].toInt() and 0xFF) shl 16) or
+                ((packet[offset + 3].toInt() and 0xFF) shl 24)
+            assertTrue(
+                bits !in kgBitPatterns,
+                "Echo 0x4E must not contain kg float bits at offset 0x${offset.toString(16)}",
+            )
         }
     }
 

@@ -9,6 +9,7 @@ import com.devil.phoenixproject.util.HardwareDetection
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -22,71 +23,114 @@ class ActiveSessionEngineChassisLimitHostTest {
 
     @Test
     fun `V-Form send site rejects 100_5 kg and does not write CONFIG`() = runTest {
+        assertRejectedConfig(
+            deviceName = "Vee_Test",
+            expectedModel = PhoenixModel.VFormTrainer,
+            weightPerCableKg = 100.5f,
+        )
+    }
+
+    @Test
+    fun `V-Form send site accepts 100 kg CONFIG with forceMax 100`() = runTest {
+        val config = assertAcceptedConfig(
+            deviceName = "Vee_Test",
+            expectedModel = PhoenixModel.VFormTrainer,
+            weightPerCableKg = 100f,
+        )
+        assertEquals(100f, readFloatLE(config, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
+        assertEquals(100f, readFloatLE(config, BleConstants.ActivationPacket.OFFSET_FORCE_MAX))
+    }
+
+    @Test
+    fun `Trainer+ send site accepts 100_5 kg CONFIG with forceMax 110`() = runTest {
+        val config = assertAcceptedConfig(
+            deviceName = "VIT_Test",
+            expectedModel = PhoenixModel.TrainerPlus,
+            weightPerCableKg = 100.5f,
+        )
+        assertEquals(100.5f, readFloatLE(config, BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT))
+        assertEquals(110f, readFloatLE(config, BleConstants.ActivationPacket.OFFSET_FORCE_MAX))
+    }
+
+    @Test
+    fun `unknown advertised name send site rejects 100_5 kg`() = runTest {
+        assertRejectedConfig(
+            deviceName = "Phoenix_Test",
+            expectedModel = PhoenixModel.Unknown,
+            weightPerCableKg = 100.5f,
+        )
+    }
+
+    private fun TestScope.assertRejectedConfig(
+        deviceName: String,
+        expectedModel: PhoenixModel,
+        weightPerCableKg: Float,
+    ) {
         val harness = DWSMTestHarness(this)
         val bleErrors = mutableListOf<String>()
         backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
             harness.coordinator.bleErrorEvents.collect(bleErrors::add)
         }
         try {
-            harness.fakeBleRepo.simulateConnect("Vee_Test")
-            assertEquals(
-                PhoenixModel.VFormTrainer,
-                HardwareDetection.detectModel("Vee_Test"),
-            )
-
-            harness.dwsm.updateWorkoutParameters(
-                WorkoutParameters(
-                    programMode = ProgramMode.OldSchool,
-                    reps = 8,
-                    warmupReps = 0,
-                    weightPerCableKg = 100.5f,
-                    isJustLift = true,
-                ),
-            )
-            harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+            harness.fakeBleRepo.simulateConnect(deviceName)
+            assertEquals(expectedModel, HardwareDetection.detectModel(deviceName))
+            startJustLift(harness, weightPerCableKg)
             advanceUntilIdle()
-
-            val configWrites = harness.fakeBleRepo.commandsReceived.filter {
-                it.isNotEmpty() && it[0] == BleConstants.Commands.ACTIVATION_COMMAND
-            }
             assertTrue(
-                configWrites.isEmpty(),
-                "V-Form must not send CONFIG at 100.5 kg/cable; got ${configWrites.size} writes",
+                configWrites(harness).isEmpty(),
+                "$deviceName must not send CONFIG at ${weightPerCableKg}kg; got ${configWrites(harness).size}",
             )
             assertTrue(
-                bleErrors.any { it.contains("Invalid BLE workout command") && it.contains("100.5") },
-                "Expected send-site rejection of 100.5 kg on V-Form, got $bleErrors",
+                bleErrors.any { it.contains("Invalid BLE workout command") && it.contains(weightPerCableKg.toString()) },
+                "Expected send-site rejection of $weightPerCableKg kg on $deviceName, got $bleErrors",
             )
         } finally {
             harness.cleanup()
         }
     }
 
-    @Test
-    fun `Trainer+ send site accepts 100_5 kg CONFIG`() = runTest {
+    private fun TestScope.assertAcceptedConfig(
+        deviceName: String,
+        expectedModel: PhoenixModel,
+        weightPerCableKg: Float,
+    ): ByteArray {
         val harness = DWSMTestHarness(this)
         try {
-            harness.fakeBleRepo.simulateConnect("VIT_Test")
-            assertEquals(PhoenixModel.TrainerPlus, HardwareDetection.detectModel("VIT_Test"))
-
-            harness.dwsm.updateWorkoutParameters(
-                WorkoutParameters(
-                    programMode = ProgramMode.OldSchool,
-                    reps = 8,
-                    warmupReps = 0,
-                    weightPerCableKg = 100.5f,
-                    isJustLift = true,
-                ),
-            )
-            harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+            harness.fakeBleRepo.simulateConnect(deviceName)
+            assertEquals(expectedModel, HardwareDetection.detectModel(deviceName))
+            startJustLift(harness, weightPerCableKg)
             advanceUntilIdle()
-
-            val configWrites = harness.fakeBleRepo.commandsReceived.filter {
-                it.isNotEmpty() && it[0] == BleConstants.Commands.ACTIVATION_COMMAND
-            }
-            assertTrue(configWrites.isNotEmpty(), "Trainer+ must send CONFIG at 100.5 kg/cable")
+            val writes = configWrites(harness)
+            assertTrue(writes.isNotEmpty(), "$deviceName must send CONFIG at ${weightPerCableKg}kg")
+            return writes.first()
         } finally {
             harness.cleanup()
         }
+    }
+
+    private fun startJustLift(harness: DWSMTestHarness, weightPerCableKg: Float) {
+        harness.dwsm.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 8,
+                warmupReps = 0,
+                weightPerCableKg = weightPerCableKg,
+                isJustLift = true,
+            ),
+        )
+        harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+    }
+
+    private fun configWrites(harness: DWSMTestHarness): List<ByteArray> =
+        harness.fakeBleRepo.commandsReceived.filter {
+            it.isNotEmpty() && it[0] == BleConstants.Commands.ACTIVATION_COMMAND
+        }
+
+    private fun readFloatLE(buffer: ByteArray, offset: Int): Float {
+        val bits = (buffer[offset].toInt() and 0xFF) or
+            ((buffer[offset + 1].toInt() and 0xFF) shl 8) or
+            ((buffer[offset + 2].toInt() and 0xFF) shl 16) or
+            ((buffer[offset + 3].toInt() and 0xFF) shl 24)
+        return Float.fromBits(bits)
     }
 }

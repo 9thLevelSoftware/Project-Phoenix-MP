@@ -183,7 +183,7 @@ class DropSetEligibilityPolicyTest {
         configuration,
         expectedLiveIdentity,
         commandTemplate,
-        com.devil.phoenixproject.domain.model.PhoenixModel.TrainerPlus,
+        com.devil.phoenixproject.domain.model.PhoenixModel.Unknown,
     )
 
     private fun completion(

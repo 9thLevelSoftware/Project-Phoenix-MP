@@ -51,7 +51,7 @@ class BulkWeightAdjustTest {
     private fun bulkAdjust(
         exercises: List<RoutineExercise>,
         mode: BulkAdjustMode,
-        model: PhoenixModel = PhoenixModel.TrainerPlus,
+        model: PhoenixModel = PhoenixModel.Unknown,
     ) = applyBulkAdjust(exercises, mode, model)
 
     // ── Percentage mode ─────────────────────────────────────────────

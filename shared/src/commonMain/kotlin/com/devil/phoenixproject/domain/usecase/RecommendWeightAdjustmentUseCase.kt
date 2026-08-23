@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.WeightAdjustmentDirection
 import com.devil.phoenixproject.domain.model.WeightAdjustmentInput
 import com.devil.phoenixproject.domain.model.WeightAdjustmentRecommendation
+import com.devil.phoenixproject.util.ChassisLimits
 import com.devil.phoenixproject.util.Constants
 import kotlin.math.ceil
 import kotlin.math.floor
@@ -103,7 +104,8 @@ class RecommendWeightAdjustmentUseCase {
         quality: SetQualitySummary,
     ): WeightAdjustmentRecommendation? {
         val recommended = nextHigherIncrement(input.currentWeightKgPerCable, input.weightIncrementKg)
-        if (recommended > Constants.MAX_WEIGHT_PER_CABLE_KG || recommended <= input.currentWeightKgPerCable) return null
+        val chassisMax = ChassisLimits.maxKgPerCable(input.hardwareModel)
+        if (recommended > chassisMax || recommended <= input.currentWeightKgPerCable) return null
 
         val confidence = if (quality.repScores.size >= HIGH_CONFIDENCE_REP_COUNT) {
             RecommendationConfidence.HIGH

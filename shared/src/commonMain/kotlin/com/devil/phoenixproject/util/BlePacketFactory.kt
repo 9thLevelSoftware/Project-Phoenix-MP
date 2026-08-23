@@ -229,6 +229,13 @@ object BlePacketFactory {
         // capped at the chassis ceiling so V-Form never sees 110 kg.
         val targetWeightPerCable = params.weightPerCableKg
         val effectiveKg = ChassisLimits.forceMaxKg(targetWeightPerCable, model)
+        val encodedProgression = ChassisLimits.finiteRepProgressionKg(
+            requestedKg = params.progressionRegressionKg,
+            weightPerCableKg = targetWeightPerCable,
+            reps = params.reps,
+            model = model,
+            unlimitedReps = params.isJustLift || params.isAMRAP,
+        )
 
         // Normal force modes keep softMax tied to the selected force
         // per cable. Unlimited-rep behavior is controlled by the reps field
@@ -251,7 +258,7 @@ object BlePacketFactory {
             putFloatLE(
                 frame,
                 BleConstants.ActivationPacket.OFFSET_INCREMENT,
-                params.progressionRegressionKg,
+                encodedProgression,
             )
         }
 
@@ -266,7 +273,7 @@ object BlePacketFactory {
         putFloatLE(
             frame,
             BleConstants.ActivationPacket.OFFSET_PROGRESSION,
-            params.progressionRegressionKg,
+            encodedProgression,
         )
 
         // Diagnostic logging

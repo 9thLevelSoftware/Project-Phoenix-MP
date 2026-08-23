@@ -12,7 +12,7 @@ class WorkoutCommandValidatorTest {
 
     private fun validateParams(
         params: WorkoutParameters,
-        model: PhoenixModel = PhoenixModel.TrainerPlus,
+        model: PhoenixModel = PhoenixModel.Unknown,
     ) = WorkoutCommandValidator.validateProgramParams(params, model)
 
     @Test
@@ -146,6 +146,9 @@ class WorkoutCommandValidatorTest {
             ChassisLimits.TRAINER_PLUS_KG_PER_CABLE,
             ChassisLimits.maxKgPerCable(PhoenixModel.TrainerPlus),
         )
+        assertEquals(100f, HardwareDetection.getCapabilities("Phoenix").maxResistanceKg)
+        assertEquals(100f, HardwareDetection.getCapabilities("Vee_Test").maxResistanceKg)
+        assertEquals(110f, HardwareDetection.getCapabilities("VIT_Test").maxResistanceKg)
     }
 
     @Test

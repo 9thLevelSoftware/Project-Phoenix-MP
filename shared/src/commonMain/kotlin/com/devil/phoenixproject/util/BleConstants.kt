@@ -67,9 +67,9 @@ object BleConstants {
      * - 0x40-0x4F: eccentric activation phase
      * - 0x48-0x4F: eccentric-up ramp inside the eccentric activation phase
      * - 0x50-0x53: forceMin (0.0f)
-     * - 0x54-0x57: forceMax (min(adjustedWeight + 10.0f, chassisMax) — force ceiling)
-     * - 0x58-0x5B: target weight (adjustedWeight — actual operating weight)
-     * - 0x5C-0x5F: progression (progressionRegressionKg)
+     * - 0x54-0x57: forceMax (min(selectedWeightPerCableKg + 10.0f, chassisMax) — force ceiling)
+     * - 0x58-0x5B: target weight (selectedWeightPerCableKg — actual operating weight)
+     * - 0x5C-0x5F: progression (finite-rep headroom clamp of progressionRegressionKg)
      *
      * Activation packets keep 0x48-0x4F as the mode profile's eccentric-up
      * ramp bytes. The active force fields live in the trailing block at 0x50-0x5F.
@@ -93,9 +93,9 @@ object BleConstants {
 
         // Force config block
         const val OFFSET_FORCE_MIN = 0x50 // 0.0f in activation packets
-        const val OFFSET_FORCE_MAX = 0x54 // min(adjustedWeight + 10.0f, chassisMax)
-        const val OFFSET_TARGET_WEIGHT = 0x58 // adjustedWeight (actual operating weight)
-        const val OFFSET_PROGRESSION = 0x5C // progressionRegressionKg
+        const val OFFSET_FORCE_MAX = 0x54 // min(selectedWeightPerCableKg + 10.0f, chassisMax)
+        const val OFFSET_TARGET_WEIGHT = 0x58 // selectedWeightPerCableKg
+        const val OFFSET_PROGRESSION = 0x5C // finite-rep chassis-headroom clamp
     }
 
     // Legacy aliases for backward compatibility

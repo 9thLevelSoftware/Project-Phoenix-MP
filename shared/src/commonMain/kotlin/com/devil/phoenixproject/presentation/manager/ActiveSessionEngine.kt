@@ -3942,6 +3942,7 @@ class ActiveSessionEngine(
             physicalCableCount = physicalCableCount,
             selectedItems = selectedItems,
             isEchoMode = request.params.isEchoMode,
+            hardwareModel = chassisModel(),
             validatorMinimumPerCableKg = validatorSafeMinimum(request.params),
             behaviorOverrides = behaviorOverrides,
         )
@@ -5247,6 +5248,7 @@ class ActiveSessionEngine(
             physicalCableCount = physicalCableCount,
             selectedItems = selectedItems,
             isEchoMode = params.isEchoMode,
+            hardwareModel = chassisModel(),
             validatorMinimumPerCableKg = validatorSafeMinimum(params),
             behaviorOverrides = behaviorOverrides,
         )
@@ -5272,6 +5274,7 @@ class ActiveSessionEngine(
             physicalCableCount = physicalCableCount,
             selectedItems = selectedItems,
             isEchoMode = params.isEchoMode,
+            hardwareModel = chassisModel(),
             validatorMinimumPerCableKg = validatorSafeMinimum(params),
             behaviorOverrides = behaviorOverrides,
         )
@@ -7192,6 +7195,7 @@ class ActiveSessionEngine(
                 physicalCableCount = physicalCableCount,
                 selectedItems = resolvedItems,
                 isEchoMode = currentParams.isEchoMode,
+                hardwareModel = chassisModel(),
                 validatorMinimumPerCableKg = validatorSafeMinimum(currentParams),
                 behaviorOverrides = coordinator._activeRackBehaviorOverrides.value,
             )
@@ -7249,6 +7253,7 @@ class ActiveSessionEngine(
                 physicalCableCount = exercise.exercise.preferredCableCount ?: 1,
                 selectedItems = resolvedItems,
                 isEchoMode = currentParams.isEchoMode,
+                hardwareModel = chassisModel(),
                 validatorMinimumPerCableKg = validatorSafeMinimum(currentParams),
                 behaviorOverrides = overrides,
             )
@@ -8248,6 +8253,21 @@ class ActiveSessionEngine(
                     ?: resolveSelectedExercise(effectiveParams)?.preferredCableCount
                     ?: 1
                 val rackSnapshotItems = coordinator._currentRackLoadAdjustment.value.selectedItems
+                val preRackValidation = if (warmupOverrideParams.isEchoMode) {
+                    Result.success(Unit)
+                } else {
+                    WorkoutCommandValidator.validateProgramParams(warmupOverrideParams, chassisModel())
+                }
+                preRackValidation.onFailure { error ->
+                    Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
+                    coordinator._bleErrorEvents.tryEmit("Invalid BLE workout command: ${error.message}")
+                    if (retryRequest != null) {
+                        failRetryStartAndRecover(retryRequest, lease, priorWorkoutState)
+                    } else {
+                        failStart(lease, priorWorkoutState)
+                    }
+                    return@launch
+                }
                 val bleParams = run {
                     val base = if (isTimedCableExercise) {
                         Logger.d { "Duration cable: overriding isAMRAP=true for BLE command (prevents machine rep limit)" }
@@ -11544,6 +11564,7 @@ class ActiveSessionEngine(
             hasNextSetTarget = isSameExercise &&
                 !targetExerciseIsBodyweight &&
                 completedSetHasTarget,
+            hardwareModel = chassisModel(),
         )
 
         coordinator._weightAdjustmentRecommendation.value = recommendWeightAdjustmentUseCase(input)

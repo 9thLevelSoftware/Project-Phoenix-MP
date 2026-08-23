@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.model.RepQualityScore
 import com.devil.phoenixproject.domain.model.SetQualitySummary
 import com.devil.phoenixproject.domain.model.StrengthProfile
 import com.devil.phoenixproject.domain.model.VelocityResult
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.WeightAdjustmentDirection
 import com.devil.phoenixproject.domain.model.WeightAdjustmentInput
 import kotlin.test.BeforeTest
@@ -142,17 +143,29 @@ class RecommendWeightAdjustmentUseCaseTest {
 
     @Test
     fun recommendationSuppressesWhenIncreaseWouldExceedMaxWeight() {
-        val recommendation = useCase(
+        val trainerPlus = useCase(
             input(
                 targetReps = 10,
                 actualReps = 10,
                 currentWeight = 110f,
                 increment = 2.5f,
                 quality = qualitySummary(scores = listOf(95, 92, 90)),
+                hardwareModel = PhoenixModel.TrainerPlus,
             ),
         )
+        assertNull(trainerPlus)
 
-        assertNull(recommendation)
+        val vForm = useCase(
+            input(
+                targetReps = 10,
+                actualReps = 10,
+                currentWeight = 100f,
+                increment = 2.5f,
+                quality = qualitySummary(scores = listOf(95, 92, 90)),
+                hardwareModel = PhoenixModel.VFormTrainer,
+            ),
+        )
+        assertNull(vForm)
     }
 
     @Test
@@ -226,6 +239,7 @@ class RecommendWeightAdjustmentUseCaseTest {
         quality: SetQualitySummary? = qualitySummary(scores = listOf(90, 88, 86)),
         biomechanics: BiomechanicsSetSummary? = null,
         isBodyweight: Boolean = false,
+        hardwareModel: PhoenixModel = PhoenixModel.Unknown,
     ): WeightAdjustmentInput = WeightAdjustmentInput(
         exerciseId = "bench-press-001",
         exerciseName = "Bench Press",
@@ -239,6 +253,7 @@ class RecommendWeightAdjustmentUseCaseTest {
         biomechanicsSummary = biomechanics,
         isBodyweight = isBodyweight,
         hasNextSetTarget = true,
+        hardwareModel = hardwareModel,
     )
 
     private fun qualitySummary(

@@ -36,6 +36,7 @@ data class WeightAdjustmentInput(
     val biomechanicsSummary: BiomechanicsSetSummary?,
     val isBodyweight: Boolean,
     val hasNextSetTarget: Boolean,
+    val hardwareModel: PhoenixModel,
 )
 
 /**

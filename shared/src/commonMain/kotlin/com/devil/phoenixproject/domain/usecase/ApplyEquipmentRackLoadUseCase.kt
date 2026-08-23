@@ -1,9 +1,11 @@
 package com.devil.phoenixproject.domain.usecase
 
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadContribution
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
+import com.devil.phoenixproject.util.ChassisLimits
 import com.devil.phoenixproject.util.Constants
 
 class ApplyEquipmentRackLoadUseCase {
@@ -12,6 +14,7 @@ class ApplyEquipmentRackLoadUseCase {
         physicalCableCount: Int,
         selectedItems: List<RackItem>,
         isEchoMode: Boolean,
+        hardwareModel: PhoenixModel,
         validatorMinimumPerCableKg: Float = Constants.MIN_WEIGHT_KG,
         behaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
     ): RackLoadAdjustment {
@@ -25,16 +28,17 @@ class ApplyEquipmentRackLoadUseCase {
                 externalAddedLoadKg -
                 counterweightKg
             ).coerceAtLeast(0f)
+        val chassisMax = ChassisLimits.maxKgPerCable(hardwareModel)
         val adjustedMachineWeightPerCableKg = if (isEchoMode) {
             programmedWeightPerCableKg
         } else {
             (programmedWeightPerCableKg - (counterweightKg / cableCount))
                 .coerceIn(
                     // F373: clamp the lower bound below the ceiling. A caller-supplied
-                    // validatorMinimumPerCableKg above MAX_WEIGHT_PER_CABLE_KG would make
+                    // validatorMinimumPerCableKg above chassis max would make
                     // coerceIn(min, max) have min > max and throw.
-                    validatorMinimumPerCableKg.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG),
-                    Constants.MAX_WEIGHT_PER_CABLE_KG,
+                    validatorMinimumPerCableKg.coerceIn(Constants.MIN_WEIGHT_KG, chassisMax),
+                    chassisMax,
                 )
         }
 

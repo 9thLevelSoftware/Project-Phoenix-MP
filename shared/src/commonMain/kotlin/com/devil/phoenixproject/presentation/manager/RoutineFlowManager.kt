@@ -11,6 +11,7 @@ import com.devil.phoenixproject.domain.model.ActiveRackSelection
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
@@ -36,6 +37,7 @@ import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineSetWeightRequest
 import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
+import com.devil.phoenixproject.util.ChassisLimits
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -163,6 +165,9 @@ class RoutineFlowManager(
 
         /** Capture persisted-runtime cleanup before intentionally abandoning/replacing a routine. */
         fun beginRoutineAbandonmentRuntimeCleanup()
+
+        /** Connected chassis, or Unknown fail-closed 100 kg/cable. */
+        fun chassisModel(): PhoenixModel = PhoenixModel.Unknown
     }
 
     /**
@@ -1024,6 +1029,7 @@ class RoutineFlowManager(
             physicalCableCount = physicalCableCount,
             selectedItems = resolvedItems,
             isEchoMode = exercise.programMode is ProgramMode.Echo,
+            hardwareModel = lifecycleDelegate.chassisModel(),
             validatorMinimumPerCableKg = Constants.DEFAULT_WEIGHT_INCREMENT_KG,
             behaviorOverrides = exercise.rackBehaviorOverrides,
         )
@@ -1362,7 +1368,10 @@ class RoutineFlowManager(
         supersedeConfigurationInputIntent()
         val state = coordinator._routineFlowState.value
         if (state is RoutineFlowState.SetReady) {
-            val clampedWeight = weight.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG)
+            val clampedWeight = weight.coerceIn(
+                Constants.MIN_WEIGHT_KG,
+                ChassisLimits.maxKgPerCable(lifecycleDelegate.chassisModel()),
+            )
             lifecycleDelegate.mutateConfigurationInputs {
                 coordinator._routineFlowState.value = state.copy(adjustedWeight = clampedWeight)
                 coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(weightPerCableKg = clampedWeight)

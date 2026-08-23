@@ -3,6 +3,7 @@ package com.devil.phoenixproject.domain.usecase
 import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.DropSetCandidateInvalidReason
 import com.devil.phoenixproject.domain.model.DropSetCandidateResolution
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.test.Test
@@ -157,8 +158,26 @@ class DropSetCandidateResolverTest {
         assertEquals(
             110f,
             assertIs<DropSetCandidateResolution.Valid>(
-                resolve(DropPercentage.TEN, start = 122.25f, base = 122.25f, floor = 1f),
+                resolve(
+                    DropPercentage.TEN,
+                    start = 122.25f,
+                    base = 122.25f,
+                    floor = 1f,
+                    hardwareModel = PhoenixModel.TrainerPlus,
+                ),
             ).candidate.resolvedWeightPerCableKg,
+        )
+        assertEquals(
+            DropSetCandidateInvalidReason.INVALID_COMMAND,
+            assertIs<DropSetCandidateResolution.Invalid>(
+                resolve(
+                    DropPercentage.TEN,
+                    start = 122.25f,
+                    base = 122.25f,
+                    floor = 1f,
+                    hardwareModel = PhoenixModel.VFormTrainer,
+                ),
+            ).reason,
         )
         assertEquals(
             DropSetCandidateInvalidReason.INVALID_COMMAND,
@@ -222,6 +241,7 @@ class DropSetCandidateResolverTest {
         base: Float = 50f,
         floor: Float = 1f,
         template: WorkoutParameters = commandTemplate(),
+        hardwareModel: PhoenixModel = PhoenixModel.Unknown,
     ): DropSetCandidateResolution = resolver.resolve(
         DropSetCandidateRequest(
             percentage = percentage,
@@ -229,7 +249,7 @@ class DropSetCandidateResolverTest {
             programmedBaseWeightPerCableKg = base,
             minimumWeightPerCableKg = floor,
             commandTemplate = template,
-            hardwareModel = com.devil.phoenixproject.domain.model.PhoenixModel.TrainerPlus,
+            hardwareModel = hardwareModel,
         ),
     )
 

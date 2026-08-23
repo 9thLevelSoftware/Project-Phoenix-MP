@@ -1,9 +1,10 @@
 package com.devil.phoenixproject.domain.usecase
 
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackItemCategory
-import com.devil.phoenixproject.util.Constants
+import com.devil.phoenixproject.util.ChassisLimits
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
@@ -17,6 +18,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 1,
             selectedItems = listOf(rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE)),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
         )
 
         assertEquals(10f, result.externalAddedLoadKg)
@@ -37,6 +39,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 1,
             selectedItems = listOf(rackItem("plate carrier", 30f, RackItemBehavior.DISPLAY_ONLY)),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
         )
 
         assertEquals(0f, result.externalAddedLoadKg)
@@ -53,6 +56,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 2,
             selectedItems = listOf(rackItem("assist", 12f, RackItemBehavior.COUNTERWEIGHT)),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
             validatorMinimumPerCableKg = 1f,
         )
 
@@ -72,6 +76,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 2,
             selectedItems = listOf(rackItem("assist", 10f, RackItemBehavior.COUNTERWEIGHT)),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
             validatorMinimumPerCableKg = 1f,
         )
 
@@ -87,17 +92,35 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 1,
             selectedItems = listOf(rackItem("assist", 20f, RackItemBehavior.COUNTERWEIGHT)),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
             validatorMinimumPerCableKg = 1f,
         )
-        val maximum = useCase.calculate(
+        val unknownMax = useCase.calculate(
             programmedWeightPerCableKg = 120f,
             physicalCableCount = 1,
             selectedItems = emptyList(),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
+        )
+        val vFormMax = useCase.calculate(
+            programmedWeightPerCableKg = 120f,
+            physicalCableCount = 1,
+            selectedItems = emptyList(),
+            isEchoMode = false,
+            hardwareModel = PhoenixModel.VFormTrainer,
+        )
+        val trainerPlusMax = useCase.calculate(
+            programmedWeightPerCableKg = 120f,
+            physicalCableCount = 1,
+            selectedItems = emptyList(),
+            isEchoMode = false,
+            hardwareModel = PhoenixModel.TrainerPlus,
         )
 
         assertEquals(1f, minimum.adjustedMachineWeightPerCableKg)
-        assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, maximum.adjustedMachineWeightPerCableKg)
+        assertEquals(ChassisLimits.UNKNOWN_FAIL_CLOSED_KG_PER_CABLE, unknownMax.adjustedMachineWeightPerCableKg)
+        assertEquals(ChassisLimits.V_FORM_KG_PER_CABLE, vFormMax.adjustedMachineWeightPerCableKg)
+        assertEquals(ChassisLimits.TRAINER_PLUS_KG_PER_CABLE, trainerPlusMax.adjustedMachineWeightPerCableKg)
     }
 
     @Test
@@ -111,6 +134,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 1,
             selectedItems = listOf(vest, chain, vest, assist),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
         )
 
         assertEquals(15f, result.externalAddedLoadKg)
@@ -135,6 +159,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 1,
             selectedItems = listOf(rackItem("assist", 10f, RackItemBehavior.COUNTERWEIGHT)),
             isEchoMode = true,
+            hardwareModel = PhoenixModel.Unknown,
         )
 
         assertEquals(30f, result.displayLoadKg)
@@ -166,6 +191,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 2,
             selectedItems = listOf(vest),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
         )
         assertEquals(5f, result.externalAddedLoadKg)
         assertEquals(0f, result.counterweightKg)
@@ -180,6 +206,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 2,
             selectedItems = listOf(vest),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
             behaviorOverrides = overrides,
         )
         assertEquals(0f, result.externalAddedLoadKg)
@@ -198,6 +225,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 2,
             selectedItems = listOf(vest),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
             behaviorOverrides = overrides,
         )
         assertEquals(0f, result.externalAddedLoadKg)
@@ -218,6 +246,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 2,
             selectedItems = listOf(vest, ankle),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
             behaviorOverrides = overrides,
         )
         assertEquals(2f, result.externalAddedLoadKg) // ankle only
@@ -237,6 +266,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 2,
             selectedItems = listOf(vest),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
             behaviorOverrides = emptyMap(),
         )
         val without = useCase.calculate(
@@ -244,6 +274,7 @@ class ApplyEquipmentRackLoadUseCaseTest {
             physicalCableCount = 2,
             selectedItems = listOf(vest),
             isEchoMode = false,
+            hardwareModel = PhoenixModel.Unknown,
         )
         assertEquals(without.externalAddedLoadKg, withOverrides.externalAddedLoadKg)
         assertEquals(without.counterweightKg, withOverrides.counterweightKg)
