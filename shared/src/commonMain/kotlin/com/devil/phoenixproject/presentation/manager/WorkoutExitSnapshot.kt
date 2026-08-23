@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BiomechanicsSetSummary
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.ForceCurveResult
+import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
@@ -357,6 +358,17 @@ internal data class WorkoutExitSnapshot(
     val repMetrics: List<RepMetricData>,
     val biomechanicsRepResults: List<BiomechanicsRepResult>,
     val singleExerciseDefaults: SingleExerciseDefaultsDocument? = null,
+    /**
+     * Just Lift defaults captured from the pre-teardown Just Lift WorkoutParameters.
+     * Populated only when [completion] is a Just Lift completion; persisted in the same
+     * `settingsManager.mutateWorkout(snapshot.lease.profileId)` block as
+     * [singleExerciseDefaults] so the automatic-completion path cannot fall behind the
+     * legacy manual `saveJustLiftDefaultsFromWorkout()` path.
+     *
+     * See issue #714 (Just Lift mode resets to TUT at end of every set instead of
+     * preserving the user's selected mode).
+     */
+    val justLiftDefaults: JustLiftDefaultsDocument? = null,
     val presentationSummary: WorkoutState.SetSummary,
     val exerciseIndex: Int,
     val setIndex: Int,

@@ -6678,27 +6678,39 @@ class ActiveSessionEngine(
 
     private suspend fun saveJustLiftDefaultsFromWorkout() {
         val params = coordinator._workoutParameters.value
-        if (!params.isJustLift) return
-
-        val eccentricLoadPct = if (params.isEchoMode) params.eccentricLoad.percentage else 100
-        val echoLevelVal = if (params.isEchoMode) params.echoLevel.levelValue else 0
-
+        val defaults = toJustLiftDefaultsDocumentOrNull(params) ?: return
         try {
-            val defaults = JustLiftDefaultsDocument(
-                workoutModeId = params.programMode.modeValue,
-                weightPerCableKg = params.weightPerCableKg.coerceAtLeast(0.1f),
-                weightChangePerRep = params.progressionRegressionKg,
-                eccentricLoadPercentage = eccentricLoadPct,
-                echoLevelValue = echoLevelVal,
-                stallDetectionEnabled = params.stallDetectionEnabled,
-                repCountTimingName = params.repCountTiming.name,
-                restSeconds = params.justLiftRestSeconds,
-            )
             settingsManager.saveJustLiftDefaultsDocument(defaults)
             Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg, restSeconds=${params.justLiftRestSeconds}" }
         } catch (e: Exception) {
             Logger.e(e) { "Failed to save Just Lift defaults: ${e.message}" }
         }
+    }
+
+    /**
+     * Shared Just Lift defaults conversion used by both the legacy manual
+     * `saveJustLiftDefaultsFromWorkout()` path and the automatic-completion
+     * snapshot persistence path. Centralising the conversion guarantees the
+     * two paths cannot drift.
+     *
+     * Returns null when [params] is not a Just Lift workout. See issue #714.
+     */
+    internal fun toJustLiftDefaultsDocumentOrNull(params: com.devil.phoenixproject.domain.model.WorkoutParameters): JustLiftDefaultsDocument? {
+        if (!params.isJustLift) return null
+
+        val eccentricLoadPct = if (params.isEchoMode) params.eccentricLoad.percentage else 100
+        val echoLevelVal = if (params.isEchoMode) params.echoLevel.levelValue else 0
+
+        return JustLiftDefaultsDocument(
+            workoutModeId = params.programMode.modeValue,
+            weightPerCableKg = params.weightPerCableKg.coerceAtLeast(0.1f),
+            weightChangePerRep = params.progressionRegressionKg,
+            eccentricLoadPercentage = eccentricLoadPct,
+            echoLevelValue = echoLevelVal,
+            stallDetectionEnabled = params.stallDetectionEnabled,
+            repCountTimingName = params.repCountTiming.name,
+            restSeconds = params.justLiftRestSeconds,
+        )
     }
 
     suspend fun getSingleExerciseDefaults(
@@ -8955,6 +8967,11 @@ class ActiveSessionEngine(
             cycleId = context.cycleId,
             dayNumber = context.cycleDayNumber,
         )
+        // Issue #714: capture Just Lift defaults from the pre-teardown params
+        // so automatic completion persists the user's confirmed Just Lift mode.
+        // Read here (before reset) and freeze into the immutable snapshot so the
+        // persistSnapshot write cannot read mutable live state after teardown.
+        val capturedJustLiftDefaults = toJustLiftDefaultsDocumentOrNull(params)
         return WorkoutExitSnapshot(
             lease = lease,
             completion = completion,
@@ -8966,6 +8983,7 @@ class ActiveSessionEngine(
             biomechanicsRepResults = biomechanicsSummary?.repResults.orEmpty()
                 .map { it.deepCopyForExitSnapshot() },
             singleExerciseDefaults = captureSingleExerciseDefaultsFromWorkout(),
+            justLiftDefaults = capturedJustLiftDefaults,
             presentationSummary = presentationSummary,
             exerciseIndex = exerciseIndex,
             setIndex = setIndex,
@@ -9012,6 +9030,20 @@ class ActiveSessionEngine(
             PersistenceClaimResult.DuplicateInProgress,
             PersistenceClaimResult.AlreadyPersisted,
             -> logPersistenceDeduplicated(snapshot)
+        }
+    }
+
+    // Issue #714: writes the Just Lift defaults captured in the immutable exit
+    // snapshot. Split out from `persistSnapshot` so the Just Lift completion
+    // job can call it synchronously before publishing `SetSummary` / flipping
+    // to `Idle`, and the async path can still call it for retained-snapshot
+    // retry and process recovability. The async re-write is idempotent
+    // (same captured value).
+    internal suspend fun persistCapturedJustLiftDefaultsSnapshot(snapshot: WorkoutExitSnapshot) {
+        snapshot.justLiftDefaults?.let { justLiftDefaults ->
+            settingsManager.mutateWorkout(snapshot.lease.profileId) { workoutPreferences ->
+                workoutPreferences.copy(justLiftDefaults = justLiftDefaults)
+            }
         }
     }
 
@@ -9072,6 +9104,12 @@ class ActiveSessionEngine(
                     )
                 }
             }
+            // Issue #714: persist Just Lift defaults captured in the immutable
+            // exit snapshot so the user's confirmed Just Lift mode survives the
+            // return-to-setup reload. Uses the same profile-scoped mutateWorkout
+            // and the snapshot's lease profile id, so it cannot read mutable
+            // coordinator state after teardown.
+            persistCapturedJustLiftDefaultsSnapshot(snapshot)
 
             val postSave = snapshot.postSaveInput
             val hasPR = gamificationManager.processPostSaveEvents(
@@ -11222,6 +11260,38 @@ class ActiveSessionEngine(
             }
 
             Logger.d("handleSetCompletion: summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, wasBodyweight=$wasBodyweight, effectiveSkipSummary=$effectiveSkipSummary, isJustLift=$isJustLift, isAMRAP=${params.isAMRAP}")
+
+            // Issue #714 (Codex P1 follow-up): write synchronously so
+            // JustLiftScreen's reload sees fresh defaults before any navigation
+            // fires; try/catch so a transient prefs failure doesn't strand the
+            // user mid-teardown.
+            // reads persisted defaults on `LaunchedEffect(readyProfileId)` — once per
+            // profile-id change — and the async `persistSnapshot` coroutine does not
+            // finish writing the captured Just Lift defaults until AFTER this
+            // completion job has published `SetSummary` or flipped `WorkoutState` to
+            // `Idle`. The ActiveWorkoutScreen observer then pops back to
+            // JustLiftScreen and JustLiftScreen recomposes against the stale TUT value.
+            // Write the captured defaults synchronously here, BEFORE any state flip or
+            // summary publish that could trigger the navigation observer, so the
+            // JustLiftScreen reload sees the persisted Old School (or whatever the user
+            // picked). The write is wrapped in try/catch so a transient
+            // preferences-store failure cannot leave the user stuck after machine
+            // teardown — the retained-snapshot retry path is the durable backstop.
+            // The async `persistSnapshot` path still calls the same helper for retained
+            // snapshot recovery and process recovability (idempotent re-write of the
+            // same value).
+            if (isJustLift && terminalSnapshot?.justLiftDefaults != null) {
+                try {
+                    persistCapturedJustLiftDefaultsSnapshot(terminalSnapshot)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    Logger.w(e) {
+                        "Issue #714: synchronous Just Lift defaults write failed; " +
+                            "retained-snapshot retry will recover"
+                    }
+                }
+            }
 
             if (!effectiveSkipSummary && !preservePlanOwnedResting) {
                 Logger.d("handleSetCompletion: Setting state to SetSummary (effectiveSkipSummary=false)")
