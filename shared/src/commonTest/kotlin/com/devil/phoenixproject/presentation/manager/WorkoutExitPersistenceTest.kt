@@ -1448,9 +1448,13 @@ class WorkoutExitPersistenceTest {
             )
             advanceUntilIdle()
 
-            // 2. Connect, pick Old School, start a Just Lift set. The harness starts
-            //    in the no-summary trajectory by default; we also set restSeconds=0
-            //    so the egg timer doesn't introduce a delay window after Idle.
+            // 2. Connect, force skipSummary ON by setting summaryCountdownSeconds < 0,
+            //    pick Old School, start a Just Lift set. With skipSummary=true the
+            //    completion job flips WorkoutState to Idle synchronously without any
+            //    SetSummary / delay window, so the test exercises the exact race the
+            //    fix targets: the Just Lift defaults write must land BEFORE the Idle
+    //    transition.
+            harness.fakePrefsManager.setSummaryCountdownSeconds(-1)
             harness.fakeBleRepo.simulateConnect("Vee_Test")
             harness.dwsm.updateWorkoutParameters(
                 WorkoutParameters(
