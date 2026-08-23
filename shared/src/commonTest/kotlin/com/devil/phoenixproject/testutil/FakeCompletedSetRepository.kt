@@ -45,6 +45,13 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         sessionRoutineIds[sessionId] = routineSessionId
     }
 
+    fun removeSaved(id: String) {
+        val set = completedSets.remove(id) ?: return
+        saved.removeAll { it.id == id }
+        completedSetsBySession[set.sessionId]?.remove(id)
+        updateCompletedFlow(set.sessionId)
+    }
+
     fun softDeleteSession(sessionId: String) {
         deletedSessionIds += sessionId
     }

@@ -1,10 +1,18 @@
 package com.devil.phoenixproject.data.repository
 
+import app.cash.sqldelight.db.QueryResult
+import app.cash.sqldelight.db.SqlDriver
+import app.cash.sqldelight.db.SqlPreparedStatement
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import app.cash.turbine.test
+import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.SetEndReason
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
@@ -73,6 +81,89 @@ class SqlDelightWorkoutRepositoryTest {
         assertEquals("test-session-001", retrieved?.id)
         assertEquals(session.mode, retrieved?.mode)
         assertEquals(session.weightPerCableKg, retrieved?.weightPerCableKg)
+    }
+
+    @Test
+    fun `persistWorkoutExit writes session metrics and completed set in one commit`() = runTest {
+        seedProfile(database, "default")
+        val session = createTestSession(id = "exit-session").copy(profileId = "default", workingReps = 5)
+        val metrics = listOf(
+            WorkoutMetric(
+                timestamp = 10L,
+                loadA = 20f,
+                loadB = 21f,
+                positionA = 100f,
+                positionB = 101f,
+                velocityA = 1.0,
+                velocityB = 1.1,
+            ),
+        )
+        val completedSet = testCompletedSet(sessionId = session.id, id = "exit-set")
+
+        repository.persistWorkoutExit(session, metrics, completedSet, emptyList(), emptyList())
+
+        assertEquals(session.id, repository.getSession(session.id)?.id)
+        assertEquals(metrics, repository.getMetricsForSessionSync(session.id))
+        assertNotNull(database.phoenixDatabaseQueries.selectCompletedSetById(completedSet.id).executeAsOneOrNull())
+    }
+
+    @Test
+    fun `persistWorkoutExit fails closed when originating profile is gone`() = runTest {
+        val session = createTestSession(id = "orphan-session").copy(profileId = "deleted-profile")
+        val metrics = listOf(
+            WorkoutMetric(
+                timestamp = 10L,
+                loadA = 20f,
+                loadB = 21f,
+                positionA = 100f,
+                positionB = 101f,
+            ),
+        )
+        val completedSet = testCompletedSet(sessionId = session.id, id = "orphan-set")
+
+        val error = assertFailsWith<IllegalStateException> {
+            repository.persistWorkoutExit(session, metrics, completedSet, emptyList(), emptyList())
+        }
+        assertTrue(error.message!!.contains("deleted-profile"))
+        assertNull(repository.getSession(session.id))
+        assertTrue(repository.getMetricsForSessionSync(session.id).isEmpty())
+        assertNull(database.phoenixDatabaseQueries.selectCompletedSetById(completedSet.id).executeAsOneOrNull())
+    }
+
+    @Test
+    fun `crash between session and metrics cannot leave a partial workout exit`() = runTest {
+        val delegate = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        PhoenixDatabase.Schema.create(delegate)
+        val driver = CrashOnMetricSampleInsertDriver(delegate)
+        val crashingDatabase = PhoenixDatabase(driver)
+        seedProfile(crashingDatabase, "default")
+        val crashingRepository = SqlDelightWorkoutRepository(crashingDatabase, exerciseRepository)
+
+        val session = createTestSession(id = "partial-session").copy(profileId = "default")
+        val metrics = listOf(
+            WorkoutMetric(
+                timestamp = 10L,
+                loadA = 20f,
+                loadB = 21f,
+                positionA = 100f,
+                positionB = 101f,
+                velocityA = 1.0,
+                velocityB = 1.1,
+            ),
+        )
+        val completedSet = testCompletedSet(sessionId = session.id, id = "partial-set")
+
+        val failure = runCatching {
+            crashingRepository.persistWorkoutExit(session, metrics, completedSet, emptyList(), emptyList())
+        }.exceptionOrNull()
+        assertNotNull(failure)
+        assertTrue(failure.message!!.contains("simulated crash between session and metrics"))
+
+        assertNull(crashingRepository.getSession(session.id))
+        assertTrue(crashingRepository.getMetricsForSessionSync(session.id).isEmpty())
+        assertNull(
+            crashingDatabase.phoenixDatabaseQueries.selectCompletedSetById(completedSet.id).executeAsOneOrNull(),
+        )
     }
 
     @Test
@@ -477,6 +568,46 @@ class SqlDelightWorkoutRepositoryTest {
     }
 
     // ========== Helper Methods ==========
+
+    private fun seedProfile(db: PhoenixDatabase, id: String) {
+        db.phoenixDatabaseQueries.insertProfile(
+            id = id,
+            name = id,
+            colorIndex = 0L,
+            createdAt = 1L,
+            isActive = 1L,
+        )
+    }
+
+    private fun testCompletedSet(sessionId: String, id: String) = CompletedSet(
+        id = id,
+        sessionId = sessionId,
+        plannedSetId = null,
+        setNumber = 0,
+        setType = SetType.STANDARD,
+        actualReps = 5,
+        actualWeightKg = 25f,
+        loggedRpe = null,
+        isPr = false,
+        completedAt = 100L,
+        setEndReason = SetEndReason.USER_STOPPED,
+    )
+
+    private class CrashOnMetricSampleInsertDriver(
+        private val delegate: SqlDriver,
+    ) : SqlDriver by delegate {
+        override fun execute(
+            identifier: Int?,
+            sql: String,
+            parameters: Int,
+            binders: (SqlPreparedStatement.() -> Unit)?,
+        ): QueryResult<Long> {
+            if (sql.contains("INSERT INTO MetricSample", ignoreCase = true)) {
+                error("simulated crash between session and metrics")
+            }
+            return delegate.execute(identifier, sql, parameters, binders)
+        }
+    }
 
     private fun createTestSession(id: String = "test-session", timestamp: Long = System.currentTimeMillis()) = WorkoutSession(
         id = id,

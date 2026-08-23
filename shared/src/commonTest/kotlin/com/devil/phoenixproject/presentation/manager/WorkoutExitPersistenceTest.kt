@@ -44,6 +44,68 @@ import kotlinx.coroutines.withContext
 class WorkoutExitPersistenceTest {
 
     @Test
+    fun `no-lease End Workout does not invent a UUID session`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertTrue(harness.fakeWorkoutRepo.persistWorkoutExitAttempts.isEmpty())
+            assertTrue(harness.fakeWorkoutRepo.saveSessionAttempts.isEmpty())
+            assertEquals(0, harness.fakeWorkoutRepo.directSaveSessionCalls)
+            assertTrue(harness.fakeWorkoutRepo.allSessions().isEmpty())
+            assertTrue(harness.fakeCompletedSetRepo.saved.isEmpty())
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `happy persist path uses persistWorkoutExit not saveSession`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startTrackedCableSet(harness)
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertEquals(1, harness.fakeWorkoutRepo.persistWorkoutExitAttempts.size)
+            assertEquals(0, harness.fakeWorkoutRepo.directSaveSessionCalls)
+            assertEquals(0, harness.fakeWorkoutRepo.directSaveMetricsCalls)
+            assertEquals(1, harness.activeSessionEngine.workoutCompletedSyncCallsForTest)
+            assertEquals(
+                1,
+                harness.fakeWorkoutRepo.allSessions().count {
+                    it.id == harness.fakeWorkoutRepo.persistWorkoutExitAttempts.single().id
+                },
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `onWorkoutCompleted is not invoked when persistWorkoutExit throws`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startTrackedCableSet(harness)
+            harness.fakeWorkoutRepo.persistWorkoutExitFailure = IllegalStateException("forced txn failure")
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertEquals(1, harness.fakeWorkoutRepo.persistWorkoutExitAttempts.size)
+            assertTrue(harness.fakeWorkoutRepo.allSessions().isEmpty())
+            assertEquals(0, harness.activeSessionEngine.workoutCompletedSyncCallsForTest)
+            assertTrue(
+                harness.activeSessionEngine.hasRetainedWorkoutExitSnapshotForTest(
+                    harness.fakeWorkoutRepo.persistWorkoutExitAttempts.single().id,
+                ),
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `routine completion preserves start key after set index mutation`() = runTest {
         assertRoutineAttemptIdentityAfterMutation(mutateSetIndex = true, mutateSetKind = false)
     }

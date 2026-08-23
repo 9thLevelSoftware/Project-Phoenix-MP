@@ -317,7 +317,13 @@ internal class DWSMTestHarness(
     val fakeActiveWorkoutRuntimeRepository = FakeActiveWorkoutRuntimeRepository()
     val fakeWorkoutServiceController = FakeWorkoutServiceController()
     val fakeUserProfileRepo = FakeUserProfileRepository().apply { setActiveProfileForTest() }
-    private val workoutRepository = workoutRepositoryOverride ?: fakeWorkoutRepo
+    private val workoutRepository = workoutRepositoryOverride ?: fakeWorkoutRepo.also { repo ->
+        repo.bindExitPersistence(
+            completedSetRepository = fakeCompletedSetRepo,
+            repMetricRepository = fakeRepMetricRepo,
+            biomechanicsRepository = fakeBiomechanicsRepo,
+        )
+    }
     private val completedSetRepository = completedSetRepositoryOverride ?: fakeCompletedSetRepo
 
     val repCounter = RepCounterFromMachine()

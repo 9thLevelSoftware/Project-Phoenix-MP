@@ -1,10 +1,16 @@
 package com.devil.phoenixproject.testutil
 
+import com.devil.phoenixproject.data.repository.BiomechanicsRepository
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.PersonalRecordEntity
 import com.devil.phoenixproject.data.repository.PhaseStatisticsData
+import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -40,10 +46,29 @@ class FakeWorkoutRepository : WorkoutRepository {
     val recentCompletedRequests = mutableListOf<RecentCompletedRequest>()
     val saveSessionAttempts = mutableListOf<WorkoutSession>()
     val saveMetricsAttempts = mutableListOf<Pair<String, List<WorkoutMetric>>>()
+    val persistWorkoutExitAttempts = mutableListOf<WorkoutSession>()
+    var directSaveSessionCalls = 0
+    var directSaveMetricsCalls = 0
     var beforeSaveSession: suspend (WorkoutSession) -> Unit = {}
     var afterSaveSession: suspend (WorkoutSession) -> Unit = {}
+    var persistWorkoutExitFailure: Throwable? = null
+    var existingProfileIds: Set<String>? = null
     var recentCompletedFailure: Throwable? = null
     var mostRecentCompletedExerciseFailure: Throwable? = null
+
+    private var completedSetSink: CompletedSetRepository? = null
+    private var repMetricSink: RepMetricRepository? = null
+    private var biomechanicsSink: BiomechanicsRepository? = null
+
+    fun bindExitPersistence(
+        completedSetRepository: CompletedSetRepository,
+        repMetricRepository: RepMetricRepository,
+        biomechanicsRepository: BiomechanicsRepository,
+    ) {
+        completedSetSink = completedSetRepository
+        repMetricSink = repMetricRepository
+        biomechanicsSink = biomechanicsRepository
+    }
 
     // Test control methods
     fun addSession(session: WorkoutSession) {
@@ -79,8 +104,13 @@ class FakeWorkoutRepository : WorkoutRepository {
         recentCompletedRequests.clear()
         saveSessionAttempts.clear()
         saveMetricsAttempts.clear()
+        persistWorkoutExitAttempts.clear()
+        directSaveSessionCalls = 0
+        directSaveMetricsCalls = 0
         beforeSaveSession = {}
         afterSaveSession = {}
+        persistWorkoutExitFailure = null
+        existingProfileIds = null
         recentCompletedFailure = null
         mostRecentCompletedExerciseFailure = null
         updateSessionsFlow()
@@ -166,10 +196,89 @@ class FakeWorkoutRepository : WorkoutRepository {
     override suspend fun getSessionCountForExercise(exerciseId: String, profileId: String): Long = sessions.values.count { it.exerciseId == exerciseId }.toLong()
 
     override suspend fun saveSession(session: WorkoutSession) {
+        directSaveSessionCalls++
         saveSessionAttempts += session
         beforeSaveSession(session)
         sessions[session.id] = session
         updateSessionsFlow()
+        afterSaveSession(session)
+    }
+
+    override suspend fun persistWorkoutExit(
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        biomechanics: List<BiomechanicsRepResult>,
+    ) {
+        persistWorkoutExitAttempts += session
+        persistWorkoutExitFailure?.let { throw it }
+        val knownProfiles = existingProfileIds
+        if (knownProfiles != null && session.profileId !in knownProfiles) {
+            throw IllegalStateException("Cannot persist workout exit for missing profile '${session.profileId}'")
+        }
+
+        val previousSession = sessions[session.id]
+        val sessionExisted = previousSession != null
+        if (!sessionExisted) {
+            saveSessionAttempts += session
+        }
+        beforeSaveSession(session)
+
+        val previousMetrics = this.metrics[session.id]
+        val previousReps = repMetricSink?.getRepMetrics(session.id).orEmpty()
+        val previousBio = biomechanicsSink?.getRepBiomechanics(session.id).orEmpty()
+        var insertedCompletedSetId: String? = null
+        try {
+            if (!sessionExisted) {
+                sessions[session.id] = session
+                updateSessionsFlow()
+            }
+            if (metrics.isNotEmpty()) {
+                saveMetricsAttempts += session.id to metrics.toList()
+                this.metrics[session.id] = metrics.toList()
+            }
+            val completedSets = completedSetSink
+            if (completedSet != null && completedSets != null) {
+                val alreadySaved = completedSets.getCompletedSets(session.id).any { it.id == completedSet.id }
+                if (!alreadySaved) {
+                    completedSets.saveCompletedSet(completedSet)
+                    insertedCompletedSetId = completedSet.id
+                }
+            }
+            repMetricSink?.deleteRepMetrics(session.id)
+            if (repMetrics.isNotEmpty()) {
+                repMetricSink?.saveRepMetrics(session.id, repMetrics)
+            }
+            biomechanicsSink?.deleteRepBiomechanics(session.id)
+            if (biomechanics.isNotEmpty()) {
+                biomechanicsSink?.saveRepBiomechanics(session.id, biomechanics)
+            }
+        } catch (error: Throwable) {
+            if (!sessionExisted) {
+                sessions.remove(session.id)
+            } else {
+                sessions[session.id] = previousSession
+            }
+            if (previousMetrics == null) {
+                this.metrics.remove(session.id)
+            } else {
+                this.metrics[session.id] = previousMetrics
+            }
+            insertedCompletedSetId?.let { id ->
+                (completedSetSink as? FakeCompletedSetRepository)?.removeSaved(id)
+            }
+            repMetricSink?.deleteRepMetrics(session.id)
+            if (previousReps.isNotEmpty()) {
+                repMetricSink?.saveRepMetrics(session.id, previousReps)
+            }
+            biomechanicsSink?.deleteRepBiomechanics(session.id)
+            if (previousBio.isNotEmpty()) {
+                biomechanicsSink?.saveRepBiomechanics(session.id, previousBio)
+            }
+            updateSessionsFlow()
+            throw error
+        }
         afterSaveSession(session)
     }
 
@@ -290,6 +399,7 @@ class FakeWorkoutRepository : WorkoutRepository {
     }
 
     override suspend fun saveMetrics(sessionId: String, metrics: List<WorkoutMetric>) {
+        directSaveMetricsCalls++
         saveMetricsAttempts += sessionId to metrics.toList()
         this.metrics[sessionId] = metrics.toList()
     }

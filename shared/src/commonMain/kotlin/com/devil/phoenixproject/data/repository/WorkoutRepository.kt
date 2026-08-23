@@ -1,6 +1,10 @@
 package com.devil.phoenixproject.data.repository
 
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
 import kotlinx.coroutines.flow.Flow
@@ -28,6 +32,24 @@ interface WorkoutRepository {
     // Workout sessions
     fun getAllSessions(profileId: String): Flow<List<WorkoutSession>>
     suspend fun saveSession(session: WorkoutSession)
+
+    /**
+     * Atomically persist a workout-exit snapshot: session, metrics, completed set,
+     * per-rep metrics, and biomechanics. Production callers must use this instead of
+     * composing [saveSession]/[saveMetrics] with other repositories' suspend `save*`.
+     *
+     * Implementations must open one SQLDelight `db.transaction` and write through
+     * the generated `phoenixDatabaseQueries` object directly. Fail closed if
+     * [WorkoutSession.profileId] has no UserProfile row — do not insert under a
+     * dead profile_id.
+     */
+    suspend fun persistWorkoutExit(
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        biomechanics: List<BiomechanicsRepResult>,
+    )
     suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String)
     suspend fun deleteSession(sessionId: String)
     suspend fun deleteAllSessions()
