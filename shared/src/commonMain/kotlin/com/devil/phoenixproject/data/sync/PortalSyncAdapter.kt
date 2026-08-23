@@ -347,10 +347,8 @@ object PortalSyncAdapter {
             name = session.exerciseName ?: "Unknown Exercise",
             muscleGroup = swr.muscleGroup,
             orderIndex = orderIndex,
-            // Per-cable hybrid 1RM from this exercise's single set. Uses
-            // workingReps (warmup excluded); falls back to totalReps when
-            // working is 0 (legacy rows). null when there is no meaningful
-            // estimate (0-rep/0-weight). Portal store-verbatim is unverified.
+            // Working reps exclude warmup; fall back to totalReps when working
+            // is 0 so legacy rows still get an estimate.
             estimatedOneRepMaxKg = OneRepMaxCalculator.estimate(
                 session.weightPerCableKg,
                 session.workingReps.takeIf { it > 0 } ?: session.totalReps,
