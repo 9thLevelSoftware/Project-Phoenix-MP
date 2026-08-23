@@ -9034,14 +9034,11 @@ class ActiveSessionEngine(
     }
 
     // Issue #714: writes the Just Lift defaults captured in the immutable exit
-    // snapshot through the profile-scoped mutateWorkout path. Split out from
-    // `persistSnapshot` so the Just Lift screen's return-to-setup reload (which
-    // reads persisted defaults on `LaunchedEffect(readyProfileId)`) can be
-    // synchronized with this write — without it, the UI re-reads the stale TUT
-    // value because the async `persistSnapshot` coroutine completes AFTER
-    // `WorkoutState.Idle` has already navigated the user back to JustLiftScreen.
-    // The async `persistSnapshot` still calls this helper again so the existing
-    // idempotent retry / retained-snapshot recovery paths remain correct.
+    // snapshot. Split out from `persistSnapshot` so the Just Lift completion
+    // job can call it synchronously before publishing `SetSummary` / flipping
+    // to `Idle`, and the async path can still call it for retained-snapshot
+    // retry and process recovability. The async re-write is idempotent
+    // (same captured value).
     internal suspend fun persistCapturedJustLiftDefaultsSnapshot(snapshot: WorkoutExitSnapshot) {
         snapshot.justLiftDefaults?.let { justLiftDefaults ->
             settingsManager.mutateWorkout(snapshot.lease.profileId) { workoutPreferences ->
@@ -11264,6 +11261,35 @@ class ActiveSessionEngine(
 
             Logger.d("handleSetCompletion: summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, wasBodyweight=$wasBodyweight, effectiveSkipSummary=$effectiveSkipSummary, isJustLift=$isJustLift, isAMRAP=${params.isAMRAP}")
 
+            // Issue #714 (Codex P1 follow-up): JustLiftScreen's return-to-setup reload
+            // reads persisted defaults on `LaunchedEffect(readyProfileId)` — once per
+            // profile-id change — and the async `persistSnapshot` coroutine does not
+            // finish writing the captured Just Lift defaults until AFTER this
+            // completion job has published `SetSummary` or flipped `WorkoutState` to
+            // `Idle`. The ActiveWorkoutScreen observer then pops back to
+            // JustLiftScreen and JustLiftScreen recomposes against the stale TUT value.
+            // Write the captured defaults synchronously here, BEFORE any state flip or
+            // summary publish that could trigger the navigation observer, so the
+            // JustLiftScreen reload sees the persisted Old School (or whatever the user
+            // picked). The write is wrapped in try/catch so a transient
+            // preferences-store failure cannot leave the user stuck after machine
+            // teardown — the retained-snapshot retry path is the durable backstop.
+            // The async `persistSnapshot` path still calls the same helper for retained
+            // snapshot recovery and process recovability (idempotent re-write of the
+            // same value).
+            if (isJustLift && terminalSnapshot?.justLiftDefaults != null) {
+                try {
+                    persistCapturedJustLiftDefaultsSnapshot(terminalSnapshot)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Throwable) {
+                    Logger.w(e) {
+                        "Issue #714: synchronous Just Lift defaults write failed; " +
+                            "retained-snapshot retry will recover"
+                    }
+                }
+            }
+
             if (!effectiveSkipSummary && !preservePlanOwnedResting) {
                 Logger.d("handleSetCompletion: Setting state to SetSummary (effectiveSkipSummary=false)")
                 val summaryPublished = executionGuard.commitIfCurrent(lease) {
@@ -11278,24 +11304,6 @@ class ActiveSessionEngine(
 
             if (isJustLift) {
                 Logger.d("Just Lift: IMMEDIATE reset for next set (while showing summary)")
-
-                // Issue #714 (Codex P1): JustLiftScreen's return-to-setup reload reads
-                // persisted defaults on `LaunchedEffect(readyProfileId)` — once per
-                // profile-id change — and the async `persistSnapshot` coroutine does not
-                // finish writing the captured Just Lift defaults until AFTER this
-                // completion job has flipped `WorkoutState` to `Idle` (and the
-                // ActiveWorkoutScreen observer has popped back to JustLiftScreen). The
-                // UI therefore re-reads the stale TUT value every set. Write the
-                // captured defaults synchronously here, before any state flip that
-                // triggers the navigation observer, so the reload sees the persisted
-                // Old School (or whatever the user picked). The async `persistSnapshot`
-                // path still runs the same write idempotently for retained-snapshot
-                // retry and process-recovability.
-                terminalSnapshot?.let { snapshot ->
-                    if (snapshot.justLiftDefaults != null) {
-                        persistCapturedJustLiftDefaultsSnapshot(snapshot)
-                    }
-                }
 
                 repCounter.reset()
                 resetAutoStopState()
