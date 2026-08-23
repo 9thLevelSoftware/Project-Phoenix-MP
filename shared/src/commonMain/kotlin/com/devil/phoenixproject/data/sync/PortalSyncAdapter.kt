@@ -347,13 +347,13 @@ object PortalSyncAdapter {
             name = session.exerciseName ?: "Unknown Exercise",
             muscleGroup = swr.muscleGroup,
             orderIndex = orderIndex,
-            // Per-cable estimate from this exercise's single set; matches the
-            // set's weightKg (per-cable). Portal applies its x2 display transform.
-            // null when there is no meaningful estimate (0-rep/0-weight) so the
-            // portal treats the field as absent and falls back, per the DTO doc.
+            // Per-cable hybrid 1RM from this exercise's single set. Uses
+            // workingReps (warmup excluded); falls back to totalReps when
+            // working is 0 (legacy rows). null when there is no meaningful
+            // estimate (0-rep/0-weight). Portal store-verbatim is unverified.
             estimatedOneRepMaxKg = OneRepMaxCalculator.estimate(
                 session.weightPerCableKg,
-                session.totalReps,
+                session.workingReps.takeIf { it > 0 } ?: session.totalReps,
             ).takeIf { it > 0f },
             // Velocity-based (VBT) estimate, looked up by catalog exerciseId from
             // the precomputed map. Distinct from the rep-based estimate above; null
