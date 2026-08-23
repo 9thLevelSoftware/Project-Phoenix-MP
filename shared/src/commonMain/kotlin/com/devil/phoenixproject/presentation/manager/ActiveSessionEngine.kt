@@ -6678,27 +6678,39 @@ class ActiveSessionEngine(
 
     private suspend fun saveJustLiftDefaultsFromWorkout() {
         val params = coordinator._workoutParameters.value
-        if (!params.isJustLift) return
-
-        val eccentricLoadPct = if (params.isEchoMode) params.eccentricLoad.percentage else 100
-        val echoLevelVal = if (params.isEchoMode) params.echoLevel.levelValue else 0
-
+        val defaults = toJustLiftDefaultsDocumentOrNull(params) ?: return
         try {
-            val defaults = JustLiftDefaultsDocument(
-                workoutModeId = params.programMode.modeValue,
-                weightPerCableKg = params.weightPerCableKg.coerceAtLeast(0.1f),
-                weightChangePerRep = params.progressionRegressionKg,
-                eccentricLoadPercentage = eccentricLoadPct,
-                echoLevelValue = echoLevelVal,
-                stallDetectionEnabled = params.stallDetectionEnabled,
-                repCountTimingName = params.repCountTiming.name,
-                restSeconds = params.justLiftRestSeconds,
-            )
             settingsManager.saveJustLiftDefaultsDocument(defaults)
             Logger.d { "Saved Just Lift defaults: mode=${params.programMode.modeValue}, weight=${params.weightPerCableKg}kg, restSeconds=${params.justLiftRestSeconds}" }
         } catch (e: Exception) {
             Logger.e(e) { "Failed to save Just Lift defaults: ${e.message}" }
         }
+    }
+
+    /**
+     * Shared Just Lift defaults conversion used by both the legacy manual
+     * `saveJustLiftDefaultsFromWorkout()` path and the automatic-completion
+     * snapshot persistence path. Centralising the conversion guarantees the
+     * two paths cannot drift.
+     *
+     * Returns null when [params] is not a Just Lift workout. See issue #714.
+     */
+    internal fun toJustLiftDefaultsDocumentOrNull(params: com.devil.phoenixproject.domain.model.WorkoutParameters): JustLiftDefaultsDocument? {
+        if (!params.isJustLift) return null
+
+        val eccentricLoadPct = if (params.isEchoMode) params.eccentricLoad.percentage else 100
+        val echoLevelVal = if (params.isEchoMode) params.echoLevel.levelValue else 0
+
+        return JustLiftDefaultsDocument(
+            workoutModeId = params.programMode.modeValue,
+            weightPerCableKg = params.weightPerCableKg.coerceAtLeast(0.1f),
+            weightChangePerRep = params.progressionRegressionKg,
+            eccentricLoadPercentage = eccentricLoadPct,
+            echoLevelValue = echoLevelVal,
+            stallDetectionEnabled = params.stallDetectionEnabled,
+            repCountTimingName = params.repCountTiming.name,
+            restSeconds = params.justLiftRestSeconds,
+        )
     }
 
     suspend fun getSingleExerciseDefaults(
@@ -8955,6 +8967,11 @@ class ActiveSessionEngine(
             cycleId = context.cycleId,
             dayNumber = context.cycleDayNumber,
         )
+        // Issue #714: capture Just Lift defaults from the pre-teardown params
+        // so automatic completion persists the user's confirmed Just Lift mode.
+        // Read here (before reset) and freeze into the immutable snapshot so the
+        // persistSnapshot write cannot read mutable live state after teardown.
+        val capturedJustLiftDefaults = toJustLiftDefaultsDocumentOrNull(params)
         return WorkoutExitSnapshot(
             lease = lease,
             completion = completion,
@@ -8966,6 +8983,7 @@ class ActiveSessionEngine(
             biomechanicsRepResults = biomechanicsSummary?.repResults.orEmpty()
                 .map { it.deepCopyForExitSnapshot() },
             singleExerciseDefaults = captureSingleExerciseDefaultsFromWorkout(),
+            justLiftDefaults = capturedJustLiftDefaults,
             presentationSummary = presentationSummary,
             exerciseIndex = exerciseIndex,
             setIndex = setIndex,
@@ -9070,6 +9088,16 @@ class ActiveSessionEngine(
                         singleExerciseDefaults = workoutPreferences.singleExerciseDefaults +
                             (defaults.exerciseId to defaults),
                     )
+                }
+            }
+            // Issue #714: persist Just Lift defaults captured in the immutable
+            // exit snapshot so the user's confirmed Just Lift mode survives the
+            // return-to-setup reload. Uses the same profile-scoped mutateWorkout
+            // and the snapshot's lease profile id, so it cannot read mutable
+            // coordinator state after teardown.
+            snapshot.justLiftDefaults?.let { justLiftDefaults ->
+                settingsManager.mutateWorkout(snapshot.lease.profileId) { workoutPreferences ->
+                    workoutPreferences.copy(justLiftDefaults = justLiftDefaults)
                 }
             }
 

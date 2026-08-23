@@ -1238,4 +1238,189 @@ class WorkoutExitPersistenceTest {
             harness.cleanup()
         }
     }
+
+    // ===== Issue #714: automatic Just Lift completion must persist the user's selected
+    // Just Lift mode. The snapshot path captured only singleExerciseDefaults, so
+    // settings.justLiftDefaults stayed at the stale TUT value and the return-to-setup
+    // reload overwrote the user's confirmed Old School selection. =====
+
+    @Test
+    fun `Issue714 automatic Just Lift completion persists Old School over seeded TUT defaults`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            // 1. Seed the active profile's Just Lift defaults as TUT — the bug condition.
+            val readyBefore = harness.fakeUserProfileRepo.activeProfileContext.value
+                as com.devil.phoenixproject.data.repository.ActiveProfileContext.Ready
+            harness.fakeUserProfileRepo.updateWorkout(
+                readyBefore.profile.id,
+                readyBefore.preferences.workout.value.copy(
+                    justLiftDefaults = com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument(
+                        workoutModeId = ProgramMode.TUT.modeValue,
+                        weightPerCableKg = 18f,
+                        weightChangePerRep = 0.5f,
+                        eccentricLoadPercentage = 100,
+                        echoLevelValue = 0,
+                        stallDetectionEnabled = true,
+                        repCountTimingName = com.devil.phoenixproject.domain.model.RepCountTiming.TOP.name,
+                        restSeconds = 90,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            // Sanity: seeded TUT is observable via settingsManager before the workout.
+            val seededBefore = harness.settingsManager.getJustLiftDefaultsDocument()
+            assertEquals(ProgramMode.TUT.modeValue, seededBefore.workoutModeId)
+
+            // 2. User picks Old School and starts a Just Lift set. params carry OldSchool.
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 5,
+                    warmupReps = 0,
+                    weightPerCableKg = 27.5f,
+                    progressionRegressionKg = 1.25f,
+                    stallDetectionEnabled = false,
+                    repCountTiming = com.devil.phoenixproject.domain.model.RepCountTiming.BOTTOM,
+                    justLiftRestSeconds = 120,
+                    isJustLift = true,
+                    useAutoStart = true,
+                    isAMRAP = false,
+                    selectedExerciseId = null,
+                ),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(workingReps = 5)
+
+            // 3. Trigger automatic completion.
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                SetEndReason.TARGET_REPS_REACHED,
+            )
+            advanceUntilIdle()
+
+            // 4. The persisted Just Lift defaults must reflect Old School and round-trip
+            // every captured field through the immutable exit snapshot.
+            val persisted = harness.settingsManager.getJustLiftDefaultsDocument()
+            assertEquals(ProgramMode.OldSchool.modeValue, persisted.workoutModeId)
+            assertEquals(27.5f, persisted.weightPerCableKg)
+            assertEquals(1.25f, persisted.weightChangePerRep)
+            assertEquals(100, persisted.eccentricLoadPercentage)
+            assertEquals(0, persisted.echoLevelValue)
+            assertEquals(false, persisted.stallDetectionEnabled)
+            assertEquals(com.devil.phoenixproject.domain.model.RepCountTiming.BOTTOM.name, persisted.repCountTimingName)
+            assertEquals(120, persisted.restSeconds)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Issue714 reset after handleSetCompletion does not affect persisted Just Lift defaults`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            // Seed TUT defaults.
+            val readyBefore = harness.fakeUserProfileRepo.activeProfileContext.value
+                as com.devil.phoenixproject.data.repository.ActiveProfileContext.Ready
+            harness.fakeUserProfileRepo.updateWorkout(
+                readyBefore.profile.id,
+                readyBefore.preferences.workout.value.copy(
+                    justLiftDefaults = com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument(
+                        workoutModeId = ProgramMode.TUT.modeValue,
+                        weightPerCableKg = 15f,
+                    ),
+                ),
+            )
+            advanceUntilIdle()
+
+            // User picks Echo and starts a Just Lift set.
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.Echo,
+                    reps = 4,
+                    weightPerCableKg = 22f,
+                    echoLevel = com.devil.phoenixproject.domain.model.EchoLevel.EPIC,
+                    eccentricLoad = com.devil.phoenixproject.domain.model.EccentricLoad.LOAD_150,
+                    isJustLift = true,
+                    useAutoStart = true,
+                    selectedExerciseId = null,
+                ),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(workingReps = 4)
+
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                SetEndReason.TARGET_REPS_REACHED,
+            )
+            // Snapshot persistence is async via launchSnapshotPersistence; wait for it.
+            advanceUntilIdle()
+
+            // Simulate the post-teardown Just Lift reset path mutating live params
+            // BEFORE the user observes the setup screen. This proves the persisted
+            // defaults could not have come from mutable coordinator state after reset.
+            harness.coordinator._workoutParameters.value =
+                harness.coordinator._workoutParameters.value.copy(
+                    programMode = ProgramMode.TUT,
+                    weightPerCableKg = 5f,
+                    echoLevel = com.devil.phoenixproject.domain.model.EchoLevel.HARDER,
+                    eccentricLoad = com.devil.phoenixproject.domain.model.EccentricLoad.LOAD_100,
+                )
+            advanceUntilIdle()
+
+            val persisted = harness.settingsManager.getJustLiftDefaultsDocument()
+            assertEquals(ProgramMode.Echo.modeValue, persisted.workoutModeId)
+            assertEquals(22f, persisted.weightPerCableKg)
+            assertEquals(
+                com.devil.phoenixproject.domain.model.EccentricLoad.LOAD_150.percentage,
+                persisted.eccentricLoadPercentage,
+            )
+            assertEquals(
+                com.devil.phoenixproject.domain.model.EchoLevel.EPIC.levelValue,
+                persisted.echoLevelValue,
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Issue714 routine set completion does not write Just Lift defaults`() = runTest {
+        // The Just Lift persistence path must be gated on completion.isJustLift so a
+        // routine set does not overwrite the user's saved Just Lift defaults.
+        val harness = DWSMTestHarness(this)
+        try {
+            val seeded = com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument(
+                workoutModeId = ProgramMode.Pump.modeValue,
+                weightPerCableKg = 22f,
+                restSeconds = 75,
+            )
+            val readyBefore = harness.fakeUserProfileRepo.activeProfileContext.value
+                as com.devil.phoenixproject.data.repository.ActiveProfileContext.Ready
+            harness.fakeUserProfileRepo.updateWorkout(
+                readyBefore.profile.id,
+                readyBefore.preferences.workout.value.copy(justLiftDefaults = seeded),
+            )
+            advanceUntilIdle()
+
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                SetEndReason.TARGET_REPS_REACHED,
+            )
+            advanceUntilIdle()
+
+            val after = harness.settingsManager.getJustLiftDefaultsDocument()
+            assertEquals(seeded, after, "Routine set completion must not mutate Just Lift defaults")
+        } finally {
+            harness.cleanup()
+        }
+    }
 }
