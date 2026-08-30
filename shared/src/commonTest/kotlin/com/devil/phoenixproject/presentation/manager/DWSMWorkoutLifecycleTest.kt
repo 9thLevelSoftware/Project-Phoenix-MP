@@ -41,6 +41,7 @@ import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -65,6 +66,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -3481,6 +3483,83 @@ class DWSMWorkoutLifecycleTest {
             assertFalse(lease.isTimedCable)
             assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
         } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Just Lift reset publishes Idle and egg timer before releasing reset claim`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.setActiveProfilePreferences(
+                UserPreferences(autoStartCountdownSeconds = 2),
+            )
+            harness.setActiveSummaryCountdownSeconds(-1)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                TestFixtures.justLiftParams.copy(justLiftRestSeconds = 30),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+            advanceUntilIdle()
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(workingReps = 1, isWarmupComplete = true)
+
+            var publicationObserved = false
+            harness.activeSessionEngine.afterJustLiftResetPresentationForTest = {
+                publicationObserved = true
+                assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+                assertEquals(30, harness.coordinator.justLiftRestCountdown.value)
+
+                // A queued handle-grab/auto-start must not cross the reset claim while
+                // the post-reset Idle and egg-timer writes are being published.
+                harness.fakeBleRepo.setHandleState(HandleState.Grabbed)
+                advanceTimeBy(2_000)
+                runCurrent()
+                assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
+            }
+
+            harness.activeSessionEngine.handleSetCompletion(
+                leaseA,
+                SetEndReason.TARGET_REPS_REACHED,
+            )
+            runCurrent()
+
+            assertTrue(publicationObserved)
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertEquals(28, harness.coordinator.justLiftRestCountdown.value)
+        } finally {
+            harness.activeSessionEngine.afterJustLiftResetPresentationForTest = null
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Just Lift reset releases its claim when cleanup throws`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.setActiveSummaryCountdownSeconds(-1)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(TestFixtures.justLiftParams)
+            harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+            advanceUntilIdle()
+            val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(workingReps = 1, isWarmupComplete = true)
+            harness.activeSessionEngine.afterResetCleanupTokenCaptureForTest = {
+                error("test reset cleanup failure")
+            }
+
+            assertFailsWith<IllegalStateException> {
+                harness.activeSessionEngine.resetForNewWorkoutForTest(leaseA)
+            }
+            harness.activeSessionEngine.afterResetCleanupTokenCaptureForTest = null
+
+            // The failed reset must not wedge the guard and prevent all future starts.
+            harness.dwsm.updateWorkoutParameters(TestFixtures.justLiftParams)
+            harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+            advanceUntilIdle()
+            assertNotEquals(leaseA, harness.activeSessionEngine.currentExecutionLeaseForTest())
+        } finally {
+            harness.activeSessionEngine.afterResetCleanupTokenCaptureForTest = null
             harness.cleanup()
         }
     }

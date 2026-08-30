@@ -940,11 +940,8 @@ internal class WorkoutExecutionGuard(
             if (expectedResetClaim != null || !sameIdentity(currentLeaseRef.value, lease)) {
                 return@withPlatformLock null
             }
-            supersedeRecoveryPublicationLocked()
             val token = captureResetCleanupTokenLocked()
-            if (!invalidateLocked(lease, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)) {
-                return@withPlatformLock null
-            }
+            invalidateLocked(lease, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
             expectedResetClaim = lease
             token
         }
