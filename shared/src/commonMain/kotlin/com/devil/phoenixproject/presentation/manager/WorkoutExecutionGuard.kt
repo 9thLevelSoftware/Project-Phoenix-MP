@@ -7,6 +7,8 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 sealed interface MachineTeardownState {
     data object Ready : MachineTeardownState
@@ -201,6 +203,8 @@ internal class WorkoutExecutionGuard(
     private val teardownLock = Any()
     private val persistenceLock = Any()
     private val persistedClaims = LinkedHashMap<String, PersistenceClaimStatus>()
+    private val justLiftDefaultsPersistenceMutex = Mutex()
+    private val latestJustLiftDefaultsExecutionByProfile = mutableMapOf<String, Long>()
 
     private var teardownLease: ExecutionLease? = null
     private var machineConfigurationClaim: MachineConfigurationClaim? = null
@@ -1210,6 +1214,25 @@ internal class WorkoutExecutionGuard(
 
             PersistenceClaimStatus.PERSISTED -> PersistenceClaimResult.AlreadyPersisted
         }
+    }
+
+    /**
+     * Serializes Just Lift defaults writes and admits only executions newer than the
+     * last successful write for that profile. The lock spans the suspendable mutation,
+     * so a delayed older coroutine cannot pass the check and write after a newer one.
+     */
+    internal suspend fun persistJustLiftDefaultsIfNewer(
+        profileId: String,
+        executionId: Long,
+        persist: suspend () -> Unit,
+    ): Boolean = justLiftDefaultsPersistenceMutex.withLock {
+        val latestExecutionId = latestJustLiftDefaultsExecutionByProfile[profileId]
+        if (latestExecutionId != null && executionId <= latestExecutionId) {
+            return@withLock false
+        }
+        persist()
+        latestJustLiftDefaultsExecutionByProfile[profileId] = executionId
+        true
     }
 
     fun persistenceClaimStatus(sessionId: String): PersistenceClaimStatus = withPlatformLock(persistenceLock) {
