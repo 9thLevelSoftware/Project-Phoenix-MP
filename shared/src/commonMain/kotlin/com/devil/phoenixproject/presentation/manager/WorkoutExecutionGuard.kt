@@ -926,7 +926,7 @@ internal class WorkoutExecutionGuard(
             LogEventType.WORKOUT_EXECUTION,
             "executionId=${current.executionId},sessionId=${current.sessionId},transition=invalidated,reason=$reason",
         )
-        true
+        return true
     }
 
     fun invalidate(lease: ExecutionLease, reason: ExecutionInvalidationReason): Boolean =
