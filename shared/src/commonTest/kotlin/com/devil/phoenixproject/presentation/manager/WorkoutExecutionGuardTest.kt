@@ -5,6 +5,7 @@ package com.devil.phoenixproject.presentation.manager
 import com.devil.phoenixproject.domain.model.SetEndReason
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFails
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertNull
@@ -62,10 +63,24 @@ class WorkoutExecutionGuardTest {
         guard.invalidateCurrent(ExecutionInvalidationReason.STOP_SET)
         val leaseB = guard.beginExecution(seed("session-b")).getOrThrow()
 
-        assertFalse(guard.claimExpectedReset(leaseA))
+        assertNull(guard.claimExpectedResetAndCaptureResetCleanupToken(leaseA))
         assertTrue(guard.isCurrent(leaseB))
         assertTrue(guard.invalidate(leaseB, ExecutionInvalidationReason.START_FAILED))
         assertFalse(guard.isCurrent(leaseB))
+    }
+
+    @Test
+    fun `expected reset claim reserves the boundary until cleanup releases it`() {
+        val guard = WorkoutExecutionGuard()
+        val leaseA = guard.beginExecution(seed("session-a")).getOrThrow()
+
+        val resetToken = guard.claimExpectedResetAndCaptureResetCleanupToken(leaseA)
+        assertEquals(leaseA, resetToken?.lease)
+        assertFails { guard.beginExecution(seed("session-b")).getOrThrow() }
+
+        guard.releaseExpectedResetClaim(leaseA)
+        val leaseB = guard.beginExecution(seed("session-b")).getOrThrow()
+        assertTrue(guard.isCurrent(leaseB))
     }
 
     @Test

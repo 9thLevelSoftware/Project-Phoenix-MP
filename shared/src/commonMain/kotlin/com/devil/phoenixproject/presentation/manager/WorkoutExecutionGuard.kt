@@ -203,6 +203,7 @@ internal class WorkoutExecutionGuard(
     private val persistedClaims = LinkedHashMap<String, PersistenceClaimStatus>()
 
     private var teardownLease: ExecutionLease? = null
+    private var expectedResetClaim: ExecutionLease? = null
     private var machineConfigurationClaim: MachineConfigurationClaim? = null
     private var deferredConfigurationTeardownLease: ExecutionLease? = null
     private var deferredConfigurationTeardownAttempt = 0
@@ -386,7 +387,8 @@ internal class WorkoutExecutionGuard(
     }
 
     private fun beginExecutionLocked(seed: ExecutionSeed): Result<ExecutionLease> {
-        if (machineConfigurationClaim != null ||
+        if (expectedResetClaim != null ||
+            machineConfigurationClaim != null ||
             recoveryPublicationClaim != null ||
             queuedSuccessorSetup != null ||
             restoredTeardownRecord != null ||
@@ -905,9 +907,9 @@ internal class WorkoutExecutionGuard(
         invalidated
     }
 
-    fun invalidate(lease: ExecutionLease, reason: ExecutionInvalidationReason): Boolean = withPlatformLock(teardownLock) {
-        val current = currentLeaseRef.value ?: return@withPlatformLock false
-        if (!sameIdentity(current, lease)) return@withPlatformLock false
+    private fun invalidateLocked(lease: ExecutionLease, reason: ExecutionInvalidationReason): Boolean {
+        val current = currentLeaseRef.value ?: return false
+        if (!sameIdentity(current, lease)) return false
         if (reason == ExecutionInvalidationReason.START_FAILED) {
             recoveryPublicationClaim = null
         } else {
@@ -927,9 +929,31 @@ internal class WorkoutExecutionGuard(
         true
     }
 
-    /** Atomically claims and invalidates an exact lease for a delayed reset. */
-    fun claimExpectedReset(lease: ExecutionLease): Boolean =
-        invalidate(lease, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
+    fun invalidate(lease: ExecutionLease, reason: ExecutionInvalidationReason): Boolean =
+        withPlatformLock(teardownLock) {
+            invalidateLocked(lease, reason)
+        }
+
+    /** Atomically reserves the reset boundary, captures cleanup, and invalidates an exact lease. */
+    fun claimExpectedResetAndCaptureResetCleanupToken(lease: ExecutionLease): ResetCleanupToken? =
+        withPlatformLock(teardownLock) {
+            if (expectedResetClaim != null || !sameIdentity(currentLeaseRef.value, lease)) {
+                return@withPlatformLock null
+            }
+            supersedeRecoveryPublicationLocked()
+            val token = captureResetCleanupTokenLocked()
+            if (!invalidateLocked(lease, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)) {
+                return@withPlatformLock null
+            }
+            expectedResetClaim = lease
+            token
+        }
+
+    fun releaseExpectedResetClaim(lease: ExecutionLease) = withPlatformLock(teardownLock) {
+        if (sameIdentity(expectedResetClaim, lease)) {
+            expectedResetClaim = null
+        }
+    }
 
     fun commitResetCleanupIfNoSuccessor(
         token: ResetCleanupToken,

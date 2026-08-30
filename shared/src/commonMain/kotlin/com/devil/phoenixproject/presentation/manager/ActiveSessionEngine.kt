@@ -7001,11 +7001,14 @@ class ActiveSessionEngine(
     }
 
     private fun resetForNewWorkoutInternal(expectedLease: ExecutionLease?): Boolean {
+        val expectedResetToken = expectedLease?.let { lease ->
+            executionGuard.claimExpectedResetAndCaptureResetCleanupToken(lease)
+                ?: return false
+        }
         val cleanupCandidate = runtimeCleanupCandidateRef.value
         val restoredTimerOwner = restoredRestTimerOwnerRef.value
-        val resetToken = executionGuard.supersedeRecoveryPublicationAndCaptureResetCleanupToken()
-        val expectedLeaseClaimed = expectedLease == null || executionGuard.claimExpectedReset(expectedLease)
-        if (!expectedLeaseClaimed) return false
+        val resetToken = expectedResetToken
+            ?: executionGuard.supersedeRecoveryPublicationAndCaptureResetCleanupToken()
         val cleanupTarget = cleanupCandidate?.let { candidate ->
             installRuntimeCleanupIntent(
                 captureRuntimeCleanupTarget(candidate, RuntimeCleanupReason.EXPLICIT_RESTART),
@@ -7018,6 +7021,7 @@ class ActiveSessionEngine(
             afterResetCleanupTokenCaptureForTest?.invoke()
             restoredTimerOwner?.let(::detachRestoredRestTimerIfExact)?.cancel()
             coordinator.workoutJob?.cancel(CancellationException("Accepted retry reset requested"))
+            expectedLease?.let(executionGuard::releaseExpectedResetClaim)
             return true
         }
         val lease = resetToken.lease
@@ -7054,10 +7058,14 @@ class ActiveSessionEngine(
                 executionContext = null
             }
         }
-        if (lease != null && invalidatedLease == null) return true
+        if (lease != null && invalidatedLease == null) {
+            expectedLease?.let(executionGuard::releaseExpectedResetClaim)
+            return true
+        }
         executionGuard.commitResetCleanupIfNoSuccessor(resetToken, invalidatedLease) {
             clearSharedStateForNewWorkout()
         }
+        expectedLease?.let(executionGuard::releaseExpectedResetClaim)
         return true
     }
 
