@@ -436,7 +436,7 @@ internal class WorkoutExecutionGuard(
         allowNoCurrentAfterOwnedInvalidation: Boolean,
         expectedRestoredOwner: RestoredRuntimeOwnerToken? = null,
     ): RecoveryPublicationClaim? = withPlatformLock(teardownLock) {
-        if (jobOwnershipClosed || recoveryPublicationClaim != null) return@withPlatformLock null
+        if (jobOwnershipClosed || expectedResetClaim != null || recoveryPublicationClaim != null) return@withPlatformLock null
         if (recoveryPublicationSupersessionEpoch != expectedSupersessionEpoch) return@withPlatformLock null
         if (!recoveryPublicationAuthorityMatches(expectedLease, allowNoCurrentAfterOwnedInvalidation)) {
             return@withPlatformLock null
@@ -460,6 +460,7 @@ internal class WorkoutExecutionGuard(
         block: () -> Unit,
     ): Boolean = withPlatformLock(teardownLock) {
         if (jobOwnershipClosed ||
+            expectedResetClaim != null ||
             recoveryPublicationClaim != claim ||
             executionSequence.value != claim.executionGeneration ||
             recoveryPublicationSupersessionEpoch != claim.supersessionEpoch ||
@@ -500,6 +501,7 @@ internal class WorkoutExecutionGuard(
             claim.expectedLease != null ||
             claim.allowNoCurrentAfterOwnedInvalidation ||
             currentLeaseRef.value != null ||
+            expectedResetClaim != null ||
             restoredTeardownRecord != null ||
             machineConfigurationClaim != null ||
             configurationInputEpoch != expectedConfigurationInputEpoch ||
