@@ -69,6 +69,17 @@ class WorkoutExecutionGuardTest {
     }
 
     @Test
+    fun `expected reset claim fails without touching a successor`() {
+        val guard = WorkoutExecutionGuard()
+        val leaseA = guard.beginExecution(seed("session-a")).getOrThrow()
+        guard.invalidateCurrent(ExecutionInvalidationReason.STOP_SET)
+        val leaseB = guard.beginExecution(seed("session-b")).getOrThrow()
+
+        assertFalse(guard.claimExpectedReset(leaseA))
+        assertTrue(guard.isCurrent(leaseB))
+    }
+
+    @Test
     fun `activation rejects a lease that is no longer current`() {
         val guard = WorkoutExecutionGuard()
         val leaseA = guard.beginExecution(seed("session-a")).getOrThrow()

@@ -927,6 +927,10 @@ internal class WorkoutExecutionGuard(
         true
     }
 
+    /** Atomically claims and invalidates an exact lease for a delayed reset. */
+    fun claimExpectedReset(lease: ExecutionLease): Boolean =
+        invalidate(lease, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
+
     fun commitResetCleanupIfNoSuccessor(
         token: ResetCleanupToken,
         invalidatedLease: ExecutionLease?,

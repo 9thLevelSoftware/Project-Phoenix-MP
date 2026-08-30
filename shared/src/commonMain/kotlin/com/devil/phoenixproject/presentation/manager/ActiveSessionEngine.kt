@@ -6996,10 +6996,12 @@ class ActiveSessionEngine(
 
     // ===== Core Workout Lifecycle =====
 
-    fun resetForNewWorkout() {
+    fun resetForNewWorkout(expectedLease: ExecutionLease? = null): Boolean {
         val cleanupCandidate = runtimeCleanupCandidateRef.value
         val restoredTimerOwner = restoredRestTimerOwnerRef.value
         val resetToken = executionGuard.supersedeRecoveryPublicationAndCaptureResetCleanupToken()
+        val expectedLeaseClaimed = expectedLease == null || executionGuard.claimExpectedReset(expectedLease)
+        if (!expectedLeaseClaimed) return false
         val cleanupTarget = cleanupCandidate?.let { candidate ->
             installRuntimeCleanupIntent(
                 captureRuntimeCleanupTarget(candidate, RuntimeCleanupReason.EXPLICIT_RESTART),
@@ -7012,7 +7014,7 @@ class ActiveSessionEngine(
             afterResetCleanupTokenCaptureForTest?.invoke()
             restoredTimerOwner?.let(::detachRestoredRestTimerIfExact)?.cancel()
             coordinator.workoutJob?.cancel(CancellationException("Accepted retry reset requested"))
-            return
+            return true
         }
         val lease = resetToken.lease
         afterResetCleanupTokenCaptureForTest?.invoke()
@@ -7032,8 +7034,12 @@ class ActiveSessionEngine(
                 resetMachineTeardownOwner.compareAndSet(resetOwner, null)
             }
         }
-        val invalidatedLease = lease?.takeIf {
-            executionGuard.invalidate(it, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
+        val invalidatedLease = if (expectedLease != null) {
+            lease
+        } else {
+            lease?.takeIf {
+                executionGuard.invalidate(it, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
+            }
         }
         lease?.let(::discardTeardownReadyContinuation)
         if (invalidatedLease != null) {
@@ -7044,10 +7050,11 @@ class ActiveSessionEngine(
                 executionContext = null
             }
         }
-        if (lease != null && invalidatedLease == null) return
+        if (lease != null && invalidatedLease == null) return true
         executionGuard.commitResetCleanupIfNoSuccessor(resetToken, invalidatedLease) {
             clearSharedStateForNewWorkout()
         }
+        return true
     }
 
     private fun clearSharedStateForNewWorkout() {
@@ -11325,7 +11332,7 @@ class ActiveSessionEngine(
 
                 if (skipSummary) {
                     Logger.d("Just Lift: Summary OFF - skipping summary")
-                    resetForNewWorkout()
+                    if (!resetForNewWorkout(lease)) return@launchCompletionJob
                     coordinator._workoutState.value = WorkoutState.Idle
                     if (justLiftRestSeconds > 0) {
                         startJustLiftEggTimer(justLiftRestSeconds)
@@ -11336,7 +11343,7 @@ class ActiveSessionEngine(
 
                     if (coordinator._workoutState.value is WorkoutState.SetSummary) {
                         Logger.d("Just Lift: Summary complete, transitioning to Idle")
-                        resetForNewWorkout()
+                        if (!resetForNewWorkout(lease)) return@launchCompletionJob
                         coordinator._workoutState.value = WorkoutState.Idle
                         if (justLiftRestSeconds > 0) {
                             Logger.d("Just Lift: Starting egg timer ($justLiftRestSeconds s)")
