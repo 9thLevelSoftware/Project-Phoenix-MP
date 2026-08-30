@@ -6695,7 +6695,7 @@ class ActiveSessionEngine(
      *
      * Returns null when [params] is not a Just Lift workout. See issue #714.
      */
-    internal fun toJustLiftDefaultsDocumentOrNull(params: com.devil.phoenixproject.domain.model.WorkoutParameters): JustLiftDefaultsDocument? {
+    internal fun toJustLiftDefaultsDocumentOrNull(params: WorkoutParameters): JustLiftDefaultsDocument? {
         if (!params.isJustLift) return null
 
         val eccentricLoadPct = if (params.isEchoMode) params.eccentricLoad.percentage else 100
@@ -9033,17 +9033,42 @@ class ActiveSessionEngine(
         }
     }
 
-    // Issue #714: writes the Just Lift defaults captured in the immutable exit
-    // snapshot. Split out from `persistSnapshot` so the Just Lift completion
-    // job can call it synchronously before publishing `SetSummary` / flipping
-    // to `Idle`, and the async path can still call it for retained-snapshot
-    // retry and process recovability. The async re-write is idempotent
-    // (same captured value).
-    internal suspend fun persistCapturedJustLiftDefaultsSnapshot(snapshot: WorkoutExitSnapshot) {
-        snapshot.justLiftDefaults?.let { justLiftDefaults ->
+    // Issue #714 (post-#716 P1 follow-up): single-slot ownership for the Just Lift
+    // defaults write. Both writers go through the same `settingsManager.mutateWorkout`
+    // mutex; without ownership, a slower async `persistSnapshot` for snapshot N can
+    // overwrite a fresher synchronous write for snapshot N+1. See #716 review thread
+    // discussion_r3837465213. `claimIfNeeded` distinguishes the canonical synchronous
+    // completion-job write (which flips the marker on success and clears it on
+    // failure) from the async `persistSnapshot` and retained-retry paths (which
+    // always check the marker first and skip when the synchronous owner already
+    // persisted). The synchronous failure path explicitly clears the marker so the
+    // async fallback becomes the durable backstop.
+    internal suspend fun persistCapturedJustLiftDefaultsSnapshot(
+        snapshot: WorkoutExitSnapshot,
+        claimIfNeeded: Boolean,
+    ) {
+        val pending = snapshot.justLiftDefaults ?: return
+        // The async / retained-retry paths MUST NOT re-write if the synchronous
+        // completion-job owner has already persisted for this snapshot.
+        // The synchronous claim path is the canonical first writer.
+        if (!claimIfNeeded && snapshot.justLiftDefaultsPersisted) return
+        if (claimIfNeeded) {
+            // Sync claimer: even if the marker somehow ended up true (e.g. a retry
+            // that started after a previous successful sync write), reset and write
+            // so the latest captured values from the current snapshot win.
+            snapshot.clearJustLiftDefaultsPersisted()
+        }
+        try {
             settingsManager.mutateWorkout(snapshot.lease.profileId) { workoutPreferences ->
-                workoutPreferences.copy(justLiftDefaults = justLiftDefaults)
+                workoutPreferences.copy(justLiftDefaults = pending)
             }
+            snapshot.markJustLiftDefaultsPersisted()
+        } catch (cancellation: CancellationException) {
+            snapshot.clearJustLiftDefaultsPersisted()
+            throw cancellation
+        } catch (error: Exception) {
+            snapshot.clearJustLiftDefaultsPersisted()
+            throw error
         }
     }
 
@@ -9104,12 +9129,11 @@ class ActiveSessionEngine(
                     )
                 }
             }
-            // Issue #714: persist Just Lift defaults captured in the immutable
-            // exit snapshot so the user's confirmed Just Lift mode survives the
-            // return-to-setup reload. Uses the same profile-scoped mutateWorkout
-            // and the snapshot's lease profile id, so it cannot read mutable
-            // coordinator state after teardown.
-            persistCapturedJustLiftDefaultsSnapshot(snapshot)
+            // Issue #714: async Just Lift defaults write is a fallback / retained-snapshot
+            // retry; the synchronous completion-job write (claimIfNeeded = true) is the
+            // canonical owner for each snapshot, so the late async coroutine must not
+            // re-write after the synchronous path has already persisted for this snapshot.
+            persistCapturedJustLiftDefaultsSnapshot(snapshot, claimIfNeeded = false)
 
             val postSave = snapshot.postSaveInput
             val hasPR = gamificationManager.processPostSaveEvents(
@@ -11261,28 +11285,17 @@ class ActiveSessionEngine(
 
             Logger.d("handleSetCompletion: summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, wasBodyweight=$wasBodyweight, effectiveSkipSummary=$effectiveSkipSummary, isJustLift=$isJustLift, isAMRAP=${params.isAMRAP}")
 
-            // Issue #714 (Codex P1 follow-up): write synchronously so
-            // JustLiftScreen's reload sees fresh defaults before any navigation
-            // fires; try/catch so a transient prefs failure doesn't strand the
-            // user mid-teardown.
-            // reads persisted defaults on `LaunchedEffect(readyProfileId)` — once per
-            // profile-id change — and the async `persistSnapshot` coroutine does not
-            // finish writing the captured Just Lift defaults until AFTER this
-            // completion job has published `SetSummary` or flipped `WorkoutState` to
-            // `Idle`. The ActiveWorkoutScreen observer then pops back to
-            // JustLiftScreen and JustLiftScreen recomposes against the stale TUT value.
-            // Write the captured defaults synchronously here, BEFORE any state flip or
-            // summary publish that could trigger the navigation observer, so the
-            // JustLiftScreen reload sees the persisted Old School (or whatever the user
-            // picked). The write is wrapped in try/catch so a transient
-            // preferences-store failure cannot leave the user stuck after machine
-            // teardown — the retained-snapshot retry path is the durable backstop.
-            // The async `persistSnapshot` path still calls the same helper for retained
-            // snapshot recovery and process recovability (idempotent re-write of the
-            // same value).
+            // Issue #714 (post-#716 P1 follow-up): synchronous Just Lift defaults write,
+            // before `WorkoutState` flips to `Idle` / before `SetSummary` is published,
+            // so the return-to-setup reload on the next `LaunchedEffect(readyProfileId)`
+            // observes the freshly captured mode. `claimIfNeeded = true` makes this
+            // caller the canonical owner for THIS snapshot; the asynchronous
+            // `persistSnapshot` coroutine treats that call as already done and skips
+            // its redundant write. A failure here clears the marker so the retained-
+            // snapshot retry path remains the durable backstop.
             if (isJustLift && terminalSnapshot?.justLiftDefaults != null) {
                 try {
-                    persistCapturedJustLiftDefaultsSnapshot(terminalSnapshot)
+                    persistCapturedJustLiftDefaultsSnapshot(terminalSnapshot, claimIfNeeded = true)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {

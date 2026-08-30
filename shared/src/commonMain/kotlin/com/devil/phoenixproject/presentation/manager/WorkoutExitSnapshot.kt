@@ -348,10 +348,25 @@ internal class DangerZoneCountdownGate {
     private fun ExecutionLease.sameExecutionAs(other: ExecutionLease): Boolean = executionId == other.executionId && sessionId == other.sessionId
 }
 
-internal data class WorkoutExitSnapshot(
+/**
+ * Issue #714 (post-#716 P1 follow-up): the synchronous `handleSetCompletion` write
+ * and the asynchronous `persistSnapshot` write for `justLiftDefaults` would race on
+ * consecutive Just Lift completions with different modes. The same captured
+ * `JustLiftDefaultsDocument` is written by both paths through the same
+ * `settingsManager.mutateWorkout(profileId)` mutex, and `mutateWorkout` serializes
+ * without imposing recency — so a slower `persistSnapshot` for snapshot N could
+ * overwrite a fresher synchronous write for snapshot N+1. `justLiftDefaultsPersisted`
+ * is the per-snapshot ownership marker that distinguishes successful synchronous
+ * persistence from fallback retry and prevents the stale overwrite.
+ *
+ * Lives outside the data-class constructor so the marker survives the
+ * `getOrCapture { .copy(terminalPath = …) }` hot path that re-issues the snapshot
+ * for an already-captured key.
+ */
+internal class WorkoutExitSnapshot(
     val lease: ExecutionLease,
     val completion: SetExecutionCompletion,
-    val terminalPath: TerminalPath,
+    var terminalPath: TerminalPath,
     val session: WorkoutSession,
     val completedSet: CompletedSet?,
     val metrics: List<WorkoutMetric>,
@@ -380,7 +395,31 @@ internal data class WorkoutExitSnapshot(
     val cycleId: String?,
     val cycleDayNumber: Int?,
     val postSaveInput: PostSaveWorkoutInput,
-)
+) {
+    /**
+     * Set to true once either the synchronous completion-job write or the asynchronous
+     * `persistSnapshot` write has durably persisted [justLiftDefaults] for THIS snapshot.
+     * Both writers take the same single-slot ownership: the first one to flip this to
+     * `true` is the canonical writer for that snapshot's defaults, and any later
+     * redundant call from the other path returns without touching preferences.
+     *
+     * Mutated only through [markJustLiftDefaultsPersisted] /
+     * [clearJustLiftDefaultsPersisted]; always read through
+     * [justLiftDefaultsPersisted] so a future process-recovery retry path can take
+     * the same ownership seat.
+     */
+    @Volatile
+    var justLiftDefaultsPersisted: Boolean = false
+        private set
+
+    fun markJustLiftDefaultsPersisted() {
+        justLiftDefaultsPersisted = true
+    }
+
+    fun clearJustLiftDefaultsPersisted() {
+        justLiftDefaultsPersisted = false
+    }
+}
 
 internal data class WorkoutExecutionContext(
     val lease: ExecutionLease,
@@ -428,7 +467,10 @@ internal class WorkoutExitSnapshotStore {
     ): WorkoutExitSnapshot {
         val key = completion.lease.snapshotKey()
         withPlatformLock(lock) {
-            snapshots[key]?.let { return it.copy(terminalPath = terminalPath) }
+            snapshots[key]?.let { existing ->
+                existing.terminalPath = terminalPath
+                return existing
+            }
         }
 
         val candidate = capture()
@@ -441,7 +483,9 @@ internal class WorkoutExitSnapshotStore {
         }
 
         return withPlatformLock(lock) {
-            snapshots[key]?.copy(terminalPath = terminalPath) ?: candidate.also { installed ->
+            snapshots[key]?.also { existing ->
+                existing.terminalPath = terminalPath
+            } ?: candidate.also { installed ->
                 snapshots[key] = installed
                 onInstalled(installed)
             }
