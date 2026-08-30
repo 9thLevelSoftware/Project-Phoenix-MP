@@ -2,6 +2,7 @@ package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.QualityTrend
@@ -1036,6 +1037,7 @@ class WorkoutExitPersistenceTest {
         completion: SetExecutionCompletion,
         terminalPath: TerminalPath,
         completedSetId: String,
+        justLiftDefaults: JustLiftDefaultsDocument? = null,
     ) = WorkoutExitSnapshot(
         completion = completion,
         lease = completion.lease,
@@ -1057,6 +1059,7 @@ class WorkoutExitPersistenceTest {
         metrics = emptyList(),
         repMetrics = emptyList(),
         biomechanicsRepResults = emptyList(),
+        justLiftDefaults = justLiftDefaults,
         presentationSummary = WorkoutState.SetSummary(
             metrics = emptyList(),
             peakLoadKgPerCable = 25f,
@@ -1535,6 +1538,87 @@ class WorkoutExitPersistenceTest {
                 "Expected at least one Just Lift defaults write during completion. Events: $eventLog"
             }
         } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Issue714 synchronous Just Lift defaults failure is recovered by async snapshot retry`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val releaseAsyncSnapshot = CompletableDeferred<Unit>()
+        val mutationProfileIds = mutableListOf<String>()
+        try {
+            val ready = harness.fakeUserProfileRepo.activeProfileContext.value
+                as com.devil.phoenixproject.data.repository.ActiveProfileContext.Ready
+            val seededTut = JustLiftDefaultsDocument(
+                workoutModeId = ProgramMode.TUT.modeValue,
+                weightPerCableKg = 18f,
+            )
+            harness.fakeUserProfileRepo.updateWorkout(
+                ready.profile.id,
+                ready.preferences.workout.value.copy(justLiftDefaults = seededTut),
+            )
+            advanceUntilIdle()
+
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 5,
+                    warmupReps = 0,
+                    weightPerCableKg = 32f,
+                    progressionRegressionKg = 1f,
+                    stallDetectionEnabled = true,
+                    repCountTiming = com.devil.phoenixproject.domain.model.RepCountTiming.TOP,
+                    justLiftRestSeconds = 0,
+                    isJustLift = true,
+                    useAutoStart = true,
+                    isAMRAP = false,
+                    selectedExerciseId = null,
+                ),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true, isJustLiftMode = true)
+            advanceUntilIdle()
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._repCount.value = RepCount(workingReps = 5)
+
+            // Hold the async snapshot before it reaches mutateWorkout. This lets the
+            // completion job exercise its synchronous catch, then releases the same
+            // retained snapshot for the async retry path.
+            harness.fakeWorkoutRepo.beforeSaveSession = { releaseAsyncSnapshot.await() }
+            harness.fakeUserProfileRepo.updateWorkoutFailure = IllegalStateException("transient sync failure")
+            harness.fakeUserProfileRepo.beforeWorkoutMutation = { profileId ->
+                mutationProfileIds += profileId
+                if (mutationProfileIds.size > 1) {
+                    harness.fakeUserProfileRepo.updateWorkoutFailure = null
+                }
+            }
+
+            harness.activeSessionEngine.handleSetCompletion(
+                lease,
+                SetEndReason.TARGET_REPS_REACHED,
+            )
+            runCurrent()
+
+            // The first mutateWorkout is the synchronous completion write. It throws
+            // and is swallowed by handleSetCompletion, leaving the seeded value intact.
+            assertEquals(listOf(ready.profile.id), mutationProfileIds)
+            assertEquals(ProgramMode.TUT.modeValue, harness.settingsManager.getJustLiftDefaultsDocument().workoutModeId)
+
+            // Releasing saveSession lets persistSnapshot continue through
+            // persistCapturedJustLiftDefaultsSnapshot -> executionGuard -> settingsManager.
+            releaseAsyncSnapshot.complete(Unit)
+            advanceUntilIdle()
+
+            assertEquals(listOf(ready.profile.id, ready.profile.id), mutationProfileIds)
+            val persisted = harness.settingsManager.getJustLiftDefaultsDocument()
+            assertEquals(ProgramMode.OldSchool.modeValue, persisted.workoutModeId)
+            assertEquals(32f, persisted.weightPerCableKg)
+        } finally {
+            releaseAsyncSnapshot.complete(Unit)
+            harness.fakeWorkoutRepo.beforeSaveSession = {}
+            harness.fakeUserProfileRepo.updateWorkoutFailure = null
+            harness.fakeUserProfileRepo.beforeWorkoutMutation = null
             harness.cleanup()
         }
     }
