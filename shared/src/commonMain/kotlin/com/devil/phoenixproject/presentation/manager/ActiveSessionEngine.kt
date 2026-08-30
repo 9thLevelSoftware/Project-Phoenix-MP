@@ -9033,42 +9033,16 @@ class ActiveSessionEngine(
         }
     }
 
-    // Issue #714 (post-#716 P1 follow-up): single-slot ownership for the Just Lift
-    // defaults write. Both writers go through the same `settingsManager.mutateWorkout`
-    // mutex; without ownership, a slower async `persistSnapshot` for snapshot N can
-    // overwrite a fresher synchronous write for snapshot N+1. See #716 review thread
-    // discussion_r3837465213. `claimIfNeeded` distinguishes the canonical synchronous
-    // completion-job write (which flips the marker on success and clears it on
-    // failure) from the async `persistSnapshot` and retained-retry paths (which
-    // always check the marker first and skip when the synchronous owner already
-    // persisted). The synchronous failure path explicitly clears the marker so the
-    // async fallback becomes the durable backstop.
-    internal suspend fun persistCapturedJustLiftDefaultsSnapshot(
-        snapshot: WorkoutExitSnapshot,
-        claimIfNeeded: Boolean,
-    ) {
+    // Issue #714: serialize profile-scoped Just Lift defaults writes by execution id.
+    internal suspend fun persistCapturedJustLiftDefaultsSnapshot(snapshot: WorkoutExitSnapshot) {
         val pending = snapshot.justLiftDefaults ?: return
-        // The async / retained-retry paths MUST NOT re-write if the synchronous
-        // completion-job owner has already persisted for this snapshot.
-        // The synchronous claim path is the canonical first writer.
-        if (!claimIfNeeded && snapshot.justLiftDefaultsPersisted) return
-        if (claimIfNeeded) {
-            // Sync claimer: even if the marker somehow ended up true (e.g. a retry
-            // that started after a previous successful sync write), reset and write
-            // so the latest captured values from the current snapshot win.
-            snapshot.clearJustLiftDefaultsPersisted()
-        }
-        try {
+        executionGuard.persistJustLiftDefaultsIfNewer(
+            profileId = snapshot.lease.profileId,
+            executionId = snapshot.lease.executionId,
+        ) {
             settingsManager.mutateWorkout(snapshot.lease.profileId) { workoutPreferences ->
                 workoutPreferences.copy(justLiftDefaults = pending)
             }
-            snapshot.markJustLiftDefaultsPersisted()
-        } catch (cancellation: CancellationException) {
-            snapshot.clearJustLiftDefaultsPersisted()
-            throw cancellation
-        } catch (error: Exception) {
-            snapshot.clearJustLiftDefaultsPersisted()
-            throw error
         }
     }
 
@@ -9129,11 +9103,9 @@ class ActiveSessionEngine(
                     )
                 }
             }
-            // Issue #714: async Just Lift defaults write is a fallback / retained-snapshot
-            // retry; the synchronous completion-job write (claimIfNeeded = true) is the
-            // canonical owner for each snapshot, so the late async coroutine must not
-            // re-write after the synchronous path has already persisted for this snapshot.
-            persistCapturedJustLiftDefaultsSnapshot(snapshot, claimIfNeeded = false)
+            // Issue #714: the async path is guarded by the same profile-wide
+            // execution gate as the synchronous completion write.
+            persistCapturedJustLiftDefaultsSnapshot(snapshot)
 
             val postSave = snapshot.postSaveInput
             val hasPR = gamificationManager.processPostSaveEvents(
@@ -11285,17 +11257,11 @@ class ActiveSessionEngine(
 
             Logger.d("handleSetCompletion: summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, wasBodyweight=$wasBodyweight, effectiveSkipSummary=$effectiveSkipSummary, isJustLift=$isJustLift, isAMRAP=${params.isAMRAP}")
 
-            // Issue #714 (post-#716 P1 follow-up): synchronous Just Lift defaults write,
-            // before `WorkoutState` flips to `Idle` / before `SetSummary` is published,
-            // so the return-to-setup reload on the next `LaunchedEffect(readyProfileId)`
-            // observes the freshly captured mode. `claimIfNeeded = true` makes this
-            // caller the canonical owner for THIS snapshot; the asynchronous
-            // `persistSnapshot` coroutine treats that call as already done and skips
-            // its redundant write. A failure here clears the marker so the retained-
-            // snapshot retry path remains the durable backstop.
+            // Issue #714: persist the captured Just Lift defaults before publishing
+            // completion state; the profile-wide execution gate prevents stale writes.
             if (isJustLift && terminalSnapshot?.justLiftDefaults != null) {
                 try {
-                    persistCapturedJustLiftDefaultsSnapshot(terminalSnapshot, claimIfNeeded = true)
+                    persistCapturedJustLiftDefaultsSnapshot(terminalSnapshot)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: Throwable) {
