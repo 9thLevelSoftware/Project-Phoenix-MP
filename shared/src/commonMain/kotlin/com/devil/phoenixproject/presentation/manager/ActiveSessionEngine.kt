@@ -6996,7 +6996,11 @@ class ActiveSessionEngine(
 
     // ===== Core Workout Lifecycle =====
 
-    fun resetForNewWorkout(expectedLease: ExecutionLease? = null): Boolean {
+    fun resetForNewWorkout() {
+        resetForNewWorkoutInternal(null)
+    }
+
+    private fun resetForNewWorkoutInternal(expectedLease: ExecutionLease?): Boolean {
         val cleanupCandidate = runtimeCleanupCandidateRef.value
         val restoredTimerOwner = restoredRestTimerOwnerRef.value
         val resetToken = executionGuard.supersedeRecoveryPublicationAndCaptureResetCleanupToken()
@@ -11332,7 +11336,7 @@ class ActiveSessionEngine(
 
                 if (skipSummary) {
                     Logger.d("Just Lift: Summary OFF - skipping summary")
-                    if (!resetForNewWorkout(lease)) return@launchCompletionJob
+                    if (!resetForNewWorkoutInternal(lease)) return@launchCompletionJob
                     coordinator._workoutState.value = WorkoutState.Idle
                     if (justLiftRestSeconds > 0) {
                         startJustLiftEggTimer(justLiftRestSeconds)
@@ -11343,7 +11347,7 @@ class ActiveSessionEngine(
 
                     if (coordinator._workoutState.value is WorkoutState.SetSummary) {
                         Logger.d("Just Lift: Summary complete, transitioning to Idle")
-                        if (!resetForNewWorkout(lease)) return@launchCompletionJob
+                        if (!resetForNewWorkoutInternal(lease)) return@launchCompletionJob
                         coordinator._workoutState.value = WorkoutState.Idle
                         if (justLiftRestSeconds > 0) {
                             Logger.d("Just Lift: Starting egg timer ($justLiftRestSeconds s)")
