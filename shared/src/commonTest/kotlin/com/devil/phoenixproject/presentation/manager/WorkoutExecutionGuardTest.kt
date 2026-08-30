@@ -658,6 +658,61 @@ class WorkoutExecutionGuardTest {
         )
     }
 
+    @Test
+    fun `profile-wide Just Lift gate rejects a late older execution after newer sync`() = runTest {
+        val guard = WorkoutExecutionGuard()
+        val writes = mutableListOf<Long>()
+
+        // The newer synchronous completion wins before the older async fallback arrives.
+        assertTrue(
+            guard.persistJustLiftDefaultsIfNewer("profile-a", executionId = 2L) {
+                writes += 2L
+            },
+        )
+        assertFalse(
+            guard.persistJustLiftDefaultsIfNewer("profile-a", executionId = 1L) {
+                writes += 1L
+            },
+        )
+
+        assertEquals(listOf(2L), writes)
+    }
+
+    @Test
+    fun `failed Just Lift write can retry the same execution`() = runTest {
+        val guard = WorkoutExecutionGuard()
+        var fail = true
+        val writes = mutableListOf<Long>()
+
+        val firstAttempt = runCatching {
+            guard.persistJustLiftDefaultsIfNewer("profile-a", executionId = 2L) {
+                if (fail) error("transient failure")
+                writes += 2L
+            }
+        }
+        assertTrue(firstAttempt.isFailure)
+
+        fail = false
+        assertTrue(
+            guard.persistJustLiftDefaultsIfNewer("profile-a", executionId = 2L) {
+                writes += 2L
+            },
+        )
+        assertEquals(listOf(2L), writes)
+    }
+
+    @Test
+    fun `Just Lift gate state is isolated by profile`() = runTest {
+        val guard = WorkoutExecutionGuard()
+
+        assertTrue(
+            guard.persistJustLiftDefaultsIfNewer("profile-a", executionId = 2L) {},
+        )
+        assertTrue(
+            guard.persistJustLiftDefaultsIfNewer("profile-b", executionId = 1L) {},
+        )
+    }
+
     private fun seed(sessionId: String) = ExecutionSeed(
         sessionId = sessionId,
         profileId = "profile-$sessionId",

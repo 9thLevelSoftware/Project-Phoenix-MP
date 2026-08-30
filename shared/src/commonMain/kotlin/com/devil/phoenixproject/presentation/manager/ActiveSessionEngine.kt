@@ -6696,7 +6696,7 @@ class ActiveSessionEngine(
      *
      * Returns null when [params] is not a Just Lift workout. See issue #714.
      */
-    internal fun toJustLiftDefaultsDocumentOrNull(params: com.devil.phoenixproject.domain.model.WorkoutParameters): JustLiftDefaultsDocument? {
+    internal fun toJustLiftDefaultsDocumentOrNull(params: WorkoutParameters): JustLiftDefaultsDocument? {
         if (!params.isJustLift) return null
 
         val eccentricLoadPct = if (params.isEchoMode) params.eccentricLoad.percentage else 100
@@ -9063,16 +9063,15 @@ class ActiveSessionEngine(
         }
     }
 
-    // Issue #714: writes the Just Lift defaults captured in the immutable exit
-    // snapshot. Split out from `persistSnapshot` so the Just Lift completion
-    // job can call it synchronously before publishing `SetSummary` / flipping
-    // to `Idle`, and the async path can still call it for retained-snapshot
-    // retry and process recovability. The async re-write is idempotent
-    // (same captured value).
+    // Issue #714: serialize profile-scoped Just Lift defaults writes by execution id.
     internal suspend fun persistCapturedJustLiftDefaultsSnapshot(snapshot: WorkoutExitSnapshot) {
-        snapshot.justLiftDefaults?.let { justLiftDefaults ->
+        val pending = snapshot.justLiftDefaults ?: return
+        executionGuard.persistJustLiftDefaultsIfNewer(
+            profileId = snapshot.lease.profileId,
+            executionId = snapshot.lease.executionId,
+        ) {
             settingsManager.mutateWorkout(snapshot.lease.profileId) { workoutPreferences ->
-                workoutPreferences.copy(justLiftDefaults = justLiftDefaults)
+                workoutPreferences.copy(justLiftDefaults = pending)
             }
         }
     }
@@ -9134,11 +9133,8 @@ class ActiveSessionEngine(
                     )
                 }
             }
-            // Issue #714: persist Just Lift defaults captured in the immutable
-            // exit snapshot so the user's confirmed Just Lift mode survives the
-            // return-to-setup reload. Uses the same profile-scoped mutateWorkout
-            // and the snapshot's lease profile id, so it cannot read mutable
-            // coordinator state after teardown.
+            // Issue #714: the async path is guarded by the same profile-wide
+            // execution gate as the synchronous completion write.
             persistCapturedJustLiftDefaultsSnapshot(snapshot)
 
             val postSave = snapshot.postSaveInput
@@ -11291,25 +11287,8 @@ class ActiveSessionEngine(
 
             Logger.d("handleSetCompletion: summaryCountdownSeconds=$summaryCountdownSeconds, skipSummary=$skipSummary, wasBodyweight=$wasBodyweight, effectiveSkipSummary=$effectiveSkipSummary, isJustLift=$isJustLift, isAMRAP=${params.isAMRAP}")
 
-            // Issue #714 (Codex P1 follow-up): write synchronously so
-            // JustLiftScreen's reload sees fresh defaults before any navigation
-            // fires; try/catch so a transient prefs failure doesn't strand the
-            // user mid-teardown.
-            // reads persisted defaults on `LaunchedEffect(readyProfileId)` — once per
-            // profile-id change — and the async `persistSnapshot` coroutine does not
-            // finish writing the captured Just Lift defaults until AFTER this
-            // completion job has published `SetSummary` or flipped `WorkoutState` to
-            // `Idle`. The ActiveWorkoutScreen observer then pops back to
-            // JustLiftScreen and JustLiftScreen recomposes against the stale TUT value.
-            // Write the captured defaults synchronously here, BEFORE any state flip or
-            // summary publish that could trigger the navigation observer, so the
-            // JustLiftScreen reload sees the persisted Old School (or whatever the user
-            // picked). The write is wrapped in try/catch so a transient
-            // preferences-store failure cannot leave the user stuck after machine
-            // teardown — the retained-snapshot retry path is the durable backstop.
-            // The async `persistSnapshot` path still calls the same helper for retained
-            // snapshot recovery and process recovability (idempotent re-write of the
-            // same value).
+            // Issue #714: persist the captured Just Lift defaults before publishing
+            // completion state; the profile-wide execution gate prevents stale writes.
             if (isJustLift && terminalSnapshot?.justLiftDefaults != null) {
                 try {
                     persistCapturedJustLiftDefaultsSnapshot(terminalSnapshot)
