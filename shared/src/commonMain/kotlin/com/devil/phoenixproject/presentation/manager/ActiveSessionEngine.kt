@@ -4321,6 +4321,7 @@ class ActiveSessionEngine(
     internal var beforePersistedRestTimerActionForTest: (suspend () -> Unit)? = null
     internal var afterPersistedRestTimerActionAuthorizationForTest: (suspend () -> Unit)? = null
     internal var afterResetCleanupTokenCaptureForTest: (() -> Unit)? = null
+    internal var afterJustLiftResetPresentationForTest: (() -> Unit)? = null
     internal var recoveryPreparationCallsForTest: Int = 0
     internal var afterRuntimeResumeSelectionForTest: (suspend (RoutineResumeHandle.Persisted) -> Unit)? = null
     internal var beforeRestoredRuntimeOwnerPublicationForTest: (() -> Unit)? = null
@@ -6997,56 +6998,85 @@ class ActiveSessionEngine(
     // ===== Core Workout Lifecycle =====
 
     fun resetForNewWorkout() {
-        val cleanupCandidate = runtimeCleanupCandidateRef.value
-        val restoredTimerOwner = restoredRestTimerOwnerRef.value
-        val resetToken = executionGuard.supersedeRecoveryPublicationAndCaptureResetCleanupToken()
-        val cleanupTarget = cleanupCandidate?.let { candidate ->
-            installRuntimeCleanupIntent(
-                captureRuntimeCleanupTarget(candidate, RuntimeCleanupReason.EXPLICIT_RESTART),
-            )
+        resetForNewWorkoutInternal(null)
+    }
+
+    internal fun resetForNewWorkoutForTest(expectedLease: ExecutionLease): Boolean =
+        resetForNewWorkoutInternal(expectedLease)
+
+    private fun resetForNewWorkoutInternal(
+        expectedLease: ExecutionLease?,
+        afterExpectedLeaseReset: (() -> Unit)? = null,
+    ): Boolean {
+        val expectedResetToken = expectedLease?.let { lease ->
+            executionGuard.claimExpectedResetAndCaptureResetCleanupToken(lease)
+                ?: return false
         }
-        executionGuard.supersedeQueuedSuccessors()
-        supersedePendingResetStart()
-        cleanupTarget?.let(::launchRuntimeCleanup)
-        if (acceptedRetryStartClaim.value != null && coordinator.workoutJob?.isActive == true) {
+        try {
+            val cleanupCandidate = runtimeCleanupCandidateRef.value
+            val restoredTimerOwner = restoredRestTimerOwnerRef.value
+            val resetToken = expectedResetToken
+                ?: executionGuard.supersedeRecoveryPublicationAndCaptureResetCleanupToken()
+            val cleanupTarget = cleanupCandidate?.let { candidate ->
+                installRuntimeCleanupIntent(
+                    captureRuntimeCleanupTarget(candidate, RuntimeCleanupReason.EXPLICIT_RESTART),
+                )
+            }
+            executionGuard.supersedeQueuedSuccessors()
+            supersedePendingResetStart()
+            cleanupTarget?.let(::launchRuntimeCleanup)
+            if (acceptedRetryStartClaim.value != null && coordinator.workoutJob?.isActive == true) {
+                afterResetCleanupTokenCaptureForTest?.invoke()
+                restoredTimerOwner?.let(::detachRestoredRestTimerIfExact)?.cancel()
+                coordinator.workoutJob?.cancel(CancellationException("Accepted retry reset requested"))
+                afterExpectedLeaseReset?.invoke()
+                return true
+            }
+            val lease = resetToken.lease
             afterResetCleanupTokenCaptureForTest?.invoke()
             restoredTimerOwner?.let(::detachRestoredRestTimerIfExact)?.cancel()
-            coordinator.workoutJob?.cancel(CancellationException("Accepted retry reset requested"))
-            return
-        }
-        val lease = resetToken.lease
-        afterResetCleanupTokenCaptureForTest?.invoke()
-        restoredTimerOwner?.let(::detachRestoredRestTimerIfExact)?.cancel()
-        coordinator.workoutJob?.cancel(CancellationException("Workout reset requested"))
-        coordinator.workoutJob = null
-        lease?.let(bodyweightCompletionGate::invalidate)
-        lease?.let(::clearDangerZoneCountdownOverride)
-        if (lease?.requiresMachine == true) {
-            val resetOwner = ResetMachineTeardownOwner(
-                id = resetMachineTeardownOwnerSequence.incrementAndGet(),
-                lease = lease,
-            )
-            if (resetMachineTeardownOwner.compareAndSet(null, resetOwner) &&
-                !beginMachineTeardown(lease, TeardownReason.RECOVERY)
-            ) {
-                resetMachineTeardownOwner.compareAndSet(resetOwner, null)
+            coordinator.workoutJob?.cancel(CancellationException("Workout reset requested"))
+            coordinator.workoutJob = null
+            lease?.let(bodyweightCompletionGate::invalidate)
+            lease?.let(::clearDangerZoneCountdownOverride)
+            if (lease?.requiresMachine == true) {
+                val resetOwner = ResetMachineTeardownOwner(
+                    id = resetMachineTeardownOwnerSequence.incrementAndGet(),
+                    lease = lease,
+                )
+                if (resetMachineTeardownOwner.compareAndSet(null, resetOwner) &&
+                    !beginMachineTeardown(lease, TeardownReason.RECOVERY)
+                ) {
+                    resetMachineTeardownOwner.compareAndSet(resetOwner, null)
+                }
             }
-        }
-        val invalidatedLease = lease?.takeIf {
-            executionGuard.invalidate(it, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
-        }
-        lease?.let(::discardTeardownReadyContinuation)
-        if (invalidatedLease != null) {
-            afterResetInvalidation(invalidatedLease.executionId, invalidatedLease.sessionId)
-            repFreshnessGate.invalidate(invalidatedLease)
-            detachBiomechanicsContext(invalidatedLease)
-            if (executionContext?.lease?.sameExecutionAs(invalidatedLease) == true) {
-                executionContext = null
+            val invalidatedLease = if (expectedLease != null) {
+                lease
+            } else {
+                lease?.takeIf {
+                    executionGuard.invalidate(it, ExecutionInvalidationReason.RESET_FOR_NEW_WORKOUT)
+                }
             }
-        }
-        if (lease != null && invalidatedLease == null) return
-        executionGuard.commitResetCleanupIfNoSuccessor(resetToken, invalidatedLease) {
-            clearSharedStateForNewWorkout()
+            lease?.let(::discardTeardownReadyContinuation)
+            if (invalidatedLease != null) {
+                afterResetInvalidation(invalidatedLease.executionId, invalidatedLease.sessionId)
+                repFreshnessGate.invalidate(invalidatedLease)
+                detachBiomechanicsContext(invalidatedLease)
+                if (executionContext?.lease?.sameExecutionAs(invalidatedLease) == true) {
+                    executionContext = null
+                }
+            }
+            if (lease != null && invalidatedLease == null) {
+                afterExpectedLeaseReset?.invoke()
+                return true
+            }
+            executionGuard.commitResetCleanupIfNoSuccessor(resetToken, invalidatedLease) {
+                clearSharedStateForNewWorkout()
+            }
+            afterExpectedLeaseReset?.invoke()
+            return true
+        } finally {
+            expectedLease?.let(executionGuard::releaseExpectedResetClaim)
         }
     }
 
@@ -11304,23 +11334,29 @@ class ActiveSessionEngine(
 
                 if (skipSummary) {
                     Logger.d("Just Lift: Summary OFF - skipping summary")
-                    resetForNewWorkout()
-                    coordinator._workoutState.value = WorkoutState.Idle
-                    if (justLiftRestSeconds > 0) {
-                        startJustLiftEggTimer(justLiftRestSeconds)
+                    val resetSucceeded = resetForNewWorkoutInternal(lease) {
+                        coordinator._workoutState.value = WorkoutState.Idle
+                        if (justLiftRestSeconds > 0) {
+                            startJustLiftEggTimer(justLiftRestSeconds)
+                        }
+                        afterJustLiftResetPresentationForTest?.invoke()
                     }
+                    if (!resetSucceeded) return@launchCompletionJob
                 } else if (summaryDelayMs > 0) {
                     delay(summaryDelayMs)
                     if (!hasCurrentAuthority(lease, "just_lift_summary_delay")) return@launchCompletionJob
 
                     if (coordinator._workoutState.value is WorkoutState.SetSummary) {
                         Logger.d("Just Lift: Summary complete, transitioning to Idle")
-                        resetForNewWorkout()
-                        coordinator._workoutState.value = WorkoutState.Idle
-                        if (justLiftRestSeconds > 0) {
-                            Logger.d("Just Lift: Starting egg timer ($justLiftRestSeconds s)")
-                            startJustLiftEggTimer(justLiftRestSeconds)
+                        val resetSucceeded = resetForNewWorkoutInternal(lease) {
+                            coordinator._workoutState.value = WorkoutState.Idle
+                            if (justLiftRestSeconds > 0) {
+                                Logger.d("Just Lift: Starting egg timer ($justLiftRestSeconds s)")
+                                startJustLiftEggTimer(justLiftRestSeconds)
+                            }
+                            afterJustLiftResetPresentationForTest?.invoke()
                         }
+                        if (!resetSucceeded) return@launchCompletionJob
                     } else {
                         Logger.d("Just Lift: Summary interrupted by user action (state is ${coordinator._workoutState.value})")
                     }
