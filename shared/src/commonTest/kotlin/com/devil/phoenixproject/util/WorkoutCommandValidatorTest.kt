@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 class WorkoutCommandValidatorTest {
@@ -156,6 +157,21 @@ class WorkoutCommandValidatorTest {
         assertEquals(PhoenixModel.Unknown, HardwareDetection.detectModel("Vitruvian"))
         assertEquals(PhoenixModel.Unknown, HardwareDetection.detectModel("Vitruvian Form"))
         assertEquals(PhoenixModel.Unknown, HardwareDetection.detectModel("VITruvian"))
+    }
+
+    @Test
+    fun `finite progression rejects non-finite input instead of rewriting it`() {
+        listOf(Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY).forEach { value ->
+            assertFailsWith<IllegalArgumentException> {
+                ChassisLimits.finiteRepProgressionKg(
+                    requestedKg = value,
+                    weightPerCableKg = 20f,
+                    reps = 8,
+                    model = PhoenixModel.Unknown,
+                    unlimitedReps = false,
+                )
+            }
+        }
     }
 
     @Test

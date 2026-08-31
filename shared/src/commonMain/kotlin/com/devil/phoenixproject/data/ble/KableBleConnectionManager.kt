@@ -551,11 +551,17 @@ class KableBleConnectionManager(
         val allowed = if (advertisementForIdentity != null) {
             // Once an advertisement is stored, its live identity is authoritative:
             // a stale/connectable ScannedDevice label must not bypass this check.
+            val storedAdvertisementIsVisibleOnly = BleAdvertisementFilter.isVisibleOnlyCandidate(
+                name = advertisedName,
+                serviceUuidStrings = advertisementForIdentity.uuids.map { it.toString() },
+                hasFef3ServiceData = advertisementHasFef3ServiceData(advertisementForIdentity),
+            )
             BleAdvertisementFilter.mayConnectWithAdvertisementIdentity(
                 scannedName = device.name,
                 advertisedName = advertisedName,
                 identifier = device.address,
                 lastSuccessfulIdentifier = lastSuccessfulIdentifier,
+                storedAdvertisementIsVisibleOnly = storedAdvertisementIsVisibleOnly,
             )
         } else {
             // Preserve the existing fail-closed "missing advertisement" result for

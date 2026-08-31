@@ -57,21 +57,36 @@ object BleAdvertisementFilter {
      * Both the caller's scanned label and the stored advertisement must be
      * independently admissible. This prevents a stale connectable UI label from
      * authorizing a non-connectable advertisement for the same identifier.
+     * Unnamed stored advertisements additionally require visible-only NUS/FEF3
+     * evidence before the last-successful-identifier opt-in can apply.
      */
     fun mayConnectWithAdvertisementIdentity(
         scannedName: String?,
         advertisedName: String?,
         identifier: String?,
         lastSuccessfulIdentifier: String? = null,
-    ): Boolean = mayConnect(
-        name = scannedName,
-        identifier = identifier,
-        lastSuccessfulIdentifier = lastSuccessfulIdentifier,
-    ) && mayConnect(
-        name = advertisedName,
-        identifier = identifier,
-        lastSuccessfulIdentifier = lastSuccessfulIdentifier,
-    )
+        storedAdvertisementIsVisibleOnly: Boolean = false,
+    ): Boolean {
+        val scannedAllowed = mayConnect(
+            name = scannedName,
+            identifier = identifier,
+            lastSuccessfulIdentifier = lastSuccessfulIdentifier,
+        )
+        val advertisedAllowed = if (advertisedName.isNullOrBlank()) {
+            storedAdvertisementIsVisibleOnly && mayConnect(
+                name = advertisedName,
+                identifier = identifier,
+                lastSuccessfulIdentifier = lastSuccessfulIdentifier,
+            )
+        } else {
+            mayConnect(
+                name = advertisedName,
+                identifier = identifier,
+                lastSuccessfulIdentifier = lastSuccessfulIdentifier,
+            )
+        }
+        return scannedAllowed && advertisedAllowed
+    }
 
     /**
      * [connect] re-check: a live name must be connectable. The last successful

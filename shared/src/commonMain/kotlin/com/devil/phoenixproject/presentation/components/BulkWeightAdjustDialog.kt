@@ -180,7 +180,7 @@ fun BulkWeightAdjustDialog(
     }
 
     // Compute preview
-    val preview by remember(currentMode, exercises) {
+    val preview by remember(currentMode, exercises, hardwareModel) {
         derivedStateOf {
             currentMode?.let { mode -> applyBulkAdjust(exercises, mode, hardwareModel) }
         }

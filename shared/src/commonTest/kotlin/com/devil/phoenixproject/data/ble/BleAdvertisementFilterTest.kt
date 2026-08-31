@@ -139,12 +139,22 @@ class BleAdvertisementFilterTest {
                 lastSuccessfulIdentifier = null,
             ),
         )
+        assertFalse(
+            BleAdvertisementFilter.mayConnectWithAdvertisementIdentity(
+                scannedName = "Trainer (AA:BB)",
+                advertisedName = null,
+                identifier = "AA:BB",
+                lastSuccessfulIdentifier = "AA:BB",
+            ),
+            "A null-name stored advertisement must not pass on identifier alone",
+        )
         assertTrue(
             BleAdvertisementFilter.mayConnectWithAdvertisementIdentity(
                 scannedName = "Trainer (AA:BB)",
                 advertisedName = null,
                 identifier = "AA:BB",
                 lastSuccessfulIdentifier = "AA:BB",
+                storedAdvertisementIsVisibleOnly = true,
             ),
         )
     }

@@ -46,7 +46,9 @@ object ChassisLimits {
         model: PhoenixModel,
         unlimitedReps: Boolean,
     ): Float {
-        if (!requestedKg.isFinite()) return 0f
+        if (!requestedKg.isFinite()) {
+            throw IllegalArgumentException("requestedKg must be finite")
+        }
         if (unlimitedReps || requestedKg <= 0f) return requestedKg
         val steps = max(reps - 1, 1)
         val headroom = ((maxKgPerCable(model) - weightPerCableKg) / steps).coerceAtLeast(0f)
