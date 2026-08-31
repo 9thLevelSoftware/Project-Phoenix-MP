@@ -216,6 +216,14 @@ jobs:
             -exportPath $RUNNER_TEMP/export \
             -exportOptionsPlist iosApp/ExportOptions.plist
 
+      - name: Set up Python (for JWT + upload verification)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Python cryptography library
+        run: pip install cryptography
+
       - name: Upload to TestFlight
         env:
           APPSTORE_API_KEY: ${{ secrets.APPSTORE_API_KEY }}
@@ -230,80 +238,119 @@ jobs:
           BUILD_VERSION="${{ steps.build_number.outputs.build_number }}"
           MARKETING_VERSION=$(grep 'MARKETING_VERSION' iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | head -1 | sed 's/.*= //;s/;.*//')
 
-          echo "=== Validating IPA before upload ==="
+          echo "=== IPA details ==="
           echo "IPA: $IPA_PATH ($(du -h "$IPA_PATH" | cut -f1))"
           echo "Bundle ID: $BUNDLE_ID"
           echo "Build version: $BUILD_VERSION"
           echo "Marketing version: $MARKETING_VERSION"
 
-          xcrun altool --validate-app \
-            -f "$IPA_PATH" \
-            -t ios \
-            --apiKey "$APPSTORE_API_KEY_ID" \
-            --apiIssuer "$APPSTORE_ISSUER_ID"
+          # --- Write JWT generation script (used here and in the next step) ---
+          cat > "$RUNNER_TEMP/generate_jwt.py" << 'PYEOF'
+          import base64, json, time, os
+          from cryptography.hazmat.primitives import hashes
+          from cryptography.hazmat.primitives.asymmetric import ec
+          from cryptography.hazmat.primitives.serialization import load_pem_private_key
+          from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
 
+          def b64url(data):
+              if isinstance(data, str):
+                  data = data.encode()
+              return base64.urlsafe_b64encode(data).rstrip(b'=').decode()
+
+          kid = os.environ['APPSTORE_API_KEY_ID']
+          iss = os.environ['APPSTORE_ISSUER_ID']
+          with open(os.path.expanduser(f'~/.appstoreconnect/private_keys/AuthKey_{kid}.p8'), 'rb') as f:
+              key = load_pem_private_key(f.read(), password=None)
+          now = int(time.time())
+          hdr = b64url(json.dumps({"alg": "ES256", "kid": kid, "typ": "JWT"}, separators=(',', ':')))
+          pay = b64url(json.dumps({"iss": iss, "iat": now, "exp": now + 1200, "aud": "appstoreconnect-v1"}, separators=(',', ':')))
+          msg = f"{hdr}.{pay}"
+          r, s = decode_dss_signature(key.sign(msg.encode(), ec.ECDSA(hashes.SHA256())))
+          print(f"{msg}.{b64url(r.to_bytes(32, 'big') + s.to_bytes(32, 'big'))}")
+          PYEOF
+          sed -i '' 's/^          //' "$RUNNER_TEMP/generate_jwt.py"
+
+          generate_jwt() { python3 "$RUNNER_TEMP/generate_jwt.py"; }
+
+          # --- Upload via xcrun altool with strict error handling ---
+          # xcrun altool --upload-package silently fails on Xcode 26+ (exit 0 but
+          # IPA never reaches App Store Connect). We capture all output, verify the
+          # upload via the ASC API, and fall back to Transporter if needed.
           echo "=== Uploading IPA to App Store Connect ==="
-          # --upload-app is deprecated and silently fails on Xcode 26+; use --upload-package
-          xcrun altool --upload-package "$IPA_PATH" \
+
+          set +e
+          ALTOOL_OUTPUT=$(xcrun altool --upload-package "$IPA_PATH" \
             --type ios \
             --bundle-id "$BUNDLE_ID" \
             --bundle-version "$BUILD_VERSION" \
             --bundle-short-version-string "$MARKETING_VERSION" \
             --apple-id "${{ secrets.APP_APPLE_ID }}" \
             --apiKey "$APPSTORE_API_KEY_ID" \
-            --apiIssuer "$APPSTORE_ISSUER_ID"
+            --apiIssuer "$APPSTORE_ISSUER_ID" \
+            2>&1)
+          ALTOOL_EXIT=$?
+          set -e
 
-          echo "=== Upload completed successfully ==="
+          echo "altool exit code: $ALTOOL_EXIT"
+          echo "altool output:"
+          echo "$ALTOOL_OUTPUT"
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
+          if [ $ALTOOL_EXIT -ne 0 ]; then
+            echo "ERROR: altool upload failed with exit code $ALTOOL_EXIT"
+            exit 1
+          fi
 
-      - name: Install Python cryptography library
-        run: pip install cryptography
+          # Check for common silent-failure patterns in altool output
+          if echo "$ALTOOL_OUTPUT" | grep -qi "error\|failed\|invalid"; then
+            echo "ERROR: altool reported errors despite exit code 0"
+            exit 1
+          fi
 
-      - name: Create JWT generation script
-        run: |
-          cat > $RUNNER_TEMP/generate_jwt.py << 'EOF'
-          import base64
-          import json
-          import time
-          import os
-          from cryptography.hazmat.primitives import hashes
-          from cryptography.hazmat.primitives.asymmetric import ec
-          from cryptography.hazmat.primitives.serialization import load_pem_private_key
-          from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+          # Verify the upload actually reached Apple by checking the ASC API
+          echo "=== Verifying upload reached App Store Connect ==="
+          sleep 30
+          VERIFY_JWT=$(generate_jwt)
+          API_BASE="https://api.appstoreconnect.apple.com/v1"
+          VERIFY_RESPONSE=$(curl -s --globoff -H "Authorization: Bearer $VERIFY_JWT" \
+            "$API_BASE/builds?filter[version]=$BUILD_VERSION&limit=1")
+          VERIFY_STATUS=$(echo "$VERIFY_RESPONSE" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['data'][0]['attributes'].get('processingState','UNKNOWN') if data.get('data') else 'NOT_FOUND')" 2>/dev/null || echo "NOT_FOUND")
 
-          def base64url_encode(data):
-              if isinstance(data, str):
-                  data = data.encode('utf-8')
-              return base64.urlsafe_b64encode(data).rstrip(b'=').decode('utf-8')
+          echo "Build status 30s after upload: $VERIFY_STATUS"
+          if [ "$VERIFY_STATUS" = "NOT_FOUND" ]; then
+            echo ""
+            echo "============================================"
+            echo "ERROR: Build not found in App Store Connect after upload."
+            echo "xcrun altool reported success but the IPA was never received."
+            echo ""
+            echo "This is a known issue with Xcode 26+ altool."
+            echo "Attempting Transporter CLI fallback..."
+            echo "============================================"
+            echo ""
 
-          key_id = os.environ['APPSTORE_API_KEY_ID']
-          issuer_id = os.environ['APPSTORE_ISSUER_ID']
-          key_path = os.path.expanduser(f'~/.appstoreconnect/private_keys/AuthKey_{key_id}.p8')
+            TRANSPORTER="/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"
+            if [ -x "$TRANSPORTER" ]; then
+              set +e
+              TRANSPORTER_OUTPUT=$("$TRANSPORTER" -m upload \
+                -assetFile "$IPA_PATH" \
+                -apiKey "$APPSTORE_API_KEY_ID" \
+                -apiIssuer "$APPSTORE_ISSUER_ID" \
+                2>&1)
+              TRANSPORTER_EXIT=$?
+              set -e
+              echo "Transporter exit: $TRANSPORTER_EXIT"
+              echo "$TRANSPORTER_OUTPUT"
+              if [ $TRANSPORTER_EXIT -ne 0 ]; then
+                echo "ERROR: Transporter upload also failed"
+                exit 1
+              fi
+            else
+              echo "Transporter not found at $TRANSPORTER"
+              echo "Install with: mas install 497799835 (or download from developer.apple.com)"
+              exit 1
+            fi
+          fi
 
-          with open(key_path, 'rb') as f:
-              private_key = load_pem_private_key(f.read(), password=None)
-
-          header = {"alg": "ES256", "kid": key_id, "typ": "JWT"}
-          now = int(time.time())
-          payload = {"iss": issuer_id, "iat": now, "exp": now + 1200, "aud": "appstoreconnect-v1"}
-
-          header_b64 = base64url_encode(json.dumps(header, separators=(',', ':')))
-          payload_b64 = base64url_encode(json.dumps(payload, separators=(',', ':')))
-          message = f"{header_b64}.{payload_b64}"
-
-          signature = private_key.sign(message.encode('utf-8'), ec.ECDSA(hashes.SHA256()))
-          r, s = decode_dss_signature(signature)
-          signature_bytes = r.to_bytes(32, 'big') + s.to_bytes(32, 'big')
-          signature_b64 = base64url_encode(signature_bytes)
-
-          print(f"{message}.{signature_b64}")
-          EOF
-          # Remove leading whitespace from Python file
-          sed -i '' 's/^          //' $RUNNER_TEMP/generate_jwt.py
+          echo "=== Upload completed ==="
 
       - name: Add build to TestFlight test group
         env:
