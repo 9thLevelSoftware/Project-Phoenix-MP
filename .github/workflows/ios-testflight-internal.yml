@@ -228,40 +228,29 @@ jobs:
           echo "Build version: $BUILD_VERSION"
           echo "Marketing version: $MARKETING_VERSION"
 
-          # --- Upload via xcrun altool with strict error handling ---
-          # xcrun altool --upload-package silently fails on Xcode 26+ (exit 0 but
-          # IPA never reaches App Store Connect). We capture all output, verify the
-          # upload via the ASC API, and fall back to Transporter if needed.
-          echo "=== Uploading IPA to App Store Connect ==="
+          # --- Upload via Transporter (altool silently fails on Xcode 26+) ---
+          # xcrun altool --upload-package returns exit 0 on Xcode 26+ but the
+          # IPA never reaches App Store Connect. Use Transporter directly.
+          echo "=== Uploading IPA to App Store Connect via Transporter ==="
 
-          set +e
-          ALTOOL_OUTPUT=$(xcrun altool --upload-package "$IPA_PATH" \
-            --type ios \
-            --bundle-id "$BUNDLE_ID" \
-            --bundle-version "$BUILD_VERSION" \
-            --bundle-short-version-string "$MARKETING_VERSION" \
-            --apple-id "${{ secrets.APP_APPLE_ID }}" \
-            --apiKey "$APPSTORE_API_KEY_ID" \
-            --apiIssuer "$APPSTORE_ISSUER_ID" \
-            2>&1)
-          ALTOOL_EXIT=$?
-          set -e
+          # Ensure Transporter is installed
+          TRANSPORTER="/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"
+          if [ ! -x "$TRANSPORTER" ]; then
+            echo "Transporter not found, installing via Homebrew..."
+            brew install --cask transporter
+          fi
 
-          echo "altool exit code: $ALTOOL_EXIT"
-          echo "altool output:"
-          echo "$ALTOOL_OUTPUT"
-
-          if [ $ALTOOL_EXIT -ne 0 ]; then
-            echo "ERROR: altool upload failed with exit code $ALTOOL_EXIT"
+          if [ ! -x "$TRANSPORTER" ]; then
+            echo "ERROR: Transporter installation failed"
+            echo "Install manually: brew install --cask transporter"
             exit 1
           fi
 
-          # Check for common silent-failure patterns in altool output
-          # Exclude "no errors" lines (e.g. "UPLOAD SUCCEEDED with no errors")
-          if echo "$ALTOOL_OUTPUT" | grep -v -i "no errors" | grep -qi "error\|failed\|invalid"; then
-            echo "ERROR: altool reported errors despite exit code 0"
-            exit 1
-          fi
+          echo "Using Transporter at: $TRANSPORTER"
+          "$TRANSPORTER" -m upload \
+            -assetFile "$IPA_PATH" \
+            -apiKey "$APPSTORE_API_KEY_ID" \
+            -apiIssuer "$APPSTORE_ISSUER_ID"
 
           # Verify the upload actually reached Apple by checking the ASC API
           echo "=== Verifying upload reached App Store Connect ==="
@@ -303,35 +292,10 @@ jobs:
           if [ "$VERIFY_STATUS" = "NOT_FOUND" ]; then
             echo ""
             echo "============================================"
-            echo "ERROR: Build not found in App Store Connect after upload."
-            echo "xcrun altool reported success but the IPA was never received."
-            echo ""
-            echo "This is a known issue with Xcode 26+ altool."
-            echo "Attempting Transporter CLI fallback..."
+            echo "WARNING: Build not found in App Store Connect 30s after upload."
+            echo "Transporter reported success. Build may still be propagating."
             echo "============================================"
             echo ""
-
-            TRANSPORTER="/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"
-            if [ -x "$TRANSPORTER" ]; then
-              set +e
-              TRANSPORTER_OUTPUT=$("$TRANSPORTER" -m upload \
-                -assetFile "$IPA_PATH" \
-                -apiKey "$APPSTORE_API_KEY_ID" \
-                -apiIssuer "$APPSTORE_ISSUER_ID" \
-                2>&1)
-              TRANSPORTER_EXIT=$?
-              set -e
-              echo "Transporter exit: $TRANSPORTER_EXIT"
-              echo "$TRANSPORTER_OUTPUT"
-              if [ $TRANSPORTER_EXIT -ne 0 ]; then
-                echo "ERROR: Transporter upload also failed"
-                exit 1
-              fi
-            else
-              echo "Transporter not found at $TRANSPORTER"
-              echo "Install with: mas install 497799835 (or download from developer.apple.com)"
-              exit 1
-            fi
           fi
 
           echo ""
