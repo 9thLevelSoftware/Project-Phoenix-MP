@@ -152,6 +152,13 @@ class WorkoutCommandValidatorTest {
     }
 
     @Test
+    fun `Vitruvian names remain unknown and fail closed`() {
+        assertEquals(PhoenixModel.Unknown, HardwareDetection.detectModel("Vitruvian"))
+        assertEquals(PhoenixModel.Unknown, HardwareDetection.detectModel("Vitruvian Form"))
+        assertEquals(PhoenixModel.Unknown, HardwareDetection.detectModel("VITruvian"))
+    }
+
+    @Test
     fun `just lift requires minimum nonzero weight`() {
         assertFailureContains(
             validateParams(

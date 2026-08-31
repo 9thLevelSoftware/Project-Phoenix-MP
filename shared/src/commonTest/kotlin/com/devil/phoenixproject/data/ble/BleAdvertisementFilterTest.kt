@@ -113,6 +113,61 @@ class BleAdvertisementFilterTest {
     }
 
     @Test
+    fun `stored advertisement identity must pass independently of scanned label`() {
+        assertTrue(
+            BleAdvertisementFilter.mayConnectWithAdvertisementIdentity(
+                scannedName = "Vee_scan",
+                advertisedName = "VIT_live",
+                identifier = "AA:BB",
+                lastSuccessfulIdentifier = null,
+            ),
+        )
+        assertFalse(
+            BleAdvertisementFilter.mayConnectWithAdvertisementIdentity(
+                scannedName = "Vee_scan",
+                advertisedName = "Phoenix_live",
+                identifier = "AA:BB",
+                lastSuccessfulIdentifier = null,
+            ),
+            "A connectable ScannedDevice label must not bypass a rejected stored advertisement",
+        )
+        assertFalse(
+            BleAdvertisementFilter.mayConnectWithAdvertisementIdentity(
+                scannedName = "Vee_scan",
+                advertisedName = "Vitruvian",
+                identifier = "AA:BB",
+                lastSuccessfulIdentifier = null,
+            ),
+        )
+        assertTrue(
+            BleAdvertisementFilter.mayConnectWithAdvertisementIdentity(
+                scannedName = "Trainer (AA:BB)",
+                advertisedName = null,
+                identifier = "AA:BB",
+                lastSuccessfulIdentifier = "AA:BB",
+            ),
+        )
+    }
+
+    @Test
+    fun `last-successful identifier does not authorize named generic advertisements`() {
+        assertFalse(
+            BleAdvertisementFilter.mayConnect(
+                name = "Phoenix",
+                identifier = "AA:BB",
+                lastSuccessfulIdentifier = "AA:BB",
+            ),
+        )
+        assertFalse(
+            BleAdvertisementFilter.mayConnect(
+                name = "Vitruvian",
+                identifier = "AA:BB",
+                lastSuccessfulIdentifier = "AA:BB",
+            ),
+        )
+    }
+
+    @Test
     fun `last-successful identifier is opt-in connect for placeholder names`() {
         assertTrue(
             BleAdvertisementFilter.mayConnect(

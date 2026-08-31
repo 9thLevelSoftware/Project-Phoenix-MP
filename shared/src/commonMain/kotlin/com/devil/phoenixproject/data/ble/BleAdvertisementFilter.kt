@@ -54,8 +54,29 @@ object BleAdvertisementFilter {
         isVisibleOnlyCandidate(name, serviceUuidStrings, hasFef3ServiceData)
 
     /**
-     * [connect] re-check: a live name must be connectable, unless this
-     * identifier is the last successful trainer connection (opt-in).
+     * Both the caller's scanned label and the stored advertisement must be
+     * independently admissible. This prevents a stale connectable UI label from
+     * authorizing a non-connectable advertisement for the same identifier.
+     */
+    fun mayConnectWithAdvertisementIdentity(
+        scannedName: String?,
+        advertisedName: String?,
+        identifier: String?,
+        lastSuccessfulIdentifier: String? = null,
+    ): Boolean = mayConnect(
+        name = scannedName,
+        identifier = identifier,
+        lastSuccessfulIdentifier = lastSuccessfulIdentifier,
+    ) && mayConnect(
+        name = advertisedName,
+        identifier = identifier,
+        lastSuccessfulIdentifier = lastSuccessfulIdentifier,
+    )
+
+    /**
+     * [connect] re-check: a live name must be connectable. The last successful
+     * identifier is an opt-in only for unnamed advertisements represented by the
+     * manager's generated `Trainer (<identifier>)` placeholder.
      */
     fun mayConnect(
         name: String?,
@@ -63,6 +84,10 @@ object BleAdvertisementFilter {
         lastSuccessfulIdentifier: String? = null,
     ): Boolean {
         if (isConnectableName(name)) return true
+        val normalizedName = name?.trim().orEmpty()
+        val isUnnamedPlaceholder = normalizedName.isEmpty() ||
+            (normalizedName.startsWith("Trainer (", ignoreCase = true) && normalizedName.endsWith(")"))
+        if (!isUnnamedPlaceholder) return false
         val id = identifier?.takeIf { it.isNotBlank() } ?: return false
         val last = lastSuccessfulIdentifier?.takeIf { it.isNotBlank() } ?: return false
         return id == last

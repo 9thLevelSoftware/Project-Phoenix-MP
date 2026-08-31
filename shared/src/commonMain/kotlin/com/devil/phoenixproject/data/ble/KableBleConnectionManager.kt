@@ -548,15 +548,25 @@ class KableBleConnectionManager(
     suspend fun connect(device: ScannedDevice): Result<Unit> {
         val advertisementForIdentity = discoveredAdvertisements[device.address]
         val advertisedName = advertisementForIdentity?.name
-        val allowed = BleAdvertisementFilter.mayConnect(
-            name = device.name,
-            identifier = device.address,
-            lastSuccessfulIdentifier = lastSuccessfulIdentifier,
-        ) || BleAdvertisementFilter.mayConnect(
-            name = advertisedName,
-            identifier = device.address,
-            lastSuccessfulIdentifier = lastSuccessfulIdentifier,
-        )
+        val allowed = if (advertisementForIdentity != null) {
+            // Once an advertisement is stored, its live identity is authoritative:
+            // a stale/connectable ScannedDevice label must not bypass this check.
+            BleAdvertisementFilter.mayConnectWithAdvertisementIdentity(
+                scannedName = device.name,
+                advertisedName = advertisedName,
+                identifier = device.address,
+                lastSuccessfulIdentifier = lastSuccessfulIdentifier,
+            )
+        } else {
+            // Preserve the existing fail-closed "missing advertisement" result for
+            // direct callers; no Peripheral/GATT is created until an advertisement
+            // is present and independently validated above.
+            BleAdvertisementFilter.mayConnect(
+                name = device.name,
+                identifier = device.address,
+                lastSuccessfulIdentifier = lastSuccessfulIdentifier,
+            )
+        }
         if (!allowed) {
             log.w { "Rejecting connect: '${device.name}' is not Vee_/VIT" }
             logRepo.warning(

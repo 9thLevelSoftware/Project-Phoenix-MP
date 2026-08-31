@@ -8253,20 +8253,26 @@ class ActiveSessionEngine(
                     ?: resolveSelectedExercise(effectiveParams)?.preferredCableCount
                     ?: 1
                 val rackSnapshotItems = coordinator._currentRackLoadAdjustment.value.selectedItems
-                val preRackValidation = if (warmupOverrideParams.isEchoMode) {
-                    Result.success(Unit)
-                } else {
-                    WorkoutCommandValidator.validateProgramParams(warmupOverrideParams, chassisModel())
-                }
-                preRackValidation.onFailure { error ->
-                    Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
-                    coordinator._bleErrorEvents.tryEmit("Invalid BLE workout command: ${error.message}")
-                    if (retryRequest != null) {
-                        failRetryStartAndRecover(retryRequest, lease, priorWorkoutState)
+                // Direct/non-routine inputs have no legacy routine clamp path, so reject
+                // over-ceiling values before any BLE work. Routine values may be above
+                // a newly detected chassis ceiling in persisted data; preserve the
+                // existing rack adjustment clamp and validate the final BLE params below.
+                if (coordinator._loadedRoutine.value == null) {
+                    val preRackValidation = if (warmupOverrideParams.isEchoMode) {
+                        Result.success(Unit)
                     } else {
-                        failStart(lease, priorWorkoutState)
+                        WorkoutCommandValidator.validateProgramParams(warmupOverrideParams, chassisModel())
                     }
-                    return@launch
+                    preRackValidation.onFailure { error ->
+                        Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
+                        coordinator._bleErrorEvents.tryEmit("Invalid BLE workout command: ${error.message}")
+                        if (retryRequest != null) {
+                            failRetryStartAndRecover(retryRequest, lease, priorWorkoutState)
+                        } else {
+                            failStart(lease, priorWorkoutState)
+                        }
+                        return@launch
+                    }
                 }
                 val bleParams = run {
                     val base = if (isTimedCableExercise) {

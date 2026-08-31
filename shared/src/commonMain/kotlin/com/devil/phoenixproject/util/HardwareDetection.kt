@@ -21,7 +21,8 @@ object HardwareDetection {
      */
     fun detectModel(deviceName: String): PhoenixModel = when {
         deviceName.startsWith("Vee_", ignoreCase = true) -> PhoenixModel.VFormTrainer
-        deviceName.startsWith("VIT", ignoreCase = true) -> PhoenixModel.TrainerPlus
+        deviceName.startsWith("VIT", ignoreCase = true) &&
+            !deviceName.startsWith("Vitruvian", ignoreCase = true) -> PhoenixModel.TrainerPlus
         else -> PhoenixModel.Unknown
     }
 
