@@ -90,6 +90,13 @@ jobs:
           # Show what was set
           grep "CURRENT_PROJECT_VERSION" iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | head -2
 
+      # Keep Gradle/Kotlin/Native and xcodebuild on the same Xcode SDK. The macos-15
+      # runner does not include the iOS 18.2 simulator runtime that Xcode 16.2's
+      # actool expects for asset catalogs; Xcode 16.4 pairs with the installed iOS
+      # 18.5 runtime and retains the Xcode 16 App Store upload tooling.
+      - name: Select Xcode 16.4
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+
       - name: Build shared framework and resources
         run: |
           # Single Gradle invocation — linkReleaseFrameworkIosArm64 already depends on
@@ -168,12 +175,6 @@ jobs:
         run: |
           mkdir -p shared/build/bin/iosArm64/debugFramework
           ln -sfn ../releaseFramework/shared.framework shared/build/bin/iosArm64/debugFramework/shared.framework
-
-      # macos-15 no longer includes the iOS 18.2 simulator runtime that Xcode 16.2's
-      # actool requires while compiling this asset catalog. Xcode 16.4 pairs with the
-      # installed iOS 18.5 runtime and retains the Xcode 16 App Store upload tooling.
-      - name: Select Xcode 16.4
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
 
       - name: Install certificate and profile
         env:
