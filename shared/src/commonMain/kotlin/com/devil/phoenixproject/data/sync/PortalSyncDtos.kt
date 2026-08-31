@@ -85,9 +85,10 @@ data class PortalExerciseDto(
     val orderIndex: Int = 0,
     /**
      * Canonical estimated 1RM (per-cable kg) for this exercise in this session.
-     * Mobile is the source of truth (see OneRepMaxCalculator.estimate). The
-     * portal stores this verbatim in exercise_progress.estimated_1rm_kg and
-     * only recomputes when this field is absent (legacy payloads).
+     * Mobile contract: OneRepMaxCalculator.estimate from workingReps, falling
+     * back to totalReps only when working is 0. Still shipped on every push.
+     * Portal store-verbatim of this field is unverified — do not assume the
+     * portal writes it unchanged or skips recompute.
      */
     val estimatedOneRepMaxKg: Float? = null,
     /**
@@ -97,8 +98,8 @@ data class PortalExerciseDto(
      * [estimatedOneRepMaxKg] (Brzycki/Epley hybrid) and must never overwrite it.
      * It is the latest passing estimate for this exercise/profile at push time
      * (a rolling current value, not as-of-session). Null when the exercise has
-     * no exerciseId or no passing velocity estimate. The portal stores this
-     * verbatim in exercise_progress.velocity_estimated_1rm_kg and never recomputes.
+     * no exerciseId or no passing velocity estimate. Portal store-verbatim of
+     * this field is unverified; do not assume the portal never recomputes it.
      */
     val velocityEstimatedOneRepMaxKg: Float? = null,
     val sets: List<PortalSetDto> = emptyList(),
