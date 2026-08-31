@@ -153,8 +153,11 @@ jobs:
           mkdir -p shared/build/bin/iosArm64/debugFramework
           ln -sfn ../releaseFramework/shared.framework shared/build/bin/iosArm64/debugFramework/shared.framework
 
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
+      # macos-15 no longer includes the iOS 18.2 simulator runtime that Xcode 16.2's
+      # actool requires while compiling this asset catalog. Xcode 16.4 pairs with the
+      # installed iOS 18.5 runtime and retains the Xcode 16 App Store upload tooling.
+      - name: Select Xcode 16.4
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
 
       - name: Install certificate and profile
         env:
