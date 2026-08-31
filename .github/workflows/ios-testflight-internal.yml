@@ -257,7 +257,8 @@ jobs:
           fi
 
           # Check for common silent-failure patterns in altool output
-          if echo "$ALTOOL_OUTPUT" | grep -qi "error\|failed\|invalid"; then
+          # Exclude "no errors" lines (e.g. "UPLOAD SUCCEEDED with no errors")
+          if echo "$ALTOOL_OUTPUT" | grep -v -i "no errors" | grep -qi "error\|failed\|invalid"; then
             echo "ERROR: altool reported errors despite exit code 0"
             exit 1
           fi
