@@ -31,7 +31,7 @@ env:
 
 jobs:
   build-and-upload:
-    runs-on: macos-26
+    runs-on: macos-15
 
     steps:
       - name: Checkout repository
@@ -170,7 +170,7 @@ jobs:
           ln -sfn ../releaseFramework/shared.framework shared/build/bin/iosArm64/debugFramework/shared.framework
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
 
       - name: Install certificate and profile
         env:
@@ -272,89 +272,38 @@ jobs:
 
           generate_jwt() { python3 "$RUNNER_TEMP/generate_jwt.py"; }
 
-          # --- Upload to App Store Connect ---
-          # xcrun altool --upload-package silently fails on Xcode 26+ (exit 0
-          # but IPA never reaches Apple). Try Transporter methods in order:
-          # 1. xcrun iTMSTransporter (bundled with Xcode)
-          # 2. Standalone Transporter.app
-          # 3. fastlane deliver (widely available on CI runners)
+          # --- Upload via xcrun altool ---
           echo "=== Uploading IPA to App Store Connect ==="
 
-          UPLOAD_OK=false
+          set +e
+          ALTOOL_OUTPUT=$(xcrun altool --upload-package "$IPA_PATH" \
+            --type ios \
+            --bundle-id "$BUNDLE_ID" \
+            --bundle-version "$BUILD_VERSION" \
+            --bundle-short-version-string "$MARKETING_VERSION" \
+            --apple-id "${{ secrets.APP_APPLE_ID }}" \
+            --apiKey "$APPSTORE_API_KEY_ID" \
+            --apiIssuer "$APPSTORE_ISSUER_ID" \
+            2>&1)
+          ALTOOL_EXIT=$?
+          set -e
 
-          # Method 1: xcrun iTMSTransporter (bundled with Xcode 26+)
-          if command -v xcrun &>/dev/null && xcrun iTMSTransporter --help &>/dev/null 2>&1; then
-            echo "Using xcrun iTMSTransporter..."
-            set +e
-            xcrun iTMSTransporter -m upload \
-              -assetFile "$IPA_PATH" \
-              -apiKey "$APPSTORE_API_KEY_ID" \
-              -apiIssuer "$APPSTORE_ISSUER_ID" 2>&1
-            TRANSPORTER_EXIT=$?
-            set -e
-            if [ $TRANSPORTER_EXIT -eq 0 ]; then
-              UPLOAD_OK=true
-            else
-              echo "xcrun iTMSTransporter failed (exit $TRANSPORTER_EXIT), trying next method..."
-            fi
-          fi
+          echo "altool exit code: $ALTOOL_EXIT"
+          echo "altool output:"
+          echo "$ALTOOL_OUTPUT"
 
-          # Method 2: Standalone Transporter.app
-          if [ "$UPLOAD_OK" = false ]; then
-            TRANSPORTER="/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"
-            if [ -x "$TRANSPORTER" ]; then
-              echo "Using standalone Transporter.app..."
-              set +e
-              "$TRANSPORTER" -m upload \
-                -assetFile "$IPA_PATH" \
-                -apiKey "$APPSTORE_API_KEY_ID" \
-                -apiIssuer "$APPSTORE_ISSUER_ID" 2>&1
-              TRANSPORTER_EXIT=$?
-              set -e
-              if [ $TRANSPORTER_EXIT -eq 0 ]; then
-                UPLOAD_OK=true
-              else
-                echo "Standalone Transporter failed (exit $TRANSPORTER_EXIT), trying next method..."
-              fi
-            fi
-          fi
-
-          # Method 3: fastlane deliver
-          if [ "$UPLOAD_OK" = false ]; then
-            if command -v fastlane &>/dev/null; then
-              echo "Using fastlane deliver..."
-              set +e
-              fastlane deliver \
-                --ipa "$IPA_PATH" \
-                --skip_waiting_for_build_processing \
-                --api_key "{\"key_id\":\"$APPSTORE_API_KEY_ID\",\"issuer_id\":\"$APPSTORE_ISSUER_ID\",\"key\":\"$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_API_KEY_ID}.p8\"}" 2>&1
-              FASTLANE_EXIT=$?
-              set -e
-              if [ $FASTLANE_EXIT -eq 0 ]; then
-                UPLOAD_OK=true
-              else
-                echo "fastlane deliver failed (exit $FASTLANE_EXIT)"
-              fi
-            fi
-          fi
-
-          if [ "$UPLOAD_OK" = false ]; then
-            echo ""
-            echo "============================================"
-            echo "ERROR: All upload methods failed."
-            echo ""
-            echo "Tried:"
-            echo "  1. xcrun iTMSTransporter (Xcode-bundled)"
-            echo "  2. /Applications/Transporter.app"
-            echo "  3. fastlane deliver"
-            echo ""
-            echo "To fix: install Transporter on the runner or switch to macos-15"
-            echo "runner where altool from Xcode 15/16 still works."
-            echo "============================================"
+          if [ $ALTOOL_EXIT -ne 0 ]; then
+            echo "ERROR: altool upload failed with exit code $ALTOOL_EXIT"
             exit 1
           fi
 
-          # Verify the upload actually reached Apple by checking the ASC API
+          # Check for error patterns, excluding "no errors" success messages
+          if echo "$ALTOOL_OUTPUT" | grep -v -i "no errors" | grep -qi "error\|failed\|invalid"; then
+            echo "ERROR: altool reported errors despite exit code 0"
+            exit 1
+          fi
+
+          # Verify the upload actually reached Apple
           echo "=== Verifying upload reached App Store Connect ==="
           sleep 30
           VERIFY_JWT=$(generate_jwt)
@@ -368,8 +317,7 @@ jobs:
             echo ""
             echo "============================================"
             echo "WARNING: Build not found in App Store Connect 30s after upload."
-            echo "Transporter reported success. Build may still be propagating."
-            echo "The TestFlight distribution step will retry with longer polling."
+            echo "Build may still be propagating. The distribution step will retry."
             echo "============================================"
             echo ""
           fi

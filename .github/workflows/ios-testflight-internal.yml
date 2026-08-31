@@ -18,7 +18,7 @@ env:
 
 jobs:
   build-and-upload:
-    runs-on: macos-26
+    runs-on: macos-15
 
     steps:
       - name: Checkout repository
@@ -154,7 +154,7 @@ jobs:
           ln -sfn ../releaseFramework/shared.framework shared/build/bin/iosArm64/debugFramework/shared.framework
 
       - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app/Contents/Developer
 
       - name: Install certificate and profile
         env:
@@ -228,93 +228,7 @@ jobs:
           echo "Build version: $BUILD_VERSION"
           echo "Marketing version: $MARKETING_VERSION"
 
-          # --- Upload to App Store Connect ---
-          # xcrun altool --upload-package silently fails on Xcode 26+ (exit 0
-          # but IPA never reaches Apple). Try Transporter methods in order:
-          # 1. xcrun iTMSTransporter (bundled with Xcode)
-          # 2. Standalone Transporter.app
-          # 3. fastlane deliver (widely available on CI runners)
-          echo "=== Uploading IPA to App Store Connect ==="
-
-          UPLOAD_OK=false
-
-          # Method 1: xcrun iTMSTransporter (bundled with Xcode 26+)
-          if command -v xcrun &>/dev/null && xcrun iTMSTransporter --help &>/dev/null 2>&1; then
-            echo "Using xcrun iTMSTransporter..."
-            set +e
-            xcrun iTMSTransporter -m upload \
-              -assetFile "$IPA_PATH" \
-              -apiKey "$APPSTORE_API_KEY_ID" \
-              -apiIssuer "$APPSTORE_ISSUER_ID" 2>&1
-            TRANSPORTER_EXIT=$?
-            set -e
-            if [ $TRANSPORTER_EXIT -eq 0 ]; then
-              UPLOAD_OK=true
-            else
-              echo "xcrun iTMSTransporter failed (exit $TRANSPORTER_EXIT), trying next method..."
-            fi
-          fi
-
-          # Method 2: Standalone Transporter.app
-          if [ "$UPLOAD_OK" = false ]; then
-            TRANSPORTER="/Applications/Transporter.app/Contents/itms/bin/iTMSTransporter"
-            if [ -x "$TRANSPORTER" ]; then
-              echo "Using standalone Transporter.app..."
-              set +e
-              "$TRANSPORTER" -m upload \
-                -assetFile "$IPA_PATH" \
-                -apiKey "$APPSTORE_API_KEY_ID" \
-                -apiIssuer "$APPSTORE_ISSUER_ID" 2>&1
-              TRANSPORTER_EXIT=$?
-              set -e
-              if [ $TRANSPORTER_EXIT -eq 0 ]; then
-                UPLOAD_OK=true
-              else
-                echo "Standalone Transporter failed (exit $TRANSPORTER_EXIT), trying next method..."
-              fi
-            fi
-          fi
-
-          # Method 3: fastlane deliver
-          if [ "$UPLOAD_OK" = false ]; then
-            if command -v fastlane &>/dev/null; then
-              echo "Using fastlane deliver..."
-              set +e
-              fastlane deliver \
-                --ipa "$IPA_PATH" \
-                --skip_waiting_for_build_processing \
-                --api_key "{\"key_id\":\"$APPSTORE_API_KEY_ID\",\"issuer_id\":\"$APPSTORE_ISSUER_ID\",\"key\":\"$HOME/.appstoreconnect/private_keys/AuthKey_${APPSTORE_API_KEY_ID}.p8\"}" 2>&1
-              FASTLANE_EXIT=$?
-              set -e
-              if [ $FASTLANE_EXIT -eq 0 ]; then
-                UPLOAD_OK=true
-              else
-                echo "fastlane deliver failed (exit $FASTLANE_EXIT)"
-              fi
-            fi
-          fi
-
-          if [ "$UPLOAD_OK" = false ]; then
-            echo ""
-            echo "============================================"
-            echo "ERROR: All upload methods failed."
-            echo ""
-            echo "Tried:"
-            echo "  1. xcrun iTMSTransporter (Xcode-bundled)"
-            echo "  2. /Applications/Transporter.app"
-            echo "  3. fastlane deliver"
-            echo ""
-            echo "To fix: install Transporter on the runner or switch to macos-15"
-            echo "runner where altool from Xcode 15/16 still works."
-            echo "============================================"
-            exit 1
-          fi
-
-          # Verify the upload actually reached Apple by checking the ASC API
-          echo "=== Verifying upload reached App Store Connect ==="
-          sleep 30
-
-          # Write JWT generation script for verification
+          # --- Write JWT generation script (used here and in the next step) ---
           cat > "$RUNNER_TEMP/generate_jwt.py" << 'PYEOF'
           import base64, json, time, os
           from cryptography.hazmat.primitives import hashes
@@ -340,7 +254,43 @@ jobs:
           PYEOF
           sed -i '' 's/^          //' "$RUNNER_TEMP/generate_jwt.py"
 
-          VERIFY_JWT=$(python3 "$RUNNER_TEMP/generate_jwt.py")
+          generate_jwt() { python3 "$RUNNER_TEMP/generate_jwt.py"; }
+
+          # --- Upload via xcrun altool ---
+          echo "=== Uploading IPA to App Store Connect ==="
+
+          set +e
+          ALTOOL_OUTPUT=$(xcrun altool --upload-package "$IPA_PATH" \
+            --type ios \
+            --bundle-id "$BUNDLE_ID" \
+            --bundle-version "$BUILD_VERSION" \
+            --bundle-short-version-string "$MARKETING_VERSION" \
+            --apple-id "${{ secrets.APP_APPLE_ID }}" \
+            --apiKey "$APPSTORE_API_KEY_ID" \
+            --apiIssuer "$APPSTORE_ISSUER_ID" \
+            2>&1)
+          ALTOOL_EXIT=$?
+          set -e
+
+          echo "altool exit code: $ALTOOL_EXIT"
+          echo "altool output:"
+          echo "$ALTOOL_OUTPUT"
+
+          if [ $ALTOOL_EXIT -ne 0 ]; then
+            echo "ERROR: altool upload failed with exit code $ALTOOL_EXIT"
+            exit 1
+          fi
+
+          # Check for error patterns, excluding "no errors" success messages
+          if echo "$ALTOOL_OUTPUT" | grep -v -i "no errors" | grep -qi "error\|failed\|invalid"; then
+            echo "ERROR: altool reported errors despite exit code 0"
+            exit 1
+          fi
+
+          # Verify the upload actually reached Apple
+          echo "=== Verifying upload reached App Store Connect ==="
+          sleep 30
+          VERIFY_JWT=$(generate_jwt)
           API_BASE="https://api.appstoreconnect.apple.com/v1"
           VERIFY_RESPONSE=$(curl -s --globoff -H "Authorization: Bearer $VERIFY_JWT" \
             "$API_BASE/builds?filter[version]=$BUILD_VERSION&limit=1")
@@ -351,16 +301,12 @@ jobs:
             echo ""
             echo "============================================"
             echo "WARNING: Build not found in App Store Connect 30s after upload."
-            echo "Transporter reported success. Build may still be propagating."
+            echo "Build may still be propagating. The distribution step will retry."
             echo "============================================"
             echo ""
           fi
 
-          echo ""
-          echo "=== Build uploaded to TestFlight (internal only) ==="
-          echo "Build number: $BUILD_VERSION"
-          echo "The build will be available in TestFlight for internal testers after processing."
-          echo "No external test group was added - this build is for internal testing only."
+          echo "=== Upload completed ==="
 
       - name: Clean up keychain
         if: always()
