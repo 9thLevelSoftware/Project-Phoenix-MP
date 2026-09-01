@@ -1,12 +1,10 @@
-# Project Phoenix — Phoenix Trainer Control App
+# Project Phoenix — Trainer Control App
 
 [![Latest Release](https://img.shields.io/github/v/release/9thLevelSoftware/Project-Phoenix-MP)](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/latest)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
 [![Kotlin](https://img.shields.io/badge/Kotlin-2.0+-blue.svg)](https://kotlinlang.org)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-green.svg)](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases)
 [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/9thLevelSoftware/Project-Phoenix-MP)
-
-**Keep your Phoenix Trainer alive.** This community-developed app restores full functionality to Phoenix V-Form and Trainer+ machines after the company's closure. Don't let your investment become e-waste.
 
 ---
 
@@ -26,8 +24,6 @@ Your support helps cover development, testing, and platform costs and keeps this
 |----------|---------|-------|
 | **Android** | [Play Store](https://play.google.com/store/apps/details?id=com.devil.phoenixproject) / [Join Beta](ANDROID_INSTALL.md#join-the-beta) | [Android Guide](ANDROID_INSTALL.md) |
 | **iOS** | [TestFlight](https://testflight.apple.com/join/TFw1m89R) | [iOS Guide](iOS_INSTALL.md) |
-
-Current release: **[v0.9.6](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.6)** — profile-centered training controls, Exercise Insights, and workout reliability improvements. See the [release notes](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.6) for full details.
 
 ---
 
@@ -88,15 +84,6 @@ Current release: **[v0.9.6](https://github.com/9thLevelSoftware/Project-Phoenix-
 - No account required
 - Works completely offline
 - Backup & restore your data anytime
-
----
-
-## Supported Hardware
-
-| Machine | Device Name | Max Resistance | Status |
-|---------|-------------|----------------|--------|
-| **Phoenix V-Form Trainer** (VIT-200) | `Vee_*` | 200 kg (440 lbs) | ✅ Fully Supported |
-| **Phoenix Trainer+** | `VIT*` | 220 kg (485 lbs) | ✅ Fully Supported |
 
 ---
 
@@ -191,14 +178,4 @@ Proprietary License - All Rights Reserved. See [LICENSE](LICENSE) file for detai
 
 ---
 
-## Acknowledgments
-
-- Original [ProjectPhoenix](https://github.com/9thLevelSoftware/Project-Phoenix-MP) Android app
-- Community protocol documentation for the machine BLE interface
-- Phoenix machine owners community for testing and feedback
-- JetBrains for Kotlin Multiplatform
-- All contributors and supporters
-
----
-
-*Project Phoenix is a community rescue project to keep Phoenix Trainer machines functional. It is not affiliated with or endorsed by Phoenix.*
+*Project Phoenix is a community rescue project. It is not affiliated with or endorsed by Vitruvian/RCI Fitness.*
