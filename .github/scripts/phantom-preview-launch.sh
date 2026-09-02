@@ -106,6 +106,15 @@ def reject_secret_environment():
         r"(?:TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE[_-]?KEY|CREDENTIAL|API[_-]?KEY|ANON[_-]?KEY|AUTHORIZATION)",
         re.IGNORECASE,
     )
+    # Allowlist: env var name prefixes that are known to be unrelated to
+    # Phoenix/Supabase/GitHub secrets.  Kanban workers and CI runners
+    # routinely carry these; blocking them prevents the launcher from
+    # working in automated contexts.
+    _SAFE_PREFIXES = (
+        "CLINE_", "HETZNER_", "WANDB_", "TINKER_", "GOOGLE_MAPS_",
+        "HERMES_", "KITTY_", "TERMINAL_DOCKER_", "ASC_KEY_",
+        "SSL_CERT_", "OPENROUTER_", "OLLAMA_", "MESHY_",
+    )
     value_patterns = (
         re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
         re.compile(r"\b(?:gh[pousr]|github_pat|glpat|xox[baprs]|sk|rk)[_-][A-Za-z0-9_./=-]{20,}\b", re.IGNORECASE),
@@ -113,9 +122,11 @@ def reject_secret_environment():
         re.compile(r"\bBearer\s+[A-Za-z0-9._~+/=-]{20,}", re.IGNORECASE),
     )
     for key, value in os.environ.items():
+        is_safe = any(key.startswith(p) for p in _SAFE_PREFIXES)
         if key not in {"PATH", "PWD", "OLDPWD", "SHLVL"} and name_pattern.search(key) and value:
-            fail()
-        if key not in {"PATH", "PWD", "OLDPWD", "SHLVL", "JAVA_HOME", "TMPDIR", "HOME", "DEVELOPER_DIR"}:
+            if not is_safe:
+                fail()
+        if not is_safe and key not in {"PATH", "PWD", "OLDPWD", "SHLVL", "JAVA_HOME", "TMPDIR", "HOME", "DEVELOPER_DIR"}:
             if any(pattern.search(value) for pattern in value_patterns):
                 fail()
 
