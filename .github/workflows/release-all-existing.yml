@@ -86,7 +86,7 @@ jobs:
     secrets: inherit
 
   android-playstore:
-    needs: [prepare-release, android-apk, ios-ipa]
+    needs: [prepare-release, android-apk]
     if: ${{ !inputs.skip_android_playstore }}
     uses: ./.github/workflows/android-playstore.yml
     with:
@@ -96,7 +96,7 @@ jobs:
     secrets: inherit
 
   ios-testflight:
-    needs: [prepare-release, android-apk, ios-ipa]
+    needs: [prepare-release, ios-ipa]
     if: ${{ !inputs.skip_ios_testflight }}
     uses: ./.github/workflows/ios-testflight.yml
     with:
