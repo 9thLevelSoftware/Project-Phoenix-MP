@@ -58,7 +58,13 @@ actual class DriverFactory {
                 )
             }
 
-            driver.execute(null, "PRAGMA journal_mode = WAL", 0)
+            val journalMode = driver.queryText("PRAGMA journal_mode = WAL")
+            if (!journalMode.equals("wal", ignoreCase = true)) {
+                throw DatabaseFileMigrationException(
+                    DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+                    "The Phoenix database journal mode is invalid.",
+                )
+            }
             driver.execute(null, "PRAGMA foreign_keys = ON", 0)
 
             val schemaVersion = driver.queryLong("PRAGMA user_version")
@@ -130,6 +136,23 @@ actual class DriverFactory {
         return value ?: throw DatabaseFileMigrationException(
             DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
             "The Phoenix database schema version could not be read.",
+        )
+    }
+
+    private fun SqlDriver.queryText(sql: String): String {
+        var value: String? = null
+        executeQuery(
+            identifier = null,
+            sql = sql,
+            mapper = { cursor ->
+                if (cursor.next().value) value = cursor.getString(0)
+                QueryResult.Value(Unit)
+            },
+            parameters = 0,
+        )
+        return value ?: throw DatabaseFileMigrationException(
+            DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+            "The Phoenix database journal mode could not be read.",
         )
     }
 }
