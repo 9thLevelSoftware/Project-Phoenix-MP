@@ -17,8 +17,10 @@ env:
   GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx8g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g"
 
 jobs:
-  build-and-upload:
-    runs-on: macos-15
+  build:
+    runs-on: macos-26
+    outputs:
+      build_number: ${{ steps.build_number.outputs.build_number }}
 
     steps:
       - name: Checkout repository
@@ -74,12 +76,10 @@ jobs:
           # Show what was set
           grep "CURRENT_PROJECT_VERSION" iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | head -2
 
-      # Keep Gradle/Kotlin/Native and xcodebuild on the same Xcode SDK. The macos-15
-      # runner does not include the iOS 18.2 simulator runtime that Xcode 16.2's
-      # actool expects for asset catalogs; Xcode 16.4 pairs with the installed iOS
-      # 18.5 runtime and retains the Xcode 16 App Store upload tooling.
-      - name: Select Xcode 16.4
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+      # Compose Multiplatform 1.11 links UIKit symbols from the iOS 26 SDK.
+      # Gradle/Kotlin Native and xcodebuild must use that same SDK.
+      - name: Select Xcode 26.2
+        run: sudo xcode-select -s /Applications/Xcode_26.2.app/Contents/Developer
 
       - name: Build shared framework and resources
         run: |
@@ -204,6 +204,36 @@ jobs:
             -exportPath $RUNNER_TEMP/export \
             -exportOptionsPlist iosApp/ExportOptions.plist
 
+      - name: Upload IPA for TestFlight job
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflight-ipa-${{ github.run_id }}
+          path: ${{ runner.temp }}/export/PhoenixApp.ipa
+          if-no-files-found: error
+          retention-days: 1
+          overwrite: true
+
+      - name: Clean up keychain
+        if: always()
+        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
+
+  upload:
+    needs: build
+    runs-on: macos-15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Download IPA from Xcode 26 build
+        uses: actions/download-artifact@v4
+        with:
+          name: testflight-ipa-${{ github.run_id }}
+          path: ${{ runner.temp }}/export
+
+      - name: Select Xcode 16.4 upload tooling
+        run: sudo xcode-select -s /Applications/Xcode_16.4.app/Contents/Developer
+
       - name: Set up Python (for upload verification)
         uses: actions/setup-python@v5
         with:
@@ -223,7 +253,7 @@ jobs:
           echo "$APPSTORE_API_KEY" > ~/.appstoreconnect/private_keys/AuthKey_${APPSTORE_API_KEY_ID}.p8
 
           IPA_PATH="$RUNNER_TEMP/export/PhoenixApp.ipa"
-          BUILD_VERSION="${{ steps.build_number.outputs.build_number }}"
+          BUILD_VERSION="${{ needs.build.outputs.build_number }}"
           MARKETING_VERSION=$(grep 'MARKETING_VERSION' iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | head -1 | sed 's/.*= //;s/;.*//')
 
           echo "=== IPA details ==="
@@ -311,7 +341,3 @@ jobs:
           fi
 
           echo "=== Upload completed ==="
-
-      - name: Clean up keychain
-        if: always()
-        run: security delete-keychain $RUNNER_TEMP/app-signing.keychain-db || true
