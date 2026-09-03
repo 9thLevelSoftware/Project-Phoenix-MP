@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
@@ -62,9 +63,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
@@ -82,26 +84,32 @@ import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.usecase.RoutineScalingBaselineSource
 import com.devil.phoenixproject.presentation.components.CompactNumberPicker
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
+import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.ProgressionSlider
-import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseConfigViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ExerciseType
 import com.devil.phoenixproject.presentation.viewmodel.SetConfiguration
 import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.parseLocalizedDecimal
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_add_set
-import vitruvianprojectphoenix.shared.generated.resources.cd_close
-import vitruvianprojectphoenix.shared.generated.resources.cd_delete_set
-import vitruvianprojectphoenix.shared.generated.resources.cd_personal_record
-import vitruvianprojectphoenix.shared.generated.resources.label_duration
-import vitruvianprojectphoenix.shared.generated.resources.label_reps
-import vitruvianprojectphoenix.shared.generated.resources.percent_label
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_add_set
+import projectphoenix.shared.generated.resources.cd_close
+import projectphoenix.shared.generated.resources.cd_delete_set
+import projectphoenix.shared.generated.resources.cd_personal_record
+import projectphoenix.shared.generated.resources.drop_set_min_weight
+import projectphoenix.shared.generated.resources.drop_set_min_weight_error
+import projectphoenix.shared.generated.resources.drop_set_min_weight_supporting
+import projectphoenix.shared.generated.resources.drop_set_offer_toggle
+import projectphoenix.shared.generated.resources.drop_set_title
+import projectphoenix.shared.generated.resources.label_duration
+import projectphoenix.shared.generated.resources.label_reps
+import projectphoenix.shared.generated.resources.percent_label
 
 /**
  * Exercise configuration bottom sheet for SingleExerciseScreen
@@ -122,6 +130,8 @@ fun ExerciseEditBottomSheet(
     onDismiss: () -> Unit,
     buttonText: String = "Save",
     weightStepOverride: Float = 0f, // Issue #266/#410: 0 = use default for unit
+    primaryActionEnabled: Boolean = true,
+    primaryActionSupportingContent: (@Composable () -> Unit)? = null,
 ) {
     // Create local ViewModel instance with repositories for PR and velocity-1RM lookups
     val velocityOneRepMaxRepository: VelocityOneRepMaxRepository = koinInject()
@@ -130,18 +140,16 @@ fun ExerciseEditBottomSheet(
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val activeProfileId = activeProfile?.id ?: "default"
 
-    // Fetch videos for exercise
-    var videos by remember { mutableStateOf<List<ExerciseVideoEntity>>(emptyList()) }
+    var images by remember { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
     LaunchedEffect(exercise.exercise.id) {
         exercise.exercise.id?.let { exerciseId ->
             try {
-                videos = exerciseRepository.getVideos(exerciseId)
+                images = exerciseRepository.getImages(exerciseId)
             } catch (_: Exception) {
-                // Handle error - videos will remain empty
+                // Handle error - images will remain empty
             }
         }
     }
-    val preferredVideo = videos.firstOrNull { it.angle == "FRONT" } ?: videos.firstOrNull()
 
     // Initialize the ViewModel - PR loading is now handled internally by the ViewModel
     LaunchedEffect(exercise, weightUnit, activeProfileId) {
@@ -161,6 +169,9 @@ fun ExerciseEditBottomSheet(
     val stallDetectionEnabled by viewModel.stallDetectionEnabled.collectAsState()
     val repCountTiming by viewModel.repCountTiming.collectAsState()
     val stopAtTop by viewModel.stopAtTop.collectAsState()
+    val dropSetEnabled by viewModel.dropSetEnabled.collectAsState()
+    val dropSetMinWeightKg by viewModel.dropSetMinWeightKg.collectAsState()
+    val isDropSetMinWeightValid by viewModel.isDropSetMinWeightValid.collectAsState()
     val defaultRackItemIds by viewModel.defaultRackItemIds.collectAsState()
     val rackBehaviorOverrides by viewModel.rackBehaviorOverrides.collectAsState()
 
@@ -306,24 +317,22 @@ fun ExerciseEditBottomSheet(
                     .verticalScroll(rememberScrollState()),
                 verticalArrangement = Arrangement.spacedBy(Spacing.small),
             ) {
-                // Video Player
-                if (enableVideoPlayback) {
-                    preferredVideo?.let { video ->
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(16f / 9f),
-                            shape = MaterialTheme.shapes.medium,
-                            colors = CardDefaults.cardColors(
-                                containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            ),
-                            elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-                        ) {
-                            VideoPlayer(
-                                videoUrl = video.videoUrl,
-                                modifier = Modifier.fillMaxSize(),
-                            )
-                        }
+                if (enableVideoPlayback && images.isNotEmpty()) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(16f / 9f),
+                        shape = MaterialTheme.shapes.medium,
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+                        ),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+                    ) {
+                        ExerciseDemoImage(
+                            imageUrls = images.map { it.url },
+                            modifier = Modifier.fillMaxSize(),
+                            contentDescription = exercise.exercise.displayName,
+                        )
                     }
                 }
 
@@ -452,6 +461,7 @@ fun ExerciseEditBottomSheet(
                     onRestChange = viewModel::updateRestTime,
                     onAddSet = viewModel::addSet,
                     onDeleteSet = viewModel::deleteSet,
+                    onRepeatCountChange = viewModel::onRepeatCountChange, // Issue #667
                 )
 
                 // Per Set Rest Time toggle — immediately follows SetsConfiguration so rest
@@ -613,6 +623,20 @@ fun ExerciseEditBottomSheet(
                         }
                     }
 
+                    if (selectedMode is WorkoutMode.OldSchool) {
+                        DropSetRoutineConfigurationCard(
+                            dropSetEnabled = dropSetEnabled,
+                            dropSetMinWeightKg = dropSetMinWeightKg,
+                            isDropSetMinWeightValid = isDropSetMinWeightValid,
+                            weightUnit = weightUnit,
+                            weightSuffix = weightSuffix,
+                            kgToDisplay = kgToDisplay,
+                            displayToKg = displayToKg,
+                            onDropSetEnabledChange = viewModel::onDropSetEnabledChange,
+                            onDropSetMinWeightKgChange = viewModel::onDropSetMinWeightKgChange,
+                        )
+                    }
+
                     // Rep Count Timing toggle
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
@@ -717,6 +741,8 @@ fun ExerciseEditBottomSheet(
 
             Spacer(modifier = Modifier.height(Spacing.small))
 
+            primaryActionSupportingContent?.invoke()
+
             // Bottom actions
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -740,7 +766,7 @@ fun ExerciseEditBottomSheet(
                     modifier = Modifier
                         .weight(1f)
                         .height(56.dp),
-                    enabled = sets.isNotEmpty(),
+                    enabled = sets.isNotEmpty() && primaryActionEnabled && isDropSetMinWeightValid,
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -818,6 +844,7 @@ fun SetsConfiguration(
     onRestChange: (String, Int) -> Unit,
     onAddSet: () -> Unit,
     onDeleteSet: (Int) -> Unit,
+    onRepeatCountChange: (String, Int) -> Unit = { _, _ -> }, // Issue #667
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -847,8 +874,22 @@ fun SetsConfiguration(
                     onRestChange = { newRest -> onRestChange(setConfig.id, newRest) },
                     onDelete = { onDeleteSet(index) },
                     perSetRestTime = perSetRestTime,
+                    repeatCount = setConfig.repeatCount, // Issue #667
+                    onRepeatCountChange = { newCount -> onRepeatCountChange(setConfig.id, newCount) }, // Issue #667
                 )
             }
+        }
+
+        // Issue #667: Total expanded sets preview
+        if (sets.any { it.repeatCount > 1 }) {
+            val total = sets.sumOf { it.repeatCount.coerceIn(1, 20) }
+            Text(
+                "Total sets after expansion: $total",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.padding(vertical = Spacing.extraSmall),
+            )
         }
 
         // Add Set button
@@ -890,6 +931,8 @@ fun SetRow(
     onRestChange: (Int) -> Unit,
     onDelete: () -> Unit,
     perSetRestTime: Boolean = false,
+    repeatCount: Int = 1, // Issue #667
+    onRepeatCountChange: (Int) -> Unit = {}, // Issue #667
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
@@ -914,6 +957,15 @@ fun SetRow(
                     style = MaterialTheme.typography.bodyMedium,
                     fontWeight = FontWeight.Bold,
                 )
+                // Issue #667: ×N badge for repeated sets
+                if (repeatCount > 1) {
+                    Text(
+                        " ×$repeatCount",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
                 IconButton(
                     onClick = onDelete,
                     enabled = canDelete,
@@ -950,6 +1002,28 @@ fun SetRow(
                 }
                 Spacer(modifier = Modifier.height(Spacing.small))
             }
+
+            // Issue #667: Repeat counter
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+            ) {
+                Text(
+                    "Repeat:",
+                    style = MaterialTheme.typography.bodySmall,
+                    fontWeight = FontWeight.Medium,
+                )
+                CompactNumberPicker(
+                    value = repeatCount,
+                    onValueChange = onRepeatCountChange,
+                    range = 1..20,
+                    label = "",
+                    suffix = "x",
+                )
+            }
+
+            Spacer(modifier = Modifier.height(Spacing.small))
 
             // Reps/Duration and Weight side-by-side
             Row(
@@ -1351,12 +1425,16 @@ fun WeightConfigurationCard(
                         text = when {
                             baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.ESTIMATED_1RM ->
                                 "Scale weight based on your velocity 1RM estimate"
+
                             baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.MAX_VOLUME_PR ->
                                 "Scale weight based on your max-volume personal record"
+
                             baselineWeightKg != null && effectiveScalingBasis == ScalingBasis.MAX_WEIGHT_PR ->
                                 "Scale weight based on your max-weight personal record"
+
                             currentExercisePR != null ->
                                 "Scale weight based on your ${currentExercisePR.phase.displayLabel().lowercase()} personal record"
+
                             else ->
                                 "No baseline available for the selected scaling type"
                         },
@@ -1430,7 +1508,9 @@ fun WeightConfigurationCard(
                         Text(
                             text = when (effectiveBasisForControls) {
                                 ScalingBasis.ESTIMATED_1RM -> "$weightPercentOfPR% of Est. 1RM"
+
                                 ScalingBasis.MAX_VOLUME_PR -> "$weightPercentOfPR% of Max-volume PR"
+
                                 ScalingBasis.MAX_WEIGHT_PR ->
                                     "$weightPercentOfPR% of ${currentExercisePR?.phase?.displayLabel() ?: "Max-weight"} PR"
                             },
@@ -1513,6 +1593,112 @@ fun WeightConfigurationCard(
             }
         }
     }
+}
+
+@Composable
+internal fun DropSetRoutineConfigurationCard(
+    dropSetEnabled: Boolean,
+    dropSetMinWeightKg: Float?,
+    isDropSetMinWeightValid: Boolean,
+    weightUnit: WeightUnit,
+    weightSuffix: String,
+    kgToDisplay: (Float, WeightUnit) -> Float,
+    displayToKg: (Float, WeightUnit) -> Float,
+    onDropSetEnabledChange: (Boolean) -> Unit,
+    onDropSetMinWeightKgChange: (Float?) -> Unit,
+) {
+    var dropSetMinWeightText by remember {
+        mutableStateOf(formatDropSetMinWeightInput(dropSetMinWeightKg, weightUnit, kgToDisplay))
+    }
+    LaunchedEffect(dropSetMinWeightKg, weightUnit) {
+        val parsedKg = parseLocalizedDecimal(dropSetMinWeightText)?.let { displayToKg(it, weightUnit) }
+        if (parsedKg != dropSetMinWeightKg) {
+            dropSetMinWeightText = formatDropSetMinWeightInput(dropSetMinWeightKg, weightUnit, kgToDisplay)
+        }
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.surfaceVariant),
+        shadowElevation = 2.dp,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(Spacing.small),
+            verticalArrangement = Arrangement.spacedBy(Spacing.small),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = stringResource(Res.string.drop_set_title),
+                        style = MaterialTheme.typography.bodyMedium,
+                        fontWeight = if (dropSetEnabled) FontWeight.Bold else FontWeight.Normal,
+                        color = if (dropSetEnabled) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            MaterialTheme.colorScheme.onSurface
+                        },
+                    )
+                    Text(
+                        text = stringResource(Res.string.drop_set_offer_toggle),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = dropSetEnabled,
+                    onCheckedChange = onDropSetEnabledChange,
+                )
+            }
+
+            if (dropSetEnabled) {
+                OutlinedTextField(
+                    value = dropSetMinWeightText,
+                    onValueChange = { value ->
+                        dropSetMinWeightText = value
+                        onDropSetMinWeightKgChange(
+                            parseLocalizedDecimal(value)?.let { displayToKg(it, weightUnit) },
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text(stringResource(Res.string.drop_set_min_weight)) },
+                    singleLine = true,
+                    isError = !isDropSetMinWeightValid,
+                    supportingText = {
+                        Text(
+                            text = if (isDropSetMinWeightValid) {
+                                stringResource(Res.string.drop_set_min_weight_supporting, weightSuffix)
+                            } else {
+                                stringResource(Res.string.drop_set_min_weight_error)
+                            },
+                            color = if (isDropSetMinWeightValid) {
+                                MaterialTheme.colorScheme.onSurfaceVariant
+                            } else {
+                                MaterialTheme.colorScheme.error
+                            },
+                        )
+                    },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
+                )
+            }
+        }
+    }
+}
+
+private fun formatDropSetMinWeightInput(
+    weightKg: Float?,
+    weightUnit: WeightUnit,
+    kgToDisplay: (Float, WeightUnit) -> Float,
+): String {
+    val display = weightKg?.let { kgToDisplay(it, weightUnit) } ?: return ""
+    return if (display % 1f == 0f) display.toInt().toString() else display.toString()
 }
 
 /**

@@ -40,7 +40,7 @@ Source spec: `docs/superpowers/specs/2026-06-26-velocity-based-1rm-design.md` (i
 - Test files mirroring each (`commonTest` for pure domain, `androidHostTest` for DB repos).
 
 **Modify:**
-- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq` — two CREATE TABLEs, `Exercise.mvtOverrideMs` column, queries.
+- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq` — two CREATE TABLEs, `Exercise.mvtOverrideMs` column, queries.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/MigrationStatements.kt` — `36 ->`, `37 ->` branches.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt` — two `SchemaTableOperation`s + `Exercise.mvtOverrideMs` heal op.
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt` + `WorkoutRepository.kt` — velocity-points query method.
@@ -393,7 +393,7 @@ git commit -m "feat(1rm): add VelocityOneRepMaxEstimator reusing AssessmentEngin
 ### Task 4: `VelocityOneRepMaxEstimate` table (schema + migration + manifest)
 
 **Files:**
-- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq`
 - Create: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/36.sqm`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/MigrationStatements.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt`
@@ -402,7 +402,7 @@ git commit -m "feat(1rm): add VelocityOneRepMaxEstimator reusing AssessmentEngin
 **Interfaces:**
 - Produces SQLDelight queries: `insertVelocityOneRepMax`, `selectVelocityOneRepMaxByExercise`, `selectLatestPassingVelocityOneRepMax`.
 
-- [ ] **Step 1: Add the table + queries to `VitruvianDatabase.sq`**
+- [ ] **Step 1: Add the table + queries to `PhoenixDatabase.sq`**
 
 Insert after the `AssessmentResult` block (around line 434):
 
@@ -523,7 +523,7 @@ SchemaTableOperation(
 
 - [ ] **Step 5: Run the schema build + parity tests**
 
-Run: `./gradlew :shared:generateCommonMainVitruvianDatabaseInterface :shared:testDebugUnitTest --tests "*SchemaManifestTest*" --tests "*SchemaParityTest*"`
+Run: `./gradlew :shared:generateCommonMainPhoenixDatabaseInterface :shared:testDebugUnitTest --tests "*SchemaManifestTest*" --tests "*SchemaParityTest*"`
 Expected: SQLDelight generates `insertVelocityOneRepMax` etc.; parity tests PASS. If parity fails, the `.sq` CREATE and the `SchemaManifest` createSql differ — reconcile them character-for-character (ignoring whitespace).
 
 - [ ] **Step 6: Commit**
@@ -542,11 +542,11 @@ git commit -m "feat(1rm): add VelocityOneRepMaxEstimate table + migration 36 (#5
 - Test: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightVelocityOneRepMaxRepositoryTest.kt`
 
 **Interfaces:**
-- Consumes: generated queries from Task 4; `VitruvianDatabase`.
+- Consumes: generated queries from Task 4; `PhoenixDatabase`.
 - Produces:
   - `data class VelocityOneRepMaxEntity(val id: Long, val exerciseId: String, val estimatedPerCableKg: Float, val mvtUsedMs: Float, val r2: Float, val distinctLoads: Int, val passedQualityGate: Boolean, val computedAt: Long, val profileId: String)`
   - `interface VelocityOneRepMaxRepository { suspend fun insert(result: VelocityOneRepMaxResult, exerciseId: String, computedAt: Long, profileId: String); suspend fun getLatestPassing(exerciseId: String, profileId: String): VelocityOneRepMaxEntity?; fun getHistory(exerciseId: String, profileId: String): Flow<List<VelocityOneRepMaxEntity>> }`
-  - `class SqlDelightVelocityOneRepMaxRepository(private val db: VitruvianDatabase) : VelocityOneRepMaxRepository`
+  - `class SqlDelightVelocityOneRepMaxRepository(private val db: PhoenixDatabase) : VelocityOneRepMaxRepository`
 
 - [ ] **Step 1: Write the failing test**
 
@@ -593,7 +593,7 @@ class SqlDelightVelocityOneRepMaxRepositoryTest {
 }
 ```
 
-> Note: `createInMemoryTestDatabase()` and `seedExercise(...)` are the harness helpers — copy them verbatim from `SqlDelightAssessmentRepositoryTest.kt`, which already constructs a `VitruvianDatabase` over an in-memory `JdbcSqliteDriver` and inserts Exercise rows for FK satisfaction.
+> Note: `createInMemoryTestDatabase()` and `seedExercise(...)` are the harness helpers — copy them verbatim from `SqlDelightAssessmentRepositoryTest.kt`, which already constructs a `PhoenixDatabase` over an in-memory `JdbcSqliteDriver` and inserts Exercise rows for FK satisfaction.
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -607,7 +607,7 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxResult
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -632,8 +632,8 @@ interface VelocityOneRepMaxRepository {
     fun getHistory(exerciseId: String, profileId: String): Flow<List<VelocityOneRepMaxEntity>>
 }
 
-class SqlDelightVelocityOneRepMaxRepository(private val db: VitruvianDatabase) : VelocityOneRepMaxRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightVelocityOneRepMaxRepository(private val db: PhoenixDatabase) : VelocityOneRepMaxRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     private fun map(
         id: Long, exerciseId: String, estimatedPerCableKg: Double, mvtUsedMs: Double, r2: Double,
@@ -688,7 +688,7 @@ git commit -m "feat(1rm): add VelocityOneRepMaxRepository (#517)"
 ### Task 6: Per-exercise velocity-points query on WorkoutRepository
 
 **Files:**
-- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq` (add query)
+- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq` (add query)
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/WorkoutRepository.kt` (interface method)
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepository.kt` (impl)
 - Test: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightWorkoutRepositoryVelocityPointsTest.kt`
@@ -696,7 +696,7 @@ git commit -m "feat(1rm): add VelocityOneRepMaxRepository (#517)"
 **Interfaces:**
 - Produces: `suspend fun WorkoutRepository.getVelocityPointsForExercise(exerciseId: String, profileId: String, sinceTimestampMs: Long): List<WorkoutVelocityPoint>` (returns the domain type from Task 3). Load uses `workingAvgWeightKg` when non-null, else `weightPerCableKg`.
 
-- [ ] **Step 1: Add the query to `VitruvianDatabase.sq`**
+- [ ] **Step 1: Add the query to `PhoenixDatabase.sq`**
 
 Place near the other `WorkoutSession` SELECTs (after `selectSessionsByExerciseSince` region ~line 595):
 
@@ -799,7 +799,7 @@ git commit -m "feat(1rm): add per-exercise velocity-points query (#517)"
 ### Task 7: Personal MVT table + Exercise override column + repository
 
 **Files:**
-- Modify: `VitruvianDatabase.sq` (ExerciseMvt table + `Exercise.mvtOverrideMs` column + queries), `MigrationStatements.kt` (`37 ->`), `SchemaManifest.kt` (table op + Exercise heal op), `Exercise.kt` (field), the Exercise SQL mapper wherever `selectExerciseById`/`insertExercise` are mapped.
+- Modify: `PhoenixDatabase.sq` (ExerciseMvt table + `Exercise.mvtOverrideMs` column + queries), `MigrationStatements.kt` (`37 ->`), `SchemaManifest.kt` (table op + Exercise heal op), `Exercise.kt` (field), the Exercise SQL mapper wherever `selectExerciseById`/`insertExercise` are mapped.
 - Create: `shared/src/commonMain/sqldelight/.../migrations/37.sqm`, `data/repository/PersonalMvtRepository.kt`
 - Test: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightPersonalMvtRepositoryTest.kt`
 
@@ -809,7 +809,7 @@ git commit -m "feat(1rm): add per-exercise velocity-points query (#517)"
   - `interface PersonalMvtRepository { suspend fun get(exerciseId: String, profileId: String): PersonalMvtEntity?; suspend fun upsert(exerciseId: String, profileId: String, personalMvtMs: Float, sampleCount: Int) }`
   - `Exercise.mvtOverrideMs: Float?` (nullable, default null).
 
-- [ ] **Step 1: Schema additions in `VitruvianDatabase.sq`**
+- [ ] **Step 1: Schema additions in `PhoenixDatabase.sq`**
 
 ```sql
 ALTER TABLE Exercise ADD COLUMN mvtOverrideMs REAL;  -- handled via migration; see note
@@ -897,7 +897,7 @@ class SqlDelightPersonalMvtRepositoryTest {
 ```kotlin
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
@@ -909,8 +909,8 @@ interface PersonalMvtRepository {
     suspend fun upsert(exerciseId: String, profileId: String, personalMvtMs: Float, sampleCount: Int)
 }
 
-class SqlDelightPersonalMvtRepository(private val db: VitruvianDatabase) : PersonalMvtRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightPersonalMvtRepository(private val db: PhoenixDatabase) : PersonalMvtRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     override suspend fun get(exerciseId: String, profileId: String): PersonalMvtEntity? = withContext(Dispatchers.IO) {
         queries.selectExerciseMvt(exerciseId, profileId).executeAsOneOrNull()?.let {
@@ -933,7 +933,7 @@ class SqlDelightPersonalMvtRepository(private val db: VitruvianDatabase) : Perso
 
 - [ ] **Step 7: Run schema + repo tests**
 
-Run: `./gradlew :shared:generateCommonMainVitruvianDatabaseInterface :shared:testDebugUnitTest --tests "*SchemaManifestTest*" --tests "*SchemaParityTest*" --tests "*PersonalMvtRepositoryTest*"`
+Run: `./gradlew :shared:generateCommonMainPhoenixDatabaseInterface :shared:testDebugUnitTest --tests "*SchemaManifestTest*" --tests "*SchemaParityTest*" --tests "*PersonalMvtRepositoryTest*"`
 Expected: PASS.
 
 - [ ] **Step 8: Commit**

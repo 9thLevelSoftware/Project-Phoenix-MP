@@ -151,9 +151,8 @@ class SettingsManager(
         .map { it.bleCompatibilityMode }
         .stateIn(scope, SharingStarted.Eagerly, userPreferences.value.bleCompatibilityMode)
 
-    private fun ready(): ActiveProfileContext.Ready =
-        userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
-            ?: throw ProfileContextUnavailableException()
+    private fun ready(): ActiveProfileContext.Ready = userProfileRepository.activeProfileContext.value as? ActiveProfileContext.Ready
+        ?: throw ProfileContextUnavailableException()
 
     private fun readyFor(expectedId: String): ActiveProfileContext.Ready {
         val current = ready()
@@ -214,19 +213,26 @@ class SettingsManager(
         }
     }
 
-    private fun updateWorkout(transform: (WorkoutPreferences) -> WorkoutPreferences) =
-        updateSection(
-            mutex = workoutUpdates,
-            read = { it.preferences.workout.value },
-            write = userProfileRepository::updateWorkout,
-        ) { _, value -> transform(value) }
+    private fun updateWorkout(transform: (WorkoutPreferences) -> WorkoutPreferences) = updateSection(
+        mutex = workoutUpdates,
+        read = { it.preferences.workout.value },
+        write = userProfileRepository::updateWorkout,
+    ) { _, value -> transform(value) }
 
-    private fun updateLed(transform: (LedPreferences) -> LedPreferences) =
-        updateSection(
-            mutex = ledUpdates,
-            read = { it.preferences.led.value },
-            write = userProfileRepository::updateLed,
-        ) { _, value -> transform(value) }
+    internal suspend fun mutateWorkout(
+        profileId: String,
+        transform: (WorkoutPreferences) -> WorkoutPreferences,
+    ) {
+        workoutUpdates.withLock {
+            userProfileRepository.mutateWorkout(profileId, transform)
+        }
+    }
+
+    private fun updateLed(transform: (LedPreferences) -> LedPreferences) = updateSection(
+        mutex = ledUpdates,
+        read = { it.preferences.led.value },
+        write = userProfileRepository::updateLed,
+    ) { _, value -> transform(value) }
 
     private fun updateVbt(
         transform: (ActiveProfileContext.Ready, VbtPreferences) -> VbtPreferences?,
@@ -266,10 +272,8 @@ class SettingsManager(
     fun setRepSoundEnabled(enabled: Boolean) = updateWorkout { it.copy(repSoundEnabled = enabled) }
     fun setMotionStartEnabled(enabled: Boolean) = updateWorkout { it.copy(motionStartEnabled = enabled) }
     fun setWeightSuggestionsEnabled(enabled: Boolean) = updateWorkout { it.copy(weightSuggestionsEnabled = enabled) }
-    fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) =
-        updateWorkout { it.copy(defaultRoutineExerciseUsePercentOfPR = enabled) }
-    fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) =
-        updateWorkout { it.copy(defaultRoutineExerciseWeightPercentOfPR = percent.coerceIn(50, 120)) }
+    fun setDefaultRoutineExerciseUsePercentOfPR(enabled: Boolean) = updateWorkout { it.copy(defaultRoutineExerciseUsePercentOfPR = enabled) }
+    fun setDefaultRoutineExerciseWeightPercentOfPR(percent: Int) = updateWorkout { it.copy(defaultRoutineExerciseWeightPercentOfPR = percent.coerceIn(50, 120)) }
     fun setVoiceStopEnabled(enabled: Boolean) = updateWorkout { it.copy(voiceStopEnabled = enabled) }
 
     fun setColorScheme(schemeIndex: Int) = updateLed { it.copy(colorScheme = schemeIndex) }
@@ -360,22 +364,18 @@ class SettingsManager(
         }
     }
 
-    fun getSingleExerciseDefaultsDocument(exerciseId: String): SingleExerciseDefaultsDocument? =
-        ready().preferences.workout.value.singleExerciseDefaults[exerciseId]
+    fun getSingleExerciseDefaultsDocument(exerciseId: String): SingleExerciseDefaultsDocument? = ready().preferences.workout.value.singleExerciseDefaults[exerciseId]
 
-    fun saveSingleExerciseDefaultsDocument(document: SingleExerciseDefaultsDocument) =
-        updateWorkout { current ->
-            current.copy(
-                singleExerciseDefaults = current.singleExerciseDefaults +
-                    (document.exerciseId to document),
-            )
-        }
+    fun saveSingleExerciseDefaultsDocument(document: SingleExerciseDefaultsDocument) = updateWorkout { current ->
+        current.copy(
+            singleExerciseDefaults = current.singleExerciseDefaults +
+                (document.exerciseId to document),
+        )
+    }
 
-    fun getJustLiftDefaultsDocument(): JustLiftDefaultsDocument =
-        ready().preferences.workout.value.justLiftDefaults
+    fun getJustLiftDefaultsDocument(): JustLiftDefaultsDocument = ready().preferences.workout.value.justLiftDefaults
 
-    fun saveJustLiftDefaultsDocument(document: JustLiftDefaultsDocument) =
-        updateWorkout { current -> current.copy(justLiftDefaults = document) }
+    fun saveJustLiftDefaultsDocument(document: JustLiftDefaultsDocument) = updateWorkout { current -> current.copy(justLiftDefaults = document) }
 
     fun setEnableVideoPlayback(enabled: Boolean) {
         scope.launch { globalPreferences.setEnableVideoPlayback(enabled) }

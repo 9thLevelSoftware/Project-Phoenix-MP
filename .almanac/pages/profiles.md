@@ -9,7 +9,7 @@ sources:
     note: Defines the `UserProfile` model, default-profile bootstrap, active-profile state, Supabase linking, subscription fields, and delete-time reassignment behavior.
   - id: schema-file
     type: file
-    path: shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq
+    path: shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq
     note: Defines the `UserProfile` table, the `profile_id` columns that partition many tables, and the backup-sync query that exports profile rows.
   - id: migration-manager
     type: file

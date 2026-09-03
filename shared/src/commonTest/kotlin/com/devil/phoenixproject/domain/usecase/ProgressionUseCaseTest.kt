@@ -163,16 +163,97 @@ class ProgressionUseCaseTest {
         assertTrue(result?.isPending() == true)
     }
 
-    private fun completedSet(id: String, sessionId: String, reps: Int, weight: Float, rpe: Int?, completedAt: Long): CompletedSet = CompletedSet(
+    @Test
+    fun `retry attempts of one logical set collapse so drop weight does not crowd older sets`() = runTest {
+        val now = 1_000_000_000L
+        completedSetRepository.setSessionExercise("attempt-1", "bench")
+        completedSetRepository.setSessionExercise("attempt-2", "bench")
+        completedSetRepository.setSessionExercise("older-1", "bench")
+        completedSetRepository.setSessionExercise("older-2", "bench")
+        completedSetRepository.setSessionRoutine("attempt-1", "run-1")
+        completedSetRepository.setSessionRoutine("attempt-2", "run-1")
+        completedSetRepository.setSessionRoutine("older-1", "run-1")
+        completedSetRepository.setSessionRoutine("older-2", "run-older")
+        completedSetRepository.saveCompletedSets(
+            listOf(
+                completedSet(
+                    id = "retry",
+                    sessionId = "attempt-2",
+                    reps = 8,
+                    weight = 40f,
+                    rpe = 5,
+                    completedAt = now,
+                    routineExerciseId = "occurrence-1",
+                    attemptNumber = 2,
+                    setNumber = 0,
+                    setType = SetType.DROP_SET,
+                ),
+                completedSet(
+                    id = "failed",
+                    sessionId = "attempt-1",
+                    reps = 3,
+                    weight = 50f,
+                    rpe = 9,
+                    completedAt = now - 1_000,
+                    routineExerciseId = "occurrence-1",
+                    attemptNumber = 1,
+                    setNumber = 0,
+                ),
+                completedSet(
+                    id = "same-session-set-1",
+                    sessionId = "older-1",
+                    reps = 10,
+                    weight = 40f,
+                    rpe = 5,
+                    completedAt = now - 2_000,
+                    routineExerciseId = "occurrence-1",
+                    setNumber = 1,
+                ),
+                completedSet(
+                    id = "older-b",
+                    sessionId = "older-2",
+                    reps = 10,
+                    weight = 50f,
+                    rpe = 5,
+                    completedAt = now - 86_400_000L,
+                    routineExerciseId = "occurrence-1",
+                    setNumber = 0,
+                ),
+            ),
+        )
+
+        val recent = completedSetRepository.getRecentCompletedSetsForExercise("bench", 20, "default")
+        assertEquals(listOf("retry", "same-session-set-1", "older-b"), recent.map { it.id })
+
+        val result = useCase.checkForProgression(exerciseId = "bench", targetReps = 10)
+
+        assertEquals(ProgressionReason.LOW_RPE, result?.reason)
+        assertEquals(40f, result?.previousWeightKg)
+    }
+
+    private fun completedSet(
+        id: String,
+        sessionId: String,
+        reps: Int,
+        weight: Float,
+        rpe: Int?,
+        completedAt: Long,
+        routineExerciseId: String? = null,
+        attemptNumber: Int = 1,
+        setNumber: Int = 1,
+        setType: SetType = SetType.STANDARD,
+    ): CompletedSet = CompletedSet(
         id = id,
         sessionId = sessionId,
         plannedSetId = null,
-        setNumber = 1,
-        setType = SetType.STANDARD,
+        setNumber = setNumber,
+        setType = setType,
         actualReps = reps,
         actualWeightKg = weight,
         loggedRpe = rpe,
         isPr = false,
         completedAt = completedAt,
+        routineExerciseId = routineExerciseId,
+        attemptNumber = attemptNumber,
     )
 }

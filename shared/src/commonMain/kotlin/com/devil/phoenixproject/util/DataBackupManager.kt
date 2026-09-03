@@ -22,7 +22,7 @@ import com.devil.phoenixproject.database.StreakHistory
 import com.devil.phoenixproject.database.Superset
 import com.devil.phoenixproject.database.TrainingCycle
 import com.devil.phoenixproject.database.UserProfile
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.WorkoutSession
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
@@ -30,6 +30,7 @@ import com.devil.phoenixproject.domain.model.ProfilePreferenceSection
 import com.devil.phoenixproject.domain.model.ProfilePreferenceValidity
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackPreferences
+import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.UserProfilePreferences
 import com.devil.phoenixproject.domain.model.VbtPreferences
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
@@ -130,7 +131,7 @@ interface DataBackupManager {
  * Platform implementations extend this and add file I/O.
  */
 abstract class BaseDataBackupManager(
-    private val database: VitruvianDatabase,
+    private val database: PhoenixDatabase,
     private val profilePreferencesRepository: ProfilePreferencesRepository,
     private val userProfileRepository: UserProfileRepository,
 ) : DataBackupManager {
@@ -142,7 +143,7 @@ abstract class BaseDataBackupManager(
         explicitNulls = false
     }
 
-    private val queries get() = database.vitruvianDatabaseQueries
+    private val queries get() = database.phoenixDatabaseQueries
 
     /**
      * Create a platform-specific JSON writer for streaming export.
@@ -279,7 +280,7 @@ abstract class BaseDataBackupManager(
         val routineNameResolutionContext = buildRoutineNameResolutionContext(routines, routineExercises)
         // Supersets table might not exist on older databases
         val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }.getOrElse { emptyList() }
-        val personalRecords = queries.selectAllRecordsSync().executeAsList().map { pr ->
+        val personalRecords = queries.selectActiveRecordsForBackup().executeAsList().map { pr ->
             mapPersonalRecordToBackup(pr)
         }
         // Training cycles tables might not exist on older databases
@@ -725,6 +726,8 @@ abstract class BaseDataBackupManager(
                                     runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
                                 }?.name,
                                 isBodyweight = resolveBackupIsBodyweight(exercise),
+                                dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
+                                dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
                             )
                         }
                         if (inserted != null) routineExercisesImported++
@@ -870,13 +873,16 @@ abstract class BaseDataBackupManager(
                             id = completedSet.id,
                             session_id = completedSet.sessionId,
                             planned_set_id = completedSet.plannedSetId,
+                            routine_exercise_id = completedSet.routineExerciseId,
                             set_number = completedSet.setNumber.toLong(),
                             set_type = completedSet.setType,
+                            attempt_number = completedSet.attemptNumber.coerceAtLeast(1).toLong(),
                             actual_reps = completedSet.actualReps.toLong(),
                             actual_weight_kg = completedSet.actualWeightKg.toDouble(),
                             logged_rpe = completedSet.loggedRpe?.toLong(),
                             is_pr = if (completedSet.isPr) 1L else 0L,
                             completed_at = completedSet.completedAt,
+                            set_end_reason = SetEndReason.fromPersisted(completedSet.setEndReason).name,
                         )
                         completedSetsImported++
                     }
@@ -1546,6 +1552,8 @@ abstract class BaseDataBackupManager(
                                                             runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
                                                         }?.name,
                                                         isBodyweight = resolveBackupIsBodyweight(exercise),
+                                                        dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
+                                                        dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
                                                     )
                                                 }
                                                 if (inserted != null) {
@@ -1790,13 +1798,16 @@ abstract class BaseDataBackupManager(
                                                     id = completedSet.id,
                                                     session_id = completedSet.sessionId,
                                                     planned_set_id = completedSet.plannedSetId,
+                                                    routine_exercise_id = completedSet.routineExerciseId,
                                                     set_number = completedSet.setNumber.toLong(),
                                                     set_type = completedSet.setType,
+                                                    attempt_number = completedSet.attemptNumber.coerceAtLeast(1).toLong(),
                                                     actual_reps = completedSet.actualReps.toLong(),
                                                     actual_weight_kg = completedSet.actualWeightKg.toDouble(),
                                                     logged_rpe = completedSet.loggedRpe?.toLong(),
                                                     is_pr = if (completedSet.isPr) 1L else 0L,
                                                     completed_at = completedSet.completedAt,
+                                                    set_end_reason = SetEndReason.fromPersisted(completedSet.setEndReason).name,
                                                 )
                                                 completedSetsImported++
                                             }
@@ -2175,7 +2186,7 @@ abstract class BaseDataBackupManager(
         writeJsonArray(writer, "supersets", supersets.map { json.encodeToString(SupersetBackup.serializer(), mapSupersetToBackup(it)) })
         writer.write(",")
 
-        val personalRecords = queries.selectAllRecordsSync().executeAsList()
+        val personalRecords = queries.selectActiveRecordsForBackup().executeAsList()
         writeJsonArray(writer, "personalRecords", personalRecords.map { json.encodeToString(PersonalRecordBackup.serializer(), mapPersonalRecordToBackup(it)) })
         writer.write(",")
 
@@ -2495,7 +2506,7 @@ abstract class BaseDataBackupManager(
     }
 
     /**
-     * Generic placeholder routine names set by external imports (e.g. Vitruvian cloud).
+     * Generic placeholder routine names set by external imports (e.g. legacy cloud exports).
      * These don't identify a real routine and should be treated as null/unknown.
      */
     private val GARBAGE_ROUTINE_NAMES = setOf(
@@ -2657,6 +2668,8 @@ abstract class BaseDataBackupManager(
         scalingBasis = exercise.scalingBasis,
         // Explicit bodyweight flag (#635); null = derive from equipment.
         isBodyweight = exercise.isBodyweight?.let { it != 0L },
+        dropSetEnabled = exercise.dropSetEnabled != 0L,
+        dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toFloat(),
     )
 
     /**
@@ -2979,13 +2992,16 @@ abstract class BaseDataBackupManager(
         id = cs.id,
         sessionId = cs.session_id,
         plannedSetId = cs.planned_set_id,
+        routineExerciseId = cs.routine_exercise_id,
         setNumber = cs.set_number.toInt(),
         setType = cs.set_type,
+        attemptNumber = cs.attempt_number.toInt().coerceAtLeast(1),
         actualReps = cs.actual_reps.toInt(),
         actualWeightKg = cs.actual_weight_kg.toFloat(),
         loggedRpe = cs.logged_rpe?.toInt(),
         isPr = cs.is_pr != 0L,
         completedAt = cs.completed_at,
+        setEndReason = SetEndReason.fromPersisted(cs.set_end_reason).name,
     )
 
     private fun mapProgressionEventToBackup(pe: ProgressionEvent): ProgressionEventBackup = ProgressionEventBackup(

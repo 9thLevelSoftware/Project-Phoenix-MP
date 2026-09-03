@@ -13,7 +13,7 @@ import com.devil.phoenixproject.data.repository.SqlDelightProfilePreferencesRepo
 import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
 import com.devil.phoenixproject.data.repository.SqlDelightWorkoutRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.LedPreferences
@@ -59,7 +59,7 @@ import org.junit.Test
 
 class DataBackupManagerRoutineNameTest {
 
-    private lateinit var database: com.devil.phoenixproject.database.VitruvianDatabase
+    private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
     private lateinit var workoutRepository: SqlDelightWorkoutRepository
     private lateinit var backupManager: TestDataBackupManager
     private val testJson = Json { encodeDefaults = true }
@@ -69,6 +69,34 @@ class DataBackupManagerRoutineNameTest {
         database = createTestDatabase()
         workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
         backupManager = TestDataBackupManager(database)
+    }
+
+    @Test
+    fun `normal backup excludes local active workout runtime recovery data`() = runTest {
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "ordinary-exported-session",
+                routineSessionId = "ordinary-routine-session",
+                exerciseName = "Bench Press",
+                totalReps = 8,
+                workingReps = 8,
+            ),
+        )
+        database.phoenixDatabaseQueries.replaceActiveWorkoutRuntime(
+            profile_id = "runtime-only-profile-key-673",
+            routine_session_id = "runtime-only-session-key-673",
+            document_version = 1,
+            runtime_json = """{"version":1,"sourceStableSessionId":"runtime-secret-673"}""",
+            updated_at_epoch_ms = 1_700_000_000_000,
+        )
+
+        val exportedJson = backupManager.exportToJson()
+        val decoded = testJson.decodeFromString<BackupData>(exportedJson)
+
+        assertEquals(listOf("ordinary-exported-session"), decoded.data.workoutSessions.map { it.id })
+        assertFalse(exportedJson.contains("runtime-only-profile-key-673"))
+        assertFalse(exportedJson.contains("runtime-only-session-key-673"))
+        assertFalse(exportedJson.contains("runtime-secret-673"))
     }
 
     @Test
@@ -119,7 +147,7 @@ class DataBackupManagerRoutineNameTest {
                 workingReps = 0,
             ),
         )
-        database.vitruvianDatabaseQueries.softDeleteSessionsByRoutineSessionId(
+        database.phoenixDatabaseQueries.softDeleteSessionsByRoutineSessionId(
             deletedAt = 1_700_000_123_000L,
             updatedAt = 1_700_000_123_000L,
             routineSessionId = "deleted-routine",
@@ -130,6 +158,45 @@ class DataBackupManagerRoutineNameTest {
 
         assertEquals(listOf("active-session"), legacyBackup.data.workoutSessions.map { it.id })
         assertEquals(listOf("active-session"), streamedBackup.data.workoutSessions.map { it.id })
+    }
+
+    @Test
+    fun `full backup excludes soft-deleted personal records`() = runTest {
+        fun insertPersonalRecord(exerciseId: String, uuid: String) {
+            database.phoenixDatabaseQueries.insertRecord(
+                exerciseId = exerciseId,
+                exerciseName = exerciseId,
+                weight = 80.0,
+                reps = 5L,
+                oneRepMax = 93.33,
+                achievedAt = 1_700_000_000_000L,
+                workoutMode = "Old School",
+                prType = "MAX_WEIGHT",
+                volume = 400.0,
+                phase = "COMBINED",
+                profile_id = "default",
+                cable_count = 2L,
+                uuid = uuid,
+            )
+        }
+
+        insertPersonalRecord("active-pr", "12345678-1234-4abc-8def-1234567890ab")
+        insertPersonalRecord("deleted-pr", "22345678-1234-4abc-8def-1234567890ab")
+        val deleted = database.phoenixDatabaseQueries
+            .selectRecordsByExercise("deleted-pr", profileId = "default")
+            .executeAsOne()
+        database.phoenixDatabaseQueries.softDeletePRById(
+            deletedAt = 1_700_000_123_000L,
+            updatedAt = 1_700_000_123_000L,
+            id = deleted.id,
+            profileId = "default",
+        )
+
+        val legacyBackup = backupManager.exportAllData()
+        val streamedBackup = testJson.decodeFromString<BackupData>(backupManager.exportToJson())
+
+        assertEquals(listOf("active-pr"), legacyBackup.data.personalRecords.map { it.exerciseId })
+        assertEquals(listOf("active-pr"), streamedBackup.data.personalRecords.map { it.exerciseId })
     }
 
     @Test
@@ -207,7 +274,7 @@ class DataBackupManagerRoutineNameTest {
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
         assertTrue(importResult.isSuccess)
 
-        val imported = database.vitruvianDatabaseQueries
+        val imported = database.phoenixDatabaseQueries
             .selectSessionById("session-import-1")
             .executeAsOneOrNull()
         assertNotNull(imported)
@@ -270,7 +337,7 @@ class DataBackupManagerRoutineNameTest {
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
         assertTrue(importResult.isSuccess)
 
-        val imported = database.vitruvianDatabaseQueries
+        val imported = database.phoenixDatabaseQueries
             .selectSessionById("session-import-2")
             .executeAsOneOrNull()
         assertNotNull(imported)
@@ -328,7 +395,7 @@ class DataBackupManagerRoutineNameTest {
     @Test
     fun `exportAllData strips fabricated legacy_session routineSessionId`() = runTest {
         // Simulate a session that was previously imported with a fabricated legacy_session_* ID
-        database.vitruvianDatabaseQueries.insertSession(
+        database.phoenixDatabaseQueries.insertSession(
             id = "session-fabricated-1",
             timestamp = 1_700_000_000_000,
             mode = "Old School",
@@ -422,7 +489,7 @@ class DataBackupManagerRoutineNameTest {
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
         assertTrue(importResult.isSuccess)
 
-        val imported = database.vitruvianDatabaseQueries
+        val imported = database.phoenixDatabaseQueries
             .selectSessionById("session-import-fabricated")
             .executeAsOneOrNull()
         assertNotNull(imported)
@@ -464,7 +531,7 @@ class DataBackupManagerRoutineNameTest {
         val importResult = backupManager.importFromJson(testJson.encodeToString(backup))
         assertTrue(importResult.isSuccess)
 
-        val imported = database.vitruvianDatabaseQueries
+        val imported = database.phoenixDatabaseQueries
             .selectSessionById("session-import-garbage")
             .executeAsOneOrNull()
         assertNotNull(imported)
@@ -492,17 +559,20 @@ class DataBackupManagerRoutineNameTest {
         )
 
         // Insert a completed set for that session
-        database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
+        database.phoenixDatabaseQueries.insertCompletedSetIgnore(
             id = "cs-1",
             session_id = "session-export-test",
             planned_set_id = null,
+            routine_exercise_id = "routine-exercise-export",
             set_number = 1,
             set_type = "STANDARD",
+            attempt_number = 3,
             actual_reps = 10,
             actual_weight_kg = 50.0,
             logged_rpe = null,
             is_pr = 0,
             completed_at = 1700000060000L,
+            set_end_reason = "TARGET_REPS_REACHED",
         )
 
         // Export just this session
@@ -522,19 +592,198 @@ class DataBackupManagerRoutineNameTest {
         assertEquals(1, backupData.data.completedSets.size, "Should include completedSets for the session")
         assertEquals("cs-1", backupData.data.completedSets[0].id)
         assertEquals("session-export-test", backupData.data.completedSets[0].sessionId)
+        assertEquals("routine-exercise-export", backupData.data.completedSets[0].routineExerciseId)
+        assertEquals(3, backupData.data.completedSets[0].attemptNumber)
 
         // Verify it can be re-imported (import compatibility)
         // First delete the session so import has room
-        database.vitruvianDatabaseQueries.deleteSession("session-export-test")
-        database.vitruvianDatabaseQueries.deleteCompletedSetsBySession("session-export-test")
+        database.phoenixDatabaseQueries.deleteSession("session-export-test")
+        database.phoenixDatabaseQueries.deleteCompletedSetsBySession("session-export-test")
 
         val importResult = backupManager.importFromJson(fileContent)
         assertTrue(importResult.isSuccess, "Should be importable")
         assertEquals(1, importResult.getOrThrow().sessionsImported)
         assertEquals(1, importResult.getOrThrow().completedSetsImported)
+        val reimported = database.phoenixDatabaseQueries.selectCompletedSetById("cs-1").executeAsOne()
+        assertEquals("routine-exercise-export", reimported.routine_exercise_id)
+        assertEquals(3L, reimported.attempt_number)
 
         // Clean up
         File(filePath).delete()
+    }
+
+    @Test
+    fun `buffered and streaming completed set imports canonicalize unknown end reasons`() = runTest {
+        val backup = BackupData(
+            version = CURRENT_BACKUP_VERSION,
+            exportedAt = "2026-08-14T00:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-future-reason",
+                        timestamp = 1L,
+                        mode = "OldSchool",
+                        targetReps = 8,
+                        weightPerCableKg = 40f,
+                        progressionKg = 0f,
+                        duration = 0L,
+                        totalReps = 8,
+                        warmupReps = 0,
+                        workingReps = 8,
+                        isJustLift = false,
+                        stopAtTop = false,
+                    ),
+                ),
+                completedSets = listOf(
+                    CompletedSetBackup(
+                        id = "set-future-reason",
+                        sessionId = "session-future-reason",
+                        setNumber = 1,
+                        actualReps = 8,
+                        actualWeightKg = 40f,
+                        completedAt = 2L,
+                        setEndReason = "FUTURE_REASON",
+                        routineExerciseId = "routine-exercise-import",
+                        attemptNumber = 2,
+                    ),
+                ),
+            ),
+        )
+        val payload = testJson.encodeToString(backup)
+
+        assertTrue(backupManager.importFromJson(payload).isSuccess)
+        assertEquals(
+            "UNKNOWN",
+            database.phoenixDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne().set_end_reason,
+        )
+        assertEquals(
+            "routine-exercise-import" to 2L,
+            database.phoenixDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne()
+                .let { it.routine_exercise_id to it.attempt_number },
+        )
+
+        val streamingDatabase = createTestDatabase()
+        val streamingManager = TestDataBackupManager(streamingDatabase)
+        assertTrue(streamingManager.importFromStringStreaming(payload).isSuccess)
+        assertEquals(
+            "UNKNOWN",
+            streamingDatabase.phoenixDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne().set_end_reason,
+        )
+        assertEquals(
+            "routine-exercise-import" to 2L,
+            streamingDatabase.phoenixDatabaseQueries.selectCompletedSetById("set-future-reason").executeAsOne()
+                .let { it.routine_exercise_id to it.attempt_number },
+        )
+    }
+
+    @Test
+    fun `buffered completed set import canonicalizes negative attempt to one`() = runTest {
+        assertBufferedInvalidAttemptCanonicalized(-4)
+    }
+
+    @Test
+    fun `streaming completed set import canonicalizes zero attempt to one`() = runTest {
+        assertStreamingInvalidAttemptCanonicalized(0)
+    }
+
+    private fun invalidAttemptPayload(sessionId: String, setId: String, invalidAttempt: Int): String =
+        testJson.encodeToString(
+            BackupData(
+                version = CURRENT_BACKUP_VERSION,
+                exportedAt = "2026-08-14T00:00:00Z",
+                appVersion = "test",
+                data = BackupContent(
+                    workoutSessions = listOf(
+                        WorkoutSessionBackup(
+                            id = sessionId,
+                            timestamp = 1L,
+                            mode = "OldSchool",
+                            targetReps = 8,
+                            weightPerCableKg = 40f,
+                            progressionKg = 0f,
+                            duration = 0L,
+                            totalReps = 8,
+                            warmupReps = 0,
+                            workingReps = 8,
+                            isJustLift = false,
+                            stopAtTop = false,
+                        ),
+                    ),
+                    completedSets = listOf(
+                        CompletedSetBackup(
+                            id = setId,
+                            sessionId = sessionId,
+                            setNumber = 0,
+                            actualReps = 8,
+                            actualWeightKg = 40f,
+                            completedAt = 2L,
+                            routineExerciseId = "invalid-import-occurrence",
+                            attemptNumber = invalidAttempt,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    private suspend fun assertBufferedInvalidAttemptCanonicalized(invalidAttempt: Int) {
+        assertTrue(backupManager.importFromJson(invalidAttemptPayload("buffered-invalid-session", "buffered-invalid-set", invalidAttempt)).isSuccess)
+        assertEquals(
+            1L,
+            database.phoenixDatabaseQueries.selectCompletedSetById("buffered-invalid-set").executeAsOne().attempt_number,
+        )
+    }
+
+    private suspend fun assertStreamingInvalidAttemptCanonicalized(invalidAttempt: Int) {
+        val streamingDatabase = createTestDatabase()
+        val streamingManager = TestDataBackupManager(streamingDatabase)
+        assertTrue(streamingManager.importFromStringStreaming(invalidAttemptPayload("streaming-invalid-session", "streaming-invalid-set", invalidAttempt)).isSuccess)
+        assertEquals(
+            1L,
+            streamingDatabase.phoenixDatabaseQueries.selectCompletedSetById("streaming-invalid-set").executeAsOne().attempt_number,
+        )
+    }
+
+    @Test
+    fun `buffered and streaming completed set exports canonicalize unknown end reasons`() = runTest {
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "session-export-future-reason",
+                timestamp = 1L,
+                mode = "OldSchool",
+                reps = 8,
+                weightPerCableKg = 40f,
+                totalReps = 8,
+                workingReps = 8,
+            ),
+        )
+        database.phoenixDatabaseQueries.insertCompletedSetIgnore(
+            id = "set-export-future-reason",
+            session_id = "session-export-future-reason",
+            planned_set_id = null,
+            routine_exercise_id = "routine-exercise-export",
+            set_number = 1L,
+            set_type = "STANDARD",
+            attempt_number = 3L,
+            actual_reps = 8L,
+            actual_weight_kg = 40.0,
+            logged_rpe = null,
+            is_pr = 0L,
+            completed_at = 2L,
+            set_end_reason = "FUTURE_REASON",
+        )
+
+        val buffered = backupManager.exportAllData()
+        val streamingPath = backupManager.exportToCachePublic()
+        val streaming = testJson.decodeFromString<BackupData>(File(streamingPath).readText())
+
+        assertEquals("UNKNOWN", buffered.data.completedSets.single().setEndReason)
+        assertEquals("UNKNOWN", streaming.data.completedSets.single().setEndReason)
+        assertEquals("routine-exercise-export", buffered.data.completedSets.single().routineExerciseId)
+        assertEquals(3, buffered.data.completedSets.single().attemptNumber)
+        assertEquals("routine-exercise-export", streaming.data.completedSets.single().routineExerciseId)
+        assertEquals(3, streaming.data.completedSets.single().attemptNumber)
+        File(streamingPath).delete()
     }
 
     @Test
@@ -600,29 +849,35 @@ class DataBackupManagerRoutineNameTest {
             ),
         )
         // One completed set per routine session
-        database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
+        database.phoenixDatabaseQueries.insertCompletedSetIgnore(
             id = "cs-bench",
             session_id = "routine-bench",
             planned_set_id = null,
+            routine_exercise_id = null,
             set_number = 1,
             set_type = "STANDARD",
+            attempt_number = 1,
             actual_reps = 10,
             actual_weight_kg = 50.0,
             logged_rpe = null,
             is_pr = 0,
             completed_at = 1_700_000_006_000L,
+            set_end_reason = "TARGET_REPS_REACHED",
         )
-        database.vitruvianDatabaseQueries.insertCompletedSetIgnore(
+        database.phoenixDatabaseQueries.insertCompletedSetIgnore(
             id = "cs-row",
             session_id = "routine-row",
             planned_set_id = null,
+            routine_exercise_id = null,
             set_number = 1,
             set_type = "STANDARD",
+            attempt_number = 1,
             actual_reps = 10,
             actual_weight_kg = 40.0,
             logged_rpe = null,
             is_pr = 0,
             completed_at = 1_700_000_106_000L,
+            set_end_reason = "TARGET_REPS_REACHED",
         )
 
         val result = backupManager.exportRoutine(sharedRoutineSessionId)
@@ -665,7 +920,7 @@ class DataBackupManagerRoutineNameTest {
      */
     @Test
     fun `restore legacy backup adopts skipped records into active profile not default`() = runTest {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
 
         // 1. Create a non-default profile and make it active
         queries.insertProfile(
@@ -801,7 +1056,7 @@ class DataBackupManagerRoutineNameTest {
      */
     @Test
     fun `restore with explicit foreign profileId does not adopt into active profile`() = runTest {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
 
         // 1. Create two profiles; make "userA" active
         queries.insertProfile(id = "userA", name = "User A", colorIndex = 1L, createdAt = 1_700_000_000_000, isActive = 1L)
@@ -919,7 +1174,7 @@ class DataBackupManagerRoutineNameTest {
 
     @Test
     fun `v2 round-trip preserves SessionNotes data`() = runTest {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         queries.upsertSessionNotes(
             routineSessionId = "rs-notes-1",
             notes = "felt strong today; DOMS in triceps",
@@ -940,7 +1195,7 @@ class DataBackupManagerRoutineNameTest {
 
     @Test
     fun `v2 export preserves EarnedBadge sync fields so restore does not re-push`() = runTest {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         // Insert a badge that has already been pushed to the portal (serverId set,
         // updatedAt set). The backup must preserve these so a restore does not
         // produce a phantom duplicate on the server.
@@ -963,7 +1218,7 @@ class DataBackupManagerRoutineNameTest {
 
     @Test
     fun `v2 export preserves CycleDay per-day progression overrides`() = runTest {
-        val queries = database.vitruvianDatabaseQueries
+        val queries = database.phoenixDatabaseQueries
         // Build a cycle with a day that has all new per-day override fields populated.
         queries.insertTrainingCycle(
             id = "cycle-drift",
@@ -1304,7 +1559,7 @@ class DataBackupManagerRoutineNameTest {
                 ),
             )
             assertTrue(fixture.manager.importFromJson(payload).isSuccess)
-            val profiles = fixture.database.vitruvianDatabaseQueries.getAllProfiles().executeAsList()
+            val profiles = fixture.database.phoenixDatabaseQueries.getAllProfiles().executeAsList()
             assertEquals(PROFILE_A, profiles.single { it.isActive == 1L }.id)
         }
 
@@ -1424,34 +1679,34 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
         assertEquals(
             represented,
-            fixture.database.vitruvianDatabaseQueries
+            fixture.database.phoenixDatabaseQueries
                 .selectSessionById("legacy-fallback-session")
                 .executeAsOne()
                 .profile_id,
         )
         assertEquals(
             represented,
-            fixture.database.vitruvianDatabaseQueries
+            fixture.database.phoenixDatabaseQueries
                 .selectSessionById(explicitDefault.id)
                 .executeAsOne()
                 .profile_id,
         )
         assertEquals(
             represented,
-            fixture.database.vitruvianDatabaseQueries
+            fixture.database.phoenixDatabaseQueries
                 .selectSessionById(explicitRepresented.id)
                 .executeAsOne()
                 .profile_id,
         )
         assertEquals(
             represented,
-            fixture.database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id,
+            fixture.database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id,
         )
     }
 
     @Test
     fun `buffered session import adopts explicit owner when its profile is absent`() = runTest {
-        val activeProfileId = database.vitruvianDatabaseQueries.getActiveProfile().executeAsOne().id
+        val activeProfileId = database.phoenixDatabaseQueries.getActiveProfile().executeAsOne().id
         val session = WorkoutSessionBackup(
             id = "buffered-missing-profile-session",
             timestamp = 1L,
@@ -1479,7 +1734,7 @@ class DataBackupManagerRoutineNameTest {
         assertTrue(result.isSuccess, result.exceptionOrNull()?.toString())
         assertEquals(
             activeProfileId,
-            database.vitruvianDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
+            database.phoenixDatabaseQueries.selectSessionById(session.id).executeAsOne().profile_id,
         )
     }
 
@@ -1523,7 +1778,7 @@ class DataBackupManagerRoutineNameTest {
 
         assertTrue(importResult.isSuccess, "v5 backup import must succeed: ${importResult.exceptionOrNull()?.message}")
         assertEquals("vest", target.preferences.get(PROFILE_A).rack.value.items.single().id)
-        val importedExercise = target.database.vitruvianDatabaseQueries
+        val importedExercise = target.database.phoenixDatabaseQueries
             .selectAllRoutineExercisesSync()
             .executeAsList()
             .single()
@@ -1551,7 +1806,7 @@ class DataBackupManagerRoutineNameTest {
         )
 
         // Confirm it was persisted on the source DB before export.
-        val sourceExercise = database.vitruvianDatabaseQueries
+        val sourceExercise = database.phoenixDatabaseQueries
             .selectAllRoutineExercisesSync()
             .executeAsList()
             .single()
@@ -1564,7 +1819,7 @@ class DataBackupManagerRoutineNameTest {
         val importResult = targetManager.importFromJson(backupJson)
         assertTrue(importResult.isSuccess, "Backup import must succeed: ${importResult.exceptionOrNull()?.message}")
 
-        val importedExercise = targetDatabase.vitruvianDatabaseQueries
+        val importedExercise = targetDatabase.phoenixDatabaseQueries
             .selectAllRoutineExercisesSync()
             .executeAsList()
             .single()
@@ -1599,8 +1854,8 @@ class DataBackupManagerRoutineNameTest {
         preferenceDecorator: (ProfilePreferencesRepository) -> ProfilePreferencesRepository = { it },
         reconcileFailure: Throwable? = null,
     ): PreferenceFixture {
-        VitruvianDatabase.Schema.create(driver)
-        val fixtureDatabase = VitruvianDatabase(driver)
+        PhoenixDatabase.Schema.create(driver)
+        val fixtureDatabase = PhoenixDatabase(driver)
         val realPreferences = SqlDelightProfilePreferencesRepository(fixtureDatabase)
         val effectivePreferences = preferenceDecorator(realPreferences)
         val safetyStore = SettingsProfileLocalSafetyStore(MapSettings())
@@ -1610,7 +1865,7 @@ class DataBackupManagerRoutineNameTest {
             profileLocalSafetyStore = safetyStore,
             gamificationRepository = SqlDelightGamificationRepository(fixtureDatabase),
         )
-        fixtureDatabase.vitruvianDatabaseQueries.seedMissingProfilePreferences()
+        fixtureDatabase.phoenixDatabaseQueries.seedMissingProfilePreferences()
         val recordingUserProfiles = RecordingUserProfileRepository(
             delegate = realUserProfiles,
             preferences = effectivePreferences,
@@ -1633,7 +1888,7 @@ class DataBackupManagerRoutineNameTest {
     private suspend fun seedDistinctProfilePreferences(fixture: PreferenceFixture) {
         insertProfile(fixture, PROFILE_A, active = false)
         insertProfile(fixture, PROFILE_B, active = false)
-        fixture.database.vitruvianDatabaseQueries.setActiveProfile(PROFILE_A)
+        fixture.database.phoenixDatabaseQueries.setActiveProfile(PROFILE_A)
         fixture.preferences.updateCore(PROFILE_A, CoreProfilePreferences(70f, WeightUnit.KG, 2.5f), 10L)
         fixture.preferences.updateRack(
             PROFILE_A,
@@ -1678,8 +1933,8 @@ class DataBackupManagerRoutineNameTest {
     }
 
     private fun insertProfile(fixture: PreferenceFixture, id: String, active: Boolean) {
-        if (fixture.database.vitruvianDatabaseQueries.getProfileById(id).executeAsOneOrNull() == null) {
-            fixture.database.vitruvianDatabaseQueries.insertProfile(
+        if (fixture.database.phoenixDatabaseQueries.getProfileById(id).executeAsOneOrNull() == null) {
+            fixture.database.phoenixDatabaseQueries.insertProfile(
                 id = id,
                 name = id,
                 colorIndex = 0L,
@@ -1691,8 +1946,8 @@ class DataBackupManagerRoutineNameTest {
                 isActive = if (active) 1L else 0L,
             )
         }
-        fixture.database.vitruvianDatabaseQueries.insertDefaultProfilePreferences(id, 1L)
-        if (active) fixture.database.vitruvianDatabaseQueries.setActiveProfile(id)
+        fixture.database.phoenixDatabaseQueries.insertDefaultProfilePreferences(id, 1L)
+        if (active) fixture.database.phoenixDatabaseQueries.setActiveProfile(id)
     }
 
     private inline fun <reified T> jsonElement(value: T): JsonElement =
@@ -1774,7 +2029,7 @@ class DataBackupManagerRoutineNameTest {
 
     private data class PreferenceFixture(
         val driver: SqlDriver,
-        val database: VitruvianDatabase,
+        val database: PhoenixDatabase,
         val preferences: ProfilePreferencesRepository,
         val safetyStore: ProfileLocalSafetyStore,
         val userProfiles: RecordingUserProfileRepository,
@@ -1841,7 +2096,7 @@ class DataBackupManagerRoutineNameTest {
         const val PROFILE_C = "profile-c"
 
         fun createTestUserProfileRepository(
-            database: VitruvianDatabase,
+            database: PhoenixDatabase,
             preferences: ProfilePreferencesRepository,
         ): UserProfileRepository = SqlDelightUserProfileRepository(
             database = database,
@@ -1849,12 +2104,12 @@ class DataBackupManagerRoutineNameTest {
             profileLocalSafetyStore = SettingsProfileLocalSafetyStore(MapSettings()),
             gamificationRepository = SqlDelightGamificationRepository(database),
         ).also {
-            database.vitruvianDatabaseQueries.seedMissingProfilePreferences()
+            database.phoenixDatabaseQueries.seedMissingProfilePreferences()
         }
     }
 
     private class TestDataBackupManager(
-        database: com.devil.phoenixproject.database.VitruvianDatabase,
+        database: com.devil.phoenixproject.database.PhoenixDatabase,
         val profilePreferencesRepository: ProfilePreferencesRepository = SqlDelightProfilePreferencesRepository(database),
         val userProfileRepository: UserProfileRepository = createTestUserProfileRepository(
             database,
@@ -1876,6 +2131,16 @@ class DataBackupManagerRoutineNameTest {
         }
 
         suspend fun exportToCachePublic(): String = exportToCache()
+
+        suspend fun importFromStringStreaming(value: String): Result<ImportResult> {
+            val source = StringBackupStreamSource(value)
+            source.open()
+            return try {
+                importFromStream(source)
+            } finally {
+                source.close()
+            }
+        }
 
         override suspend fun finalizeExport(tempFilePath: String): Result<String> = Result.success(tempFilePath)
 
@@ -1905,5 +2170,22 @@ class DataBackupManagerRoutineNameTest {
 
         override fun openBackupFolder() = Unit
         override fun pruneOldBackups(keepCount: Int) = Unit
+    }
+
+    private class StringBackupStreamSource(private val value: String) : BackupStreamSource {
+        private var index = 0
+
+        override fun open() {
+            index = 0
+        }
+        override fun close() = Unit
+        override fun read(): Int = if (index < value.length) value[index++].code else -1
+        override fun read(buffer: CharArray, offset: Int, length: Int): Int {
+            if (index >= value.length) return -1
+            val count = minOf(length, value.length - index)
+            value.toCharArray(index, index + count).copyInto(buffer, offset)
+            index += count
+            return count
+        }
     }
 }

@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
@@ -68,6 +69,7 @@ class BleConnectionManager(
     val connectionLostDuringWorkout: StateFlow<Boolean> = _connectionLostDuringWorkout.asStateFlow()
 
     private var connectionJob: Job? = null
+    private var recoveryConnectionJob: Job? = null
 
     init {
         // CRITICAL: All scope.launch coroutines in init must have try-catch.
@@ -242,7 +244,7 @@ class BleConnectionManager(
     }
 
     /**
-     * Ensures connection to a Vitruvian device.
+     * Ensures connection to a Phoenix device.
      * If already connected, immediately calls onConnected.
      * If not connected, starts scan and auto-connects to first device found.
      * Matches parent repo behavior with proper timeouts and cleanup.
@@ -334,6 +336,37 @@ class BleConnectionManager(
                 _isAutoConnecting.value = false
                 _connectionError.value = "Error: ${e.message}"
                 onFailed()
+            }
+        }
+    }
+
+    fun reconnectForWorkoutRecovery(
+        onConnected: () -> Unit,
+        onFailed: () -> Unit,
+    ) {
+        if (recoveryConnectionJob?.isActive == true) return
+        recoveryConnectionJob = scope.launch {
+            try {
+                connectionJob?.cancelAndJoin()
+                connectionJob = null
+                _isAutoConnecting.value = false
+                _pendingConnectionCallback = null
+                _connectionError.value = null
+                bleRepository.stopScanning()
+                bleRepository.cancelConnection()
+                bleRepository.disconnect()
+                bleRepository.scanAndConnect(timeoutMs = 30_000L).getOrThrow()
+                withTimeout(15_000L) {
+                    connectionState.first { it is ConnectionState.Connected }
+                }
+                onConnected()
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                _connectionError.value = error.message ?: "Connection failed"
+                onFailed()
+            } finally {
+                recoveryConnectionJob = null
             }
         }
     }

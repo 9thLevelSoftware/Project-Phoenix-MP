@@ -178,6 +178,8 @@ data class RoutineExerciseBackup(
     // Explicit bodyweight classification (issue #635); null = derive from equipment.
     // Default null keeps pre-existing backup files loadable.
     val isBodyweight: Boolean? = null,
+    val dropSetEnabled: Boolean = false,
+    val dropSetMinWeightKg: Float? = null,
 )
 
 /**
@@ -315,6 +317,9 @@ data class CompletedSetBackup(
     val loggedRpe: Int? = null,
     val isPr: Boolean = false,
     val completedAt: Long,
+    val setEndReason: String = "UNKNOWN",
+    val routineExerciseId: String? = null,
+    val attemptNumber: Int = 1,
 )
 
 /**

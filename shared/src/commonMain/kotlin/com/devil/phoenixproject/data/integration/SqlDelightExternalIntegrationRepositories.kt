@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.integration
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ExternalBodyMeasurement
 import com.devil.phoenixproject.domain.model.ExternalExerciseTemplate
 import com.devil.phoenixproject.domain.model.ExternalExerciseTemplateMapping
@@ -27,8 +27,8 @@ private fun List<String>.encodeList(): String = joinToString(LIST_SEPARATOR)
 private fun String.decodeList(): List<String> = split(LIST_SEPARATOR).filter { it.isNotBlank() }
 private fun providerFromKey(key: String): IntegrationProvider = IntegrationProvider.fromKey(key) ?: IntegrationProvider.UNKNOWN
 
-class SqlDelightExternalRoutineRepository(db: VitruvianDatabase) : ExternalRoutineRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightExternalRoutineRepository(db: PhoenixDatabase) : ExternalRoutineRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     private fun com.devil.phoenixproject.database.ExternalRoutine.toDomain(
         exercises: List<ExternalRoutineExercise>,
@@ -234,8 +234,8 @@ class SqlDelightExternalRoutineRepository(db: VitruvianDatabase) : ExternalRouti
     }
 }
 
-class SqlDelightExternalProgramRepository(db: VitruvianDatabase) : ExternalProgramRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightExternalProgramRepository(db: PhoenixDatabase) : ExternalProgramRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     private fun com.devil.phoenixproject.database.ExternalProgram.toDomain(): ExternalProgram = ExternalProgram(
         id = id,
@@ -375,8 +375,8 @@ class SqlDelightExternalProgramRepository(db: VitruvianDatabase) : ExternalProgr
     }
 }
 
-class SqlDelightExternalMeasurementRepository(db: VitruvianDatabase) : ExternalMeasurementRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightExternalMeasurementRepository(db: PhoenixDatabase) : ExternalMeasurementRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     private fun com.devil.phoenixproject.database.ExternalBodyMeasurement.toDomain(): ExternalBodyMeasurement = ExternalBodyMeasurement(
         id = id,
@@ -433,8 +433,8 @@ class SqlDelightExternalMeasurementRepository(db: VitruvianDatabase) : ExternalM
     }
 }
 
-class SqlDelightExternalExerciseTemplateRepository(db: VitruvianDatabase) : ExternalExerciseTemplateRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightExternalExerciseTemplateRepository(db: PhoenixDatabase) : ExternalExerciseTemplateRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     private fun com.devil.phoenixproject.database.ExternalExerciseTemplate.toDomain(): ExternalExerciseTemplate = ExternalExerciseTemplate(
         id = id,
@@ -540,8 +540,8 @@ class SqlDelightExternalExerciseTemplateRepository(db: VitruvianDatabase) : Exte
     }
 }
 
-class SqlDelightIntegrationSyncCursorRepository(db: VitruvianDatabase) : IntegrationSyncCursorRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightIntegrationSyncCursorRepository(db: PhoenixDatabase) : IntegrationSyncCursorRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     private fun com.devil.phoenixproject.database.IntegrationSyncCursor.toDomain(): IntegrationSyncCursor = IntegrationSyncCursor(
         provider = providerFromKey(provider),

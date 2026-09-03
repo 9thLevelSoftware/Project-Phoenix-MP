@@ -45,7 +45,7 @@ sources:
     note: Defines workout cue playback, voice-stop gating, and platform safety-feedback behavior.
   - id: ble-page
     type: file
-    path: .almanac/pages/vitruvian-ble-protocol.md
+    path: .almanac/pages/phoenix-ble-protocol.md
     note: Defines trainer communication, packet parsing, and command semantics.
   - id: diagnostics-page
     type: file
@@ -78,15 +78,15 @@ Phoenix workout behavior is one cluster, but the code and wiki split it into nin
 
 ## Cluster map
 
-The page links map directly onto those code boundaries: [[vitruvian-ble-protocol]] explains the BLE layer under `KableBleConnectionManager`, [[workout-engine]] explains the session state and control layer under `DefaultWorkoutSessionManager`, [[routines-and-training-cycles]] explains the editable programming layer above those runtime managers, [[machine-diagnostics]] explains the fault-snapshot and troubleshooting export path, [[workout-safety-and-feedback]] explains cue playback and voice-stop behavior around active workouts, [[strength-assessment-and-insights]] explains the local analytics layer that both consumes and informs workout data, [[equipment-rack]] explains accessory-load defaults and saved rack context, [[gamification]] explains workout-derived PR celebrations and badge state, and [[data-backup-and-repair]] explains the backup, restore, and startup-repair layer that can change workout-visible history without touching the session managers [@ble-page] [@workout-engine-page] [@routines-page] [@diagnostics-page] [@safety-page] [@assessment-page] [@rack-page] [@gamification-page] [@backup-repair-page].
+The page links map directly onto those code boundaries: [[phoenix-ble-protocol]] explains the BLE layer under `KableBleConnectionManager`, [[workout-engine]] explains the session state and control layer under `DefaultWorkoutSessionManager`, [[routines-and-training-cycles]] explains the editable programming layer above those runtime managers, [[machine-diagnostics]] explains the fault-snapshot and troubleshooting export path, [[workout-safety-and-feedback]] explains cue playback and voice-stop behavior around active workouts, [[strength-assessment-and-insights]] explains the local analytics layer that both consumes and informs workout data, [[equipment-rack]] explains accessory-load defaults and saved rack context, [[gamification]] explains workout-derived PR celebrations and badge state, and [[data-backup-and-repair]] explains the backup, restore, and startup-repair layer that can change workout-visible history without touching the session managers [@ble-page] [@workout-engine-page] [@routines-page] [@diagnostics-page] [@safety-page] [@assessment-page] [@rack-page] [@gamification-page] [@backup-repair-page].
 
-Read [[project-phoenix]] before this cluster when the task depends on supported hardware, per-cable load assumptions, or the repo's preservation goals after the original Vitruvian shutdown. Those product constraints explain why backward-compatible firmware handling and local-first workout behavior are treated as design requirements rather than legacy baggage.
+Read [[project-phoenix]] before this cluster when the task depends on supported hardware, per-cable load assumptions, or the repo's preservation goals after the original Phoenix shutdown. Those product constraints explain why backward-compatible firmware handling and local-first workout behavior are treated as design requirements rather than legacy baggage.
 
 Read [[frontend]] before this cluster when the symptom is clearly in shared screen ownership, route placement, or Compose state projection and you still do not know which workout leaf page owns the underlying behavior.
 
 ## Default read order
 
-Read this cluster in dependency order when the bug source is unclear. [[vitruvian-ble-protocol]] explains what the machine sends and accepts, [[workout-engine]] explains how shared runtime state reacts to that data, [[machine-diagnostics]] explains the live fault and crash snapshot branch under the same BLE connection, [[workout-safety-and-feedback]] explains cue and safe-stop behavior wrapped around that session runtime, [[routines-and-training-cycles]] explains how pre-authored plans feed the live session, [[equipment-rack]] explains how accessory context modifies or annotates that flow, [[gamification]] explains how saved workouts turn into PR or badge state, and [[strength-assessment-and-insights]] explains the local 1RM and analytics layer that feeds percentage-based programming and exercise detail history [@ble-page] [@workout-engine-page] [@diagnostics-page] [@safety-page] [@routines-page] [@rack-page] [@gamification-page] [@assessment-page].
+Read this cluster in dependency order when the bug source is unclear. [[phoenix-ble-protocol]] explains what the machine sends and accepts, [[workout-engine]] explains how shared runtime state reacts to that data, [[machine-diagnostics]] explains the live fault and crash snapshot branch under the same BLE connection, [[workout-safety-and-feedback]] explains cue and safe-stop behavior wrapped around that session runtime, [[routines-and-training-cycles]] explains how pre-authored plans feed the live session, [[equipment-rack]] explains how accessory context modifies or annotates that flow, [[gamification]] explains how saved workouts turn into PR or badge state, and [[strength-assessment-and-insights]] explains the local 1RM and analytics layer that feeds percentage-based programming and exercise detail history [@ble-page] [@workout-engine-page] [@diagnostics-page] [@safety-page] [@routines-page] [@rack-page] [@gamification-page] [@assessment-page].
 
 `MainViewModel` is the UI entry point, not the system boundary. [[app-architecture]] explains that screens mostly talk to one shared façade, but `MainViewModel` itself composes manager-owned flows instead of implementing workout behavior directly, so debugging usually belongs in one of the lower pages in this cluster rather than in the screen tree [@app-architecture-page] [@main-viewmodel] [@workout-engine-page].
 
@@ -94,7 +94,7 @@ Read this cluster in dependency order when the bug source is unclear. [[vitruvia
 
 ## Choose the leaf page
 
-Use [[vitruvian-ble-protocol]] first for scan behavior, reconnects, packet parsing, mode IDs, command formats, or trainer firmware mismatches [@ble-page].
+Use [[phoenix-ble-protocol]] first for scan behavior, reconnects, packet parsing, mode IDs, command formats, or trainer firmware mismatches [@ble-page].
 
 Use [[workout-engine]] first for countdowns, stop-state transitions, set-ready behavior, rest timers, active session state, and command timing [@workout-engine-page].
 

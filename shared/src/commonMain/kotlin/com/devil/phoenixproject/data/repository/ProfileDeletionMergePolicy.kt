@@ -41,6 +41,7 @@ data class ProfileMergeExerciseMvt(
 
 object ProfileDeletionMergePolicy {
     val directProfileOwnedTables: Set<String> = setOf(
+        "ActiveWorkoutRuntime",
         "AssessmentResult",
         "EarnedBadge",
         "ExerciseMvt",

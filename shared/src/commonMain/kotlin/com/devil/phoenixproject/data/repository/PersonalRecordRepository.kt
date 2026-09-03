@@ -48,6 +48,9 @@ interface PersonalRecordRepository {
      */
     fun getAllPRsGrouped(profileId: String): Flow<List<PersonalRecord>>
 
+    /** Soft-delete one active-profile PR snapshot by its local row ID. */
+    suspend fun deletePR(prId: Long, profileId: String)
+
     /**
      * Update PR if the new performance is better
      * Compares the new weight and reps with the existing PR for the exercise/mode combination

@@ -1,6 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
@@ -18,8 +18,8 @@ interface PersonalMvtRepository {
     suspend fun upsert(exerciseId: String, profileId: String, personalMvtMs: Float, sampleCount: Int)
 }
 
-class SqlDelightPersonalMvtRepository(private val db: VitruvianDatabase) : PersonalMvtRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightPersonalMvtRepository(private val db: PhoenixDatabase) : PersonalMvtRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     override suspend fun get(exerciseId: String, profileId: String): PersonalMvtEntity? =
         withContext(Dispatchers.IO) {

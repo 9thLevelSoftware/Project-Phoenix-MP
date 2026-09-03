@@ -51,17 +51,17 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_continue_set
-import vitruvianprojectphoenix.shared.generated.resources.action_exit
-import vitruvianprojectphoenix.shared.generated.resources.end_workout
-import vitruvianprojectphoenix.shared.generated.resources.exit_workout_message
-import vitruvianprojectphoenix.shared.generated.resources.exit_workout_title
-import vitruvianprojectphoenix.shared.generated.resources.skip_exercise
-import vitruvianprojectphoenix.shared.generated.resources.stop_current_set_message
-import vitruvianprojectphoenix.shared.generated.resources.stop_current_set_title
-import vitruvianprojectphoenix.shared.generated.resources.stop_set
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.action_continue_set
+import projectphoenix.shared.generated.resources.action_exit
+import projectphoenix.shared.generated.resources.end_workout
+import projectphoenix.shared.generated.resources.exit_workout_message
+import projectphoenix.shared.generated.resources.exit_workout_title
+import projectphoenix.shared.generated.resources.skip_exercise
+import projectphoenix.shared.generated.resources.stop_current_set_message
+import projectphoenix.shared.generated.resources.stop_current_set_title
+import projectphoenix.shared.generated.resources.stop_set
 
 /**
  * Active Workout screen - displays workout controls and metrics during an active workout.
@@ -107,6 +107,8 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     // Issue #190: Exercise timer pause state
     val isExerciseTimerPaused by viewModel.isExerciseTimerPaused.collectAsState()
     val currentRackLoadAdjustment by viewModel.currentRackLoadAdjustment.collectAsState()
+    val machineTeardownState by viewModel.machineTeardownState.collectAsState()
+    val restTransitionPlan by viewModel.restTransitionPlan.collectAsState()
 
     val connectionError by viewModel.connectionError.collectAsState()
     val userPreferences by viewModel.userPreferences.collectAsState()
@@ -258,12 +260,16 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             workoutState is WorkoutState.Idle &&
                 (
                     loadedRoutine == null ||
-                        loadedRoutine?.id?.startsWith(
-                            DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX,
-                        ) ==
-                        true
+                        (
+                            loadedRoutine?.id?.startsWith(
+                                DefaultWorkoutSessionManager.TEMP_SINGLE_EXERCISE_PREFIX,
+                            ) ==
+                                true &&
+                                !viewModel.isStoppingWorkout()
+                            )
                     ) -> {
-                // Single Exercise completed and reset to Idle - navigate back to SingleExerciseScreen
+                // Issue #660: a direct timed Stop Set returns a temp routine to SetReady.
+                // Let the routine-flow observer navigate there rather than tearing down to Home.
                 Logger.d { "ActiveWorkoutScreen: Single Exercise idle, navigating back" }
                 hasNavigatedAway = true
                 navController.navigateUp()
@@ -363,6 +369,8 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         userPreferences.velocityLossThresholdPercent,
         userPreferences.effectiveWeightIncrementKg,
         currentRackLoadAdjustment,
+        machineTeardownState,
+        restTransitionPlan,
     ) {
         WorkoutUiState(
             connectionState = connectionState,
@@ -403,6 +411,8 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             velocityLossThresholdPercent = userPreferences.velocityLossThresholdPercent,
             weightStepKg = userPreferences.effectiveWeightIncrementKg,
             rackLoadAdjustment = currentRackLoadAdjustment,
+            machineTeardownState = machineTeardownState,
+            restTransitionPlan = restTransitionPlan,
         )
     }
 
@@ -417,8 +427,13 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
                     onFailed = { /* Error shown via StateFlow */ },
                 )
             },
+            onRetryWorkoutTeardown = { viewModel.retryWorkoutTeardown() },
+            onReconnectWorkoutTeardown = { viewModel.reconnectWorkoutTeardown() },
             onStopWorkout = { showExitConfirmation = true },
             onSkipRest = { viewModel.skipRest() },
+            onSkipRestWithIdentity = { identity -> viewModel.skipRest(identity) },
+            onAcceptDropSetAction = { identity, percentage -> viewModel.acceptDropSet(identity, percentage) },
+            onDeclineDropSetAction = { identity -> viewModel.declineDropSet(identity) },
             onExtendRest = { seconds -> viewModel.extendRestTime(seconds) },
             onToggleRestPause = { viewModel.toggleRestPause() },
             onResetRest = { viewModel.resetRestTimer() },

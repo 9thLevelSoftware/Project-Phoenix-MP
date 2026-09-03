@@ -32,7 +32,7 @@ Scope reviewed from task t_fa884bd4. Repository path on disk is `/Users/christop
 - Category: bug
 - Severity: low
 - Line numbers: 50-55, 87-90
-- Description: Vitruvian fault flags `8` and `16` both use the label `Message failure`, and the final `.distinct()` collapses them. If both bits are set, the decoded label reports only one message failure and loses which bit(s) were active.
+- Description: Phoenix fault flags `8` and `16` both use the label `Message failure`, and the final `.distinct()` collapses them. If both bits are set, the decoded label reports only one message failure and loses which bit(s) were active.
 - Suggested fix direction: Give the two flags distinct labels if the protocol differentiates them, or include the bit mask in duplicate labels so combined faults remain diagnosable.
 
 ## shared/src/commonMain/kotlin/com/devil/phoenixproject/data/ble/DiscoMode.kt

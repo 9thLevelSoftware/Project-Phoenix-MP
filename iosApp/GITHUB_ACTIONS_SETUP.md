@@ -23,9 +23,9 @@ You need to add these secrets to your repository:
 
 ### Supabase Runtime Config
 
-The iOS workflows generate `iosApp/VitruvianPhoenix/Config/Supabase.xcconfig`
+The iOS workflows generate `iosApp/PhoenixApp/Config/Supabase.xcconfig`
 from encrypted GitHub secrets before building. The Xcode project reads the
-tracked `iosApp/VitruvianPhoenix/Config/SupabaseBase.xcconfig`, which
+tracked `iosApp/PhoenixApp/Config/SupabaseBase.xcconfig`, which
 optionally includes that generated local file. The real xcconfig file is
 ignored by git and must stay local; only templates and base configs are tracked.
 
@@ -235,7 +235,7 @@ You can also trigger manually:
 |------|---------|
 | `.github/workflows/ios-build.yml` | CI/CD workflow |
 | `iosApp/ExportOptions.plist` | Archive export settings |
-| `iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj` | Xcode project |
+| `iosApp/PhoenixApp/PhoenixApp.xcodeproj` | Xcode project |
 
 ---
 

@@ -26,10 +26,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.domain.model.WorkoutMetric
+import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
-import com.devil.phoenixproject.presentation.components.VideoPlayer
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentStep
 import com.devil.phoenixproject.presentation.viewmodel.AssessmentUiEvent
@@ -43,13 +43,13 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.flow.StateFlow
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 /**
  * Multi-step assessment wizard screen for guided VBT strength testing.
  *
- * Walks the user through: exercise selection -> video instruction ->
+ * Walks the user through: exercise selection -> image instruction ->
  * progressive weight loading with velocity tracking -> results with
  * 1RM estimate and override option -> save confirmation.
  *
@@ -330,18 +330,17 @@ private fun InstructionContent(step: AssessmentStep.Instruction, onStartAssessme
 
         Spacer(modifier = Modifier.height(Spacing.medium))
 
-        // Video player - use the short looping demo, not instructional tutorial media.
-        val videoToShow = step.videos.firstOrNull { !it.isTutorial }
-        if (videoToShow != null) {
+        if (step.images.isNotEmpty()) {
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(220.dp),
                 shape = MaterialTheme.shapes.medium,
             ) {
-                VideoPlayer(
-                    videoUrl = videoToShow.videoUrl,
+                ExerciseDemoImage(
+                    imageUrls = step.images.map { it.url },
                     modifier = Modifier.fillMaxSize(),
+                    contentDescription = step.exercise.displayName,
                 )
             }
             Spacer(modifier = Modifier.height(Spacing.medium))

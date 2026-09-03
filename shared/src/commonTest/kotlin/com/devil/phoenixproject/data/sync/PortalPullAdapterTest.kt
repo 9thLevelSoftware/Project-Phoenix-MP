@@ -299,6 +299,23 @@ class PortalPullAdapterTest {
         assertEquals(5, result.reps)
     }
 
+    @Test
+    fun `toPersonalRecordSyncDto preserves portal deletion and LWW timestamps`() {
+        val pr = PullPersonalRecordDto(
+            id = "pr-row-uuid",
+            exerciseName = "Bench Press",
+            recordType = "MAX_WEIGHT",
+            achievedAt = "2026-01-01T00:00:00Z",
+            updatedAt = "2026-01-02T00:00:00Z",
+            deletedAt = "2026-01-03T00:00:00Z",
+        )
+
+        val result = PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId = "catalog-bench")
+
+        assertEquals(1767312000000L, result.updatedAt)
+        assertEquals(1767398400000L, result.deletedAt)
+    }
+
     // ========== Factory Helpers ==========
 
     private fun makePullRoutineDto(

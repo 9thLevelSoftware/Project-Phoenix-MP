@@ -9,6 +9,8 @@ import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
 import com.devil.phoenixproject.data.local.DriverFactory
+import com.devil.phoenixproject.data.preferences.AndroidPreferenceFileMigrator
+import com.devil.phoenixproject.data.preferences.AndroidPreferenceFileOperations
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.KableBleRepository
 import com.devil.phoenixproject.domain.voice.AndroidSafeWordListenerFactory
@@ -32,32 +34,46 @@ import org.koin.core.module.Module
 import org.koin.core.module.dsl.viewModel
 import org.koin.dsl.module
 
-private const val ENCRYPTED_PREFS_FILE = "vitruvian_secure_preferences"
-private const val PLAINTEXT_PREFS_FILE = "vitruvian_preferences"
-
 private val log = Logger.withTag("PlatformModule")
+
+private data class AndroidPreferenceStores(
+    val plaintext: SharedPreferences,
+    val encrypted: SharedPreferences,
+)
 
 actual val platformModule: Module = module {
     single { DriverFactory(androidContext()) }
 
+    single {
+        val context = androidContext()
+        AndroidPreferenceFileOperations(context) { name -> createEncryptedPreferences(context, name) }
+    }
+    single {
+        AndroidPreferenceFileMigrator(get<AndroidPreferenceFileOperations>()) { message, failure ->
+            if (failure == null) {
+                log.w { message }
+            } else {
+                log.w(failure) { message }
+            }
+        }
+    }
+    single {
+        val operations = get<AndroidPreferenceFileOperations>()
+        get<AndroidPreferenceFileMigrator>().prepare()
+        val plaintext = operations.targetPlaintext()
+        val encrypted = operations.targetEncrypted()
+        migrateTokensToEncrypted(plaintext, encrypted)
+        AndroidPreferenceStores(plaintext, encrypted)
+    }
+
     // General-purpose preferences (non-sensitive settings like units, UI prefs)
     single<Settings> {
-        val preferences = androidContext().getSharedPreferences(
-            PLAINTEXT_PREFS_FILE,
-            Context.MODE_PRIVATE,
-        )
-        SharedPreferencesSettings(preferences)
+        SharedPreferencesSettings(get<AndroidPreferenceStores>().plaintext)
     }
 
     // Encrypted preferences for auth tokens (JWT, refresh token, email)
     single<Settings>(SecureSettingsQualifier) {
-        val encryptedPrefs = createEncryptedPreferences(androidContext())
-        val plainPrefs = androidContext().getSharedPreferences(
-            PLAINTEXT_PREFS_FILE,
-            Context.MODE_PRIVATE,
-        )
-        migrateTokensToEncrypted(plainPrefs, encryptedPrefs)
-        SharedPreferencesSettings(encryptedPrefs)
+        SharedPreferencesSettings(get<AndroidPreferenceStores>().encrypted)
     }
 
     single { OAuthLauncher(androidContext()) }
@@ -82,6 +98,8 @@ actual val platformModule: Module = module {
             gamificationRepository = get(),
             trainingCycleRepository = get(),
             completedSetRepository = get(),
+            activeWorkoutRuntimeRepository = get(),
+            dropSetEligibilityPolicy = get(),
             syncTriggerManager = get(),
             repMetricRepository = get(),
             biomechanicsRepository = get(),
@@ -120,10 +138,10 @@ actual val platformModule: Module = module {
  * @throws SecurityException if EncryptedSharedPreferences cannot be created.
  *         This indicates the device cannot securely store authentication tokens.
  */
-private fun createEncryptedPreferences(context: Context): SharedPreferences = try {
+private fun createEncryptedPreferences(context: Context, name: String): SharedPreferences = try {
     val masterKeyAlias = MasterKeys.getOrCreate(MasterKeys.AES256_GCM_SPEC)
     EncryptedSharedPreferences.create(
-        ENCRYPTED_PREFS_FILE,
+        name,
         masterKeyAlias,
         context,
         EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
@@ -162,14 +180,26 @@ private fun migrateTokensToEncrypted(plain: SharedPreferences, encrypted: Shared
     if (!hasPortalKeys) return
 
     log.i { "Migrating portal keys from plaintext to encrypted preferences" }
+    val keysToWrite = PORTAL_KEYS.filter { key -> plain.contains(key) && !encrypted.contains(key) }
     val editor = encrypted.edit()
-    for (key in PORTAL_KEYS) {
+    for (key in keysToWrite) {
         when (val value = plain.all[key]) {
             is String -> editor.putString(key, value)
+
             is Boolean -> editor.putBoolean(key, value)
+
             is Long -> editor.putLong(key, value)
+
             is Int -> editor.putInt(key, value)
+
             is Float -> editor.putFloat(key, value)
+
+            is Set<*> -> {
+                if (value.all { item -> item is String }) {
+                    @Suppress("UNCHECKED_CAST")
+                    editor.putStringSet(key, (value as Set<String>).toSet())
+                }
+            }
             // null or missing — skip
         }
     }
@@ -178,7 +208,7 @@ private fun migrateTokensToEncrypted(plain: SharedPreferences, encrypted: Shared
     // process death or storage error between the encrypted write and the
     // plaintext removal could lose the auth tokens permanently. If the encrypted
     // write fails, leave the plaintext keys intact so migration can retry.
-    val committed = editor.commit()
+    val committed = keysToWrite.isEmpty() || editor.commit()
     if (!committed) {
         log.w { "Encrypted token migration write failed; keeping plaintext keys for retry" }
         return
@@ -189,6 +219,9 @@ private fun migrateTokensToEncrypted(plain: SharedPreferences, encrypted: Shared
     for (key in PORTAL_KEYS) {
         plainEditor.remove(key)
     }
-    plainEditor.commit()
+    if (!plainEditor.commit()) {
+        log.w { "Plaintext portal-key cleanup failed; it will retry next launch" }
+        return
+    }
     log.i { "Portal key migration to encrypted storage complete" }
 }

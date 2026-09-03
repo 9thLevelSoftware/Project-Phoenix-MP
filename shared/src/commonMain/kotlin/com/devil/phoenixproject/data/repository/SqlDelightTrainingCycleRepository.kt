@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleItem
 import com.devil.phoenixproject.domain.model.CycleProgress
@@ -18,9 +18,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
-class SqlDelightTrainingCycleRepository(private val db: VitruvianDatabase) : TrainingCycleRepository {
+class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : TrainingCycleRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     // ==================== Mapping Functions ====================
 

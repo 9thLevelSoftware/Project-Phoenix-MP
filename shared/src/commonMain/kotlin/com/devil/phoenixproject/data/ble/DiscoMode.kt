@@ -13,7 +13,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 
 /**
- * Disco Mode easter egg - rapidly cycles LED colors on the Vitruvian machine.
+ * Disco Mode easter egg - rapidly cycles LED colors on the Phoenix machine.
  *
  * Self-contained module extracted from KableBleRepository (Phase 8).
  * Uses callback for command sending to avoid circular dependency.

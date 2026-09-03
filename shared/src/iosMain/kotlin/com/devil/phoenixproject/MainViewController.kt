@@ -6,7 +6,6 @@ import coil3.SingletonImageLoader
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.util.DebugLogger
-import com.devil.phoenixproject.presentation.components.RequireBlePermissions
 import kotlin.native.Platform as NativePlatform
 import platform.Foundation.NSLog
 
@@ -21,10 +20,7 @@ fun MainViewController() = run {
         NSLog("iOS UI: Setting up image loader...")
         ensureImageLoader()
         NSLog("iOS UI: Image loader ready, loading App()...")
-        RequireBlePermissions {
-            NSLog("iOS UI: BLE permissions checked, rendering App()...")
-            IosAppHost()
-        }
+        IosAppHost()
     }
 }
 

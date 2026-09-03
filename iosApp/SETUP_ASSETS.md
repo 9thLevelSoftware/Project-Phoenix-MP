@@ -6,12 +6,12 @@ This guide covers the manual setup steps required to complete iOS app asset conf
 
 ### Source Image
 The app icon source image is located at:
-- `androidApp/src/main/res/drawable-xxxhdpi/vitphoe_logo_foreground.png`
+- `androidApp/src/main/res/drawable-xxxhdpi/phoenix_logo_foreground.png`
 
 ### Setup Steps
 
 1. **Open Xcode Project**
-   - Open your Xcode project for VitruvianPhoenix
+   - Open your Xcode project for PhoenixApp
 
 2. **Create AppIcon Asset**
    - In Xcode, select your project in the navigator
@@ -23,7 +23,7 @@ The app icon source image is located at:
 
 3. **Add Icon Sizes**
    - Select the `AppIcon` image set
-   - Drag the source image (`vitphoe_logo_foreground.png`) into the appropriate slots:
+   - Drag the source image (`phoenix_logo_foreground.png`) into the appropriate slots:
      - **iPhone**: 20pt, 29pt, 40pt, 60pt (2x and 3x for each)
      - **iPad**: 20pt, 29pt, 40pt, 76pt, 83.5pt (1x, 2x for each)
      - **App Store**: 1024pt (1x)
@@ -49,7 +49,7 @@ The app icon source image is located at:
    - Set the color to match the app theme background:
      - Light mode: `#F8FAFC` (SurfaceContainerLight)
      - Dark mode: `#0F172A` (SurfaceContainerDark)
-   - Or use the color from `androidApp/src/main/res/drawable/ic_launcher_background.xml` (#0F172A)
+   - Or use the color from `androidApp/src/main/res/drawable/ic_launcher_background.xml` (#000000)
 
 2. **Verify Info.plist**
    - Ensure `Info.plist` references these assets:
@@ -101,7 +101,7 @@ This script works dynamically and utilizes either `afconvert` (native macOS tool
      ```
 
 2. **Verification in Xcode Project**
-   - The converted files are placed directly in the `VitruvianPhoenix/VitruvianPhoenix/Sounds/` folder on disk.
+   - The converted files are placed directly in the `PhoenixApp/PhoenixApp/Sounds/` folder on disk.
    - Because the Xcode project uses file-system synchronized groups, these files are **automatically** picked up and bundled with the iOS target. No manual dragging or target membership configuration is needed.
 
 3. **Verify Sound Loading**

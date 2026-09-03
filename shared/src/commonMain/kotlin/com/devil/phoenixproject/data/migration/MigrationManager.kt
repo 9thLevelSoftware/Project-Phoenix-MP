@@ -18,7 +18,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.normalizeWorkoutModeKey
 import com.devil.phoenixproject.database.Routine
 import com.devil.phoenixproject.database.RoutineExercise
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
@@ -50,7 +50,7 @@ sealed interface RequiredMigrationState {
  * Call [close] when done to prevent memory leaks.
  */
 class MigrationManager(
-    private val database: VitruvianDatabase,
+    private val database: PhoenixDatabase,
     private val userProfileRepository: UserProfileRepository,
     private val gamificationRepository: GamificationRepository,
     private val settings: Settings,
@@ -76,7 +76,7 @@ class MigrationManager(
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val queries get() = database.vitruvianDatabaseQueries
+    private val queries get() = database.phoenixDatabaseQueries
     private val migrationMutex = Mutex()
     private val requiredMigrationMutex = Mutex()
 
@@ -1067,7 +1067,7 @@ class MigrationManager(
     }
 
     /**
-     * Generic placeholder routine names set by external imports (e.g. Vitruvian cloud).
+     * Generic placeholder routine names set by external imports (e.g. legacy cloud exports).
      * These don't identify a real routine and should be treated as null/unknown.
      */
     private val GARBAGE_ROUTINE_NAMES = setOf(

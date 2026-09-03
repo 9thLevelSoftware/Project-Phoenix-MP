@@ -17,6 +17,8 @@
     <string name="action_ok">OK</string>
     <string name="action_save">Enregistrer</string>
     <string name="action_delete">Supprimer</string>
+    <string name="delete_personal_record_title">Supprimer le record personnel ?</string>
+    <string name="delete_personal_record_message">Supprimer ce record personnel de cet appareil et des appareils synchronisés ? Cette action est irréversible dans cette version.</string>
     <string name="action_edit">Modifier</string>
     <string name="action_copy">Copier</string>
     <string name="action_close">Fermer</string>
@@ -85,6 +87,9 @@
     <string name="stop_label">ARRÊT</string>
     <string name="waiting_for_data">En attente des données…</string>
     <string name="reconnect">Reconnecter</string>
+    <string name="workout_teardown_finishing">Finalisation de l’entraînement précédent…</string>
+    <string name="workout_teardown_failed">La réinitialisation de l’appareil n’a pas abouti</string>
+    <string name="workout_teardown_retry">Réessayer</string>
 
     <string name="stop_current_set_title">Arrêter la série en cours ?</string>
     <string name="stop_current_set_message">Arrêtez cette série, passez cet exercice ou terminez tout l\'entraînement.</string>
@@ -101,7 +106,7 @@
     <string name="connection_failed">Échec de la connexion</string>
     <string name="disconnect">Déconnecter</string>
     <string name="disconnect_title">Déconnecter ?</string>
-    <string name="disconnect_message">Êtes-vous sûr de vouloir vous déconnecter de la machine Vitruvian ?</string>
+    <string name="disconnect_message">Êtes-vous sûr de vouloir vous déconnecter de la machine ?</string>
 
     <!-- Settings -->
     <string name="settings_title">Paramètres</string>
@@ -293,6 +298,27 @@
     <string name="rest_continue">Continuer</string>
     <string name="rest_complete_announcement">Repos terminé</string>
     <string name="rest_seconds_remaining">%1$d secondes restantes</string>
+    <string name="drop_set_title">Drop set</string>
+    <string name="drop_set_offer_toggle">Proposer un drop set après un échec.</string>
+    <string name="drop_set_min_weight">Poids minimum</string>
+    <string name="drop_set_min_weight_supporting">Minimum par câble en %1$s</string>
+    <string name="drop_set_min_weight_error">Saisissez un poids minimum supérieur à 0</string>
+    <string name="drop_set_offer_question">Réessayer cette série avec un drop set ?</string>
+    <string name="drop_set_retry_set">Réessayer la série</string>
+    <string name="drop_set_skip">Ignorer le drop set</string>
+    <string name="drop_set_candidate_unavailable">En dessous du minimum configuré</string>
+    <string name="drop_set_remaining_one">1 drop restant</string>
+    <string name="drop_set_remaining_many">%1$d drops restants</string>
+    <string name="drop_set_accepted_waiting">Nouvel essai à %1$s — %2$s par câble</string>
+    <string name="drop_set_saving">Enregistrement de la tentative échouée</string>
+    <string name="drop_set_preparing">Préparation de l’appareil</string>
+    <string name="drop_set_ready">Prêt à réessayer</string>
+    <string name="drop_set_recovery">Reconnectez-vous pour réessayer ce drop set</string>
+    <string name="drop_set_skip_rest_blocked">Choisissez un drop set ou ignorez-le avant de passer le repos</string>
+    <string name="drop_set_waiting_timer">Repos terminé. Choisissez un drop set ou ignorez-le pour continuer.</string>
+    <string name="cd_drop_set_candidate">Drop de %1$s, %2$s par câble</string>
+    <string name="cd_drop_set_candidate_unavailable">Drop de %1$s indisponible</string>
+    <string name="cd_drop_set_retry_disabled">Sélectionnez un pourcentage de drop pour réessayer</string>
     <string name="set_weight">Régler le poids</string>
 
     <!-- Connection Logs -->
@@ -496,7 +522,6 @@
     <string name="cd_previous_exercise">Previous exercise</string>
     <string name="cd_next_exercise">Next exercise</string>
     <string name="cd_completed">Completed</string>
-    <string name="cd_video_thumbnail">Video thumbnail</string>
     <string name="cd_thumbnail_for">Thumbnail for %1$s</string>
     <string name="cd_clear_filters">Clear filters</string>
     <string name="cd_alphabet_nav">Alphabet navigation. Tap a letter to jump to exercises starting with that letter.</string>
@@ -584,7 +609,7 @@
     <string name="cd_premium_feature">Premium feature</string>
     <string name="cd_trophy">Trophy celebration</string>
     <string name="cd_confetti">Celebration confetti</string>
-    <string name="cd_phoenix_logo">Vitruvian Phoenix Logo</string>
+    <string name="cd_phoenix_logo">Logo Phoenix</string>
     <string name="cd_dismiss_readiness">Dismiss readiness briefing</string>
     <string name="cd_above_pr">Above PR</string>
     <string name="cd_below_pr">Below PR</string>
@@ -743,9 +768,10 @@
     <string name="profile_recovery_message">Phoenix n’a pas pu confirmer quel profil est actif. Réessayez avant de continuer.</string>
     <string name="profile_recovery_retry_failed">La récupération du profil est toujours indisponible</string>
     <string name="profile_delete_reassign_message">Supprimer « %1$s » ? Ses entraînements, routines, records, badges, évaluations et données de progression seront transférés vers Default. Cette action est irréversible.</string>
-    <string name="settings_video_behavior">Comportement vidéo</string>
-    <string name="settings_show_exercise_videos">Afficher les vidéos d'exercice</string>
+    <string name="settings_video_behavior">Démonstrations d'exercices</string>
+    <string name="settings_show_exercise_videos">Afficher les démonstrations d'exercices</string>
     <string name="settings_show_exercise_videos_description">Afficher les démonstrations ; désactivez-les sur les appareils plus lents</string>
+    <string name="settings_exercise_demos_disabled">Démonstrations désactivées</string>
     <string name="profile_weight_increment">Incrément de poids</string>
     <string name="profile_body_weight">Poids corporel</string>
     <string name="profile_set_summary">Durée du résumé de série</string>
@@ -794,4 +820,6 @@
     <string name="profile_disco_unlocked_body">Activez le mode disco dans les préférences LED pour faire danser votre machine.</string>
     <string name="profile_disco_unlocked_action">C\'est parti !</string>
     <string name="profile_adult_enable_partial_failure">La confirmation de l\'âge a été enregistrée, mais le mode vulgaire n\'a pas pu être activé. Réessayez.</string>
+    <string name="label_previously_completed">Déjà terminés</string>
+    <string name="cd_filter_previously_completed">Filtrer les exercices déjà terminés</string>
 </resources>

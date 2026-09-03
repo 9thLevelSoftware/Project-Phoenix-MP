@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.ui.theme.applyPlatformNightMode
 import com.russhwolf.settings.Settings
 import com.russhwolf.settings.set
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,6 +34,7 @@ class ThemeViewModel(private val settings: Settings) : ViewModel() {
         viewModelScope.launch {
             _themeMode.value = mode
             saveThemePreference(mode)
+            applyPlatformNightMode(mode)
             log.d { "Theme mode changed to: $mode" }
         }
     }
@@ -70,7 +72,8 @@ class ThemeViewModel(private val settings: Settings) : ViewModel() {
     }
 
     companion object {
-        private const val THEME_MODE_KEY = "theme_mode"
+        const val THEME_MODE_KEY = "theme_mode"
+        const val THEME_PREFS_FILE = "phoenix_preferences"
         private const val DYNAMIC_COLOR_ENABLED_KEY = "dynamic_color_enabled"
     }
 }

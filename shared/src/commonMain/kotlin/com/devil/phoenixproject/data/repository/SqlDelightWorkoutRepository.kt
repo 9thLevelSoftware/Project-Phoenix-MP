@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -27,9 +27,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
-class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val exerciseRepository: ExerciseRepository) : WorkoutRepository {
+class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val exerciseRepository: ExerciseRepository) : WorkoutRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     private val json = Json {
         ignoreUnknownKeys = true
@@ -422,6 +422,8 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                     defaultRackItemIds = defaultRackItemIds,
                     rackBehaviorOverrides = rackBehaviorOverrides,
                     scalingBasis = row.scalingBasis?.let { runCatching { ScalingBasis.valueOf(it) }.getOrNull() },
+                    dropSetEnabled = row.dropSetEnabled == 1L,
+                    dropSetMinWeightKg = row.dropSetMinWeightKg?.toFloat(),
                 )
             } catch (e: Exception) {
                 Logger.e(e) { "Failed to map routine exercise: ${row.exerciseId}" }
@@ -777,6 +779,8 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
             // #635: persist the explicit flag so reloads and sync keep the exact
             // classification (null = derive from equipment, pre-migration behavior)
             isBodyweight = exercise.exercise.isBodyweightOverride?.let { if (it) 1L else 0L },
+            dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
+            dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
         )
     }
 
@@ -972,7 +976,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
             val defaultProfileId = profileId.ifBlank { "default" }
 
-            val currentWeightPR = queries.selectPR(
+            val currentWeightPR = queries.selectPRIncludingDeleted(
                 exerciseId,
                 mode,
                 PRType.MAX_WEIGHT.name,
@@ -980,7 +984,7 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
                 profileId = defaultProfileId,
             ).executeAsOneOrNull()
 
-            val currentVolumePR = queries.selectPR(
+            val currentVolumePR = queries.selectPRIncludingDeleted(
                 exerciseId,
                 mode,
                 PRType.MAX_VOLUME.name,
@@ -1046,21 +1050,24 @@ class SqlDelightWorkoutRepository(private val db: VitruvianDatabase, private val
 
     override suspend fun saveMetrics(sessionId: String, metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>) {
         withContext(Dispatchers.IO) {
-            metrics.forEach { metric ->
-                // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
-                val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
-                queries.insertMetric(
-                    sessionId = sessionId,
-                    timestamp = metric.timestamp,
-                    position = metric.positionA.toDouble(),
-                    positionB = metric.positionB.toDouble(),
-                    velocity = metric.velocityA,
-                    velocityB = metric.velocityB,
-                    load = metric.loadA.toDouble(),
-                    loadB = metric.loadB.toDouble(),
-                    power = power.toDouble(),
-                    status = metric.status.toLong(),
-                )
+            db.transaction {
+                queries.deleteMetricsBySession(sessionId)
+                metrics.forEach { metric ->
+                    // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
+                    val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
+                    queries.insertMetric(
+                        sessionId = sessionId,
+                        timestamp = metric.timestamp,
+                        position = metric.positionA.toDouble(),
+                        positionB = metric.positionB.toDouble(),
+                        velocity = metric.velocityA,
+                        velocityB = metric.velocityB,
+                        load = metric.loadA.toDouble(),
+                        loadB = metric.loadB.toDouble(),
+                        power = power.toDouble(),
+                        status = metric.status.toLong(),
+                    )
+                }
             }
         }
     }

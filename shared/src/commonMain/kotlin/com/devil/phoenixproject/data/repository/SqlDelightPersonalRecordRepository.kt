@@ -3,20 +3,21 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.util.OneRepMaxCalculator
+import com.devil.phoenixproject.util.KmpUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
-class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : PersonalRecordRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightPersonalRecordRepository(private val db: PhoenixDatabase) : PersonalRecordRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     // SQLDelight mapper - parameters must match query columns even if not all are used
     private fun mapToPR(
@@ -63,6 +64,8 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         profileId = profileId,
         cableCount = cableCount?.toInt(),
         uuid = uuid,
+        updatedAt = updatedAt,
+        deletedAt = deletedAt,
     )
 
     override suspend fun getLatestPR(exerciseId: String, workoutMode: String, profileId: String): PersonalRecord? = withContext(Dispatchers.IO) {
@@ -93,6 +96,18 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                 // Return the best PR for each exercise (by weight, parity with parent repo)
                 prs.maxByOrNull { it.weightPerCableKg }
             }
+    }
+
+    override suspend fun deletePR(prId: Long, profileId: String) = withContext(Dispatchers.IO) {
+        val now = KmpUtils.currentTimeMillis()
+        db.transaction {
+            queries.softDeletePRById(
+                deletedAt = now,
+                updatedAt = now,
+                id = prId,
+                profileId = profileId,
+            )
+        }
     }
 
     override suspend fun updatePRIfBetter(
@@ -281,8 +296,9 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
         // Issue #319: Log the profile context being used
         Logger.d { "PR_SAVE: Checking for exercise=$exerciseId, mode=$canonicalWorkoutMode, phase=$phaseName, profile=$effectiveProfileId" }
 
-        // Check weight PR for this phase
-        val currentWeightPR = queries.selectPR(
+        // Keep a tombstone's UUID for sync identity, but do not let a deleted
+        // outlier remain the active comparison baseline for future PRs.
+        val storedWeightPR = queries.selectPRIncludingDeleted(
             exerciseId,
             canonicalWorkoutMode,
             PRType.MAX_WEIGHT.name,
@@ -291,6 +307,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
             mapper = ::mapToPR,
         )
             .executeAsOneOrNull()
+        val currentWeightPR = storedWeightPR?.takeIf { it.deletedAt == null }
 
         // Issue #319: Detect profile mismatch if a PR exists with a different profile_id
         if (currentWeightPR != null && currentWeightPR.profileId != effectiveProfileId) {
@@ -306,8 +323,8 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                 "new=${weightPRWeightPerCableKg}kg vs current=${currentWeightPR?.weightPerCableKg ?: "NONE"} → ${if (isNewWeightPR) "NEW PR" else "no change"}"
         }
 
-        // Check volume PR for this phase
-        val currentVolumePR = queries.selectPR(
+        // Keep the deleted volume snapshot only for UUID reuse, not comparison.
+        val storedVolumePR = queries.selectPRIncludingDeleted(
             exerciseId,
             canonicalWorkoutMode,
             PRType.MAX_VOLUME.name,
@@ -316,6 +333,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
             mapper = ::mapToPR,
         )
             .executeAsOneOrNull()
+        val currentVolumePR = storedVolumePR?.takeIf { it.deletedAt == null }
 
         // Issue #319: Detect profile mismatch for volume PR too
         if (currentVolumePR != null && currentVolumePR.profileId != effectiveProfileId) {
@@ -349,7 +367,9 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     phase = phaseName,
                     profile_id = effectiveProfileId,
                     cable_count = cableCount?.toLong(),
-                    uuid = currentWeightPR?.uuid ?: generateUUID(),
+                    // A deleted snapshot is no longer the active comparison
+                    // baseline, but its UUID is retained until sync converges.
+                    uuid = storedWeightPR?.uuid ?: generateUUID(),
                 )
                 brokenPRs.add(PRType.MAX_WEIGHT)
             }
@@ -369,7 +389,7 @@ class SqlDelightPersonalRecordRepository(private val db: VitruvianDatabase) : Pe
                     phase = phaseName,
                     profile_id = effectiveProfileId,
                     cable_count = cableCount?.toLong(),
-                    uuid = currentVolumePR?.uuid ?: generateUUID(),
+                    uuid = storedVolumePR?.uuid ?: generateUUID(),
                 )
                 brokenPRs.add(PRType.MAX_VOLUME)
             }

@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.local
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlin.test.assertEquals
 import kotlin.test.fail
 import org.junit.Test
@@ -28,7 +28,7 @@ class SchemaParityTest {
     fun `fresh install and full upgrade produce identical schemas`() {
         // Database A: canonical fresh install
         val freshDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(freshDriver)
+        PhoenixDatabase.Schema.create(freshDriver)
 
         // Database B: v1 base -> migrate 1..27 with resilient fallback -> reconcile
         val upgradeDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
@@ -187,7 +187,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 32, 33)
+        PhoenixDatabase.Schema.migrate(driver, 32, 33)
 
         assertEquals(1L, countExerciseVideos(driver, isTutorial = false))
         assertEquals(0L, countExerciseVideos(driver, isTutorial = true))
@@ -214,7 +214,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 33, 34)
+        PhoenixDatabase.Schema.migrate(driver, 33, 34)
 
         assertEquals(true, columnExistsInDriver(driver, "WorkoutSession", "externalAddedLoadKg"))
         assertEquals(true, columnExistsInDriver(driver, "WorkoutSession", "counterweightKg"))
@@ -272,7 +272,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 34, 35)
+        PhoenixDatabase.Schema.migrate(driver, 34, 35)
 
         assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "defaultRackItemIds"))
         var defaultRackItemIds = ""
@@ -313,7 +313,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 35, 36)
+        PhoenixDatabase.Schema.migrate(driver, 35, 36)
 
         assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "rackBehaviorOverrides"))
         var rackBehaviorOverrides = ""
@@ -347,7 +347,7 @@ class SchemaParityTest {
                 id, name, created, muscleGroup, muscleGroups, equipment,
                 popularity, archived, isFavorite, isCustom, timesPerformed, defaultCableConfig
             ) VALUES (
-                'UjIGHxCav-lS9B2I', 'Squat', 0, 'LEGS', 'LEGS', '',
+                'legacy-squat', 'Squat', 0, 'LEGS', 'LEGS', '',
                 0, 0, 0, 0, 0, 'DOUBLE'
             )
             """.trimIndent(),
@@ -361,7 +361,7 @@ class SchemaParityTest {
                 id, name, created, muscleGroup, muscleGroups, equipment,
                 popularity, archived, isFavorite, isCustom, timesPerformed, defaultCableConfig
             ) VALUES (
-                'U9nn8f-vcAltrR-E', 'Plank', 0, 'CORE', 'CORE', '',
+                'legacy-plank', 'Plank', 0, 'CORE', 'CORE', '',
                 0, 0, 0, 0, 0, 'DOUBLE'
             )
             """.trimIndent(),
@@ -391,7 +391,7 @@ class SchemaParityTest {
             INSERT INTO RoutineExercise (
                 id, routineId, exerciseName, exerciseMuscleGroup, exerciseEquipment, exerciseId, orderIndex, weightPerCableKg
             ) VALUES (
-                'rex-squat', 'routine-635', 'Squat', 'LEGS', '', 'UjIGHxCav-lS9B2I', 1, 40.0
+                'rex-squat', 'routine-635', 'Squat', 'LEGS', '', 'legacy-squat', 1, 40.0
             )
             """.trimIndent(),
             0,
@@ -422,14 +422,14 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 39, 40)
+        PhoenixDatabase.Schema.migrate(driver, 39, 40)
 
         assertEquals(true, columnExistsInDriver(driver, "Exercise", "isBodyweight"))
         assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "isBodyweight"))
 
         // Squat backfilled to explicit cable (0); Plank untouched (NULL = derived)
-        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'UjIGHxCav-lS9B2I'"))
-        assertEquals(null, queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'U9nn8f-vcAltrR-E'"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'legacy-squat'"))
+        assertEquals(null, queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'legacy-plank'"))
 
         // Sentinel converted to explicit flag and cleared from equipment
         assertEquals("1", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-sentinel'"))
@@ -464,7 +464,7 @@ class SchemaParityTest {
                 id, name, created, muscleGroup, muscleGroups, equipment,
                 popularity, archived, isFavorite, isCustom, timesPerformed, defaultCableConfig
             ) VALUES (
-                'UjIGHxCav-lS9B2I', 'Squat', 0, 'LEGS', 'LEGS', '',
+                'legacy-squat', 'Squat', 0, 'LEGS', 'LEGS', '',
                 0, 0, 0, 0, 0, 'DOUBLE'
             )
             """.trimIndent(),
@@ -491,7 +491,7 @@ class SchemaParityTest {
         migrateWithResilience(driver, 39, 40)
 
         assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "isBodyweight"))
-        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'UjIGHxCav-lS9B2I'"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM Exercise WHERE id = 'legacy-squat'"))
         assertEquals("1", queryScalar(driver, "SELECT CAST(isBodyweight AS TEXT) FROM RoutineExercise WHERE id = 'rex-sentinel-resilient'"))
         assertEquals("", queryScalar(driver, "SELECT exerciseEquipment FROM RoutineExercise WHERE id = 'rex-sentinel-resilient'"))
     }
@@ -541,7 +541,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 40, 41)
+        PhoenixDatabase.Schema.migrate(driver, 40, 41)
 
         assertEquals(true, columnExistsInDriver(driver, "PersonalRecord", "uuid"))
         assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord"))
@@ -587,7 +587,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 41, 42)
+        PhoenixDatabase.Schema.migrate(driver, 41, 42)
 
         assertEquals(true, columnExistsInDriver(driver, "TrainingCycle", "template_id"))
         assertEquals(true, columnExistsInDriver(driver, "TrainingCycle", "week_number"))
@@ -597,7 +597,7 @@ class SchemaParityTest {
 
     @Test
     fun `generated schema exposes expected version`() {
-        assertEquals(EXPECTED_SCHEMA_VERSION, VitruvianDatabase.Schema.version)
+        assertEquals(EXPECTED_SCHEMA_VERSION, PhoenixDatabase.Schema.version)
     }
 
     @Test
@@ -610,7 +610,7 @@ class SchemaParityTest {
             0,
         )
 
-        VitruvianDatabase.Schema.migrate(driver, 42, EXPECTED_SCHEMA_VERSION)
+        PhoenixDatabase.Schema.migrate(driver, 42, EXPECTED_SCHEMA_VERSION)
 
         assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM UserProfilePreferences WHERE profile_id = 'a'"))
         assertEquals("1", queryScalar(driver, "SELECT CAST(vbt_enabled AS TEXT) FROM UserProfilePreferences WHERE profile_id = 'a'"))
@@ -638,10 +638,282 @@ class SchemaParityTest {
         assertEquals(true, getTables(driver).contains("PendingProfileContextRecovery"))
     }
 
+    @Test
+    fun migration43To44ReplacesExerciseVideoWithExerciseImageAndArchivesStockRows() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 43)
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+                equipment, movement, sidedness, grip, gripWidth, minRepRange, popularity, archived,
+                isFavorite, isCustom, timesPerformed, lastPerformed, aliases, defaultCableConfig,
+                one_rep_max_kg, updatedAt, serverId, deletedAt
+            ) VALUES (
+                'legacy-1', 'Squat', 'Squat', '', 0, 'Legs', 'Legs', '',
+                'BAR', '', '', '', '', 1, 0, 0,
+                0, 0, 0, NULL, '', 'DOUBLE',
+                NULL, NULL, NULL, NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+                equipment, movement, sidedness, grip, gripWidth, minRepRange, popularity, archived,
+                isFavorite, isCustom, timesPerformed, lastPerformed, aliases, defaultCableConfig,
+                one_rep_max_kg, updatedAt, serverId, deletedAt
+            ) VALUES (
+                'custom-1', 'My Lift', 'My Lift', '', 0, 'Chest', 'Chest', '',
+                '', '', '', '', '', 1, 0, 0,
+                0, 1, 0, NULL, '', 'EITHER',
+                NULL, NULL, NULL, NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO ExerciseVideo (exerciseId, angle, videoUrl, thumbnailUrl, isTutorial)
+            VALUES ('legacy-1', 'front', 'https://example.com/demo.mp4', 'https://example.com/demo.jpg', 0)
+            """.trimIndent(),
+            0,
+        )
+
+        PhoenixDatabase.Schema.migrate(driver, 43, 44)
+
+        assertEquals(false, getTables(driver).contains("ExerciseVideo"))
+        assertEquals(true, getTables(driver).contains("ExerciseImage"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(archived AS TEXT) FROM Exercise WHERE id = 'legacy-1'"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(archived AS TEXT) FROM Exercise WHERE id = 'custom-1'"))
+    }
+
+    @Test
+    fun `resilient migration 43 fallback drops video table and archives stock rows`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 43)
+        driver.execute(
+            null,
+            """
+            INSERT INTO Exercise (
+                id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+                equipment, movement, sidedness, grip, gripWidth, minRepRange, popularity, archived,
+                isFavorite, isCustom, timesPerformed, lastPerformed, aliases, defaultCableConfig,
+                one_rep_max_kg, updatedAt, serverId, deletedAt
+            ) VALUES (
+                'legacy-2', 'Squat', 'Squat', '', 0, 'Legs', 'Legs', '',
+                'BAR', '', '', '', '', 1, 0, 0,
+                0, 0, 0, NULL, '', 'DOUBLE',
+                NULL, NULL, NULL, NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        applyMigrationResilient(driver, 43)
+        assertEquals(false, getTables(driver).contains("ExerciseVideo"))
+        assertEquals(true, getTables(driver).contains("ExerciseImage"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(archived AS TEXT) FROM Exercise WHERE id = 'legacy-2'"))
+    }
+
+    @Test
+    fun `migration 44 to 45 adds set_end_reason column and preserves historical rows as UNKNOWN`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 44)
+
+        // Create prerequisite rows using columns available at schema v44,
+        // before migration 44 adds the reason column.
+        driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
+        driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)", 0)
+        driver.execute(null, "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('s1',1,'OldSchool',10,40.0)", 0)
+
+        // Insert a CompletedSet before the new column exists.
+        driver.execute(
+            null,
+            """
+            INSERT INTO CompletedSet (id, session_id, set_number, set_type, actual_reps, actual_weight_kg, is_pr, completed_at)
+            VALUES ('cs-pre-mig', 's1', 1, 'STANDARD', 8, 40.0, 0, 1000)
+            """.trimIndent(),
+            0,
+        )
+
+        // This test proves generated migration 44.sqm itself; resilient recovery
+        // behavior is covered separately below.
+        PhoenixDatabase.Schema.migrate(driver, 44, 45)
+
+        assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "set_end_reason"))
+
+        // Pre-existing row must have the default value
+        assertEquals("UNKNOWN", queryScalar(driver, "SELECT set_end_reason FROM CompletedSet WHERE id = 'cs-pre-mig'"))
+    }
+
+    @Test
+    fun `resilient migration 44 fallback preserves an already-healed set_end_reason`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 44)
+
+        // Simulate schema drift: column already added by heal
+        driver.execute(null, "ALTER TABLE CompletedSet ADD COLUMN set_end_reason TEXT NOT NULL DEFAULT 'UNKNOWN'", 0)
+
+        driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
+        driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)", 0)
+        driver.execute(null, "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('s1',1,'OldSchool',10,40.0)", 0)
+        driver.execute(
+            null,
+            """
+            INSERT INTO CompletedSet (id, session_id, set_number, set_type, actual_reps, actual_weight_kg, is_pr, completed_at, set_end_reason)
+            VALUES ('cs-resilient', 's1', 1, 'STANDARD', 8, 40.0, 0, 1000, 'STALL_FAILURE')
+            """.trimIndent(),
+            0,
+        )
+
+        // Resilient fallback should succeed even though the column already exists.
+        applyMigrationResilient(driver, 44)
+
+        assertEquals("STALL_FAILURE", queryScalar(driver, "SELECT set_end_reason FROM CompletedSet WHERE id = 'cs-resilient'"))
+    }
+
+    @Test
+    fun `migration 45 to 46 adds attempt identity and active runtime while preserving historical defaults`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 45)
+        driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
+        driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)", 0)
+        driver.execute(null, "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('s1',1,'OldSchool',10,40.0)", 0)
+        driver.execute(
+            null,
+            """
+            INSERT INTO CompletedSet (id, session_id, set_number, set_type, actual_reps, actual_weight_kg, is_pr, completed_at, set_end_reason)
+            VALUES ('cs-pre-attempt-identity', 's1', 0, 'STANDARD', 8, 40.0, 0, 1000, 'TARGET_REPS_REACHED')
+            """.trimIndent(),
+            0,
+        )
+
+        PhoenixDatabase.Schema.migrate(driver, 45, 46)
+
+        assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "routine_exercise_id"))
+        assertEquals(true, columnExistsInDriver(driver, "CompletedSet", "attempt_number"))
+        assertEquals(null, queryScalar(driver, "SELECT routine_exercise_id FROM CompletedSet WHERE id = 'cs-pre-attempt-identity'"))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(attempt_number AS TEXT) FROM CompletedSet WHERE id = 'cs-pre-attempt-identity'"))
+        assertEquals(
+            linkedMapOf(
+                "profile_id" to "TEXT",
+                "routine_session_id" to "TEXT",
+                "document_version" to "INTEGER",
+                "runtime_json" to "TEXT",
+                "updated_at_epoch_ms" to "INTEGER",
+            ),
+            getColumns(driver, "ActiveWorkoutRuntime"),
+        )
+        assertEquals(
+            listOf(
+                "profile_id",
+                "routine_session_id",
+                "document_version",
+                "runtime_json",
+                "updated_at_epoch_ms",
+            ),
+            getNotNullColumns(driver, "ActiveWorkoutRuntime"),
+        )
+        assertEquals(
+            listOf("profile_id", "routine_session_id"),
+            getPrimaryKeyColumns(driver, "ActiveWorkoutRuntime"),
+        )
+        assertEquals(0, getForeignKeyCount(driver, "ActiveWorkoutRuntime"))
+        assertEquals(emptyList(), getUserIndexes(driver, "ActiveWorkoutRuntime"))
+    }
+
+    @Test
+    fun `resilient migration 45 independently converges every meaningful partial state`() {
+        val scenarios = listOf(
+            PartialMigration44State(
+                name = "routine identity column already present and runtime missing",
+                preAppliedSql = listOf("ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT"),
+                expectedSuccess = listOf(false, true, true),
+            ),
+            PartialMigration44State(
+                name = "attempt column already present and runtime missing",
+                preAppliedSql = listOf("ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1"),
+                expectedSuccess = listOf(true, false, true),
+            ),
+            PartialMigration44State(
+                name = "both attempt identity columns already present and runtime missing",
+                preAppliedSql = listOf(
+                    "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT",
+                    "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1",
+                ),
+                expectedSuccess = listOf(false, false, true),
+            ),
+            PartialMigration44State(
+                name = "both attempt identity columns and runtime table already present",
+                preAppliedSql = listOf(
+                    "ALTER TABLE CompletedSet ADD COLUMN routine_exercise_id TEXT",
+                    "ALTER TABLE CompletedSet ADD COLUMN attempt_number INTEGER NOT NULL DEFAULT 1",
+                    CREATE_ACTIVE_RUNTIME_SQL,
+                ),
+                expectedSuccess = listOf(false, false, false),
+            ),
+        )
+
+        scenarios.forEachIndexed { index, scenario ->
+            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            buildSchemaAtVersion(driver, 45)
+            scenario.preAppliedSql.forEach { driver.execute(null, it, 0) }
+            val completedSetId = "cs-resilient-45-$index"
+            insertHistoricalCompletedSet(driver, completedSetId)
+
+            val results = applyMigrationResilient(driver, 45)
+
+            assertEquals(3, results.size, scenario.name)
+            assertEquals(scenario.expectedSuccess, results.map { it.success }, scenario.name)
+            assertEquals(listOf(true, true, true), results.map { it.recoverable }, scenario.name)
+            assertEquals(null, queryScalar(driver, "SELECT routine_exercise_id FROM CompletedSet WHERE id = '$completedSetId'"), scenario.name)
+            assertEquals("1", queryScalar(driver, "SELECT CAST(attempt_number AS TEXT) FROM CompletedSet WHERE id = '$completedSetId'"), scenario.name)
+            assertActiveRuntimeShape(driver, scenario.name)
+        }
+    }
+
+    @Test
+    fun `migration 46 to 47 adds drop set configuration defaults`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 46)
+        driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
+        driver.execute(
+            null,
+            "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Bench','Chest',0,40.0)",
+            0,
+        )
+
+        PhoenixDatabase.Schema.migrate(driver, 46, 47)
+
+        assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "dropSetEnabled"))
+        assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "dropSetMinWeightKg"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(dropSetEnabled AS TEXT) FROM RoutineExercise WHERE id = 're1'"))
+        assertEquals(null, queryScalar(driver, "SELECT CAST(dropSetMinWeightKg AS TEXT) FROM RoutineExercise WHERE id = 're1'"))
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 43L
+        private const val EXPECTED_SCHEMA_VERSION = 47L
+        private val CREATE_ACTIVE_RUNTIME_SQL = """
+            CREATE TABLE ActiveWorkoutRuntime (
+                profile_id TEXT NOT NULL,
+                routine_session_id TEXT NOT NULL,
+                document_version INTEGER NOT NULL,
+                runtime_json TEXT NOT NULL,
+                updated_at_epoch_ms INTEGER NOT NULL,
+                PRIMARY KEY (profile_id, routine_session_id)
+            )
+        """.trimIndent()
         private val CANONICAL_UUID_REGEX = Regex("^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$")
 
         /**
@@ -842,7 +1114,7 @@ class SchemaParityTest {
     private fun migrateWithResilience(driver: SqlDriver, from: Long, to: Long) {
         for (v in from until to) {
             try {
-                VitruvianDatabase.Schema.migrate(driver, v, v + 1)
+                PhoenixDatabase.Schema.migrate(driver, v, v + 1)
             } catch (_: Exception) {
                 // Keyed by the .sqm file number (the version migrated FROM) — matches
                 // the production DriverFactory callers.
@@ -886,6 +1158,125 @@ class SchemaParityTest {
         )
         return columns
     }
+
+    private fun getPrimaryKeyColumns(driver: SqlDriver, table: String): List<String> {
+        val columns = mutableListOf<Pair<Long, String>>()
+        driver.executeQuery(
+            null,
+            "PRAGMA table_info($table)",
+            { cursor ->
+                while (cursor.next().value) {
+                    val primaryKeyOrder = cursor.getLong(5) ?: 0L
+                    if (primaryKeyOrder > 0) {
+                        columns += primaryKeyOrder to cursor.getString(1).orEmpty()
+                    }
+                }
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        return columns.sortedBy { it.first }.map { it.second }
+    }
+
+    private fun getNotNullColumns(driver: SqlDriver, table: String): List<String> {
+        val columns = mutableListOf<String>()
+        driver.executeQuery(
+            null,
+            "PRAGMA table_info($table)",
+            { cursor ->
+                while (cursor.next().value) {
+                    if (cursor.getLong(3) == 1L) columns += cursor.getString(1).orEmpty()
+                }
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        return columns
+    }
+
+    private fun getForeignKeyCount(driver: SqlDriver, table: String): Int {
+        var count = 0
+        driver.executeQuery(
+            null,
+            "PRAGMA foreign_key_list($table)",
+            { cursor ->
+                while (cursor.next().value) count++
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        return count
+    }
+
+    private fun getUserIndexes(driver: SqlDriver, table: String): List<String> {
+        val indexes = mutableListOf<String>()
+        driver.executeQuery(
+            null,
+            "PRAGMA index_list($table)",
+            { cursor ->
+                while (cursor.next().value) {
+                    val name = cursor.getString(1).orEmpty()
+                    if (!name.startsWith("sqlite_")) indexes += name
+                }
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        return indexes
+    }
+
+    private fun insertHistoricalCompletedSet(driver: SqlDriver, id: String) {
+        driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u-$id','U',0,1,1)", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r-$id','R',1)", 0)
+        driver.execute(null, "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re-$id','r-$id','Bench','Chest',0,40.0)", 0)
+        driver.execute(null, "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('s-$id',1,'OldSchool',10,40.0)", 0)
+        driver.execute(
+            null,
+            """
+            INSERT INTO CompletedSet (id, session_id, set_number, set_type, actual_reps, actual_weight_kg, is_pr, completed_at, set_end_reason)
+            VALUES ('$id', 's-$id', 0, 'STANDARD', 8, 40.0, 0, 1000, 'TARGET_REPS_REACHED')
+            """.trimIndent(),
+            0,
+        )
+    }
+
+    private fun assertActiveRuntimeShape(driver: SqlDriver, scenario: String) {
+        assertEquals(
+            linkedMapOf(
+                "profile_id" to "TEXT",
+                "routine_session_id" to "TEXT",
+                "document_version" to "INTEGER",
+                "runtime_json" to "TEXT",
+                "updated_at_epoch_ms" to "INTEGER",
+            ),
+            getColumns(driver, "ActiveWorkoutRuntime"),
+            scenario,
+        )
+        assertEquals(
+            listOf(
+                "profile_id",
+                "routine_session_id",
+                "document_version",
+                "runtime_json",
+                "updated_at_epoch_ms",
+            ),
+            getNotNullColumns(driver, "ActiveWorkoutRuntime"),
+            scenario,
+        )
+        assertEquals(
+            listOf("profile_id", "routine_session_id"),
+            getPrimaryKeyColumns(driver, "ActiveWorkoutRuntime"),
+            scenario,
+        )
+        assertEquals(0, getForeignKeyCount(driver, "ActiveWorkoutRuntime"), scenario)
+        assertEquals(emptyList(), getUserIndexes(driver, "ActiveWorkoutRuntime"), scenario)
+    }
+
+    private data class PartialMigration44State(
+        val name: String,
+        val preAppliedSql: List<String>,
+        val expectedSuccess: List<Boolean>,
+    )
 
     private fun getIndexes(driver: SqlDriver): List<String> {
         val indexes = mutableListOf<String>()

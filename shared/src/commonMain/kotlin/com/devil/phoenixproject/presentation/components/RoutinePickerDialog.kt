@@ -25,8 +25,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import com.devil.phoenixproject.domain.model.Routine
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.*
-import vitruvianprojectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.Res
 
 @Composable
 fun RoutinePickerDialog(routines: List<Routine>, onSelectRoutine: (Routine) -> Unit, onCreateRoutine: () -> Unit, onDismiss: () -> Unit) {

@@ -81,7 +81,7 @@ object ColorSchemes {
 
     /**
      * "None" turns off the LED lights by sending black (0,0,0) colors.
-     * This matches the official app's implementation.
+     * Sending black to all three slots turns the LEDs off.
      */
     val NONE = ColorScheme(
         name = "None",

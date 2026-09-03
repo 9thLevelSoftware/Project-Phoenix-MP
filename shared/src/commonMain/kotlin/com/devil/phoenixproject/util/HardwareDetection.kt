@@ -1,11 +1,11 @@
 package com.devil.phoenixproject.util
 
-import com.devil.phoenixproject.domain.model.VitruvianModel
+import com.devil.phoenixproject.domain.model.PhoenixModel
 
 /**
- * Vitruvian Hardware Detection
+ * Trainer Hardware Detection
  *
- * Previously attempted to identify hardware models (Euclid, Trainer+) from device name prefixes,
+ * Previously attempted to identify hardware models (V-Form, Trainer+) from device name prefixes,
  * but this approach was flawed - device name patterns don't reliably indicate hardware capabilities.
  *
  * Current approach: Report only what we can actually detect (device name) and avoid making
@@ -22,16 +22,16 @@ object HardwareDetection {
      * - "Vee_" prefix -> V-Form Trainer
      * - "VIT" prefix -> Trainer+
      */
-    fun detectModel(deviceName: String): VitruvianModel = when {
-        deviceName.startsWith("Vee_", ignoreCase = true) -> VitruvianModel.VFormTrainer
-        deviceName.startsWith("VIT", ignoreCase = true) -> VitruvianModel.TrainerPlus
-        else -> VitruvianModel.Unknown
+    fun detectModel(deviceName: String): PhoenixModel = when {
+        deviceName.startsWith("Vee_", ignoreCase = true) -> PhoenixModel.VFormTrainer
+        deviceName.startsWith("VIT", ignoreCase = true) -> PhoenixModel.TrainerPlus
+        else -> PhoenixModel.Unknown
     }
 
     /**
      * Get device display info without making capability assumptions
      */
-    fun getDeviceDisplayInfo(deviceName: String): String = "Vitruvian Trainer ($deviceName)"
+    fun getDeviceDisplayInfo(deviceName: String): String = "Trainer ($deviceName)"
 
     /**
      * Get hardware capabilities - currently returns defaults since we can't
@@ -44,7 +44,7 @@ object HardwareDetection {
 }
 
 /**
- * Hardware capabilities for Vitruvian trainers
+ * Hardware capabilities for supported trainers
  *
  * Note: Without firmware version detection, we assume all features are available.
  * This is safer than incorrectly disabling features based on flawed model detection.

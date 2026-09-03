@@ -3,12 +3,12 @@ package com.devil.phoenixproject.domain.model
 import kotlinx.serialization.Serializable
 
 /**
- * Vitruvian Hardware Model
+ * Phoenix Hardware Model
  */
-enum class VitruvianModel(val displayName: String) {
+enum class PhoenixModel(val displayName: String) {
     VFormTrainer("V-Form Trainer"),
     TrainerPlus("Trainer+"),
-    Unknown("Unknown Vitruvian Device"),
+    Unknown("Unknown Phoenix Device"),
 }
 
 /**
@@ -32,7 +32,7 @@ enum class WorkoutPhase {
 /**
  * Personal record for an exercise.
  *
- * [weightPerCableKg] is the official-app display contract for PR load. [cableCount]
+ * [weightPerCableKg] is the per-cable display contract for PR load. [cableCount]
  * is retained for legacy metadata and analytics context; ordinary PR display must
  * not multiply by it.
  */
@@ -51,6 +51,8 @@ data class PersonalRecord(
     val profileId: String = "default",
     val cableCount: Int? = null,
     val uuid: String? = null,
+    val updatedAt: Long? = null,
+    val deletedAt: Long? = null,
 )
 
 /**
@@ -63,7 +65,7 @@ sealed class ConnectionState {
     data class Connected(
         val deviceName: String,
         val deviceAddress: String,
-        val hardwareModel: VitruvianModel = VitruvianModel.Unknown,
+        val hardwareModel: PhoenixModel = PhoenixModel.Unknown,
     ) : ConnectionState()
     data class Error(val message: String, val throwable: Throwable? = null) : ConnectionState()
 }
@@ -385,7 +387,7 @@ data class WorkoutMetric(
     val positionA: Float, // Position in mm (changed from Int in Issue #197)
     val positionB: Float, // Position in mm (changed from Int in Issue #197)
     val ticks: Long = 0L,
-    val velocityA: Double = 0.0, // Velocity for handle detection (official app protocol)
+    val velocityA: Double = 0.0, // Firmware-provided velocity used for handle detection
     val velocityB: Double = 0.0, // Velocity for right handle detection (for single-handle exercises)
     val status: Int = 0, // Machine status flags (0x8000=Deload Occurred, 0x0040=Deload Warn)
 ) {
@@ -607,9 +609,35 @@ data class WorkoutSession(
 fun WorkoutSession.effectiveHeaviestKgPerCable(): Float = heaviestLiftKg ?: weightPerCableKg
 
 /**
+ * Resolves the safe per-cable load for history, progression, and 1RM display.
+ *
+ * A finite positive recorded summary value is authoritative. Zero, negative, and non-finite
+ * summary values fall back to the finite positive configured value. A deliberate zero is
+ * preserved only when the caller supplies the canonical bodyweight classification and the
+ * persisted rack context contains a positive counterweight. A WorkoutSession alone does not
+ * persist that classification, so counterweight must never be treated as proof. Legacy sessions
+ * have no summary value and therefore use their configured weight unchanged.
+ */
+fun WorkoutSession.displayHeaviestKgPerCable(isBodyweight: Boolean = false): Float {
+    val measured = heaviestLiftKg
+    if (measured != null && measured.isFinite()) {
+        if (measured > 0f) return measured
+        if (
+            measured == 0f &&
+            isBodyweight &&
+            counterweightKg.isFinite() &&
+            counterweightKg > 0f
+        ) {
+            return 0f
+        }
+    }
+    return weightPerCableKg.takeIf { it.isFinite() && it > 0f } ?: 0f
+}
+
+/**
  * Legacy multiplier metadata for explicit total/compatibility paths.
  *
- * Ordinary saved-session load display matches the official app and stays per-cable.
+ * Ordinary saved-session load display stays per-cable.
  * Do not use this helper to format primary selected/heaviest load values.
  */
 fun WorkoutSession.displayLoadMultiplier(): Int = displayMultiplier ?: cableCount ?: 1

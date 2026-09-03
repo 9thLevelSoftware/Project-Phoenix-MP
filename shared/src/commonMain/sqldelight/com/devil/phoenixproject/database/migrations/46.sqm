@@ -1,0 +1,3 @@
+-- Migration 46: Opt-in drop-set offer configuration on routine exercises (Issue #673 PR 3)
+ALTER TABLE RoutineExercise ADD COLUMN dropSetEnabled INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL;

@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -101,16 +100,15 @@ private val LightColorScheme = lightColorScheme(
 )
 
 @Composable
-fun VitruvianTheme(
+fun PhoenixTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
     dynamicColorEnabled: Boolean = false,
     content: @Composable () -> Unit,
 ) {
-    val useDarkColors = when (themeMode) {
-        ThemeMode.SYSTEM -> isSystemInDarkTheme()
-        ThemeMode.LIGHT -> false
-        ThemeMode.DARK -> true
-    }
+    val useDarkColors = resolveUseDarkColors(
+        themeMode = themeMode,
+        systemDark = rememberPlatformSystemDark(),
+    )
     val colorScheme = if (dynamicColorEnabled) {
         // Material You path. In dark mode, clamp the dynamic dark scheme so the
         // surface family never resolves to high-luminance values; see
@@ -127,6 +125,8 @@ fun VitruvianTheme(
     } else {
         LightColorScheme
     }
+
+    ApplyStatusBarAppearance(isDark = useDarkColors)
 
     MaterialTheme(
         colorScheme = colorScheme,

@@ -42,8 +42,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import com.devil.phoenixproject.presentation.components.LoadingIndicator
-import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -72,11 +70,12 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -90,11 +89,22 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
+import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
+import com.devil.phoenixproject.presentation.components.LoadingIndicator
+import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
-import com.devil.phoenixproject.presentation.components.VideoPlayer
+import com.devil.phoenixproject.presentation.components.StartGateLabel
+import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
+import com.devil.phoenixproject.presentation.components.toStartGatePresentation
+import com.devil.phoenixproject.presentation.manager.MachineTeardownState
+import com.devil.phoenixproject.presentation.manager.RestActionIdentity
+import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
+import com.devil.phoenixproject.presentation.manager.actionIdentity
+import com.devil.phoenixproject.presentation.theme.phoenixStructuralContainerColor
+import com.devil.phoenixproject.presentation.theme.phoenixStructuralContentColor
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
 import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
@@ -104,41 +114,42 @@ import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_skip
-import vitruvianprojectphoenix.shared.generated.resources.action_tag
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_includes
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_more
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_no_weight_volume
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_reps_completed
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_reps_title
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_set_progress
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_variant
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_variant_percent
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_volume
-import vitruvianprojectphoenix.shared.generated.resources.cd_configure_workout
-import vitruvianprojectphoenix.shared.generated.resources.cd_connection_lost
-import vitruvianprojectphoenix.shared.generated.resources.cd_disconnect
-import vitruvianprojectphoenix.shared.generated.resources.cd_scan_devices
-import vitruvianprojectphoenix.shared.generated.resources.cd_start_new_workout
-import vitruvianprojectphoenix.shared.generated.resources.cd_stop_workout
-import vitruvianprojectphoenix.shared.generated.resources.cd_workout_completed
-import vitruvianprojectphoenix.shared.generated.resources.cd_workout_error
-import vitruvianprojectphoenix.shared.generated.resources.connecting
-import vitruvianprojectphoenix.shared.generated.resources.disconnect
-import vitruvianprojectphoenix.shared.generated.resources.disconnect_message
-import vitruvianprojectphoenix.shared.generated.resources.disconnect_title
-import vitruvianprojectphoenix.shared.generated.resources.label_per_cable
-import vitruvianprojectphoenix.shared.generated.resources.not_connected
-import vitruvianprojectphoenix.shared.generated.resources.reconnect
-import vitruvianprojectphoenix.shared.generated.resources.save_set
-import vitruvianprojectphoenix.shared.generated.resources.scan
-import vitruvianprojectphoenix.shared.generated.resources.scanning_for_devices
-import vitruvianprojectphoenix.shared.generated.resources.stop_workout
-import vitruvianprojectphoenix.shared.generated.resources.tag_lift_message
-import vitruvianprojectphoenix.shared.generated.resources.tag_lift_title
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.action_skip
+import projectphoenix.shared.generated.resources.action_tag
+import projectphoenix.shared.generated.resources.bodyweight_effective_load
+import projectphoenix.shared.generated.resources.bodyweight_effective_load_includes
+import projectphoenix.shared.generated.resources.bodyweight_effective_load_more
+import projectphoenix.shared.generated.resources.bodyweight_no_weight_volume
+import projectphoenix.shared.generated.resources.bodyweight_reps_completed
+import projectphoenix.shared.generated.resources.bodyweight_reps_title
+import projectphoenix.shared.generated.resources.bodyweight_set_progress
+import projectphoenix.shared.generated.resources.bodyweight_variant
+import projectphoenix.shared.generated.resources.bodyweight_variant_percent
+import projectphoenix.shared.generated.resources.bodyweight_volume
+import projectphoenix.shared.generated.resources.cd_configure_workout
+import projectphoenix.shared.generated.resources.cd_connection_lost
+import projectphoenix.shared.generated.resources.cd_disconnect
+import projectphoenix.shared.generated.resources.cd_scan_devices
+import projectphoenix.shared.generated.resources.cd_start_new_workout
+import projectphoenix.shared.generated.resources.cd_stop_workout
+import projectphoenix.shared.generated.resources.cd_workout_completed
+import projectphoenix.shared.generated.resources.cd_workout_error
+import projectphoenix.shared.generated.resources.connecting
+import projectphoenix.shared.generated.resources.disconnect
+import projectphoenix.shared.generated.resources.disconnect_message
+import projectphoenix.shared.generated.resources.disconnect_title
+import projectphoenix.shared.generated.resources.label_per_cable
+import projectphoenix.shared.generated.resources.not_connected
+import projectphoenix.shared.generated.resources.reconnect
+import projectphoenix.shared.generated.resources.save_set
+import projectphoenix.shared.generated.resources.scan
+import projectphoenix.shared.generated.resources.scanning_for_devices
+import projectphoenix.shared.generated.resources.stop_workout
+import projectphoenix.shared.generated.resources.tag_lift_message
+import projectphoenix.shared.generated.resources.tag_lift_title
+import projectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * WorkoutTab with State Holder Pattern (2025 Material Expressive).
@@ -146,7 +157,7 @@ import vitruvianprojectphoenix.shared.generated.resources.tag_lift_title
  *
  * @param state Consolidated UI state
  * @param actions Callback interface for UI events
- * @param exerciseRepository Repository for loading exercise details/videos
+ * @param exerciseRepository Repository for loading exercise details/images
  * @param hapticEvents Optional flow for triggering haptic feedback
  */
 @Composable
@@ -172,6 +183,7 @@ fun WorkoutTab(
         enableVideoPlayback = state.enableVideoPlayback,
         exerciseRepository = exerciseRepository,
         isWorkoutSetupDialogVisible = state.isWorkoutSetupDialogVisible,
+        machineTeardownState = state.machineTeardownState,
         hapticEvents = hapticEvents,
         loadedRoutine = state.loadedRoutine,
         currentExerciseIndex = state.currentExerciseIndex,
@@ -190,8 +202,13 @@ fun WorkoutTab(
         onCancelScan = actions::onCancelScan,
         onDisconnect = actions::onDisconnect,
         onStartWorkout = actions::onStartWorkout,
+        onRetryWorkoutTeardown = actions::onRetryWorkoutTeardown,
+        onReconnectWorkoutTeardown = actions::onReconnectWorkoutTeardown,
         onStopWorkout = actions::onStopWorkout,
         onSkipRest = actions::onSkipRest,
+        onSkipRestWithIdentity = actions::onSkipRest,
+        onAcceptDropSet = actions::onAcceptDropSet,
+        onDeclineDropSet = actions::onDeclineDropSet,
         onExtendRest = actions::onExtendRest,
         onToggleRestPause = actions::onToggleRestPause,
         onResetRest = actions::onResetRest,
@@ -226,6 +243,7 @@ fun WorkoutTab(
         weightStepKg = state.weightStepKg,
         rackLoadAdjustment = state.rackLoadAdjustment,
         currentWarmupSetIndex = state.currentWarmupSetIndex,
+        restTransitionPlan = state.restTransitionPlan,
     )
 }
 
@@ -249,6 +267,7 @@ fun WorkoutTab(
     enableVideoPlayback: Boolean,
     exerciseRepository: ExerciseRepository,
     isWorkoutSetupDialogVisible: Boolean = false,
+    machineTeardownState: MachineTeardownState = MachineTeardownState.Ready,
     hapticEvents: SharedFlow<HapticEvent>? = null,
     loadedRoutine: Routine? = null,
     currentExerciseIndex: Int = 0,
@@ -267,8 +286,13 @@ fun WorkoutTab(
     onCancelScan: () -> Unit,
     onDisconnect: () -> Unit,
     onStartWorkout: () -> Unit,
+    onRetryWorkoutTeardown: () -> Unit = {},
+    onReconnectWorkoutTeardown: () -> Unit = {},
     onStopWorkout: () -> Unit,
     onSkipRest: () -> Unit,
+    onSkipRestWithIdentity: (RestActionIdentity) -> Unit = { onSkipRest() },
+    onAcceptDropSet: (RestActionIdentity, DropPercentage) -> Unit = { _, _ -> },
+    onDeclineDropSet: (RestActionIdentity) -> Unit = {},
     onExtendRest: (Int) -> Unit = {},
     onToggleRestPause: () -> Unit = {},
     onResetRest: () -> Unit = {},
@@ -310,6 +334,7 @@ fun WorkoutTab(
     rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
     // Issue #646: -1 means not currently in variable warm-up phase
     currentWarmupSetIndex: Int = -1,
+    restTransitionPlan: RestTransitionPlan? = null,
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -389,6 +414,12 @@ fun WorkoutTab(
                 )
             }
 
+            WorkoutStartGateNotice(
+                state = machineTeardownState,
+                onRetry = onRetryWorkoutTeardown,
+                onReconnect = onReconnectWorkoutTeardown,
+            )
+
             if (connectionState is ConnectionState.Connected) {
                 // Show setup button when in Idle state, otherwise show workout controls
                 when (workoutState) {
@@ -410,6 +441,7 @@ fun WorkoutTab(
                             currentExerciseIndex = currentExerciseIndex,
                             onStartNextExercise = onStartNextExercise,
                             onResetForNewWorkout = onResetForNewWorkout,
+                            machineTeardownState = machineTeardownState,
                         )
                     }
 
@@ -650,7 +682,25 @@ fun WorkoutTab(
                         isSupersetTransition = workoutState.isSupersetTransition,
                         supersetLabel = workoutState.supersetLabel,
                         isRestPaused = isRestPaused,
-                        onSkipRest = onSkipRest,
+                        dropSetOffer = dropSetOfferUiState(
+                            plan = restTransitionPlan,
+                            teardown = machineTeardownState,
+                            exerciseDisplayName = workoutState.nextExerciseName,
+                            failedSetNumber = workoutState.currentSet,
+                            failedConfiguredWeightPerCableKg = workoutParameters.lastUsedWeightKg
+                                ?: workoutParameters.weightPerCableKg,
+                            minimumWeightPerCableKg = 0f,
+                        ),
+                        onAcceptDropSet = onAcceptDropSet,
+                        onDeclineDropSet = onDeclineDropSet,
+                        onSkipRest = {
+                            val identity = restTransitionPlan?.actionIdentity()
+                            if (identity != null) {
+                                onSkipRestWithIdentity(identity)
+                            } else {
+                                onSkipRest()
+                            }
+                        },
                         onExtendRest = onExtendRest,
                         onToggleRestPause = onToggleRestPause,
                         onResetRest = onResetRest,
@@ -764,6 +814,9 @@ fun WorkoutTab(
                 onHideWorkoutSetupDialog()
             },
             onDismiss = onHideWorkoutSetupDialog,
+            machineTeardownState = machineTeardownState,
+            onRetryWorkoutTeardown = onRetryWorkoutTeardown,
+            onReconnectWorkoutTeardown = onReconnectWorkoutTeardown,
         )
     }
 }
@@ -985,13 +1038,13 @@ private fun WorkoutPausedCard(onScan: () -> Unit, workoutState: WorkoutState, re
 /**
  * Completed Card - shown when workout/exercise is complete
  */
-@Suppress("SENSELESS_COMPARISON") // Smart-cast helper: null check needed for non-null usage below
 @Composable
 private fun CompletedCard(
     loadedRoutine: Routine?,
     currentExerciseIndex: Int,
     onStartNextExercise: () -> Unit,
     onResetForNewWorkout: () -> Unit,
+    machineTeardownState: MachineTeardownState,
 ) {
     // workout-setup-16: spring scaleIn entrance on the CheckCircle icon.
     // reduceMotion: EnterTransition.None — icon appears instantly (complete static final state).
@@ -1015,8 +1068,11 @@ private fun CompletedCard(
         ) {
             AnimatedVisibility(
                 visible = iconVisible,
-                enter = if (reduceMotion) EnterTransition.None
-                        else scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn(),
+                enter = if (reduceMotion) {
+                    EnterTransition.None
+                } else {
+                    scaleIn(animationSpec = ExpressiveMotion.SpringBouncy) + fadeIn()
+                },
             ) {
                 Icon(
                     Icons.Default.CheckCircle,
@@ -1037,14 +1093,18 @@ private fun CompletedCard(
             val hasMoreExercises = loadedRoutine != null &&
                 currentExerciseIndex < (loadedRoutine.exercises.size - 1)
 
-            if (hasMoreExercises && loadedRoutine != null) { // null check for smart-cast
+            val startGate = machineTeardownState.toStartGatePresentation()
+            val nextExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex + 1)
+            val nextExerciseStartGate = machineTeardownState.toStartGatePresentation(
+                requiresMachine = nextExercise?.exercise?.isBodyweight != true,
+            )
+            if (hasMoreExercises && nextExercise != null) {
                 // Show next exercise preview
-                val nextExercise = loadedRoutine.exercises[currentExerciseIndex + 1]
-
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = MaterialTheme.colorScheme.primaryContainer,
+                        containerColor = phoenixStructuralContainerColor(MaterialTheme.colorScheme),
+                        contentColor = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                     ),
                     shape = MaterialTheme.shapes.small,
                     elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
@@ -1054,7 +1114,7 @@ private fun CompletedCard(
                             "Next Exercise",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                         )
 
                         Spacer(Modifier.height(Spacing.small))
@@ -1062,13 +1122,13 @@ private fun CompletedCard(
                         Text(
                             nextExercise.exercise.name,
                             style = MaterialTheme.typography.headlineSmall,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                         )
 
                         Text(
                             formatReps(nextExercise.setReps),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onPrimaryContainer,
+                            color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
                         )
 
                         Spacer(Modifier.height(Spacing.medium))
@@ -1078,6 +1138,7 @@ private fun CompletedCard(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(56.dp),
+                            enabled = nextExerciseStartGate.startEnabled,
                             shape = MaterialTheme.shapes.medium,
                             elevation = ButtonDefaults.buttonElevation(
                                 defaultElevation = 4.dp,
@@ -1085,7 +1146,11 @@ private fun CompletedCard(
                             ),
                         ) {
                             Text(
-                                "Start Next Exercise",
+                                if (nextExerciseStartGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                                    stringResource(Res.string.workout_teardown_finishing)
+                                } else {
+                                    "Start Next Exercise"
+                                },
                                 style = MaterialTheme.typography.titleLarge,
                                 fontWeight = FontWeight.Bold,
                             )
@@ -1099,6 +1164,7 @@ private fun CompletedCard(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp),
+                    enabled = startGate.startEnabled,
                     shape = MaterialTheme.shapes.medium,
                     elevation = ButtonDefaults.buttonElevation(
                         defaultElevation = 4.dp,
@@ -1108,7 +1174,11 @@ private fun CompletedCard(
                     Icon(Icons.Default.Refresh, contentDescription = stringResource(Res.string.cd_start_new_workout))
                     Spacer(modifier = Modifier.width(Spacing.small))
                     Text(
-                        "Start New Workout",
+                        if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                            stringResource(Res.string.workout_teardown_finishing)
+                        } else {
+                            "Start New Workout"
+                        },
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
                     )
@@ -1137,10 +1207,11 @@ private fun BodyweightRepEntryDialog(
 
     val reps = repsText.toIntOrNull()?.coerceAtLeast(0) ?: 0
     val effectiveWeightKg = if (entry.bodyWeightKg > 0f && selectedVariant.percentage > 0f) {
-        (entry.bodyWeightKg * selectedVariant.percentage +
-            rackLoadAdjustment.externalAddedLoadKg -
-            rackLoadAdjustment.counterweightKg
-        ).coerceAtLeast(0f)
+        (
+            entry.bodyWeightKg * selectedVariant.percentage +
+                rackLoadAdjustment.externalAddedLoadKg -
+                rackLoadAdjustment.counterweightKg
+            ).coerceAtLeast(0f)
     } else {
         0f
     }
@@ -1435,7 +1506,10 @@ fun ConnectionCard(connectionState: ConnectionState, onScan: () -> Unit, onCance
 fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        colors = CardDefaults.cardColors(
+            containerColor = phoenixStructuralContainerColor(MaterialTheme.colorScheme),
+            contentColor = phoenixStructuralContentColor(MaterialTheme.colorScheme),
+        ),
         shape = MaterialTheme.shapes.medium,
         elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
         border = BorderStroke(3.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
@@ -1487,7 +1561,7 @@ fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
                 text = labelText,
                 style = MaterialTheme.typography.titleLarge,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
             )
             Spacer(modifier = Modifier.height(Spacing.medium))
 
@@ -1498,10 +1572,10 @@ fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
                 fontWeight = FontWeight.Bold,
                 color = if (isPending) {
                     // Grey color for pending rep (at TOP, waiting for eccentric)
-                    MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.4f)
+                    phoenixStructuralContentColor(MaterialTheme.colorScheme).copy(alpha = 0.4f)
                 } else {
                     // Full color for confirmed rep (at BOTTOM, completed)
-                    MaterialTheme.colorScheme.onPrimaryContainer
+                    phoenixStructuralContentColor(MaterialTheme.colorScheme)
                 },
             )
         }
@@ -1743,27 +1817,26 @@ fun CurrentExerciseCard(
     // Get current exercise from routine if available
     val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
 
-    // Get exercise entity and video for display
+    // Get exercise entity and demonstration images for display
     // Issue #142: Key the remember on currentExerciseIndex so state resets when exercise changes.
     var exerciseEntity by remember(currentExerciseIndex) { mutableStateOf<Exercise?>(null) }
-    var videoEntity by remember(currentExerciseIndex) { mutableStateOf<ExerciseVideoEntity?>(null) }
+    var images by remember(currentExerciseIndex) { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
 
-    // Load exercise and video data
-    // Issue #142: Include currentExerciseIndex in the key to ensure video reloads when
+    // Load exercise and image data
+    // Issue #142: Include currentExerciseIndex in the key to ensure images reload when
     // navigating to a different exercise position. This handles cases where the same
     // exercise appears multiple times in a routine (same exercise.id but different index).
     LaunchedEffect(currentExerciseIndex, currentExercise?.exercise?.id, workoutParameters.selectedExerciseId) {
         // Clear stale data first
         exerciseEntity = null
-        videoEntity = null
-        // Load new exercise and video data
+        images = emptyList()
         val exerciseId = currentExercise?.exercise?.id ?: workoutParameters.selectedExerciseId
         if (exerciseId != null) {
             try {
                 exerciseEntity = exerciseRepository.getExerciseById(exerciseId)
-                videoEntity = exerciseRepository.getVideos(exerciseId).firstOrNull()
+                images = exerciseRepository.getImages(exerciseId)
             } catch (e: Exception) {
-                co.touchlab.kermit.Logger.e("WorkoutTab") { "Failed to load exercise/video for $exerciseId: ${e.message}" }
+                co.touchlab.kermit.Logger.e("WorkoutTab") { "Failed to load exercise/images for $exerciseId: ${e.message}" }
             }
         }
     }
@@ -1843,15 +1916,15 @@ fun CurrentExerciseCard(
                 )
             }
 
-            // Video player - shows exercise demonstration video or placeholder
             if (enableVideoPlayback) {
                 Spacer(modifier = Modifier.height(Spacing.medium))
-                VideoPlayer(
-                    videoUrl = videoEntity?.videoUrl,
+                ExerciseDemoImage(
+                    imageUrls = images.map { it.url },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(200.dp)
                         .clip(MaterialTheme.shapes.small),
+                    contentDescription = currentExercise?.exercise?.name ?: exerciseEntity?.name,
                 )
             }
         }

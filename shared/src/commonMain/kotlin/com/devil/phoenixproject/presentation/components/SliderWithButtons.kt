@@ -27,9 +27,9 @@ import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.Spacing
 import kotlin.math.roundToInt
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_decrease
-import vitruvianprojectphoenix.shared.generated.resources.cd_increase
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_decrease
+import projectphoenix.shared.generated.resources.cd_increase
 
 /**
  * Hybrid slider with fine-tuning +/- buttons

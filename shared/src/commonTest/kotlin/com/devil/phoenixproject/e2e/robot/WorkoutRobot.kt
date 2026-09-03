@@ -30,7 +30,6 @@ import kotlin.test.assertTrue
  */
 @Suppress("unused") // Robot methods are available for test scenarios
 class WorkoutRobot(private val viewModel: MainViewModel, private val bleRepository: FakeBleRepository) {
-
     // ========== Connection Actions ==========
 
     fun connectToDevice(deviceName: String = "Vee_TestDevice"): WorkoutRobot {
@@ -144,7 +143,7 @@ class WorkoutRobot(private val viewModel: MainViewModel, private val bleReposito
         metric: WorkoutMetric,
         warmupCount: Int = 0,
         warmupTarget: Int = 3,
-        workingTarget: Int = 10,
+        workingTarget: Int? = null,
     ): WorkoutRobot {
         // Issue #210: Include machine's warmup/working targets for sync verification
         // For working reps: repsRomCount stays at warmupCount, completeCounter (down) increments
@@ -156,16 +155,26 @@ class WorkoutRobot(private val viewModel: MainViewModel, private val bleReposito
                 repsRomCount = warmupCount, // warmup count from machine
                 repsRomTotal = warmupTarget, // Issue #210: Machine's warmup target
                 repsSetCount = repIndex, // working reps from machine
-                repsSetTotal = workingTarget, // Issue #210: Machine's working target
+                repsSetTotal = workingTarget ?: activeWorkingRepTarget(), // Issue #210: Machine's working target
                 rangeTop = 800f,
                 rangeBottom = 0f,
                 rawData = ByteArray(24),
-                timestamp = repIndex.toLong(),
+                timestamp = activeCutoverTimestamp() + repIndex,
             ),
         )
         bleRepository.emitMetric(metric)
         return this
     }
+
+    private fun activeCutoverTimestamp(): Long = requireNotNull(
+        viewModel.workoutSessionManager.activeSessionEngine
+            .currentExecutionLeaseOrNull()
+            ?.activationCutoverTimestampMs,
+    ) { "WorkoutRobot rep fixture requires an active execution cutover" }
+
+    private fun activeWorkingRepTarget(): Int = requireNotNull(viewModel.workoutSessionManager.activeSessionEngine.currentExecutionLeaseOrNull()) {
+        "WorkoutRobot rep fixture requires a current execution lease"
+    }.workingRepTarget
 
     // ========== Assertions ==========
 

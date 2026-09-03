@@ -31,7 +31,10 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -47,15 +50,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -64,35 +71,53 @@ import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
+import com.devil.phoenixproject.presentation.manager.RestActionIdentity
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_add_30_seconds
-import vitruvianprojectphoenix.shared.generated.resources.cd_end_workout
-import vitruvianprojectphoenix.shared.generated.resources.cd_reset_timer
-import vitruvianprojectphoenix.shared.generated.resources.cd_rest_timer
-import vitruvianprojectphoenix.shared.generated.resources.cd_skip_rest
-import vitruvianprojectphoenix.shared.generated.resources.rest_complete_announcement
-import vitruvianprojectphoenix.shared.generated.resources.rest_continue
-import vitruvianprojectphoenix.shared.generated.resources.rest_eccentric_load
-import vitruvianprojectphoenix.shared.generated.resources.rest_end_workout
-import vitruvianprojectphoenix.shared.generated.resources.rest_exercise_of
-import vitruvianprojectphoenix.shared.generated.resources.rest_mode
-import vitruvianprojectphoenix.shared.generated.resources.rest_next_set_config
-import vitruvianprojectphoenix.shared.generated.resources.rest_pause
-import vitruvianprojectphoenix.shared.generated.resources.rest_paused
-import vitruvianprojectphoenix.shared.generated.resources.rest_quick_rest
-import vitruvianprojectphoenix.shared.generated.resources.rest_reset
-import vitruvianprojectphoenix.shared.generated.resources.rest_resume
-import vitruvianprojectphoenix.shared.generated.resources.rest_seconds_remaining
-import vitruvianprojectphoenix.shared.generated.resources.rest_set_of
-import vitruvianprojectphoenix.shared.generated.resources.rest_skip
-import vitruvianprojectphoenix.shared.generated.resources.rest_target_reps
-import vitruvianprojectphoenix.shared.generated.resources.rest_time
-import vitruvianprojectphoenix.shared.generated.resources.rest_up_next
-import vitruvianprojectphoenix.shared.generated.resources.rest_weight_per_cable
-import vitruvianprojectphoenix.shared.generated.resources.rest_workout_complete
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_add_30_seconds
+import projectphoenix.shared.generated.resources.cd_drop_set_candidate
+import projectphoenix.shared.generated.resources.cd_drop_set_candidate_unavailable
+import projectphoenix.shared.generated.resources.cd_drop_set_retry_disabled
+import projectphoenix.shared.generated.resources.cd_end_workout
+import projectphoenix.shared.generated.resources.cd_reset_timer
+import projectphoenix.shared.generated.resources.cd_rest_timer
+import projectphoenix.shared.generated.resources.cd_skip_rest
+import projectphoenix.shared.generated.resources.drop_set_accepted_waiting
+import projectphoenix.shared.generated.resources.drop_set_candidate_unavailable
+import projectphoenix.shared.generated.resources.drop_set_offer_question
+import projectphoenix.shared.generated.resources.drop_set_preparing
+import projectphoenix.shared.generated.resources.drop_set_ready
+import projectphoenix.shared.generated.resources.drop_set_recovery
+import projectphoenix.shared.generated.resources.drop_set_remaining_many
+import projectphoenix.shared.generated.resources.drop_set_remaining_one
+import projectphoenix.shared.generated.resources.drop_set_retry_set
+import projectphoenix.shared.generated.resources.drop_set_saving
+import projectphoenix.shared.generated.resources.drop_set_skip
+import projectphoenix.shared.generated.resources.drop_set_skip_rest_blocked
+import projectphoenix.shared.generated.resources.drop_set_waiting_timer
+import projectphoenix.shared.generated.resources.rest_complete_announcement
+import projectphoenix.shared.generated.resources.rest_continue
+import projectphoenix.shared.generated.resources.rest_eccentric_load
+import projectphoenix.shared.generated.resources.rest_end_workout
+import projectphoenix.shared.generated.resources.rest_exercise_of
+import projectphoenix.shared.generated.resources.rest_mode
+import projectphoenix.shared.generated.resources.rest_next_set_config
+import projectphoenix.shared.generated.resources.rest_pause
+import projectphoenix.shared.generated.resources.rest_paused
+import projectphoenix.shared.generated.resources.rest_quick_rest
+import projectphoenix.shared.generated.resources.rest_reset
+import projectphoenix.shared.generated.resources.rest_resume
+import projectphoenix.shared.generated.resources.rest_seconds_remaining
+import projectphoenix.shared.generated.resources.rest_set_of
+import projectphoenix.shared.generated.resources.rest_skip
+import projectphoenix.shared.generated.resources.rest_target_reps
+import projectphoenix.shared.generated.resources.rest_time
+import projectphoenix.shared.generated.resources.rest_up_next
+import projectphoenix.shared.generated.resources.rest_weight_per_cable
+import projectphoenix.shared.generated.resources.rest_workout_complete
 
 /**
  * Rest Timer Card Component
@@ -100,6 +125,7 @@ import vitruvianprojectphoenix.shared.generated.resources.rest_workout_complete
  * Displays during rest periods between sets/exercises in autoplay mode.
  * Shows countdown timer, next exercise info, and editable workout parameters.
  */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RestTimerCard(
     restSecondsRemaining: Int,
@@ -142,6 +168,9 @@ fun RestTimerCard(
     isNextExerciseBodyweight: Boolean = false,
     // Issue #266/#410: Configurable weight step from user preferences
     weightStepKg: Float = 0.25f,
+    dropSetOffer: DropSetOfferUiState? = null,
+    onAcceptDropSet: (RestActionIdentity, DropPercentage) -> Unit = { _, _ -> },
+    onDeclineDropSet: (RestActionIdentity) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     // Local state for editing parameters
@@ -166,11 +195,16 @@ fun RestTimerCard(
     val restCompleteText = stringResource(Res.string.rest_complete_announcement)
     val secondsRemainingText = stringResource(Res.string.rest_seconds_remaining, restSecondsRemaining)
     val pausedText = stringResource(Res.string.rest_paused)
+    val dropSetWaitingText = stringResource(Res.string.drop_set_waiting_timer)
+    val skipRestBlockedText = stringResource(Res.string.drop_set_skip_rest_blocked)
+    val unresolvedOffer = dropSetOffer as? DropSetOfferUiState.Unresolved
+    val skipRestBlocked = unresolvedOffer != null
     var lastAnnouncedText by remember { mutableStateOf("") }
 
-    LaunchedEffect(restSecondsRemaining, isRestPaused) {
+    LaunchedEffect(restSecondsRemaining, isRestPaused, skipRestBlocked) {
         val newText = when {
             isRestPaused -> pausedText
+            restSecondsRemaining == 0 && skipRestBlocked -> dropSetWaitingText
             restSecondsRemaining == 0 -> restCompleteText
             isAnnouncementSecond -> secondsRemainingText
             else -> return@LaunchedEffect // Don't update — no announcement this tick
@@ -374,6 +408,17 @@ fun RestTimerCard(
                 }
             }
 
+            if (dropSetOffer != null) {
+                DropSetOfferCard(
+                    offer = dropSetOffer,
+                    weightUnit = weightUnit,
+                    formatWeightWithUnit = formatWeightWithUnit,
+                    formatWeight = formatWeight,
+                    onAcceptDropSet = onAcceptDropSet,
+                    onDeclineDropSet = onDeclineDropSet,
+                )
+            }
+
             // UP NEXT section with exercise info
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
@@ -574,9 +619,16 @@ fun RestTimerCard(
                 // Skip Rest button (primary action)
                 Button(
                     onClick = onSkipRest,
+                    enabled = !skipRestBlocked,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(56.dp),
+                        .height(56.dp)
+                        .semantics {
+                            if (skipRestBlocked) {
+                                contentDescription = skipRestBlockedText
+                                disabled()
+                            }
+                        },
                     colors = ButtonDefaults.buttonColors(
                         containerColor = MaterialTheme.colorScheme.primary,
                         contentColor = MaterialTheme.colorScheme.onPrimary,
@@ -701,3 +753,243 @@ private fun RestTimerEccentricLoadSlider(percent: Int, onPercentChange: (Int) ->
         )
     }
 }
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun DropSetOfferCard(
+    offer: DropSetOfferUiState,
+    weightUnit: WeightUnit,
+    formatWeightWithUnit: ((Float, WeightUnit) -> String)?,
+    formatWeight: ((Float) -> String)?,
+    onAcceptDropSet: (RestActionIdentity, DropPercentage) -> Unit,
+    onDeclineDropSet: (RestActionIdentity) -> Unit,
+) {
+    val identity = offer.context.identity
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh),
+        shape = MaterialTheme.shapes.medium,
+    ) {
+        when (offer) {
+            is DropSetOfferUiState.Unresolved -> UnresolvedDropSetOffer(
+                offer = offer,
+                identity = identity,
+                weightUnit = weightUnit,
+                formatWeightWithUnit = formatWeightWithUnit,
+                formatWeight = formatWeight,
+                onAcceptDropSet = onAcceptDropSet,
+                onDeclineDropSet = onDeclineDropSet,
+            )
+
+            is DropSetOfferUiState.AcceptedWaiting -> {
+                val percent = percentLabel((offer.acceptedCandidate.percentage.fraction * 100f).toInt())
+                val weight = formatDropSetWeight(
+                    offer.acceptedCandidate.weightPerCableKg,
+                    weightUnit,
+                    formatWeightWithUnit,
+                    formatWeight,
+                )
+                val waitText = when (offer.waitState) {
+                    DropSetRetryWaitState.SAVING_FAILED_ATTEMPT ->
+                        stringResource(Res.string.drop_set_saving)
+
+                    DropSetRetryWaitState.PREPARING_TRAINER ->
+                        stringResource(Res.string.drop_set_preparing)
+
+                    DropSetRetryWaitState.READY_TO_RETRY ->
+                        stringResource(Res.string.drop_set_ready)
+                }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.medium)
+                        .semantics {
+                            liveRegion = LiveRegionMode.Polite
+                            contentDescription = waitText
+                        },
+                    verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                ) {
+                    Text(
+                        text = stringResource(Res.string.drop_set_accepted_waiting, percent, weight),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    Text(
+                        text = waitText,
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+
+            is DropSetOfferUiState.RecoveryRequired -> {
+                val accepted = offer.acceptedCandidate
+                val recoveryText = stringResource(Res.string.drop_set_recovery)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(Spacing.medium)
+                        .semantics {
+                            liveRegion = LiveRegionMode.Polite
+                            contentDescription = recoveryText
+                        },
+                    verticalArrangement = Arrangement.spacedBy(Spacing.small),
+                ) {
+                    Text(
+                        text = stringResource(Res.string.drop_set_recovery),
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                    )
+                    if (accepted != null) {
+                        Text(
+                            text = stringResource(
+                                Res.string.drop_set_accepted_waiting,
+                                percentLabel((accepted.percentage.fraction * 100f).toInt()),
+                                formatDropSetWeight(
+                                    accepted.weightPerCableKg,
+                                    weightUnit,
+                                    formatWeightWithUnit,
+                                    formatWeight,
+                                ),
+                            ),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun UnresolvedDropSetOffer(
+    offer: DropSetOfferUiState.Unresolved,
+    identity: RestActionIdentity,
+    weightUnit: WeightUnit,
+    formatWeightWithUnit: ((Float, WeightUnit) -> String)?,
+    formatWeight: ((Float) -> String)?,
+    onAcceptDropSet: (RestActionIdentity, DropPercentage) -> Unit,
+    onDeclineDropSet: (RestActionIdentity) -> Unit,
+) {
+    val offerId = identity.offerId.orEmpty()
+    var selection by remember(offerId) { mutableStateOf<DropPercentage?>(null) }
+    val retryEnabled = canRetryDropSet(offer, DropSetOfferSelection(offerId, selection))
+    val retryDisabledText = stringResource(Res.string.cd_drop_set_retry_disabled)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(Spacing.medium),
+        verticalArrangement = Arrangement.spacedBy(Spacing.small),
+    ) {
+        Text(
+            text = stringResource(Res.string.drop_set_offer_question),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.semantics {
+                liveRegion = LiveRegionMode.Polite
+            },
+        )
+        Text(
+            text = if (offer.remainingDrops == 1) {
+                stringResource(Res.string.drop_set_remaining_one)
+            } else {
+                stringResource(Res.string.drop_set_remaining_many, offer.remainingDrops)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+        ) {
+            offer.candidates.forEach { candidate ->
+                val percent = percentLabel((candidate.percentage.fraction * 100f).toInt())
+                val weight = formatDropSetWeight(
+                    candidate.weightPerCableKg,
+                    weightUnit,
+                    formatWeightWithUnit,
+                    formatWeight,
+                )
+                val selected = selection == candidate.percentage
+                val description = if (candidate.enabled) {
+                    stringResource(Res.string.cd_drop_set_candidate, percent, weight)
+                } else {
+                    stringResource(Res.string.cd_drop_set_candidate_unavailable, percent)
+                }
+                FilterChip(
+                    selected = selected,
+                    enabled = candidate.enabled,
+                    onClick = { selection = candidate.percentage },
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(48.dp)
+                        .semantics {
+                            role = Role.RadioButton
+                            this.selected = selected
+                            contentDescription = description
+                            if (!candidate.enabled) disabled()
+                        },
+                    label = {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = percent,
+                                style = MaterialTheme.typography.labelLarge,
+                                fontWeight = FontWeight.Bold,
+                            )
+                            Text(
+                                text = if (candidate.enabled) {
+                                    weight
+                                } else {
+                                    stringResource(Res.string.drop_set_candidate_unavailable)
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                            )
+                        }
+                    },
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                    ),
+                )
+            }
+        }
+        Button(
+            onClick = {
+                val percentage = selection ?: return@Button
+                if (retryEnabled) onAcceptDropSet(identity, percentage)
+            },
+            enabled = retryEnabled,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp)
+                .semantics {
+                    if (!retryEnabled) {
+                        contentDescription = retryDisabledText
+                        disabled()
+                    }
+                },
+        ) {
+            Text(stringResource(Res.string.drop_set_retry_set))
+        }
+        TextButton(
+            onClick = { onDeclineDropSet(identity) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(48.dp),
+        ) {
+            Text(stringResource(Res.string.drop_set_skip))
+        }
+    }
+}
+
+private fun formatDropSetWeight(
+    weightPerCableKg: Float,
+    weightUnit: WeightUnit,
+    formatWeightWithUnit: ((Float, WeightUnit) -> String)?,
+    formatWeight: ((Float) -> String)?,
+): String = formatWeightWithUnit?.invoke(weightPerCableKg, weightUnit)
+    ?: formatWeight?.invoke(weightPerCableKg)
+    ?: "$weightPerCableKg kg"

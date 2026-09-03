@@ -85,9 +85,10 @@ data class PortalExerciseDto(
     val orderIndex: Int = 0,
     /**
      * Canonical estimated 1RM (per-cable kg) for this exercise in this session.
-     * Mobile is the source of truth (see OneRepMaxCalculator.estimate). The
-     * portal stores this verbatim in exercise_progress.estimated_1rm_kg and
-     * only recomputes when this field is absent (legacy payloads).
+     * Mobile contract: OneRepMaxCalculator.estimate from workingReps, falling
+     * back to totalReps only when working is 0. Still shipped on every push.
+     * Portal store-verbatim of this field is unverified — do not assume the
+     * portal writes it unchanged or skips recompute.
      */
     val estimatedOneRepMaxKg: Float? = null,
     /**
@@ -97,8 +98,8 @@ data class PortalExerciseDto(
      * [estimatedOneRepMaxKg] (Brzycki/Epley hybrid) and must never overwrite it.
      * It is the latest passing estimate for this exercise/profile at push time
      * (a rolling current value, not as-of-session). Null when the exercise has
-     * no exerciseId or no passing velocity estimate. The portal stores this
-     * verbatim in exercise_progress.velocity_estimated_1rm_kg and never recomputes.
+     * no exerciseId or no passing velocity estimate. Portal store-verbatim of
+     * this field is unverified; do not assume the portal never recomputes it.
      */
     val velocityEstimatedOneRepMaxKg: Float? = null,
     val sets: List<PortalSetDto> = emptyList(),
@@ -243,6 +244,8 @@ data class PortalRoutineExerciseSyncDto(
     val perSetEchoLevels: String? = null, // JSON array of echo level names
     val warmupSets: String? = null, // JSON array of {reps, percentOfWorking}
     val rackBehaviorOverrides: String? = null, // JSON map of rackItemId -> behavior name
+    val dropSetEnabled: Boolean = false,
+    val dropSetMinWeightKg: Float? = null,
 )
 
 // ─── Training Cycle Sync DTOs ─────────────────────────────────────
@@ -409,10 +412,9 @@ private val LOCAL_ONLY_PROFILE_PREFERENCE_KEYS = setOf(
     "legacymigrationversion",
 )
 
-private fun normalizedProfilePreferenceWireKey(key: String): String =
-    key
-        .filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
-        .lowercase()
+private fun normalizedProfilePreferenceWireKey(key: String): String = key
+    .filter { it in 'a'..'z' || it in 'A'..'Z' || it in '0'..'9' }
+    .lowercase()
 
 internal enum class ProfilePreferenceWireSafetyViolation {
     INVALID_TEXT_TREE,
@@ -425,12 +427,14 @@ internal fun isPostgresCompatibleText(value: String): Boolean {
         val codeUnit = value[index]
         when {
             codeUnit == '\u0000' -> return false
+
             codeUnit in '\uD800'..'\uDBFF' -> {
                 if (index + 1 >= value.length || value[index + 1] !in '\uDC00'..'\uDFFF') {
                     return false
                 }
                 index += 1
             }
+
             codeUnit in '\uDC00'..'\uDFFF' -> return false
         }
         index += 1
@@ -444,17 +448,21 @@ internal fun profilePreferenceWireSafetyViolation(
     is kotlinx.serialization.json.JsonArray -> value.firstNotNullOfOrNull(
         ::profilePreferenceWireSafetyViolation,
     )
+
     is kotlinx.serialization.json.JsonObject -> {
         value.entries.firstNotNullOfOrNull { (key, child) ->
             when {
                 !isPostgresCompatibleText(key) ->
                     ProfilePreferenceWireSafetyViolation.INVALID_TEXT_TREE
+
                 normalizedProfilePreferenceWireKey(key) in LOCAL_ONLY_PROFILE_PREFERENCE_KEYS ->
                     ProfilePreferenceWireSafetyViolation.LOCAL_ONLY_KEY
+
                 else -> profilePreferenceWireSafetyViolation(child)
             }
         }
     }
+
     is kotlinx.serialization.json.JsonPrimitive -> if (
         value.isString && !isPostgresCompatibleText(value.content)
     ) {
@@ -630,6 +638,7 @@ data class PortalPersonalRecordDto(
     val sessionId: String? = null,
     val achievedAt: String,
     val updatedAt: String? = null,
+    val deletedAt: String? = null,
     val localProfileId: String? = null,
     val workoutMode: String? = null,
 )
@@ -897,6 +906,8 @@ data class PullRoutineExerciseDto(
     val perSetEchoLevels: String? = null, // JSON array of echo level names
     val warmupSets: String? = null, // JSON array of {reps, percentOfWorking}
     val rackBehaviorOverrides: String? = null, // JSON map of rackItemId -> behavior name
+    val dropSetEnabled: Boolean? = null,
+    val dropSetMinWeightKg: Float? = null,
 )
 
 /**
@@ -977,6 +988,8 @@ data class PullGamificationStatsDto(
 data class PullPersonalRecordDto(
     val id: String = "",
     val userId: String = "",
+    val exerciseId: String? = null,
+    val localProfileId: String? = null,
     val exerciseName: String = "",
     val muscleGroup: String = "General",
     val recordType: String = "1RM",
@@ -987,4 +1000,5 @@ data class PullPersonalRecordDto(
     val sessionId: String? = null,
     val achievedAt: String? = null,
     val updatedAt: String? = null,
+    val deletedAt: String? = null,
 )

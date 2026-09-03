@@ -24,6 +24,16 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 class FakeBleRepository : BleRepository {
 
+    sealed interface Event {
+        data object StopWorkoutEntered : Event
+        data object StopWorkoutCompleted : Event
+        data class WorkoutCommand(val bytes: ByteArray) : Event {
+            override fun equals(other: Any?): Boolean = other is WorkoutCommand && bytes.contentEquals(other.bytes)
+
+            override fun hashCode(): Int = bytes.contentHashCode()
+        }
+    }
+
     // Controllable state flows
     private val _connectionState = MutableStateFlow<ConnectionState>(ConnectionState.Disconnected)
     override val connectionState: StateFlow<ConnectionState> = _connectionState.asStateFlow()
@@ -62,13 +72,21 @@ class FakeBleRepository : BleRepository {
     val commandsReceived = mutableListOf<ByteArray>()
     val workoutParameters = mutableListOf<WorkoutParameters>()
     val colorSchemeCommands = mutableListOf<Int>()
+    val events = mutableListOf<Event>()
 
     // Configurable behavior
     var scanResult: Result<Unit> = Result.success(Unit)
     var connectResult: Result<Unit> = Result.success(Unit)
     var workoutCommandResult: Result<Unit> = Result.success(Unit)
+    var afterWorkoutCommand: suspend (ByteArray) -> Unit = {}
     var shouldFailConnect = false
     var connectDelay: Long = 0L
+    var stopWorkoutBlock: suspend () -> Result<Unit> = { Result.success(Unit) }
+    var stopWorkoutCallCount = 0
+    var stopPacketCallCount = 0
+    var stopPollingCallCount = 0
+    var disconnectCallCount = 0
+    var reconnectCallCount = 0
 
     // ========== Test control methods ==========
 
@@ -155,11 +173,19 @@ class FakeBleRepository : BleRepository {
         commandsReceived.clear()
         workoutParameters.clear()
         colorSchemeCommands.clear()
+        events.clear()
         scanResult = Result.success(Unit)
         connectResult = Result.success(Unit)
         workoutCommandResult = Result.success(Unit)
+        afterWorkoutCommand = {}
         shouldFailConnect = false
         connectDelay = 0L
+        stopWorkoutBlock = { Result.success(Unit) }
+        stopWorkoutCallCount = 0
+        stopPacketCallCount = 0
+        stopPollingCallCount = 0
+        disconnectCallCount = 0
+        reconnectCallCount = 0
     }
 
     // ========== BleRepository interface implementation ==========
@@ -208,6 +234,7 @@ class FakeBleRepository : BleRepository {
     }
 
     override suspend fun disconnect() {
+        disconnectCallCount++
         setConnectionState(ConnectionState.Disconnected)
     }
 
@@ -216,6 +243,7 @@ class FakeBleRepository : BleRepository {
     }
 
     override suspend fun scanAndConnect(timeoutMs: Long): Result<Unit> {
+        reconnectCallCount++
         setConnectionState(ConnectionState.Scanning)
 
         val devices = _scannedDevices.value
@@ -237,7 +265,10 @@ class FakeBleRepository : BleRepository {
     }
 
     override suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit> {
-        commandsReceived.add(command)
+        val copy = command.copyOf()
+        commandsReceived.add(copy)
+        events += Event.WorkoutCommand(copy)
+        afterWorkoutCommand(copy)
         return workoutCommandResult
     }
 
@@ -248,9 +279,18 @@ class FakeBleRepository : BleRepository {
         return Result.success(Unit)
     }
 
-    override suspend fun stopWorkout(): Result<Unit> = Result.success(Unit)
+    override suspend fun stopWorkout(): Result<Unit> {
+        stopWorkoutCallCount++
+        events += Event.StopWorkoutEntered
+        return stopWorkoutBlock().also {
+            events += Event.StopWorkoutCompleted
+        }
+    }
 
-    override suspend fun sendStopCommand(): Result<Unit> = Result.success(Unit)
+    override suspend fun sendStopCommand(): Result<Unit> {
+        stopPacketCallCount++
+        return Result.success(Unit)
+    }
 
     override fun enableHandleDetection(enabled: Boolean) {
         if (enabled) {
@@ -275,7 +315,7 @@ class FakeBleRepository : BleRepository {
     }
 
     override fun stopPolling() {
-        // No-op in fake
+        stopPollingCallCount++
     }
 
     override fun stopMonitorPollingOnly() {

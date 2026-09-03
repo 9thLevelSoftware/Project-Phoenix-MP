@@ -15,13 +15,14 @@ import com.devil.phoenixproject.data.ble.decodeDiagnosticFaults
 import com.devil.phoenixproject.data.ble.formatDiagnosticUInt32
 import com.devil.phoenixproject.data.ble.parseMonitorPacket
 import com.devil.phoenixproject.data.ble.parseRepPacket
-import com.devil.phoenixproject.data.ble.toVitruvianHex
+import com.devil.phoenixproject.data.ble.toPhoenixHex
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.util.BlePacketFactory
 import com.devil.phoenixproject.util.rethrowIfCancellation
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -250,28 +251,22 @@ class KableBleRepository : BleRepository {
             // polling, but surface a send failure so the caller can react.
             val sendResult = sendWorkoutCommand(resetCmd)
             delay(50)
-
+            sendResult
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            log.e { "Failed to stop workout: ${error.message}" }
+            Result.failure(error)
+        } finally {
             log.d { "Stopping polling after RESET..." }
             stopPolling()
-
-            sendResult.fold(
-                onSuccess = { Result.success(Unit) },
-                onFailure = { cause ->
-                    log.e { "RESET command failed to send; polling stopped but machine may not be reset: ${cause.message}" }
-                    Result.failure(cause)
-                },
-            )
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.e { "Failed to stop workout: ${e.message}" }
-            Result.failure(e)
         }
     }
 
     override suspend fun sendStopCommand(): Result<Unit> {
         log.i { "Sending stop command (polling continues)" }
         return try {
-            val stopPacket = BlePacketFactory.createOfficialStopPacket()
+            val stopPacket = BlePacketFactory.createSoftStopPacket()
             log.d { "Sending StopPacket (0x50)..." }
             sendWorkoutCommand(stopPacket)
         } catch (e: Exception) {
@@ -371,13 +366,13 @@ class KableBleRepository : BleRepository {
             if (notification.isLegacyFormat) {
                 log.w { "Rep notification (LEGACY 6-byte format - Issue #187 fallback):" }
                 log.w { "  top=${notification.topCounter}, complete=${notification.completeCounter}" }
-                log.w { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
+                log.w { "  hex=${data.joinToString(" ") { it.toPhoenixHex() }}" }
             } else {
                 log.d { "Rep notification (24-byte format, RX):" }
                 log.d { "  up=${notification.topCounter}, down=${notification.completeCounter}" }
                 log.d { "  repsRomCount=${notification.repsRomCount} (warmup done), repsRomTotal=${notification.repsRomTotal} (warmup target)" }
                 log.d { "  repsSetCount=${notification.repsSetCount} (working done), repsSetTotal=${notification.repsSetTotal} (working target)" }
-                log.d { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
+                log.d { "  hex=${data.joinToString(" ") { it.toPhoenixHex() }}" }
             }
 
             val emitted = publishRepEvent(notification, source = "rx")
@@ -399,13 +394,13 @@ class KableBleRepository : BleRepository {
             }
 
             log.i { "REPS CHAR notification: ${data.size} bytes" }
-            log.d { "  hex=${data.joinToString(" ") { it.toVitruvianHex() }}" }
+            log.d { "  hex=${data.joinToString(" ") { it.toPhoenixHex() }}" }
 
             if (notification.isLegacyFormat) {
                 log.w { "REPS (LEGACY 6-byte format):" }
                 log.w { "  top=${notification.topCounter}, complete=${notification.completeCounter}" }
             } else {
-                log.i { "REPS (24-byte official format):" }
+                log.i { "REPS (24-byte modern format):" }
                 log.i { "  up=${notification.topCounter}, down=${notification.completeCounter}" }
                 log.i { "  repsRomCount=${notification.repsRomCount} (warmup done), repsRomTotal=${notification.repsRomTotal} (warmup target)" }
                 log.i { "  repsSetCount=${notification.repsSetCount} (working done), repsSetTotal=${notification.repsSetTotal} (working target)" }

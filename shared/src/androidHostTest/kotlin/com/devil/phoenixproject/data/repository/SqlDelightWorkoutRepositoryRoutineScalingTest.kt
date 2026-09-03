@@ -19,7 +19,7 @@ import org.junit.Test
  */
 class SqlDelightWorkoutRepositoryRoutineScalingTest {
 
-    private lateinit var database: com.devil.phoenixproject.database.VitruvianDatabase
+    private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
     private lateinit var exerciseRepository: FakeExerciseRepository
     private lateinit var repository: SqlDelightWorkoutRepository
 

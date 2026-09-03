@@ -9,7 +9,6 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -47,8 +46,8 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FloatingActionButton
@@ -77,23 +76,38 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
 import com.devil.phoenixproject.presentation.components.DayStrip
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
 import com.devil.phoenixproject.presentation.components.EmptyState
+import com.devil.phoenixproject.presentation.components.ExpressiveCard
 import com.devil.phoenixproject.presentation.components.ResumeRoutineDialog
 import com.devil.phoenixproject.presentation.components.cycle.TemplatePreviewEditSheet
 import com.devil.phoenixproject.presentation.components.cycle.UnifiedCycleCreationSheet
+import com.devil.phoenixproject.presentation.manager.RoutineResumeDiscovery
+import com.devil.phoenixproject.presentation.manager.RoutineResumeHandle
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeActionAuthority
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeCompletionDisposition
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeEntryPoint
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeOperationGate
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeRetryAction
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeUiOperation
+import com.devil.phoenixproject.presentation.viewmodel.RoutineResumeUiOutcome
+import com.devil.phoenixproject.presentation.viewmodel.classifyRoutineResumeCompletion
+import com.devil.phoenixproject.presentation.viewmodel.runFreshCycleUiOperation
+import com.devil.phoenixproject.presentation.viewmodel.runRoutineResumeUiOperation
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
@@ -102,25 +116,25 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_delete
-import vitruvianprojectphoenix.shared.generated.resources.action_edit
-import vitruvianprojectphoenix.shared.generated.resources.action_ok
-import vitruvianprojectphoenix.shared.generated.resources.assign_routine
-import vitruvianprojectphoenix.shared.generated.resources.cd_create_cycle
-import vitruvianprojectphoenix.shared.generated.resources.cd_expand
-import vitruvianprojectphoenix.shared.generated.resources.create_cycle
-import vitruvianprojectphoenix.shared.generated.resources.delete_cycle_message
-import vitruvianprojectphoenix.shared.generated.resources.delete_cycle_title
-import vitruvianprojectphoenix.shared.generated.resources.edit_cycle
-import vitruvianprojectphoenix.shared.generated.resources.empty_no_cycles_message
-import vitruvianprojectphoenix.shared.generated.resources.empty_no_cycles_title
-import vitruvianprojectphoenix.shared.generated.resources.exercises_not_found
-import vitruvianprojectphoenix.shared.generated.resources.jump_to_day
-import vitruvianprojectphoenix.shared.generated.resources.label_error
-import vitruvianprojectphoenix.shared.generated.resources.skip_rest_day
-import vitruvianprojectphoenix.shared.generated.resources.start_workout
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.action_delete
+import projectphoenix.shared.generated.resources.action_edit
+import projectphoenix.shared.generated.resources.action_ok
+import projectphoenix.shared.generated.resources.assign_routine
+import projectphoenix.shared.generated.resources.cd_create_cycle
+import projectphoenix.shared.generated.resources.cd_expand
+import projectphoenix.shared.generated.resources.create_cycle
+import projectphoenix.shared.generated.resources.delete_cycle_message
+import projectphoenix.shared.generated.resources.delete_cycle_title
+import projectphoenix.shared.generated.resources.edit_cycle
+import projectphoenix.shared.generated.resources.empty_no_cycles_message
+import projectphoenix.shared.generated.resources.empty_no_cycles_title
+import projectphoenix.shared.generated.resources.exercises_not_found
+import projectphoenix.shared.generated.resources.jump_to_day
+import projectphoenix.shared.generated.resources.label_error
+import projectphoenix.shared.generated.resources.skip_rest_day
+import projectphoenix.shared.generated.resources.start_workout
 
 // Shared failure copy for the fresh-start and restart workout paths (issue #620:
 // failures must always be surfaced, never silent).
@@ -129,9 +143,8 @@ private const val WORKOUT_LOAD_FAILED_MESSAGE =
 private const val CONNECTION_FAILED_MESSAGE = "Machine connection failed — workout not started."
 
 /** Stable exercise-library IDs keyed by template exercise name, for ID-first lookups. */
-private fun CycleTemplate.exerciseIdsByName(): Map<String, String?> =
-    days.flatMap { it.routine?.exercises ?: emptyList() }
-        .associate { it.exerciseName to it.exerciseId }
+private fun CycleTemplate.exerciseIdsByName(): Map<String, String?> = days.flatMap { it.routine?.exercises ?: emptyList() }
+    .associate { it.exerciseName to it.exerciseId }
 
 /**
  * State machine for cycle creation flow
@@ -165,6 +178,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     val personalRecordRepository: com.devil.phoenixproject.data.repository.PersonalRecordRepository = koinInject()
     val userProfileRepository: com.devil.phoenixproject.data.repository.UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
+    val activeProfileContext by userProfileRepository.activeProfileContext.collectAsState()
     val profileId = activeProfile?.id ?: "default"
     val scope = rememberCoroutineScope()
 
@@ -231,10 +245,11 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     var selectedDayNumber by remember { mutableStateOf<Int?>(null) }
 
     // Resume/Restart dialog state (Issue #101)
-    var showResumeDialog by remember { mutableStateOf(false) }
-    var pendingRoutineId by remember { mutableStateOf<String?>(null) }
-    var pendingCycleId by remember { mutableStateOf<String?>(null) }
-    var pendingDayNumber by remember { mutableStateOf(0) }
+    var pendingResumeHandle by remember { mutableStateOf<RoutineResumeHandle?>(null) }
+    var resumeOperationInFlight by remember { mutableStateOf(false) }
+    var discardRetryPending by remember { mutableStateOf(false) }
+    var manualLoadRetry by remember { mutableStateOf<RoutineResumeUiOperation.RetryManualLoad?>(null) }
+    val resumeOperationGate = remember { RoutineResumeOperationGate() }
 
     suspend fun loadProgressMap(cycleList: List<TrainingCycle>, activeCycleId: String?): Map<String, CycleProgress> {
         val progressMap = mutableMapOf<String, CycleProgress>()
@@ -307,6 +322,90 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
 
     Logger.d { "TrainingCyclesScreen: ${cycles.size} cycles loaded" }
 
+    fun clearResumeDialog() {
+        pendingResumeHandle = null
+        resumeOperationInFlight = false
+        discardRetryPending = false
+        manualLoadRetry = null
+    }
+
+    LaunchedEffect(activeProfileContext) {
+        val ready = activeProfileContext as? ActiveProfileContext.Ready ?: return@LaunchedEffect
+        val handle = pendingResumeHandle ?: return@LaunchedEffect
+        if (ready.profile.id != handle.selectedProfileId) {
+            resumeOperationGate.supersede()
+            clearResumeDialog()
+        }
+    }
+
+    suspend fun dispatchResumeOutcome(outcome: RoutineResumeUiOutcome) {
+        when (outcome) {
+            RoutineResumeUiOutcome.NavigateActiveWorkout -> {
+                clearResumeDialog()
+                navController.navigate(NavigationRoutes.ActiveWorkout.route)
+            }
+
+            is RoutineResumeUiOutcome.EnterSetReady -> {
+                viewModel.enterSetReady(outcome.exerciseIndex, outcome.setIndex)
+                clearResumeDialog()
+                navController.navigate(NavigationRoutes.SetReady.route)
+            }
+
+            is RoutineResumeUiOutcome.RetainDialog -> {
+                resumeOperationInFlight = false
+                discardRetryPending = outcome.retryAction == RoutineResumeRetryAction.DISCARD
+            }
+
+            RoutineResumeUiOutcome.ConnectionFailed -> {
+                resumeOperationInFlight = false
+                snackbarHostState.showSnackbar(CONNECTION_FAILED_MESSAGE)
+            }
+
+            is RoutineResumeUiOutcome.LoadFailed -> {
+                manualLoadRetry = outcome.retryOperation
+                resumeOperationInFlight = false
+                snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE)
+            }
+
+            RoutineResumeUiOutcome.DismissDialog,
+            RoutineResumeUiOutcome.StartAndNavigateActiveWorkout,
+            is RoutineResumeUiOutcome.EnterDailyOverview,
+            -> clearResumeDialog()
+
+            RoutineResumeUiOutcome.StaleNoOp -> Unit
+        }
+    }
+
+    fun launchResumeOperation(operation: RoutineResumeUiOperation) {
+        resumeOperationInFlight = true
+        resumeOperationGate.launch(scope) { actionToken ->
+            val authority = RoutineResumeActionAuthority(
+                entryPoint = RoutineResumeEntryPoint.TRAINING_CYCLES,
+                actionToken = actionToken,
+                currentToken = { resumeOperationGate.currentToken },
+                contextIsCurrent = {
+                    viewModel.isRoutineResumeProfileCurrent(operation.handle.selectedProfileId)
+                },
+            )
+            val outcome = runRoutineResumeUiOperation(
+                operation = operation,
+                authority = authority,
+                port = viewModel.routineResumeUiPort(),
+            )
+            when (
+                val disposition = classifyRoutineResumeCompletion(
+                    tokenCurrent = authority.tokenIsCurrent(),
+                    contextCurrent = authority.contextIsCurrent(),
+                    outcome = outcome,
+                )
+            ) {
+                RoutineResumeCompletionDisposition.IgnoreStaleToken -> return@launch
+                RoutineResumeCompletionDisposition.UnlockRetainedDialog -> resumeOperationInFlight = false
+                is RoutineResumeCompletionDisposition.Apply -> dispatchResumeOutcome(disposition.outcome)
+            }
+        }
+    }
+
     val backgroundGradient = screenBackgroundBrush()
 
     Box(
@@ -347,40 +446,56 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                             },
                             onStartWorkout = { routineId, cycleId, dayNumber ->
                                 routineId?.let { rid ->
-                                    // Issue #101: Check for resumable progress
-                                    if (viewModel.hasResumableProgress(rid)) {
-                                        // Show resume dialog
-                                        pendingRoutineId = rid
-                                        pendingCycleId = cycleId
-                                        pendingDayNumber = dayNumber
-                                        showResumeDialog = true
-                                    } else {
-                                        // No progress - start fresh
-                                        // Issue #541: Route cycles through SetReadyScreen for parity
-                                        // with the routines flow. loadRoutineFromCycle is async (it
-                                        // launches a coroutine to resolve PR% weights via
-                                        // RoutineFlowManager.loadRoutine → resolveRoutineWeights), so
-                                        // we must wait for the engine's loadedRoutine flow to surface
-                                        // the expected routine id before calling enterSetReady —
-                                        // otherwise enterSetReady returns early because _loadedRoutine
-                                        // is still null and SetReadyScreen would render blank.
-                                        viewModel.ensureConnection(
-                                            onConnected = {
-                                                scope.launch {
-                                                    if (viewModel.loadRoutineFromCycleAsync(rid, cycleId, dayNumber)) {
-                                                        viewModel.enterSetReady(0, 0)
-                                                        navController.navigate(NavigationRoutes.SetReady.route)
-                                                    } else {
-                                                        snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE)
-                                                    }
-                                                }
-                                            },
-                                            onFailed = {
-                                                scope.launch {
-                                                    snackbarHostState.showSnackbar(CONNECTION_FAILED_MESSAGE)
-                                                }
+                                    val routine = allRoutines.find { it.id == rid } ?: return@let
+                                    pendingResumeHandle = null
+                                    resumeOperationInFlight = true
+                                    discardRetryPending = false
+                                    manualLoadRetry = null
+                                    resumeOperationGate.launch(scope) { selectionToken ->
+                                        val authority = RoutineResumeActionAuthority(
+                                            entryPoint = RoutineResumeEntryPoint.TRAINING_CYCLES,
+                                            actionToken = selectionToken,
+                                            currentToken = { resumeOperationGate.currentToken },
+                                            contextIsCurrent = {
+                                                viewModel.isRoutineResumeProfileCurrent(routine.profileId)
                                             },
                                         )
+                                        when (
+                                            val discovery = viewModel.discoverRoutineResume(
+                                                routine = routine,
+                                                launchOrigin = RoutineLaunchOrigin.TRAINING_CYCLES,
+                                                cycleId = cycleId,
+                                                cycleDayNumber = dayNumber,
+                                            )
+                                        ) {
+                                            is RoutineResumeDiscovery.Candidate ->
+                                                if (authority.isCurrent()) {
+                                                    pendingResumeHandle = discovery.handle
+                                                    resumeOperationInFlight = false
+                                                }
+
+                                            RoutineResumeDiscovery.Missing ->
+                                                if (authority.isCurrent()) {
+                                                    dispatchResumeOutcome(
+                                                        runFreshCycleUiOperation(
+                                                            routine = routine,
+                                                            cycleId = cycleId,
+                                                            dayNumber = dayNumber,
+                                                            authority = authority,
+                                                            port = viewModel.routineResumeUiPort(),
+                                                        ),
+                                                    )
+                                                }
+
+                                            RoutineResumeDiscovery.RetryableFailure ->
+                                                if (authority.isCurrent()) {
+                                                    resumeOperationInFlight = false
+                                                    snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE)
+                                                }
+
+                                            RoutineResumeDiscovery.Superseded ->
+                                                if (authority.isCurrent()) clearResumeDialog()
+                                        }
                                     }
                                 }
                             },
@@ -786,63 +901,26 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     }
 
     // Resume/Restart Dialog (Issue #101)
-    if (showResumeDialog) {
-        viewModel.getResumableProgressInfo()?.let { info ->
-            ResumeRoutineDialog(
-                progressInfo = info,
-                onResume = {
-                    showResumeDialog = false
-                    // Issue #541: Resume a cycle workout via SetReadyScreen (parity with fresh start).
-                    // Do not call loadRoutineFromCycle (we want to keep existing progress). The engine's
-                    // currentExerciseIndex / currentSetIndex carry the in-progress position from the prior
-                    // workout session; we route to SetReady at that (ex, set) so the user lands back
-                    // where they left off, not at (0, 0). See also the parent task RCA's set-jump note:
-                    // engine layer already supports arbitrary (ex, set) entry.
-                    viewModel.ensureConnection(
-                        onConnected = {
-                            val exIdx = viewModel.currentExerciseIndex.value
-                            val setIdx = viewModel.currentSetIndex.value
-                            viewModel.enterSetReady(exIdx, setIdx)
-                            navController.navigate(NavigationRoutes.SetReady.route)
-                        },
-                        onFailed = { /* Error shown via StateFlow */ },
-                    )
-                },
-                onRestart = {
-                    showResumeDialog = false
-                    // Issue #541: Restart resets the cycle's routine indices, then routes through
-                    // SetReadyScreen so the user lands on the parity path with the set picker.
-                    // Same race-condition guard as the fresh-start flow: loadRoutineFromCycle is
-                    // async, so we wait for the engine's loadedRoutine flow to surface the expected
-                    // id before calling enterSetReady.
-                    pendingRoutineId?.let { rid ->
-                        viewModel.ensureConnection(
-                            onConnected = {
-                                scope.launch {
-                                    if (viewModel.loadRoutineFromCycleAsync(
-                                            rid,
-                                            pendingCycleId ?: "",
-                                            pendingDayNumber,
-                                        )
-                                    ) {
-                                        viewModel.enterSetReady(0, 0)
-                                        navController.navigate(NavigationRoutes.SetReady.route)
-                                    } else {
-                                        snackbarHostState.showSnackbar(WORKOUT_LOAD_FAILED_MESSAGE)
-                                    }
-                                }
-                            },
-                            onFailed = {
-                                scope.launch {
-                                    snackbarHostState.showSnackbar(CONNECTION_FAILED_MESSAGE)
-                                }
-                            },
-                        )
-                    }
-                },
-                onDismiss = { showResumeDialog = false },
-            )
-        }
+    pendingResumeHandle?.let { handle ->
+        ResumeRoutineDialog(
+            progressInfo = handle.progressInfo,
+            onResume = {
+                if (resumeOperationInFlight || discardRetryPending) return@ResumeRoutineDialog
+                launchResumeOperation(manualLoadRetry ?: RoutineResumeUiOperation.Resume(handle))
+            },
+            onRestart = {
+                if (resumeOperationInFlight) return@ResumeRoutineDialog
+                manualLoadRetry = null
+                launchResumeOperation(RoutineResumeUiOperation.Restart(handle))
+            },
+            onDismiss = {
+                if (!resumeOperationInFlight) {
+                    resumeOperationGate.supersede()
+                    clearResumeDialog()
+                }
+            },
+            confirmEnabled = !resumeOperationInFlight && !discardRetryPending,
+        )
     }
 }
 

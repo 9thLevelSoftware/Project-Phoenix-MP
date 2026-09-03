@@ -57,7 +57,7 @@ actual object DeviceInfo {
     // ==================== Formatted Output ====================
 
     actual fun getFormattedInfo(): String = buildString {
-        appendLine("App: VitruvianPhoenix v$appVersionName (build $appVersionCode)")
+        appendLine("App: Project Phoenix v$appVersionName (build $appVersionCode)")
         appendLine("Build Type: $buildType")
         appendLine()
         appendLine("Device: $manufacturer $model")

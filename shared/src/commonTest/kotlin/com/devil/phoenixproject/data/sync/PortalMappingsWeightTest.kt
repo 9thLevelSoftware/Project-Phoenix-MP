@@ -68,7 +68,7 @@ class PortalMappingsWeightTest {
 
     @Test
     fun pushSetWeightKgAtMaxRangeBoundaryIsPerCable() {
-        // 110 kg/cable = 220 kg total for a dual-cable Vitruvian Trainer+ max.
+        // 110 kg/cable = 220 kg total for a dual-cable Phoenix Trainer+ max.
         val swr = sessionWithReps(weightPerCableKg = 110f, totalReps = 5)
         val sessions = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
         assertEquals(110f, sessions[0].exercises[0].sets[0].weightKg)

@@ -51,10 +51,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import com.devil.phoenixproject.domain.model.RepCount
-import com.devil.phoenixproject.presentation.util.SetTypeLabel
-import com.devil.phoenixproject.presentation.util.setTypeLabel
-import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -66,52 +62,61 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
+import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
 import com.devil.phoenixproject.presentation.components.BackHandler
+import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
 import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
+import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
+import com.devil.phoenixproject.presentation.components.ExerciseQuickHistoryCard
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
-import com.devil.phoenixproject.presentation.components.VideoPlayer
-import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
-import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
+import com.devil.phoenixproject.presentation.components.StartGateLabel
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
+import com.devil.phoenixproject.presentation.components.WeightRecommendationCard
+import com.devil.phoenixproject.presentation.components.WorkoutStartGateNotice
 import com.devil.phoenixproject.presentation.components.formatRackLoadContributionSummary
+import com.devil.phoenixproject.presentation.components.toStartGatePresentation
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.navigation.safePopOrNavigate
+import com.devil.phoenixproject.presentation.util.SetTypeLabel
+import com.devil.phoenixproject.presentation.util.setTypeLabel
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
+import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_exit
-import vitruvianprojectphoenix.shared.generated.resources.cd_next
-import vitruvianprojectphoenix.shared.generated.resources.cd_previous
-import vitruvianprojectphoenix.shared.generated.resources.cd_stop
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_includes
-import vitruvianprojectphoenix.shared.generated.resources.bodyweight_effective_load_more
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_confirm
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_dismiss
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_message
-import vitruvianprojectphoenix.shared.generated.resources.equipment_rack_save_override_title
-import vitruvianprojectphoenix.shared.generated.resources.exit_routine_message
-import vitruvianprojectphoenix.shared.generated.resources.exit_routine_title
-import vitruvianprojectphoenix.shared.generated.resources.set_type_warmup
-import vitruvianprojectphoenix.shared.generated.resources.set_type_working
-import vitruvianprojectphoenix.shared.generated.resources.target_reps
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.action_exit
+import projectphoenix.shared.generated.resources.bodyweight_effective_load_includes
+import projectphoenix.shared.generated.resources.bodyweight_effective_load_more
+import projectphoenix.shared.generated.resources.cd_next
+import projectphoenix.shared.generated.resources.cd_previous
+import projectphoenix.shared.generated.resources.cd_stop
+import projectphoenix.shared.generated.resources.equipment_rack_save_override_confirm
+import projectphoenix.shared.generated.resources.equipment_rack_save_override_dismiss
+import projectphoenix.shared.generated.resources.equipment_rack_save_override_message
+import projectphoenix.shared.generated.resources.equipment_rack_save_override_title
+import projectphoenix.shared.generated.resources.exit_routine_message
+import projectphoenix.shared.generated.resources.exit_routine_title
+import projectphoenix.shared.generated.resources.set_type_warmup
+import projectphoenix.shared.generated.resources.set_type_working
+import projectphoenix.shared.generated.resources.target_reps
+import projectphoenix.shared.generated.resources.workout_teardown_finishing
 
 /**
  * Set Ready Screen - Focused view for a single exercise/set.
@@ -125,6 +130,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     val loadedRoutine by viewModel.loadedRoutine.collectAsState()
     val weightUnit by viewModel.weightUnit.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
+    val machineTeardownState by viewModel.machineTeardownState.collectAsState()
     val enableVideoPlayback by viewModel.enableVideoPlayback.collectAsState()
     val weightRecommendation by viewModel.weightAdjustmentRecommendation.collectAsState()
     val rackItems by viewModel.rackItems.collectAsState()
@@ -149,6 +155,13 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
         return
     }
 
+    // Issue #671: Exercise history quick view
+    val activeProfileId by viewModel.activeProfileId.collectAsState()
+    val recentSessionsFlow = remember(currentExercise.exercise.id, activeProfileId) {
+        viewModel.recentSessionsForExercise(currentExercise.exercise.id, activeProfileId)
+    }
+    val recentSessions by recentSessionsFlow.collectAsState()
+
     var runtimeBehaviorOverrides by remember(setReadyState.exerciseIndex) {
         mutableStateOf(currentExercise.rackBehaviorOverrides)
     }
@@ -160,6 +173,7 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
     // #635: explicit stored flag with equipment-derivation fallback
     val isBodyweight = currentExercise.exercise.isBodyweight
+    val startGate = machineTeardownState.toStartGatePresentation(requiresMachine = !isBodyweight)
     val matchingWeightRecommendation = weightRecommendation?.takeIf { recommendation ->
         !isBodyweight &&
             recommendation.targetExerciseId == currentExercise.exercise.id &&
@@ -210,20 +224,16 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
         viewModel.updateTopBarTitle("")
     }
 
-    // Load video for exercise
+    // Load demonstration images for exercise
     // Issue #142: Key the remember on exerciseIndex so state resets when exercise changes.
-    // This ensures the video entity is cleared and reloaded for each exercise.
-    var videoEntity by remember(setReadyState.exerciseIndex) { mutableStateOf<ExerciseVideoEntity?>(null) }
+    var images by remember(setReadyState.exerciseIndex) { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
     LaunchedEffect(setReadyState.exerciseIndex, currentExercise.exercise.id) {
-        // Clear any stale video first
-        videoEntity = null
-        // Load new video if exercise has an ID
+        images = emptyList()
         currentExercise.exercise.id?.let { exerciseId ->
             try {
-                val videos = exerciseRepository.getVideos(exerciseId)
-                videoEntity = videos.firstOrNull()
+                images = exerciseRepository.getImages(exerciseId)
             } catch (_: Exception) {
-                // Video loading failed - videoEntity stays null
+                // Image loading failed - images stay empty
             }
         }
     }
@@ -256,78 +266,92 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 color = MaterialTheme.colorScheme.surfaceContainer,
                 tonalElevation = 3.dp,
             ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .navigationBarsPadding()
-                        .padding(horizontal = 16.dp, vertical = 12.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // PREV button - compact icon button
-                    FilledTonalIconButton(
-                        onClick = { viewModel.setReadyPrev() },
-                        enabled = canGoPrev,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.KeyboardArrowLeft,
-                            contentDescription = stringResource(Res.string.cd_previous),
-                        )
-                    }
-
-                    // START SET button - primary action, takes most space
-                    Button(
-                        onClick = {
-                            viewModel.ensureConnection(
-                                onConnected = { viewModel.startSetFromReady() },
-                                onFailed = {},
-                            )
-                        },
+                Column {
+                    WorkoutStartGateNotice(
+                        state = machineTeardownState,
+                        onRetry = { viewModel.retryWorkoutTeardown() },
+                        onReconnect = { viewModel.reconnectWorkoutTeardown() },
+                        modifier = Modifier.padding(start = 16.dp, top = 12.dp, end = 16.dp),
+                    )
+                    Row(
                         modifier = Modifier
-                            .weight(1f)
-                            .height(48.dp),
-                        enabled = connectionState is ConnectionState.Connected && !bodyweightPromptPending,
-                        shape = MaterialTheme.shapes.small,
+                            .fillMaxWidth()
+                            .navigationBarsPadding()
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Icon(
-                            Icons.Default.PlayArrow,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp),
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            "START",
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                        )
-                    }
+                        // PREV button - compact icon button
+                        FilledTonalIconButton(
+                            onClick = { viewModel.setReadyPrev() },
+                            enabled = canGoPrev,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowLeft,
+                                contentDescription = stringResource(Res.string.cd_previous),
+                            )
+                        }
 
-                    // NEXT button - compact icon button
-                    FilledTonalIconButton(
-                        onClick = { viewModel.setReadySkip() },
-                        enabled = canSkip,
-                        modifier = Modifier.size(48.dp),
-                    ) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                            contentDescription = stringResource(Res.string.cd_next),
-                        )
-                    }
+                        // START SET button - primary action, takes most space
+                        Button(
+                            onClick = {
+                                if (!startGate.startEnabled) return@Button
+                                viewModel.ensureConnection(
+                                    onConnected = { viewModel.startSetFromReady() },
+                                    onFailed = {},
+                                )
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(48.dp),
+                            enabled = connectionState is ConnectionState.Connected && !bodyweightPromptPending &&
+                                startGate.startEnabled,
+                            shape = MaterialTheme.shapes.small,
+                        ) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (startGate.label == StartGateLabel.FINISHING_PREVIOUS_WORKOUT) {
+                                    stringResource(Res.string.workout_teardown_finishing)
+                                } else {
+                                    "START"
+                                },
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                            )
+                        }
 
-                    // STOP button - destructive action
-                    FilledTonalIconButton(
-                        onClick = { showStopConfirmation = true },
-                        modifier = Modifier.size(48.dp),
-                        colors = IconButtonDefaults.filledTonalIconButtonColors(
-                            containerColor = MaterialTheme.colorScheme.errorContainer,
-                            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-                        ),
-                    ) {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = stringResource(Res.string.cd_stop),
-                        )
+                        // NEXT button - compact icon button
+                        FilledTonalIconButton(
+                            onClick = { viewModel.setReadySkip() },
+                            enabled = canSkip,
+                            modifier = Modifier.size(48.dp),
+                        ) {
+                            Icon(
+                                Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                                contentDescription = stringResource(Res.string.cd_next),
+                            )
+                        }
+
+                        // STOP button - destructive action
+                        FilledTonalIconButton(
+                            onClick = { showStopConfirmation = true },
+                            modifier = Modifier.size(48.dp),
+                            colors = IconButtonDefaults.filledTonalIconButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.onErrorContainer,
+                            ),
+                        ) {
+                            Icon(
+                                Icons.Default.Close,
+                                contentDescription = stringResource(Res.string.cd_stop),
+                            )
+                        }
                     }
                 }
             }
@@ -738,6 +762,13 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
                 }
             }
 
+            // Issue #671: Exercise history quick view
+            ExerciseQuickHistoryCard(
+                sessions = recentSessions,
+                weightUnit = weightUnit,
+                formatWeight = viewModel::formatWeight,
+            )
+
             EquipmentRackSelectionCard(
                 rackItems = rackItems,
                 activeRackItemIds = activeRackItemIds,
@@ -760,14 +791,14 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
 
             Spacer(Modifier.height(12.dp))
 
-            // Video thumbnail stays available but no longer pushes primary set configuration down.
             if (enableVideoPlayback) {
-                VideoPlayer(
-                    videoUrl = videoEntity?.videoUrl,
+                ExerciseDemoImage(
+                    imageUrls = images.map { it.url },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(96.dp)
                         .clip(MaterialTheme.shapes.small),
+                    contentDescription = currentExercise.exercise.displayName,
                 )
                 Spacer(Modifier.height(12.dp))
             }

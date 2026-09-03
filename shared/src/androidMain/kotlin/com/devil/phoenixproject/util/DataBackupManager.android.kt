@@ -12,7 +12,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -28,7 +28,7 @@ import kotlinx.coroutines.withContext
  */
 class AndroidDataBackupManager(
     private val context: Context,
-    database: VitruvianDatabase,
+    database: PhoenixDatabase,
     private val preferencesManager: PreferencesManager,
     private val destinationResolver: BackupDestinationResolver,
     profilePreferencesRepository: ProfilePreferencesRepository,
@@ -268,7 +268,7 @@ class AndroidDataBackupManager(
             .replace("-", "") + "_" +
             KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
                 .replace(":", "")
-        val fileName = "vitruvian_backup_$timestamp.json"
+        val fileName = "phoenix_backup_$timestamp.json"
         return BackupJsonWriter(File(cacheDir, fileName).absolutePath)
     }
 
@@ -292,7 +292,7 @@ class AndroidDataBackupManager(
                 val contentValues = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                     put(MediaStore.Downloads.MIME_TYPE, "application/json")
-                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/VitruvianPhoenix")
+                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/ProjectPhoenix")
                 }
 
                 val resolver = context.contentResolver
@@ -317,7 +317,7 @@ class AndroidDataBackupManager(
                 @Suppress("DEPRECATION")
                 val downloadsDir = File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "VitruvianPhoenix",
+                    "ProjectPhoenix",
                 )
                 downloadsDir.mkdirs()
                 val destFile = File(downloadsDir, fileName)
@@ -341,14 +341,14 @@ class AndroidDataBackupManager(
                 .replace("-", "") + "_" +
                 KmpUtils.formatTimestamp(KmpUtils.currentTimeMillis(), "HH:mm:ss")
                     .replace(":", "")
-            val fileName = "vitruvian_backup_$timestamp.json"
+            val fileName = "phoenix_backup_$timestamp.json"
 
             val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 // Android 10+ use MediaStore
                 val contentValues = ContentValues().apply {
                     put(MediaStore.Downloads.DISPLAY_NAME, fileName)
                     put(MediaStore.Downloads.MIME_TYPE, "application/json")
-                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/VitruvianPhoenix")
+                    put(MediaStore.Downloads.RELATIVE_PATH, "Download/ProjectPhoenix")
                 }
 
                 val resolver = context.contentResolver
@@ -365,7 +365,7 @@ class AndroidDataBackupManager(
                 @Suppress("DEPRECATION")
                 val downloadsDir = File(
                     Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "VitruvianPhoenix",
+                    "ProjectPhoenix",
                 )
                 downloadsDir.mkdirs()
 
@@ -457,7 +457,7 @@ class AndroidDataBackupManager(
             val shareIntent = Intent(Intent.ACTION_SEND).apply {
                 type = "application/json"
                 putExtra(Intent.EXTRA_STREAM, uri)
-                putExtra(Intent.EXTRA_SUBJECT, "Vitruvian Phoenix Backup")
+                putExtra(Intent.EXTRA_SUBJECT, "Project Phoenix Backup")
                 addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }

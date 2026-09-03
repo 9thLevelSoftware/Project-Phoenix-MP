@@ -14,6 +14,7 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -217,6 +218,8 @@ class GamificationManager(
                             }
                         }
                     }
+                } catch (e: CancellationException) {
+                    throw e
                 } catch (e: Exception) {
                     val errorMsg = "Unexpected error checking PR: ${e.message}"
                     Logger.e(e) { "PR_TRACK: $errorMsg" }
@@ -232,6 +235,8 @@ class GamificationManager(
         exerciseId?.takeIf { it.isNotBlank() }?.let { id ->
             try {
                 onPostSaveComputed(id, effectiveProfileId, sessionMcvMmS)
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Logger.w(e) { "VELOCITY_1RM: post-save hook failed for $id" }
             }
@@ -256,6 +261,8 @@ class GamificationManager(
                 _badgeEarnedEvents.emit(newBadges)
                 Logger.d("New badges earned: ${newBadges.map { it.name }}")
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(e) { "Error updating gamification: ${e.message}" }
         }

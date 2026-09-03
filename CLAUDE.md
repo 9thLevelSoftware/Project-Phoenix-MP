@@ -28,7 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Kotlin Multiplatform app for controlling Vitruvian Trainer workout machines via BLE. Community rescue project to keep machines functional after company bankruptcy.
+Kotlin Multiplatform app for controlling Phoenix Trainer workout machines via BLE. Community rescue project to keep machines functional after company bankruptcy.
 
 ## Build Commands
 
@@ -81,7 +81,7 @@ Nordic UART Service UUIDs in `BleInterfaces.kt`:
 Device names start with `Vee_` (V-Form) or `VIT` (Trainer+).
 
 ### Database Schema
-SQLDelight schema at `shared/src/commonMain/sqldelight/.../VitruvianDatabase.sq`:
+SQLDelight schema at `shared/src/commonMain/sqldelight/.../PhoenixDatabase.sq`:
 - **WorkoutSession** - Exercise sessions with mode, weight, reps
 - **MetricSample** - Real-time metrics (position, velocity, load, power)
 - **PersonalRecord** - PR tracking with 1RM calculations
@@ -108,8 +108,8 @@ Located in `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/model/`
 - Coroutines 1.10.2
 
 ## Hardware Support
-- **Vitruvian V-Form Trainer** (VIT-200): 200kg max, device name `Vee_*`
-- **Vitruvian Trainer+**: 220kg max
+- **Phoenix V-Form Trainer** (VIT-200): 200kg max, device name `Vee_*`
+- **Phoenix Trainer+**: 220kg max
 
 ## Sync Architecture
 
@@ -147,8 +147,9 @@ Uses multiplatform-settings with Keychain backend (`KeychainSettings`) for secur
 - Requires iOS Keychain capability in entitlements
 
 ### 1RM Estimate Parity (PARITY-CRITICAL)
-- Canonical formula: hybrid — Brzycki `w*36/(37-reps)` for reps <= 10, Epley `w*(1+reps/30)` for reps > 10. Continuous at reps == 10.
-- Single implementation: `OneRepMaxCalculator.estimate()` (`util/Constants.kt`). All 1RM estimates (UI display, PR storage, cycle reporting) route through it — never reimplement the formula.
-- Mobile computes the estimate per exercise-session (per-cable kg) and ships it as `PortalExerciseDto.estimatedOneRepMaxKg`. The portal stores it verbatim in `exercise_progress.estimated_1rm_kg` and recomputes (same hybrid) ONLY when the field is absent (legacy payloads). Mirror any change in the phoenix-portal counterpart.
-- Max-weight PRs (`personal_records`) are a SEPARATE metric from the estimated 1RM — do not relabel one as the other.
+- Two estimators, plus a third column — never relabel one as another:
+  1. Hybrid rep-based 1RM — Brzycki `w*36/(37-reps)` for reps <= 10, Epley `w*(1+reps/30)` for reps > 10. Continuous at reps == 10. Single implementation: `OneRepMaxCalculator.estimate()` (`util/Constants.kt`). All hybrid estimates (UI display, PR storage, cycle reporting, portal DTO) route through it — never reimplement the formula.
+  2. Velocity OLS (VBT) — `VelocityOneRepMaxEstimator` from BLE mean concentric velocity. Shipped separately as `PortalExerciseDto.velocityEstimatedOneRepMaxKg`. Must never overwrite the hybrid field.
+  3. Max-weight PRs (`personal_records`) are a SEPARATE metric from either estimated 1RM.
+- Portal sync (mobile contract): compute the hybrid estimate per exercise-session from **workingReps** (fallback `totalReps` if working is 0), per-cable kg, and still ship it as `PortalExerciseDto.estimatedOneRepMaxKg`. Portal store-verbatim of that field is **unverified** — do not assert the portal writes it unchanged or skips recompute. Client remains drop-resistant.
 - Stored `Exercise.one_rep_max_kg` (manual 5/3/1 input or VBT assessment) is the fallback scaling baseline for `% of PR` routines when no matching PersonalRecord exists (`ResolveRoutineWeightsUseCase`).

@@ -64,7 +64,7 @@ class IosCsvExporter : CsvExporter {
                 val exerciseName = exerciseNames[session.exerciseId] ?: session.exerciseId ?: "Unknown"
                 val date = KmpUtils.formatTimestamp(session.timestamp, "yyyy-MM-dd")
                 val time = KmpUtils.formatTimestamp(session.timestamp, "HH:mm")
-                // For Echo mode, use peak weight (matches official app behavior); otherwise use configured weight
+                // For Echo mode, peak weight is the meaningful load; otherwise use configured weight
                 val isEchoMode = session.mode.contains("Echo", ignoreCase = true)
                 val effectiveWeight = if (isEchoMode) {
                     session.peakWeightKg ?: session.workingAvgWeightKg ?: session.weightPerCableKg

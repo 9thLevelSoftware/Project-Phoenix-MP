@@ -2,7 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
@@ -65,9 +65,10 @@ sealed interface ActiveProfileContext {
     ) : ActiveProfileContext
 }
 
-class ProfileContextUnavailableException : IllegalStateException(
-    "Active profile context is switching",
-)
+class ProfileContextUnavailableException :
+    IllegalStateException(
+        "Active profile context is switching",
+    )
 
 class StaleProfileContextException(
     expectedProfileId: String,
@@ -76,10 +77,11 @@ class StaleProfileContextException(
     "Profile changed from $expectedProfileId to $activeProfileId before the update completed",
 )
 
-class ProfileContextRecoveryException(cause: Throwable) : IllegalStateException(
-    "Could not reconcile the active profile context",
-    cause,
-)
+class ProfileContextRecoveryException(cause: Throwable) :
+    IllegalStateException(
+        "Could not reconcile the active profile context",
+        cause,
+    )
 
 interface UserProfileRepository {
     val activeProfile: StateFlow<UserProfile?>
@@ -96,6 +98,7 @@ interface UserProfileRepository {
     suspend fun refreshProfiles()
     suspend fun ensureDefaultProfile()
     suspend fun updateCore(profileId: String, value: CoreProfilePreferences)
+
     /** Atomically transforms the latest active core section after validating [profileId]. */
     suspend fun mutateCore(
         profileId: String,
@@ -103,6 +106,12 @@ interface UserProfileRepository {
     )
     suspend fun updateRack(profileId: String, value: RackPreferences)
     suspend fun updateWorkout(profileId: String, value: WorkoutPreferences)
+
+    /** Atomically transforms the latest active workout section after validating [profileId]. */
+    suspend fun mutateWorkout(
+        profileId: String,
+        transform: (WorkoutPreferences) -> WorkoutPreferences,
+    )
     suspend fun updateLed(profileId: String, value: LedPreferences)
     suspend fun updateVbt(profileId: String, value: VbtPreferences)
     suspend fun updateLocalSafety(profileId: String, value: ProfileLocalSafetyPreferences)
@@ -121,14 +130,14 @@ interface UserProfileRepository {
 }
 
 class SqlDelightUserProfileRepository(
-    private val database: VitruvianDatabase,
+    private val database: PhoenixDatabase,
     private val profilePreferencesRepository: ProfilePreferencesRepository,
     private val profileLocalSafetyStore: ProfileLocalSafetyStore,
     private val gamificationRepository: GamificationRepository,
     private val profileScopedDataMerger: ProfileScopedDataMerger = ProfileScopedDataMerger(database),
     private val beforeProfileDeletionCommit: () -> Unit = {},
 ) : UserProfileRepository {
-    private val queries = database.vitruvianDatabaseQueries
+    private val queries = database.phoenixDatabaseQueries
     private val profileContextMutex = Mutex()
     private val profileCleanupMutex = Mutex()
 
@@ -149,24 +158,22 @@ class SqlDelightUserProfileRepository(
         _activeProfileContext.value = ActiveProfileContext.Switching(activeProfile.value?.id)
     }
 
-    override fun observePreferences(profileId: String): Flow<UserProfilePreferences> =
-        profilePreferencesRepository.observe(profileId)
+    override fun observePreferences(profileId: String): Flow<UserProfilePreferences> = profilePreferencesRepository.observe(profileId)
 
-    override suspend fun createProfile(name: String, colorIndex: Int): UserProfile =
-        profileContextMutex.withLock {
-            val trimmedName = name.trim()
-            require(trimmedName.isNotEmpty()) { "Profile name must not be blank" }
-            val id = generateUUID()
-            val createdAt = currentTimeMillis()
-            database.transaction {
-                queries.insertProfile(id, trimmedName, colorIndex.toLong(), createdAt, 0L)
-                queries.insertDefaultProfilePreferences(id, 1L)
-            }
-            refreshProfilesSync()
-            requireNotNull(allProfiles.value.firstOrNull { it.id == id }) {
-                "Created profile missing: $id"
-            }
+    override suspend fun createProfile(name: String, colorIndex: Int): UserProfile = profileContextMutex.withLock {
+        val trimmedName = name.trim()
+        require(trimmedName.isNotEmpty()) { "Profile name must not be blank" }
+        val id = generateUUID()
+        val createdAt = currentTimeMillis()
+        database.transaction {
+            queries.insertProfile(id, trimmedName, colorIndex.toLong(), createdAt, 0L)
+            queries.insertDefaultProfilePreferences(id, 1L)
         }
+        refreshProfilesSync()
+        requireNotNull(allProfiles.value.firstOrNull { it.id == id }) {
+            "Created profile missing: $id"
+        }
+    }
 
     override suspend fun createAndActivateProfile(
         name: String,
@@ -209,15 +216,14 @@ class SqlDelightUserProfileRepository(
         deleteProfileLocked(id, requireActive = false)
     }
 
-    override suspend fun deleteActiveProfile(expectedProfileId: String): Boolean =
-        profileContextMutex.withLock {
-            val ready = _activeProfileContext.value as? ActiveProfileContext.Ready
-                ?: throw ProfileContextUnavailableException()
-            if (ready.profile.id != expectedProfileId) {
-                throw StaleProfileContextException(expectedProfileId, ready.profile.id)
-            }
-            deleteProfileLocked(expectedProfileId, requireActive = true)
+    override suspend fun deleteActiveProfile(expectedProfileId: String): Boolean = profileContextMutex.withLock {
+        val ready = _activeProfileContext.value as? ActiveProfileContext.Ready
+            ?: throw ProfileContextUnavailableException()
+        if (ready.profile.id != expectedProfileId) {
+            throw StaleProfileContextException(expectedProfileId, ready.profile.id)
         }
+        deleteProfileLocked(expectedProfileId, requireActive = true)
+    }
 
     private suspend fun deleteProfileLocked(id: String, requireActive: Boolean): Boolean {
         if (id == DEFAULT_PROFILE_ID) return false
@@ -242,6 +248,7 @@ class SqlDelightUserProfileRepository(
             Logger.i { "PROFILE_DELETE: Reassigning data from profile '$id' to '$targetProfileId'" }
             database.transaction {
                 queries.enqueueProfileLocalCleanup(id, currentTimeMillis())
+                queries.deleteActiveWorkoutRuntimeByProfile(id)
                 profileScopedDataMerger.mergeForProfileDeletion(id, targetProfileId)
                 queries.reassignRoutineGroupProfile(targetProfileId, id)
                 queries.reassignRoutineProfile(targetProfileId, id)
@@ -343,10 +350,9 @@ class SqlDelightUserProfileRepository(
         }
     }
 
-    override suspend fun updateCore(profileId: String, value: CoreProfilePreferences) =
-        mutateActiveProfile(profileId) {
-            profilePreferencesRepository.updateCore(profileId, value, currentTimeMillis())
-        }
+    override suspend fun updateCore(profileId: String, value: CoreProfilePreferences) = mutateActiveProfile(profileId) {
+        profilePreferencesRepository.updateCore(profileId, value, currentTimeMillis())
+    }
 
     override suspend fun mutateCore(
         profileId: String,
@@ -359,25 +365,32 @@ class SqlDelightUserProfileRepository(
         )
     }
 
-    override suspend fun updateRack(profileId: String, value: RackPreferences) =
-        mutateActiveProfile(profileId) {
-            profilePreferencesRepository.updateRack(profileId, value, currentTimeMillis())
-        }
+    override suspend fun updateRack(profileId: String, value: RackPreferences) = mutateActiveProfile(profileId) {
+        profilePreferencesRepository.updateRack(profileId, value, currentTimeMillis())
+    }
 
-    override suspend fun updateWorkout(profileId: String, value: WorkoutPreferences) =
-        mutateActiveProfile(profileId) {
-            profilePreferencesRepository.updateWorkout(profileId, value, currentTimeMillis())
-        }
+    override suspend fun updateWorkout(profileId: String, value: WorkoutPreferences) = mutateActiveProfile(profileId) {
+        profilePreferencesRepository.updateWorkout(profileId, value, currentTimeMillis())
+    }
 
-    override suspend fun updateLed(profileId: String, value: LedPreferences) =
-        mutateActiveProfile(profileId) {
-            profilePreferencesRepository.updateLed(profileId, value, currentTimeMillis())
-        }
+    override suspend fun mutateWorkout(
+        profileId: String,
+        transform: (WorkoutPreferences) -> WorkoutPreferences,
+    ) = mutateActiveProfile(profileId) { context ->
+        profilePreferencesRepository.updateWorkout(
+            profileId,
+            transform(context.preferences.workout.value),
+            currentTimeMillis(),
+        )
+    }
 
-    override suspend fun updateVbt(profileId: String, value: VbtPreferences) =
-        mutateActiveProfile(profileId) {
-            profilePreferencesRepository.updateVbt(profileId, value, currentTimeMillis())
-        }
+    override suspend fun updateLed(profileId: String, value: LedPreferences) = mutateActiveProfile(profileId) {
+        profilePreferencesRepository.updateLed(profileId, value, currentTimeMillis())
+    }
+
+    override suspend fun updateVbt(profileId: String, value: VbtPreferences) = mutateActiveProfile(profileId) {
+        profilePreferencesRepository.updateVbt(profileId, value, currentTimeMillis())
+    }
 
     override suspend fun updateLocalSafety(
         profileId: String,
@@ -464,10 +477,9 @@ class SqlDelightUserProfileRepository(
         }
     }
 
-    override suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile? =
-        queries.getProfileBySupabaseId(supabaseUserId)
-            .executeAsOneOrNull()
-            ?.toUserProfile()
+    override suspend fun getProfileBySupabaseId(supabaseUserId: String): UserProfile? = queries.getProfileBySupabaseId(supabaseUserId)
+        .executeAsOneOrNull()
+        ?.toUserProfile()
 
     override fun getActiveProfileSubscriptionStatus(): Flow<SubscriptionStatus> = flow {
         val result = queries.getActiveProfileSubscriptionStatus().executeAsOneOrNull()

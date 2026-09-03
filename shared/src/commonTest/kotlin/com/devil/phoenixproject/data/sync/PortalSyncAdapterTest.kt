@@ -12,6 +12,7 @@ import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutSession
+import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -730,6 +731,71 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `toPortalRoutine maps drop set configuration`() {
+        val enabled = makeRoutineExercise().copy(dropSetEnabled = true, dropSetMinWeightKg = 12.5f)
+        val disabled = makeRoutineExercise().copy(dropSetEnabled = false, dropSetMinWeightKg = null)
+        val result = PortalSyncAdapter.toPortalRoutine(
+            makeRoutine(exercises = listOf(enabled, disabled)),
+            "user-1",
+        )
+
+        assertEquals(true, result.exercises[0].dropSetEnabled)
+        assertEquals(12.5f, result.exercises[0].dropSetMinWeightKg)
+        assertEquals(false, result.exercises[1].dropSetEnabled)
+        assertNull(result.exercises[1].dropSetMinWeightKg)
+    }
+
+    @Test
+    fun `older pull payload omitting drop set fields decodes to null`() {
+        val dto = portalPayloadJson.decodeFromString(
+            PullRoutineExerciseDto.serializer(),
+            """{"id":"rex-legacy","routineId":"routine-1","name":"Bench Press"}""",
+        )
+        assertNull(dto.dropSetEnabled)
+        assertNull(dto.dropSetMinWeightKg)
+    }
+
+    @Test
+    fun `pull payload with explicit disabled drop set decodes to false`() {
+        val dto = portalPayloadJson.decodeFromString(
+            PullRoutineExerciseDto.serializer(),
+            """{"id":"rex-off","routineId":"routine-1","dropSetEnabled":false,"dropSetMinWeightKg":null}""",
+        )
+        assertEquals(false, dto.dropSetEnabled)
+        assertNull(dto.dropSetMinWeightKg)
+    }
+
+    @Test
+    fun `programmed set count collapses retry attempts that share logical identity`() {
+        val identity = PortalSyncAdapter.LogicalSetSyncIdentity("run-1", "rex-1", 1)
+        val sessions = listOf(
+            makeSessionWithReps(sessionId = "attempt-1", routineSessionId = "run-1")
+                .copy(logicalSetIdentity = identity),
+            makeSessionWithReps(sessionId = "attempt-2", routineSessionId = "run-1")
+                .copy(logicalSetIdentity = identity),
+            makeSessionWithReps(sessionId = "legacy", routineSessionId = "run-1"),
+        )
+
+        assertEquals(2, PortalSyncAdapter.programmedSetCount(sessions))
+        val grouped = sessions.map {
+            it.copy(session = it.session.copy(routineSessionId = "run-1"))
+        }
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(grouped, "user-1")
+        assertEquals(1, result.size)
+        assertEquals(2, result[0].setCount)
+        assertEquals(3, result[0].exerciseCount)
+    }
+
+    @Test
+    fun `programmed set count keeps legacy one session one set without identity`() {
+        val sessions = listOf(
+            makeSessionWithReps(sessionId = "s1", routineSessionId = "run-1"),
+            makeSessionWithReps(sessionId = "s2", routineSessionId = "run-1"),
+        )
+        assertEquals(2, PortalSyncAdapter.programmedSetCount(sessions))
+    }
+
+    @Test
     fun `toPortalRoutine maps PR percentage when enabled`() {
         val exercises = listOf(
             makeRoutineExercise(
@@ -1015,23 +1081,95 @@ class PortalSyncAdapterTest {
     // ========== Estimated 1RM in sync payload (Task 4) ==========
 
     @Test
-    fun `exercise dto carries hybrid estimated 1RM per cable`() {
-        // 60 kg per cable x 5 reps -> Brzycki: 60 * 36 / 32 = 67.5
+    fun `exercise dto carries hybrid estimated 1RM from workingReps not warmup`() {
+        // 60 kg × 5 working + 3 warmup (totalReps=8). Must use working=5 → 67.5,
+        // not the 8-rep estimate. A totalReps=5 / workingReps=0 fixture would
+        // still pass via fallback and would not prove working-over-warmup.
         val sessions = listOf(
             makeSessionWithReps(
                 sessionId = "s1",
                 routineSessionId = null,
                 exerciseName = "Bench Press",
                 weightPerCableKg = 60f,
-                totalReps = 5,
+                warmupReps = 3,
+                workingReps = 5,
+                totalReps = 8,
             ),
         )
 
         val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
 
         val estimate = result[0].exercises[0].estimatedOneRepMaxKg
+        val fromWorking = OneRepMaxCalculator.estimate(60f, 5)
+        val fromTotal = OneRepMaxCalculator.estimate(60f, 8)
         assertNotNull(estimate)
-        assertTrue(abs(estimate - 67.5f) < 0.01f, "expected 67.5, got $estimate")
+        assertFloatEquals(fromWorking, estimate)
+        assertFloatEquals(67.5f, estimate)
+        assertTrue(
+            abs(estimate - fromTotal) > 1f,
+            "warmup+working golden must not equal the 8-rep estimate ($fromTotal)",
+        )
+    }
+
+    @Test
+    fun `exercise dto hybrid 1RM falls back to totalReps when workingReps is 0`() {
+        val sessions = listOf(
+            makeSessionWithReps(
+                sessionId = "s1",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 60f,
+                workingReps = 0,
+                totalReps = 5,
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
+
+        assertFloatEquals(
+            OneRepMaxCalculator.estimate(60f, 5),
+            result[0].exercises[0].estimatedOneRepMaxKg!!,
+        )
+    }
+
+    @Test
+    fun `exercise dto hybrid 1RM is null when working and total reps are 0`() {
+        val sessions = listOf(
+            makeSessionWithReps(
+                sessionId = "s1",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 60f,
+                workingReps = 0,
+                totalReps = 0,
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(sessions, "user-1")
+
+        assertNull(result[0].exercises[0].estimatedOneRepMaxKg)
+    }
+
+    @Test
+    fun `exercise dto hybrid 1RM null does not drop a present velocity estimate`() {
+        val sessions = listOf(
+            makeSessionWithReps(
+                sessionId = "s1",
+                exerciseName = "Bench Press",
+                exerciseId = "ex1",
+                weightPerCableKg = 60f,
+                workingReps = 0,
+                totalReps = 0,
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(
+            sessions,
+            "user-1",
+            velocityEstimatesByExerciseId = mapOf("ex1" to 92f),
+        )
+
+        val exercise = result[0].exercises[0]
+        assertNull(exercise.estimatedOneRepMaxKg)
+        assertFloatEquals(92f, exercise.velocityEstimatedOneRepMaxKg!!)
     }
 
     // ========== Velocity-estimated 1RM in sync payload (Phase 6) ==========
@@ -1045,7 +1183,9 @@ class PortalSyncAdapterTest {
                 exerciseName = "Bench Press",
                 exerciseId = "ex1",
                 weightPerCableKg = 60f,
-                totalReps = 5,
+                warmupReps = 3,
+                workingReps = 5,
+                totalReps = 8,
             ),
         )
 
@@ -1056,10 +1196,15 @@ class PortalSyncAdapterTest {
         )
 
         val exercise = result[0].exercises[0]
+        val hybrid = exercise.estimatedOneRepMaxKg
         assertFloatEquals(92f, exercise.velocityEstimatedOneRepMaxKg!!)
-        // Rep-based estimate is still computed independently: 60 * 36 / 32 = 67.5
-        assertNotNull(exercise.estimatedOneRepMaxKg)
-        assertFloatEquals(67.5f, exercise.estimatedOneRepMaxKg!!)
+        // Hybrid stays independent and warmup-excluded: 60 × 5 working → 67.5
+        assertNotNull(hybrid)
+        assertFloatEquals(67.5f, hybrid)
+        assertTrue(
+            abs(hybrid - OneRepMaxCalculator.estimate(60f, 8)) > 1f,
+            "velocity fixture hybrid must not use the 8-rep (warmup-inclusive) estimate",
+        )
     }
 
     @Test
@@ -1123,6 +1268,8 @@ class PortalSyncAdapterTest {
         durationMs: Long = 60000,
         weightPerCableKg: Float = 20f,
         reps: Int = 10,
+        warmupReps: Int = 0,
+        workingReps: Int? = null,
         totalReps: Int = 10,
         totalVolumeKg: Float? = null,
         rpe: Int? = null,
@@ -1139,6 +1286,8 @@ class PortalSyncAdapterTest {
             weightPerCableKg = weightPerCableKg,
             duration = durationMs,
             totalReps = totalReps,
+            warmupReps = warmupReps,
+            workingReps = workingReps ?: totalReps,
             exerciseName = exerciseName,
             exerciseId = exerciseId,
             routineSessionId = routineSessionId,

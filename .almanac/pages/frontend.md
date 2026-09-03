@@ -29,7 +29,7 @@ sources:
     note: Defines the routine-editor and training-cycle programming boundary that can surface through shared Compose screens without being part of the live session engine.
   - id: ios-content
     type: file
-    path: iosApp/VitruvianPhoenix/VitruvianPhoenix/ContentView.swift
+    path: iosApp/PhoenixApp/PhoenixApp/ContentView.swift
     note: Shows that iOS hosts the shared Compose controller rather than a parallel SwiftUI screen tree.
   - id: android-host
     type: file

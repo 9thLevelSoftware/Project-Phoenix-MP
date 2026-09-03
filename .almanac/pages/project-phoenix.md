@@ -1,6 +1,6 @@
 ---
 title: Project Phoenix
-summary: Project Phoenix is a Kotlin Multiplatform rescue app that restores local-first control of Vitruvian Trainer hardware after the original company's shutdown.
+summary: Project Phoenix is a Kotlin Multiplatform rescue app that restores local-first control of Phoenix Trainer hardware after the original company's shutdown.
 topics: [product, systems]
 sources:
   - id: repo-readme
@@ -22,11 +22,11 @@ sources:
   - id: ble-scan
     type: file
     path: shared/src/commonMain/kotlin/com/devil/phoenixproject/data/ble/KableBleConnectionManager.kt
-    note: Defines the BLE discovery filters Phoenix uses to recognize Vitruvian devices in practice.
+    note: Defines the BLE discovery filters Phoenix uses to recognize Phoenix devices in practice.
 status: active
 verified: 2026-06-20
 ---
-Project Phoenix is a community-maintained control app for Vitruvian V-Form and Trainer+ machines after the original company closure. The repo positions the app as a way to keep the hardware usable instead of turning it into e-waste, and it ships for both Android and iOS [@repo-readme].
+Project Phoenix is a community-maintained control app for Phoenix V-Form and Trainer+ machines after the original company closure. The repo positions the app as a way to keep the hardware usable instead of turning it into e-waste, and it ships for both Android and iOS [@repo-readme].
 
 The app is a Kotlin Multiplatform codebase with a shared `shared` module and thin `androidApp` and `iosApp` hosts. The shared module uses Compose Multiplatform, Koin, SQLDelight, Ktor, Kable, and multiplatform settings so most behavior lives once in shared code [@shared-build].
 
@@ -38,7 +38,7 @@ That local-first contract is why the remote pages in [[sync]] are framed as opti
 
 ## Hardware contract
 
-Phoenix only claims support for two hardware families in current project memory: V-Form machines advertised as `Vee_*` and Trainer+ machines advertised as `VIT*` [@repo-readme]. The BLE scanner first accepts `Vee_*`, `VIT*`, and `Vitruvian*` names, then falls back to advertisements that expose the `0000fef3` service UUID, the Nordic UART service UUID, or non-empty `0000fef3` service data so devices can still be discovered when the advertisement is incomplete or nameless [@ble-scan].
+Phoenix only claims support for two hardware families in current project memory: V-Form machines advertised as `Vee_*` and Trainer+ machines advertised as `VIT*` [@repo-readme]. The BLE scanner first accepts `Vee_*`, `VIT*`, and `Phoenix*` names, then falls back to advertisements that expose the `0000fef3` service UUID, the Nordic UART service UUID, or non-empty `0000fef3` service data so devices can still be discovered when the advertisement is incomplete or nameless [@ble-scan].
 
 The hardware contract in this repo is per-cable weight, not total machine weight. `Constants` caps the default safe UI limit at `100 kg` per cable, carries a separate `110 kg` per-cable ceiling for Trainer+, and keeps the rest of the app's stored values and calculations in per-cable units rather than total machine load [@app-constants].
 
@@ -55,7 +55,7 @@ The fastest rule is that most coding work should not start here. Open this page 
 The fastest way into the code still starts from the cluster hubs unless the symptom is already narrow enough for a leaf page:
 
 - Shared app structure and screen boundaries: [[app-architecture]]
-- BLE, routine flow, diagnostics, or trainer communication: [[workouts]] then [[vitruvian-ble-protocol]] if the issue is already clearly in the transport layer
+- BLE, routine flow, diagnostics, or trainer communication: [[workouts]] then [[phoenix-ble-protocol]] if the issue is already clearly in the transport layer
 - Workout lifecycle and routine orchestration: [[workouts]]
 - Persistence, migrations, backups, or profile-scoped visibility: [[data]] then [[local-data-model]] if the issue is already structural
 - Supabase project configuration, redirect allowlists, or Edge Function surface: [[supabase]]

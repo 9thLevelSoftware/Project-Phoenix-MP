@@ -1,13 +1,13 @@
 package com.devil.phoenixproject.domain.model
 
 /**
- * Exercise model - represents any exercise that can be performed on the Vitruvian Trainer
+ * Exercise model - represents any exercise that can be performed on the Phoenix Trainer
  *
  * MIGRATION NOTE: This was converted from an enum to a data class to support the exercise library
  * with 100+ exercises instead of being limited to hardcoded values.
  *
  * NOTES:
- * - Vitruvian cables only pull UPWARD from floor platform
+ * - Phoenix cables only pull UPWARD from floor platform
  * - Compatible: Rows, presses, curls, squats, deadlifts, raises
  * - NOT compatible: Pulldowns, pushdowns (require overhead anchor)
  * - Machine tracks each cable independently (loadA, loadB, posA, posB)
@@ -24,7 +24,7 @@ data class Exercise(
     val muscleGroup: String,
     val muscleGroups: String = muscleGroup, // Comma-separated list of primary muscle groups (defaults to muscleGroup for backward compatibility)
     val equipment: String = "",
-    val id: String? = null, // Optional exercise library ID for loading videos/thumbnails
+    val id: String? = null, // Optional exercise library ID (free-exercise-db slug, wger_<id>, or custom_<ts>) used to load demo images
     val isFavorite: Boolean = false, // Whether exercise is marked as favorite
     val isCustom: Boolean = false, // Whether exercise was created by user
     val timesPerformed: Int = 0, // Number of times this exercise has been performed
@@ -34,7 +34,7 @@ data class Exercise(
     val mvtOverrideMs: Float? = null, // User-set Minimum Velocity Threshold override (m/s) for velocity-1RM
     /**
      * Explicit stored bodyweight classification (issue #635). Sourced from the catalog
-     * (Exercise.isBodyweight column / exercise_dump.json) or the RoutineExercise snapshot
+     * (Exercise.isBodyweight column / bundled catalogue) or the RoutineExercise snapshot
      * (portal per-exercise toggle). Null = no explicit flag; derive from [hasCableAccessory]
      * (custom exercises and rows predating migration 39).
      */
@@ -75,7 +75,9 @@ data class Exercise(
     val usesUnifiedAttachment: Boolean
         get() {
             val equipmentParts = equipment.split(",").map { it.trim().uppercase() }
-            return equipmentParts.any { it == "BAR" || it == "BELT" }
+            return equipmentParts.any {
+                it == "BAR" || it == "BELT" || it == "BARBELL" || it == "E-Z CURL BAR"
+            }
         }
 
     /**
@@ -93,8 +95,21 @@ data class Exercise(
         }
 
     companion object {
-        /** Equipment that physically attaches to the machine's cables */
-        private val CABLE_ACCESSORIES = setOf("HANDLES", "BAR", "ROPE", "SHORT_BAR", "BELT", "STRAPS")
+        /** Equipment that implies a loaded/cable movement rather than bodyweight-only. */
+        internal val CABLE_ACCESSORIES = setOf(
+            "CABLE",
+            "BARBELL",
+            "DUMBBELL",
+            "KETTLEBELLS",
+            "MACHINE",
+            "E-Z CURL BAR",
+            "HANDLES",
+            "BAR",
+            "ROPE",
+            "SHORT_BAR",
+            "BELT",
+            "STRAPS",
+        )
     }
 }
 

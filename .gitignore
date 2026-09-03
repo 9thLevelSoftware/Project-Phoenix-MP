@@ -18,10 +18,10 @@ build/
 # Local configuration
 local.properties
 *.local.properties
-# fix(audit): C1 — cover Supabase.xcconfig in any location under VitruvianPhoenix
+# fix(audit): C1 — cover Supabase.xcconfig in any location under PhoenixApp
 # so a stray sibling file doesn't leak the anon key again.
-iosApp/VitruvianPhoenix/**/Supabase.xcconfig
-iosApp/VitruvianPhoenix/Config/Supabase.xcconfig
+iosApp/PhoenixApp/**/Supabase.xcconfig
+iosApp/PhoenixApp/Config/Supabase.xcconfig
 
 # Kotlin
 .kotlin/
@@ -39,8 +39,8 @@ iosApp/**/*.xcworkspace/
 **/*.xcuserstate
 **/project.xcworkspace/xcuserdata/
 iosApp/**/DerivedData/
-iosApp/VitruvianPhoenix/compose-resources/
-iosApp/VitruvianPhoenix/VitruvianPhoenix/compose-resources/
+iosApp/PhoenixApp/compose-resources/
+iosApp/PhoenixApp/PhoenixApp/compose-resources/
 
 # Desktop
 /out/
@@ -77,12 +77,6 @@ CHANGELOG.md
 opencode.json
 review-prompt.txt
 
-# Reference/decompiled code (not for distribution)
-/reference/
-/vitruvian-decompiled/
-/scripts/
-/apktool.jar
-/vitruvian-official.apk
 /parent repo/
 
 # Git worktrees

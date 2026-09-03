@@ -13,15 +13,17 @@ import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineFlowState
-import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.RoutineItem
+import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.SessionBodyweightState
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.WorkoutParameters
@@ -32,16 +34,53 @@ import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.usecase.ApplyEquipmentRackLoadUseCase
 import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.domain.usecase.RoutineSetWeightRequest
+import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.serializer
+
+internal data class InMemoryRoutineProgressSnapshot(
+    val loadedRoutine: Routine,
+    val exerciseIndex: Int,
+    val setIndex: Int,
+    val routineSessionId: String?,
+    val progressInfo: ResumableProgressInfo,
+    val launchOrigin: RoutineLaunchOrigin,
+    val cycleId: String?,
+    val cycleDayNumber: Int?,
+    val configurationInputEpoch: Long,
+)
+
+internal data class RoutineRackSelectionSnapshot(
+    val itemIds: List<String>,
+    val behaviorOverrides: Map<String, RackItemBehavior>,
+    val adjustment: RackLoadAdjustment,
+    val itemsJson: String,
+)
+
+internal data class RoutineRecoveryPreparation(
+    val resolvedRoutine: Routine,
+    val sourceExercise: RoutineExercise,
+    val sourceExerciseIndex: Int,
+    val sourceSetIndex: Int,
+    val semanticSetType: SetType,
+    val targetReps: Int?,
+    val programmedBaseWeightPerCableKg: Float,
+    val rackSelection: RoutineRackSelectionSnapshot,
+    val launchOrigin: RoutineLaunchOrigin,
+    val cycleId: String?,
+    val cycleDayNumber: Int?,
+)
 
 /**
  * Manages routine CRUD, exercise/set navigation, and superset navigation.
@@ -81,21 +120,49 @@ class RoutineFlowManager(
      * Implemented by DefaultWorkoutSessionManager to bridge RoutineFlowManager back to DWSM
      * without creating a direct reference.
      */
-    interface WorkoutLifecycleDelegate {
+    internal interface WorkoutLifecycleDelegate {
         /** Reset the rep counter state */
         fun resetRepCounter()
 
         /** Start a workout with optional countdown skip */
         fun startWorkout(skipCountdown: Boolean = false)
 
-        /** Send BLE stop command to clear fault state */
-        suspend fun sendStopCommand()
+        /** Complete machine teardown before a transition may navigate or start. */
+        fun requestTeardownForTransition(
+            expectedLease: ExecutionLease?,
+            reason: TeardownReason,
+            afterReady: () -> Unit,
+        )
 
-        /** Send BLE stop/reset to put machine in BASELINE mode */
-        suspend fun stopMachineWorkout()
+        /** Lease captured by an asynchronous routine transition, if a set owns it. */
+        fun currentExecutionLeaseOrNull(): ExecutionLease?
+
+        /** Renew authority before an asynchronous routine transition mutates navigation. */
+        fun isCurrentExecution(lease: ExecutionLease): Boolean
 
         /** Update workout parameters for internal manager transitions (no user-adjusted side-effects) */
         fun setWorkoutParametersInternal(params: WorkoutParameters)
+
+        /** Atomically publishes command-authoritative in-memory routine state. */
+        fun mutateConfigurationInputs(block: () -> Unit)
+
+        /** Publishes one Resume-owned routine replacement only while its UI authority is exact. */
+        fun mutateConfigurationInputsIf(
+            candidateStillCurrent: () -> Boolean,
+            block: () -> Unit,
+        ): Boolean
+
+        /** Captures one exact command-authoritative in-memory snapshot without mutation. */
+        fun <T> captureConfigurationInputs(block: () -> T): ConfigurationInputCapture<T>
+
+        /** Resolves the effective load retained for this exact routine-exercise occurrence. */
+        fun resolveOccurrenceSetWeight(exercise: RoutineExercise, setIndex: Int): Float
+
+        /** Capture persisted-runtime cleanup before routine completion mutates identity. */
+        fun beginRoutineCompletedRuntimeCleanup()
+
+        /** Capture persisted-runtime cleanup before intentionally abandoning/replacing a routine. */
+        fun beginRoutineAbandonmentRuntimeCleanup()
     }
 
     /**
@@ -106,10 +173,11 @@ class RoutineFlowManager(
 
     private fun clampUpcomingProgressionKg(valueKg: Float): Float = valueKg.coerceIn(-3f, 3f)
 
-    private fun shouldPreserveRestEditedProgression(): Boolean =
-        coordinator._userAdjustedWeightDuringRest &&
-            (coordinator._workoutState.value is WorkoutState.Resting ||
-                coordinator._workoutState.value is WorkoutState.SetSummary)
+    private fun shouldPreserveRestEditedProgression(): Boolean = coordinator._userAdjustedWeightDuringRest &&
+        (
+            coordinator._workoutState.value is WorkoutState.Resting ||
+                coordinator._workoutState.value is WorkoutState.SetSummary
+            )
 
     private fun markExerciseSkipped(index: Int) {
         coordinator._skippedExercises.update { it + index }
@@ -742,6 +810,54 @@ class RoutineFlowManager(
         return routine.copy(exercises = resolvedExercises)
     }
 
+    internal suspend fun prepareRoutineForRecovery(
+        routine: Routine,
+        exerciseIndex: Int,
+        setIndex: Int,
+        launchOrigin: RoutineLaunchOrigin,
+        cycleId: String?,
+        cycleDayNumber: Int?,
+    ): RoutineRecoveryPreparation? {
+        if (routine.exercises.isEmpty() || exerciseIndex < 0 || setIndex < 0) return null
+        val resolvedRoutine = normalizeExerciseOrder(resolveRoutineWeights(routine))
+        val exercise = resolvedRoutine.exercises.getOrNull(exerciseIndex) ?: return null
+        if (setIndex !in exercise.setReps.indices) return null
+        val programmedBaseWeightPerCableKg = RoutineSetWeightResolver(
+            RoutineSetWeightRequest(
+                exercise = exercise,
+                setIndex = setIndex,
+                currentPrKg = null,
+            ),
+        )
+        if (!programmedBaseWeightPerCableKg.isFinite() || programmedBaseWeightPerCableKg < 0f) return null
+        val configuredReps = exercise.setReps[setIndex]
+        val semanticSetType = if (configuredReps == null || (exercise.isAMRAP && setIndex == exercise.setReps.lastIndex)) {
+            SetType.AMRAP
+        } else {
+            SetType.STANDARD
+        }
+        val isTimedCable = !exercise.exercise.isBodyweight && exercise.duration?.takeIf { it > 0 } != null
+        val targetReps = configuredReps.takeUnless {
+            semanticSetType == SetType.AMRAP || isTimedCable || exercise.exercise.isBodyweight
+        }
+        return RoutineRecoveryPreparation(
+            resolvedRoutine = resolvedRoutine,
+            sourceExercise = exercise,
+            sourceExerciseIndex = exerciseIndex,
+            sourceSetIndex = setIndex,
+            semanticSetType = semanticSetType,
+            targetReps = targetReps,
+            programmedBaseWeightPerCableKg = programmedBaseWeightPerCableKg,
+            rackSelection = resolveDefaultRackSelection(
+                exercise = exercise,
+                programmedWeightPerCableKg = programmedBaseWeightPerCableKg,
+            ),
+            launchOrigin = launchOrigin,
+            cycleId = cycleId,
+            cycleDayNumber = cycleDayNumber,
+        )
+    }
+
     /**
      * Issue #334: Normalize exercise ordering so superset members are contiguous.
      * Existing routines saved before the editor fix may have scattered superset
@@ -788,42 +904,22 @@ class RoutineFlowManager(
         coordinator._sessionBodyweightState.value = SessionBodyweightState()
     }
 
-    private fun loadRoutineInternal(routine: Routine) {
+    private fun loadRoutineInternal(
+        routine: Routine,
+        resumeLaunchOrigin: RoutineLaunchOrigin? = null,
+        resumeCycleId: String? = null,
+        resumeCycleDayNumber: Int? = null,
+        publicationStillCurrent: (() -> Boolean)? = null,
+    ): Boolean {
         val normalized = normalizeExerciseOrder(routine)
-        coordinator.clearActiveRackSelection()
-        resetSessionBodyweightStateForRoutine(normalized)
-        coordinator._loadedRoutine.value = normalized
-        coordinator._currentExerciseIndex.value = 0
-        coordinator._currentSetIndex.value = 0
-        coordinator._skippedExercises.value = emptySet()
-        coordinator._completedExercises.value = emptySet()
-        coordinator._completedRoutineSetKeys.value = emptySet()
-        coordinator._weightAdjustmentRecommendation.value = null
-
-        // Issue #222 diagnostic: Reset bodyweight counter for new routine
-        coordinator.bodyweightSetsCompletedInRoutine = 0
-        coordinator._selectedBodyweightVariants.value = emptyMap()
-        coordinator.bodyweightCompletionVariantOverride = null
-        // Issue #222 v8: Reset transition flag for new routine
-        coordinator.previousExerciseWasBodyweight = false
-
-        // Reset workout state to Idle when loading a routine
-        // This fixes the bug where stale Resting state persists from a previous workout
-        coordinator._workoutState.value = WorkoutState.Idle
-
         // Load parameters from first exercise (matching parent repo behavior)
         val firstExercise = normalized.exercises[0]
-
-        // Pre-seed rack defaults for the first exercise so direct-start paths (e.g. cycle workouts
-        // that bypass enterSetReady) capture the correct rack snapshot from set 1.
-        // Issue #534: also recompute the rack load adjustment so the live-set "Effective load"
-        // formula sees the configured vest / counterweight mass.
-        applyDefaultRackSelectionForExercise(firstExercise)
-
+        val rackSelection = resolveDefaultRackSelection(firstExercise)
         val firstSetReps = firstExercise.setReps.firstOrNull() // Can be null for AMRAP sets
-        // Get per-set weight for first set, falling back to exercise default
-        val firstSetWeight = firstExercise.setWeightsPerCableKg.getOrNull(0)
-            ?: firstExercise.weightPerCableKg
+        // Loading a routine starts a new logical run; never inherit an overlay from a prior session.
+        val firstSetWeight = RoutineSetWeightResolver(
+            RoutineSetWeightRequest(exercise = firstExercise, setIndex = 0, currentPrKg = null),
+        )
 
         // Only bodyweight exercises should have warmupReps = 0
         val isFirstBodyweight = firstExercise.exercise.isBodyweight
@@ -849,18 +945,49 @@ class RoutineFlowManager(
             stallDetectionEnabled = firstExercise.stallDetectionEnabled,
             repCountTiming = firstExercise.repCountTiming,
         )
+        val hasVariableWarmups = firstExercise.warmupSets.isNotEmpty() && !isFirstBodyweight
 
-        // Phase 35C: Initialize warm-up phase for first exercise if it has warmupSets
-        if (firstExercise.warmupSets.isNotEmpty() && !isFirstBodyweight) {
-            coordinator._currentWarmupSetIndex.value = 0
-            coordinator._totalWarmupSets.value = firstExercise.warmupSets.size
-            Logger.d("RoutineFlowManager") { "Phase 35C: First exercise has ${firstExercise.warmupSets.size} warm-up sets" }
-        } else {
-            coordinator._currentWarmupSetIndex.value = -1
-            coordinator._totalWarmupSets.value = 0
+        val publish: () -> Unit = {
+            if (resumeLaunchOrigin != null) {
+                coordinator.routineLaunchOrigin = resumeLaunchOrigin
+                coordinator.activeCycleId = resumeCycleId
+                coordinator.activeCycleDayNumber = resumeCycleDayNumber
+            }
+            coordinator.clearActiveRackSelection()
+            resetSessionBodyweightStateForRoutine(normalized)
+            coordinator._loadedRoutine.value = normalized
+            coordinator._currentExerciseIndex.value = 0
+            coordinator._currentSetIndex.value = 0
+            coordinator._skippedExercises.value = emptySet()
+            coordinator._completedExercises.value = emptySet()
+            coordinator._completedRoutineSetKeys.value = emptySet()
+            coordinator._weightAdjustmentRecommendation.value = null
+            coordinator.bodyweightSetsCompletedInRoutine = 0
+            coordinator._selectedBodyweightVariants.value = emptyMap()
+            coordinator.bodyweightCompletionVariantOverride = null
+            coordinator.previousExerciseWasBodyweight = false
+            coordinator._workoutState.value = WorkoutState.Idle
+            publishRackSelection(rackSelection)
+            coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
+            coordinator._totalWarmupSets.value = if (hasVariableWarmups) firstExercise.warmupSets.size else 0
+            coordinator._userAdjustedWeightDuringRest = false
+            coordinator._workoutParameters.value = params.withPublishedRackSelection(
+                coordinator._workoutParameters.value,
+            )
         }
-
-        lifecycleDelegate.setWorkoutParametersInternal(params)
+        val published = if (publicationStillCurrent == null) {
+            lifecycleDelegate.mutateConfigurationInputs(publish)
+            true
+        } else {
+            lifecycleDelegate.mutateConfigurationInputsIf(publicationStillCurrent) {
+                lifecycleDelegate.beginRoutineAbandonmentRuntimeCleanup()
+                publish()
+            }
+        }
+        if (hasVariableWarmups) {
+            Logger.d("RoutineFlowManager") { "Phase 35C: First exercise has ${firstExercise.warmupSets.size} warm-up sets" }
+        }
+        return published
     }
 
     /**
@@ -882,16 +1009,15 @@ class RoutineFlowManager(
      * mid-flow toggle path; this one runs at SetReady entry for every routine-driven
      * navigation (loadRoutine, enterSetReady, enterSetReadyWithAdjustments).
      */
-    private fun applyDefaultRackSelectionForExercise(exercise: RoutineExercise) {
+    private fun resolveDefaultRackSelection(
+        exercise: RoutineExercise,
+        programmedWeightPerCableKg: Float = exercise.weightPerCableKg,
+    ): RoutineRackSelectionSnapshot {
         val distinctIds = exercise.defaultRackItemIds
             .filter { it.isNotBlank() }
             .distinct()
-        coordinator._activeRackBehaviorOverrides.value = exercise.rackBehaviorOverrides
         val resolvedItems = equipmentRackRepository.rackItems.value
             .filter { it.enabled && it.id in distinctIds }
-        // Use the exercise's own weight — not the coordinator's currently-mirrored
-        // workout parameters, which may still reflect the previous set / routine.
-        val programmedWeightPerCableKg = exercise.weightPerCableKg
         val physicalCableCount = exercise.exercise.preferredCableCount ?: 1
         val adjustment = applyEquipmentRackLoadUseCase.calculate(
             programmedWeightPerCableKg = programmedWeightPerCableKg,
@@ -905,11 +1031,36 @@ class RoutineFlowManager(
             ListSerializer(serializer<RackItem>()),
             resolvedItems,
         )
-        coordinator.setActiveRackSelection(
-            itemIds = distinctIds,
-            precomputedAdjustment = adjustment,
-            precomputedItemsJson = itemsJson,
+        return RoutineRackSelectionSnapshot(
+            itemIds = distinctIds.toList(),
+            behaviorOverrides = exercise.rackBehaviorOverrides.toMap(),
+            adjustment = adjustment,
+            itemsJson = itemsJson,
         )
+    }
+
+    private fun publishRackSelection(snapshot: RoutineRackSelectionSnapshot) {
+        coordinator._activeRackBehaviorOverrides.value = snapshot.behaviorOverrides
+        coordinator.setActiveRackSelection(
+            itemIds = snapshot.itemIds,
+            precomputedAdjustment = snapshot.adjustment,
+            precomputedItemsJson = snapshot.itemsJson,
+        )
+    }
+
+    private fun applyDefaultRackSelectionForExercise(exercise: RoutineExercise) {
+        val snapshot = resolveDefaultRackSelection(exercise)
+        lifecycleDelegate.mutateConfigurationInputs { publishRackSelection(snapshot) }
+    }
+
+    private fun WorkoutParameters.withPublishedRackSelection(published: WorkoutParameters): WorkoutParameters = copy(
+        activeRackItemIds = published.activeRackItemIds,
+        externalAddedLoadKg = published.externalAddedLoadKg,
+        counterweightKg = published.counterweightKg,
+    )
+
+    private fun supersedeConfigurationInputIntent() {
+        lifecycleDelegate.mutateConfigurationInputs { }
     }
 
     fun loadRoutine(routine: Routine) {
@@ -917,6 +1068,8 @@ class RoutineFlowManager(
             Logger.w { "Cannot load routine with no exercises" }
             return
         }
+        lifecycleDelegate.beginRoutineAbandonmentRuntimeCleanup()
+        supersedeConfigurationInputIntent()
 
         // Mark as DAILY_ROUTINES (synchronous, before the async weight-resolution coroutine).
         // If called via loadRoutineFromCycle, ActiveSessionEngine will overwrite this with
@@ -940,6 +1093,8 @@ class RoutineFlowManager(
             Logger.w { "Cannot load routine with no exercises" }
             return false
         }
+        lifecycleDelegate.beginRoutineAbandonmentRuntimeCleanup()
+        supersedeConfigurationInputIntent()
 
         // Mark as DAILY_ROUTINES. If called via loadRoutineFromCycleAsync, ActiveSessionEngine
         // will overwrite this with TRAINING_CYCLES immediately after this suspend call returns.
@@ -949,9 +1104,32 @@ class RoutineFlowManager(
         return true
     }
 
+    internal suspend fun loadRoutineForResumeAsync(
+        routine: Routine,
+        launchOrigin: RoutineLaunchOrigin,
+        cycleId: String?,
+        cycleDayNumber: Int?,
+        publicationStillCurrent: () -> Boolean,
+    ): Boolean {
+        if (routine.exercises.isEmpty() || !publicationStillCurrent()) {
+            return false
+        }
+        val resolvedRoutine = resolveRoutineWeights(routine)
+        currentCoroutineContext().ensureActive()
+        if (!publicationStillCurrent()) return false
+        return loadRoutineInternal(
+            routine = resolvedRoutine,
+            resumeLaunchOrigin = launchOrigin,
+            resumeCycleId = cycleId,
+            resumeCycleDayNumber = cycleDayNumber,
+            publicationStillCurrent = publicationStillCurrent,
+        )
+    }
+
     fun loadRoutineById(routineId: String) {
         val routine = coordinator._routines.value.find { it.id == routineId }
         if (routine != null) {
+            lifecycleDelegate.beginRoutineAbandonmentRuntimeCleanup()
             clearCycleContext()
             loadRoutine(routine)
         }
@@ -961,6 +1139,8 @@ class RoutineFlowManager(
      * Enter routine overview mode.
      */
     fun enterRoutineOverview(routine: Routine) {
+        lifecycleDelegate.beginRoutineAbandonmentRuntimeCleanup()
+        supersedeConfigurationInputIntent()
         // Mark as DAILY_ROUTINES synchronously before the async weight-resolution coroutine,
         // mirroring loadRoutine(). This ensures routineExitDestination() returns the correct
         // destination even if the user exits before the coroutine completes.
@@ -974,6 +1154,8 @@ class RoutineFlowManager(
      * Enter routine overview with a one-shot launch modifier applied after PR% weights resolve.
      */
     fun enterRoutineOverview(routine: Routine, modifier: AppliedRoutineModifier) {
+        lifecycleDelegate.beginRoutineAbandonmentRuntimeCleanup()
+        supersedeConfigurationInputIntent()
         // Mark as DAILY_ROUTINES synchronously before the async weight-resolution coroutine,
         // mirroring loadRoutine(). This ensures routineExitDestination() returns the correct
         // destination even if the user exits before the coroutine completes.
@@ -987,30 +1169,29 @@ class RoutineFlowManager(
 
     private fun enterRoutineOverviewInternal(routine: Routine) {
         val normalized = normalizeExerciseOrder(routine)
-        resetSessionBodyweightStateForRoutine(normalized)
-        coordinator._loadedRoutine.value = normalized
-        coordinator._currentExerciseIndex.value = 0
-        coordinator._currentSetIndex.value = 0
-        coordinator._skippedExercises.value = emptySet()
-        coordinator._completedExercises.value = emptySet()
-        coordinator._completedRoutineSetKeys.value = emptySet()
-        coordinator._weightAdjustmentRecommendation.value = null
-        coordinator._workoutState.value = WorkoutState.Idle
-        coordinator._routineFlowState.value = RoutineFlowState.Overview(
-            routine = normalized,
-            selectedExerciseIndex = 0,
-        )
-
         // Issue #356: Initialize warm-up state for the first exercise
         val firstExercise = normalized.exercises.firstOrNull()
         val isFirstBodyweight = firstExercise?.exercise?.isBodyweight ?: false
-        if (firstExercise != null && firstExercise.warmupSets.isNotEmpty() && !isFirstBodyweight) {
-            coordinator._currentWarmupSetIndex.value = 0
-            coordinator._totalWarmupSets.value = firstExercise.warmupSets.size
-            Logger.d("RoutineFlowManager") { "Issue #356: Overview init warm-up for ${firstExercise.exercise.name}: ${firstExercise.warmupSets.size} sets" }
-        } else {
-            coordinator._currentWarmupSetIndex.value = -1
-            coordinator._totalWarmupSets.value = 0
+        val warmupExercise = firstExercise?.takeIf { it.warmupSets.isNotEmpty() && !isFirstBodyweight }
+        lifecycleDelegate.mutateConfigurationInputs {
+            resetSessionBodyweightStateForRoutine(normalized)
+            coordinator._loadedRoutine.value = normalized
+            coordinator._currentExerciseIndex.value = 0
+            coordinator._currentSetIndex.value = 0
+            coordinator._skippedExercises.value = emptySet()
+            coordinator._completedExercises.value = emptySet()
+            coordinator._completedRoutineSetKeys.value = emptySet()
+            coordinator._weightAdjustmentRecommendation.value = null
+            coordinator._workoutState.value = WorkoutState.Idle
+            coordinator._routineFlowState.value = RoutineFlowState.Overview(
+                routine = normalized,
+                selectedExerciseIndex = 0,
+            )
+            coordinator._currentWarmupSetIndex.value = if (warmupExercise != null) 0 else -1
+            coordinator._totalWarmupSets.value = warmupExercise?.warmupSets?.size ?: 0
+        }
+        warmupExercise?.let { exercise ->
+            Logger.d("RoutineFlowManager") { "Issue #356: Overview init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
         }
     }
 
@@ -1021,6 +1202,7 @@ class RoutineFlowManager(
      * Used by the autoplay exercise-advance path in [ActiveSessionEngine.startNextSetOrExercise].
      */
     fun seedRackSelectionForExercise(exerciseIndex: Int) {
+        supersedeConfigurationInputIntent()
         val routine = coordinator._loadedRoutine.value ?: return
         val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
         applyDefaultRackSelectionForExercise(exercise)
@@ -1030,21 +1212,12 @@ class RoutineFlowManager(
      * Enter set-ready state for specific exercise and set.
      */
     fun enterSetReady(exerciseIndex: Int, setIndex: Int) {
+        supersedeConfigurationInputIntent()
         val routine = coordinator._loadedRoutine.value ?: return
         val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
-
-        // Issue #356: Track if we're entering a new exercise (need to reinit warm-up state)
         val isNewExercise = exerciseIndex != coordinator._currentExerciseIndex.value
-
-        coordinator._currentExerciseIndex.value = exerciseIndex
-        coordinator._currentSetIndex.value = setIndex
-        // Issue #534: recompute rack load adjustment for the body-weight effective load formula
-        applyDefaultRackSelectionForExercise(exercise)
-
-        // Get weight for this set
-        val setWeight = exercise.setWeightsPerCableKg.getOrNull(setIndex)
-            ?: exercise.weightPerCableKg
-        // Issue #129: Check raw value for AMRAP before fallback
+        val rackSelection = resolveDefaultRackSelection(exercise)
+        val setWeight = lifecycleDelegate.resolveOccurrenceSetWeight(exercise, setIndex)
         val rawSetReps = exercise.setReps.getOrNull(setIndex)
         val setReps = rawSetReps ?: exercise.reps
         val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
@@ -1053,11 +1226,7 @@ class RoutineFlowManager(
         } else {
             clampUpcomingProgressionKg(exercise.progressionKg)
         }
-        if (!preserveRestEditedProgression) {
-            coordinator._userAdjustedWeightDuringRest = false
-        }
-
-        coordinator._routineFlowState.value = RoutineFlowState.SetReady(
+        val readyState = RoutineFlowState.SetReady(
             exerciseIndex = exerciseIndex,
             setIndex = setIndex,
             adjustedWeight = setWeight,
@@ -1066,37 +1235,10 @@ class RoutineFlowManager(
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
-
-        // Issue #129: Determine if this specific set is AMRAP (null reps = AMRAP)
         val isSetAmrap = rawSetReps == null
-        Logger.d {
-            "enterSetReady: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
-        }
-        // Issue #357: Log weight source for PR% debugging
-        val weightFromList = exercise.setWeightsPerCableKg.getOrNull(setIndex)
-        Logger.d("RoutineFlowManager") {
-            "Issue #357: enterSetReady weight for set $setIndex: setWeightsPerCableKg[$setIndex]=$weightFromList, " +
-                "fallback weightPerCableKg=${exercise.weightPerCableKg}, using=$setWeight, " +
-                "usePercentOfPR=${exercise.usePercentOfPR}, setWeights.size=${exercise.setWeightsPerCableKg.size}"
-        }
-
-        // Issue #356: Initialize warm-up state when entering a new exercise at set 0
-        // This ensures warm-up sets are executed when navigating via SetReady skip/prev
-        if (isNewExercise && setIndex == 0) {
-            val isBodyweight = exercise.exercise.isBodyweight
-            if (exercise.warmupSets.isNotEmpty() && !isBodyweight) {
-                coordinator._currentWarmupSetIndex.value = 0
-                coordinator._totalWarmupSets.value = exercise.warmupSets.size
-                Logger.d("RoutineFlowManager") { "Issue #356: SetReady init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
-            } else {
-                coordinator._currentWarmupSetIndex.value = -1
-                coordinator._totalWarmupSets.value = 0
-            }
-        }
-
-        // Update workout parameters for this set
-        // Issue #209: Explicitly set isJustLift=false and useAutoStart=false
-        coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+        val initializeWarmups = isNewExercise && setIndex == 0
+        val hasVariableWarmups = initializeWarmups && exercise.warmupSets.isNotEmpty() && !exercise.exercise.isBodyweight
+        val nextParams = coordinator._workoutParameters.value.copy(
             programMode = exercise.programMode,
             weightPerCableKg = setWeight,
             reps = setReps,
@@ -1111,6 +1253,36 @@ class RoutineFlowManager(
             isJustLift = false,
             useAutoStart = false,
         )
+        lifecycleDelegate.mutateConfigurationInputs {
+            coordinator._currentExerciseIndex.value = exerciseIndex
+            coordinator._currentSetIndex.value = setIndex
+            publishRackSelection(rackSelection)
+            if (!preserveRestEditedProgression) {
+                coordinator._userAdjustedWeightDuringRest = false
+            }
+            coordinator._routineFlowState.value = readyState
+            if (initializeWarmups) {
+                coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
+                coordinator._totalWarmupSets.value = if (hasVariableWarmups) exercise.warmupSets.size else 0
+            }
+            coordinator._workoutParameters.value = nextParams.withPublishedRackSelection(
+                coordinator._workoutParameters.value,
+            )
+        }
+
+        Logger.d {
+            "enterSetReady: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
+        }
+        // Issue #357: Log weight source for PR% debugging
+        val weightFromList = exercise.setWeightsPerCableKg.getOrNull(setIndex)
+        Logger.d("RoutineFlowManager") {
+            "Issue #357: enterSetReady weight for set $setIndex: setWeightsPerCableKg[$setIndex]=$weightFromList, " +
+                "fallback weightPerCableKg=${exercise.weightPerCableKg}, using=$setWeight, " +
+                "usePercentOfPR=${exercise.usePercentOfPR}, setWeights.size=${exercise.setWeightsPerCableKg.size}"
+        }
+        if (hasVariableWarmups) {
+            Logger.d("RoutineFlowManager") { "Issue #356: SetReady init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
+        }
         clearWeightRecommendationIfNotTarget(exercise.exercise.id, setIndex)
     }
 
@@ -1118,27 +1290,18 @@ class RoutineFlowManager(
      * Enter SetReady state with pre-adjusted weight and reps from the overview screen.
      */
     fun enterSetReadyWithAdjustments(exerciseIndex: Int, setIndex: Int, adjustedWeight: Float, adjustedReps: Int) {
+        supersedeConfigurationInputIntent()
         val routine = coordinator._loadedRoutine.value ?: return
         val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
-
-        // Issue #356: Track if we're entering a new exercise (need to reinit warm-up state)
         val isNewExercise = exerciseIndex != coordinator._currentExerciseIndex.value
-
-        coordinator._currentExerciseIndex.value = exerciseIndex
-        coordinator._currentSetIndex.value = setIndex
-        // Issue #534: recompute rack load adjustment for the body-weight effective load formula
-        applyDefaultRackSelectionForExercise(exercise)
+        val rackSelection = resolveDefaultRackSelection(exercise)
         val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
         val progressionKg = if (preserveRestEditedProgression) {
             clampUpcomingProgressionKg(coordinator._workoutParameters.value.progressionRegressionKg)
         } else {
             clampUpcomingProgressionKg(exercise.progressionKg)
         }
-        if (!preserveRestEditedProgression) {
-            coordinator._userAdjustedWeightDuringRest = false
-        }
-
-        coordinator._routineFlowState.value = RoutineFlowState.SetReady(
+        val readyState = RoutineFlowState.SetReady(
             exerciseIndex = exerciseIndex,
             setIndex = setIndex,
             adjustedWeight = adjustedWeight,
@@ -1147,31 +1310,11 @@ class RoutineFlowManager(
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
-
-        // Issue #129: Check raw value for AMRAP - null reps in setReps list = AMRAP
         val rawSetReps = exercise.setReps.getOrNull(setIndex)
         val isSetAmrap = rawSetReps == null
-        Logger.d {
-            "enterSetReadyWithAdjustments: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
-        }
-
-        // Issue #356: Initialize warm-up state when entering a new exercise at set 0
-        // This is the main path from RoutineOverviewScreen when user taps "Start"
-        if (isNewExercise && setIndex == 0) {
-            val isBodyweight = exercise.exercise.isBodyweight
-            if (exercise.warmupSets.isNotEmpty() && !isBodyweight) {
-                coordinator._currentWarmupSetIndex.value = 0
-                coordinator._totalWarmupSets.value = exercise.warmupSets.size
-                Logger.d("RoutineFlowManager") { "Issue #356: SetReadyWithAdjustments init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
-            } else {
-                coordinator._currentWarmupSetIndex.value = -1
-                coordinator._totalWarmupSets.value = 0
-            }
-        }
-
-        // Update workout parameters with adjusted values
-        // Issue #209: Explicitly set isJustLift=false and useAutoStart=false
-        coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+        val initializeWarmups = isNewExercise && setIndex == 0
+        val hasVariableWarmups = initializeWarmups && exercise.warmupSets.isNotEmpty() && !exercise.exercise.isBodyweight
+        val nextParams = coordinator._workoutParameters.value.copy(
             programMode = exercise.programMode,
             weightPerCableKg = adjustedWeight,
             reps = adjustedReps,
@@ -1186,6 +1329,29 @@ class RoutineFlowManager(
             isJustLift = false,
             useAutoStart = false,
         )
+        lifecycleDelegate.mutateConfigurationInputs {
+            coordinator._currentExerciseIndex.value = exerciseIndex
+            coordinator._currentSetIndex.value = setIndex
+            publishRackSelection(rackSelection)
+            if (!preserveRestEditedProgression) {
+                coordinator._userAdjustedWeightDuringRest = false
+            }
+            coordinator._routineFlowState.value = readyState
+            if (initializeWarmups) {
+                coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
+                coordinator._totalWarmupSets.value = if (hasVariableWarmups) exercise.warmupSets.size else 0
+            }
+            coordinator._workoutParameters.value = nextParams.withPublishedRackSelection(
+                coordinator._workoutParameters.value,
+            )
+        }
+
+        Logger.d {
+            "enterSetReadyWithAdjustments: exercise=${exercise.exercise.name}, set=$setIndex, isAMRAP=$isSetAmrap, stallDetection=${exercise.stallDetectionEnabled}"
+        }
+        if (hasVariableWarmups) {
+            Logger.d("RoutineFlowManager") { "Issue #356: SetReadyWithAdjustments init warm-up for ${exercise.exercise.name}: ${exercise.warmupSets.size} sets" }
+        }
         clearWeightRecommendationIfNotTarget(exercise.exercise.id, setIndex)
     }
 
@@ -1193,11 +1359,14 @@ class RoutineFlowManager(
      * Update weight in set-ready state.
      */
     fun updateSetReadyWeight(weight: Float) {
+        supersedeConfigurationInputIntent()
         val state = coordinator._routineFlowState.value
         if (state is RoutineFlowState.SetReady) {
             val clampedWeight = weight.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG)
-            coordinator._routineFlowState.value = state.copy(adjustedWeight = clampedWeight)
-            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(weightPerCableKg = clampedWeight)
+            lifecycleDelegate.mutateConfigurationInputs {
+                coordinator._routineFlowState.value = state.copy(adjustedWeight = clampedWeight)
+                coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(weightPerCableKg = clampedWeight)
+            }
         }
     }
 
@@ -1205,10 +1374,13 @@ class RoutineFlowManager(
      * Update reps in set-ready state.
      */
     fun updateSetReadyReps(reps: Int) {
+        supersedeConfigurationInputIntent()
         val state = coordinator._routineFlowState.value
         if (state is RoutineFlowState.SetReady && reps >= 1) {
-            coordinator._routineFlowState.value = state.copy(adjustedReps = reps)
-            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(reps = reps)
+            lifecycleDelegate.mutateConfigurationInputs {
+                coordinator._routineFlowState.value = state.copy(adjustedReps = reps)
+                coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(reps = reps)
+            }
         }
     }
 
@@ -1217,13 +1389,16 @@ class RoutineFlowManager(
      * Stored internally in kg and intentionally does not mutate RoutineExercise defaults.
      */
     fun updateSetReadyProgressionKg(valueKg: Float) {
+        supersedeConfigurationInputIntent()
         val state = coordinator._routineFlowState.value
         if (state is RoutineFlowState.SetReady) {
             val clampedValue = clampUpcomingProgressionKg(valueKg)
-            coordinator._routineFlowState.value = state.copy(adjustedProgressionKg = clampedValue)
-            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
-                progressionRegressionKg = clampedValue,
-            )
+            lifecycleDelegate.mutateConfigurationInputs {
+                coordinator._routineFlowState.value = state.copy(adjustedProgressionKg = clampedValue)
+                coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+                    progressionRegressionKg = clampedValue,
+                )
+            }
         }
     }
 
@@ -1231,10 +1406,13 @@ class RoutineFlowManager(
      * Update echo level in set-ready state for Echo mode.
      */
     fun updateSetReadyEchoLevel(level: EchoLevel) {
+        supersedeConfigurationInputIntent()
         val state = coordinator._routineFlowState.value
         if (state is RoutineFlowState.SetReady) {
-            coordinator._routineFlowState.value = state.copy(echoLevel = level)
-            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(echoLevel = level)
+            lifecycleDelegate.mutateConfigurationInputs {
+                coordinator._routineFlowState.value = state.copy(echoLevel = level)
+                coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(echoLevel = level)
+            }
         }
     }
 
@@ -1242,14 +1420,17 @@ class RoutineFlowManager(
      * Update eccentric load percentage in set-ready state for Echo mode.
      */
     fun updateSetReadyEccentricLoad(percent: Int) {
+        supersedeConfigurationInputIntent()
         // Defensive clamping: Machine hardware limit is 150% eccentric load
         val safePercent = percent.coerceIn(0, 150)
         val state = coordinator._routineFlowState.value
         if (state is RoutineFlowState.SetReady) {
-            coordinator._routineFlowState.value = state.copy(eccentricLoadPercent = safePercent)
             val load = EccentricLoad.entries.minByOrNull { kotlin.math.abs(it.percentage - safePercent) }
                 ?: EccentricLoad.LOAD_100
-            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(eccentricLoad = load)
+            lifecycleDelegate.mutateConfigurationInputs {
+                coordinator._routineFlowState.value = state.copy(eccentricLoadPercent = safePercent)
+                coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(eccentricLoad = load)
+            }
         }
     }
 
@@ -1258,6 +1439,7 @@ class RoutineFlowManager(
      * Delegates BLE and workout lifecycle to DWSM via [WorkoutLifecycleDelegate].
      */
     fun startSetFromReady() {
+        supersedeConfigurationInputIntent()
         val state = coordinator._routineFlowState.value
         if (state !is RoutineFlowState.SetReady) return
 
@@ -1270,12 +1452,14 @@ class RoutineFlowManager(
 
         // Apply the adjusted values to workout parameters
         // Issue #209: Explicitly set isJustLift=false as a safety net
-        coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
-            weightPerCableKg = state.adjustedWeight,
-            reps = state.adjustedReps,
-            progressionRegressionKg = state.adjustedProgressionKg,
-            isJustLift = false,
-        )
+        lifecycleDelegate.mutateConfigurationInputs {
+            coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(
+                weightPerCableKg = state.adjustedWeight,
+                reps = state.adjustedReps,
+                progressionRegressionKg = state.adjustedProgressionKg,
+                isJustLift = false,
+            )
+        }
 
         // Start the workout directly (skip countdown since user already configured on SetReady)
         lifecycleDelegate.startWorkout(skipCountdown = true)
@@ -1302,21 +1486,22 @@ class RoutineFlowManager(
      * so reading the destination afterwards always returns the default (DailyRoutines).
      */
     fun exitRoutineFlow() {
-        coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
-        coordinator._loadedRoutine.value = null
-        clearSessionBodyweightState()
-        coordinator._workoutState.value = WorkoutState.Idle
-        coordinator._weightAdjustmentRecommendation.value = null
-        coordinator.clearActiveRackSelection()
-        coordinator.routineStartTime = 0
-        // Issue #392: Clear routine session context so next routine gets fresh ID
-        coordinator.currentRoutineSessionId = null
-        coordinator.currentRoutineName = null
-        coordinator.currentRoutineId = null
-        coordinator.routineAccumulatedCalories = 0f
-        coordinator._completedRoutineSetKeys.value = emptySet()
-        // Clear launch origin last so any concurrent read still sees the correct value.
-        coordinator.routineLaunchOrigin = null
+        lifecycleDelegate.beginRoutineAbandonmentRuntimeCleanup()
+        lifecycleDelegate.mutateConfigurationInputs {
+            coordinator._routineFlowState.value = RoutineFlowState.NotInRoutine
+            coordinator._loadedRoutine.value = null
+            clearSessionBodyweightState()
+            coordinator._workoutState.value = WorkoutState.Idle
+            coordinator._weightAdjustmentRecommendation.value = null
+            coordinator.clearActiveRackSelection()
+            coordinator.routineStartTime = 0
+            coordinator.currentRoutineSessionId = null
+            coordinator.currentRoutineName = null
+            coordinator.currentRoutineId = null
+            coordinator.routineAccumulatedCalories = 0f
+            coordinator._completedRoutineSetKeys.value = emptySet()
+            coordinator.routineLaunchOrigin = null
+        }
     }
 
     /**
@@ -1329,6 +1514,8 @@ class RoutineFlowManager(
             Logger.d("RoutineFlowManager") { "showRoutineComplete: already complete, ignoring duplicate call" }
             return
         }
+        lifecycleDelegate.beginRoutineCompletedRuntimeCleanup()
+        supersedeConfigurationInputIntent()
         val routine = coordinator._loadedRoutine.value ?: return
         val skippedIndices = coordinator._skippedExercises.value
         val completedSetKeys = coordinator._completedRoutineSetKeys.value
@@ -1347,29 +1534,33 @@ class RoutineFlowManager(
         } else {
             0L
         }
-        coordinator._weightAdjustmentRecommendation.value = null
-        clearSessionBodyweightState()
-        coordinator._routineFlowState.value = RoutineFlowState.Complete(
-            routineName = routine.name,
-            totalSets = completedSetCount,
-            totalExercises = completedExerciseIndices.size,
-            totalDurationMs = duration,
-        )
+        lifecycleDelegate.mutateConfigurationInputs {
+            coordinator._weightAdjustmentRecommendation.value = null
+            clearSessionBodyweightState()
+            coordinator._routineFlowState.value = RoutineFlowState.Complete(
+                routineName = routine.name,
+                totalSets = completedSetCount,
+                totalExercises = completedExerciseIndices.size,
+                totalDurationMs = duration,
+            )
+        }
     }
 
     fun clearLoadedRoutine() {
-        coordinator._loadedRoutine.value = null
-        clearSessionBodyweightState()
-        coordinator.clearActiveRackSelection()
+        lifecycleDelegate.beginRoutineAbandonmentRuntimeCleanup()
         clearCycleContext()
-        coordinator._weightAdjustmentRecommendation.value = null
-        coordinator.routineStartTime = 0
-        // Issue #392: Clear routine session context so next routine gets fresh ID
-        coordinator.currentRoutineSessionId = null
-        coordinator.currentRoutineName = null
-        coordinator.currentRoutineId = null
-        coordinator.routineAccumulatedCalories = 0f
-        coordinator._completedRoutineSetKeys.value = emptySet()
+        lifecycleDelegate.mutateConfigurationInputs {
+            coordinator._loadedRoutine.value = null
+            clearSessionBodyweightState()
+            coordinator.clearActiveRackSelection()
+            coordinator._weightAdjustmentRecommendation.value = null
+            coordinator.routineStartTime = 0
+            coordinator.currentRoutineSessionId = null
+            coordinator.currentRoutineName = null
+            coordinator.currentRoutineId = null
+            coordinator.routineAccumulatedCalories = 0f
+            coordinator._completedRoutineSetKeys.value = emptySet()
+        }
     }
 
     private fun clearWeightRecommendationIfNotTarget(exerciseId: String?, setIndex: Int) {
@@ -1395,58 +1586,44 @@ class RoutineFlowManager(
      * Internal helper to perform the actual exercise navigation.
      */
     private fun navigateToExerciseInternal(routine: Routine, index: Int) {
-        markExerciseActive(index)
-        coordinator._currentExerciseIndex.value = index
-        coordinator._currentSetIndex.value = 0
-
+        supersedeConfigurationInputIntent()
         val exercise = routine.exercises[index]
         val setReps = exercise.setReps.getOrNull(0)
-        val setWeight = exercise.setWeightsPerCableKg.getOrNull(0) ?: exercise.weightPerCableKg
-
-        // Issue #536: seed the new exercise's defaults (which clears any previous
-        // selection when the new exercise has no defaults; otherwise overwrites
-        // _workoutParameters.load fields with the new exercise's precomputed
-        // adjustment). Without this reset, a vest selected via the SetReady toggle
-        // on the previous exercise leaks into the live HUD for this exercise
-        // (captureRackLoadSnapshot reads _activeRackItemIds at set start). Mirrors
-        // the seeding done by enterSetReady / enterSetReadyWithAdjustments /
-        // loadRoutineInternal so every per-exercise-advance path is consistent.
-        applyDefaultRackSelectionForExercise(exercise)
-
-        coordinator._workoutParameters.update { params ->
-            params.copy(
-                programMode = exercise.programMode,
-                echoLevel = exercise.echoLevel,
-                eccentricLoad = exercise.eccentricLoad,
-                reps = setReps ?: exercise.reps,
-                weightPerCableKg = setWeight,
-                progressionRegressionKg = exercise.progressionKg,
-                warmupReps = 3,
-                selectedExerciseId = exercise.exercise.id,
-                stallDetectionEnabled = exercise.stallDetectionEnabled,
-                repCountTiming = exercise.repCountTiming,
-                stopAtTop = exercise.stopAtTop,
-            )
-        }
-
-        // Phase 35C: Initialize warm-up phase when jumping to exercise with warmupSets
-        // Fixed: Use canonical isBodyweight check (hasCableAccessory) instead of
-        // incorrect equipment string comparison that missed exercises with non-cable
-        // equipment like BENCH.
+        val setWeight = lifecycleDelegate.resolveOccurrenceSetWeight(exercise, 0)
+        val rackSelection = resolveDefaultRackSelection(exercise)
+        val nextParams = coordinator._workoutParameters.value.copy(
+            programMode = exercise.programMode,
+            echoLevel = exercise.echoLevel,
+            eccentricLoad = exercise.eccentricLoad,
+            reps = setReps ?: exercise.reps,
+            weightPerCableKg = setWeight,
+            progressionRegressionKg = exercise.progressionKg,
+            warmupReps = 3,
+            selectedExerciseId = exercise.exercise.id,
+            stallDetectionEnabled = exercise.stallDetectionEnabled,
+            repCountTiming = exercise.repCountTiming,
+            stopAtTop = exercise.stopAtTop,
+        )
         val isBodyweight = exercise.exercise.isBodyweight
-        if (exercise.warmupSets.isNotEmpty() && !isBodyweight) {
-            coordinator._currentWarmupSetIndex.value = 0
-            coordinator._totalWarmupSets.value = exercise.warmupSets.size
+        val hasVariableWarmups = exercise.warmupSets.isNotEmpty() && !isBodyweight
+        lifecycleDelegate.mutateConfigurationInputs {
+            markExerciseActive(index)
+            coordinator._currentExerciseIndex.value = index
+            coordinator._currentSetIndex.value = 0
+            publishRackSelection(rackSelection)
+            coordinator._workoutParameters.value = nextParams.withPublishedRackSelection(
+                coordinator._workoutParameters.value,
+            )
+            coordinator._currentWarmupSetIndex.value = if (hasVariableWarmups) 0 else -1
+            coordinator._totalWarmupSets.value = if (hasVariableWarmups) exercise.warmupSets.size else 0
+            coordinator._workoutState.value = WorkoutState.Idle
+            coordinator._repCount.value = RepCount()
+        }
+        if (hasVariableWarmups) {
             Logger.d("RoutineFlowManager") {
                 "Phase 35C: Entering warm-up phase for ${exercise.exercise.name}: ${exercise.warmupSets.size} warm-up sets"
             }
-        } else {
-            coordinator._currentWarmupSetIndex.value = -1
-            coordinator._totalWarmupSets.value = 0
         }
-
-        coordinator._workoutState.value = WorkoutState.Idle
-        coordinator._repCount.value = RepCount()
         lifecycleDelegate.resetRepCounter()
 
         Logger.i("RoutineFlowManager") { "Jumped to exercise $index: ${exercise.exercise.name}" }
@@ -1500,23 +1677,14 @@ class RoutineFlowManager(
         coordinator._timedExerciseRemainingSeconds.value = null
         resetAutoStopState()
 
-        // Issue #172: Async navigation with proper BLE cleanup
-        scope.launch {
-            try {
-                // Issue #205: Clear fault state with StopPacket (0x50)
-                lifecycleDelegate.sendStopCommand()
-                delay(100)
-
-                // Full reset with RESET command (0x0A)
-                lifecycleDelegate.stopMachineWorkout()
-                delay(150)
-
-                Logger.d("RoutineFlowManager") { "BLE stop sequence sent before navigation to exercise $index" }
-            } catch (e: Exception) {
-                if (e is CancellationException) throw e
-                Logger.w(e) { "Stop command before navigation failed (non-fatal): ${e.message}" }
+        val transitionLease = lifecycleDelegate.currentExecutionLeaseOrNull()
+        lifecycleDelegate.requestTeardownForTransition(transitionLease, TeardownReason.EXERCISE_JUMP) transition@{
+            if (transitionLease != null && !lifecycleDelegate.isCurrentExecution(transitionLease)) {
+                return@transition
             }
-
+            if (transitionLease == null && lifecycleDelegate.currentExecutionLeaseOrNull() != null) {
+                return@transition
+            }
             markExerciseActive(index)
             lifecycleDelegate.resetRepCounter()
             enterSetReady(index, 0)
@@ -1742,6 +1910,48 @@ class RoutineFlowManager(
         return false
     }
 
+    internal fun captureResumableProgress(
+        routineId: String,
+        profileId: String,
+    ): InMemoryRoutineProgressSnapshot? {
+        val capture = lifecycleDelegate.captureConfigurationInputs {
+            val loaded = coordinator._loadedRoutine.value
+                ?.takeIf { it.id == routineId && it.profileId == profileId }
+                ?: return@captureConfigurationInputs null
+            val exerciseIndex = coordinator._currentExerciseIndex.value
+            val setIndex = coordinator._currentSetIndex.value
+            if (exerciseIndex == 0 &&
+                setIndex == 0 &&
+                lifecycleDelegate.currentExecutionLeaseOrNull() == null
+            ) {
+                return@captureConfigurationInputs null
+            }
+            val exercise = loaded.exercises.getOrNull(exerciseIndex)
+                ?: return@captureConfigurationInputs null
+            if (setIndex !in exercise.setReps.indices) return@captureConfigurationInputs null
+            val launchOrigin = coordinator.routineLaunchOrigin
+                ?: return@captureConfigurationInputs null
+            InMemoryRoutineProgressSnapshot(
+                loadedRoutine = loaded,
+                exerciseIndex = exerciseIndex,
+                setIndex = setIndex,
+                routineSessionId = coordinator.currentRoutineSessionId,
+                progressInfo = ResumableProgressInfo(
+                    exerciseName = exercise.exercise.displayName,
+                    currentSet = setIndex + 1,
+                    totalSets = exercise.setReps.size,
+                    currentExercise = exerciseIndex + 1,
+                    totalExercises = loaded.exercises.size,
+                ),
+                launchOrigin = launchOrigin,
+                cycleId = coordinator.activeCycleId,
+                cycleDayNumber = coordinator.activeCycleDayNumber,
+                configurationInputEpoch = -1L,
+            )
+        }
+        return capture.value?.copy(configurationInputEpoch = capture.configurationInputEpoch)
+    }
+
     /**
      * Get information about resumable progress for display in dialog.
      */
@@ -1781,8 +1991,10 @@ class RoutineFlowManager(
      * Clear the active cycle context (e.g., when starting a non-cycle workout).
      */
     fun clearCycleContext() {
-        coordinator.activeCycleId = null
-        coordinator.activeCycleDayNumber = null
+        lifecycleDelegate.mutateConfigurationInputs {
+            coordinator.activeCycleId = null
+            coordinator.activeCycleDayNumber = null
+        }
     }
 }
 

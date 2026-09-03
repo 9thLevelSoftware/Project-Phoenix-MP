@@ -5,7 +5,7 @@ import app.cash.sqldelight.coroutines.mapToList
 import app.cash.sqldelight.coroutines.mapToOneOrNull
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.BadgeDefinitions
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.BadgeRequirement
 import com.devil.phoenixproject.domain.model.EarnedBadge
@@ -29,8 +29,8 @@ import kotlinx.datetime.toLocalDateTime
  * SQLDelight implementation of GamificationRepository.
  * All methods are profile-scoped to support multi-profile isolation.
  */
-class SqlDelightGamificationRepository(db: VitruvianDatabase) : GamificationRepository {
-    private val queries = db.vitruvianDatabaseQueries
+class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationRepository {
+    private val queries = db.phoenixDatabaseQueries
 
     override fun getEarnedBadges(profileId: String): Flow<List<EarnedBadge>> = queries.selectAllEarnedBadges(profileId = profileId)
         .asFlow()

@@ -27,7 +27,7 @@ Builds on the merged foundation + Phase 3 (this branch). Reuses `VelocityOneRepM
 **Modify:**
 - `domain/model/Gamification.kt` — new `BadgeRequirement.VelocityOneRepMaxImprovements` + `getProgressDescription` branch.
 - `data/local/BadgeDefinitions.kt` — 3 tiered badge definitions.
-- `sqldelight/.../VitruvianDatabase.sq` — `selectAllPassingVelocityOneRepMaxByProfile` query.
+- `sqldelight/.../PhoenixDatabase.sq` — `selectAllPassingVelocityOneRepMaxByProfile` query.
 - `data/repository/VelocityOneRepMaxRepository.kt` — `getAllPassing(profileId)`.
 - `presentation/manager/GamificationManager.kt` — `checkVelocityOneRepMaxBadges(...)`.
 - `presentation/viewmodel/MainViewModel.kt` — invoke the count + badge check from `onPostSaveComputed`.
@@ -145,13 +145,13 @@ git commit -m "feat(1rm): add tiered velocity-1RM improvement badges (#517)"
 ### Task 2: `getAllPassing(profileId)` repository query
 
 **Files:**
-- Modify: `sqldelight/.../VitruvianDatabase.sq`, `data/repository/VelocityOneRepMaxRepository.kt`
+- Modify: `sqldelight/.../PhoenixDatabase.sq`, `data/repository/VelocityOneRepMaxRepository.kt`
 - Test: `shared/src/androidHostTest/.../repository/SqlDelightVelocityOneRepMaxRepositoryTest.kt` (extend)
 
 **Interfaces:**
 - Produces: `suspend fun VelocityOneRepMaxRepository.getAllPassing(profileId: String): List<VelocityOneRepMaxEntity>` ordered by `exerciseId, computedAt ASC`.
 
-- [ ] **Step 1: Add the query** to `VitruvianDatabase.sq` (near the other VelocityOneRepMax queries):
+- [ ] **Step 1: Add the query** to `PhoenixDatabase.sq` (near the other VelocityOneRepMax queries):
 
 ```sql
 selectAllPassingVelocityOneRepMaxByProfile:

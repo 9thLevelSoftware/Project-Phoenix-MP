@@ -17,6 +17,8 @@
     <string name="action_ok">OK</string>
     <string name="action_save">Opslaan</string>
     <string name="action_delete">Verwijderen</string>
+    <string name="delete_personal_record_title">Persoonlijk record verwijderen?</string>
+    <string name="delete_personal_record_message">Dit persoonlijke record verwijderen van dit apparaat en gesynchroniseerde apparaten? Dit kan in deze versie niet ongedaan worden gemaakt.</string>
     <string name="action_edit">Bewerken</string>
     <string name="action_copy">Kopiëren</string>
     <string name="action_close">Sluiten</string>
@@ -85,6 +87,9 @@
     <string name="stop_label">STOP</string>
     <string name="waiting_for_data">Wachten op gegevens…</string>
     <string name="reconnect">Opnieuw verbinden</string>
+    <string name="workout_teardown_finishing">Vorige training wordt afgerond…</string>
+    <string name="workout_teardown_failed">Het resetten van de trainer is niet voltooid</string>
+    <string name="workout_teardown_retry">Opnieuw proberen</string>
 
     <string name="stop_current_set_title">Huidige serie stoppen?</string>
     <string name="stop_current_set_message">Stop deze serie, sla deze oefening over of beëindig de hele training.</string>
@@ -101,7 +106,7 @@
     <string name="connection_failed">Verbinding mislukt</string>
     <string name="disconnect">Verbinding verbreken</string>
     <string name="disconnect_title">Verbinding verbreken?</string>
-    <string name="disconnect_message">Weet je zeker dat je de verbinding met de Vitruvian-machine wilt verbreken?</string>
+    <string name="disconnect_message">Weet je zeker dat je de verbinding met de machine wilt verbreken?</string>
 
     <!-- Settings -->
     <string name="settings_title">Instellingen</string>
@@ -294,6 +299,27 @@
     <string name="rest_continue">Doorgaan</string>
     <string name="rest_complete_announcement">Rust voltooid</string>
     <string name="rest_seconds_remaining">Nog %1$d seconden</string>
+    <string name="drop_set_title">Drop-set</string>
+    <string name="drop_set_offer_toggle">Drop-set aanbieden na een mislukte set.</string>
+    <string name="drop_set_min_weight">Minimumgewicht</string>
+    <string name="drop_set_min_weight_supporting">Minimum per kabel in %1$s</string>
+    <string name="drop_set_min_weight_error">Voer een minimumgewicht groter dan 0 in</string>
+    <string name="drop_set_offer_question">Deze set opnieuw proberen met een drop-set?</string>
+    <string name="drop_set_retry_set">Set opnieuw</string>
+    <string name="drop_set_skip">Drop-set overslaan</string>
+    <string name="drop_set_candidate_unavailable">Onder het ingestelde minimum</string>
+    <string name="drop_set_remaining_one">1 drop resterend</string>
+    <string name="drop_set_remaining_many">%1$d drops resterend</string>
+    <string name="drop_set_accepted_waiting">Opnieuw op %1$s — %2$s per kabel</string>
+    <string name="drop_set_saving">Mislukte poging wordt opgeslagen</string>
+    <string name="drop_set_preparing">Trainer wordt voorbereid</string>
+    <string name="drop_set_ready">Klaar om opnieuw te proberen</string>
+    <string name="drop_set_recovery">Maak opnieuw verbinding om deze drop-set te herhalen</string>
+    <string name="drop_set_skip_rest_blocked">Kies een drop-set of sla die over voordat je de rust overslaat</string>
+    <string name="drop_set_waiting_timer">Rust voltooid. Kies een drop-set of sla die over om verder te gaan.</string>
+    <string name="cd_drop_set_candidate">%1$s drop, %2$s per kabel</string>
+    <string name="cd_drop_set_candidate_unavailable">%1$s drop niet beschikbaar</string>
+    <string name="cd_drop_set_retry_disabled">Selecteer een droppercentage om opnieuw te proberen</string>
     <string name="set_weight">Gewicht instellen</string>
 
     <!-- Connection Logs -->
@@ -491,7 +517,6 @@
     <string name="cd_previous_exercise">Vorige oefening</string>
     <string name="cd_next_exercise">Volgende oefening</string>
     <string name="cd_completed">Voltooid</string>
-    <string name="cd_video_thumbnail">Video-miniatuur</string>
     <string name="cd_thumbnail_for">Miniatuur voor %1$s</string>
     <string name="cd_clear_filters">Filters wissen</string>
     <string name="cd_alphabet_nav">Alfabetnavigatie. Tik op een letter om naar oefeningen te springen die met die letter beginnen.</string>
@@ -563,7 +588,7 @@
     <string name="cd_premium_feature">Premium-functie</string>
     <string name="cd_trophy">Trofeëviering</string>
     <string name="cd_confetti">Feestconfetti</string>
-    <string name="cd_phoenix_logo">Vitruvian Phoenix Logo</string>
+    <string name="cd_phoenix_logo">Phoenix-logo</string>
     <string name="cd_dismiss_readiness">Gereedheidsmelding sluiten</string>
     <string name="cd_above_pr">Boven PR</string>
     <string name="cd_below_pr">Onder PR</string>
@@ -722,9 +747,10 @@
     <string name="profile_recovery_message">Phoenix kan niet bevestigen welk profiel actief is. Probeer opnieuw voordat u doorgaat.</string>
     <string name="profile_recovery_retry_failed">Profielherstel is nog niet beschikbaar</string>
     <string name="profile_delete_reassign_message">&quot;%1$s&quot; verwijderen? Trainingen, routines, records, badges, metingen en voortgang worden naar Default verplaatst. Dit kan niet ongedaan worden gemaakt.</string>
-    <string name="settings_video_behavior">Videogedrag</string>
-    <string name="settings_show_exercise_videos">Oefeningsvideo's tonen</string>
+    <string name="settings_video_behavior">Oefendemonstraties</string>
+    <string name="settings_show_exercise_videos">Oefendemonstraties tonen</string>
     <string name="settings_show_exercise_videos_description">Toon oefendemonstraties; schakel dit uit op tragere apparaten</string>
+    <string name="settings_exercise_demos_disabled">Oefendemonstraties uitgeschakeld</string>
     <string name="profile_weight_increment">Gewichtsstap</string>
     <string name="profile_body_weight">Lichaamsgewicht</string>
     <string name="profile_set_summary">Duur setoverzicht</string>
@@ -773,4 +799,6 @@
     <string name="profile_disco_unlocked_body">Schakel de discomodus in bij de LED-voorkeuren en laat je trainer feesten.</string>
     <string name="profile_disco_unlocked_action">Tijd voor een feestje</string>
     <string name="profile_adult_enable_partial_failure">De leeftijdsbevestiging is opgeslagen, maar de vulgaire modus kon niet worden ingeschakeld. Probeer het opnieuw.</string>
+    <string name="label_previously_completed">Eerder voltooid</string>
+    <string name="cd_filter_previously_completed">Eerder voltooide oefeningen filteren</string>
 </resources>

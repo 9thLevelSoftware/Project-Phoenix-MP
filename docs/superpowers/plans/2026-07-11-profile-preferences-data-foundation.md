@@ -48,7 +48,7 @@
 
 ### Existing files modified by this plan
 
-- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq`
 - `shared/build.gradle.kts`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/MigrationStatements.kt`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt`
@@ -58,7 +58,7 @@
 - `shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt`
 - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightUserProfileRepositoryTest.kt`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt`
-- `androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt`
+- `androidApp/src/main/kotlin/com/devil/phoenixproject/PhoenixApp.kt`
 - `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/MigrationManagerTest.kt`
 - `shared/src/commonMain/kotlin/com/devil/phoenixproject/App.kt`
 - `shared/src/androidMain/kotlin/com/devil/phoenixproject/AndroidAppHost.kt`
@@ -565,7 +565,7 @@ git commit -m "feat: define profile preference documents"
 
 **Files:**
 - Create: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/42.sqm`
-- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq`
 - Modify: `shared/build.gradle.kts`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/MigrationStatements.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt`
@@ -789,7 +789,7 @@ Set SQLDelight `version = 43` in `shared/build.gradle.kts`; set the parity const
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration :shared:validateSchemaManifest --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainPhoenixDatabaseInterface :shared:verifyCommonMainPhoenixDatabaseMigration :shared:validateSchemaManifest --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*SchemaParityTest*" --tests "*SchemaManifestTest*" --console=plain
 ```
 
@@ -798,7 +798,7 @@ Expected: both commands exit 0; migration parity reports schema 43 and no missin
 - [ ] **Step 7: Commit schema 43**
 
 ```powershell
-git add shared/build.gradle.kts shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/42.sqm shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/MigrationStatements.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/local/SchemaParityTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/local/SchemaManifestTest.kt
+git add shared/build.gradle.kts shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/42.sqm shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/MigrationStatements.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/local/SchemaManifest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/local/SchemaParityTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/local/SchemaManifestTest.kt
 git commit -m "feat: add profile preference schema"
 ```
 
@@ -971,9 +971,9 @@ interface ProfilePreferencesRepository {
 }
 
 class SqlDelightProfilePreferencesRepository(
-    private val database: VitruvianDatabase,
+    private val database: PhoenixDatabase,
 ) : ProfilePreferencesRepository {
-    private val queries = database.vitruvianDatabaseQueries
+    private val queries = database.phoenixDatabaseQueries
 
     override fun observe(profileId: String): Flow<UserProfilePreferences> =
         queries.selectProfilePreferences(profileId)
@@ -1357,7 +1357,7 @@ git commit -m "feat: add active profile preference facade"
 - Modify: `shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/MigrationManagerTest.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt`
-- Modify: `androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt`
+- Modify: `androidApp/src/main/kotlin/com/devil/phoenixproject/PhoenixApp.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/App.kt`
 - Modify: `shared/src/androidMain/kotlin/com/devil/phoenixproject/AndroidAppHost.kt`
@@ -1626,7 +1626,7 @@ fun checkAndRunMigrations() {
 }
 ```
 
-Keep Android's `VitruvianApp.onCreate()` and iOS `KoinInit.runMigrations()` calling `checkAndRunMigrations`; update their comments so required preference migration is no longer described as best effort. `AppContent` observes the same state and its idempotent call guarantees the gate is started in previews or alternate hosts.
+Keep Android's `PhoenixApp.onCreate()` and iOS `KoinInit.runMigrations()` calling `checkAndRunMigrations`; update their comments so required preference migration is no longer described as best effort. `AppContent` observes the same state and its idempotent call guarantees the gate is started in previews or alternate hosts.
 
 - [ ] **Step 5: Gate root navigation and expose Retry on both platforms**
 
@@ -1697,7 +1697,7 @@ Expected: PASS for reconciliation seeding, all-profile copy, corrupt normalizati
 - [ ] **Step 7: Commit the required migration gate**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/LegacyProfilePreferencesReader.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/LegacyProfilePreferencesReaderTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/PreferencesManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/EquipmentRackRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/MigrationManagerTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/ProfilePreferencesMigrationTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/App.kt shared/src/androidMain/kotlin/com/devil/phoenixproject/AndroidAppHost.kt shared/src/iosMain/kotlin/com/devil/phoenixproject/IosAppHost.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/LegacyProfilePreferencesReader.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/preferences/LegacyProfilePreferencesReaderTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/preferences/PreferencesManager.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/EquipmentRackRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/MigrationManagerTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/ProfilePreferencesMigrationTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt androidApp/src/main/kotlin/com/devil/phoenixproject/PhoenixApp.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/KoinInit.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/App.kt shared/src/androidMain/kotlin/com/devil/phoenixproject/AndroidAppHost.kt shared/src/iosMain/kotlin/com/devil/phoenixproject/IosAppHost.kt
 git commit -m "feat: migrate legacy profile preferences at startup"
 ```
 
@@ -2489,7 +2489,7 @@ git commit -m "feat: gate live VBT by active profile"
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfileDeletionMergePolicy.kt`
 - Create: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfileScopedDataMerger.kt`
 - Create: `shared/src/commonTest/kotlin/com/devil/phoenixproject/data/repository/ProfileDeletionMergePolicyTest.kt`
-- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq`
+- Modify: `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/UserProfileRepository.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt`
 - Modify: `shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt`
@@ -2717,7 +2717,7 @@ semantics. Task 4's required startup migration remains the owner of draining lef
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainPhoenixDatabaseInterface --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfileDeletionMergePolicyTest*" --tests "*SqlDelightUserProfileRepositoryTest*" --tests "*MigrationManagerTest*" --tests "*ProfilePreferencesMigrationTest*" --tests "*KoinModuleVerifyTest*" --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:compileKotlinIosArm64 --console=plain
 ```
@@ -2730,7 +2730,7 @@ compilation. Run `git diff --check` and confirm no `.sqm` was added.
 - [ ] **Step 7: Commit deletion hardening**
 
 ```powershell
-git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfileDeletionMergePolicy.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfileScopedDataMerger.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/repository/ProfileDeletionMergePolicyTest.kt shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/VitruvianDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/UserProfileRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightUserProfileRepositoryTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/MigrationManagerTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/ProfilePreferencesMigrationTest.kt
+git add shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfileDeletionMergePolicy.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/ProfileScopedDataMerger.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/data/repository/ProfileDeletionMergePolicyTest.kt shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq shared/src/commonMain/kotlin/com/devil/phoenixproject/data/repository/UserProfileRepository.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DataModule.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/di/DomainModule.kt shared/src/commonTest/kotlin/com/devil/phoenixproject/testutil/FakeUserProfileRepository.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/repository/SqlDelightUserProfileRepositoryTest.kt shared/src/commonMain/kotlin/com/devil/phoenixproject/data/migration/MigrationManager.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/MigrationManagerTest.kt shared/src/androidHostTest/kotlin/com/devil/phoenixproject/data/migration/ProfilePreferencesMigrationTest.kt
 git commit -m "fix: merge profile data safely on deletion"
 ```
 
@@ -2872,7 +2872,7 @@ After v5 export and v4 restore use the preference aggregate directly, `BaseDataB
 
 ```kotlin
 abstract class BaseDataBackupManager(
-    private val database: VitruvianDatabase,
+    private val database: PhoenixDatabase,
     private val profilePreferencesRepository: ProfilePreferencesRepository,
     private val userProfileRepository: UserProfileRepository,
 ) : DataBackupManager
@@ -2883,7 +2883,7 @@ Thread both dependencies through the platform classes:
 ```kotlin
 class AndroidDataBackupManager(
     private val context: Context,
-    database: VitruvianDatabase,
+    database: PhoenixDatabase,
     private val preferencesManager: PreferencesManager,
     private val destinationResolver: BackupDestinationResolver,
     profilePreferencesRepository: ProfilePreferencesRepository,
@@ -2897,7 +2897,7 @@ class AndroidDataBackupManager(
 
 ```kotlin
 class IosDataBackupManager(
-    database: VitruvianDatabase,
+    database: PhoenixDatabase,
     private val preferencesManager: PreferencesManager,
     private val destinationResolver: BackupDestinationResolver,
     profilePreferencesRepository: ProfilePreferencesRepository,
@@ -2923,7 +2923,7 @@ single<DataBackupManager> {
 }
 ```
 
-Update both Android-host `TestDataBackupManager` subclasses in `DataBackupManagerRoutineNameTest.kt` and `BackupJsonNavigatorTest.kt`. Build a real `ProfilePreferencesRepository` and a real or recording/delegating `UserProfileRepository` against the same `VitruvianDatabase`. Do not pass `SettingsEquipmentRackRepository` or inject/read `ProfileLocalSafetyStore` from backup code.
+Update both Android-host `TestDataBackupManager` subclasses in `DataBackupManagerRoutineNameTest.kt` and `BackupJsonNavigatorTest.kt`. Build a real `ProfilePreferencesRepository` and a real or recording/delegating `UserProfileRepository` against the same `PhoenixDatabase`. Do not pass `SettingsEquipmentRackRepository` or inject/read `ProfileLocalSafetyStore` from backup code.
 
 - [ ] **Step 5: Export the same typed sections in buffered and streaming paths**
 
@@ -3364,7 +3364,7 @@ If verification or platform compilation fails, repair only the concrete missing 
 Run:
 
 ```powershell
-.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainVitruvianDatabaseInterface :shared:verifyCommonMainVitruvianDatabaseMigration :shared:validateSchemaManifest --console=plain
+.\gradlew.bat '-Pskip.supabase.check=true' :shared:generateCommonMainPhoenixDatabaseInterface :shared:verifyCommonMainPhoenixDatabaseMigration :shared:validateSchemaManifest --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*ProfilePreferences*" --tests "*SqlDelightUserProfileRepositoryTest*" --tests "*SettingsManagerTest*" --tests "*VbtEnabledRuntimeTest*" --tests "*Backup*" --tests "*KoinModuleVerifyTest*" --console=plain
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --continue --console=plain
 ```
@@ -3557,7 +3557,7 @@ $reviewableWiringPaths = @(
     'shared/src/androidMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.android.kt',
     'shared/src/iosMain/kotlin/com/devil/phoenixproject/util/DataBackupManager.ios.kt',
     'shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/viewmodel/MainViewModel.kt',
-    'androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt'
+    'androidApp/src/main/kotlin/com/devil/phoenixproject/PhoenixApp.kt'
 )
 $reviewedWiringFiles = @(
     git diff --name-only --diff-filter=AM -- $reviewableWiringPaths

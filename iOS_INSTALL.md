@@ -1,6 +1,6 @@
 # iOS Installation Guide
 
-This guide explains how to install Vitruvian Phoenix on your iPhone or iPad.
+This guide explains how to install Project Phoenix on your iPhone or iPad.
 
 ## Prerequisites
 
@@ -20,7 +20,7 @@ The app is currently in beta. Join our TestFlight beta program for easy installa
 
 ### Step 2: Join the Beta
 
-1. [Tap here to join the Vitruvian Phoenix beta](https://testflight.apple.com/join/TFw1m89R)
+1. [Tap here to join the Project Phoenix beta](https://testflight.apple.com/join/TFw1m89R)
 2. Or open this link on your device: `https://testflight.apple.com/join/TFw1m89R`
 3. Tap **Accept** to join the beta program
 4. Tap **Install** to download the beta version
@@ -64,13 +64,13 @@ AltStore is a free app that lets you sideload apps using your Apple ID.
 5. Enter your Apple ID and password when prompted
 6. AltStore will appear on your iPhone home screen
 
-#### Step 3: Install Vitruvian Phoenix
+#### Step 3: Install Project Phoenix
 
-1. Download the `VitruvianPhoenix.ipa` file from [GitHub Releases](../../releases)
+1. Download the `PhoenixApp.ipa` file from [GitHub Releases](../../releases)
 2. Open AltStore on your iPhone
 3. Go to the **My Apps** tab
 4. Tap the **+** button in the top left
-5. Select the `VitruvianPhoenix.ipa` file
+5. Select the `PhoenixApp.ipa` file
 6. Wait for installation to complete
 
 #### Step 4: Trust the App
@@ -96,10 +96,10 @@ Apps installed with a free Apple ID expire after **7 days**. AltStore can refres
 When you first launch the app, you'll be asked to grant permissions:
 
 ### Bluetooth Permission
-- Required to scan for and connect to your Vitruvian trainer
+- Required to scan for and connect to your Phoenix trainer
 - Tap **OK** or **Allow** when prompted
 
-**Note:** If you deny Bluetooth permission, the app cannot connect to your trainer. You can grant it later in Settings > Vitruvian Phoenix > Bluetooth.
+**Note:** If you deny Bluetooth permission, the app cannot connect to your trainer. You can grant it later in Settings > Project Phoenix > Bluetooth.
 
 ---
 
@@ -114,7 +114,7 @@ When you first launch the app, you'll be asked to grant permissions:
 
 - Ensure Bluetooth is enabled on your device
 - Make sure you granted Bluetooth permission to the app
-- Move closer to your Vitruvian trainer
+- Move closer to your Phoenix trainer
 - Try turning your trainer off and on again
 
 ### App Crashes on Launch
@@ -149,10 +149,10 @@ A: Use TestFlight for the easiest experience with automatic updates. Sideloading
 **Q: Will there be an App Store release?**
 A: Yes, we plan to release on the App Store once the app exits beta.
 
-**Q: What Vitruvian devices are supported?**
+**Q: What Phoenix devices are supported?**
 A:
-- Vitruvian V-Form Trainer (VIT-200) - devices starting with `Vee_`
-- Vitruvian Trainer+ - devices starting with `VIT`
+- Phoenix V-Form Trainer (VIT-200) - devices starting with `Vee_`
+- Phoenix Trainer+ - devices starting with `VIT`
 
 **Q: Does it work on iPad?**
 A: Yes, the app works on any iPad running iOS/iPadOS 14.0 or later with Bluetooth support.

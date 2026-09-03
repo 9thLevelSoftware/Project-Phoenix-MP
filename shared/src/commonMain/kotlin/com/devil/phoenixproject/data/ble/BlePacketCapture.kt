@@ -10,7 +10,7 @@ import kotlinx.atomicfu.locks.withLock
  * BLE Packet Capture Utility for Hardware Validation
  *
  * Captures raw BLE bytes from the monitor characteristic and logs them
- * in a format that can be pasted directly into HardwareValidationTest.
+ * in a copyable hex format for offline protocol analysis.
  *
  * Usage in debug builds:
  * ```
@@ -24,7 +24,7 @@ import kotlinx.atomicfu.locks.withLock
  * // Packets are also logged to Logcat with tag "BlePacketCapture"
  * ```
  *
- * Then grep Logcat for "CAPTURE_HEX" and paste into HardwareValidationTest.
+ * Then grep Logcat for "CAPTURE_HEX".
  *
  * To hook this into the polling loop, add ONE line in MetricPollingEngine.parseMonitorData():
  * ```
@@ -89,7 +89,7 @@ object BlePacketCapture {
         log.i { "Packet sizes: $sizes" }
 
         // Log copyable test data
-        log.i { "=== COPY BELOW INTO HardwareValidationTest.CAPTURED_PACKETS ===" }
+        log.i { "=== CAPTURED PACKETS (copyable) ===" }
         for ((index, pkt) in result.withIndex()) {
             val relTime = pkt.timestampMs - startTime
             log.i { "CAPTURE_HEX[$index] t=${relTime}ms size=${pkt.size}: ${pkt.hex}" }

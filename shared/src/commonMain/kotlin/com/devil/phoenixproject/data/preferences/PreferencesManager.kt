@@ -112,6 +112,8 @@ interface PreferencesManager {
     suspend fun setLanguage(language: String)
     suspend fun setVelocityOneRepMaxBackfillDone(done: Boolean)
     suspend fun setBleCompatibilityMode(setting: BleCompatibilitySetting)
+    fun getExerciseCatalogSource(): String
+    suspend fun setExerciseCatalogSource(source: String)
 
     @Deprecated("Legacy migration read only")
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
@@ -184,6 +186,8 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
         // Issue #333: BLE small-MTU compatibility path (Auto/On/Off)
         private const val KEY_BLE_COMPATIBILITY_MODE = "ble_compatibility_mode"
+
+        private const val KEY_EXERCISE_CATALOG_SOURCE = "exercise_catalog_source"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
@@ -613,6 +617,13 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         // Confirmed implies prompted (the one-shot decline-remember flag is irrelevant after confirm).
         settings.putBoolean(KEY_ADULTS_ONLY_PROMPTED, true)
         updateAndEmit { copy(adultsOnlyConfirmed = confirmed) }
+    }
+
+    override fun getExerciseCatalogSource(): String =
+        settings.getString(KEY_EXERCISE_CATALOG_SOURCE, "")
+
+    override suspend fun setExerciseCatalogSource(source: String) {
+        settings.putString(KEY_EXERCISE_CATALOG_SOURCE, source)
     }
 
     override suspend fun setBleCompatibilityMode(setting: BleCompatibilitySetting) {

@@ -58,23 +58,23 @@ import com.devil.phoenixproject.ui.sync.LinkAccountViewModel
 import com.devil.phoenixproject.util.KmpUtils
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_login
-import vitruvianprojectphoenix.shared.generated.resources.auth_apple
-import vitruvianprojectphoenix.shared.generated.resources.auth_apple_failed
-import vitruvianprojectphoenix.shared.generated.resources.auth_google
-import vitruvianprojectphoenix.shared.generated.resources.auth_google_failed
-import vitruvianprojectphoenix.shared.generated.resources.auth_or_continue_with
-import vitruvianprojectphoenix.shared.generated.resources.cd_back
-import vitruvianprojectphoenix.shared.generated.resources.label_email
-import vitruvianprojectphoenix.shared.generated.resources.label_password
-import vitruvianprojectphoenix.shared.generated.resources.label_premium
-import vitruvianprojectphoenix.shared.generated.resources.last_synced
-import vitruvianprojectphoenix.shared.generated.resources.never_synced
-import vitruvianprojectphoenix.shared.generated.resources.phoenix_portal
-import vitruvianprojectphoenix.shared.generated.resources.sync_now
-import vitruvianprojectphoenix.shared.generated.resources.syncing
-import vitruvianprojectphoenix.shared.generated.resources.unlink_account
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_login
+import projectphoenix.shared.generated.resources.auth_apple
+import projectphoenix.shared.generated.resources.auth_apple_failed
+import projectphoenix.shared.generated.resources.auth_google
+import projectphoenix.shared.generated.resources.auth_google_failed
+import projectphoenix.shared.generated.resources.auth_or_continue_with
+import projectphoenix.shared.generated.resources.cd_back
+import projectphoenix.shared.generated.resources.label_email
+import projectphoenix.shared.generated.resources.label_password
+import projectphoenix.shared.generated.resources.label_premium
+import projectphoenix.shared.generated.resources.last_synced
+import projectphoenix.shared.generated.resources.never_synced
+import projectphoenix.shared.generated.resources.phoenix_portal
+import projectphoenix.shared.generated.resources.sync_now
+import projectphoenix.shared.generated.resources.syncing
+import projectphoenix.shared.generated.resources.unlink_account
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

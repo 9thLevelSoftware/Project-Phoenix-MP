@@ -58,7 +58,7 @@ jobs:
         run: |
           set -euo pipefail
           ANDROID_VERSION="$(sed -nE 's/^[[:space:]]*versionName = "([^"]+)".*/\1/p' androidApp/build.gradle.kts | head -1)"
-          IOS_VERSIONS="$(sed -nE 's/^[[:space:]]*MARKETING_VERSION = ([^;]+);/\1/p' iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj | sort -u)"
+          IOS_VERSIONS="$(sed -nE 's/^[[:space:]]*MARKETING_VERSION = ([^;]+);/\1/p' iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj | sort -u)"
           if ! [[ "$ANDROID_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.]+)?$ ]]; then
             echo "Invalid Android versionName: '$ANDROID_VERSION'." >&2
             exit 1
@@ -105,7 +105,7 @@ jobs:
       release_tag: ${{ needs.create-release.outputs.tag }}
     secrets: inherit
   android-playstore:
-    needs: [create-release, android-apk, ios-ipa]
+    needs: [create-release, android-apk]
     if: ${{ !inputs.skip_android_playstore }}
     uses: ./.github/workflows/android-playstore.yml
     with:
@@ -114,7 +114,7 @@ jobs:
       submitForReview: ${{ inputs.submit_android_playstore_for_review }}
     secrets: inherit
   ios-testflight:
-    needs: [create-release, android-apk, ios-ipa]
+    needs: [create-release, ios-ipa]
     if: ${{ !inputs.skip_ios_testflight }}
     uses: ./.github/workflows/ios-testflight.yml
     with:
@@ -129,7 +129,7 @@ jobs:
         run: |
           echo "## Release All Platforms" >> "$GITHUB_STEP_SUMMARY"
           echo "Release tag: ${{ needs.create-release.outputs.tag }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "APK and IPA builds complete before store publication begins." >> "$GITHUB_STEP_SUMMARY"
+          echo "Each store publication begins after its matching platform asset succeeds." >> "$GITHUB_STEP_SUMMARY"
           echo "| Platform | Result |" >> "$GITHUB_STEP_SUMMARY"
           echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Android Release APK | ${{ needs.android-apk.result }} |" >> "$GITHUB_STEP_SUMMARY"

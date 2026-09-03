@@ -3,7 +3,7 @@ package com.devil.phoenixproject.data.local
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -115,6 +115,70 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `completed set heal supplies UNKNOWN default`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE CompletedSet (id TEXT PRIMARY KEY, session_id TEXT NOT NULL)",
+            0,
+        )
+
+        val result = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "CompletedSet" && it.column == "set_end_reason" },
+        )
+        driver.execute(null, "INSERT INTO CompletedSet(id, session_id) VALUES ('set-1', 'session-1')", 0)
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        var persistedReason: String? = null
+        driver.executeQuery(
+            null,
+            "SELECT set_end_reason FROM CompletedSet WHERE id = 'set-1'",
+            { cursor ->
+                if (cursor.next().value) persistedReason = cursor.getString(0)
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        assertEquals("UNKNOWN", persistedReason)
+    }
+
+    @Test
+    fun `completed set identity heals are distinct and attempt defaults to one`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE CompletedSet (id TEXT PRIMARY KEY, session_id TEXT NOT NULL)",
+            0,
+        )
+
+        val occurrenceResult = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "CompletedSet" && it.column == "routine_exercise_id" },
+        )
+        val attemptResult = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "CompletedSet" && it.column == "attempt_number" },
+        )
+        driver.execute(null, "INSERT INTO CompletedSet(id, session_id) VALUES ('set-identity', 'session-1')", 0)
+
+        assertEquals(ReconciliationStatus.CREATED, occurrenceResult.status)
+        assertEquals(ReconciliationStatus.CREATED, attemptResult.status)
+        assertEquals(listOf("id", "session_id", "routine_exercise_id", "attempt_number"), columnNames(driver, "CompletedSet"))
+        var attemptNumber: Long? = null
+        driver.executeQuery(
+            null,
+            "SELECT attempt_number FROM CompletedSet WHERE id = 'set-identity'",
+            { cursor ->
+                if (cursor.next().value) attemptNumber = cursor.getLong(0)
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        assertEquals(1L, attemptNumber)
+    }
+
+    @Test
     fun `applyColumnHeal returns TABLE_MISSING when table does not exist`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
 
@@ -163,9 +227,31 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `active runtime table reconciliation creates the missing table and is idempotent`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        val operation = manifestTables.first { it.table == "ActiveWorkoutRuntime" }
+
+        val created = applyTableCreate(driver, operation)
+        val alreadyPresent = applyTableCreate(driver, operation)
+
+        assertEquals(ReconciliationStatus.CREATED, created.status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, alreadyPresent.status)
+        assertEquals(
+            listOf(
+                "profile_id",
+                "routine_session_id",
+                "document_version",
+                "runtime_json",
+                "updated_at_epoch_ms",
+            ),
+            columnNames(driver, "ActiveWorkoutRuntime"),
+        )
+    }
+
+    @Test
     fun `reconcileFullSchema restores profile preference and cleanup tables with all columns`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        VitruvianDatabase.Schema.create(driver)
+        PhoenixDatabase.Schema.create(driver)
         driver.execute(null, "DROP TABLE IF EXISTS UserProfilePreferences", 0)
         driver.execute(null, "DROP TABLE IF EXISTS PendingProfileContextRecovery", 0)
         driver.execute(null, "DROP TABLE IF EXISTS PendingProfileLocalCleanup", 0)
@@ -506,8 +592,9 @@ class SchemaManifestTest {
 
         val report = reconcileFullSchema(driver)
 
-        // Verify the report has entries for all manifest items
-        val expectedTotal = manifestTables.size + manifestColumns.size + manifestIndexes.size
+        // Verify the report has entries for all manifest items, including dropped tables
+        val expectedTotal = manifestDroppedTables.size + manifestTables.size +
+            manifestColumns.size + manifestIndexes.size
         assertEquals(expectedTotal, report.total)
 
         // No failures should occur (all prerequisite tables exist)

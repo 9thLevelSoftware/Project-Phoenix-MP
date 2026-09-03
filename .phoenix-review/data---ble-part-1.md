@@ -33,8 +33,8 @@ Assigned files reviewed directly when present. Several assigned paths do not exi
 - Line numbers: 245-297, 469-479
 - Category: failure-point
 - Severity: medium
-- Description: `startScanning()` recognizes Vitruvian devices by advertised name, service UUID, or FEF3 service data. `scanAndConnect()` only accepts devices with a non-null name beginning with `Vee_` or `VIT`. Devices that are discoverable through the repository's manual scan path can therefore never be found by the auto-connect path.
-- Suggested fix direction: Extract one shared Vitruvian advertisement predicate and use it in both `startScanning()` and `scanAndConnect()`. Preserve the nameless/service-data fallback when auto-connecting.
+- Description: `startScanning()` recognizes Phoenix devices by advertised name, service UUID, or FEF3 service data. `scanAndConnect()` only accepts devices with a non-null name beginning with `Vee_` or `VIT`. Devices that are discoverable through the repository's manual scan path can therefore never be found by the auto-connect path.
+- Suggested fix direction: Extract one shared Phoenix advertisement predicate and use it in both `startScanning()` and `scanAndConnect()`. Preserve the nameless/service-data fallback when auto-connecting.
 
 ### 3. Notification observer jobs are untracked and can be duplicated across reconnect/readiness cycles
 

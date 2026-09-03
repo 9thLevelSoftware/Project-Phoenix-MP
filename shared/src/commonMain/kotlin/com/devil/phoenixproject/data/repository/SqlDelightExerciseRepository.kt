@@ -4,7 +4,8 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.ExerciseImporter
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -13,9 +14,13 @@ import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
 
-class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseImporter: ExerciseImporter) : ExerciseRepository {
+class SqlDelightExerciseRepository(
+    db: PhoenixDatabase,
+    private val exerciseImporter: ExerciseImporter,
+    private val preferencesManager: PreferencesManager,
+) : ExerciseRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
 
     // Mapper function to convert database entity to Domain Model
     // Parameters match the column order in the Exercise table
@@ -127,54 +132,33 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
         queries.selectExerciseById(id, ::mapToExercise).executeAsOneOrNull()
     }
 
-    override suspend fun getVideos(exerciseId: String): List<ExerciseVideoEntity> = withContext(Dispatchers.IO) {
-        queries.selectVideosByExercise(exerciseId).executeAsList().map {
-            ExerciseVideoEntity(
+    override suspend fun getImages(exerciseId: String): List<ExerciseImageEntity> = withContext(Dispatchers.IO) {
+        queries.selectImagesByExercise(exerciseId).executeAsList().map {
+            ExerciseImageEntity(
                 id = it.id,
                 exerciseId = it.exerciseId,
-                angle = it.angle,
-                videoUrl = it.videoUrl,
-                thumbnailUrl = it.thumbnailUrl,
-                isTutorial = it.isTutorial == 1L,
+                url = it.url,
+                sortOrder = it.sortOrder.toInt(),
             )
         }
     }
 
     override suspend fun importExercises(): Result<Unit> = withContext(Dispatchers.IO) {
         try {
-            // Check if exercises are already imported
-            val exerciseCount = queries.countExercises().executeAsOne()
-            val videoCount = queries.countVideos().executeAsOne()
-
-            // If exercises exist but no videos, we need to re-import (videos were added later)
-            val needsReimport = exerciseCount > 0 && videoCount == 0L
-
-            if (exerciseCount == 0L || needsReimport) {
-                if (needsReimport) {
-                    Logger.d {
-                        "Exercises exist ($exerciseCount) but no videos found. Clearing and re-importing..."
-                    }
-                    queries.deleteAllVideos()
-                    queries.deleteAllExercises()
-                }
-                Logger.d { "Importing exercises from bundled JSON..." }
+            val currentSource = preferencesManager.getExerciseCatalogSource()
+            if (currentSource != ExerciseImporter.BUNDLED_CATALOG_SOURCE) {
+                Logger.d { "Importing bundled free-exercise-db catalogue..." }
                 val result = exerciseImporter.importExercises()
-                if (result.isSuccess) {
-                    val newVideoCount = queries.countVideos().executeAsOne()
-                    Logger.d {
-                        "Successfully imported ${result.getOrNull()} exercises with $newVideoCount videos"
-                    }
-                    Result.success(Unit)
-                } else {
-                    result.exceptionOrNull()?.let { Result.failure(it) }
-                        ?: Result.failure(Exception("Import failed"))
+                val importedCount = result.getOrNull() ?: 0
+                if (!result.isSuccess || importedCount <= 0) {
+                    return@withContext result.exceptionOrNull()?.let { Result.failure(it) }
+                        ?: Result.failure(Exception("Import produced no exercises"))
                 }
-            } else {
-                Logger.d {
-                    "Exercises already imported (exercises: $exerciseCount, videos: $videoCount)"
-                }
-                Result.success(Unit)
+                preferencesManager.setExerciseCatalogSource(ExerciseImporter.BUNDLED_CATALOG_SOURCE)
+                Logger.d { "Successfully imported $importedCount exercises" }
             }
+            exerciseImporter.remapLegacyCatalogueIds()
+            Result.success(Unit)
         } catch (e: Exception) {
             Logger.e(e) { "Failed to import exercises" }
             Result.failure(e)
@@ -186,7 +170,7 @@ class SqlDelightExerciseRepository(db: VitruvianDatabase, private val exerciseIm
         count == 0L
     }
 
-    override suspend fun updateFromGitHub(): Result<Int> = exerciseImporter.updateFromGitHub()
+    override suspend fun updateFromWger(): Result<Int> = exerciseImporter.updateFromWger()
 
     // ========== Custom Exercise Management ==========
 

@@ -2,7 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.local.ExerciseImporter
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
@@ -15,7 +15,7 @@ import org.junit.Test
 
 class SqlDelightExerciseRepositoryTest {
 
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var importer: ExerciseImporter
     private lateinit var repository: SqlDelightExerciseRepository
 
@@ -23,7 +23,11 @@ class SqlDelightExerciseRepositoryTest {
     fun setup() {
         database = createTestDatabase()
         importer = ExerciseImporter(database)
-        repository = SqlDelightExerciseRepository(database, importer)
+        repository = SqlDelightExerciseRepository(
+            database,
+            importer,
+            com.devil.phoenixproject.testutil.FakePreferencesManager(),
+        )
     }
 
     @Test
@@ -94,81 +98,55 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
-    fun `getVideos returns exercise videos`() = runTest {
-        insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
-        database.vitruvianDatabaseQueries.insertVideo(
+    fun `getImages returns exercise demonstration stills`() = runTest {
+        insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "barbell")
+        database.phoenixDatabaseQueries.insertImage(
             exerciseId = "ex-1",
-            angle = "front",
-            videoUrl = "https://example.com/video.mp4",
-            thumbnailUrl = "https://example.com/thumb.jpg",
-            isTutorial = 0L,
+            url = "https://example.com/0.jpg",
+            sortOrder = 0L,
+        )
+        database.phoenixDatabaseQueries.insertImage(
+            exerciseId = "ex-1",
+            url = "https://example.com/1.jpg",
+            sortOrder = 1L,
         )
 
-        val videos = repository.getVideos("ex-1")
+        val images = repository.getImages("ex-1")
 
-        assertEquals(1, videos.size)
-        assertEquals("front", videos.first().angle)
+        assertEquals(2, images.size)
+        assertEquals("https://example.com/0.jpg", images.first().url)
+        assertEquals(1, images.last().sortOrder)
     }
 
     @Test
-    fun `getVideos excludes instructional tutorial videos`() = runTest {
-        insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
-        database.vitruvianDatabaseQueries.insertVideo(
-            exerciseId = "ex-1",
-            angle = "front",
-            videoUrl = "https://example.com/demo.mp4",
-            thumbnailUrl = "https://example.com/demo.jpg",
-            isTutorial = 0L,
-        )
-        database.vitruvianDatabaseQueries.insertVideo(
-            exerciseId = "ex-1",
-            angle = "tutorial",
-            videoUrl = "https://example.com/tutorial.mp4",
-            thumbnailUrl = "https://example.com/tutorial.jpg",
-            isTutorial = 1L,
-        )
-
-        val videos = repository.getVideos("ex-1")
-
-        assertEquals(1, videos.size)
-        assertEquals("front", videos.single().angle)
-        assertEquals(false, videos.single().isTutorial)
-    }
-
-    @Test
-    fun `import ignores instructional tutorial videos`() = runTest {
-        val result = importer.importFromJsonString(
+    fun `import maps free-exercise-db rows and images`() = runTest {
+        val result = importer.importFromFreeExerciseJson(
             """
             [
               {
-                "id": "ex-1",
-                "name": "Bench Press",
-                "equipment": ["BAR"],
-                "muscleGroups": ["CHEST"],
-                "videos": [
-                  {
-                    "video": "https://example.com/demo.mp4",
-                    "thumbnail": "https://example.com/demo.jpg",
-                    "angle": "front"
-                  }
-                ],
-                "tutorial": {
-                  "video": "https://example.com/tutorial.mp4",
-                  "thumbnail": "https://example.com/tutorial.jpg"
-                }
+                "id": "Barbell_Bench_Press_-_Medium_Grip",
+                "name": "Barbell Bench Press - Medium Grip",
+                "equipment": "barbell",
+                "primaryMuscles": ["chest"],
+                "secondaryMuscles": ["triceps", "shoulders"],
+                "instructions": ["Lie back.", "Press."],
+                "category": "strength",
+                "images": ["Barbell_Bench_Press_-_Medium_Grip/0.jpg"]
               }
             ]
             """.trimIndent(),
         )
 
         assertTrue(result.isSuccess)
-        val videos = repository.getVideos("ex-1")
-        val rawVideoCount = database.vitruvianDatabaseQueries.countVideos().executeAsOne()
-
-        assertEquals(1, rawVideoCount)
-        assertEquals(1, videos.size)
-        assertEquals("front", videos.single().angle)
-        assertEquals(false, videos.single().isTutorial)
+        val exercise = repository.getExerciseById("Barbell_Bench_Press_-_Medium_Grip")
+        assertNotNull(exercise)
+        assertEquals("Chest", exercise.muscleGroup)
+        assertEquals(false, exercise.isBodyweight)
+        assertEquals(ExerciseCableIntent.DUAL, exercise.cableIntent)
+        assertEquals(2, exercise.displayMultiplier)
+        val images = repository.getImages("Barbell_Bench_Press_-_Medium_Grip")
+        assertEquals(1, images.size)
+        assertTrue(images.single().url.contains("Barbell_Bench_Press_-_Medium_Grip/0.jpg"))
     }
 
     @Test
@@ -194,45 +172,618 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
-    fun `import normalizes audited single cable names while preserving correct entries`() = runTest {
-        val result = importer.importFromJsonString(
+    fun `import marks body-only rows as bodyweight`() = runTest {
+        val result = importer.importFromFreeExerciseJson(
             """
             [
               {
-                "id": "row-sc",
-                "name": "Bent Over Row (SC)",
-                "equipment": ["HANDLES"],
-                "muscleGroups": ["BACK"],
-                "muscles": ["lats"],
-                "sidedness": "bilateral"
-              },
-              {
-                "id": "reverse-lunge-sc",
-                "name": "Reverse Lunge (SC)",
-                "equipment": ["HANDLES"],
-                "muscleGroups": ["LEGS"],
-                "muscles": ["glutes"],
-                "movement": "unilateral_leg",
-                "sidedness": "unilateral"
+                "id": "Plank",
+                "name": "Plank",
+                "equipment": "body only",
+                "primaryMuscles": ["abdominals"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "strength",
+                "images": []
               }
             ]
             """.trimIndent(),
         )
 
         assertTrue(result.isSuccess)
+        val plank = repository.getExerciseById("Plank")
+        assertNotNull(plank)
+        assertEquals("Core", plank.muscleGroup)
+        assertEquals(true, plank.isBodyweight)
+        assertEquals("BODYWEIGHT", plank.equipment)
+        assertEquals(ExerciseCableIntent.EITHER, plank.cableIntent)
+    }
 
-        val normalizedRow = database.vitruvianDatabaseQueries.selectExerciseById("row-sc").executeAsOneOrNull()
-        val reverseLunge = database.vitruvianDatabaseQueries.selectExerciseById("reverse-lunge-sc").executeAsOneOrNull()
+    @Test
+    fun `import leaves non-cable equipment bodyweight derivation unset`() = runTest {
+        val result = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Foam_Roll",
+                "name": "Foam Roll",
+                "equipment": "foam roll",
+                "primaryMuscles": ["lower back"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "stretching",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
 
-        assertNotNull(normalizedRow)
-        assertEquals("unilateral", normalizedRow.sidedness)
-        assertEquals("SINGLE", normalizedRow.defaultCableConfig)
-        assertEquals(ExerciseCableIntent.SINGLE, repository.getExerciseById("row-sc")?.cableIntent)
+        assertTrue(result.isSuccess)
+        val foamRoll = repository.getExerciseById("Foam_Roll")
+        assertNotNull(foamRoll)
+        assertEquals("foam roll", foamRoll.equipment)
+        assertEquals(true, foamRoll.isBodyweight)
+        assertEquals(false, foamRoll.hasCableAccessory)
+    }
 
-        assertNotNull(reverseLunge)
-        assertEquals("unilateral", reverseLunge.sidedness)
-        assertEquals("SINGLE", reverseLunge.defaultCableConfig)
-        assertEquals(ExerciseCableIntent.SINGLE, repository.getExerciseById("reverse-lunge-sc")?.cableIntent)
+    @Test
+    fun `reimport preserves user-owned catalogue fields`() = runTest {
+        insertExercise(
+            id = "Plank",
+            name = "Old Plank",
+            muscleGroup = "Core",
+            equipment = "BODYWEIGHT",
+            isFavorite = 1L,
+            oneRepMaxKg = 42.5,
+            timesPerformed = 9L,
+            lastPerformed = 1_700_000_000_000L,
+        )
+
+        val result = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Plank",
+                "name": "Plank",
+                "equipment": "body only",
+                "primaryMuscles": ["abdominals"],
+                "secondaryMuscles": [],
+                "instructions": ["Hold a straight line."],
+                "category": "strength",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        assertTrue(result.isSuccess)
+        val plank = repository.getExerciseById("Plank")
+        assertNotNull(plank)
+        assertEquals("Plank", plank.name)
+        assertEquals(true, plank.isFavorite)
+        assertEquals(42.5f, plank.oneRepMaxKg)
+        assertEquals(9, plank.timesPerformed)
+        val row = database.phoenixDatabaseQueries.selectExerciseById("Plank").executeAsOne()
+        assertEquals(1_700_000_000_000L, row.lastPerformed)
+        assertEquals("Hold a straight line.", row.description)
+        assertEquals("BODYWEIGHT", plank.equipment)
+    }
+
+    @Test
+    fun `import fails when every catalogue id is already a custom exercise`() = runTest {
+        insertExercise(
+            id = "Plank",
+            name = "My Plank",
+            muscleGroup = "Core",
+            equipment = "BODYWEIGHT",
+            isCustom = 1L,
+        )
+
+        val result = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Plank",
+                "name": "Plank",
+                "equipment": "body only",
+                "primaryMuscles": ["abdominals"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "strength",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
+
+        assertTrue(result.isFailure)
+        val custom = repository.getExerciseById("Plank")
+        assertNotNull(custom)
+        assertEquals("My Plank", custom.name)
+        assertEquals(true, custom.isCustom)
+    }
+
+    @Test
+    fun `name fallbacks prefer active rows over archived legacy ids`() = runTest {
+        insertExercise(
+            id = "legacy-plank",
+            name = "Plank",
+            muscleGroup = "Core",
+            equipment = "BODYWEIGHT",
+            archived = 1L,
+        )
+        insertExercise(
+            id = "Plank",
+            name = "Plank",
+            muscleGroup = "Core",
+            equipment = "BODYWEIGHT",
+            archived = 0L,
+        )
+
+        val byName = database.phoenixDatabaseQueries.findExerciseByName("Plank").executeAsOne()
+        val byMuscle = database.phoenixDatabaseQueries
+            .findExerciseByNameAndMuscle("Plank", "Core")
+            .executeAsOne()
+        val byCase = database.phoenixDatabaseQueries
+            .findExerciseByNameCaseInsensitive("plank")
+            .executeAsOne()
+
+        assertEquals("Plank", byName.id)
+        assertEquals("Plank", byMuscle.id)
+        assertEquals("Plank", byCase.id)
+    }
+
+    @Test
+    fun `remap moves history and PRs onto replacement catalogue ids`() = runTest {
+        insertExercise(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+            isFavorite = 1L,
+            oneRepMaxKg = 100.0,
+            timesPerformed = 4L,
+        )
+        database.phoenixDatabaseQueries.insertRecord(
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+            exerciseName = "Bench Press",
+            weight = 80.0,
+            reps = 5,
+            oneRepMax = 90.0,
+            achievedAt = 1_700_000_000_000L,
+            workoutMode = "OldSchool",
+            prType = "MAX_WEIGHT",
+            volume = 400.0,
+            phase = "COMBINED",
+            profile_id = "default",
+            cable_count = 2,
+            uuid = null,
+        )
+        database.phoenixDatabaseQueries.insertSession(
+            id = "session-legacy-bench",
+            timestamp = 1_700_000_000_000L,
+            mode = "OldSchool",
+            targetReps = 5,
+            weightPerCableKg = 40.0,
+            progressionKg = 0.0,
+            duration = 60,
+            totalReps = 5,
+            warmupReps = 0,
+            workingReps = 5,
+            isJustLift = 0,
+            stopAtTop = 0,
+            eccentricLoad = 100,
+            echoLevel = 1,
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+            exerciseName = "Bench Press",
+            routineSessionId = null,
+            routineName = null,
+            routineId = null,
+            safetyFlags = 0,
+            deloadWarningCount = 0,
+            romViolationCount = 0,
+            spotterActivations = 0,
+            peakForceConcentricA = null,
+            peakForceConcentricB = null,
+            peakForceEccentricA = null,
+            peakForceEccentricB = null,
+            avgForceConcentricA = null,
+            avgForceConcentricB = null,
+            avgForceEccentricA = null,
+            avgForceEccentricB = null,
+            heaviestLiftKg = 40.0,
+            totalVolumeKg = 200.0,
+            cableCount = 2,
+            estimatedCalories = null,
+            warmupAvgWeightKg = null,
+            workingAvgWeightKg = 40.0,
+            burnoutAvgWeightKg = null,
+            peakWeightKg = 40.0,
+            rpe = null,
+            avgMcvMmS = null,
+            avgAsymmetryPercent = null,
+            totalVelocityLossPercent = null,
+            dominantSide = null,
+            strengthProfile = null,
+            formScore = null,
+            profile_id = "default",
+            display_multiplier = 2,
+            externalAddedLoadKg = 0.0,
+            counterweightKg = 0.0,
+            rackItemsJson = "[]",
+        )
+
+        val imported = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Barbell_Bench_Press_-_Medium_Grip",
+                "name": "Barbell Bench Press - Medium Grip",
+                "equipment": "barbell",
+                "primaryMuscles": ["chest"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "strength",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
+        assertTrue(imported.isSuccess)
+        importer.remapLegacyCatalogueIds()
+
+        val replacement = "Barbell_Bench_Press_-_Medium_Grip"
+        val session = database.phoenixDatabaseQueries.selectSessionById("session-legacy-bench").executeAsOne()
+        assertEquals(replacement, session.exerciseId)
+        val prs = database.phoenixDatabaseQueries.selectAllPRsForExercise(replacement, "default").executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals(80.0, prs.single().weight)
+        val exercise = repository.getExerciseById(replacement)
+        assertNotNull(exercise)
+        assertEquals(true, exercise.isFavorite)
+        assertEquals(100.0f, exercise.oneRepMaxKg)
+        assertEquals(4, exercise.timesPerformed)
+
+        importer.remapLegacyCatalogueIds()
+        val afterSecondPass = repository.getExerciseById(replacement)
+        assertNotNull(afterSecondPass)
+        assertEquals(4, afterSecondPass.timesPerformed)
+        assertEquals(true, afterSecondPass.isFavorite)
+        assertEquals(100.0f, afterSecondPass.oneRepMaxKg)
+    }
+
+    @Test
+    fun `remap maps duplicate bench press catalogue id`() = runTest {
+        insertExercise(
+            id = "b5d0f3d1-994b-4589-9d2b-b3f36f1412c7",
+            name = "Bench Press ",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+            timesPerformed = 3L,
+        )
+        insertPr(
+            exerciseId = "b5d0f3d1-994b-4589-9d2b-b3f36f1412c7",
+            exerciseName = "Bench Press",
+            weight = 92.5,
+        )
+
+        val imported = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Barbell_Bench_Press_-_Medium_Grip",
+                "name": "Barbell Bench Press - Medium Grip",
+                "equipment": "barbell",
+                "primaryMuscles": ["chest"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "strength",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
+        assertTrue(imported.isSuccess)
+        importer.remapLegacyCatalogueIds()
+
+        val replacement = "Barbell_Bench_Press_-_Medium_Grip"
+        val prs = database.phoenixDatabaseQueries
+            .selectAllPRsForExercise(replacement, "default")
+            .executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals(92.5, prs.single().weight)
+        val leftover = database.phoenixDatabaseQueries
+            .selectPersonalRecordsByExerciseId("b5d0f3d1-994b-4589-9d2b-b3f36f1412c7")
+            .executeAsList()
+        assertTrue(leftover.isEmpty())
+        val exercise = repository.getExerciseById(replacement)
+        assertNotNull(exercise)
+        assertEquals(3, exercise.timesPerformed)
+    }
+
+    @Test
+    fun `remap keeps a live PR over a heavier tombstone`() = runTest {
+        insertExercise(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+        )
+        insertPr(exerciseId = "ZZ92N8QsBdp6HCh3", exerciseName = "Bench Press", weight = 140.0, oneRepMax = 155.0)
+        val tombstone = database.phoenixDatabaseQueries
+            .selectPersonalRecordsByExerciseId("ZZ92N8QsBdp6HCh3")
+            .executeAsOne()
+        database.phoenixDatabaseQueries.softDeletePRById(
+            deletedAt = 1_900_000_000_000L,
+            updatedAt = 1_900_000_000_000L,
+            id = tombstone.id,
+            profileId = "default",
+        )
+        insertExercise(
+            id = "Barbell_Bench_Press_-_Medium_Grip",
+            name = "Barbell Bench Press - Medium Grip",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+        )
+        insertPr(
+            exerciseId = "Barbell_Bench_Press_-_Medium_Grip",
+            exerciseName = "Barbell Bench Press - Medium Grip",
+            weight = 95.0,
+            oneRepMax = 100.0,
+        )
+
+        importer.remapLegacyCatalogueIds()
+
+        val prs = database.phoenixDatabaseQueries
+            .selectAllPRsForExercise("Barbell_Bench_Press_-_Medium_Grip", "default")
+            .executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals(95.0, prs.single().weight)
+        assertEquals(100.0, prs.single().oneRepMax)
+        assertEquals(null, prs.single().deletedAt)
+        val leftover = database.phoenixDatabaseQueries
+            .selectPersonalRecordsByExerciseId("ZZ92N8QsBdp6HCh3")
+            .executeAsList()
+        assertTrue(leftover.isEmpty())
+    }
+
+    @Test
+    fun `remap maps renamed rack pull onto rack pulls`() = runTest {
+        insertExercise(
+            id = "legacy-rack-pull",
+            name = "Rack Pull",
+            muscleGroup = "Back",
+            equipment = "BAR",
+            archived = 1L,
+            timesPerformed = 6L,
+        )
+        insertPr(exerciseId = "legacy-rack-pull", exerciseName = "Rack Pull", weight = 180.0)
+
+        val imported = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Rack_Pulls",
+                "name": "Rack Pulls",
+                "equipment": "barbell",
+                "primaryMuscles": ["hamstrings"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "strength",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
+        assertTrue(imported.isSuccess)
+        importer.remapLegacyCatalogueIds()
+
+        val prs = database.phoenixDatabaseQueries
+            .selectAllPRsForExercise("Rack_Pulls", "default")
+            .executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals(180.0, prs.single().weight)
+        val leftover = database.phoenixDatabaseQueries
+            .selectPersonalRecordsByExerciseId("legacy-rack-pull")
+            .executeAsList()
+        assertTrue(leftover.isEmpty())
+        val exercise = repository.getExerciseById("Rack_Pulls")
+        assertNotNull(exercise)
+        assertEquals(6, exercise.timesPerformed)
+    }
+
+    @Test
+    fun `remap keeps the heavier colliding PR`() = runTest {
+        insertExercise(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+        )
+        insertPr(exerciseId = "ZZ92N8QsBdp6HCh3", exerciseName = "Bench Press", weight = 80.0, oneRepMax = 90.0)
+        insertExercise(
+            id = "Barbell_Bench_Press_-_Medium_Grip",
+            name = "Barbell Bench Press - Medium Grip",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+        )
+        insertPr(
+            exerciseId = "Barbell_Bench_Press_-_Medium_Grip",
+            exerciseName = "Barbell Bench Press - Medium Grip",
+            weight = 110.0,
+            oneRepMax = 120.0,
+        )
+
+        importer.remapLegacyCatalogueIds()
+
+        val prs = database.phoenixDatabaseQueries
+            .selectAllPRsForExercise("Barbell_Bench_Press_-_Medium_Grip", "default")
+            .executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals(110.0, prs.single().weight)
+        assertEquals(120.0, prs.single().oneRepMax)
+        val leftover = database.phoenixDatabaseQueries
+            .selectPersonalRecordsByExerciseId("ZZ92N8QsBdp6HCh3")
+            .executeAsList()
+        assertTrue(leftover.isEmpty())
+    }
+
+    @Test
+    fun `remap keeps the heavier colliding PR from the legacy row`() = runTest {
+        insertExercise(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+        )
+        insertPr(exerciseId = "ZZ92N8QsBdp6HCh3", exerciseName = "Bench Press", weight = 140.0, oneRepMax = 155.0)
+        insertExercise(
+            id = "Barbell_Bench_Press_-_Medium_Grip",
+            name = "Barbell Bench Press - Medium Grip",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+        )
+        insertPr(
+            exerciseId = "Barbell_Bench_Press_-_Medium_Grip",
+            exerciseName = "Barbell Bench Press - Medium Grip",
+            weight = 95.0,
+            oneRepMax = 100.0,
+        )
+
+        importer.remapLegacyCatalogueIds()
+
+        val prs = database.phoenixDatabaseQueries
+            .selectAllPRsForExercise("Barbell_Bench_Press_-_Medium_Grip", "default")
+            .executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals(140.0, prs.single().weight)
+        assertEquals(155.0, prs.single().oneRepMax)
+    }
+
+    @Test
+    fun `remap keeps the larger colliding MAX_VOLUME PR`() = runTest {
+        insertExercise(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+        )
+        insertPr(
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+            exerciseName = "Bench Press",
+            weight = 60.0,
+            volume = 900.0,
+            prType = "MAX_VOLUME",
+        )
+        insertExercise(
+            id = "Barbell_Bench_Press_-_Medium_Grip",
+            name = "Barbell Bench Press - Medium Grip",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+        )
+        insertPr(
+            exerciseId = "Barbell_Bench_Press_-_Medium_Grip",
+            exerciseName = "Barbell Bench Press - Medium Grip",
+            weight = 80.0,
+            volume = 400.0,
+            prType = "MAX_VOLUME",
+        )
+
+        importer.remapLegacyCatalogueIds()
+
+        val prs = database.phoenixDatabaseQueries
+            .selectAllPRsForExercise("Barbell_Bench_Press_-_Medium_Grip", "default")
+            .executeAsList()
+        assertEquals(1, prs.size)
+        assertEquals("MAX_VOLUME", prs.single().prType)
+        assertEquals(900.0, prs.single().volume)
+    }
+
+    @Test
+    fun `remap merges colliding personal MVT samples`() = runTest {
+        insertExercise(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+        )
+        insertExercise(
+            id = "Barbell_Bench_Press_-_Medium_Grip",
+            name = "Barbell Bench Press - Medium Grip",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+        )
+        database.phoenixDatabaseQueries.upsertExerciseMvt(
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+            profileId = "default",
+            personalMvtMs = 400.0,
+            sampleCount = 3,
+            updatedAt = 1_700_000_000_000L,
+        )
+        database.phoenixDatabaseQueries.upsertExerciseMvt(
+            exerciseId = "Barbell_Bench_Press_-_Medium_Grip",
+            profileId = "default",
+            personalMvtMs = 200.0,
+            sampleCount = 1,
+            updatedAt = 1_800_000_000_000L,
+        )
+
+        importer.remapLegacyCatalogueIds()
+
+        val merged = database.phoenixDatabaseQueries
+            .selectExerciseMvt("Barbell_Bench_Press_-_Medium_Grip", "default")
+            .executeAsOne()
+        assertEquals(4, merged.sampleCount)
+        assertEquals(350.0, merged.personalMvtMs)
+        assertEquals(1_800_000_000_000L, merged.updatedAt)
+        val leftover = database.phoenixDatabaseQueries
+            .selectExerciseMvtByExerciseId("ZZ92N8QsBdp6HCh3")
+            .executeAsList()
+        assertTrue(leftover.isEmpty())
+
+        importer.remapLegacyCatalogueIds()
+        val afterSecondPass = database.phoenixDatabaseQueries
+            .selectExerciseMvt("Barbell_Bench_Press_-_Medium_Grip", "default")
+            .executeAsOne()
+        assertEquals(4, afterSecondPass.sampleCount)
+        assertEquals(350.0, afterSecondPass.personalMvtMs)
+    }
+
+    private fun insertPr(
+        exerciseId: String,
+        exerciseName: String,
+        weight: Double,
+        oneRepMax: Double = weight,
+        volume: Double = weight * 5,
+        prType: String = "MAX_WEIGHT",
+        achievedAt: Long = 1_700_000_000_000L,
+        workoutMode: String = "OldSchool",
+        phase: String = "COMBINED",
+        profileId: String = "default",
+        reps: Long = 5,
+    ) {
+        database.phoenixDatabaseQueries.insertRecord(
+            exerciseId = exerciseId,
+            exerciseName = exerciseName,
+            weight = weight,
+            reps = reps,
+            oneRepMax = oneRepMax,
+            achievedAt = achievedAt,
+            workoutMode = workoutMode,
+            prType = prType,
+            volume = volume,
+            phase = phase,
+            profile_id = profileId,
+            cable_count = 2,
+            uuid = null,
+        )
     }
 
     private fun insertExercise(
@@ -245,8 +796,11 @@ class SqlDelightExerciseRepositoryTest {
         isFavorite: Long = 0L,
         isCustom: Long = 0L,
         oneRepMaxKg: Double? = null,
+        timesPerformed: Long = 0L,
+        lastPerformed: Long? = null,
+        archived: Long = 0L,
     ) {
-        database.vitruvianDatabaseQueries.insertExercise(
+        database.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = name,
             displayName = null,
@@ -262,11 +816,11 @@ class SqlDelightExerciseRepositoryTest {
             gripWidth = null,
             minRepRange = null,
             popularity = 0.0,
-            archived = 0L,
+            archived = archived,
             isFavorite = isFavorite,
             isCustom = isCustom,
-            timesPerformed = 0L,
-            lastPerformed = null,
+            timesPerformed = timesPerformed,
+            lastPerformed = lastPerformed,
             aliases = null,
             defaultCableConfig = defaultCableConfig,
             one_rep_max_kg = oneRepMaxKg,

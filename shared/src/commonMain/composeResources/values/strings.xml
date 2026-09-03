@@ -7,6 +7,9 @@
     <string name="action_ok">OK</string>
     <string name="action_save">Save</string>
     <string name="action_delete">Delete</string>
+    <string name="delete_personal_record_title">Delete personal record?</string>
+    <string name="delete_personal_record_message">Delete this personal record from this device and synced devices? This cannot be undone in this release.</string>
+    <string name="delete_personal_record_failed">Unable to delete personal record</string>
     <string name="action_edit">Edit</string>
     <string name="action_copy">Copy</string>
     <string name="action_close">Close</string>
@@ -78,6 +81,9 @@
     <string name="stop_label">STOP</string>
     <string name="waiting_for_data">Waiting for data…</string>
     <string name="reconnect">Reconnect</string>
+    <string name="workout_teardown_finishing">Finishing previous workout…</string>
+    <string name="workout_teardown_failed">Trainer reset didn\'t complete</string>
+    <string name="workout_teardown_retry">Retry</string>
     <string name="save_set">Save Set</string>
     <string name="bodyweight_reps_title">Enter bodyweight reps</string>
     <string name="bodyweight_set_progress">%1$s • Set %2$d of %3$d</string>
@@ -114,7 +120,7 @@
     <string name="connection_failed">Connection Failed</string>
     <string name="disconnect">Disconnect</string>
     <string name="disconnect_title">Disconnect?</string>
-    <string name="disconnect_message">Are you sure you want to disconnect from the Vitruvian machine?</string>
+    <string name="disconnect_message">Are you sure you want to disconnect from the trainer?</string>
     <string name="disconnect_integration_title">Disconnect integration?</string>
     <string name="disconnect_integration_message">Are you sure you want to disconnect %1$s? This will remove the integration and may interrupt a scheduled sync.</string>
     <string name="banner_not_connected_to_machine">Not connected to machine</string>
@@ -346,6 +352,27 @@
     <string name="rest_continue">Continue</string>
     <string name="rest_complete_announcement">Rest complete</string>
     <string name="rest_seconds_remaining">%1$d seconds remaining</string>
+    <string name="drop_set_title">Drop set</string>
+    <string name="drop_set_offer_toggle">Offer drop set after failure.</string>
+    <string name="drop_set_min_weight">Minimum weight</string>
+    <string name="drop_set_min_weight_supporting">Per-cable minimum in %1$s</string>
+    <string name="drop_set_min_weight_error">Enter a minimum weight greater than 0</string>
+    <string name="drop_set_offer_question">Retry this set with a drop set?</string>
+    <string name="drop_set_retry_set">Retry set</string>
+    <string name="drop_set_skip">Skip drop set</string>
+    <string name="drop_set_candidate_unavailable">Below the configured minimum</string>
+    <string name="drop_set_remaining_one">1 drop remaining</string>
+    <string name="drop_set_remaining_many">%1$d drops remaining</string>
+    <string name="drop_set_accepted_waiting">Retrying at %1$s — %2$s per cable</string>
+    <string name="drop_set_saving">Saving the failed attempt</string>
+    <string name="drop_set_preparing">Preparing the trainer</string>
+    <string name="drop_set_ready">Ready to retry</string>
+    <string name="drop_set_recovery">Reconnect to retry this drop set</string>
+    <string name="drop_set_skip_rest_blocked">Choose a drop set or skip it before skipping rest</string>
+    <string name="drop_set_waiting_timer">Rest complete. Choose a drop set or skip it to continue.</string>
+    <string name="cd_drop_set_candidate">%1$s drop, %2$s per cable</string>
+    <string name="cd_drop_set_candidate_unavailable">%1$s drop unavailable</string>
+    <string name="cd_drop_set_retry_disabled">Select a drop percentage to retry</string>
 
     <!-- ==================== Weight Adjustment ==================== -->
     <string name="set_weight">Set Weight</string>
@@ -582,7 +609,6 @@
     <string name="cd_previous_exercise">Previous exercise</string>
     <string name="cd_next_exercise">Next exercise</string>
     <string name="cd_completed">Completed</string>
-    <string name="cd_video_thumbnail">Video thumbnail</string>
     <string name="cd_thumbnail_for">Thumbnail for %1$s</string>
     <string name="cd_clear_filters">Clear filters</string>
     <string name="cd_alphabet_nav">Alphabet navigation. Tap a letter to jump to exercises starting with that letter.</string>
@@ -674,7 +700,7 @@
     <string name="cd_premium_feature">Premium feature</string>
     <string name="cd_trophy">Trophy celebration</string>
     <string name="cd_confetti">Celebration confetti</string>
-    <string name="cd_phoenix_logo">Vitruvian Phoenix Logo</string>
+    <string name="cd_phoenix_logo">Phoenix logo</string>
     <string name="cd_dismiss_readiness">Dismiss readiness briefing</string>
     <string name="cd_above_pr">Above PR</string>
     <string name="cd_below_pr">Below PR</string>
@@ -843,8 +869,6 @@
     <string name="cd_strength_assessment_cta">Open Strength Assessment picker</string>
     <string name="cd_exercise_history_detail">View exercise history and 1RM</string>
 
-    <!-- ==================== Video Player ==================== -->
-    <string name="video_preview_unavailable">Video preview unavailable</string>
 
     <!-- ==================== Just Lift auto-start honesty (task-5B.3) ==================== -->
     <string name="autostart_connect_prompt">Connect to enable auto-start</string>
@@ -886,9 +910,15 @@
     <string name="profile_recovery_message">Phoenix could not confirm which profile is active. Retry before continuing.</string>
     <string name="profile_recovery_retry_failed">Profile recovery is still unavailable</string>
     <string name="profile_delete_reassign_message">Delete &quot;%1$s&quot;? Its workouts, routines, records, badges, assessments, and progression data will move to Default. This cannot be undone.</string>
-    <string name="settings_video_behavior">Video Behavior</string>
-    <string name="settings_show_exercise_videos">Show Exercise Videos</string>
-    <string name="settings_show_exercise_videos_description">Display exercise demonstrations; turn this off on slower devices</string>
+    <string name="settings_video_behavior">Exercise Demos</string>
+    <string name="settings_show_exercise_videos">Show Exercise Demos</string>
+    <string name="settings_show_exercise_videos_description">Display exercise demonstration stills; turn this off on slower devices</string>
+    <string name="settings_exercise_demos_disabled">Exercise Demos Disabled</string>
+    <string name="settings_refresh_wger_catalog">Refresh extra exercises from wger</string>
+    <string name="settings_refresh_wger_catalog_description">Downloads openly licensed exercises from wger (CC-BY-SA). Does not replace the bundled catalogue.</string>
+    <string name="settings_refresh_wger_catalog_success">Added %1$d exercises from wger</string>
+    <string name="settings_refresh_wger_catalog_error">Could not refresh from wger</string>
+    <string name="settings_refresh_wger_catalog_in_progress">Refreshing…</string>
     <string name="profile_weight_increment">Weight increment</string>
     <string name="profile_body_weight">Body weight</string>
     <string name="profile_set_summary">Set summary duration</string>
@@ -928,4 +958,6 @@
     <string name="profile_disco_unlocked_body">Turn on Disco Mode in LED preferences to make your trainer party.</string>
     <string name="profile_disco_unlocked_action">Let\'s party</string>
     <string name="profile_adult_enable_partial_failure">Age confirmation was saved, but Vulgar Mode could not be enabled. Try again.</string>
+    <string name="label_previously_completed">Previously completed</string>
+    <string name="cd_filter_previously_completed">Filter exercises previously completed</string>
 </resources>

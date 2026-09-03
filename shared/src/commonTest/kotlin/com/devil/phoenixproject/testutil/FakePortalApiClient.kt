@@ -80,6 +80,7 @@ open class FakePortalApiClient :
     val pullCallCursors: MutableList<String?> = mutableListOf()
     val pullCallProfileIds: MutableList<String?> = mutableListOf()
     val pullCallTimestampsMs: MutableList<Long> = mutableListOf()
+    val pullKnownEntityIdsHistory: MutableList<KnownEntityIds> = mutableListOf()
     var pullTimestampSourceMs: () -> Long = { currentTimeMillis() }
     var lastIntegrationSyncRequest: IntegrationSyncRequest? = null
     var lastPlaygroundSimulationRequest: IntegrationPlaygroundSimulationRequest? = null
@@ -114,6 +115,7 @@ open class FakePortalApiClient :
     ): Result<PortalSyncPullResponse> {
         pullCallCount++
         lastPullKnownEntityIds = knownEntityIds
+        pullKnownEntityIdsHistory += knownEntityIds
         lastPullDeviceId = deviceId
         lastPullProfileId = profileId
         pullCallProfileIds += profileId

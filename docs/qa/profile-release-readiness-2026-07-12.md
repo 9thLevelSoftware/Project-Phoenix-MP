@@ -133,7 +133,7 @@ The run switched A → B and opened B's rack management surface. It displayed `Q
 
 The complete post-B A sweep restored all inspected A values: 82.5 kg body weight, kg unit, 2.5 kg increment, 15s/7s/45s timing, top rep timing, audio/countdown/auto-start/motion/scaling choices, Green LED scheme, enabled VBT with 20%/Estimated 1RM, verbal/vulgar/dominatrix state, and local safety `Phoenix Alpha`, calibrated, adults-only confirmed. The stopped database and preferences XML independently preserve the full A/B documents and safety keys.
 
-Evidence: `matrix-8103281b/profile-b-rack-route.xml`, `restored-a-rack-route.xml`, `restored-a-sweep-1.xml` through `restored-a-sweep-10.xml`, `restored-a-sweep-combined.txt`, `seeded-final-db-query.txt`, `seeded-final-preferences.xml`, and `seeded-final-vitruvian.db`.
+Evidence: `matrix-8103281b/profile-b-rack-route.xml`, `restored-a-rack-route.xml`, `restored-a-sweep-1.xml` through `restored-a-sweep-10.xml`, `restored-a-sweep-combined.txt`, `seeded-final-db-query.txt`, `seeded-final-preferences.xml`, and `seeded-final-phoenix.db`.
 
 ## Manual acceptance matrix
 
@@ -152,7 +152,7 @@ No `Switch Profile` or `Profiles` content selector appeared in Home or Just Lift
 
 ## Runtime substitution and hardware bounds
 
-No compatible Vitruvian trainer was present. The no-trainer substitution command was freshly rerun at pre-report revision `361677c2`:
+No compatible Phoenix trainer was present. The no-trainer substitution command was freshly rerun at pre-report revision `361677c2`:
 
 ```powershell
 .\gradlew.bat '-Pskip.supabase.check=true' :shared:testAndroidHostTest --tests "*VerbalEncouragementPreferenceCascadeTest" --tests "*SafeWordDetectionManagerTest" --tests "*AdultModePresentationTest" --tests "*VbtEnabledRuntimeTest" --rerun-tasks --console=plain

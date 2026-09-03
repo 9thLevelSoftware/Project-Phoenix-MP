@@ -5,8 +5,8 @@ import kotlin.uuid.ExperimentalUuidApi
 import kotlin.uuid.Uuid
 
 /**
- * BLE Constants - UUIDs and configuration values for Vitruvian device communication
- * Based on Phoenix Backend (deobfuscated official app)
+ * BLE Constants - UUIDs and configuration values for trainer device communication
+ * Nordic UART service UUIDs and trainer protocol constants.
  */
 @Suppress("unused") // Protocol reference constants - many are kept for documentation
 @OptIn(ExperimentalUuidApi::class)
@@ -15,7 +15,7 @@ object BleConstants {
     const val GATT_SERVICE_UUID_STRING = "00001801-0000-1000-8000-00805f9b34fb"
     const val NUS_SERVICE_UUID_STRING = "6e400001-b5a3-f393-e0a9-e50e24dcca9e"
 
-    // Primary Characteristic UUIDs (from Phoenix Backend)
+    // Primary characteristic UUIDs
     const val NUS_RX_CHAR_UUID_STRING = "6e400002-b5a3-f393-e0a9-e50e24dcca9e"
     const val SAMPLE_CHAR_UUID_STRING = "90e991a6-c548-44ed-969b-eb541014eae3" // 28 bytes
     const val MONITOR_CHAR_UUID_STRING = SAMPLE_CHAR_UUID_STRING // Alias for backward compat
@@ -32,7 +32,7 @@ object BleConstants {
     const val DIAGNOSTIC_CHAR_UUID_STRING = "5fa538ec-d041-42f6-bbd6-c30d475387b7" // Variable
     const val PROPERTY_CHAR_UUID_STRING = DIAGNOSTIC_CHAR_UUID_STRING // Alias
 
-    // Unknown/Auth characteristic - present in web apps notification list
+    // Unknown/Auth characteristic - observed in the device's notification set
     // Purpose unclear but may be needed for proper device communication
     const val UNKNOWN_AUTH_CHAR_UUID_STRING = "36e6c2ee-21c7-404e-aa9b-f74ca4728ad4"
 
@@ -43,17 +43,16 @@ object BleConstants {
         REPS_CHAR_UUID_STRING,
         HEURISTIC_CHAR_UUID_STRING,
         BLE_UPDATE_REQUEST_CHAR_UUID_STRING,
-        UNKNOWN_AUTH_CHAR_UUID_STRING, // Web apps subscribe to this
+        UNKNOWN_AUTH_CHAR_UUID_STRING, // Subscribed for parity with observed device behavior
     )
 
-    // Device name pattern for filtering - matches "Vitruvian*" devices
+    // Device name pattern for filtering - matches "Phoenix*" devices
     const val DEVICE_NAME_PREFIX = "Vee"
-    const val DEVICE_NAME_PATTERN = "^Vitruvian.*$"
 
-    // Command IDs (Official Protocol from Phoenix Backend)
+    // Command IDs (machine protocol)
     object Commands {
-        const val STOP_COMMAND: Byte = 0x50 // Stop/halt (official app)
-        const val RESET_COMMAND: Byte = 0x0A // Reset/init (web app stop) - recovery fallback
+        const val STOP_COMMAND: Byte = 0x50 // Stop/halt
+        const val RESET_COMMAND: Byte = 0x0A // Reset/init - accepted by the device as a recovery stop
         const val REGULAR_COMMAND: Byte = 0x4F // 25-byte packet (79 decimal)
         const val ECHO_COMMAND: Byte = 0x4E // 32-byte packet (78 decimal)
         const val ACTIVATION_COMMAND: Byte = 0x04 // 96-byte packet
@@ -72,7 +71,7 @@ object BleConstants {
      * - 0x58-0x5B: target weight (adjustedWeight — actual operating weight)
      * - 0x5C-0x5F: progression (progressionRegressionKg)
      *
-     * Official activation packets keep 0x48-0x4F as the mode profile's eccentric-up
+     * Activation packets keep 0x48-0x4F as the mode profile's eccentric-up
      * ramp bytes. The active force fields live in the trailing block at 0x50-0x5F.
      *
      * The legacy OVERLAP experiment wrote softMax/increment at 0x48/0x4C. Those
@@ -83,7 +82,7 @@ object BleConstants {
         const val SIZE = 96
         const val OFFSET_MODE_PROFILE = 0x30 // 32 bytes (concentric + eccentric phases)
 
-        // Official profile-tail offsets.
+        // Profile-tail offsets.
         const val OFFSET_ECC_UP_MIN_MMS = 0x48
         const val OFFSET_ECC_UP_MAX_MMS = 0x4A
         const val OFFSET_ECC_UP_RAMP = 0x4C
@@ -109,7 +108,7 @@ object BleConstants {
     @Suppress("unused")
     const val CMD_STOP = 0x50
 
-    // Data Protocol Constants (from Phoenix Backend)
+    // Data protocol constants
     @Suppress("unused") // Protocol reference documentation
     object DataProtocol {
         // Scaling factors for cable data
@@ -148,7 +147,7 @@ object BleConstants {
 
     // Primary Characteristic UUIDs
     val NUS_TX_UUID = Uuid.parse(NUS_RX_CHAR_UUID_STRING) // Write to device (app TX = device RX, hence NUS_RX_CHAR_UUID_STRING for 6e400002)
-    val NUS_RX_UUID = Uuid.parse("6e400003-b5a3-f393-e0a9-e50e24dcca9e") // Standard NUS RX (not used by Vitruvian)
+    val NUS_RX_UUID = Uuid.parse("6e400003-b5a3-f393-e0a9-e50e24dcca9e") // Standard NUS RX (not used by Phoenix)
     val MONITOR_UUID = Uuid.parse(SAMPLE_CHAR_UUID_STRING)
     val REPS_UUID = Uuid.parse(REPS_CHAR_UUID_STRING)
 

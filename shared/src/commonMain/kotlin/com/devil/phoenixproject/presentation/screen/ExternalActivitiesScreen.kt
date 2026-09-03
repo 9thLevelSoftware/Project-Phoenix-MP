@@ -26,9 +26,9 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.KmpUtils
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.viewmodel.koinViewModel
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.empty_no_external_activities_message
-import vitruvianprojectphoenix.shared.generated.resources.empty_no_external_activities_title
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.empty_no_external_activities_message
+import projectphoenix.shared.generated.resources.empty_no_external_activities_title
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

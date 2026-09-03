@@ -56,7 +56,7 @@ fun CircularForceGauge(
 
         isEccentric -> MaterialTheme.colorScheme.tertiary
 
-        // Commonly used for Eccentric in Vitruvian context
+        // Commonly used for Eccentric in Phoenix context
         else -> MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f)
     }
 

@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.ExternalActivitySyncKey
 import com.devil.phoenixproject.data.local.BadgeDefinitions
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
@@ -11,6 +12,7 @@ import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.domain.model.CharacterClass
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.RpgProfile
@@ -70,8 +72,18 @@ object SyncConfig {
     /** Default number of entities per pull page. */
     const val DEFAULT_PAGE_SIZE = 100
 
-    /** Maximum pages to fetch in a single pull operation (prevents infinite loops). */
-    const val MAX_PAGES = 100
+    /**
+     * Emergency circuit breaker: absolute maximum pages per pull.
+     *
+     * This is a telemetry-backed safety net, NOT a product limit. Normal pagination
+     * terminates via `hasMore=false` or cursor-validity checks. A legitimate account
+     * should never reach this ceiling; if it fires, it signals a server-side
+     * pagination bug (e.g. cursor never exhausted).
+     *
+     * Previous value was 100, which blocked accounts with >10,000 entities.
+     * See: https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues/679
+     */
+    const val MAX_PAGES = 10_000
 
     /**
      * Maximum number of IDs per parity list sent in a single pull request.
@@ -327,6 +339,7 @@ class SyncManager(
     private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
     private val rateLimiter: ClientRateLimiter = ClientRateLimiter(),
     private val isProfilePreferenceMigrationReady: () -> Boolean,
+    private val completedSetRepository: CompletedSetRepository? = null,
 ) {
     companion object {
         /**
@@ -341,6 +354,8 @@ class SyncManager(
          * Prevents infinite retry storms when the same batch keeps failing.
          */
         const val MAX_FULL_BATCH_RETRIES = 3
+
+        private const val COMPLETED_SET_IDENTITY_CHUNK = 500
 
         /**
          * Subscription tier that entitles a user to sync 50 Hz rep telemetry
@@ -785,7 +800,9 @@ class SyncManager(
             context = "Push payload",
         )
 
-        // 2. Fetch full PRs with type/phase/volume metadata (GAP 2 fix), profile-scoped
+        // Dedicated PR rows need the full snapshot so stable UUID, updatedAt, and
+        // deletedAt all reach the portal. Reuse that same projection for legacy
+        // set-level PR hints rather than reading a lossy second delta.
         val recentPRs = syncRepository.getFullPRsModifiedSince(lastSync, activeProfileId)
         val prBySessionKey = recentPRs.groupBy { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp)
@@ -805,6 +822,7 @@ class SyncManager(
         val sessionIdByPrKey = sessionIdByDeltaPrKey + historicalSessionIdByPrKey
 
         // 3. Build SessionWithReps (fetch rep metrics per session, detect PRs, attach PR metadata)
+        val completedSetsBySessionId = logicalSetCompletedSetsBySessionId(sessions.map { it.id })
         val sessionsWithReps = sessions.map { session ->
             val repMetrics = repMetricRepository.getRepMetrics(session.id)
             val sessionKey = session.exerciseId
@@ -826,6 +844,10 @@ class SyncManager(
                 muscleGroup = muscleGroup,
                 isPr = prRecords.isNotEmpty(),
                 prRecords = prRecords,
+                logicalSetIdentity = logicalSetIdentityFor(
+                    session,
+                    completedSetsBySessionId[session.id].orEmpty(),
+                ),
             )
         }
         val personalRecordDtos = recentPRs.map { pr ->
@@ -1288,7 +1310,10 @@ class SyncManager(
         // server confirmed the push. This gives PersonalRecord rows the same
         // post-confirmation resend protection that WorkoutSession rows get from
         // the caller's post-push stamping block.
-        val pushedPrIds = recentPRs.map { it.id }.distinct()
+        val pushedPrIds = recentPRs
+            .filter { it.deletedAt == null && it.id >= 0L }
+            .map { it.id }
+            .distinct()
         if (pushedPrIds.isNotEmpty()) {
             val prStampTime = currentTimeMillis()
             syncRepository.updatePersonalRecordTimestamp(pushedPrIds, prStampTime)
@@ -1299,6 +1324,31 @@ class SyncManager(
 
         return Result.success(lastResponse!!)
         // No updateServerIds() -- portal uses client-provided UUIDs
+    }
+
+    private suspend fun logicalSetCompletedSetsBySessionId(
+        sessionIds: List<String>,
+    ): Map<String, List<CompletedSet>> {
+        val repository = completedSetRepository ?: return emptyMap()
+        if (sessionIds.isEmpty()) return emptyMap()
+        return sessionIds
+            .chunked(COMPLETED_SET_IDENTITY_CHUNK)
+            .flatMap { chunk -> repository.getCompletedSetsForSessions(chunk) }
+            .groupBy { it.sessionId }
+    }
+
+    private fun logicalSetIdentityFor(
+        session: WorkoutSession,
+        completedSets: List<CompletedSet>,
+    ): PortalSyncAdapter.LogicalSetSyncIdentity? {
+        val routineSessionId = session.routineSessionId ?: return null
+        val completedSet = completedSets.firstOrNull { !it.routineExerciseId.isNullOrBlank() } ?: return null
+        val routineExerciseId = completedSet.routineExerciseId ?: return null
+        return PortalSyncAdapter.LogicalSetSyncIdentity(
+            routineSessionId = routineSessionId,
+            routineExerciseId = routineExerciseId,
+            setNumber = completedSet.setNumber,
+        )
     }
 
     private suspend fun pushPayloadWithRateLimit(
@@ -1427,7 +1477,7 @@ class SyncManager(
         val rawRoutineIds = syncRepository.getAllRoutineIds(mergeProfileId)
         val rawCycleIds = syncRepository.getAllCycleIds(mergeProfileId)
         val rawBadgeIds = syncRepository.getAllBadgeIds(mergeProfileId)
-        val rawPrIds = syncRepository.getAllPersonalRecordIds(mergeProfileId)
+        val rawPersonalRecordIds = syncRepository.getAllPersonalRecordIds(mergeProfileId)
 
         // fix(pull 400): TemplateConverter mints cycle-derived routine IDs as
         // "cycle_routine_<uuid>" which aren't valid UUIDs. The server's
@@ -1449,7 +1499,6 @@ class SyncManager(
         val filteredSessionIds = filterUuids(rawSessionIds, "sessionIds")
         val filteredCycleIds = filterUuids(rawCycleIds, "cycleIds")
         val filteredBadgeIds = filterUuids(rawBadgeIds, "badgeIds")
-        val filteredPrIds = filterUuids(rawPrIds, "personalRecordIds")
 
         fun <T> capParity(list: List<T>, label: String): List<T> = if (list.size <= SyncConfig.MAX_PARITY_IDS) {
             list
@@ -1462,38 +1511,75 @@ class SyncManager(
             list.takeLast(SyncConfig.MAX_PARITY_IDS)
         }
 
-        val knownEntityIds = KnownEntityIds(
+        val knownPersonalRecordIds = capParity(
+            filterUuids(rawPersonalRecordIds, "personalRecordIds"),
+            "personalRecordIds",
+        ).toMutableList()
+
+        fun currentKnownEntityIds(): KnownEntityIds = KnownEntityIds(
             sessionIds = capParity(filteredSessionIds, "sessionIds"),
             routineIds = capParity(filteredRoutineIds, "routineIds"),
             cycleIds = capParity(filteredCycleIds, "cycleIds"),
             badgeIds = capParity(filteredBadgeIds, "badgeIds"),
-            personalRecordIds = capParity(filteredPrIds, "personalRecordIds"),
+            // Send known PR UUIDs so the portal can page with
+            // get_personal_records_excluding_ids and still return tombstones
+            // via get_personal_record_tombstones. Empty lists force the server
+            // to rely only on the cursor, which loops when many PRs share one
+            // microsecond timestamp.
+            personalRecordIds = capParity(knownPersonalRecordIds.toList(), "personalRecordIds"),
         )
 
+        val entityIds = currentKnownEntityIds()
         Logger.i("SyncManager") {
-            "Parity sync: sending ${knownEntityIds.sessionIds.size} session IDs, " +
-                "${knownEntityIds.routineIds.size} routine IDs, ${knownEntityIds.cycleIds.size} cycle IDs"
+            "Parity sync: sending ${entityIds.sessionIds.size} session IDs, " +
+                "${entityIds.routineIds.size} routine IDs, ${entityIds.cycleIds.size} cycle IDs, " +
+                "${entityIds.personalRecordIds.size} personal record IDs"
         }
 
         var pagesProcessed = 0
         var totalEntitiesFetched = 0
         var currentCursor: String? = null
         var finalSyncTime: Long = 0
+        val seenCursors = mutableSetOf<String>() // cursor-repetition detection (issue #679)
 
         // Pagination loop: fetch pages until hasMore is false
         while (true) {
             // Early exit on coroutine cancellation
             currentCoroutineContext().ensureActive()
 
-            // Infinite loop prevention
+            // Emergency circuit breaker — should never fire during normal operation.
+            // If it does, the server's pagination protocol is broken (cursor never exhausted).
             if (pagesProcessed >= SyncConfig.MAX_PAGES) {
                 val error = PortalApiException(
-                    "Pull exceeded maximum page limit (${SyncConfig.MAX_PAGES}). " +
+                    "Pull exceeded emergency page limit (${SyncConfig.MAX_PAGES}). " +
                         "Processed $totalEntitiesFetched entities across $pagesProcessed pages. " +
-                        "This may indicate a data issue - please contact support.",
+                        "Server pagination may be broken - please contact support.",
                 )
                 Logger.e("SyncManager") { error.message!! }
                 return Result.failure(error)
+            }
+
+            // Cursor-validity guard: reject blank or repeated cursors (issue #679).
+            // A repeated cursor means the server is sending the same page forever;
+            // a blank cursor with hasMore=true is a protocol violation.
+            if (currentCursor != null) {
+                if (currentCursor.isBlank()) {
+                    val error = PortalApiException(
+                        "Pull received blank continuation cursor after $pagesProcessed pages. " +
+                            "Processed $totalEntitiesFetched entities. Server pagination protocol error.",
+                    )
+                    Logger.e("SyncManager") { error.message!! }
+                    return Result.failure(error)
+                }
+                if (!seenCursors.add(currentCursor)) {
+                    val error = PortalApiException(
+                        "Pull detected repeated cursor after $pagesProcessed pages " +
+                            "(cursor=${currentCursor.take(16)}...). " +
+                            "Processed $totalEntitiesFetched entities. Server may be stuck in a loop.",
+                    )
+                    Logger.e("SyncManager") { error.message!! }
+                    return Result.failure(error)
+                }
             }
 
             // Emit progress state for UI feedback
@@ -1504,11 +1590,14 @@ class SyncManager(
                 )
             }
 
+            val knownEntityIds = currentKnownEntityIds()
+
             // Fetch next page
             // DIAGNOSTIC: Log pull request parameters to trace sync issues
             Logger.d("SyncManager") {
                 "PULL REQUEST: deviceId=$deviceId, profileId=$activeProfileId, " +
                     "knownSessions=${knownEntityIds.sessionIds.size}, knownRoutines=${knownEntityIds.routineIds.size}, " +
+                    "knownPersonalRecords=${knownEntityIds.personalRecordIds.size}, " +
                     "cursor=$currentCursor"
             }
 
@@ -1613,6 +1702,13 @@ class SyncManager(
                 return Result.failure(mergeResult.exceptionOrNull() ?: PortalApiException("Merge failed"))
             }
 
+            for (record in pullResponse.personalRecords) {
+                val id = record.id
+                if (CANONICAL_UUID_REGEX.matches(id) && id !in knownPersonalRecordIds) {
+                    knownPersonalRecordIds += id
+                }
+            }
+
             // Update pagination state
             finalSyncTime = pullResponse.syncTime
 
@@ -1627,11 +1723,15 @@ class SyncManager(
             // Prepare for next page
             currentCursor = pullResponse.nextCursor
             if (currentCursor == null) {
-                // hasMore=true but no cursor - should not happen, break to prevent infinite loop
-                Logger.w("SyncManager") {
-                    "Pull page $pagesProcessed has hasMore=true but no nextCursor. Breaking."
-                }
-                break
+                // hasMore=true but no cursor is a protocol violation — treat as pull failure
+                // so sync() reports PartialSuccess and preserves the prior lastSync timestamp.
+                val error = PortalApiException(
+                    "Pull page $pagesProcessed has hasMore=true but no nextCursor. " +
+                        "Processed $totalEntitiesFetched entities across $pagesProcessed pages. " +
+                        "Server pagination protocol error — missing continuation cursor.",
+                )
+                Logger.e("SyncManager") { error.message!! }
+                return Result.failure(error)
             }
         }
 

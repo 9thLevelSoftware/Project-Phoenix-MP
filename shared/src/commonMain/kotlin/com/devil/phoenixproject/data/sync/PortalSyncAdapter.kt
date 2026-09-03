@@ -57,6 +57,12 @@ object PortalSyncAdapter {
     /**
      * Represent the data for a single mobile WorkoutSession plus its associated rep data.
      */
+    data class LogicalSetSyncIdentity(
+        val routineSessionId: String,
+        val routineExerciseId: String,
+        val setNumber: Int,
+    )
+
     data class SessionWithReps(
         val session: WorkoutSession,
         val repMetrics: List<RepMetricData> = emptyList(),
@@ -65,6 +71,7 @@ object PortalSyncAdapter {
         val isPr: Boolean = false,
         val prRecords: List<PersonalRecord> = emptyList(),
         val prRecord: PersonalRecord? = null, // Carries PR metadata (type, phase, volume)
+        val logicalSetIdentity: LogicalSetSyncIdentity? = null,
     )
 
     /**
@@ -92,6 +99,26 @@ object PortalSyncAdapter {
      * correctly-keyed telemetry data where setIds match the generated exercise set IDs.
      */
     data class PortalSessionBuildResult(val sessions: List<PortalWorkoutSessionDto>, val telemetry: List<PortalRepTelemetryDto>)
+
+    /**
+     * Programmed-set count for portal analytics. Repeated retry attempts that share a
+     * stable logical-set identity collapse to one set; sessions without that identity
+     * keep the legacy one-session-one-set behavior.
+     */
+    internal fun programmedSetCount(sessions: List<SessionWithReps>): Int {
+        if (sessions.none { it.logicalSetIdentity != null }) return sessions.size
+        val grouped = linkedSetOf<String>()
+        var ungrouped = 0
+        sessions.forEach { session ->
+            val identity = session.logicalSetIdentity
+            if (identity == null) {
+                ungrouped += 1
+            } else {
+                grouped += "${identity.routineSessionId}\u0000${identity.routineExerciseId}\u0000${identity.setNumber}"
+            }
+        }
+        return grouped.size + ungrouped
+    }
 
     fun toPortalWorkoutSessions(
         sessionsWithReps: List<SessionWithReps>,
@@ -161,7 +188,7 @@ object PortalSyncAdapter {
                 ?: (session.weightPerCableKg * session.totalReps)
             perCableVolume.toDouble()
         }.toFloat()
-        val totalSets = sorted.size // Each mobile session = one set in portal terms
+        val totalSets = programmedSetCount(sorted)
         val totalPrs = sorted.count { it.isPr }
 
         // Build exercise entries with telemetry (setIds are generated inside)
@@ -320,13 +347,11 @@ object PortalSyncAdapter {
             name = session.exerciseName ?: "Unknown Exercise",
             muscleGroup = swr.muscleGroup,
             orderIndex = orderIndex,
-            // Per-cable estimate from this exercise's single set; matches the
-            // set's weightKg (per-cable). Portal applies its x2 display transform.
-            // null when there is no meaningful estimate (0-rep/0-weight) so the
-            // portal treats the field as absent and falls back, per the DTO doc.
+            // Working reps exclude warmup; fall back to totalReps when working
+            // is 0 so legacy rows still get an estimate.
             estimatedOneRepMaxKg = OneRepMaxCalculator.estimate(
                 session.weightPerCableKg,
-                session.totalReps,
+                session.workingReps.takeIf { it > 0 } ?: session.totalReps,
             ).takeIf { it > 0f },
             // Velocity-based (VBT) estimate, looked up by catalog exerciseId from
             // the precomputed map. Distinct from the rep-based estimate above; null
@@ -360,7 +385,8 @@ object PortalSyncAdapter {
             workoutPhase = record.phase.name,
             sessionId = sessionId,
             achievedAt = epochToIso8601(record.timestamp),
-            updatedAt = epochToIso8601(currentTimeMillis()),
+            updatedAt = epochToIso8601(record.updatedAt ?: currentTimeMillis()),
+            deletedAt = record.deletedAt?.let(::epochToIso8601),
             localProfileId = record.profileId,
             workoutMode = PortalMappings.workoutModeToSync(record.workoutMode),
         )
@@ -605,6 +631,8 @@ object PortalSyncAdapter {
                             overrides.mapValues { (_, v) -> v.name },
                         )
                     },
+                dropSetEnabled = ex.dropSetEnabled,
+                dropSetMinWeightKg = ex.dropSetMinWeightKg,
             )
         }
 

@@ -42,11 +42,11 @@ import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.cd_phase_concentric
-import vitruvianprojectphoenix.shared.generated.resources.cd_phase_eccentric
-import vitruvianprojectphoenix.shared.generated.resources.cd_phase_idle
-import vitruvianprojectphoenix.shared.generated.resources.cd_rep_counter
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.cd_phase_concentric
+import projectphoenix.shared.generated.resources.cd_phase_eccentric
+import projectphoenix.shared.generated.resources.cd_phase_idle
+import projectphoenix.shared.generated.resources.cd_rep_counter
 
 /**
  * Issue #163: Animated Rep Counter

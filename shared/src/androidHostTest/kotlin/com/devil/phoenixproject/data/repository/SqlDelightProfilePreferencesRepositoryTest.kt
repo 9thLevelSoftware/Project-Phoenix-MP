@@ -2,7 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesCodec
 import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CoreProfilePreferences
 import com.devil.phoenixproject.domain.model.LedPreferences
 import com.devil.phoenixproject.domain.model.ProfileLocalSafetyPreferences
@@ -29,7 +29,7 @@ import org.junit.Before
 import org.junit.Test
 
 class SqlDelightProfilePreferencesRepositoryTest {
-    private lateinit var database: VitruvianDatabase
+    private lateinit var database: PhoenixDatabase
     private lateinit var repository: ProfilePreferencesRepository
 
     @Before
@@ -93,7 +93,7 @@ class SqlDelightProfilePreferencesRepositoryTest {
         insertProfile("a")
         repository.insertDefaults("a")
         val malformed = " { definitely-not-json ] \n"
-        database.vitruvianDatabaseQueries.updateWorkoutProfilePreferences(malformed, 10, "a")
+        database.phoenixDatabaseQueries.updateWorkoutProfilePreferences(malformed, 10, "a")
 
         val invalid = repository.get("a")
         assertEquals(WorkoutPreferences(), invalid.workout.value)
@@ -108,7 +108,7 @@ class SqlDelightProfilePreferencesRepositoryTest {
 
         assertEquals(
             malformed,
-            database.vitruvianDatabaseQueries.selectProfilePreferences("a")
+            database.phoenixDatabaseQueries.selectProfilePreferences("a")
                 .executeAsOne()
                 .workout_preferences_json,
         )
@@ -125,13 +125,13 @@ class SqlDelightProfilePreferencesRepositoryTest {
         )
         assertEquals(invalid.workout.metadata.serverRevision, reset.workout.metadata.serverRevision)
 
-        database.vitruvianDatabaseQueries.updateWorkoutProfilePreferences(malformed, 40, "a")
+        database.phoenixDatabaseQueries.updateWorkoutProfilePreferences(malformed, 40, "a")
         val edited = WorkoutPreferences(stopAtTop = true)
         repository.updateWorkout("a", edited, 50)
         assertEquals(edited, repository.get("a").workout.value)
         assertEquals(
             ProfilePreferencesCodec.encodeWorkout(edited),
-            database.vitruvianDatabaseQueries.selectProfilePreferences("a")
+            database.phoenixDatabaseQueries.selectProfilePreferences("a")
                 .executeAsOne()
                 .workout_preferences_json,
         )
@@ -233,7 +233,7 @@ class SqlDelightProfilePreferencesRepositoryTest {
     }
 
     private fun insertProfile(id: String) {
-        database.vitruvianDatabaseQueries.insertProfile(id, id, 0, 1, 0)
+        database.phoenixDatabaseQueries.insertProfile(id, id, 0, 1, 0)
     }
 
     private suspend fun assertOnlySectionChanged(

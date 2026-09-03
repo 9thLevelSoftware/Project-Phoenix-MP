@@ -122,7 +122,7 @@ def make_targets(args: argparse.Namespace) -> list[Target]:
         ),
         Target(
             label="iOS MARKETING_VERSION",
-            relative_path=Path("iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj"),
+            relative_path=Path("iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj"),
             pattern=re.compile(r"^(\s*MARKETING_VERSION\s*=\s*)([^;]+)(;.*)$", re.MULTILINE),
             expected_matches=2,
             replacement_value=version,
@@ -147,7 +147,7 @@ def make_targets(args: argparse.Namespace) -> list[Target]:
         targets.append(
             Target(
                 label="iOS CURRENT_PROJECT_VERSION",
-                relative_path=Path("iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj/project.pbxproj"),
+                relative_path=Path("iosApp/PhoenixApp/PhoenixApp.xcodeproj/project.pbxproj"),
                 pattern=re.compile(r"^(\s*CURRENT_PROJECT_VERSION\s*=\s*)([0-9]+)(;.*)$", re.MULTILINE),
                 expected_matches=2,
                 replacement_value=args.ios_build,

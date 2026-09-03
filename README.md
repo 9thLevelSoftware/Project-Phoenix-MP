@@ -1,4 +1,4 @@
-# Project Phoenix — Vitruvian Trainer Control App
+# Project Phoenix — Trainer Control App
 
 [![Latest Release](https://img.shields.io/github/v/release/9thLevelSoftware/Project-Phoenix-MP)](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/latest)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
@@ -6,15 +6,13 @@
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-green.svg)](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases)
 [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/9thLevelSoftware/Project-Phoenix-MP)
 
-**Keep your Vitruvian Trainer alive.** This community-developed app restores full functionality to Vitruvian V-Form and Trainer+ machines after the company's closure. Don't let your investment become e-waste.
-
 ---
 
 ## Support the Project
 
 If Project Phoenix has helped keep your machine running, please consider supporting continued development:
 
-**[☕ Support on Ko-fi](https://ko-fi.com/vitruvianredux)**
+**[☕ Support on Ko-fi](https://ko-fi.com/phoenixredux)**
 
 Your support helps cover development, testing, and platform costs and keeps this community rescue project going.
 
@@ -26,8 +24,6 @@ Your support helps cover development, testing, and platform costs and keeps this
 |----------|---------|-------|
 | **Android** | [Play Store](https://play.google.com/store/apps/details?id=com.devil.phoenixproject) / [Join Beta](ANDROID_INSTALL.md#join-the-beta) | [Android Guide](ANDROID_INSTALL.md) |
 | **iOS** | [TestFlight](https://testflight.apple.com/join/TFw1m89R) | [iOS Guide](iOS_INSTALL.md) |
-
-Current release: **v0.9.2** — Equipment Rack, Health Connect / HealthKit sync, Routine Intelligence, and a broad stability pass. See the [release notes](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.2) for full details.
 
 ---
 
@@ -67,12 +63,21 @@ Current release: **v0.9.2** — Equipment Rack, Health Connect / HealthKit sync,
 - Day strip navigation for quick access
 
 ### Analytics & Progress
-- **Automatic personal record detection**
-- Complete workout history with expandable stats
-- Muscle balance radar chart
-- Workout consistency tracking
-- Volume vs intensity comparisons
-- Mode distribution breakdown
+- **Automatic personal record detection** with velocity-estimated 1RM, percent-of-1RM scaling, badges, and backfill
+- Complete workout history with expandable stats; exercise-history quick view *(merged after v0.9.6; release pending)*
+- Exercise picker filter for previously completed movements *(merged after v0.9.6; release pending)*
+- Muscle balance radar chart, workout consistency tracking, volume/intensity comparisons, and mode distribution
+
+### Profiles & Personalized Training
+- Dedicated **Profile** tab for switching, creating, and managing lifters
+- Per-profile body weight, Equipment Rack, workout behavior, audio, LED, VBT, and safety preferences
+- **Exercise Insights** for profile-specific PRs, estimated 1RM, recent sessions, volume trends, and full history
+
+### Smarter Workout Setup
+- Equipment Rack support for external load, counterweight, and display-only accessories
+- Next-set recommendations, session body-weight prompts, and temporary Active Recovery / Heavy Deload routine starts
+- TUT and TUT Beast in Just Lift; set-type labels during workouts
+- Routine-set repetition *(merged after v0.9.6; release pending)*
 
 ### Privacy Focused
 - All data stored locally on your device
@@ -82,24 +87,18 @@ Current release: **v0.9.2** — Equipment Rack, Health Connect / HealthKit sync,
 
 ---
 
-## Supported Hardware
-
-| Machine | Device Name | Max Resistance | Status |
-|---------|-------------|----------------|--------|
-| **Vitruvian V-Form Trainer** (VIT-200) | `Vee_*` | 200 kg (440 lbs) | ✅ Fully Supported |
-| **Vitruvian Trainer+** | `VIT*` | 220 kg (485 lbs) | ✅ Fully Supported |
-
----
-
 ## What's New
 
 For the latest features, fixes, and upgrade notes see the
 [GitHub Releases page](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases).
 Recent highlights:
 
-- **v0.9.2** — Equipment Rack for accessories, Health Connect / HealthKit sync with body-weight import, Routine Intelligence (next-set suggestions), TV remote navigation, and a broad stability pass across sync, history, analytics, OAuth, BLE, and backups.
-- **v0.9.1** — Stability, diagnostics, and integration sync improvements.
-- Earlier releases are listed in the [Releases](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases) page.
+- **[v0.9.6](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.6)** — Profile tab, profile-scoped preferences, Exercise Insights, clearer set types, Health Connect mapping, and workout-flow reliability fixes.
+- **[v0.9.5](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.5)** — UI/BLE compatibility and training-cycle reliability.
+- **[v0.9.4](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.4)** — Optional age-gated VBT verbal feedback.
+- **[v0.9.3](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.3)** — Velocity-based 1RM, body-weight prompts, Equipment Rack improvements, and TUT/TUT Beast in Just Lift.
+- **[v0.9.2](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.2)** — Equipment Rack, health sync, next-set recommendations, and routine modifiers.
+- Earlier releases are listed on the [Releases](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases) page.
 
 ---
 
@@ -119,7 +118,7 @@ Recent highlights:
 ### iOS
 ```bash
 ./gradlew :shared:assembleXCFramework
-open iosApp/VitruvianPhoenix/VitruvianPhoenix.xcodeproj
+open iosApp/PhoenixApp/PhoenixApp.xcodeproj
 ```
 
 ---
@@ -169,7 +168,7 @@ Please open an issue before starting large changes so the approach can be coordi
 - **Issues**: [GitHub Issues](https://github.com/9thLevelSoftware/Project-Phoenix-MP/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/9thLevelSoftware/Project-Phoenix-MP/discussions)
 - **Project Portal**: [phoenix-portal.com](https://phoenix-portal.com)
-- **Support Development**: [Ko-fi](https://ko-fi.com/vitruvianredux)
+- **Support Development**: [Ko-fi](https://ko-fi.com/phoenixredux)
 
 ---
 
@@ -179,14 +178,4 @@ Proprietary License - All Rights Reserved. See [LICENSE](LICENSE) file for detai
 
 ---
 
-## Acknowledgments
-
-- Original [VitruvianProjectPhoenix](https://github.com/DasBluEyedDevil/VitruvianProjectPhoenix) Android app
-- Web app developers for reverse-engineering the BLE protocol
-- Vitruvian machine owners community for testing and feedback
-- JetBrains for Kotlin Multiplatform
-- All contributors and supporters
-
----
-
-*Project Phoenix is a community rescue project to keep Vitruvian Trainer machines functional. It is not affiliated with or endorsed by Vitruvian.*
+*Project Phoenix is a community rescue project. It is not affiliated with or endorsed by Vitruvian/RCI Fitness.*

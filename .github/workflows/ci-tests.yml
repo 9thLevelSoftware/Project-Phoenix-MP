@@ -35,6 +35,9 @@ jobs:
       - name: Verify no secret-bearing local files are tracked
         run: bash .github/scripts/forbid-tracked-secrets.sh
 
+      - name: Validate release workflow contracts
+        run: python3 .github/scripts/test_release_workflows.py
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest
@@ -65,7 +68,7 @@ jobs:
             ${{ runner.os }}-gradle-
 
       - name: Verify SQLDelight migrations
-        run: ./gradlew :shared:verifyCommonMainVitruvianDatabaseMigration --continue -Pskip.supabase.check=true
+        run: ./gradlew :shared:verifyCommonMainPhoenixDatabaseMigration --continue -Pskip.supabase.check=true
 
       - name: Run shared module unit tests
         run: ./gradlew :shared:testAndroidHostTest --continue -Pskip.supabase.check=true
@@ -224,4 +227,3 @@ jobs:
         with:
           name: lint-results
           path: androidApp/build/reports/lint-results-*.html
-

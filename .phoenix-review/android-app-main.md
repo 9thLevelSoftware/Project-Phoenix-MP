@@ -2,7 +2,7 @@
 
 Scope reviewed:
 - `androidApp/src/main/kotlin/com/devil/phoenixproject/MainActivity.kt`
-- `androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt`
+- `androidApp/src/main/kotlin/com/devil/phoenixproject/PhoenixApp.kt`
 - `androidApp/src/main/kotlin/com/devil/phoenixproject/auth/OAuthRedirectActivity.kt`
 - `androidApp/src/main/kotlin/com/devil/phoenixproject/service/WorkoutForegroundService.kt`
 - `androidApp/src/main/kotlin/com/devil/phoenixproject/ui/theme/AndroidTheme.kt`
@@ -39,7 +39,7 @@ Category breakdown:
 - Description: The pre-API-33 locale branch mutates `resources.configuration` directly and updates only this activity's resources. This can leave application-context resources and other context wrappers temporarily out of sync during startup, especially because Koin singletons and shared code can resolve resources outside the activity.
 - Suggested fix direction: Clone the configuration before mutation (`Configuration(resources.configuration)`) and centralize locale application so both activity and application/base contexts use the same locale source. Prefer the AndroidX/AppCompat per-app-locale path if available for API 26-32.
 
-## `androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt`
+## `androidApp/src/main/kotlin/com/devil/phoenixproject/PhoenixApp.kt`
 
 No findings in the reviewed file.
 

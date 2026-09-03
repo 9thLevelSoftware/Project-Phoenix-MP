@@ -13,7 +13,7 @@ import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
-import com.devil.phoenixproject.database.VitruvianDatabase
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleProgression
@@ -21,9 +21,9 @@ import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
-import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -45,11 +45,11 @@ import kotlinx.serialization.json.Json
  * Provides database operations for syncing data with the Phoenix Portal.
  */
 class SqlDelightSyncRepository(
-    private val db: VitruvianDatabase,
+    private val db: PhoenixDatabase,
     private val userProfileRepository: UserProfileRepository,
 ) : SyncRepository {
 
-    private val queries = db.vitruvianDatabaseQueries
+    private val queries = db.phoenixDatabaseQueries
     private val json = Json { ignoreUnknownKeys = true }
 
     private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String = "$exerciseId:$timestamp"
@@ -91,7 +91,9 @@ class SqlDelightSyncRepository(
     override suspend fun getPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecordSyncDto> = withContext(Dispatchers.IO) {
         queries.selectPRsModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
             PersonalRecordSyncDto(
-                clientId = row.id.toString(),
+                // The Portal contract uses the immutable PR UUID. Retain the
+                // legacy row-id fallback only for pre-UUID local records.
+                clientId = row.uuid ?: row.id.toString(),
                 serverId = row.serverId,
                 exerciseId = row.exerciseId,
                 exerciseName = row.exerciseName,
@@ -584,6 +586,8 @@ class SqlDelightSyncRepository(
                             .associate { it.id to it.rackBehaviorOverrides }
                         val localScalingBasisByExerciseId = localExerciseRows
                             .associate { it.id to it.scalingBasis }
+                        val localDropSetByExerciseId = localExerciseRows
+                            .associate { it.id to (it.dropSetEnabled to it.dropSetMinWeightKg) }
 
                         mergePortalExercisesForRoutine(
                             routineId = portalRoutine.id,
@@ -591,6 +595,7 @@ class SqlDelightSyncRepository(
                             localRackDefaultsByExerciseId = localRackDefaultsByExerciseId,
                             localRackOverridesByExerciseId = localRackOverridesByExerciseId,
                             localScalingBasisByExerciseId = localScalingBasisByExerciseId,
+                            localDropSetByExerciseId = localDropSetByExerciseId,
                         )
                     } else {
                         Logger.w("SyncRepository") {
@@ -1348,6 +1353,8 @@ class SqlDelightSyncRepository(
                 profileId = row.profile_id,
                 cableCount = row.cable_count?.toInt(),
                 uuid = row.uuid,
+                updatedAt = row.updatedAt,
+                deletedAt = row.deletedAt,
             )
         }
     }
@@ -1477,9 +1484,10 @@ class SqlDelightSyncRepository(
 
     private fun mergePersonalRecordRows(records: List<PersonalRecordSyncDto>, profileId: String) {
         records.forEach { dto ->
-            // INSERT OR IGNORE — local PRs win on conflict (same compound key)
-            val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
             val prUuid = dto.clientId.ifBlank { generateUUID() }
+            // Materialize an unknown remote PR first. The state-only LWW update below
+            // immediately turns it into a hidden tombstone when appropriate.
+            val effectiveVolume = if (dto.volume > 0f) dto.volume else dto.weight * dto.reps
             queries.adoptServerPrUuid(
                 uuid = prUuid,
                 exerciseId = dto.exerciseId,
@@ -1502,6 +1510,21 @@ class SqlDelightSyncRepository(
                 profile_id = profileId,
                 cable_count = dto.cableCount?.toLong(),
                 uuid = prUuid,
+            )
+            // A newer active row can restore a record; an older active row cannot
+            // clear a tombstone, and an equal-time tombstone wins deterministically.
+            queries.applyPulledPersonalRecordTombstoneState(
+                deletedAt = dto.deletedAt,
+                updatedAt = dto.updatedAt,
+                exerciseName = dto.exerciseName,
+                weight = dto.weight.toDouble(),
+                reps = dto.reps.toLong(),
+                oneRepMax = dto.oneRepMax.toDouble(),
+                achievedAt = dto.achievedAt,
+                volume = effectiveVolume.toDouble(),
+                cableCount = dto.cableCount?.toLong(),
+                uuid = prUuid,
+                profileId = profileId,
             )
         }
     }
@@ -1640,6 +1663,8 @@ class SqlDelightSyncRepository(
                             .associate { it.id to it.rackBehaviorOverrides }
                         val localScalingBasisByExerciseId = localExerciseRows2
                             .associate { it.id to it.scalingBasis }
+                        val localDropSetByExerciseId = localExerciseRows2
+                            .associate { it.id to (it.dropSetEnabled to it.dropSetMinWeightKg) }
 
                         mergePortalExercisesForRoutine(
                             routineId = portalRoutine.id,
@@ -1647,6 +1672,7 @@ class SqlDelightSyncRepository(
                             localRackDefaultsByExerciseId = localRackDefaultsByExerciseId,
                             localRackOverridesByExerciseId = localRackOverridesByExerciseId,
                             localScalingBasisByExerciseId = localScalingBasisByExerciseId,
+                            localDropSetByExerciseId = localDropSetByExerciseId,
                         )
                     }
                 }
@@ -2097,34 +2123,33 @@ class SqlDelightSyncRepository(
      * (`SelectSessionsMetricsForPreservationByIds`). If the SQL column
      * list changes, regenerate and update this helper.
      */
-    private fun com.devil.phoenixproject.database.SelectSessionsMetricsForPreservationByIds.toPreservationRow(): PreservationRow =
-        PreservationRow(
-            id = id,
-            peakForceConcentricA = peakForceConcentricA,
-            peakForceConcentricB = peakForceConcentricB,
-            peakForceEccentricA = peakForceEccentricA,
-            peakForceEccentricB = peakForceEccentricB,
-            avgForceConcentricA = avgForceConcentricA,
-            avgForceConcentricB = avgForceConcentricB,
-            avgForceEccentricA = avgForceEccentricA,
-            avgForceEccentricB = avgForceEccentricB,
-            heaviestLiftKg = heaviestLiftKg,
-            totalVolumeKg = totalVolumeKg,
-            cableCount = cableCount,
-            displayMultiplier = display_multiplier,
-            estimatedCalories = estimatedCalories,
-            warmupAvgWeightKg = warmupAvgWeightKg,
-            workingAvgWeightKg = workingAvgWeightKg,
-            burnoutAvgWeightKg = burnoutAvgWeightKg,
-            peakWeightKg = peakWeightKg,
-            rpe = rpe,
-            avgMcvMmS = avgMcvMmS,
-            avgAsymmetryPercent = avgAsymmetryPercent,
-            totalVelocityLossPercent = totalVelocityLossPercent,
-            dominantSide = dominantSide,
-            strengthProfile = strengthProfile,
-            formScore = formScore,
-        )
+    private fun com.devil.phoenixproject.database.SelectSessionsMetricsForPreservationByIds.toPreservationRow(): PreservationRow = PreservationRow(
+        id = id,
+        peakForceConcentricA = peakForceConcentricA,
+        peakForceConcentricB = peakForceConcentricB,
+        peakForceEccentricA = peakForceEccentricA,
+        peakForceEccentricB = peakForceEccentricB,
+        avgForceConcentricA = avgForceConcentricA,
+        avgForceConcentricB = avgForceConcentricB,
+        avgForceEccentricA = avgForceEccentricA,
+        avgForceEccentricB = avgForceEccentricB,
+        heaviestLiftKg = heaviestLiftKg,
+        totalVolumeKg = totalVolumeKg,
+        cableCount = cableCount,
+        displayMultiplier = display_multiplier,
+        estimatedCalories = estimatedCalories,
+        warmupAvgWeightKg = warmupAvgWeightKg,
+        workingAvgWeightKg = workingAvgWeightKg,
+        burnoutAvgWeightKg = burnoutAvgWeightKg,
+        peakWeightKg = peakWeightKg,
+        rpe = rpe,
+        avgMcvMmS = avgMcvMmS,
+        avgAsymmetryPercent = avgAsymmetryPercent,
+        totalVelocityLossPercent = totalVelocityLossPercent,
+        dominantSide = dominantSide,
+        strengthProfile = strengthProfile,
+        formScore = formScore,
+    )
 
     /**
      * Replace a routine's supersets and exercises with the version received from the portal.
@@ -2141,6 +2166,7 @@ class SqlDelightSyncRepository(
         localRackDefaultsByExerciseId: Map<String, String?>,
         localRackOverridesByExerciseId: Map<String, String?>,
         localScalingBasisByExerciseId: Map<String, String?>,
+        localDropSetByExerciseId: Map<String, Pair<Long, Double?>>,
     ) {
         queries.deleteRoutineExercises(routineId)
         queries.deleteSupersetsByRoutine(routineId)
@@ -2278,6 +2304,14 @@ class SqlDelightSyncRepository(
                 // Exercise from this row alone, without a catalog lookup (#635).
                 isBodyweight = exercise.isBodyweight?.let { if (it) 1L else 0L }
                     ?: catalogExercise?.isBodyweight,
+                dropSetEnabled = when {
+                    exercise.dropSetEnabled != null -> if (exercise.dropSetEnabled) 1L else 0L
+                    else -> localDropSetByExerciseId[exercise.id]?.first ?: 0L
+                },
+                dropSetMinWeightKg = when {
+                    exercise.dropSetEnabled != null -> exercise.dropSetMinWeightKg?.toDouble()
+                    else -> localDropSetByExerciseId[exercise.id]?.second
+                },
             )
         }
     }

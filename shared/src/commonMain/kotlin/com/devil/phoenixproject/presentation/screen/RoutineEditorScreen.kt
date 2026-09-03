@@ -92,24 +92,24 @@ import org.koin.compose.koinInject
 import sh.calvin.reorderable.ReorderableColumn
 import sh.calvin.reorderable.ReorderableItem
 import sh.calvin.reorderable.rememberReorderableLazyListState
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_cancel
-import vitruvianprojectphoenix.shared.generated.resources.action_delete
-import vitruvianprojectphoenix.shared.generated.resources.action_discard
-import vitruvianprojectphoenix.shared.generated.resources.action_edit
-import vitruvianprojectphoenix.shared.generated.resources.action_save
-import vitruvianprojectphoenix.shared.generated.resources.add_exercise
-import vitruvianprojectphoenix.shared.generated.resources.cannot_be_undone
-import vitruvianprojectphoenix.shared.generated.resources.choose_color
-import vitruvianprojectphoenix.shared.generated.resources.delete_all
-import vitruvianprojectphoenix.shared.generated.resources.delete_selected_exercises
-import vitruvianprojectphoenix.shared.generated.resources.delete_superset_message
-import vitruvianprojectphoenix.shared.generated.resources.delete_superset_title
-import vitruvianprojectphoenix.shared.generated.resources.discard_changes_message
-import vitruvianprojectphoenix.shared.generated.resources.discard_changes_title
-import vitruvianprojectphoenix.shared.generated.resources.label_name
-import vitruvianprojectphoenix.shared.generated.resources.rename_superset
-import vitruvianprojectphoenix.shared.generated.resources.routine_name
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_cancel
+import projectphoenix.shared.generated.resources.action_delete
+import projectphoenix.shared.generated.resources.action_discard
+import projectphoenix.shared.generated.resources.action_edit
+import projectphoenix.shared.generated.resources.action_save
+import projectphoenix.shared.generated.resources.add_exercise
+import projectphoenix.shared.generated.resources.cannot_be_undone
+import projectphoenix.shared.generated.resources.choose_color
+import projectphoenix.shared.generated.resources.delete_all
+import projectphoenix.shared.generated.resources.delete_selected_exercises
+import projectphoenix.shared.generated.resources.delete_superset_message
+import projectphoenix.shared.generated.resources.delete_superset_title
+import projectphoenix.shared.generated.resources.discard_changes_message
+import projectphoenix.shared.generated.resources.discard_changes_title
+import projectphoenix.shared.generated.resources.label_name
+import projectphoenix.shared.generated.resources.rename_superset
+import projectphoenix.shared.generated.resources.routine_name
 
 // State holder for the editor
 data class RoutineEditorState(
@@ -138,6 +138,13 @@ fun RoutineEditorScreen(
     // Issue #266/#410: Get user preferences for weight increment
     val userPreferences by viewModel.userPreferences.collectAsState()
     val rackItems by viewModel.rackItems.collectAsState()
+    val activeProfileId by viewModel.activeProfileId.collectAsState()
+    val completedExerciseIdsState by viewModel.completedExerciseIdsState.collectAsState()
+    val pickerCompletedExerciseIds = completedExerciseIdsState.ids.takeIf {
+        completedExerciseIdsState.profileId == activeProfileId
+    } ?: emptySet()
+    val pickerCompletedExerciseIdsLoading =
+        completedExerciseIdsState.isLoading || completedExerciseIdsState.profileId != activeProfileId
 
     // 1. Initialize State
     var state by remember { mutableStateOf(RoutineEditorState()) }
@@ -249,9 +256,10 @@ fun RoutineEditorScreen(
     // always false in state; collapse UI uses state.collapsedSupersets instead.
     val isDirty = hasSnapshot && (
         state.routineName != snapshotName ||
-        state.exercises != snapshotExercises ||
-        state.supersets != snapshotSupersets
-    )
+            state.exercises != snapshotExercises ||
+            state.supersets != snapshotSupersets
+        )
+    val canSaveRoutine = state.exercises.isNotEmpty() && state.routineName.isNotBlank()
 
     // Drag and Drop State
     val lazyListState = rememberLazyListState()
@@ -497,18 +505,19 @@ fun RoutineEditorScreen(
                         val routineToSave = if (base != null) {
                             base.copy(
                                 id = finalRoutineId,
-                                name = state.routineName.ifBlank { "Unnamed Routine" },
+                                name = state.routineName.trim(),
                                 supersets = base.supersets.map { it.copy(routineId = finalRoutineId) },
                             )
                         } else {
                             Routine(
                                 id = finalRoutineId,
-                                name = state.routineName.ifBlank { "Unnamed Routine" },
+                                name = state.routineName.trim(),
                             )
                         }
                         viewModel.saveRoutine(routineToSave)
                         navController.popBackStack()
                     },
+                    enabled = canSaveRoutine,
                 ) {
                     Text(stringResource(Res.string.action_save))
                 }
@@ -848,6 +857,9 @@ fun RoutineEditorScreen(
             },
             exerciseRepository = exerciseRepository,
             enableVideoPlayback = false,
+            enablePreviouslyCompletedFilter = true,
+            completedExerciseIds = pickerCompletedExerciseIds,
+            completedExerciseIdsLoading = pickerCompletedExerciseIdsLoading,
         )
     }
 

@@ -1,6 +1,6 @@
-# Vitruvian Phoenix - iOS App
+# Project Phoenix - iOS App
 
-iOS application for controlling Vitruvian Trainer workout machines via BLE.
+iOS application for controlling compatible smart fitness machines via BLE.
 
 ## Prerequisites
 
@@ -25,13 +25,13 @@ The framework will be built at:
 ### Supabase Configuration
 
 The Xcode project references the tracked
-`VitruvianPhoenix/Config/SupabaseBase.xcconfig`, which optionally includes the
-local-only `VitruvianPhoenix/Config/Supabase.xcconfig`. The local file is
+`PhoenixApp/Config/SupabaseBase.xcconfig`, which optionally includes the
+local-only `PhoenixApp/Config/Supabase.xcconfig`. The local file is
 intentionally ignored by git because it contains environment values. Create it
 from the tracked template before opening the project:
 
 ```bash
-cp VitruvianPhoenix/Config/Supabase.xcconfig.example VitruvianPhoenix/Config/Supabase.xcconfig
+cp PhoenixApp/Config/Supabase.xcconfig.example PhoenixApp/Config/Supabase.xcconfig
 ```
 
 Fill in local development values in `Supabase.xcconfig`. GitHub Actions writes
@@ -42,9 +42,9 @@ it in Supabase and update the GitHub secrets.
 ### Option 1: Create New Xcode Project
 
 1. Open Xcode and create a new iOS App project:
-   - Product Name: `VitruvianPhoenix`
+   - Product Name: `PhoenixApp`
    - Team: Your development team
-   - Organization Identifier: `com.example.vitruvianredux`
+   - Organization Identifier: `com.devil.phoenixproject`
    - Interface: SwiftUI
    - Language: Swift
 
@@ -56,15 +56,15 @@ it in Supabase and update the GitHub secrets.
    - Ensure "Embed & Sign" is selected
 
 3. Copy Swift files:
-   - Copy `VitruvianPhoenix/VitruvianPhoenixApp.swift` to your project
-   - Copy `VitruvianPhoenix/ContentView.swift` to your project
-   - Copy `VitruvianPhoenix/Info.plist` to your project (or merge the keys)
+   - Copy `PhoenixApp/PhoenixApp/PhoenixApp.swift` to your project
+   - Copy `PhoenixApp/PhoenixApp/ContentView.swift` to your project
+   - Copy `PhoenixApp/PhoenixApp/Info.plist` to your project (or merge the keys)
 
 ### Option 2: Use the Provided Project Files
 
-The `VitruvianPhoenix/` directory contains the Swift source files:
+The `PhoenixApp/PhoenixApp/` directory contains the Swift source files:
 
-- `VitruvianPhoenixApp.swift` - App entry point with Koin initialization
+- `PhoenixApp.swift` - App entry point with Koin initialization
 - `ContentView.swift` - SwiftUI wrapper for Compose Multiplatform UI
 - `Info.plist` - App configuration with BLE permissions
 
@@ -79,7 +79,7 @@ The `Info.plist` includes required BLE permission strings:
 ### CoreBluetooth Integration
 
 The iOS BLE implementation (`IosBleRepository.kt`) uses CoreBluetooth to:
-- Scan for Vitruvian devices (names starting with "Vee_" or "VIT")
+- Scan for Phoenix devices (names starting with "Vee_" or "VIT")
 - Connect via Nordic UART Service (NUS)
 - Parse real-time workout metrics
 - Handle rep notifications
@@ -89,13 +89,14 @@ The iOS BLE implementation (`IosBleRepository.kt`) uses CoreBluetooth to:
 ```
 iosApp/
 ├── README.md                       # This file
-└── VitruvianPhoenix/
-    ├── VitruvianPhoenixApp.swift  # @main entry point
-    ├── ContentView.swift          # Compose UI wrapper
-    └── Info.plist                 # App configuration
+└── PhoenixApp/
+    ├── PhoenixApp/
+    │   ├── PhoenixApp.swift      # @main entry point
+    │   ├── ContentView.swift     # Compose UI wrapper
+    │   └── Info.plist            # App configuration
 
 shared/src/iosMain/
-├── kotlin/com/example/vitruvianredux/
+├── kotlin/com/devil/phoenixproject/
 │   ├── MainViewController.kt      # Compose UI entry point
 │   ├── Platform.ios.kt           # Platform info
 │   ├── data/
@@ -108,7 +109,6 @@ shared/src/iosMain/
 │   ├── presentation/components/
 │   │   ├── CompactNumberPicker.ios.kt   # Wheel picker
 │   │   ├── HapticFeedbackEffect.ios.kt  # Haptic feedback
-│   │   └── VideoPlayer.ios.kt           # Video player stub
 │   └── util/CsvExporter.ios.kt   # CSV export & sharing
 ```
 
@@ -118,7 +118,7 @@ shared/src/iosMain/
 2. Select your device as the run destination
 3. Build and run from Xcode
 4. Grant Bluetooth permission when prompted
-5. The app will scan for Vitruvian devices
+5. The app will scan for Phoenix devices
 
 ## Troubleshooting
 
@@ -137,7 +137,7 @@ If you get "No such module 'shared'" error:
 
 ### Koin Initialization and Migrations
 
-The app initializes Koin and runs migrations in `VitruvianPhoenixApp.init()`:
+The app initializes Koin and runs migrations in `PhoenixAppEntry.init()`:
 ```swift
 try KoinInitIosKt.doInitKoin()   // declared in shared/iosMain/.../KoinInitIos.kt (@Throws)
 KoinInitKt.runMigrations()        // declared in shared/commonMain/.../KoinInit.kt

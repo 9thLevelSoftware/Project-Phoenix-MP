@@ -21,7 +21,7 @@ sources:
     note: Shows Android build-time credential injection and the fail-fast check for missing Supabase URL or anon key.
   - id: android-app
     type: file
-    path: androidApp/src/main/kotlin/com/devil/phoenixproject/VitruvianApp.kt
+    path: androidApp/src/main/kotlin/com/devil/phoenixproject/PhoenixApp.kt
     note: Shows Android runtime injection of SupabaseConfig into the shared Koin graph.
   - id: ios-platform
     type: file
@@ -54,7 +54,7 @@ Mobile OAuth is constrained by Supabase project configuration. `PortalAuthReposi
 
 ## Platform configuration inputs
 
-Android and iOS inject Supabase config differently into the same shared graph. Android reads `supabase.url` and `supabase.anon.key` from `local.properties`, falls back to `SUPABASE_URL` and `SUPABASE_ANON_KEY` environment variables for CI, and refuses app builds unless values are present or `-Pskip.supabase.check=true` is set for test-only work [@android-build]. `VitruvianApp` then binds those values into Koin as `SupabaseConfig` [@android-app].
+Android and iOS inject Supabase config differently into the same shared graph. Android reads `supabase.url` and `supabase.anon.key` from `local.properties`, falls back to `SUPABASE_URL` and `SUPABASE_ANON_KEY` environment variables for CI, and refuses app builds unless values are present or `-Pskip.supabase.check=true` is set for test-only work [@android-build]. `PhoenixApp` then binds those values into Koin as `SupabaseConfig` [@android-app].
 
 iOS loads the same values from `SUPABASE_URL` and `SUPABASE_ANON_KEY` entries in the app bundle and throws during Koin setup if either value is missing [@ios-platform]. The tracked `SupabaseBase.xcconfig` can include a local ignored `Supabase.xcconfig`, and the iOS README says GitHub Actions writes that ignored file from repository secrets during CI builds [@ios-readme].
 

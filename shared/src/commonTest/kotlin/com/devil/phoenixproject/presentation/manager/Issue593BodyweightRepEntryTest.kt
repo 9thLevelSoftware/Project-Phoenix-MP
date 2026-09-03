@@ -10,14 +10,14 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
-import kotlinx.coroutines.test.advanceTimeBy
-import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.runCurrent
-import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
+import kotlinx.coroutines.test.runTest
 
 /**
  * Issue #593: Custom bodyweight+equipment routine absent from Analytics;
@@ -27,7 +27,7 @@ import kotlin.test.assertTrue
  * Activity as "0 reps · 11.0 lbs" rows but disappeared from Analytics
  * under every time filter.
  *
- * Root cause: `ActiveSessionEngine.handleSetCompletion()` only
+ * Root cause: `ActiveSessionEngine.handleSetCompletion` only
  * prompted for bodyweight rep entry when the routine exercise had
  * `duration > 0`. Default-reps-mode routine exercises leave
  * `duration == null`, so the 30-second bodyweight fallback timer
@@ -41,14 +41,14 @@ import kotlin.test.assertTrue
  * bodyweight set whose reps have not been confirmed via the
  * rep-entry dialog — not only when `currentExercise.duration > 0`.
  * The recursion guard (`bodyweightCompletionVariantOverride`)
- * ensures `confirmBodyweightSetResult` -> `handleSetCompletion()`
+ * ensures `confirmBodyweightSetResult` -> `handleSetCompletion`
  * falls through to save.
  *
  * Regression coverage:
  *  - Bodyweight routine with `duration == null` (KB Swings / KB load)
  *    enters `WorkoutState.BodyweightRepEntry` on first set completion
  *    instead of silently saving zero reps.
- *  - After user confirms reps, the second `handleSetCompletion()`
+ *  - After user confirms reps, the second `handleSetCompletion`
  *    falls through to `saveWorkoutSession()` and persists
  *    `workingReps > 0` and `totalReps > 0` rows so the routine
  *    shows up in `groupedWorkoutHistory`.
@@ -102,11 +102,8 @@ class Issue593BodyweightRepEntryTest {
      * with `workingReps=0`. Post-fix the same completion must enter
      * `WorkoutState.BodyweightRepEntry` so the user can enter reps.
      *
-     * This test deliberately calls `handleSetCompletion()` without
-     * first calling `startWorkout()`: the goal is to verify the gate
-     * is purely routine-driven, so the routine is loaded but no
-     * BLE/session context is set up. The gate must fire and return
-     * without touching the (uninitialised) session store.
+     * The fixture starts the bodyweight set through the public routine
+     * path so completion runs under the current execution lease.
      */
     @Test
     fun `routine bodyweight set with null duration enters rep entry dialog instead of saving zero reps`() = runTest {
@@ -116,8 +113,12 @@ class Issue593BodyweightRepEntryTest {
             harness.fakeExerciseRepo.addExercise(kbSwings)
             harness.dwsm.loadRoutine(routine)
             advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            advanceUntilIdle()
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
 
-            // The fix must prompt on the very first handleSetCompletion() call
+            // The fix must prompt on the very first handleSetCompletion call
             // for this routine-bodyweight set. The user has not yet confirmed
             // any rep count.
             assertNull(
@@ -125,13 +126,19 @@ class Issue593BodyweightRepEntryTest {
                 "Rep-entry gate precondition: override must start null before any set completes",
             )
 
-            harness.activeSessionEngine.handleSetCompletion()
-            advanceUntilIdle()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
+            runCurrent()
 
             val state = harness.dwsm.coordinator.workoutState.value
             assertTrue(
                 state is WorkoutState.BodyweightRepEntry,
-                "Issue #593 regression: handleSetCompletion() for routine-bodyweight KB Swings " +
+                "Issue #593 regression: handleSetCompletion for routine-bodyweight KB Swings " +
                     "(duration == null) must enter the rep-entry dialog. Got: $state",
             )
             assertEquals(kbSwings.id, state.exerciseKey, "Exercise key should match KB Swings")
@@ -140,15 +147,13 @@ class Issue593BodyweightRepEntryTest {
 
             // Critical: no zero-rep session should have been written. The
             // gate fires before saveWorkoutSession() runs, so the analytics
-            // filter cannot drop the routine. Without startWorkout(),
-            // currentSessionId is null, so even if the gate had not
-            // fired, saveWorkoutSession() would have early-returned.
-            // We assert zero sessions all the same so the contract is
-            // explicit.
+            // filter cannot drop the routine. startWorkout() established
+            // the session above, so the zero-session assertion specifically
+            // proves the rep-entry gate prevented premature persistence.
             assertEquals(
                 0,
                 harness.fakeWorkoutRepo.allSessions().size,
-                "handleSetCompletion() must not persist any session before the user enters reps",
+                "handleSetCompletion must not persist any session before the user enters reps",
             )
         } finally {
             harness.cleanup()
@@ -168,9 +173,19 @@ class Issue593BodyweightRepEntryTest {
             harness.fakeExerciseRepo.addExercise(kbSwings)
             harness.dwsm.loadRoutine(routine)
             advanceUntilIdle()
-
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.dwsm.enterSetReady(0, 0)
             advanceUntilIdle()
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
+            runCurrent()
 
             val state = harness.dwsm.coordinator.workoutState.value
             assertTrue(
@@ -184,7 +199,7 @@ class Issue593BodyweightRepEntryTest {
 
     /**
      * After `confirmBodyweightSetResult` sets the override, the second
-     * `handleSetCompletion()` call must skip the dialog and fall
+     * `handleSetCompletion` call must skip the dialog and fall
      * through to `saveWorkoutSession()`. This guards the recursion
      * guard introduced by the fix.
      *
@@ -210,7 +225,7 @@ class Issue593BodyweightRepEntryTest {
             advanceUntilIdle()
 
             // Drive the 1-second timer to completion so the production
-            // path calls handleSetCompletion() the way the user's
+            // path calls handleSetCompletion the way the user's
             // routine does.
             advanceTimeBy(1_500)
             runCurrent()
@@ -223,7 +238,7 @@ class Issue593BodyweightRepEntryTest {
 
             // Simulate the user entering 12 reps in the dialog. The
             // confirm path sets the override and re-enters
-            // handleSetCompletion(), which should fall through to
+            // handleSetCompletion, which should fall through to
             // saveWorkoutSession() (the recursion guard).
             val variant = com.devil.phoenixproject.domain.usecase.BodyweightVolumeCalculator
                 .getDefaultVariantForExercise(kbSwings.name)
@@ -279,8 +294,13 @@ class Issue593BodyweightRepEntryTest {
                 ),
             )
             harness.fakeExerciseRepo.addExercise(bench)
+            harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
             harness.dwsm.loadRoutine(routine)
             advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            advanceUntilIdle()
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
 
             // Pre-seed a non-zero rep count and a metric so the cable
             // completion path has data to persist (mirrors the existing
@@ -303,7 +323,13 @@ class Issue593BodyweightRepEntryTest {
                 ),
             )
 
-            harness.activeSessionEngine.handleSetCompletion()
+            harness.activeSessionEngine.handleSetCompletion(
+
+                harness.activeSessionEngine.currentExecutionLeaseForTest(),
+
+                com.devil.phoenixproject.domain.model.SetEndReason.TARGET_REPS_REACHED,
+
+            )
             advanceUntilIdle()
 
             val state = harness.dwsm.coordinator.workoutState.value

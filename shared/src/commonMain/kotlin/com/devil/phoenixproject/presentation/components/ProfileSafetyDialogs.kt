@@ -74,7 +74,7 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.util.openAppSettings
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
-import vitruvianprojectphoenix.shared.generated.resources.*
+import projectphoenix.shared.generated.resources.*
 
 /** Calibrates a profile's safe word with three successful local detections. */
 @Composable

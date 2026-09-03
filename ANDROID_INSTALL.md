@@ -1,6 +1,6 @@
 # Android Installation Guide
 
-This guide explains how to install Vitruvian Phoenix on your Android device.
+This guide explains how to install Project Phoenix on your Android device.
 
 ## Prerequisites
 
@@ -47,7 +47,7 @@ Android requires permission to install apps from outside the Play Store.
 1. Open the downloaded APK file
 2. Tap **Install**
 3. Wait for installation to complete
-4. Tap **Open** or find **Vitruvian Phoenix** in your app drawer
+4. Tap **Open** or find **Project Phoenix** in your app drawer
 
 ---
 
@@ -56,7 +56,7 @@ Android requires permission to install apps from outside the Play Store.
 When you first launch the app, you'll be asked to grant permissions:
 
 ### Bluetooth Permissions
-- **Nearby devices** - Required to scan for and connect to your Vitruvian trainer
+- **Nearby devices** - Required to scan for and connect to your Phoenix trainer
 - Tap **Allow** when prompted
 
 ### Location Permission
@@ -64,7 +64,7 @@ When you first launch the app, you'll be asked to grant permissions:
 - This is an Android requirement - the app does not track your location
 - Tap **Allow** when prompted
 
-**Note:** If you deny permissions, the app cannot connect to your trainer. You can always grant permissions later in Settings > Apps > Vitruvian Phoenix > Permissions.
+**Note:** If you deny permissions, the app cannot connect to your trainer. You can always grant permissions later in Settings > Apps > Project Phoenix > Permissions.
 
 ---
 
@@ -89,18 +89,18 @@ When a new version is released:
 - Ensure Bluetooth is enabled on your device
 - Make sure you granted Bluetooth/Nearby devices permission
 - On Android 11 and below, ensure Location is enabled (required for BLE scanning)
-- Move closer to your Vitruvian trainer
+- Move closer to your Phoenix trainer
 - Try turning your trainer off and on again
 
 ### App Crashes on Launch
 
 - Make sure your device is running Android 8.0 or later
-- Try clearing app data: Settings > Apps > Vitruvian Phoenix > Storage > Clear data
+- Try clearing app data: Settings > Apps > Project Phoenix > Storage > Clear data
 - Report the issue on GitHub with your device model and Android version
 
 ### Bluetooth Permission Denied
 
-1. Go to **Settings > Apps > Vitruvian Phoenix > Permissions**
+1. Go to **Settings > Apps > Project Phoenix > Permissions**
 2. Enable **Nearby devices** (Android 12+) or **Location** (Android 11 and below)
 3. Restart the app
 
@@ -137,10 +137,10 @@ A: Yes, as long as it has Bluetooth Low Energy support and runs Android 8.0+.
 **Q: Why does it need location permission?**
 A: Android requires location permission for Bluetooth scanning on Android 11 and below. This is a platform limitation, not something we can change. The app never accesses your actual location.
 
-**Q: What Vitruvian devices are supported?**
+**Q: What Phoenix devices are supported?**
 A:
-- Vitruvian V-Form Trainer (VIT-200) - devices starting with `Vee_`
-- Vitruvian Trainer+ - devices starting with `VIT`
+- Phoenix V-Form Trainer (VIT-200) - devices starting with `Vee_`
+- Phoenix Trainer+ - devices starting with `VIT`
 
 ---
 

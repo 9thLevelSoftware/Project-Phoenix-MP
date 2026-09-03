@@ -16,9 +16,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
-import vitruvianprojectphoenix.shared.generated.resources.Res
-import vitruvianprojectphoenix.shared.generated.resources.action_dismiss
-import vitruvianprojectphoenix.shared.generated.resources.cd_bluetooth_lost
+import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.action_dismiss
+import projectphoenix.shared.generated.resources.cd_bluetooth_lost
 
 /**
  * Critical alert dialog shown when BLE connection is lost during an active workout.

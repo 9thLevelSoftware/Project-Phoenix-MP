@@ -84,7 +84,7 @@ Verified zero `ButtonDefaults.` usages remain in the file (grep returned no matc
 
 **Strings audit:**
 - `disconnect_title` = "Disconnect?" already exists and is used in `WorkoutTab.kt`. **Reused** for the title (minor text change: "Disconnect Device?" → "Disconnect?"; functionally equivalent).
-- `disconnect_message` = "Are you sure you want to disconnect from the Vitruvian machine?" — lacks a `%1$s` placeholder for `deviceName`, and is in use in `WorkoutTab.kt`. **Not repurposed.**
+- `disconnect_message` = "Are you sure you want to disconnect from the Phoenix machine?" — lacks a `%1$s` placeholder for `deviceName`, and is in use in `WorkoutTab.kt`. **Not repurposed.**
 - **Minted** `disconnect_message_device` = "Are you sure you want to disconnect from %1$s?" in `values/strings.xml` only; 5 locale files fall back to English.
 
 **Keys reused:** `disconnect_title`  

@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.ExerciseVideoEntity
+import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.domain.model.Exercise
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -14,12 +14,12 @@ import kotlinx.coroutines.flow.map
 class FakeExerciseRepository : ExerciseRepository {
 
     private val exercises = mutableMapOf<String, Exercise>()
-    private val videos = mutableMapOf<String, List<ExerciseVideoEntity>>()
+    private val images = mutableMapOf<String, List<ExerciseImageEntity>>()
     private val _exercisesFlow = MutableStateFlow<List<Exercise>>(emptyList())
 
     // Test control
     var importResult: Result<Unit> = Result.success(Unit)
-    var updateFromGitHubResult: Result<Int> = Result.success(0)
+    var updateFromWgerResult: Result<Int> = Result.success(0)
 
     // Test helper methods
     fun addExercise(exercise: Exercise) {
@@ -28,15 +28,15 @@ class FakeExerciseRepository : ExerciseRepository {
         updateFlow()
     }
 
-    fun addVideos(exerciseId: String, videoList: List<ExerciseVideoEntity>) {
-        videos[exerciseId] = videoList
+    fun addImages(exerciseId: String, imageList: List<ExerciseImageEntity>) {
+        images[exerciseId] = imageList
     }
 
     fun reset() {
         exercises.clear()
-        videos.clear()
+        images.clear()
         importResult = Result.success(Unit)
-        updateFromGitHubResult = Result.success(0)
+        updateFromWgerResult = Result.success(0)
         updateFlow()
     }
 
@@ -74,13 +74,13 @@ class FakeExerciseRepository : ExerciseRepository {
 
     override suspend fun getExerciseById(id: String): Exercise? = exercises[id]
 
-    override suspend fun getVideos(exerciseId: String): List<ExerciseVideoEntity> = videos[exerciseId] ?: emptyList()
+    override suspend fun getImages(exerciseId: String): List<ExerciseImageEntity> = images[exerciseId] ?: emptyList()
 
     override suspend fun importExercises(): Result<Unit> = importResult
 
     override suspend fun isExerciseLibraryEmpty(): Boolean = exercises.isEmpty()
 
-    override suspend fun updateFromGitHub(): Result<Int> = updateFromGitHubResult
+    override suspend fun updateFromWger(): Result<Int> = updateFromWgerResult
 
     override fun getCustomExercises(): Flow<List<Exercise>> = _exercisesFlow.map { list -> list.filter { it.isCustom } }
 

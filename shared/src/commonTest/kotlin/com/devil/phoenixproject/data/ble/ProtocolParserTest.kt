@@ -10,7 +10,7 @@ import kotlin.test.assertTrue
 /**
  * Unit tests for ProtocolParser byte utility functions.
  *
- * These tests verify correct byte parsing for the Vitruvian BLE protocol,
+ * These tests verify correct byte parsing for the Phoenix BLE protocol,
  * including proper handling of endianness and sign extension.
  */
 class ProtocolParserTest {
@@ -133,26 +133,26 @@ class ProtocolParserTest {
         assertEquals(-1.0f, getFloatLE(data, 0))
     }
 
-    // ========== toVitruvianHex Tests ==========
+    // ========== toPhoenixHex Tests ==========
 
     @Test
-    fun `toVitruvianHex formats max byte value`() {
-        assertEquals("FF", 0xFF.toByte().toVitruvianHex())
+    fun `toPhoenixHex formats max byte value`() {
+        assertEquals("FF", 0xFF.toByte().toPhoenixHex())
     }
 
     @Test
-    fun `toVitruvianHex pads single digit with zero`() {
-        assertEquals("0A", 0x0A.toByte().toVitruvianHex())
+    fun `toPhoenixHex pads single digit with zero`() {
+        assertEquals("0A", 0x0A.toByte().toPhoenixHex())
     }
 
     @Test
-    fun `toVitruvianHex formats zero`() {
-        assertEquals("00", 0x00.toByte().toVitruvianHex())
+    fun `toPhoenixHex formats zero`() {
+        assertEquals("00", 0x00.toByte().toPhoenixHex())
     }
 
     @Test
-    fun `toVitruvianHex uses uppercase letters`() {
-        assertEquals("AB", 0xAB.toByte().toVitruvianHex())
+    fun `toPhoenixHex uses uppercase letters`() {
+        assertEquals("AB", 0xAB.toByte().toPhoenixHex())
     }
 
     // ==================== parseRepPacket Tests (Issue #210 critical) ====================
@@ -354,7 +354,7 @@ class ProtocolParserTest {
 
     @Test
     fun `parseDiagnosticPacket returns null for short data`() {
-        val data = ByteArray(17) // Need 18 bytes minimum for non-empty official payloads
+        val data = ByteArray(17) // Need 18 bytes minimum for non-empty diagnostic payloads
         assertNull(parseDiagnosticPacket(data))
     }
 
@@ -535,12 +535,12 @@ class ProtocolParserTest {
 
     @Test
     fun `decodeDiagnosticFault maps 0x0004 by category`() {
-        val vitruvian = decodeDiagnosticFault(DiagnosticFaultCategory.VITRUVIAN, 0x0004)
+        val controller = decodeDiagnosticFault(DiagnosticFaultCategory.CONTROLLER, 0x0004)
         val motor = decodeDiagnosticFault(DiagnosticFaultCategory.MOTOR_A, 0x0004)
 
-        assertEquals("TI restarted", vitruvian.label)
-        assertEquals("Over voltage", motor.label)
-        assertEquals("0x0004", vitruvian.rawHex)
+        assertEquals("Controller restarted", controller.label)
+        assertEquals("Overvoltage", motor.label)
+        assertEquals("0x0004", controller.rawHex)
         assertEquals("0x0004", motor.rawHex)
     }
 
@@ -630,7 +630,7 @@ class ProtocolParserTest {
 
     @Test
     fun `parseRepPacket parses 16-byte legacy V-Form format - Issue 388`() {
-        // Most likely V-Form rep size per official com.vitruvian.formtrainer.Reps spec
+        // Most likely V-Form rep size per the observed Reps characteristic layout
         // (4-byte int up + 4-byte int down + 4-byte float rangeTop + 4-byte float rangeBottom
         // = 16 bytes minimum, with optional 4× short trailer making 24).
         // Phoenix's legacy parser only reads bytes 0-1 and 4-5, so the float bytes 8-15 are

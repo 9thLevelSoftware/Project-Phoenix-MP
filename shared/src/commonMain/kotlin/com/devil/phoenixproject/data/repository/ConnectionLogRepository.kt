@@ -43,6 +43,10 @@ object LogEventType {
     const val HEARTBEAT = "HEARTBEAT"
     const val REP_RECEIVED = "REP_RECEIVED"
     const val DIAGNOSTIC = "DIAGNOSTIC"
+    const val WORKOUT_EXECUTION = "WORKOUT_EXECUTION"
+    const val WORKOUT_TEARDOWN = "WORKOUT_TEARDOWN"
+    const val WORKOUT_REP_REJECTED = "WORKOUT_REP_REJECTED"
+    const val WORKOUT_PERSISTENCE = "WORKOUT_PERSISTENCE"
 }
 
 /**
@@ -153,7 +157,7 @@ class ConnectionLogRepository {
      */
     fun exportAsText(): String {
         val sb = StringBuilder()
-        sb.appendLine("=== Vitruvian Connection Logs ===")
+        sb.appendLine("=== Connection Logs ===")
         sb.appendLine("Exported: ${formatTimestamp(currentTimeMillis())}")
         sb.appendLine("Total entries: ${_logs.value.size}")
         sb.appendLine()

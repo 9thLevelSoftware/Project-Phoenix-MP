@@ -12,7 +12,7 @@ import kotlin.test.assertTrue
 
 /**
  * Tests for BLE Packet Factory - validates binary protocol frame construction
- * for Vitruvian device communication.
+ * for Phoenix device communication.
  */
 class BlePacketFactoryTest {
 
@@ -77,8 +77,8 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `createOfficialStopPacket returns 2-byte soft stop`() {
-        val packet = BlePacketFactory.createOfficialStopPacket()
+    fun `createSoftStopPacket returns 2-byte soft stop`() {
+        val packet = BlePacketFactory.createSoftStopPacket()
 
         assertEquals(2, packet.size)
         assertEquals(0x50.toByte(), packet[0])
@@ -601,7 +601,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `createEchoControl HARD level matches official app RepConfig`() {
+    fun `createEchoControl HARD level matches expected byte layout RepConfig`() {
         val packet = BlePacketFactory.createEchoControl(EchoLevel.HARD)
 
         assertEquals(3.toByte(), packet[0x04], "default romRepCount")
@@ -717,17 +717,15 @@ class BlePacketFactoryTest {
         }
     }
 
-    // ========== Echo Mode: Official App Byte Parity Tests ==========
-    // These tests verify Phoenix Echo packets match the official Vitruvian app byte-for-byte.
-    // Reference: VitruvianDeobfuscated Yj/d.java (EchoConfiguration), Ek/C1516m.java (EchoForceConfig),
-    //            Ek/C1517n.java (EchoPhase), Ek/P.java (CommandId.ECHO = 78 = 0x4E)
+    // ========== Echo Mode: Expected Byte Layout Tests ==========
+    // These tests verify Phoenix Echo packets match the expected Phoenix BLE protocol byte layout.
 
     /** Helper: read a little-endian unsigned short from a byte array */
     private fun readUShortLE(data: ByteArray, offset: Int): Int = (data[offset].toInt() and 0xFF) or
         ((data[offset + 1].toInt() and 0xFF) shl 8)
 
     @Test
-    fun `Echo HARD packet matches official app byte layout`() {
+    fun `Echo HARD packet matches expected byte layout`() {
         val packet = BlePacketFactory.createEchoControl(
             level = EchoLevel.HARD,
             warmupReps = 3,
@@ -745,7 +743,7 @@ class BlePacketFactoryTest {
         assertEquals(3, packet[0x04].toInt(), "warmupReps / romRepCount")
         assertEquals(2, packet[0x05].toInt(), "targetReps / repCount")
 
-        // EchoForceConfig fields (matching official C1516m serialization order)
+        // Echo force-config fields (serialization order)
         assertEquals(0, readUShortLE(packet, 0x06), "spotter (always 0)")
         assertEquals(75, readUShortLE(packet, 0x08), "eccentricOverload")
         assertEquals(50, readUShortLE(packet, 0x0A), "referenceMapBlend (always 50)")
@@ -755,9 +753,9 @@ class BlePacketFactoryTest {
         assertEquals(1.0f, readFloatLE(packet, 0x10), "concentricDurationSeconds (50/50)")
         assertEquals(50.0f, readFloatLE(packet, 0x14), "concentricMaxVelocity (HARD=50)")
 
-        // Eccentric EchoPhase: fixed in official app
+        // Eccentric EchoPhase: fixed on the machine
         assertEquals(0.0f, readFloatLE(packet, 0x18), "eccentricDurationSeconds (always 0.0)")
-        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity (official=-200.0)")
+        assertEquals(-200.0f, readFloatLE(packet, 0x1C), "eccentricMaxVelocity (firmware default=-200.0)")
     }
 
     @Test
@@ -799,7 +797,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `Echo all fixed fields match official app defaults`() {
+    fun `Echo all fixed fields match expected machine defaults`() {
         // Verify the fixed protocol values that never change across any Echo level
         for (level in EchoLevel.entries) {
             val packet = BlePacketFactory.createEchoControl(level, eccentricPct = 100)
@@ -812,12 +810,11 @@ class BlePacketFactoryTest {
         }
     }
 
-    // ========== Old School Mode: Official App Byte Parity Tests ==========
-    // Reference: VitruvianDeobfuscated Dk/e.java ordinal 4 (STATIC)
-    // Official mode mapping: Phoenix OldSchool = Official STATIC
+    // ========== Old School Mode: Expected Byte Layout Tests ==========
+    // Firmware profile mapping: OldSchool uses the STATIC activation profile
 
     @Test
-    fun `Old School packet matches official app RepConfig header`() {
+    fun `Old School packet matches expected byte layout RepConfig header`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
@@ -867,7 +864,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `Old School packet matches official app mode profile`() {
+    fun `Old School packet matches expected byte layout mode profile`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
@@ -898,7 +895,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `Old School packet matches official app force config`() {
+    fun `Old School packet matches expected byte layout force config`() {
         val weight = 50f
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
@@ -908,18 +905,17 @@ class BlePacketFactoryTest {
         )
         val packet = BlePacketFactory.createProgramParams(params)
 
-        // Force config: Gm.e(0.0f, 10.0f + weight), softMax=weight, increment=0
+        // Force config: force-config serialization, softMax=weight, increment=0
         assertEquals(0.0f, readFloatLE(packet, 0x50), "forces.min")
         assertEquals(60.0f, readFloatLE(packet, 0x54), "forces.max (10+weight)")
         assertEquals(50.0f, readFloatLE(packet, 0x58), "softMax (=weight)")
         assertEquals(0.0f, readFloatLE(packet, 0x5C), "increment (=progression)")
     }
 
-    // ========== Pump Mode: Official App Byte Parity Tests ==========
-    // Reference: VitruvianDeobfuscated Dk/e.java ordinal 3 (PUMP)
+    // ========== Pump Mode: Expected Byte Layout Tests ==========
 
     @Test
-    fun `Pump packet matches official app RepConfig header`() {
+    fun `Pump packet matches expected byte layout RepConfig header`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.Pump,
             reps = 10,
@@ -956,7 +952,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `Pump packet matches official app mode profile`() {
+    fun `Pump packet matches expected byte layout mode profile`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.Pump,
             reps = 10,
@@ -987,7 +983,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `Pump packet matches official app force config`() {
+    fun `Pump packet matches expected byte layout force config`() {
         val weight = 30f
         val params = WorkoutParameters(
             programMode = ProgramMode.Pump,
@@ -1003,12 +999,11 @@ class BlePacketFactoryTest {
         assertEquals(0.0f, readFloatLE(packet, 0x5C), "increment (=progression)")
     }
 
-    // ========== TUT Mode: Official App Byte Parity Tests ==========
-    // Reference: VitruvianDeobfuscated Dk/e.java ordinals 0,1,2 (EXTERNAL/FOCUSED/PROGRESSION)
-    // Phoenix TUT maps to official FOCUSED mode — identical activation profile values
+    // ========== TUT Mode: Expected Byte Layout Tests ==========
+    // TUT uses the FOCUSED firmware activation profile — identical activation profile values
 
     @Test
-    fun `TUT packet matches official app RepConfig header`() {
+    fun `TUT packet matches expected byte layout RepConfig header`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.TUT,
             reps = 8,
@@ -1044,7 +1039,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `TUT packet matches official app mode profile`() {
+    fun `TUT packet matches expected byte layout mode profile`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.TUT,
             reps = 8,
@@ -1075,7 +1070,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `TUT packet matches official app force config`() {
+    fun `TUT packet matches expected byte layout force config`() {
         val weight = 40f
         val params = WorkoutParameters(
             programMode = ProgramMode.TUT,
@@ -1091,15 +1086,14 @@ class BlePacketFactoryTest {
         assertEquals(0.0f, readFloatLE(packet, 0x5C), "increment (=progression)")
     }
 
-    // ========== Eccentric Only Mode: Official App Byte Parity Tests ==========
-    // Reference: VitruvianDeobfuscated Dk/e.java ordinal 5 (ECCENTRIC)
+    // ========== Eccentric Only Mode: Expected Byte Layout Tests ==========
     //
     // IMPORTANT: Eccentric mode uses a DIFFERENT RepConfig than other modes.
-    // The official app overrides bottom.inner.mmPerM from 250 → 50, making
+    // The eccentric profile overrides bottom.inner.mmPerM from 250 → 50, making
     // bottom-of-rep detection more sensitive for eccentric-focused training.
 
     @Test
-    fun `EccentricOnly packet matches official app RepConfig header`() {
+    fun `EccentricOnly packet matches expected byte layout RepConfig header`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.EccentricOnly,
             reps = 6,
@@ -1128,7 +1122,7 @@ class BlePacketFactoryTest {
         // bottom RepBound — ECCENTRIC-SPECIFIC OVERRIDE
         assertEquals(5.0f, readFloatLE(packet, 0x1C), "bottom.threshold")
         assertEquals(0.0f, readFloatLE(packet, 0x20), "bottom.drift")
-        // Official: bottom.inner = L(50, 250) — NOT the default L(250, 250)
+        // Eccentric profile: bottom.inner = L(50, 250) — NOT the default L(250, 250)
         assertEquals(50.toShort(), readShortLE(packet, 0x24), "bottom.inner.mmPerM (ECCENTRIC=50)")
         assertEquals(250.toShort(), readShortLE(packet, 0x26), "bottom.inner.mmMax")
         assertEquals(200.toShort(), readShortLE(packet, 0x28), "bottom.outer.mmPerM")
@@ -1139,7 +1133,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `EccentricOnly packet matches official app mode profile`() {
+    fun `EccentricOnly packet matches expected byte layout mode profile`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.EccentricOnly,
             reps = 6,
@@ -1170,7 +1164,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `EccentricOnly packet matches official app force config`() {
+    fun `EccentricOnly packet matches expected byte layout force config`() {
         val weight = 60f
         val params = WorkoutParameters(
             programMode = ProgramMode.EccentricOnly,
@@ -1311,7 +1305,7 @@ class BlePacketFactoryTest {
     // ========== Force Config with Progression Tests ==========
 
     @Test
-    fun `force config with zero progression matches official app for all modes`() {
+    fun `force config with zero progression matches expected byte layout for all modes`() {
         val modes = listOf(
             ProgramMode.OldSchool,
             ProgramMode.Pump,
@@ -1332,11 +1326,10 @@ class BlePacketFactoryTest {
         }
     }
 
-    // ========== TUT Beast Mode: Official App Byte Parity Tests ==========
-    // Reference: VitruvianDeobfuscated Dk/e.java ordinal 6 (BEAST_MODE)
+    // ========== TUT Beast Mode: Expected Byte Layout Tests ==========
 
     @Test
-    fun `TUTBeast packet matches official app mode profile`() {
+    fun `TUTBeast packet matches expected byte layout mode profile`() {
         val params = WorkoutParameters(
             programMode = ProgramMode.TUTBeast,
             reps = 6,
@@ -1635,7 +1628,7 @@ class BlePacketFactoryTest {
     @Test
     fun `issue390 AMRAP mode keeps target weight at selected per-cable weight`() {
         // AMRAP uses reps=0xFF for unlimited reps. The force controller still
-        // receives the selected per-cable force in the official trailing force block.
+        // receives the selected per-cable force in the trailing force config block.
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
             reps = 10,
