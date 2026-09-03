@@ -93,11 +93,17 @@ class WorkoutMachineTeardownTest {
             assertEquals(1, harness.coordinator.currentExerciseIndex.value)
             assertIs<RoutineFlowState.SetReady>(harness.coordinator.routineFlowState.value)
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
-            assertEquals(cableLease.executionId, successorLease.executionId)
+            assertEquals(
+                bodyweightLease.executionId,
+                successorLease.executionId,
+                "Jump must keep the live bodyweight execution and must not mint a destination lease before START",
+            )
+            assertFalse(successorLease.requiresMachine)
+            assertTrue(successorLease.executionId > cableLease.executionId)
             assertIs<MachineTeardownState.TearingDown>(
                 harness.activeSessionEngine.machineTeardownState.value,
             )
-            assertEquals(2, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
             assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty())
 
             cableReset.complete(Result.success(Unit))
