@@ -91,9 +91,8 @@ class WorkoutMachineTeardownTest {
             val successorLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
 
             assertEquals(1, harness.coordinator.currentExerciseIndex.value)
-            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
-            assertFalse(successorLease.requiresMachine)
-            assertEquals(bodyweightLease.executionId, successorLease.executionId)
+            assertIs<RoutineFlowState.SetReady>(harness.coordinator.routineFlowState.value)
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
             assertEquals(cableLease.executionId, successorLease.executionId)
             assertIs<MachineTeardownState.TearingDown>(
                 harness.activeSessionEngine.machineTeardownState.value,

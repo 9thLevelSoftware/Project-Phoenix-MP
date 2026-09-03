@@ -3273,6 +3273,10 @@ class DWSMWorkoutLifecycleTest {
         )
 
         harness.dwsm.jumpToExercise(0)
+        assertIs<RoutineFlowState.SetReady>(harness.coordinator.routineFlowState.value)
+        assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+        harness.dwsm.startSetFromReady()
+        harness.testScope.advanceUntilIdle()
         harness.testScope.advanceTimeBy(7_000)
         harness.testScope.runCurrent()
         assertEquals(0, harness.coordinator.currentWarmupSetIndex.value)
