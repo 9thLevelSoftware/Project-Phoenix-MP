@@ -1517,6 +1517,28 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
         name = "idx_pr_unique",
         createSql = "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase, profile_id)",
         preDropSql = "DROP INDEX IF EXISTS idx_pr_unique",
+        beforeCreateSql = listOf(
+            """
+            DELETE FROM PersonalRecord
+            WHERE id IN (
+                SELECT duplicate.id
+                FROM PersonalRecord AS duplicate
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM PersonalRecord AS keeper
+                    WHERE keeper.exerciseId = duplicate.exerciseId
+                      AND keeper.workoutMode = duplicate.workoutMode
+                      AND keeper.prType = duplicate.prType
+                      AND keeper.phase = duplicate.phase
+                      AND keeper.profile_id = duplicate.profile_id
+                      AND (
+                          keeper.achievedAt > duplicate.achievedAt
+                          OR (keeper.achievedAt = duplicate.achievedAt AND keeper.id > duplicate.id)
+                      )
+                )
+            )
+            """.trimIndent(),
+        ),
     ),
     SchemaIndexOperation("idx_pr_profile", "CREATE INDEX IF NOT EXISTS idx_pr_profile ON PersonalRecord(profile_id)"),
     SchemaIndexOperation(
@@ -1583,6 +1605,29 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
         "idx_gamification_stats_profile",
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_gamification_stats_profile ON GamificationStats(profile_id)",
         preDropSql = "DROP INDEX IF EXISTS idx_gamification_stats_profile",
+        beforeCreateSql = listOf(
+            """
+            DELETE FROM GamificationStats
+            WHERE id IN (
+                SELECT duplicate.id
+                FROM GamificationStats AS duplicate
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM GamificationStats AS keeper
+                    WHERE keeper.profile_id = duplicate.profile_id
+                      AND (
+                          COALESCE(keeper.updatedAt, keeper.lastUpdated) >
+                              COALESCE(duplicate.updatedAt, duplicate.lastUpdated)
+                          OR (
+                              COALESCE(keeper.updatedAt, keeper.lastUpdated) =
+                                  COALESCE(duplicate.updatedAt, duplicate.lastUpdated)
+                              AND keeper.id > duplicate.id
+                          )
+                      )
+                )
+            )
+            """.trimIndent(),
+        ),
     ),
 
     // ── RpgAttributes ───────────────────────────────────────────────────
@@ -1612,6 +1657,34 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
         name = "idx_external_activity_dedup",
         createSql = "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_activity_dedup ON ExternalActivity(provider, externalId, profileId)",
         preDropSql = "DROP INDEX IF EXISTS idx_external_activity_dedup",
+        beforeCreateSql = listOf(
+            """
+            DELETE FROM ExternalActivity
+            WHERE id IN (
+                SELECT duplicate.id
+                FROM ExternalActivity AS duplicate
+                WHERE EXISTS (
+                    SELECT 1
+                    FROM ExternalActivity AS keeper
+                    WHERE keeper.provider = duplicate.provider
+                      AND keeper.externalId = duplicate.externalId
+                      AND keeper.profileId = duplicate.profileId
+                      AND (
+                          keeper.syncedAt > duplicate.syncedAt
+                          OR (
+                              keeper.syncedAt = duplicate.syncedAt
+                              AND keeper.startedAt > duplicate.startedAt
+                          )
+                          OR (
+                              keeper.syncedAt = duplicate.syncedAt
+                              AND keeper.startedAt = duplicate.startedAt
+                              AND keeper.id > duplicate.id
+                          )
+                      )
+                )
+            )
+            """.trimIndent(),
+        ),
     ),
     SchemaIndexOperation("idx_external_activity_profile", "CREATE INDEX IF NOT EXISTS idx_external_activity_profile ON ExternalActivity(profileId)"),
     SchemaIndexOperation("idx_external_activity_provider", "CREATE INDEX IF NOT EXISTS idx_external_activity_provider ON ExternalActivity(provider)"),

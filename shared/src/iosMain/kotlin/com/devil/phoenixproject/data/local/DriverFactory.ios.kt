@@ -43,7 +43,7 @@ actual class DriverFactory {
             },
         )
 
-        return try {
+        val validatedDriver = try {
             // Authoritative reconciliation -- ensures ALL tables, columns, indexes exist
             val report = reconcileFullSchema(driver)
             val summary = report.logSummary()
@@ -75,10 +75,7 @@ actual class DriverFactory {
                 )
             }
 
-            excludeDatabaseArtifactsFromBackup()
             coordinator.targetValidated(preparation)
-
-            NSLog("iOS DB: Initialization complete")
             driver
         } catch (failure: Throwable) {
             runCatching { driver.close() }
@@ -89,6 +86,15 @@ actual class DriverFactory {
                 failure,
             )
         }
+
+        // Backup exclusion is advisory. A Foundation/iCloud attribute failure
+        // must not turn an otherwise validated database into a launch failure.
+        runBestEffortBackupExclusion {
+            excludeDatabaseArtifactsFromBackup()
+        }
+
+        NSLog("iOS DB: Initialization complete")
+        return validatedDriver
     }
 
     @OptIn(ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
@@ -157,6 +163,14 @@ actual class DriverFactory {
     }
 }
 
+internal fun runBestEffortBackupExclusion(exclude: () -> Unit) {
+    try {
+        exclude()
+    } catch (failure: Throwable) {
+        NSLog("iOS DB: Warning -- could not exclude database artifacts from backup: ${failure.message?.take(120)}")
+    }
+}
+
 /**
  * Wraps SQLDelight's schema to apply each migration step with per-statement
  * resilient error recovery. Replaces the old SavepointMigratingSchema which
@@ -166,7 +180,7 @@ actual class DriverFactory {
  * time (skipping duplicates), and continues to the next step. The post-migration
  * reconcileFullSchema() catches any remaining gaps.
  */
-private class ResilientMigratingSchema(
+internal class ResilientMigratingSchema(
     private val delegate: SqlSchema<QueryResult.Value<Unit>>,
 ) : SqlSchema<QueryResult.Value<Unit>> {
 
@@ -200,6 +214,11 @@ private class ResilientMigratingSchema(
                 val failures = results.count { !it.success && !it.recoverable }
                 if (failures > 0) {
                     NSLog("iOS DB: Migration $stepTo had $failures non-recoverable failures")
+                    throw DatabaseFileMigrationException(
+                        DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+                        "The Phoenix database migration to version $stepTo could not be completed safely.",
+                        e,
+                    )
                 }
                 driver.execute(null, "PRAGMA user_version = $stepTo", 0)
                 NSLog("iOS DB: Migration $stepTo completed via resilient fallback")

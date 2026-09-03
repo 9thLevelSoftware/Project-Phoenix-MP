@@ -86,6 +86,7 @@ internal class DatabaseFileMigrationCoordinator(
     private val operations: DatabaseFileOperations,
 ) {
     private var recoveryCreatedThisProcess = false
+    private var targetValidationPending = false
 
     fun prepareTarget(): DatabasePreparation = operations.withExclusiveMigrationLock {
         val layout = operations.inspect()
@@ -98,6 +99,13 @@ internal class DatabaseFileMigrationCoordinator(
         }
 
         val preparation = when {
+            targetValidationPending && layout.targetExists && layout.recoveryExists -> {
+                // The previous open reached cutover but never completed post-open
+                // validation. Restore the known-good snapshot before retrying rather
+                // than reopening a target that may have a partially-healed schema.
+                reconstructFromRecovery(layout)
+            }
+
             layout.targetExists -> prepareExistingTarget(layout)
 
             layout.legacyExists -> migrateLegacy(layout)
@@ -115,6 +123,7 @@ internal class DatabaseFileMigrationCoordinator(
             )
         }
 
+        targetValidationPending = preparation.migratedThisLaunch || preparation.recoveryCleanupDue
         if (preparation.migratedThisLaunch) {
             recoveryCreatedThisProcess = true
         }
@@ -136,6 +145,9 @@ internal class DatabaseFileMigrationCoordinator(
             try {
                 operations.validate(DatabaseArtifact.TARGET)
             } catch (failure: Throwable) {
+                // Keep the recovery snapshot armed. A retry must restore it before
+                // reopening this target, even when the target is still quick_check-clean.
+                targetValidationPending = true
                 throw DatabaseFileMigrationException(
                     DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
                     "The Phoenix database failed post-migration validation.",
@@ -147,6 +159,7 @@ internal class DatabaseFileMigrationCoordinator(
                 try {
                     operations.delete(DatabaseArtifact.RECOVERY)
                 } catch (failure: Throwable) {
+                    targetValidationPending = true
                     throw DatabaseFileMigrationException(
                         DatabaseMigrationFailureCode.LEGACY_CLEANUP_FAILED,
                         "The validated database opened, but its prior recovery file could not be removed.",
@@ -154,6 +167,7 @@ internal class DatabaseFileMigrationCoordinator(
                     )
                 }
             }
+            targetValidationPending = false
         }
     }
 
@@ -161,10 +175,25 @@ internal class DatabaseFileMigrationCoordinator(
         if (layout.stagingExists) {
             deleteIncompleteStaging()
         }
-        return DatabasePreparation(
-            migratedThisLaunch = false,
-            recoveryCleanupDue = layout.recoveryExists,
-        )
+        if (!layout.recoveryExists) {
+            return DatabasePreparation(
+                migratedThisLaunch = false,
+                recoveryCleanupDue = false,
+            )
+        }
+
+        return try {
+            operations.validate(DatabaseArtifact.TARGET)
+            DatabasePreparation(
+                migratedThisLaunch = false,
+                recoveryCleanupDue = true,
+            )
+        } catch (_: Throwable) {
+            // A failed launch can leave a corrupt target next to its verified
+            // recovery copy. Validate the recovery first, then replace only the
+            // unusable target through the same staging/cutover path.
+            reconstructFromRecovery(layout)
+        }
     }
 
     private fun migrateLegacy(layout: DatabaseFileLayout): DatabasePreparation {
@@ -218,6 +247,9 @@ internal class DatabaseFileMigrationCoordinator(
         }
 
         val recoveryFingerprint = validateSource(DatabaseArtifact.RECOVERY)
+        if (layout.targetExists) {
+            deleteTarget()
+        }
         createVerifiedCopy(
             source = DatabaseArtifact.RECOVERY,
             destination = DatabaseArtifact.TARGET,
@@ -227,6 +259,18 @@ internal class DatabaseFileMigrationCoordinator(
             migratedThisLaunch = true,
             recoveryCleanupDue = false,
         )
+    }
+
+    private fun deleteTarget() {
+        try {
+            operations.delete(DatabaseArtifact.TARGET)
+        } catch (failure: Throwable) {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.RECOVERY_COPY_FAILED,
+                "The failed Phoenix database could not be replaced from recovery.",
+                failure,
+            )
+        }
     }
 
     private fun createVerifiedCopy(

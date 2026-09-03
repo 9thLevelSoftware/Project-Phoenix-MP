@@ -28,15 +28,18 @@ import platform.posix.open
 internal class IosDatabaseFileOperations : DatabaseFileOperations {
     private val fileManager = NSFileManager.defaultManager
 
-    override fun inspect(): DatabaseFileLayout = DatabaseFileLayout(
-        legacyExists = exists(DatabaseArtifact.LEGACY),
-        targetExists = exists(DatabaseArtifact.TARGET),
-        recoveryExists = exists(DatabaseArtifact.RECOVERY),
-        stagingExists = exists(DatabaseArtifact.STAGING),
-        legacySidecarsExist = LEGACY_SIDECAR_SUFFIXES.any { suffix ->
-            fileManager.fileExistsAtPath("${path(DatabaseArtifact.LEGACY)}$suffix")
-        },
-    )
+    override fun inspect(): DatabaseFileLayout {
+        migrateLegacyLibraryRootIfNeeded()
+        return DatabaseFileLayout(
+            legacyExists = exists(DatabaseArtifact.LEGACY),
+            targetExists = exists(DatabaseArtifact.TARGET),
+            recoveryExists = exists(DatabaseArtifact.RECOVERY),
+            stagingExists = exists(DatabaseArtifact.STAGING),
+            legacySidecarsExist = LEGACY_SIDECAR_SUFFIXES.any { suffix ->
+                fileManager.fileExistsAtPath("${path(DatabaseArtifact.LEGACY)}$suffix")
+            },
+        )
+    }
 
     override fun checkpointAndValidate(artifact: DatabaseArtifact): DatabaseFingerprint {
         val driver = rawDriver(artifact)
@@ -235,6 +238,76 @@ internal class IosDatabaseFileOperations : DatabaseFileOperations {
         }
     }
 
+    private fun migrateLegacyLibraryRootIfNeeded() {
+        val legacyPath = path(DatabaseArtifact.LEGACY)
+        val compatibilityPath = legacyLibraryRootPath()
+        if (!fileManager.fileExistsAtPath(compatibilityPath)) return
+        if (fileManager.fileExistsAtPath(legacyPath)) {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.DUAL_DATABASES,
+                "Legacy database files exist in both the old and SQLiter locations; automatic recovery is disabled.",
+            )
+        }
+
+        val sidecars = LEGACY_SIDECAR_SUFFIXES.filter { suffix ->
+            fileManager.fileExistsAtPath("$compatibilityPath$suffix")
+        }
+        if (sidecars.any { suffix -> fileManager.fileExistsAtPath("$legacyPath$suffix") }) {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.DUAL_DATABASES,
+                "Legacy database sidecars exist in both the old and SQLiter locations; automatic recovery is disabled.",
+            )
+        }
+
+        val parentPath = legacyPath.substringBeforeLast('/')
+        check(fileManager.createDirectoryAtPath(
+            parentPath,
+            withIntermediateDirectories = true,
+            attributes = null,
+            error = null,
+        )) {
+            "Could not create the SQLiter database directory for legacy migration"
+        }
+
+        val movedSidecars = mutableListOf<String>()
+        try {
+            for (suffix in sidecars) {
+                check(fileManager.moveItemAtPath(
+                    "$compatibilityPath$suffix",
+                    toPath = "$legacyPath$suffix",
+                    error = null,
+                )) {
+                    "Could not move the legacy database sidecar into the SQLiter directory"
+                }
+                movedSidecars += suffix
+            }
+            check(fileManager.moveItemAtPath(compatibilityPath, toPath = legacyPath, error = null)) {
+                "Could not move the legacy database into the SQLiter directory"
+            }
+        } catch (failure: Throwable) {
+            for (suffix in movedSidecars.asReversed()) {
+                runCatching {
+                    fileManager.moveItemAtPath(
+                        "$legacyPath$suffix",
+                        toPath = "$compatibilityPath$suffix",
+                        error = null,
+                    )
+                }
+            }
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.RECOVERY_COPY_FAILED,
+                "The legacy database could not be moved into the SQLiter directory.",
+                failure,
+            )
+        }
+    }
+
+    private fun legacyLibraryRootPath(): String {
+        @Suppress("UNCHECKED_CAST")
+        val libraryUrl = (fileManager.URLsForDirectory(NSLibraryDirectory, NSUserDomainMask) as List<NSURL>).firstOrNull()
+            ?: error("Could not resolve the iOS Library directory")
+        return "${libraryUrl.path}/${DatabaseFileNames.LEGACY}"
+    }
     private fun path(artifact: DatabaseArtifact): String = path(name(artifact))
 
     private fun path(name: String): String = DatabaseFileContext.databasePath(name, null)

@@ -386,6 +386,87 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `idx_pr_unique deduplicates records keeping the most recent before rebuild`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE PersonalRecord (
+                id INTEGER PRIMARY KEY,
+                exerciseId TEXT NOT NULL,
+                workoutMode TEXT NOT NULL,
+                prType TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                profile_id TEXT NOT NULL,
+                achievedAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord(id, exerciseId, workoutMode, prType, phase, profile_id, achievedAt)
+            VALUES
+                (1, 'bench', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'default', 100),
+                (2, 'bench', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'default', 200),
+                (3, 'squat', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'default', 150)
+            """.trimIndent(),
+            0,
+        )
+
+        val result = applyIndexCreate(
+            driver,
+            manifestIndexes.first { it.name == "idx_pr_unique" },
+        )
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord"))
+        assertEquals("2", queryScalar(driver, "SELECT CAST(id AS TEXT) FROM PersonalRecord WHERE exerciseId = 'bench'"))
+        assertTrue(indexExists(driver, "idx_pr_unique"))
+    }
+
+    @Test
+    fun `idx_external_activity_dedup keeps the most recently synced duplicate`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE ExternalActivity (
+                id TEXT PRIMARY KEY,
+                provider TEXT NOT NULL,
+                externalId TEXT NOT NULL,
+                profileId TEXT NOT NULL,
+                startedAt INTEGER NOT NULL,
+                syncedAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO ExternalActivity(id, provider, externalId, profileId, startedAt, syncedAt)
+            VALUES
+                ('old', 'provider', 'activity', 'default', 100, 200),
+                ('new', 'provider', 'activity', 'default', 100, 300),
+                ('other', 'provider', 'other-activity', 'default', 100, 250)
+            """.trimIndent(),
+            0,
+        )
+
+        val result = applyIndexCreate(
+            driver,
+            manifestIndexes.first { it.name == "idx_external_activity_dedup" },
+        )
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM ExternalActivity"))
+        assertEquals("new", queryScalar(driver, "SELECT id FROM ExternalActivity WHERE externalId = 'activity'"))
+        assertTrue(indexExists(driver, "idx_external_activity_dedup"))
+    }
+
+    @Test
     fun `applyIndexCreate rolls back drop when unique replacement fails on duplicates (F012)`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         driver.execute(null, "CREATE TABLE TestTable (id INTEGER PRIMARY KEY, col1 TEXT)", 0)
