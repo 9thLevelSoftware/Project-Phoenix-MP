@@ -1517,9 +1517,11 @@ class RoutineFlowManager(
                 Logger.w(e) { "Stop command before navigation failed (non-fatal): ${e.message}" }
             }
 
-            navigateToExerciseInternal(routine, index)
-            // Auto-start the next exercise with countdown
-            lifecycleDelegate.startWorkout(skipCountdown = false)
+            markExerciseActive(index)
+            lifecycleDelegate.resetRepCounter()
+            enterSetReady(index, 0)
+            coordinator._workoutState.value = WorkoutState.Idle
+            Logger.i("RoutineFlowManager") { "Jumped to exercise $index; entered Set Ready (waiting for START)" }
         }
     }
 
