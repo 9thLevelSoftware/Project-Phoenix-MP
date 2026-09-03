@@ -719,10 +719,15 @@ class DWSMWorkoutLifecycleTest {
 
             val commandsBeforeJump = harness.fakeBleRepo.commandsReceived.size
             harness.dwsm.jumpToExercise(0)
-            advanceTimeBy(7_000)
-            runCurrent()
+            advanceUntilIdle()
 
             assertEquals(0, harness.coordinator.currentExerciseIndex.value)
+            assertIs<RoutineFlowState.SetReady>(harness.coordinator.routineFlowState.value)
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertEquals(commandsBeforeJump, harness.fakeBleRepo.commandsReceived.size)
+
+            harness.dwsm.startSetFromReady()
+            advanceUntilIdle()
             assertEquals(commandsBeforeJump + 1, harness.fakeBleRepo.commandsReceived.size)
             assertEquals(
                 16f,
@@ -3268,6 +3273,11 @@ class DWSMWorkoutLifecycleTest {
         )
 
         harness.dwsm.jumpToExercise(0)
+        harness.testScope.runCurrent()
+        assertIs<RoutineFlowState.SetReady>(harness.coordinator.routineFlowState.value)
+        assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+        harness.dwsm.startSetFromReady()
+        harness.testScope.advanceUntilIdle()
         harness.testScope.advanceTimeBy(7_000)
         harness.testScope.runCurrent()
         assertEquals(0, harness.coordinator.currentWarmupSetIndex.value)

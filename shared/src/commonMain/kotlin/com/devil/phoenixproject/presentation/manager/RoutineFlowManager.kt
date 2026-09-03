@@ -179,6 +179,15 @@ class RoutineFlowManager(
                 coordinator._workoutState.value is WorkoutState.SetSummary
             )
 
+    /**
+     * Per-set AMRAP when reps are null, plus the legacy ExerciseEditDialog
+     * "last set AMRAP" flag used by routine load and autoplay.
+     */
+    private fun isAmrapSet(exercise: RoutineExercise, setIndex: Int): Boolean {
+        val rawSetReps = exercise.setReps.getOrNull(setIndex)
+        return rawSetReps == null || (exercise.isAMRAP && setIndex == exercise.setReps.lastIndex)
+    }
+
     private fun markExerciseSkipped(index: Int) {
         coordinator._skippedExercises.update { it + index }
         coordinator._completedExercises.update { it - index }
@@ -1210,8 +1219,11 @@ class RoutineFlowManager(
 
     /**
      * Enter set-ready state for specific exercise and set.
+     *
+     * @param reinitializeWarmups when true, set 0 restarts configured variable warm-ups
+     * even if [exerciseIndex] is already the current exercise (navigator restart).
      */
-    fun enterSetReady(exerciseIndex: Int, setIndex: Int) {
+    fun enterSetReady(exerciseIndex: Int, setIndex: Int, reinitializeWarmups: Boolean = false) {
         supersedeConfigurationInputIntent()
         val routine = coordinator._loadedRoutine.value ?: return
         val exercise = routine.exercises.getOrNull(exerciseIndex) ?: return
@@ -1235,8 +1247,8 @@ class RoutineFlowManager(
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
-        val isSetAmrap = rawSetReps == null
-        val initializeWarmups = isNewExercise && setIndex == 0
+        val isSetAmrap = isAmrapSet(exercise, setIndex)
+        val initializeWarmups = (isNewExercise || reinitializeWarmups) && setIndex == 0
         val hasVariableWarmups = initializeWarmups && exercise.warmupSets.isNotEmpty() && !exercise.exercise.isBodyweight
         val nextParams = coordinator._workoutParameters.value.copy(
             programMode = exercise.programMode,
@@ -1310,8 +1322,7 @@ class RoutineFlowManager(
             echoLevel = if (exercise.programMode is ProgramMode.Echo) exercise.echoLevel else null,
             eccentricLoadPercent = if (exercise.programMode is ProgramMode.Echo) exercise.eccentricLoad.percentage else null,
         )
-        val rawSetReps = exercise.setReps.getOrNull(setIndex)
-        val isSetAmrap = rawSetReps == null
+        val isSetAmrap = isAmrapSet(exercise, setIndex)
         val initializeWarmups = isNewExercise && setIndex == 0
         val hasVariableWarmups = initializeWarmups && exercise.warmupSets.isNotEmpty() && !exercise.exercise.isBodyweight
         val nextParams = coordinator._workoutParameters.value.copy(
@@ -1685,10 +1696,15 @@ class RoutineFlowManager(
             if (transitionLease == null && lifecycleDelegate.currentExecutionLeaseOrNull() != null) {
                 return@transition
             }
-            Logger.d("RoutineFlowManager") { "Machine teardown complete before navigation to exercise $index" }
-            navigateToExerciseInternal(routine, index)
-            // Auto-start the next exercise with countdown
-            lifecycleDelegate.startWorkout(skipCountdown = false)
+            lifecycleDelegate.mutateConfigurationInputs {
+                markExerciseActive(index)
+                coordinator._userAdjustedWeightDuringRest = false
+                coordinator._repCount.value = RepCount()
+                coordinator._workoutState.value = WorkoutState.Idle
+            }
+            lifecycleDelegate.resetRepCounter()
+            enterSetReady(index, 0, reinitializeWarmups = true)
+            Logger.i("RoutineFlowManager") { "Jumped to exercise $index; entered Set Ready (waiting for START)" }
         }
     }
 
