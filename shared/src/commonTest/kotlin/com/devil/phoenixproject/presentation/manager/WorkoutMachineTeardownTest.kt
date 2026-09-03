@@ -97,7 +97,7 @@ class WorkoutMachineTeardownTest {
             assertIs<MachineTeardownState.TearingDown>(
                 harness.activeSessionEngine.machineTeardownState.value,
             )
-            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertEquals(2, harness.fakeBleRepo.stopWorkoutCallCount)
             assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty())
 
             cableReset.complete(Result.success(Unit))
