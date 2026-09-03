@@ -390,13 +390,9 @@ class DWSMEquipmentRackTest {
         // round-trip that the live HUD reads; the precomputed-load invariant is covered
         // by the existing "set start snapshot" test.
 
-        // Advance to exercise 1 via the jumpToExercise / navigateToExerciseInternal path.
-        // Pre-fix: the previous selection leaked, and the live HUD rendered
-        // "Rack: Weighted Vest +8 lb" on exercise 1.
+        // Advance to exercise 1 via the jumpToExercise / enterSetReady path.
+        // The previous selection must not leak into the destination exercise.
         harness.routineFlowManager.jumpToExercise(1)
-        // jumpToExercise launches the rack reset inside its own coroutine
-        // (lifecycleDelegate.sendStopCommand + navigateToExerciseInternal); advance
-        // virtual time so the state writes land before we assert.
         advanceUntilIdle()
         assertEquals(
             emptyList(),

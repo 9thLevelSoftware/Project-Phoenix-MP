@@ -764,13 +764,9 @@ class DWSMRoutineFlowTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
-        // Characterization: advanceToNextExercise calls jumpToExercise which sends BLE
-        // commands, navigates, then auto-starts a workout (skipCountdown=false).
-        // Using advanceTimeBy instead of advanceUntilIdle because the auto-started workout
-        // re-awakens init block collectors and creates an infinite re-dispatch loop.
-        // 7s covers: BLE delays (250ms) + countdown (5s) + START delay (100ms) + margin.
+        // Exercise navigation enters Set Ready without starting a workout.
         harness.dwsm.advanceToNextExercise()
-        advanceTimeBy(7000)
+        advanceUntilIdle()
 
         val params = harness.dwsm.coordinator.workoutParameters.value
         assertEquals(
@@ -778,6 +774,8 @@ class DWSMRoutineFlowTest {
             params.selectedExerciseId,
             "After advance, selected exercise should be the second exercise",
         )
+        assertIs<RoutineFlowState.SetReady>(harness.dwsm.coordinator.routineFlowState.value)
+        assertIs<WorkoutState.Idle>(harness.dwsm.coordinator.workoutState.value)
         harness.cleanup()
     }
 
@@ -800,10 +798,10 @@ class DWSMRoutineFlowTest {
             params.selectedExerciseId,
             "After jumpToExercise(2), selected exercise should be the third exercise",
         )
-
-        // Stop the auto-started workout to clean up monitoring coroutines
-        harness.dwsm.stopWorkout(exitingWorkout = true)
-        advanceUntilIdle()
+        val ready = assertIs<RoutineFlowState.SetReady>(harness.dwsm.coordinator.routineFlowState.value)
+        assertEquals(2, ready.exerciseIndex)
+        assertEquals(0, ready.setIndex)
+        assertIs<WorkoutState.Idle>(harness.dwsm.coordinator.workoutState.value)
         harness.cleanup()
     }
 
@@ -839,9 +837,13 @@ class DWSMRoutineFlowTest {
             runCurrent()
 
             assertEquals(2, harness.coordinator.currentExerciseIndex.value)
-            assertTrue(
-                harness.activeSessionEngine.currentExecutionLeaseForTest().executionId > outgoingExecutionId,
+            assertEquals(
+                outgoingExecutionId,
+                harness.activeSessionEngine.currentExecutionLeaseForTest().executionId,
+                "Jump must not mint a destination execution lease before START",
             )
+            assertIs<RoutineFlowState.SetReady>(harness.coordinator.routineFlowState.value)
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
         } finally {
             harness.cleanup()
         }
@@ -888,10 +890,9 @@ class DWSMRoutineFlowTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
-        // Characterization: skipCurrentExercise calls jumpToExercise which auto-starts
-        // a workout after navigation. advanceTimeBy avoids infinite re-dispatch loop.
+        // Skipping navigates through jumpToExercise and lands on Set Ready.
         harness.dwsm.skipCurrentExercise()
-        advanceTimeBy(7000)
+        advanceUntilIdle()
 
         val params = harness.dwsm.coordinator.workoutParameters.value
         assertEquals(
@@ -899,6 +900,8 @@ class DWSMRoutineFlowTest {
             params.selectedExerciseId,
             "After skip, selected exercise should be the second exercise",
         )
+        assertIs<RoutineFlowState.SetReady>(harness.dwsm.coordinator.routineFlowState.value)
+        assertIs<WorkoutState.Idle>(harness.dwsm.coordinator.workoutState.value)
         harness.cleanup()
     }
 
@@ -1049,24 +1052,17 @@ class DWSMRoutineFlowTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
-        // Advance to exercise 1 (jumpToExercise auto-starts a workout).
-        // advanceTimeBy avoids infinite re-dispatch loop from init block interaction.
+        // Advance to exercise 1; jump navigation lands on Set Ready.
         harness.dwsm.advanceToNextExercise()
-        advanceTimeBy(7000)
+        advanceUntilIdle()
         assertEquals(
             routine.exercises[1].exercise.id,
             harness.dwsm.coordinator.workoutParameters.value.selectedExerciseId,
         )
 
-        // Characterization: jumpToExercise blocks during Active state (Issue #125).
-        // Must stop the auto-started workout before navigating again.
-        // Use exitingWorkout=false to preserve _loadedRoutine (true clears it).
-        harness.dwsm.stopWorkout(exitingWorkout = false)
-        advanceTimeBy(1000)
-
-        // Now go back (state is SetSummary, not Active, so jumpToExercise won't be blocked)
+        // Now go back while Set Ready is idle.
         harness.dwsm.goToPreviousExercise()
-        advanceTimeBy(7000)
+        advanceUntilIdle()
 
         val params = harness.dwsm.coordinator.workoutParameters.value
         assertEquals(
@@ -1143,24 +1139,16 @@ class DWSMRoutineFlowTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
 
-        // Navigate through all 3 exercises.
-        // Characterization: jumpToExercise auto-starts a workout (Active state) and
-        // blocks further navigation (Issue #125). Must stop between navigations.
-        // Use exitingWorkout=false to preserve _loadedRoutine (true clears it).
-        // advanceTimeBy avoids infinite re-dispatch loop from init block interaction.
+        // Navigate through all 3 exercises without starting a set.
         val exerciseIds = mutableListOf<String?>()
         exerciseIds.add(harness.dwsm.coordinator.workoutParameters.value.selectedExerciseId)
 
         harness.dwsm.advanceToNextExercise()
-        advanceTimeBy(7000)
+        advanceUntilIdle()
         exerciseIds.add(harness.dwsm.coordinator.workoutParameters.value.selectedExerciseId)
 
-        // Stop the auto-started workout so next navigation isn't blocked
-        harness.dwsm.stopWorkout(exitingWorkout = false)
-        advanceTimeBy(1000)
-
         harness.dwsm.advanceToNextExercise()
-        advanceTimeBy(7000)
+        advanceUntilIdle()
         exerciseIds.add(harness.dwsm.coordinator.workoutParameters.value.selectedExerciseId)
 
         assertEquals(3, exerciseIds.size, "Should have visited 3 exercises")

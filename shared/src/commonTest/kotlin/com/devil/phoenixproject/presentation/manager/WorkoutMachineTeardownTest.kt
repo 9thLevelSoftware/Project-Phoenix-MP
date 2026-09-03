@@ -4,6 +4,7 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
@@ -90,10 +91,10 @@ class WorkoutMachineTeardownTest {
             val successorLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
 
             assertEquals(1, harness.coordinator.currentExerciseIndex.value)
-            assertIs<WorkoutState.Countdown>(harness.coordinator.workoutState.value)
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
             assertFalse(successorLease.requiresMachine)
-            assertTrue(successorLease.executionId > bodyweightLease.executionId)
-            assertTrue(successorLease.executionId > cableLease.executionId)
+            assertEquals(bodyweightLease.executionId, successorLease.executionId)
+            assertEquals(cableLease.executionId, successorLease.executionId)
             assertIs<MachineTeardownState.TearingDown>(
                 harness.activeSessionEngine.machineTeardownState.value,
             )
@@ -106,10 +107,8 @@ class WorkoutMachineTeardownTest {
             assertEquals(MachineTeardownState.Ready, harness.activeSessionEngine.machineTeardownState.value)
             assertEquals(successorLease, harness.activeSessionEngine.currentExecutionLeaseForTest())
             assertEquals(1, harness.coordinator.currentExerciseIndex.value)
-            assertIs<WorkoutState.Countdown>(harness.coordinator.workoutState.value)
-            advanceTimeBy(5_100)
-            runCurrent()
-            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertIs<RoutineFlowState.SetReady>(harness.coordinator.routineFlowState.value)
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
             assertEquals(
                 1,
                 harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == bodyweightLease.sessionId },
