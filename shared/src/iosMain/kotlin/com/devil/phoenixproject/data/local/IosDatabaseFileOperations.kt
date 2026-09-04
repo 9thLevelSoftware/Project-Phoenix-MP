@@ -230,16 +230,18 @@ internal class IosDatabaseFileOperations(
         val compatibilitySidecars = existingSidecars(compatibilityPath)
         val legacySidecars = existingSidecars(legacyPath)
 
+        val legacyExists = fileManager.fileExistsAtPath(legacyPath)
+
         if (!compatibilityExists) {
-            if (compatibilitySidecars.isNotEmpty() || legacySidecars.isNotEmpty()) {
-                throw DatabaseFileMigrationException(
-                    DatabaseMigrationFailureCode.DUAL_DATABASES,
-                    "Orphaned legacy database sidecars exist without a legacy database; automatic recovery is disabled.",
-                )
+            if (compatibilitySidecars.isNotEmpty()) {
+                NSLog("iOS DB: Ignoring orphaned Library/vitruvian.db sidecars without a main file")
+            }
+            if (!legacyExists && legacySidecars.isNotEmpty()) {
+                NSLog("iOS DB: Ignoring orphaned SQLiter vitruvian.db sidecars without a main file")
             }
             return
         }
-        if (fileManager.fileExistsAtPath(legacyPath)) {
+        if (legacyExists) {
             throw DatabaseFileMigrationException(
                 DatabaseMigrationFailureCode.DUAL_DATABASES,
                 "Legacy database files exist in both the old and SQLiter locations; automatic recovery is disabled.",

@@ -11,8 +11,10 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
+import kotlin.test.fail
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSFileManager
 
@@ -57,6 +59,124 @@ class Issue725RecurrenceTest {
 
         assertFalse(fileManager.fileExistsAtPath(legacyLibraryRootPath()))
         assertTrue(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null)))
+    }
+
+    @Test
+    fun sqliterLegacyDatabaseWithWalSidecarsDoesNotThrowDualDatabases() {
+        val legacyDriver = NativeSqliteDriver(
+            schema = PhoenixDatabase.Schema,
+            name = DatabaseFileNames.LEGACY,
+        )
+        legacyDriver.execute(
+            null,
+            "INSERT INTO UserProfile(id, name, colorIndex, createdAt, isActive) VALUES ('legacy-profile', 'Legacy', 0, 1, 1)",
+            0,
+        )
+        legacyDriver.close()
+
+        val sqliterLegacy = DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null)
+        assertTrue(fileManager.fileExistsAtPath(sqliterLegacy))
+        assertFalse(fileManager.fileExistsAtPath(legacyLibraryRootPath()))
+        ensureSidecar(sqliterLegacy, "-wal")
+        ensureSidecar(sqliterLegacy, "-shm")
+
+        val layout = try {
+            IosDatabaseFileOperations().inspect()
+        } catch (failure: DatabaseFileMigrationException) {
+            fail("inspect threw ${failure.code} for a normal SQLiter legacy DB plus WAL sidecars: ${failure.message}")
+        }
+
+        assertTrue(layout.legacyExists)
+        assertFalse(layout.targetExists)
+    }
+
+    @Test
+    fun sqliterLegacyDatabaseWithWalSidecarsMigratesToPhoenixAndPreservesData() {
+        val legacyDriver = NativeSqliteDriver(
+            schema = PhoenixDatabase.Schema,
+            name = DatabaseFileNames.LEGACY,
+        )
+        legacyDriver.execute(
+            null,
+            "INSERT INTO UserProfile(id, name, colorIndex, createdAt, isActive) VALUES ('legacy-profile', 'Legacy', 0, 1, 1)",
+            0,
+        )
+        legacyDriver.close()
+
+        val sqliterLegacy = DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null)
+        ensureSidecar(sqliterLegacy, "-wal")
+        ensureSidecar(sqliterLegacy, "-shm")
+
+        val driver = DriverFactory().createDriver()
+        try {
+            assertEquals("Legacy", queryScalar(driver, "SELECT name FROM UserProfile WHERE id = 'legacy-profile'"))
+        } finally {
+            driver.close()
+        }
+
+        assertFalse(fileManager.fileExistsAtPath(sqliterLegacy))
+        assertTrue(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null)))
+        assertFalse(fileManager.fileExistsAtPath(legacyLibraryRootPath()))
+    }
+
+    @Test
+    fun orphanSqliterLegacySidecarsWithoutMainDoNotBlockPhoenixOpen() {
+        val sqliterLegacy = DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null)
+        ensureSidecar(sqliterLegacy, "-wal")
+        ensureSidecar(sqliterLegacy, "-shm")
+        assertFalse(fileManager.fileExistsAtPath(sqliterLegacy))
+        assertFalse(fileManager.fileExistsAtPath(legacyLibraryRootPath()))
+
+        val driver = DriverFactory().createDriver()
+        try {
+            assertEquals(PhoenixDatabase.Schema.version, queryLong(driver, "PRAGMA user_version"))
+        } finally {
+            driver.close()
+        }
+
+        assertTrue(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null)))
+        assertTrue(fileManager.fileExistsAtPath("$sqliterLegacy-wal"))
+        assertTrue(fileManager.fileExistsAtPath("$sqliterLegacy-shm"))
+    }
+
+    @Test
+    fun trueDualLibraryAndSqliterLegacyMainsStillBlockWithoutDeleting() {
+        val legacyDriver = NativeSqliteDriver(
+            schema = PhoenixDatabase.Schema,
+            name = DatabaseFileNames.LEGACY,
+        )
+        legacyDriver.execute(
+            null,
+            "INSERT INTO UserProfile(id, name, colorIndex, createdAt, isActive) VALUES ('dual-profile', 'Dual', 0, 1, 1)",
+            0,
+        )
+        legacyDriver.close()
+
+        val sqliterLegacy = DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null)
+        val libraryLegacy = legacyLibraryRootPath()
+        assertTrue(fileManager.fileExistsAtPath(sqliterLegacy))
+        moveArtifact(sqliterLegacy, libraryLegacy)
+        check(fileManager.copyItemAtPath(libraryLegacy, toPath = sqliterLegacy, error = null)) {
+            "Could not copy Library legacy DB back to SQLiter path for dual-main fixture"
+        }
+        for (suffix in SIDECAR_SUFFIXES) {
+            val source = "$libraryLegacy$suffix"
+            val destination = "$sqliterLegacy$suffix"
+            if (fileManager.fileExistsAtPath(source) && !fileManager.fileExistsAtPath(destination)) {
+                check(fileManager.copyItemAtPath(source, toPath = destination, error = null)) {
+                    "Could not copy sidecar $suffix for dual-main fixture"
+                }
+            }
+        }
+
+        val failure = assertFailsWith<DatabaseFileMigrationException> {
+            IosDatabaseFileOperations().inspect()
+        }
+
+        assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, failure.code)
+        assertTrue(fileManager.fileExistsAtPath(sqliterLegacy))
+        assertTrue(fileManager.fileExistsAtPath(libraryLegacy))
+        assertFalse(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null)))
     }
 
     @Test
@@ -267,6 +387,15 @@ class Issue725RecurrenceTest {
             deletePathAndSidecars(path)
         }
         deletePathAndSidecars(legacyLibraryRootPath())
+    }
+
+    private fun ensureSidecar(databasePath: String, suffix: String) {
+        val sidecarPath = "$databasePath$suffix"
+        if (!fileManager.fileExistsAtPath(sidecarPath)) {
+            check(fileManager.createFileAtPath(sidecarPath, contents = null, attributes = null)) {
+                "Could not create test sidecar at $sidecarPath"
+            }
+        }
     }
 
     private fun deletePathAndSidecars(path: String) {
