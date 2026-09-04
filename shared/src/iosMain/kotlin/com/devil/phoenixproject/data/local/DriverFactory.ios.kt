@@ -8,18 +8,8 @@ import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import co.touchlab.sqliter.DatabaseConfiguration
 import co.touchlab.sqliter.DatabaseFileContext
 import com.devil.phoenixproject.database.PhoenixDatabase
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.ObjCObjectVar
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.ptr
-import kotlinx.cinterop.value
-import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSLog
-import platform.Foundation.NSNumber
-import platform.Foundation.NSURL
-import platform.Foundation.NSURLIsExcludedFromBackupKey
 
 actual class DriverFactory {
     private val coordinator = DatabaseFileMigrationCoordinator(IosDatabaseFileOperations())
@@ -89,15 +79,12 @@ actual class DriverFactory {
 
         // Backup exclusion is advisory. A Foundation/iCloud attribute failure
         // must not turn an otherwise validated database into a launch failure.
-        runBestEffortBackupExclusion {
-            excludeDatabaseArtifactsFromBackup()
-        }
+        excludeDatabaseArtifactsFromBackup()
 
         NSLog("iOS DB: Initialization complete")
         return validatedDriver
     }
 
-    @OptIn(ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
     private fun excludeDatabaseArtifactsFromBackup() {
         val filesToExclude = listOf(
             DatabaseFileNames.TARGET,
@@ -111,20 +98,7 @@ actual class DriverFactory {
 
         for (path in filesToExclude) {
             if (!fileManager.fileExistsAtPath(path)) continue
-            val url = NSURL.fileURLWithPath(path)
-            memScoped {
-                val errorPtr = alloc<ObjCObjectVar<NSError?>>()
-                errorPtr.value = null
-                val excluded = url.setResourceValue(
-                    NSNumber(bool = true),
-                    forKey = NSURLIsExcludedFromBackupKey,
-                    error = errorPtr.ptr,
-                )
-                check(excluded) {
-                    "Could not exclude a Phoenix database artifact from backup: " +
-                        (errorPtr.value?.localizedDescription ?: "unknown error")
-                }
-            }
+            runBestEffortBackupExclusion(path)
         }
     }
 
@@ -160,14 +134,6 @@ actual class DriverFactory {
             DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
             "The Phoenix database journal mode could not be read.",
         )
-    }
-}
-
-internal fun runBestEffortBackupExclusion(exclude: () -> Unit) {
-    try {
-        exclude()
-    } catch (failure: Throwable) {
-        NSLog("iOS DB: Warning -- could not exclude database artifacts from backup: ${failure.message?.take(120)}")
     }
 }
 

@@ -12,13 +12,9 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
-import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSFileManager
-import platform.Foundation.NSLibraryDirectory
-import platform.Foundation.NSURL
-import platform.Foundation.NSUserDomainMask
 
 @OptIn(ExperimentalForeignApi::class)
 class Issue725RecurrenceTest {
@@ -64,7 +60,80 @@ class Issue725RecurrenceTest {
     }
 
     @Test
-    fun nonRecoverableMigrationFallbackDoesNotAdvanceUserVersion() {
+    fun driverOpenRepairsDuplicatePersonalRecordsBeforeMigrationIndexCreation() {
+        val setupDriver = NativeSqliteDriver(
+            schema = PhoenixDatabase.Schema,
+            name = DatabaseFileNames.TARGET,
+        )
+        setupDriver.execute(null, "DROP INDEX idx_pr_unique", 0)
+        setupDriver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord(
+                id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt,
+                workoutMode, prType, volume, phase, profile_id
+            ) VALUES
+                (1, 'bench', 'Bench', 100.0, 5, 110.0, 100,
+                 'Old School', 'MAX_WEIGHT', 500.0, 'COMBINED', 'default'),
+                (2, 'bench', 'Bench', 105.0, 5, 115.0, 200,
+                 'Old School', 'MAX_WEIGHT', 525.0, 'COMBINED', 'default')
+            """.trimIndent(),
+            0,
+        )
+        createHistoricalExerciseVideoTable(setupDriver)
+        setupDriver.execute(null, "PRAGMA user_version = 18", 0)
+        setupDriver.close()
+
+        val driver = DriverFactory().createDriver()
+        try {
+            assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord"))
+            assertEquals("2", queryScalar(driver, "SELECT CAST(id AS TEXT) FROM PersonalRecord WHERE exerciseId = 'bench'"))
+            assertTrue(queryScalar(
+                driver,
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_pr_unique'",
+            ) != null)
+        } finally {
+            driver.close()
+        }
+    }
+
+    @Test
+    fun driverOpenRepairsDuplicateExternalActivitiesBeforeMigrationIndexCreation() {
+        val setupDriver = NativeSqliteDriver(
+            schema = PhoenixDatabase.Schema,
+            name = DatabaseFileNames.TARGET,
+        )
+        setupDriver.execute(null, "DROP INDEX idx_external_activity_dedup", 0)
+        setupDriver.execute(
+            null,
+            """
+            INSERT INTO ExternalActivity(
+                id, externalId, provider, name, startedAt, syncedAt, profileId
+            ) VALUES
+                ('activity-old', 'same', 'provider', 'Old', 100, 200, 'default'),
+                ('activity-new', 'same', 'provider', 'New', 100, 300, 'default')
+            """.trimIndent(),
+            0,
+        )
+        createHistoricalExerciseVideoTable(setupDriver)
+        setupDriver.execute(null, "PRAGMA user_version = 30", 0)
+        setupDriver.close()
+
+        val driver = DriverFactory().createDriver()
+        try {
+            assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM ExternalActivity"))
+            assertEquals("activity-new", queryScalar(driver, "SELECT id FROM ExternalActivity"))
+            assertTrue(queryScalar(
+                driver,
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_external_activity_dedup'",
+            ) != null)
+        } finally {
+            driver.close()
+        }
+    }
+
+    @Test
+    fun migration31FallbackDeduplicatesBeforeRecreatingUniqueIndex() {
         val setupDriver = NativeSqliteDriver(
             schema = PhoenixDatabase.Schema,
             name = DatabaseFileNames.TARGET,
@@ -86,12 +155,15 @@ class Issue725RecurrenceTest {
 
         val driver = rawDriver(DatabaseFileNames.TARGET)
         try {
-            val failure = assertFailsWith<DatabaseFileMigrationException> {
-                ResilientMigratingSchema(PhoenixDatabase.Schema).migrate(driver, 31, 32)
-            }
+            ResilientMigratingSchema(PhoenixDatabase.Schema).migrate(driver, 31, 32)
 
-            assertEquals(DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED, failure.code)
-            assertEquals(31L, queryLong(driver, "PRAGMA user_version"))
+            assertEquals(32L, queryLong(driver, "PRAGMA user_version"))
+            assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM ExternalActivity"))
+            assertEquals("activity-new", queryScalar(driver, "SELECT id FROM ExternalActivity"))
+            assertTrue(queryScalar(
+                driver,
+                "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_external_activity_dedup'",
+            ) != null)
         } finally {
             driver.close()
         }
@@ -101,12 +173,34 @@ class Issue725RecurrenceTest {
     fun backupExclusionFailureIsBestEffort() {
         var continued = false
 
-        runBestEffortBackupExclusion {
+        runBestEffortBackupExclusion("/injected") {
             error("injected backup attribute failure")
         }
         continued = true
 
         assertTrue(continued)
+    }
+
+    private fun createHistoricalExerciseVideoTable(driver: SqlDriver) {
+        driver.execute(
+            null,
+            "DROP TABLE IF EXISTS ExerciseImage",
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            CREATE TABLE IF NOT EXISTS ExerciseVideo (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                exerciseId TEXT NOT NULL,
+                angle TEXT NOT NULL DEFAULT '',
+                videoUrl TEXT NOT NULL DEFAULT '',
+                thumbnailUrl TEXT NOT NULL DEFAULT '',
+                isTutorial INTEGER NOT NULL DEFAULT 0
+            )
+            """.trimIndent(),
+            0,
+        )
     }
 
     private fun rawDriver(name: String): NativeSqliteDriver = NativeSqliteDriver(
@@ -158,12 +252,6 @@ class Issue725RecurrenceTest {
                 }
             }
         }
-    }
-
-    private fun legacyLibraryRootPath(): String {
-        @Suppress("UNCHECKED_CAST")
-        val libraryUrl = (fileManager.URLsForDirectory(NSLibraryDirectory, NSUserDomainMask) as List<NSURL>).first()
-        return "${libraryUrl.path}/${DatabaseFileNames.LEGACY}"
     }
 
     private fun deleteAllDatabaseArtifacts() {

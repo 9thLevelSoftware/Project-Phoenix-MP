@@ -1616,11 +1616,14 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
                     FROM GamificationStats AS keeper
                     WHERE keeper.profile_id = duplicate.profile_id
                       AND (
-                          COALESCE(keeper.updatedAt, keeper.lastUpdated) >
-                              COALESCE(duplicate.updatedAt, duplicate.lastUpdated)
+                          COALESCE(keeper.lastUpdated, 0) > COALESCE(duplicate.lastUpdated, 0)
                           OR (
-                              COALESCE(keeper.updatedAt, keeper.lastUpdated) =
-                                  COALESCE(duplicate.updatedAt, duplicate.lastUpdated)
+                              COALESCE(keeper.lastUpdated, 0) = COALESCE(duplicate.lastUpdated, 0)
+                              AND COALESCE(keeper.updatedAt, 0) > COALESCE(duplicate.updatedAt, 0)
+                          )
+                          OR (
+                              COALESCE(keeper.lastUpdated, 0) = COALESCE(duplicate.lastUpdated, 0)
+                              AND COALESCE(keeper.updatedAt, 0) = COALESCE(duplicate.updatedAt, 0)
                               AND keeper.id > duplicate.id
                           )
                       )

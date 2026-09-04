@@ -427,6 +427,44 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `idx_gamification_stats_profile matches migration 25 keeper ordering`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE GamificationStats (
+                id INTEGER PRIMARY KEY,
+                lastUpdated INTEGER NOT NULL,
+                updatedAt INTEGER,
+                profile_id TEXT NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        driver.execute(
+            null,
+            """
+            INSERT INTO GamificationStats(id, lastUpdated, updatedAt, profile_id)
+            VALUES
+                (1, 100, 1000, 'default'),
+                (2, 200, 10, 'default'),
+                (3, 200, 10, 'other')
+            """.trimIndent(),
+            0,
+        )
+
+        val result = applyIndexCreate(
+            driver,
+            manifestIndexes.first { it.name == "idx_gamification_stats_profile" },
+        )
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM GamificationStats"))
+        assertEquals("2", queryScalar(driver, "SELECT CAST(id AS TEXT) FROM GamificationStats WHERE profile_id = 'default'"))
+        assertTrue(indexExists(driver, "idx_gamification_stats_profile"))
+    }
+
+    @Test
     fun `idx_external_activity_dedup keeps the most recently synced duplicate`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
         driver.execute(
