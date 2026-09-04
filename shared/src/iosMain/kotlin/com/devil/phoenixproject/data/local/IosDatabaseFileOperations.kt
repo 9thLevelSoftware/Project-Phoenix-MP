@@ -313,6 +313,17 @@ internal class IosDatabaseFileOperations(
                 "Could not remove the old legacy database"
             }
         } catch (failure: Throwable) {
+            // Do not leave two possible legacy sources behind. Roll back the
+            // copied destination so the next launch can retry cleanup and copy
+            // from the still-authoritative old location.
+            for (suffix in copiedSidecars.asReversed()) {
+                runCatching {
+                    fileManager.removeItemAtPath("$legacyPath$suffix", error = null)
+                }
+            }
+            if (mainCopied) {
+                runCatching { fileManager.removeItemAtPath(legacyPath, error = null) }
+            }
             throw DatabaseFileMigrationException(
                 DatabaseMigrationFailureCode.LEGACY_CLEANUP_FAILED,
                 "The old legacy database files could not be removed after migration.",

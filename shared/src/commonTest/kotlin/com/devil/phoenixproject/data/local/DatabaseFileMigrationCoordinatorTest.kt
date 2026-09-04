@@ -203,6 +203,31 @@ class DatabaseFileMigrationCoordinatorTest {
     }
 
     @Test
+    fun `recovery cleanup failure preserves validated target for retry`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
+            fingerprints = mapOf(
+                DatabaseArtifact.TARGET to fingerprint,
+                DatabaseArtifact.RECOVERY to fingerprint,
+            ),
+            failOnceAt = "delete:RECOVERY",
+        )
+        val coordinator = DatabaseFileMigrationCoordinator(operations)
+        val preparation = coordinator.prepareTarget()
+
+        assertFailsWith<DatabaseFileMigrationException> {
+            coordinator.targetValidated(preparation)
+        }
+
+        val retry = coordinator.prepareTarget()
+        coordinator.targetValidated(retry)
+
+        assertTrue(operations.exists(DatabaseArtifact.TARGET))
+        assertFalse(operations.exists(DatabaseArtifact.RECOVERY))
+        assertFalse(operations.calls.any { it == "delete:TARGET" })
+    }
+
+    @Test
     fun `stale staging beside target is discarded before clean restart validation`() {
         val operations = FakeDatabaseFileOperations(
             artifacts = setOf(DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY, DatabaseArtifact.STAGING),

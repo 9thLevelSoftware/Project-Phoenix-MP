@@ -159,7 +159,10 @@ internal class DatabaseFileMigrationCoordinator(
                 try {
                     operations.delete(DatabaseArtifact.RECOVERY)
                 } catch (failure: Throwable) {
-                    targetValidationPending = true
+                    // The target was already validated. Keep it authoritative and
+                    // retry only the recovery cleanup on the next launch; restoring
+                    // the older snapshot could discard data written since then.
+                    targetValidationPending = false
                     throw DatabaseFileMigrationException(
                         DatabaseMigrationFailureCode.LEGACY_CLEANUP_FAILED,
                         "The validated database opened, but its prior recovery file could not be removed.",
