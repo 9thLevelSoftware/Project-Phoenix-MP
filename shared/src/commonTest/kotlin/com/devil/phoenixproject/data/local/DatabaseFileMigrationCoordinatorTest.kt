@@ -203,6 +203,31 @@ class DatabaseFileMigrationCoordinatorTest {
     }
 
     @Test
+    fun `recovery cleanup failure preserves validated target for retry`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
+            fingerprints = mapOf(
+                DatabaseArtifact.TARGET to fingerprint,
+                DatabaseArtifact.RECOVERY to fingerprint,
+            ),
+            failOnceAt = "delete:RECOVERY",
+        )
+        val coordinator = DatabaseFileMigrationCoordinator(operations)
+        val preparation = coordinator.prepareTarget()
+
+        assertFailsWith<DatabaseFileMigrationException> {
+            coordinator.targetValidated(preparation)
+        }
+
+        val retry = coordinator.prepareTarget()
+        coordinator.targetValidated(retry)
+
+        assertTrue(operations.exists(DatabaseArtifact.TARGET))
+        assertFalse(operations.exists(DatabaseArtifact.RECOVERY))
+        assertFalse(operations.calls.any { it == "delete:TARGET" })
+    }
+
+    @Test
     fun `stale staging beside target is discarded before clean restart validation`() {
         val operations = FakeDatabaseFileOperations(
             artifacts = setOf(DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY, DatabaseArtifact.STAGING),
@@ -381,21 +406,91 @@ class DatabaseFileMigrationCoordinatorTest {
     }
 
     @Test
-    fun `target validation failure retains recovery for another retry`() {
+    fun `corrupt target is restored from verified recovery before retry`() {
         val operations = FakeDatabaseFileOperations(
             artifacts = setOf(DatabaseArtifact.TARGET, DatabaseArtifact.RECOVERY),
-            failAt = "validate:TARGET",
+            fingerprints = mapOf(DatabaseArtifact.RECOVERY to fingerprint),
+            failures = mapOf(
+                "validate:TARGET" to DatabaseFileMigrationException(
+                    DatabaseMigrationFailureCode.INTEGRITY_CHECK_FAILED,
+                    "Target database is corrupt.",
+                ),
+            ),
         )
         val coordinator = DatabaseFileMigrationCoordinator(operations)
+
         val preparation = coordinator.prepareTarget()
 
-        val failure = assertFailsWith<DatabaseFileMigrationException> {
+        assertEquals(DatabasePreparation(migratedThisLaunch = true, recoveryCleanupDue = false), preparation)
+        assertEquals(
+            listOf(
+                "lock:start",
+                "inspect",
+                "validate:TARGET",
+                "validate:RECOVERY",
+                "delete:TARGET",
+                "copy:RECOVERY:STAGING",
+                "sync:STAGING",
+                "validate:STAGING",
+                "move:STAGING:TARGET",
+                "lock:end",
+            ),
+            operations.calls,
+        )
+        assertTrue(operations.exists(DatabaseArtifact.TARGET))
+        assertTrue(operations.exists(DatabaseArtifact.RECOVERY))
+        assertFalse(operations.exists(DatabaseArtifact.STAGING))
+    }
+
+    @Test
+    fun `target validation failure restores recovery before another retry`() {
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY),
+            fingerprints = mapOf(DatabaseArtifact.LEGACY to fingerprint),
+            failOnceAt = "validate:TARGET",
+        )
+        val coordinator = DatabaseFileMigrationCoordinator(operations)
+
+        val preparation = coordinator.prepareTarget()
+        assertTrue(preparation.migratedThisLaunch)
+
+        assertFailsWith<DatabaseFileMigrationException> {
             coordinator.targetValidated(preparation)
         }
 
-        assertEquals(DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED, failure.code)
+        val retry = coordinator.prepareTarget()
+
+        assertEquals(DatabasePreparation(migratedThisLaunch = true, recoveryCleanupDue = false), retry)
+        assertEquals(
+            listOf(
+                "lock:start",
+                "inspect",
+                "checkpoint:LEGACY",
+                "copy:LEGACY:STAGING",
+                "sync:STAGING",
+                "validate:STAGING",
+                "move:STAGING:RECOVERY",
+                "deleteLegacySidecars",
+                "move:LEGACY:TARGET",
+                "lock:end",
+                "lock:start",
+                "validate:TARGET",
+                "lock:end",
+                "lock:start",
+                "inspect",
+                "validate:RECOVERY",
+                "delete:TARGET",
+                "copy:RECOVERY:STAGING",
+                "sync:STAGING",
+                "validate:STAGING",
+                "move:STAGING:TARGET",
+                "lock:end",
+            ),
+            operations.calls,
+        )
+        assertTrue(operations.exists(DatabaseArtifact.TARGET))
         assertTrue(operations.exists(DatabaseArtifact.RECOVERY))
-        assertFalse(operations.calls.any { it == "delete:RECOVERY" })
+        assertFalse(operations.exists(DatabaseArtifact.STAGING))
     }
 
     @Test
@@ -424,6 +519,7 @@ class DatabaseFileMigrationCoordinatorTest {
         private var legacySidecarsExist: Boolean = false,
         fingerprints: Map<DatabaseArtifact, DatabaseFingerprint> = emptyMap(),
         failAt: String? = null,
+        failOnceAt: String? = null,
         failures: Map<String, Throwable> = emptyMap(),
     ) : DatabaseFileOperations {
         private val fallbackFingerprint = DatabaseFingerprint(
@@ -438,6 +534,8 @@ class DatabaseFileMigrationCoordinatorTest {
         private val failures = failures.toMutableMap().apply {
             if (failAt != null) put(failAt, IllegalStateException("Injected failure at $failAt"))
         }
+        private val failOnceAt = failOnceAt
+        private var failOnceTriggered = false
 
         fun add(artifact: DatabaseArtifact, fingerprint: DatabaseFingerprint) {
             present += artifact
@@ -515,6 +613,10 @@ class DatabaseFileMigrationCoordinatorTest {
         private fun record(call: String) {
             calls += call
             failures[call]?.let { throw it }
+            if (call == failOnceAt && !failOnceTriggered) {
+                failOnceTriggered = true
+                throw IllegalStateException("Injected one-shot failure at $call")
+            }
         }
     }
 }

@@ -515,6 +515,25 @@ internal fun getMigrationStatements(version: Int): List<String> = when (version)
     19 -> listOf(
         "ALTER TABLE PersonalRecord ADD COLUMN phase TEXT NOT NULL DEFAULT 'COMBINED'",
         "DROP INDEX IF EXISTS idx_pr_unique",
+        """
+        DELETE FROM PersonalRecord
+        WHERE id IN (
+            SELECT duplicate.id
+            FROM PersonalRecord AS duplicate
+            WHERE EXISTS (
+                SELECT 1
+                FROM PersonalRecord AS keeper
+                WHERE keeper.exerciseId = duplicate.exerciseId
+                  AND keeper.workoutMode = duplicate.workoutMode
+                  AND keeper.prType = duplicate.prType
+                  AND keeper.phase = duplicate.phase
+                  AND (
+                      keeper.achievedAt > duplicate.achievedAt
+                      OR (keeper.achievedAt = duplicate.achievedAt AND keeper.id > duplicate.id)
+                  )
+            )
+        )
+        """.trimIndent(),
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase)",
     )
 
@@ -703,6 +722,32 @@ WHERE gs.rowid = (
     31 -> listOf(
         "ALTER TABLE ExternalActivity ADD COLUMN deletedAt INTEGER",
         "DROP INDEX IF EXISTS idx_external_activity_dedup",
+        """
+        DELETE FROM ExternalActivity
+        WHERE id IN (
+            SELECT duplicate.id
+            FROM ExternalActivity AS duplicate
+            WHERE EXISTS (
+                SELECT 1
+                FROM ExternalActivity AS keeper
+                WHERE keeper.provider = duplicate.provider
+                  AND keeper.externalId = duplicate.externalId
+                  AND keeper.profileId = duplicate.profileId
+                  AND (
+                      keeper.syncedAt > duplicate.syncedAt
+                      OR (
+                          keeper.syncedAt = duplicate.syncedAt
+                          AND keeper.startedAt > duplicate.startedAt
+                      )
+                      OR (
+                          keeper.syncedAt = duplicate.syncedAt
+                          AND keeper.startedAt = duplicate.startedAt
+                          AND keeper.id > duplicate.id
+                      )
+                  )
+            )
+        )
+        """.trimIndent(),
         "CREATE UNIQUE INDEX IF NOT EXISTS idx_external_activity_dedup ON ExternalActivity(provider, externalId, profileId)",
         """CREATE TABLE IF NOT EXISTS ExternalRoutine (
             id TEXT NOT NULL PRIMARY KEY,

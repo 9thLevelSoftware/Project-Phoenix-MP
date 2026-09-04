@@ -8,18 +8,8 @@ import app.cash.sqldelight.driver.native.NativeSqliteDriver
 import co.touchlab.sqliter.DatabaseConfiguration
 import co.touchlab.sqliter.DatabaseFileContext
 import com.devil.phoenixproject.database.PhoenixDatabase
-import kotlinx.cinterop.ExperimentalForeignApi
-import kotlinx.cinterop.ObjCObjectVar
-import kotlinx.cinterop.alloc
-import kotlinx.cinterop.memScoped
-import kotlinx.cinterop.ptr
-import kotlinx.cinterop.value
-import platform.Foundation.NSError
 import platform.Foundation.NSFileManager
 import platform.Foundation.NSLog
-import platform.Foundation.NSNumber
-import platform.Foundation.NSURL
-import platform.Foundation.NSURLIsExcludedFromBackupKey
 
 actual class DriverFactory {
     private val coordinator = DatabaseFileMigrationCoordinator(IosDatabaseFileOperations())
@@ -43,7 +33,7 @@ actual class DriverFactory {
             },
         )
 
-        return try {
+        val validatedDriver = try {
             // Authoritative reconciliation -- ensures ALL tables, columns, indexes exist
             val report = reconcileFullSchema(driver)
             val summary = report.logSummary()
@@ -75,10 +65,7 @@ actual class DriverFactory {
                 )
             }
 
-            excludeDatabaseArtifactsFromBackup()
             coordinator.targetValidated(preparation)
-
-            NSLog("iOS DB: Initialization complete")
             driver
         } catch (failure: Throwable) {
             runCatching { driver.close() }
@@ -89,9 +76,15 @@ actual class DriverFactory {
                 failure,
             )
         }
+
+        // Backup exclusion is advisory. A Foundation/iCloud attribute failure
+        // must not turn an otherwise validated database into a launch failure.
+        excludeDatabaseArtifactsFromBackup()
+
+        NSLog("iOS DB: Initialization complete")
+        return validatedDriver
     }
 
-    @OptIn(ExperimentalForeignApi::class, kotlinx.cinterop.BetaInteropApi::class)
     private fun excludeDatabaseArtifactsFromBackup() {
         val filesToExclude = listOf(
             DatabaseFileNames.TARGET,
@@ -105,20 +98,7 @@ actual class DriverFactory {
 
         for (path in filesToExclude) {
             if (!fileManager.fileExistsAtPath(path)) continue
-            val url = NSURL.fileURLWithPath(path)
-            memScoped {
-                val errorPtr = alloc<ObjCObjectVar<NSError?>>()
-                errorPtr.value = null
-                val excluded = url.setResourceValue(
-                    NSNumber(bool = true),
-                    forKey = NSURLIsExcludedFromBackupKey,
-                    error = errorPtr.ptr,
-                )
-                check(excluded) {
-                    "Could not exclude a Phoenix database artifact from backup: " +
-                        (errorPtr.value?.localizedDescription ?: "unknown error")
-                }
-            }
+            runBestEffortBackupExclusion(path)
         }
     }
 
@@ -166,7 +146,7 @@ actual class DriverFactory {
  * time (skipping duplicates), and continues to the next step. The post-migration
  * reconcileFullSchema() catches any remaining gaps.
  */
-private class ResilientMigratingSchema(
+internal class ResilientMigratingSchema(
     private val delegate: SqlSchema<QueryResult.Value<Unit>>,
 ) : SqlSchema<QueryResult.Value<Unit>> {
 
@@ -200,6 +180,11 @@ private class ResilientMigratingSchema(
                 val failures = results.count { !it.success && !it.recoverable }
                 if (failures > 0) {
                     NSLog("iOS DB: Migration $stepTo had $failures non-recoverable failures")
+                    throw DatabaseFileMigrationException(
+                        DatabaseMigrationFailureCode.TARGET_VALIDATION_FAILED,
+                        "The Phoenix database migration to version $stepTo could not be completed safely.",
+                        e,
+                    )
                 }
                 driver.execute(null, "PRAGMA user_version = $stepTo", 0)
                 NSLog("iOS DB: Migration $stepTo completed via resilient fallback")

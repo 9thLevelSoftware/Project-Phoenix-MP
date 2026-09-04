@@ -25,18 +25,23 @@ import platform.posix.flock
 import platform.posix.open
 
 @OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
-internal class IosDatabaseFileOperations : DatabaseFileOperations {
+internal class IosDatabaseFileOperations(
+    private val excludeFromBackup: (String) -> Unit = ::excludePathFromBackup,
+) : DatabaseFileOperations {
     private val fileManager = NSFileManager.defaultManager
 
-    override fun inspect(): DatabaseFileLayout = DatabaseFileLayout(
-        legacyExists = exists(DatabaseArtifact.LEGACY),
-        targetExists = exists(DatabaseArtifact.TARGET),
-        recoveryExists = exists(DatabaseArtifact.RECOVERY),
-        stagingExists = exists(DatabaseArtifact.STAGING),
-        legacySidecarsExist = LEGACY_SIDECAR_SUFFIXES.any { suffix ->
-            fileManager.fileExistsAtPath("${path(DatabaseArtifact.LEGACY)}$suffix")
-        },
-    )
+    override fun inspect(): DatabaseFileLayout {
+        migrateLegacyLibraryRootIfNeeded()
+        return DatabaseFileLayout(
+            legacyExists = exists(DatabaseArtifact.LEGACY),
+            targetExists = exists(DatabaseArtifact.TARGET),
+            recoveryExists = exists(DatabaseArtifact.RECOVERY),
+            stagingExists = exists(DatabaseArtifact.STAGING),
+            legacySidecarsExist = LEGACY_SIDECAR_SUFFIXES.any { suffix ->
+                fileManager.fileExistsAtPath("${path(DatabaseArtifact.LEGACY)}$suffix")
+            },
+        )
+    }
 
     override fun checkpointAndValidate(artifact: DatabaseArtifact): DatabaseFingerprint {
         val driver = rawDriver(artifact)
@@ -86,10 +91,10 @@ internal class IosDatabaseFileOperations : DatabaseFileOperations {
 
     override fun copy(from: DatabaseArtifact, to: DatabaseArtifact) {
         check(!exists(to)) { "Refusing to replace existing $to database artifact" }
-        check(fileManager.copyItemAtPath(path(from), path(to), error = null)) {
+        check(fileManager.copyItemAtPath(path(from), toPath = path(to), error = null)) {
             "Could not copy $from to $to"
         }
-        excludePathFromBackup(path(to))
+        runBestEffortBackupExclusion(path(to)) { excludeFromBackup(path(to)) }
     }
 
     override fun sync(artifact: DatabaseArtifact) {
@@ -108,7 +113,7 @@ internal class IosDatabaseFileOperations : DatabaseFileOperations {
         deleteSidecars(from)
         // Apply the attribute before rename so a successfully promoted file is
         // never left eligible for backup if a later startup step fails.
-        excludePathFromBackup(path(from))
+        runBestEffortBackupExclusion(path(from)) { excludeFromBackup(path(from)) }
         check(fileManager.moveItemAtPath(path(from), toPath = path(to), error = null)) {
             "Could not atomically move $from to $to"
         }
@@ -207,23 +212,6 @@ internal class IosDatabaseFileOperations : DatabaseFileOperations {
 
     private fun exists(artifact: DatabaseArtifact): Boolean = fileManager.fileExistsAtPath(path(artifact))
 
-    private fun excludePathFromBackup(filePath: String) {
-        val url = NSURL.fileURLWithPath(filePath)
-        memScoped {
-            val errorPtr = alloc<ObjCObjectVar<NSError?>>()
-            errorPtr.value = null
-            val excluded = url.setResourceValue(
-                NSNumber(bool = true),
-                forKey = NSURLIsExcludedFromBackupKey,
-                error = errorPtr.ptr,
-            )
-            check(excluded) {
-                "Could not exclude a database migration artifact from backup: " +
-                    (errorPtr.value?.localizedDescription ?: "unknown error")
-            }
-        }
-    }
-
     private fun deleteSidecars(artifact: DatabaseArtifact) {
         for (suffix in LEGACY_SIDECAR_SUFFIXES) {
             val sidecarPath = "${path(artifact)}$suffix"
@@ -233,6 +221,119 @@ internal class IosDatabaseFileOperations : DatabaseFileOperations {
                 }
             }
         }
+    }
+
+    private fun migrateLegacyLibraryRootIfNeeded() {
+        val legacyPath = path(DatabaseArtifact.LEGACY)
+        val compatibilityPath = legacyLibraryRootPath()
+        val compatibilityExists = fileManager.fileExistsAtPath(compatibilityPath)
+        val compatibilitySidecars = existingSidecars(compatibilityPath)
+        val legacySidecars = existingSidecars(legacyPath)
+
+        if (!compatibilityExists) {
+            if (compatibilitySidecars.isNotEmpty() || legacySidecars.isNotEmpty()) {
+                throw DatabaseFileMigrationException(
+                    DatabaseMigrationFailureCode.DUAL_DATABASES,
+                    "Orphaned legacy database sidecars exist without a legacy database; automatic recovery is disabled.",
+                )
+            }
+            return
+        }
+        if (fileManager.fileExistsAtPath(legacyPath)) {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.DUAL_DATABASES,
+                "Legacy database files exist in both the old and SQLiter locations; automatic recovery is disabled.",
+            )
+        }
+        if (legacySidecars.isNotEmpty()) {
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.DUAL_DATABASES,
+                "Legacy database sidecars exist in the SQLiter location without its main file; automatic recovery is disabled.",
+            )
+        }
+
+        val parentPath = legacyPath.substringBeforeLast('/')
+        check(fileManager.createDirectoryAtPath(
+            parentPath,
+            withIntermediateDirectories = true,
+            attributes = null,
+            error = null,
+        )) {
+            "Could not create the SQLiter database directory for legacy migration"
+        }
+
+        var mainCopied = false
+        val copiedSidecars = mutableListOf<String>()
+        try {
+            // Copy the main file first. Sidecars must never be copied into a
+            // location unless their corresponding database was copied too.
+            check(fileManager.copyItemAtPath(
+                compatibilityPath,
+                toPath = legacyPath,
+                error = null,
+            )) {
+                "Could not copy the legacy database into the SQLiter directory"
+            }
+            mainCopied = true
+            for (suffix in compatibilitySidecars) {
+                check(fileManager.copyItemAtPath(
+                    "$compatibilityPath$suffix",
+                    toPath = "$legacyPath$suffix",
+                    error = null,
+                )) {
+                    "Could not copy the legacy database sidecar into the SQLiter directory"
+                }
+                copiedSidecars += suffix
+            }
+        } catch (failure: Throwable) {
+            for (suffix in copiedSidecars.asReversed()) {
+                runCatching {
+                    fileManager.removeItemAtPath("$legacyPath$suffix", error = null)
+                }
+            }
+            if (mainCopied) {
+                runCatching { fileManager.removeItemAtPath(legacyPath, error = null) }
+            }
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.RECOVERY_COPY_FAILED,
+                "The legacy database could not be copied into the SQLiter directory.",
+                failure,
+            )
+        }
+
+        try {
+            // The copy is complete, so remove every old-location file. Leaving
+            // a sidecar behind would make a later launch see two legacy sources.
+            for (suffix in compatibilitySidecars) {
+                check(fileManager.removeItemAtPath("$compatibilityPath$suffix", error = null)) {
+                    "Could not remove the old legacy database sidecar"
+                }
+            }
+            check(fileManager.removeItemAtPath(compatibilityPath, error = null)) {
+                "Could not remove the old legacy database"
+            }
+        } catch (failure: Throwable) {
+            // Do not leave two possible legacy sources behind. Roll back the
+            // copied destination so the next launch can retry cleanup and copy
+            // from the still-authoritative old location.
+            for (suffix in copiedSidecars.asReversed()) {
+                runCatching {
+                    fileManager.removeItemAtPath("$legacyPath$suffix", error = null)
+                }
+            }
+            if (mainCopied) {
+                runCatching { fileManager.removeItemAtPath(legacyPath, error = null) }
+            }
+            throw DatabaseFileMigrationException(
+                DatabaseMigrationFailureCode.LEGACY_CLEANUP_FAILED,
+                "The old legacy database files could not be removed after migration.",
+                failure,
+            )
+        }
+    }
+
+    private fun existingSidecars(databasePath: String): List<String> = LEGACY_SIDECAR_SUFFIXES.filter { suffix ->
+        fileManager.fileExistsAtPath("$databasePath$suffix")
     }
 
     private fun path(artifact: DatabaseArtifact): String = path(name(artifact))
@@ -258,4 +359,45 @@ internal class IosDatabaseFileOperations : DatabaseFileOperations {
     private companion object {
         val LEGACY_SIDECAR_SUFFIXES = listOf("-wal", "-shm", "-journal")
     }
+}
+
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+internal fun runBestEffortBackupExclusion(path: String) {
+    runBestEffortBackupExclusion(path) { excludePathFromBackup(path) }
+}
+
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+internal fun runBestEffortBackupExclusion(path: String, exclude: () -> Unit) {
+    try {
+        exclude()
+    } catch (failure: Throwable) {
+        NSLog("iOS DB: Warning -- could not exclude database artifact from backup at $path: ${failure.message?.take(120)}")
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+private fun excludePathFromBackup(filePath: String) {
+    val url = NSURL.fileURLWithPath(filePath)
+    memScoped {
+        val errorPtr = alloc<ObjCObjectVar<NSError?>>()
+        errorPtr.value = null
+        val excluded = url.setResourceValue(
+            NSNumber(bool = true),
+            forKey = NSURLIsExcludedFromBackupKey,
+            error = errorPtr.ptr,
+        )
+        check(excluded) {
+            "Could not exclude a database migration artifact from backup: " +
+                (errorPtr.value?.localizedDescription ?: "unknown error")
+        }
+    }
+}
+
+@OptIn(ExperimentalForeignApi::class, BetaInteropApi::class)
+internal fun legacyLibraryRootPath(): String {
+    val fileManager = NSFileManager.defaultManager
+    @Suppress("UNCHECKED_CAST")
+    val libraryUrl = (fileManager.URLsForDirectory(NSLibraryDirectory, NSUserDomainMask) as List<NSURL>).firstOrNull()
+        ?: error("Could not resolve the iOS Library directory")
+    return "${libraryUrl.path}/${DatabaseFileNames.LEGACY}"
 }
