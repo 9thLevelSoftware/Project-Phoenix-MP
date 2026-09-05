@@ -241,8 +241,16 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
     // Prepare the workout once when entering Just Lift. Do not key this on
     // workoutState: Initializing and Countdown are states owned by the current
     // auto-start execution and must not trigger a reset.
+    //
+    // Use rememberSaveable to survive process death: if the screen is recreated
+    // after the process dies, this flag is restored as true and the reset is
+    // skipped, preserving the in-flight auto-start execution.
+    var hasPreparedSession by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        viewModel.prepareForJustLift()
+        if (!hasPreparedSession) {
+            hasPreparedSession = true
+            viewModel.prepareForJustLift()
+        }
     }
 
     // Update parameters whenever user changes them

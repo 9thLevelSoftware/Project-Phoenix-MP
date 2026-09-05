@@ -9,15 +9,31 @@ import kotlin.test.assertTrue
 class JustLiftScreenLifecycleWiringTest {
 
     @Test
-    fun prepareForJustLift_isAnEntryAction_notAWorkoutStateReaction() {
+    fun prepareForJustLift_usesRememberSaveableGuard_againstScreenRecreation() {
         val source = readJustLiftScreenSource()
 
+        // The effect must use rememberSaveable to guard against re-firing after
+        // screen recreation (process death, config change). Without this guard,
+        // LaunchedEffect(Unit) re-fires and resetForNewWorkout() invalidates
+        // the in-flight auto-start execution.
         assertTrue(
-            source.contains(
-                "LaunchedEffect(Unit) {\n        viewModel.prepareForJustLift()\n    }",
-            ),
-            "JustLiftScreen must prepare the session once on screen entry.",
+            source.contains("hasPreparedSession by rememberSaveable"),
+            "JustLiftScreen must use rememberSaveable to guard prepareForJustLift against screen recreation.",
         )
+        assertTrue(
+            source.contains("if (!hasPreparedSession)"),
+            "prepareForJustLift must be guarded by hasPreparedSession to prevent reset after process death.",
+        )
+        assertTrue(
+            source.contains("hasPreparedSession = true"),
+            "hasPreparedSession must be set to true before calling prepareForJustLift.",
+        )
+    }
+
+    @Test
+    fun prepareForJustLift_isNotKeyedOnWorkoutState() {
+        val source = readJustLiftScreenSource()
+
         assertTrue(
             !source.contains("LaunchedEffect(workoutState) {\n        if (workoutState !is WorkoutState.Idle") &&
                 !source.contains("viewModel.prepareForJustLift()\n        }"),
@@ -30,10 +46,8 @@ class JustLiftScreenLifecycleWiringTest {
     fun entryAction_documentsTransientStates_areOwnedByCurrentExecution() {
         val source = readJustLiftScreenSource()
 
-        val entryComment = source.substringBefore("LaunchedEffect(Unit) {\n        viewModel.prepareForJustLift()")
-            .substringAfterLast("// Prepare the workout once when entering Just Lift.")
-        assertTrue(entryComment.contains("Initializing"), "Entry action must document Initializing ownership.")
-        assertTrue(entryComment.contains("Countdown"), "Entry action must document Countdown ownership.")
+        assertTrue(source.contains("Initializing"), "Entry action must document Initializing ownership.")
+        assertTrue(source.contains("Countdown"), "Entry action must document Countdown ownership.")
     }
 
     private fun readJustLiftScreenSource(): String {
