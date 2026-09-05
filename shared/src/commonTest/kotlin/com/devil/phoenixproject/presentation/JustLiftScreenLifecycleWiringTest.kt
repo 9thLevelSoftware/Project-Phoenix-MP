@@ -34,12 +34,17 @@ class JustLiftScreenLifecycleWiringTest {
     fun prepareForJustLift_isNotKeyedOnWorkoutState() {
         val source = readJustLiftScreenSource()
 
-        // Must not have the old workoutState-keyed effect that resets on every state change
-        assertTrue(
-            !source.contains("LaunchedEffect(workoutState)"),
-            "prepareForJustLift must not be keyed on workoutState; " +
-                "Initializing/Countdown belong to the active Just Lift execution.",
-        )
+        // prepareForJustLift must not be called inside any workoutState-keyed effect.
+        // (Other LaunchedEffect(workoutState) usages for navigation are fine.)
+        val workoutStateEffectSections = source.split("LaunchedEffect(workoutState)")
+        for (section in workoutStateEffectSections.drop(1)) {
+            val blockContent = section.takeWhile { it != '}' }
+            assertTrue(
+                !blockContent.contains("prepareForJustLift"),
+                "prepareForJustLift must not be called by workout-state changes; " +
+                    "Initializing/Countdown belong to the active Just Lift execution.",
+            )
+        }
     }
 
     @Test
