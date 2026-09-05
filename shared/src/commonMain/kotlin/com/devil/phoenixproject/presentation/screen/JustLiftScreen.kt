@@ -238,11 +238,11 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
         }
     }
 
-    // Reset workout state if entering Just Lift with any non-Idle state
-    LaunchedEffect(workoutState) {
-        if (workoutState !is WorkoutState.Idle && workoutState !is WorkoutState.Active) {
-            viewModel.prepareForJustLift()
-        }
+    // Prepare the workout once when entering Just Lift. Do not key this on
+    // workoutState: Initializing and Countdown are states owned by the current
+    // auto-start execution and must not trigger a reset.
+    LaunchedEffect(Unit) {
+        viewModel.prepareForJustLift()
     }
 
     // Update parameters whenever user changes them
