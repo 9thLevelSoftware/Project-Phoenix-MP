@@ -34,10 +34,10 @@ class JustLiftScreenLifecycleWiringTest {
     fun prepareForJustLift_isNotKeyedOnWorkoutState() {
         val source = readJustLiftScreenSource()
 
+        // Must not have the old workoutState-keyed effect that resets on every state change
         assertTrue(
-            !source.contains("LaunchedEffect(workoutState) {\n        if (workoutState !is WorkoutState.Idle") &&
-                !source.contains("viewModel.prepareForJustLift()\n        }"),
-            "prepareForJustLift must not be called by workout-state changes; " +
+            !source.contains("LaunchedEffect(workoutState)"),
+            "prepareForJustLift must not be keyed on workoutState; " +
                 "Initializing/Countdown belong to the active Just Lift execution.",
         )
     }
