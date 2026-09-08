@@ -3537,6 +3537,8 @@ class DWSMWorkoutLifecycleTest {
             assertTrue(publicationObserved)
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
             assertEquals(28, harness.coordinator.justLiftRestCountdown.value)
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount, "Completed Just Lift must not issue a redundant physical teardown")
+            assertEquals(1, harness.fakeBleRepo.restartPollingCallCount, "Completed Just Lift must re-arm polling after owned teardown")
         } finally {
             harness.activeSessionEngine.afterJustLiftResetPresentationForTest = null
             harness.cleanup()

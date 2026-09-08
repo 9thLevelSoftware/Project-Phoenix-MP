@@ -85,6 +85,7 @@ class FakeBleRepository : BleRepository {
     var stopWorkoutCallCount = 0
     var stopPacketCallCount = 0
     var stopPollingCallCount = 0
+    var restartPollingCallCount = 0
     var disconnectCallCount = 0
     var reconnectCallCount = 0
 
@@ -307,7 +308,7 @@ class FakeBleRepository : BleRepository {
     }
 
     override fun restartMonitorPolling() {
-        // No-op in fake
+        restartPollingCallCount++
     }
 
     override fun startActiveWorkoutPolling() {
