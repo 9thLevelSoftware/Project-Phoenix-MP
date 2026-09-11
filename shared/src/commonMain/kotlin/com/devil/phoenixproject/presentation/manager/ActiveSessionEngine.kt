@@ -6629,8 +6629,12 @@ class ActiveSessionEngine(
             Logger.d("prepareForJustLift: BEFORE - weight=$currentWeight kg")
 
             val currentLease = executionGuard.currentLease
+            // The workout job performs startup and then completes; rep/handle
+            // processing continues through the engine's long-lived collectors.
+            // Use the authoritative state together with the lease instead of
+            // treating the completed startup job as proof that execution ended.
             val liveJustLiftExecution = currentLease?.isJustLift == true &&
-                coordinator.workoutJob?.isActive == true
+                currentState is WorkoutState.Active
             if (currentState !is WorkoutState.Idle && !liveJustLiftExecution) {
                 Logger.d("Preparing for Just Lift: Resetting abandoned/non-Just-Lift execution")
                 if (currentLease != null) {

@@ -14,7 +14,6 @@ import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
-import kotlin.test.Ignore
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -192,7 +191,6 @@ class JustLiftCompletionBehaviorTest {
     }
 
     @Test
-    @Ignore // Known failing regression: prepareForJustLift clears an active handle-started lease (issue #756).
     fun `screen preparation during live Just Lift preserves execution reps and command ownership`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
