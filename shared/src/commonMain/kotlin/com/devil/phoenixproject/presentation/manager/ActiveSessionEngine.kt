@@ -4572,7 +4572,11 @@ class ActiveSessionEngine(
             } catch (error: Exception) {
                 failureReason = TeardownFailureReason.RESET_FAILED
             } finally {
-                bleRepository.stopPolling()
+                // A stale teardown must not stop polling that a newer execution
+                // has already re-armed. Teardown cleanup is lease-owned too.
+                if (executionGuard.isCurrent(lease)) {
+                    bleRepository.stopPolling()
+                }
                 executionGuard.clearTeardownJobIfOwned(lease)
                 logTeardownElapsed(lease, reason, elapsedRealtimeProvider() - startedAt)
             }
@@ -6624,9 +6628,19 @@ class ActiveSessionEngine(
             val currentWeight = coordinator._workoutParameters.value.weightPerCableKg
             Logger.d("prepareForJustLift: BEFORE - weight=$currentWeight kg")
 
-            if (currentState !is WorkoutState.Idle) {
-                Logger.d("Preparing for Just Lift: Resetting from ${currentState::class.simpleName} to Idle")
-                resetForNewWorkout()
+            val currentLease = executionGuard.currentLease
+            val liveJustLiftExecution = currentLease?.isJustLift == true &&
+                coordinator.workoutJob?.isActive == true
+            if (currentState !is WorkoutState.Idle && !liveJustLiftExecution) {
+                Logger.d("Preparing for Just Lift: Resetting abandoned/non-Just-Lift execution")
+                if (currentLease != null) {
+                    resetForNewWorkoutInternal(currentLease)
+                } else {
+                    resetForNewWorkout()
+                }
+            } else if (liveJustLiftExecution) {
+                Logger.d("Preparing for Just Lift: preserving live Just Lift execution")
+                return@launch
             } else {
                 Logger.d("Just Lift already in Idle state, ensuring auto-start is enabled")
             }
@@ -7007,6 +7021,7 @@ class ActiveSessionEngine(
     private fun resetForNewWorkoutInternal(
         expectedLease: ExecutionLease?,
         afterExpectedLeaseReset: (() -> Unit)? = null,
+        skipMachineTeardown: Boolean = false,
     ): Boolean {
         val expectedResetToken = expectedLease?.let { lease ->
             executionGuard.claimExpectedResetAndCaptureResetCleanupToken(lease)
@@ -7039,7 +7054,7 @@ class ActiveSessionEngine(
             coordinator.workoutJob = null
             lease?.let(bodyweightCompletionGate::invalidate)
             lease?.let(::clearDangerZoneCountdownOverride)
-            if (lease?.requiresMachine == true) {
+            if (lease?.requiresMachine == true && !skipMachineTeardown) {
                 val resetOwner = ResetMachineTeardownOwner(
                     id = resetMachineTeardownOwnerSequence.incrementAndGet(),
                     lease = lease,
@@ -11317,9 +11332,15 @@ class ActiveSessionEngine(
             if (isJustLift) {
                 Logger.d("Just Lift: IMMEDIATE reset for next set (while showing summary)")
 
+                // The completion teardown is the final physical reset for this
+                // flow. Re-arm only from its still-owned Ready continuation;
+                // stale completion work must not affect a successor.
+                if (!hasCurrentAuthority(lease, "just_lift_rearm") ||
+                    executionGuard.machineTeardownState.value !is MachineTeardownState.Ready
+                ) return@launchCompletionJob
+
                 repCounter.reset()
                 resetAutoStopState()
-
                 coordinator._workoutParameters.update { p ->
                     p.copy(selectedExerciseId = null)
                 }
@@ -11334,13 +11355,13 @@ class ActiveSessionEngine(
 
                 if (skipSummary) {
                     Logger.d("Just Lift: Summary OFF - skipping summary")
-                    val resetSucceeded = resetForNewWorkoutInternal(lease) {
+                    val resetSucceeded = resetForNewWorkoutInternal(lease, afterExpectedLeaseReset = {
                         coordinator._workoutState.value = WorkoutState.Idle
                         if (justLiftRestSeconds > 0) {
                             startJustLiftEggTimer(justLiftRestSeconds)
                         }
                         afterJustLiftResetPresentationForTest?.invoke()
-                    }
+                    }, skipMachineTeardown = true)
                     if (!resetSucceeded) return@launchCompletionJob
                 } else if (summaryDelayMs > 0) {
                     delay(summaryDelayMs)
@@ -11348,14 +11369,14 @@ class ActiveSessionEngine(
 
                     if (coordinator._workoutState.value is WorkoutState.SetSummary) {
                         Logger.d("Just Lift: Summary complete, transitioning to Idle")
-                        val resetSucceeded = resetForNewWorkoutInternal(lease) {
+                        val resetSucceeded = resetForNewWorkoutInternal(lease, afterExpectedLeaseReset = {
                             coordinator._workoutState.value = WorkoutState.Idle
                             if (justLiftRestSeconds > 0) {
                                 Logger.d("Just Lift: Starting egg timer ($justLiftRestSeconds s)")
                                 startJustLiftEggTimer(justLiftRestSeconds)
                             }
                             afterJustLiftResetPresentationForTest?.invoke()
-                        }
+                        }, skipMachineTeardown = true)
                         if (!resetSucceeded) return@launchCompletionJob
                     } else {
                         Logger.d("Just Lift: Summary interrupted by user action (state is ${coordinator._workoutState.value})")

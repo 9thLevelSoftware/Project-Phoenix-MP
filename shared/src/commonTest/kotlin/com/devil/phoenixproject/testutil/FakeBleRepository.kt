@@ -85,6 +85,16 @@ class FakeBleRepository : BleRepository {
     var stopWorkoutCallCount = 0
     var stopPacketCallCount = 0
     var stopPollingCallCount = 0
+    var restartPollingCallCount = 0
+    var monitorPollingActive = false
+        private set
+
+    // Opt-in peripheral stimulus: unlike setHandleState, cannot deliver without polling.
+    fun emitPolledHandleState(state: HandleState): Boolean {
+        if (!monitorPollingActive) return false
+        setHandleState(state)
+        return true
+    }
     var disconnectCallCount = 0
     var reconnectCallCount = 0
 
@@ -98,6 +108,7 @@ class FakeBleRepository : BleRepository {
     }
 
     fun simulateConnect(deviceName: String, deviceAddress: String = "AA:BB:CC:DD:EE:FF") {
+        monitorPollingActive = true
         setConnectionState(
             ConnectionState.Connected(
                 deviceName = deviceName,
@@ -184,6 +195,8 @@ class FakeBleRepository : BleRepository {
         stopWorkoutCallCount = 0
         stopPacketCallCount = 0
         stopPollingCallCount = 0
+        restartPollingCallCount = 0
+        monitorPollingActive = false
         disconnectCallCount = 0
         reconnectCallCount = 0
     }
@@ -307,19 +320,22 @@ class FakeBleRepository : BleRepository {
     }
 
     override fun restartMonitorPolling() {
-        // No-op in fake
+        restartPollingCallCount++
+        monitorPollingActive = true
     }
 
     override fun startActiveWorkoutPolling() {
+        monitorPollingActive = true
         _handleState.value = HandleState.Grabbed
     }
 
     override fun stopPolling() {
         stopPollingCallCount++
+        monitorPollingActive = false
     }
 
     override fun stopMonitorPollingOnly() {
-        // No-op in fake
+        monitorPollingActive = false
     }
 
     override fun restartDiagnosticPolling() {
