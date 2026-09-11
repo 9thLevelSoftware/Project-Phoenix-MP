@@ -706,8 +706,9 @@ private fun ExerciseOverviewCard(
                                     }
                                 }
                             } else {
-                                // Standard modes: Weight + Reps
-                                // Delta from routine baseline
+                                // Standard modes: Reps first, then Weight (Issue #767).
+                                // Matches RestTimerCard NEXT SET CONFIGURATION so users
+                                // don't swap reps/weight when hopping between screens.
                                 val baselineWeightKg = exercise.setWeightsPerCableKg.firstOrNull()
                                     ?: exercise.weightPerCableKg
                                 val deltaKg = adjustedWeight - baselineWeightKg
@@ -719,20 +720,6 @@ private fun ExerciseOverviewCard(
                                     null
                                 }
 
-                                SliderWithButtons(
-                                    value = adjustedWeight,
-                                    onValueChange = { newWeight ->
-                                        onWeightChange(newWeight.coerceIn(0f, maxWeightKg))
-                                    },
-                                    valueRange = 0f..maxWeightKg,
-                                    step = weightStepKg,
-                                    label = "Weight per cable",
-                                    formatValue = { formatWeight(it, weightUnit) },
-                                    deltaText = deltaText,
-                                    isDeltaPositive = deltaKg >= 0f,
-                                )
-
-                                // Reps adjuster (or AMRAP indicator)
                                 if (isAMRAP) {
                                     Row(
                                         modifier = Modifier.fillMaxWidth(),
@@ -759,6 +746,19 @@ private fun ExerciseOverviewCard(
                                         formatValue = { it.toInt().toString() },
                                     )
                                 }
+
+                                SliderWithButtons(
+                                    value = adjustedWeight,
+                                    onValueChange = { newWeight ->
+                                        onWeightChange(newWeight.coerceIn(0f, maxWeightKg))
+                                    },
+                                    valueRange = 0f..maxWeightKg,
+                                    step = weightStepKg,
+                                    label = "Weight per cable",
+                                    formatValue = { formatWeight(it, weightUnit) },
+                                    deltaText = deltaText,
+                                    isDeltaPositive = deltaKg >= 0f,
+                                )
                             }
                         }
                     }
