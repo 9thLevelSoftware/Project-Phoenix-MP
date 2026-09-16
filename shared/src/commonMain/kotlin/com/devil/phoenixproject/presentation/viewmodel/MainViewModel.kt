@@ -73,6 +73,8 @@ import com.devil.phoenixproject.presentation.manager.HistoryItem
 import com.devil.phoenixproject.presentation.manager.HistoryManager
 import com.devil.phoenixproject.presentation.manager.JustLiftDefaults
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
+import com.devil.phoenixproject.presentation.manager.MachineSafetyCoordinator
+import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.manager.RestActionIdentity
 import com.devil.phoenixproject.presentation.manager.RestTransitionCommand
 import com.devil.phoenixproject.presentation.manager.ResumableProgressInfo
@@ -97,6 +99,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
@@ -537,6 +540,7 @@ class MainViewModel(
     private val countVelocityOneRepMaxImprovementsUseCase: CountVelocityOneRepMaxImprovementsUseCase,
     // Issue #517: one-time startup backfill of velocity-1RM estimates for historical data.
     private val backfillVelocityOneRepMaxUseCase: BackfillVelocityOneRepMaxUseCase,
+    private val machineSafetyCoordinator: MachineSafetyCoordinator? = null,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -719,6 +723,8 @@ class MainViewModel(
     val isAutoConnecting: StateFlow<Boolean> get() = bleConnectionManager.isAutoConnecting
     val connectionError: StateFlow<String?> get() = bleConnectionManager.connectionError
     val connectionLostDuringWorkout: StateFlow<Boolean> get() = bleConnectionManager.connectionLostDuringWorkout
+    val machineSafetyUiState: StateFlow<MachineSafetyUiState> =
+        machineSafetyCoordinator?.uiState ?: MutableStateFlow(MachineSafetyUiState.Hidden)
 
     fun startScanning() = bleConnectionManager.startScanning()
     fun stopScanning() = bleConnectionManager.stopScanning()
@@ -727,8 +733,18 @@ class MainViewModel(
     fun disconnect() = bleConnectionManager.disconnect()
     fun clearConnectionError() = bleConnectionManager.clearConnectionError()
     fun dismissConnectionLostAlert() = bleConnectionManager.dismissConnectionLostAlert()
+    fun dismissMachineSafetyWarning() = machineSafetyCoordinator?.hideTemporarily()
+    fun requestMachineSafetyRecovery() {
+        if (machineSafetyCoordinator == null) reconnectInterruptedWorkout()
+        else machineSafetyCoordinator.requestReleaseRecovery()
+    }
+    fun acknowledgeMachineSafetyUnloaded(generation: Long) = machineSafetyCoordinator?.acknowledgeUnloaded(generation)
     fun ensureConnection(onConnected: () -> Unit, onFailed: () -> Unit = {}) = bleConnectionManager.ensureConnection(onConnected, onFailed)
     fun reconnectInterruptedWorkout() {
+        if (machineSafetyCoordinator?.uiState?.value is MachineSafetyUiState.Visible) {
+            machineSafetyCoordinator.requestReleaseRecovery()
+            return
+        }
         bleConnectionManager.dismissConnectionLostAlert()
         bleConnectionManager.ensureConnection(
             onConnected = { workoutSessionManager.reconnectInterruptedWorkout() },
@@ -1240,6 +1256,16 @@ class MainViewModel(
     // ===== Velocity-1RM Backfill (Issue #517) =====
 
     init {
+        viewModelScope.launch { machineSafetyCoordinator?.restoreOnStartup() }
+        viewModelScope.launch {
+            bleRepository.reconnectionRequested.collect { request ->
+                machineSafetyCoordinator?.recordConnectionLost(
+                    trainerAddress = request.deviceAddress,
+                    trainerName = request.deviceName,
+                    kind = com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind.UNKNOWN,
+                )
+            }
+        }
         // Run once at startup: backfill velocity-1RM estimates for historical sets.
         // Gated by a run-once preference flag so it never re-runs after the first successful pass.
         //

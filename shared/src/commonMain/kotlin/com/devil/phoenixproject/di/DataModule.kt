@@ -20,11 +20,14 @@ import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.SettingsLegacyProfilePreferencesReader
 import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
 import com.devil.phoenixproject.data.repository.*
+import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import org.koin.dsl.module
 import org.koin.dsl.onClose
+import com.devil.phoenixproject.presentation.manager.MachineSafetyCoordinator
+import com.devil.phoenixproject.presentation.manager.MachineSafetyTransport
 
 val dataModule = module {
     // Database
@@ -65,6 +68,16 @@ val dataModule = module {
     single<TrainingCycleRepository> { SqlDelightTrainingCycleRepository(get()) }
     single<CompletedSetRepository> { SqlDelightCompletedSetRepository(get()) }
     single<ActiveWorkoutRuntimeRepository> { SqlDelightActiveWorkoutRuntimeRepository(get()) }
+    single<MachineSafetyHazardRepository> { SqlDelightMachineSafetyHazardRepository(get()) }
+    single<MachineSafetyTransport> { BleRepositoryMachineSafetyTransport(get()) }
+    single {
+        MachineSafetyCoordinator(
+            repository = get(),
+            transport = get(),
+            scope = CoroutineScope(SupervisorJob() + Dispatchers.Default),
+            nowEpochMs = ::currentTimeMillis,
+        )
+    }
     single<ProgressionRepository> { SqlDelightProgressionRepository(get()) }
     single<EquipmentRackRepository> {
         ProfileEquipmentRackRepository(

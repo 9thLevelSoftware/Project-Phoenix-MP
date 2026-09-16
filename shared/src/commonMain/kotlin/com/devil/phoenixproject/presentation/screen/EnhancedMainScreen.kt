@@ -90,6 +90,7 @@ import com.devil.phoenixproject.presentation.components.ProfileAddDialog
 import com.devil.phoenixproject.presentation.components.ProfileRecoveryDialog
 import com.devil.phoenixproject.presentation.components.ProfileSwitcherSheet
 import com.devil.phoenixproject.presentation.navigation.BottomNavItem
+import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.navigation.NavGraph
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.theme.phoenixBottomNavigationContainerColor
@@ -147,6 +148,7 @@ fun EnhancedMainScreen(
     val workoutState by viewModel.workoutState.collectAsState()
     val connectionState by viewModel.connectionState.collectAsState()
     val connectionLostDuringWorkout by viewModel.connectionLostDuringWorkout.collectAsState()
+    val machineSafetyUiState by viewModel.machineSafetyUiState.collectAsState()
     val topBarTitle by viewModel.topBarTitle.collectAsState()
     val topBarActions by viewModel.topBarActions.collectAsState()
     val topBarBackAction by viewModel.topBarBackAction.collectAsState()
@@ -509,12 +511,13 @@ fun EnhancedMainScreen(
             }
 
             // Show connection lost alert during workout (Issue #43)
-            if (connectionLostDuringWorkout) {
+            if (connectionLostDuringWorkout || machineSafetyUiState is MachineSafetyUiState.Visible) {
                 ConnectionLostDialog(
                     onReconnect = {
-                        viewModel.reconnectInterruptedWorkout()
+                        viewModel.requestMachineSafetyRecovery()
                     },
                     onDismiss = {
+                        viewModel.dismissMachineSafetyWarning()
                         viewModel.dismissConnectionLostAlert()
                     },
                 )

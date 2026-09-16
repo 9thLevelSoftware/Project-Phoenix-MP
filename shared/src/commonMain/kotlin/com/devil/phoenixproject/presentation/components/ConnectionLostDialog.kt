@@ -17,7 +17,6 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.action_dismiss
 import projectphoenix.shared.generated.resources.cd_bluetooth_lost
 
 /**
@@ -44,12 +43,12 @@ fun ConnectionLostDialog(onReconnect: () -> Unit, onDismiss: () -> Unit) {
         text = {
             Column {
                 Text(
-                    "Bluetooth connection to the trainer was lost during your workout.",
+                    "Bluetooth to the trainer was lost. Phoenix cannot confirm whether resistance is still engaged. Do not assume the machine is unloaded.",
                     style = MaterialTheme.typography.bodyLarge,
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    "Phoenix will reconnect, recalibrate, and rebuild the interrupted set from your routine progress when possible.",
+                    "A successful reconnect can request a software stop, but that is not proof the cables are unloaded. Follow Vitruvian safety guidance; powering the trainer off is a valid last resort.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -58,14 +57,14 @@ fun ConnectionLostDialog(onReconnect: () -> Unit, onDismiss: () -> Unit) {
         confirmButton = {
             Button(onClick = onReconnect) {
                 Text(
-                    "Reconnect",
+                    "Reconnect to request release",
                     fontWeight = FontWeight.Bold,
                 )
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text(stringResource(Res.string.action_dismiss))
+                Text("Remind me later")
             }
         },
     )
