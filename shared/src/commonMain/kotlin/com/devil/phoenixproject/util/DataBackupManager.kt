@@ -297,7 +297,11 @@ abstract class BaseDataBackupManager(
         val cycleDays = trainingCycles.flatMap { cycle ->
             runCatching { queries.selectCycleDaysByCycle(cycle.id).executeAsList() }.getOrElse { emptyList() }
         }.map { day ->
-            if (day.routineId != null && day.routineId !in activeRoutineIds) day.copy(routineId = null) else day
+            if (day.routine_id != null && day.routine_id !in activeRoutineIds) {
+                mapCycleDayToBackup(day).copy(routineId = null)
+            } else {
+                mapCycleDayToBackup(day)
+            }
         }
 
         // New tables for complete backup - wrapped in try-catch because these tables
@@ -307,7 +311,7 @@ abstract class BaseDataBackupManager(
         val cycleProgressions = runCatching { queries.selectAllCycleProgressionsSync().executeAsList() }.getOrElse { emptyList() }
         val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }
             .getOrElse { emptyList() }
-            .filter { it.routineExerciseId in activeRoutineExerciseIds }
+            .filter { it.routine_exercise_id in activeRoutineExerciseIds }
         val completedSets = runCatching { queries.selectAllCompletedSetsSync().executeAsList() }.getOrElse { emptyList() }
         val progressionEvents = runCatching { queries.selectAllProgressionEventsSync().executeAsList() }.getOrElse { emptyList() }
         val earnedBadges = runCatching { queries.selectAllEarnedBadgesSync().executeAsList() }.getOrElse { emptyList() }
@@ -344,7 +348,7 @@ abstract class BaseDataBackupManager(
                 supersets = supersets.map { mapSupersetToBackup(it) },
                 personalRecords = personalRecords,
                 trainingCycles = trainingCycles.map { mapTrainingCycleToBackup(it) },
-                cycleDays = cycleDays.map { mapCycleDayToBackup(it) },
+                cycleDays = cycleDays,
                 cycleProgress = cycleProgress.map { mapCycleProgressToBackup(it) },
                 cycleProgressions = cycleProgressions.map { mapCycleProgressionToBackup(it) },
                 plannedSets = plannedSets.map { mapPlannedSetToBackup(it) },
@@ -2220,9 +2224,13 @@ abstract class BaseDataBackupManager(
         val cycleDays = trainingCycles.flatMap { cycle ->
             runCatching { queries.selectCycleDaysByCycle(cycle.id).executeAsList() }.getOrElse { emptyList() }
         }.map { day ->
-            if (day.routineId != null && day.routineId !in activeRoutineIds) day.copy(routineId = null) else day
+            if (day.routine_id != null && day.routine_id !in activeRoutineIds) {
+                mapCycleDayToBackup(day).copy(routineId = null)
+            } else {
+                mapCycleDayToBackup(day)
+            }
         }
-        writeJsonArray(writer, "cycleDays", cycleDays.map { json.encodeToString(CycleDayBackup.serializer(), mapCycleDayToBackup(it)) })
+        writeJsonArray(writer, "cycleDays", cycleDays.map { json.encodeToString(CycleDayBackup.serializer(), it) })
         writer.write(",")
 
         val cycleProgress = runCatching { queries.selectAllCycleProgressSync().executeAsList() }.getOrElse { emptyList() }
@@ -2235,7 +2243,7 @@ abstract class BaseDataBackupManager(
 
         val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }
             .getOrElse { emptyList() }
-            .filter { it.routineExerciseId in activeRoutineExerciseIds }
+            .filter { it.routine_exercise_id in activeRoutineExerciseIds }
         writeJsonArray(writer, "plannedSets", plannedSets.map { json.encodeToString(PlannedSetBackup.serializer(), mapPlannedSetToBackup(it)) })
         writer.write(",")
 
