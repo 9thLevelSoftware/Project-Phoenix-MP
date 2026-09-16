@@ -115,12 +115,16 @@ internal fun PersistedFileStartupFailureScreen(
         ) {
             Text("Project Phoenix", color = Color(0xFFFF6B35), fontSize = 24.sp)
             Spacer(Modifier.height(16.dp))
-            Text("Local data preserved", color = Color.White, fontSize = 18.sp)
+            Text(
+                if (dualDatabases) "Local storage needs attention" else "Local data preserved",
+                color = Color.White,
+                fontSize = 18.sp,
+            )
             Spacer(Modifier.height(12.dp))
             Text(
                 if (dualDatabases) {
-                    "Phoenix found two database files. Automatic recovery is disabled, and neither file was changed. " +
-                        "Please contact support and include the diagnostic code below."
+                    "Phoenix cannot safely choose local storage automatically. Automatic recovery is disabled to protect your data. " +
+                        "Please contact support and include the diagnostic and support codes below."
                 } else {
                     "Phoenix could not safely prepare local storage. Existing local data was left in place. " +
                         "You can retry after resolving the device or storage issue."
@@ -136,6 +140,14 @@ internal fun PersistedFileStartupFailureScreen(
                 fontSize = 12.sp,
                 modifier = Modifier.padding(8.dp),
             )
+            failure.supportCode?.let { supportCode ->
+                Text(
+                    "Support code: $supportCode",
+                    color = Color(0xFFFFD166),
+                    fontSize = 12.sp,
+                    modifier = Modifier.padding(8.dp),
+                )
+            }
             if (failure.retryAllowed) {
                 Spacer(Modifier.height(16.dp))
                 Button(onClick = onRetry) {

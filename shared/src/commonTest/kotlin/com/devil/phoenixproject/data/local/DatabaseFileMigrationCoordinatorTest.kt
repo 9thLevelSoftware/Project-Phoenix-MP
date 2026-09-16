@@ -247,6 +247,29 @@ class DatabaseFileMigrationCoordinatorTest {
     }
 
     @Test
+    fun `canonical dual conflict preserves safe reason and pre-mutation snapshot`() {
+        val snapshot = DatabasePresenceSnapshot(
+            libraryLegacy = DatabasePresence(main = true, wal = true, shm = false, journal = false),
+            sqliterLegacy = DatabasePresence(main = true, wal = false, shm = true, journal = false),
+            target = DatabasePresence(main = true, wal = false, shm = false, journal = false),
+            recovery = DatabasePresence(main = false, wal = false, shm = false, journal = false),
+            staging = DatabasePresence(main = false, wal = false, shm = false, journal = true),
+        )
+        val operations = FakeDatabaseFileOperations(
+            artifacts = setOf(DatabaseArtifact.LEGACY, DatabaseArtifact.TARGET),
+            presenceSnapshot = snapshot,
+        )
+
+        val failure = assertFailsWith<DatabaseFileMigrationException> {
+            DatabaseFileMigrationCoordinator(operations).prepareTarget()
+        }
+
+        assertEquals(DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET, failure.diagnosticReason)
+        assertEquals(snapshot, failure.presenceSnapshot)
+        assertEquals(listOf("lock:start", "inspect", "lock:end"), operations.calls)
+    }
+
+    @Test
     fun `dual databases preserve every artifact and block before validation`() {
         val allArtifacts = DatabaseArtifact.entries.toSet()
         val operations = FakeDatabaseFileOperations(artifacts = allArtifacts, legacySidecarsExist = true)
@@ -521,6 +544,7 @@ class DatabaseFileMigrationCoordinatorTest {
         failAt: String? = null,
         failOnceAt: String? = null,
         failures: Map<String, Throwable> = emptyMap(),
+        private val presenceSnapshot: DatabasePresenceSnapshot? = null,
     ) : DatabaseFileOperations {
         private val fallbackFingerprint = DatabaseFingerprint(
             fileSize = 16_384,
@@ -558,6 +582,8 @@ class DatabaseFileMigrationCoordinatorTest {
                 legacySidecarsExist = legacySidecarsExist,
             )
         }
+
+        override fun capturePresenceSnapshot(): DatabasePresenceSnapshot? = presenceSnapshot
 
         override fun checkpointAndValidate(artifact: DatabaseArtifact): DatabaseFingerprint {
             record("checkpoint:$artifact")

@@ -6,6 +6,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.migration.MigrationManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
@@ -44,6 +45,11 @@ fun AndroidAppHost() {
 
     when (resolution) {
         is StartupDependencyResolution.Failed -> {
+            Logger.e {
+                "Android app dependency resolution blocked: code=${resolution.diagnosticCode}, " +
+                    "support=${resolution.supportCode ?: "NONE"}, " +
+                    "presence=${resolution.presenceSnapshot?.safeSummary() ?: "UNAVAILABLE"}"
+            }
             PersistedFileStartupFailureScreen(resolution) { retryAttempt++ }
         }
 

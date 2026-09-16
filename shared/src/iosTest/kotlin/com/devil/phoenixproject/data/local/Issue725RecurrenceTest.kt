@@ -140,6 +140,30 @@ class Issue725RecurrenceTest {
     }
 
     @Test
+    fun libraryMainWithSqliterSidecarsReportsBoundedReasonWithoutMutation() {
+        val setupDriver = NativeSqliteDriver(
+            schema = PhoenixDatabase.Schema,
+            name = DatabaseFileNames.LEGACY,
+        )
+        setupDriver.close()
+        val sqliterLegacy = DatabaseFileContext.databasePath(DatabaseFileNames.LEGACY, null)
+        val libraryLegacy = legacyLibraryRootPath()
+        moveArtifact(sqliterLegacy, libraryLegacy)
+        ensureSidecar(sqliterLegacy, "-wal")
+        ensureSidecar(sqliterLegacy, "-shm")
+
+        val operations = IosDatabaseFileOperations()
+        val snapshot = operations.capturePresenceSnapshot()
+        val failure = assertFailsWith<DatabaseFileMigrationException> { operations.inspect() }
+
+        assertEquals(DatabaseDiagnosticReason.LIBRARY_MAIN_SQLITER_SIDECARS, failure.diagnosticReason)
+        assertEquals(snapshot, failure.presenceSnapshot)
+        assertTrue(fileManager.fileExistsAtPath(libraryLegacy))
+        assertTrue(fileManager.fileExistsAtPath("$sqliterLegacy-wal"))
+        assertTrue(fileManager.fileExistsAtPath("$sqliterLegacy-shm"))
+    }
+
+    @Test
     fun trueDualLibraryAndSqliterLegacyMainsStillBlockWithoutDeleting() {
         val legacyDriver = NativeSqliteDriver(
             schema = PhoenixDatabase.Schema,
@@ -169,11 +193,15 @@ class Issue725RecurrenceTest {
             }
         }
 
+        val operations = IosDatabaseFileOperations()
+        val snapshot = operations.capturePresenceSnapshot()
         val failure = assertFailsWith<DatabaseFileMigrationException> {
-            IosDatabaseFileOperations().inspect()
+            operations.inspect()
         }
 
         assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, failure.code)
+        assertEquals(DatabaseDiagnosticReason.LIBRARY_SQLITER_LEGACY, failure.diagnosticReason)
+        assertEquals(snapshot, failure.presenceSnapshot)
         assertTrue(fileManager.fileExistsAtPath(sqliterLegacy))
         assertTrue(fileManager.fileExistsAtPath(libraryLegacy))
         assertFalse(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null)))
