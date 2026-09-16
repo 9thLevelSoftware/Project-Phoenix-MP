@@ -1280,13 +1280,16 @@ class DefaultWorkoutSessionManager(
                     // performs presentation-only cleanup rather than a second RESET.
                     if (isJustLift) {
                         Logger.d { "Just Lift mode: Dismissing completed summary" }
-                        val completed = completion ?: return@launch
+                        val completed = completion ?: run {
+                            Logger.w { "proceedFromSummary: manual Just Lift dismissal skipped because no completion is claimed" }
+                            return@launch
+                        }
                         if (!activeSessionEngine.dismissCompletedJustLiftSummary(
                                 completion = completed,
                                 restSeconds = coordinator._workoutParameters.value.justLiftRestSeconds,
                             )
                         ) return@launch
-                        Logger.d { "Just Lift mode: Ready for next exercise" }
+
                     } else {
                         coordinator._workoutState.value = WorkoutState.Completed
                     }

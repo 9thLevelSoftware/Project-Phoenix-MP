@@ -7044,7 +7044,6 @@ class ActiveSessionEngine(
         return resetForNewWorkoutInternal(
             expectedLease = lease,
             afterExpectedLeaseReset = {
-                coordinator._workoutState.value = WorkoutState.Idle
                 if (restSeconds > 0) startJustLiftEggTimer(restSeconds)
                 afterJustLiftResetPresentationForTest?.invoke()
             },

@@ -11,6 +11,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
@@ -87,9 +88,21 @@ class JustLiftCompletionBehaviorTest {
     fun `timed summary expiry resets presentation without another physical teardown`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
+            // Mirror KableBleRepository.stopWorkout(): the physical stop is delayed,
+            // and polling is stopped from finally even when the result is successful.
+            harness.fakeBleRepo.stopWorkoutBlock = {
+                try {
+                    delay(50)
+                    Result.success(Unit)
+                } finally {
+                    harness.fakeBleRepo.stopPolling()
+                }
+            }
             prepare(harness, summarySeconds = 5)
             grabToStart(harness)
             completeSet(harness)
+            advanceTimeBy(50)
+            runCurrent()
             assertEquals(3, assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value).repCount)
             val pollingStops = harness.fakeBleRepo.stopPollingCallCount
             advanceTimeBy(5_000)
@@ -109,9 +122,21 @@ class JustLiftCompletionBehaviorTest {
     fun `manual Just Lift summary dismissal preserves polling and physical teardown ownership`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
+            // Keep this control production-faithful: Kable stops polling in
+            // stopWorkout's finally after its delayed physical reset.
+            harness.fakeBleRepo.stopWorkoutBlock = {
+                try {
+                    delay(50)
+                    Result.success(Unit)
+                } finally {
+                    harness.fakeBleRepo.stopPolling()
+                }
+            }
             prepare(harness, summarySeconds = 0)
             grabToStart(harness)
             completeSet(harness)
+            advanceTimeBy(50)
+            runCurrent()
             assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
             assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
             assertTrue(harness.fakeBleRepo.monitorPollingActive)
