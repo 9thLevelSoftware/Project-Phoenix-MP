@@ -7018,6 +7018,40 @@ class ActiveSessionEngine(
     internal fun resetForNewWorkoutForTest(expectedLease: ExecutionLease): Boolean =
         resetForNewWorkoutInternal(expectedLease)
 
+    /**
+     * Dismiss a completed Just Lift summary without starting another physical
+     * teardown. Completion already owns the machine's final reset; a manual
+     * summary action must only clear presentation state and preserve polling.
+     */
+    internal fun dismissCompletedJustLiftSummary(
+        completion: SetExecutionCompletion,
+        restSeconds: Int,
+    ): Boolean {
+        val lease = completion.lease
+        if (!completion.isJustLift ||
+            !hasCurrentAuthority(lease, "just_lift_manual_summary_dismissal") ||
+            executionGuard.claimedCompletion(lease) != completion ||
+            coordinator._workoutState.value !is WorkoutState.SetSummary ||
+            executionGuard.machineTeardownState.value !is MachineTeardownState.Ready
+        ) {
+            return false
+        }
+
+        repCounter.reset()
+        resetAutoStopState()
+        coordinator._workoutParameters.update { params -> params.copy(selectedExerciseId = null) }
+
+        return resetForNewWorkoutInternal(
+            expectedLease = lease,
+            afterExpectedLeaseReset = {
+                coordinator._workoutState.value = WorkoutState.Idle
+                if (restSeconds > 0) startJustLiftEggTimer(restSeconds)
+                afterJustLiftResetPresentationForTest?.invoke()
+            },
+            skipMachineTeardown = true,
+        )
+    }
+
     private fun resetForNewWorkoutInternal(
         expectedLease: ExecutionLease?,
         afterExpectedLeaseReset: (() -> Unit)? = null,

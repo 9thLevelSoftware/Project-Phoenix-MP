@@ -1276,13 +1276,16 @@ class DefaultWorkoutSessionManager(
                     repCounter.reset()
                     activeSessionEngine.resetAutoStopState()
 
-                    // Auto-reset for Just Lift mode to enable immediate restart
+                    // Manual Just Lift dismissal must use the completed lease so it
+                    // performs presentation-only cleanup rather than a second RESET.
                     if (isJustLift) {
-                        Logger.d { "Just Lift mode: Auto-resetting to Idle" }
-                        activeSessionEngine.resetForNewWorkout()
-                        coordinator._workoutState.value = WorkoutState.Idle
-                        activeSessionEngine.enableHandleDetection()
-                        bleRepository.enableJustLiftWaitingMode()
+                        Logger.d { "Just Lift mode: Dismissing completed summary" }
+                        val completed = completion ?: return@launch
+                        if (!activeSessionEngine.dismissCompletedJustLiftSummary(
+                                completion = completed,
+                                restSeconds = coordinator._workoutParameters.value.justLiftRestSeconds,
+                            )
+                        ) return@launch
                         Logger.d { "Just Lift mode: Ready for next exercise" }
                     } else {
                         coordinator._workoutState.value = WorkoutState.Completed

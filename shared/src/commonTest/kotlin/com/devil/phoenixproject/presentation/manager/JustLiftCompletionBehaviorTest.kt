@@ -106,6 +106,31 @@ class JustLiftCompletionBehaviorTest {
     }
 
     @Test
+    fun `manual Just Lift summary dismissal preserves polling and physical teardown ownership`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepare(harness, summarySeconds = 0)
+            grabToStart(harness)
+            completeSet(harness)
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertTrue(harness.fakeBleRepo.monitorPollingActive)
+            val pollingStops = harness.fakeBleRepo.stopPollingCallCount
+
+            harness.dwsm.proceedFromSummary()
+            runCurrent()
+
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertEquals(pollingStops, harness.fakeBleRepo.stopPollingCallCount)
+            assertTrue(harness.fakeBleRepo.monitorPollingActive)
+            grabToStart(harness)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `unlimited summary remains until handles start a successor`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
