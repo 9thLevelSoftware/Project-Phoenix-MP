@@ -275,20 +275,17 @@ abstract class BaseDataBackupManager(
             metrics.addAll(sessionMetrics)
         }
 
-        // Full backups are snapshots, not sync exports. Keep the unfiltered rows only
-        // for historical session name resolution; tombstones are not representable in
-        // RoutineBackup and must never be emitted as live routines.
+        // Full backups retain routine tombstones because historical telemetry keeps
+        // foreign-key links to the original routine and routine exercise IDs.
         val allRoutines = queries.selectAllRoutinesSync().executeAsList()
         val allRoutineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
-        val routines = allRoutines.filter { it.deletedAt == null }
-        val activeRoutineIds = routines.mapTo(hashSetOf()) { it.id }
-        val routineExercises = allRoutineExercises.filter { it.routineId in activeRoutineIds }
-        val activeRoutineExerciseIds = routineExercises.mapTo(hashSetOf()) { it.id }
+        val routines = allRoutines
+        val activeRoutineIds = allRoutines.filter { it.deletedAt == null }.mapTo(hashSetOf()) { it.id }
+        val routineExercises = allRoutineExercises
         val routineNameResolutionContext = buildRoutineNameResolutionContext(allRoutines, allRoutineExercises)
         // Supersets table might not exist on older databases
         val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }
             .getOrElse { emptyList() }
-            .filter { it.routineId in activeRoutineIds }
         val personalRecords = queries.selectActiveRecordsForBackup().executeAsList().map { pr ->
             mapPersonalRecordToBackup(pr)
         }
@@ -309,10 +306,8 @@ abstract class BaseDataBackupManager(
         // lock contention, etc.), we return empty list rather than crash.
         val cycleProgress = runCatching { queries.selectAllCycleProgressSync().executeAsList() }.getOrElse { emptyList() }
         val cycleProgressions = runCatching { queries.selectAllCycleProgressionsSync().executeAsList() }.getOrElse { emptyList() }
-        val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }
-            .getOrElse { emptyList() }
-            .filter { it.routine_exercise_id in activeRoutineExerciseIds }
-        val activePlannedSetIds = plannedSets.mapTo(hashSetOf()) { it.id }
+        val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }.getOrElse { emptyList() }
+        val plannedSetIds = plannedSets.mapTo(hashSetOf()) { it.id }
         val completedSets = runCatching { queries.selectAllCompletedSetsSync().executeAsList() }.getOrElse { emptyList() }
         val progressionEvents = runCatching { queries.selectAllProgressionEventsSync().executeAsList() }.getOrElse { emptyList() }
         val earnedBadges = runCatching { queries.selectAllEarnedBadgesSync().executeAsList() }.getOrElse { emptyList() }
@@ -351,7 +346,7 @@ abstract class BaseDataBackupManager(
                 cycleProgressions = cycleProgressions.map { mapCycleProgressionToBackup(it) },
                 plannedSets = plannedSets.map { mapPlannedSetToBackup(it) },
                 completedSets = completedSets.map { mapCompletedSetToBackup(it).let { backup ->
-                    if (backup.plannedSetId !in activePlannedSetIds) backup.copy(plannedSetId = null) else backup
+                    if (backup.plannedSetId !in plannedSetIds) backup.copy(plannedSetId = null) else backup
                 } },
                 progressionEvents = progressionEvents.map { mapProgressionEventToBackup(it) },
                 earnedBadges = earnedBadges.map { mapEarnedBadgeToBackup(it) },
@@ -657,6 +652,7 @@ abstract class BaseDataBackupManager(
                             useCount = routine.useCount.toLong(),
                             profile_id = routine.profileId ?: activeProfileId,
                             groupId = routine.groupId,
+                            deletedAt = routine.deletedAt,
                         )
                         routinesImported++
                     } else {
@@ -1434,6 +1430,7 @@ abstract class BaseDataBackupManager(
                                                     useCount = routine.useCount.toLong(),
                                                     profile_id = routine.profileId ?: activeProfileId,
                                                     groupId = routine.groupId,
+                                                    deletedAt = routine.deletedAt,
                                                 )
                                                 routinesImported++
                                                 importedRoutineIds.add(routine.id)
@@ -2145,10 +2142,9 @@ abstract class BaseDataBackupManager(
         val metricCount = runCatching { queries.countBackupMetricSamples().executeAsOne() }.getOrElse { 0L }
         val allRoutines = queries.selectAllRoutinesSync().executeAsList()
         val allRoutineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
-        val routines = allRoutines.filter { it.deletedAt == null }
-        val activeRoutineIds = routines.mapTo(hashSetOf()) { it.id }
-        val routineExercises = allRoutineExercises.filter { it.routineId in activeRoutineIds }
-        val activeRoutineExerciseIds = routineExercises.mapTo(hashSetOf()) { it.id }
+        val routines = allRoutines
+        val activeRoutineIds = allRoutines.filter { it.deletedAt == null }.mapTo(hashSetOf()) { it.id }
+        val routineExercises = allRoutineExercises
         val userProfiles = queries.selectAllUserProfilesSync().executeAsList()
         val profilePreferences = userProfiles.map { profile ->
             profilePreferencesRepository.get(profile.id).toBackup()
@@ -2209,7 +2205,6 @@ abstract class BaseDataBackupManager(
 
         val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }
             .getOrElse { emptyList() }
-            .filter { it.routineId in activeRoutineIds }
         writeJsonArray(writer, "supersets", supersets.map { json.encodeToString(SupersetBackup.serializer(), mapSupersetToBackup(it)) })
         writer.write(",")
 
@@ -2241,10 +2236,8 @@ abstract class BaseDataBackupManager(
         writeJsonArray(writer, "cycleProgressions", cycleProgressions.map { json.encodeToString(CycleProgressionBackup.serializer(), mapCycleProgressionToBackup(it)) })
         writer.write(",")
 
-        val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }
-            .getOrElse { emptyList() }
-            .filter { it.routine_exercise_id in activeRoutineExerciseIds }
-        val activePlannedSetIds = plannedSets.mapTo(hashSetOf()) { it.id }
+        val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }.getOrElse { emptyList() }
+        val plannedSetIds = plannedSets.mapTo(hashSetOf()) { it.id }
         writeJsonArray(writer, "plannedSets", plannedSets.map { json.encodeToString(PlannedSetBackup.serializer(), mapPlannedSetToBackup(it)) })
         writer.write(",")
 
@@ -2253,7 +2246,7 @@ abstract class BaseDataBackupManager(
             val backup = mapCompletedSetToBackup(it)
             json.encodeToString(
                 CompletedSetBackup.serializer(),
-                if (backup.plannedSetId !in activePlannedSetIds) backup.copy(plannedSetId = null) else backup,
+                if (backup.plannedSetId !in plannedSetIds) backup.copy(plannedSetId = null) else backup,
             )
         })
         writer.write(",")
@@ -2670,6 +2663,7 @@ abstract class BaseDataBackupManager(
         useCount = routine.useCount.toInt(),
         profileId = routine.profile_id,
         groupId = routine.groupId,
+        deletedAt = routine.deletedAt,
     )
 
     private fun mapRoutineExerciseToBackup(exercise: RoutineExercise): RoutineExerciseBackup = RoutineExerciseBackup(

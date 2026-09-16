@@ -113,6 +113,7 @@ data class RoutineBackup(
     val useCount: Int = 0,
     val profileId: String? = null, // null for backward compat with pre-profile backups
     val groupId: String? = null, // Routine group assignment (added v3)
+    val deletedAt: Long? = null, // Preserve routine tombstones for telemetry FK integrity
 )
 
 /**

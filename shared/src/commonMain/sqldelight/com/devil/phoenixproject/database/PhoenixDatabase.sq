@@ -1289,7 +1289,7 @@ selectRoutineById:
 SELECT * FROM Routine WHERE id = ?;
 
 insertRoutine:
-INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount, profile_id, groupId) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount, profile_id, groupId, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Upsert routine (insert or replace) - handles both new and existing routines
 upsertRoutine:
