@@ -72,6 +72,30 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `full backup excludes deleted routines and their children in both exporters`() = runTest {
+        workoutRepository.saveRoutine(
+            buildRoutine("routine-active", "Active", "exercise-active", "Bench Press"),
+        )
+        workoutRepository.saveRoutine(
+            buildRoutine("routine-deleted", "Deleted", "exercise-deleted", "Row"),
+        )
+        database.phoenixDatabaseQueries.softDeleteRoutine(
+            deletedAt = 1_700_000_000_000L,
+            updatedAt = 1_700_000_000_001L,
+            id = "routine-deleted",
+        )
+
+        val legacy = backupManager.exportAllData()
+        assertEquals(listOf("routine-active"), legacy.data.routines.map { it.id })
+        assertEquals(listOf("routine-active-exercise-active"), legacy.data.routineExercises.map { it.id })
+
+        val streamingPath = backupManager.exportToCachePublic()
+        val streaming = testJson.decodeFromString<BackupData>(File(streamingPath).readText())
+        assertEquals(listOf("routine-active"), streaming.data.routines.map { it.id })
+        assertEquals(listOf("routine-active-exercise-active"), streaming.data.routineExercises.map { it.id })
+    }
+
+    @Test
     fun `normal backup excludes local active workout runtime recovery data`() = runTest {
         workoutRepository.saveSession(
             WorkoutSession(

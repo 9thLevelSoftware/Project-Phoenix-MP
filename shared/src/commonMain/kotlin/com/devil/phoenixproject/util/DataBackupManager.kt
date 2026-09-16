@@ -275,11 +275,20 @@ abstract class BaseDataBackupManager(
             metrics.addAll(sessionMetrics)
         }
 
-        val routines = queries.selectAllRoutinesSync().executeAsList()
-        val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
-        val routineNameResolutionContext = buildRoutineNameResolutionContext(routines, routineExercises)
+        // Full backups are snapshots, not sync exports. Keep the unfiltered rows only
+        // for historical session name resolution; tombstones are not representable in
+        // RoutineBackup and must never be emitted as live routines.
+        val allRoutines = queries.selectAllRoutinesSync().executeAsList()
+        val allRoutineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
+        val routines = allRoutines.filter { it.deletedAt == null }
+        val activeRoutineIds = routines.mapTo(hashSetOf()) { it.id }
+        val routineExercises = allRoutineExercises.filter { it.routineId in activeRoutineIds }
+        val activeRoutineExerciseIds = routineExercises.mapTo(hashSetOf()) { it.id }
+        val routineNameResolutionContext = buildRoutineNameResolutionContext(allRoutines, allRoutineExercises)
         // Supersets table might not exist on older databases
-        val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }.getOrElse { emptyList() }
+        val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }
+            .getOrElse { emptyList() }
+            .filter { it.routineId in activeRoutineIds }
         val personalRecords = queries.selectActiveRecordsForBackup().executeAsList().map { pr ->
             mapPersonalRecordToBackup(pr)
         }
@@ -287,6 +296,8 @@ abstract class BaseDataBackupManager(
         val trainingCycles = runCatching { queries.selectAllTrainingCyclesSync().executeAsList() }.getOrElse { emptyList() }
         val cycleDays = trainingCycles.flatMap { cycle ->
             runCatching { queries.selectCycleDaysByCycle(cycle.id).executeAsList() }.getOrElse { emptyList() }
+        }.map { day ->
+            if (day.routineId != null && day.routineId !in activeRoutineIds) day.copy(routineId = null) else day
         }
 
         // New tables for complete backup - wrapped in try-catch because these tables
@@ -294,7 +305,9 @@ abstract class BaseDataBackupManager(
         // lock contention, etc.), we return empty list rather than crash.
         val cycleProgress = runCatching { queries.selectAllCycleProgressSync().executeAsList() }.getOrElse { emptyList() }
         val cycleProgressions = runCatching { queries.selectAllCycleProgressionsSync().executeAsList() }.getOrElse { emptyList() }
-        val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }.getOrElse { emptyList() }
+        val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }
+            .getOrElse { emptyList() }
+            .filter { it.routineExerciseId in activeRoutineExerciseIds }
         val completedSets = runCatching { queries.selectAllCompletedSetsSync().executeAsList() }.getOrElse { emptyList() }
         val progressionEvents = runCatching { queries.selectAllProgressionEventsSync().executeAsList() }.getOrElse { emptyList() }
         val earnedBadges = runCatching { queries.selectAllEarnedBadgesSync().executeAsList() }.getOrElse { emptyList() }
@@ -310,8 +323,12 @@ abstract class BaseDataBackupManager(
         // where the table does not yet exist (pre-flight create-if-missing covers this
         // on current builds, but defending against partial upgrade paths is cheap).
         val sessionNotes = runCatching { queries.selectAllSessionNotesSync().executeAsList() }.getOrElse { emptyList() }
-        // Migration 27 added RoutineGroup. Same defensive pattern.
-        val routineGroups = runCatching { queries.selectAllRoutineGroupsSync().executeAsList() }.getOrElse { emptyList() }
+        // Migration 27 added RoutineGroup. Same defensive pattern; orphan groups
+        // should not be restored when their active routine parent is absent.
+        val activeGroupIds = routines.mapNotNull { it.groupId }.toSet()
+        val routineGroups = runCatching { queries.selectAllRoutineGroupsSync().executeAsList() }
+            .getOrElse { emptyList() }
+            .filter { it.id in activeGroupIds }
 
         val nowMs = KmpUtils.currentTimeMillis()
         BackupData(
@@ -2122,13 +2139,17 @@ abstract class BaseDataBackupManager(
         onProgress(BackupProgress(BackupPhase.COUNTING, 0, 0))
         val sessionCount = queries.countBackupWorkoutSessions().executeAsOne()
         val metricCount = runCatching { queries.countBackupMetricSamples().executeAsOne() }.getOrElse { 0L }
-        val routines = queries.selectAllRoutinesSync().executeAsList()
-        val routineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
+        val allRoutines = queries.selectAllRoutinesSync().executeAsList()
+        val allRoutineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
+        val routines = allRoutines.filter { it.deletedAt == null }
+        val activeRoutineIds = routines.mapTo(hashSetOf()) { it.id }
+        val routineExercises = allRoutineExercises.filter { it.routineId in activeRoutineIds }
+        val activeRoutineExerciseIds = routineExercises.mapTo(hashSetOf()) { it.id }
         val userProfiles = queries.selectAllUserProfilesSync().executeAsList()
         val profilePreferences = userProfiles.map { profile ->
             profilePreferencesRepository.get(profile.id).toBackup()
         }
-        val routineNameResolutionContext = buildRoutineNameResolutionContext(routines, routineExercises)
+        val routineNameResolutionContext = buildRoutineNameResolutionContext(allRoutines, allRoutineExercises)
 
         // JSON header
         val exportedAt = kotlin.time.Instant.fromEpochMilliseconds(KmpUtils.currentTimeMillis()).toString()
@@ -2182,7 +2203,9 @@ abstract class BaseDataBackupManager(
         // Phase 5: Remaining tables (small, bulk-load is safe)
         onProgress(BackupProgress(BackupPhase.OTHER, 0, 0))
 
-        val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }.getOrElse { emptyList() }
+        val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }
+            .getOrElse { emptyList() }
+            .filter { it.routineId in activeRoutineIds }
         writeJsonArray(writer, "supersets", supersets.map { json.encodeToString(SupersetBackup.serializer(), mapSupersetToBackup(it)) })
         writer.write(",")
 
@@ -2196,6 +2219,8 @@ abstract class BaseDataBackupManager(
 
         val cycleDays = trainingCycles.flatMap { cycle ->
             runCatching { queries.selectCycleDaysByCycle(cycle.id).executeAsList() }.getOrElse { emptyList() }
+        }.map { day ->
+            if (day.routineId != null && day.routineId !in activeRoutineIds) day.copy(routineId = null) else day
         }
         writeJsonArray(writer, "cycleDays", cycleDays.map { json.encodeToString(CycleDayBackup.serializer(), mapCycleDayToBackup(it)) })
         writer.write(",")
@@ -2208,7 +2233,9 @@ abstract class BaseDataBackupManager(
         writeJsonArray(writer, "cycleProgressions", cycleProgressions.map { json.encodeToString(CycleProgressionBackup.serializer(), mapCycleProgressionToBackup(it)) })
         writer.write(",")
 
-        val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }.getOrElse { emptyList() }
+        val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }
+            .getOrElse { emptyList() }
+            .filter { it.routineExerciseId in activeRoutineExerciseIds }
         writeJsonArray(writer, "plannedSets", plannedSets.map { json.encodeToString(PlannedSetBackup.serializer(), mapPlannedSetToBackup(it)) })
         writer.write(",")
 
@@ -2254,7 +2281,10 @@ abstract class BaseDataBackupManager(
         writer.write(",")
 
         // Routine groups (migration 27). Same defensive pattern.
-        val routineGroups = runCatching { queries.selectAllRoutineGroupsSync().executeAsList() }.getOrElse { emptyList() }
+        val activeGroupIds = routines.mapNotNull { it.groupId }.toSet()
+        val routineGroups = runCatching { queries.selectAllRoutineGroupsSync().executeAsList() }
+            .getOrElse { emptyList() }
+            .filter { it.id in activeGroupIds }
         writeJsonArray(writer, "routineGroups", routineGroups.map { json.encodeToString(RoutineGroupBackup.serializer(), mapRoutineGroupToBackup(it)) })
 
         // Close JSON
