@@ -1046,6 +1046,8 @@ class SqlDelightSyncRepository(
                         isAMRAP = exRow.isAMRAP == 1L,
                         perSetRestTime = exRow.perSetRestTime == 1L,
                         stallDetectionEnabled = exRow.stallDetectionEnabled == 1L,
+                        dropSetEnabled = exRow.dropSetEnabled == 1L,
+                        dropSetMinWeightKg = exRow.dropSetMinWeightKg?.toFloat(),
                         repCountTiming = try {
                             RepCountTiming.valueOf(exRow.repCountTiming)
                         } catch (

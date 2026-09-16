@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
+import com.devil.phoenixproject.data.sync.PortalSyncAdapter
+import com.devil.phoenixproject.data.sync.PortalSyncPayload
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
@@ -13,6 +15,7 @@ import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
@@ -946,6 +949,20 @@ class SqlDelightSyncRepositoryTest {
             .single()
         assertEquals(1L, preserved.dropSetEnabled)
         assertEquals(8.0, preserved.dropSetMinWeightKg)
+
+        val outbound = repository.getFullRoutinesModifiedSince(0L, "active-profile").single()
+        val payload = PortalSyncPayload(
+            deviceId = "device-1",
+            platform = "android",
+            lastSync = 0L,
+            routines = listOf(PortalSyncAdapter.toPortalRoutine(outbound, "user")),
+        )
+        val serialized = kotlinx.serialization.json.Json.encodeToString(
+            PortalSyncPayload.serializer(),
+            payload,
+        )
+        assertTrue(serialized.contains("\"dropSetEnabled\":true"))
+        assertTrue(serialized.contains("\"dropSetMinWeightKg\":8.0"))
 
         repository.mergePortalRoutines(
             routines = listOf(
