@@ -66,8 +66,11 @@ internal class RepNotificationFreshnessGate {
         val isUnlimitedAmrapPacket = lease.isAmrap &&
             lease.usesUnlimitedRepTarget &&
             notification.repsSetTotal == UNLIMITED_REPS_SET_TOTAL
+        val isUnlimitedTimedCablePacket = lease.isTimedCable &&
+            notification.repsSetTotal == UNLIMITED_REPS_SET_TOTAL
         val targetMatches = lease.isJustLift ||
             isUnlimitedAmrapPacket ||
+            isUnlimitedTimedCablePacket ||
             notification.repsSetTotal == 0 ||
             notification.repsSetTotal == lease.workingRepTarget
         if (!targetMatches) return RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH)
