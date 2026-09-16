@@ -335,6 +335,20 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
+    // MachineSafetyHazard -- migration 47, trainer-keyed load uncertainty.
+    SchemaTableOperation(
+        table = "MachineSafetyHazard",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS MachineSafetyHazard (
+                trainer_address TEXT NOT NULL PRIMARY KEY,
+                generation INTEGER NOT NULL,
+                document_version INTEGER NOT NULL,
+                hazard_json TEXT NOT NULL,
+                updated_at_epoch_ms INTEGER NOT NULL
+            )
+        """.trimIndent(),
+    ),
+
     // EarnedBadge -- originally bootstrapped by ensureGamificationTablesExist()
     // Full current shape: sync fields (m11), profile_id (m22)
     SchemaTableOperation(
