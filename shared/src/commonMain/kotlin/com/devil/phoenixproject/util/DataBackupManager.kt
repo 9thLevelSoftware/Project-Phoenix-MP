@@ -312,6 +312,7 @@ abstract class BaseDataBackupManager(
         val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }
             .getOrElse { emptyList() }
             .filter { it.routine_exercise_id in activeRoutineExerciseIds }
+        val activePlannedSetIds = plannedSets.mapTo(hashSetOf()) { it.id }
         val completedSets = runCatching { queries.selectAllCompletedSetsSync().executeAsList() }.getOrElse { emptyList() }
         val progressionEvents = runCatching { queries.selectAllProgressionEventsSync().executeAsList() }.getOrElse { emptyList() }
         val earnedBadges = runCatching { queries.selectAllEarnedBadgesSync().executeAsList() }.getOrElse { emptyList() }
@@ -327,12 +328,9 @@ abstract class BaseDataBackupManager(
         // where the table does not yet exist (pre-flight create-if-missing covers this
         // on current builds, but defending against partial upgrade paths is cheap).
         val sessionNotes = runCatching { queries.selectAllSessionNotesSync().executeAsList() }.getOrElse { emptyList() }
-        // Migration 27 added RoutineGroup. Same defensive pattern; orphan groups
-        // should not be restored when their active routine parent is absent.
-        val activeGroupIds = routines.mapNotNull { it.groupId }.toSet()
+        // Migration 27 added RoutineGroup. Preserve empty groups as legitimate user state.
         val routineGroups = runCatching { queries.selectAllRoutineGroupsSync().executeAsList() }
             .getOrElse { emptyList() }
-            .filter { it.id in activeGroupIds }
 
         val nowMs = KmpUtils.currentTimeMillis()
         BackupData(
@@ -352,7 +350,9 @@ abstract class BaseDataBackupManager(
                 cycleProgress = cycleProgress.map { mapCycleProgressToBackup(it) },
                 cycleProgressions = cycleProgressions.map { mapCycleProgressionToBackup(it) },
                 plannedSets = plannedSets.map { mapPlannedSetToBackup(it) },
-                completedSets = completedSets.map { mapCompletedSetToBackup(it) },
+                completedSets = completedSets.map { mapCompletedSetToBackup(it).let { backup ->
+                    if (backup.plannedSetId !in activePlannedSetIds) backup.copy(plannedSetId = null) else backup
+                } },
                 progressionEvents = progressionEvents.map { mapProgressionEventToBackup(it) },
                 earnedBadges = earnedBadges.map { mapEarnedBadgeToBackup(it) },
                 streakHistory = streakHistory.map { mapStreakHistoryToBackup(it) },
@@ -2244,11 +2244,18 @@ abstract class BaseDataBackupManager(
         val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }
             .getOrElse { emptyList() }
             .filter { it.routine_exercise_id in activeRoutineExerciseIds }
+        val activePlannedSetIds = plannedSets.mapTo(hashSetOf()) { it.id }
         writeJsonArray(writer, "plannedSets", plannedSets.map { json.encodeToString(PlannedSetBackup.serializer(), mapPlannedSetToBackup(it)) })
         writer.write(",")
 
         val completedSets = runCatching { queries.selectAllCompletedSetsSync().executeAsList() }.getOrElse { emptyList() }
-        writeJsonArray(writer, "completedSets", completedSets.map { json.encodeToString(CompletedSetBackup.serializer(), mapCompletedSetToBackup(it)) })
+        writeJsonArray(writer, "completedSets", completedSets.map {
+            val backup = mapCompletedSetToBackup(it)
+            json.encodeToString(
+                CompletedSetBackup.serializer(),
+                if (backup.plannedSetId !in activePlannedSetIds) backup.copy(plannedSetId = null) else backup,
+            )
+        })
         writer.write(",")
 
         val progressionEvents = runCatching { queries.selectAllProgressionEventsSync().executeAsList() }.getOrElse { emptyList() }
@@ -2288,11 +2295,9 @@ abstract class BaseDataBackupManager(
         writeJsonArray(writer, "sessionNotes", sessionNotes.map { json.encodeToString(SessionNotesBackup.serializer(), mapSessionNotesToBackup(it)) })
         writer.write(",")
 
-        // Routine groups (migration 27). Same defensive pattern.
-        val activeGroupIds = routines.mapNotNull { it.groupId }.toSet()
+        // Routine groups (migration 27). Preserve empty groups as legitimate user state.
         val routineGroups = runCatching { queries.selectAllRoutineGroupsSync().executeAsList() }
             .getOrElse { emptyList() }
-            .filter { it.id in activeGroupIds }
         writeJsonArray(writer, "routineGroups", routineGroups.map { json.encodeToString(RoutineGroupBackup.serializer(), mapRoutineGroupToBackup(it)) })
 
         // Close JSON

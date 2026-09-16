@@ -93,6 +93,7 @@ class DataBackupManagerRoutineNameTest {
         val streaming = testJson.decodeFromString<BackupData>(File(streamingPath).readText())
         assertEquals(listOf("routine-active"), streaming.data.routines.map { it.id })
         assertEquals(listOf("routine-active-exercise-active"), streaming.data.routineExercises.map { it.id })
+        File(streamingPath).delete()
     }
 
     @Test
