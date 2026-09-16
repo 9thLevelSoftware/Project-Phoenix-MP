@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import struct
 from pathlib import Path
 
@@ -20,8 +21,8 @@ class IconValidationError(ValueError):
     """Raised when an app-icon asset violates Apple's release constraints."""
 
 
-def png_properties(path: Path) -> tuple[int, int, int]:
-    """Return width, height, and PNG color type from the IHDR chunk."""
+def png_properties(path: Path) -> tuple[int, int, int, bool]:
+    """Return dimensions, color type, and whether a tRNS chunk is present."""
     with path.open("rb") as image:
         if image.read(8) != PNG_SIGNATURE:
             raise IconValidationError(f"{path}: not a PNG file")
@@ -32,16 +33,28 @@ def png_properties(path: Path) -> tuple[int, int, int]:
         width, height, bit_depth, color_type, _, _, _ = struct.unpack(
             ">IIBBBBB", image.read(13)
         )
+        if len(image.read(4)) != 4:
+            raise IconValidationError(f"{path}: truncated PNG IHDR")
+        has_transparency_chunk = False
+        while chunk_header := image.read(8):
+            if len(chunk_header) != 8:
+                raise IconValidationError(f"{path}: truncated PNG chunk header")
+            chunk_length, chunk_type = struct.unpack(">I4s", chunk_header)
+            chunk_data = image.read(chunk_length)
+            if len(chunk_data) != chunk_length or len(image.read(4)) != 4:
+                raise IconValidationError(f"{path}: truncated PNG chunk")
+            if chunk_type == b"tRNS":
+                has_transparency_chunk = True
     if width <= 0 or height <= 0 or bit_depth not in {1, 2, 4, 8, 16}:
         raise IconValidationError(f"{path}: invalid PNG dimensions or bit depth")
-    return width, height, color_type
+    return width, height, color_type, has_transparency_chunk
 
 
 def validate_png(path: Path, expected_size: tuple[int, int] | None = None) -> None:
     if not path.is_file():
         raise IconValidationError(f"{path}: referenced icon does not exist")
-    width, height, color_type = png_properties(path)
-    if color_type in ALPHA_COLOR_TYPES:
+    width, height, color_type, has_transparency_chunk = png_properties(path)
+    if color_type in ALPHA_COLOR_TYPES or has_transparency_chunk:
         raise IconValidationError(f"{path}: PNG has an alpha channel")
     if expected_size and (width, height) != expected_size:
         expected = "x".join(map(str, expected_size))
@@ -69,8 +82,12 @@ def validate_app_icon_set(asset_dir: Path) -> int:
         if not filename or Path(filename).name != filename:
             raise IconValidationError(f"{manifest_path}: invalid icon filename")
         expected_size = None
-        if image.get("idiom") == "ios-marketing":
-            expected_size = (1024, 1024)
+        size = image.get("size")
+        if size is not None:
+            match = re.fullmatch(r"(\d+)x(\d+)", size)
+            if not match:
+                raise IconValidationError(f"{manifest_path}: invalid icon size")
+            expected_size = (int(match.group(1)), int(match.group(2)))
         validate_png(asset_dir / filename, expected_size)
         validated += 1
     return validated
