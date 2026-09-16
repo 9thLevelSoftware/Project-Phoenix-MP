@@ -327,7 +327,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 .fillMaxSize()
                 .navigationBarsPadding()
                 .padding(horizontal = Spacing.medium, vertical = Spacing.small)
-                .then(if (useCompactAccessibility) Modifier.verticalScroll(contentScrollState) else Modifier),
+                // The configuration can overflow even on a normal-size 375x667 portrait
+                // screen after app chrome and mode cards are measured. Keep scrolling
+                // independent from accessibility presentation choices.
+                .verticalScroll(contentScrollState),
             verticalArrangement = Arrangement.spacedBy(Spacing.small),
         ) {
             // Pinned header: auto-start status + workout mode (never clipped by lower content)
@@ -471,18 +474,10 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             // Mode-specific options - OLD SCHOOL, PUMP, TUT & BEAST
             val isTutOrBeast = selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast
             val showWeightAndProgression = selectedMode is WorkoutMode.OldSchool || selectedMode is WorkoutMode.Pump || isTutOrBeast
-            val flexibleBodyModifier = if (useCompactAccessibility) {
-                Modifier.fillMaxWidth()
-            } else {
-                Modifier
-                    .weight(1f)
-                    .fillMaxWidth()
-            }
             if (showWeightAndProgression) {
                 Card(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .then(if (useCompactAccessibility || stackWeightCards) Modifier else Modifier.weight(1f))
                         // Issue #571: belt-and-braces vertical separation between the two
                         // weight cards when stacked, so the wheel's bottom edge is
                         // unambiguously above the slider's top edge even if the inner
@@ -502,7 +497,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (useCompactAccessibility || stackWeightCards) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .fillMaxWidth()
                             .padding(Spacing.small),
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
@@ -513,7 +508,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
 
                         Box(
                             modifier = Modifier
-                                .then(if (useCompactAccessibility || stackWeightCards) Modifier.fillMaxWidth() else Modifier.weight(1f))
                                 .fillMaxWidth(),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -555,8 +549,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 // Weight Change Per Rep Card
                 Card(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .then(if (useCompactAccessibility || stackWeightCards) Modifier else Modifier.weight(1f)),
+                        .fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -564,13 +557,9 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (useCompactAccessibility || stackWeightCards) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .fillMaxWidth()
                             .padding(Spacing.small),
-                        verticalArrangement = if (useCompactAccessibility || stackWeightCards) {
-                            Arrangement.spacedBy(Spacing.small)
-                        } else {
-                            Arrangement.SpaceEvenly
-                        },
+                        verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         Text(
                             "Weight Change Per Rep",
@@ -592,7 +581,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             val isEchoMode = selectedMode is WorkoutMode.Echo
             if (isEchoMode) {
                 Card(
-                    modifier = flexibleBodyModifier,
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),
@@ -600,7 +589,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                 ) {
                     Column(
                         modifier = Modifier
-                            .then(if (useCompactAccessibility) Modifier.fillMaxWidth() else Modifier.fillMaxSize())
+                            .fillMaxWidth()
                             .padding(Spacing.small),
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {

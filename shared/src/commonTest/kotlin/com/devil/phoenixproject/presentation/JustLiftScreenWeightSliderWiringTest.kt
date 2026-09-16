@@ -107,20 +107,37 @@ class JustLiftScreenWeightSliderWiringTest {
     }
 
     @Test
-    fun justLiftScreen_usesCompactAccessibilityForOuterScrollOnly() {
+    fun justLiftScreen_outerScrollIsIndependentOfAccessibilityPresentation() {
         val src = readJustLiftScreenSource()
 
-        // The outer verticalScroll + outer column's verticalArrangement can still
-        // use the broader useCompactAccessibility gate — that one governs the
-        // whole screen's scroll behavior, not just the weight cards. This test
-        // documents that decision so a future refactor does not unify the two
-        // gates by accident.
-        val scrollCall = src.contains("verticalScroll(contentScrollState)")
+        // A normal-size short portrait screen can still overflow after app chrome
+        // and mode cards consume space. The scroll contract must therefore not be
+        // gated solely by useCompactAccessibility; that flag remains presentation-
+        // only for chips/segments.
         assertTrue(
-            scrollCall,
-            "JustLiftScreen.kt should still drive the outer scroll on useCompactAccessibility. " +
-                "If you are removing this, see issue #571 RCA — the outer scroll is correct; " +
-                "only the inner weight-card gate was wrong.",
+            src.contains(".verticalScroll(contentScrollState)"),
+            "JustLiftScreen.kt must always provide outer vertical scrolling so normal-size " +
+                "short portrait screens do not compress the Echo Level selector.",
+        )
+        assertTrue(
+            !src.contains("if (useCompactAccessibility) Modifier.verticalScroll(contentScrollState)"),
+            "Outer Just Lift scrolling must not depend only on accessibility presentation settings.",
+        )
+    }
+
+    @Test
+    fun justLiftScreen_scrollableColumnHasNoVerticalWeightCards() {
+        val src = readJustLiftScreenSource()
+
+        // Vertical weights under a scrolling Column receive an unbounded height and
+        // can collapse content during measurement. Cards must be content-sized.
+        assertTrue(
+            !Regex("""\.weight\(1f\)\s*\.fillMaxWidth\(\)""").containsMatchIn(src),
+            "Scrollable Just Lift mode cards must not use remaining-height weight().",
+        )
+        assertTrue(
+            !Regex("""Modifier\.fillMaxSize\(\)\s*\.padding\(Spacing\.small\)""").containsMatchIn(src),
+            "Scrollable Just Lift card bodies must not force fillMaxSize().",
         )
     }
 
@@ -152,7 +169,7 @@ class JustLiftScreenWeightSliderWiringTest {
         // owns JustLiftScreen.kt, so a working-directory-relative lookup is enough.
         val relativePath =
             "src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/JustLiftScreen.kt"
-        val src = readProjectFile(relativePath)
+        val src = readProjectFile(relativePath) ?: readProjectFile("shared/$relativePath")
         assertNotNull(
             src,
             "Could not locate JustLiftScreen.kt on disk. The test relies on the project " +
