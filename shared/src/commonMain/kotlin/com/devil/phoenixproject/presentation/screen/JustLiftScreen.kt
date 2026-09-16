@@ -474,11 +474,6 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             // Mode-specific options - OLD SCHOOL, PUMP, TUT & BEAST
             val isTutOrBeast = selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast
             val showWeightAndProgression = selectedMode is WorkoutMode.OldSchool || selectedMode is WorkoutMode.Pump || isTutOrBeast
-            // This column is vertically scrollable, so mode cards must measure to
-            // their content instead of competing for finite leftover height. A
-            // weighted card can compress its trailing controls (the Echo Level
-            // selector in particular) under short portrait constraints.
-            val flexibleBodyModifier = Modifier.fillMaxWidth()
             if (showWeightAndProgression) {
                 Card(
                     modifier = Modifier
@@ -586,7 +581,7 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
             val isEchoMode = selectedMode is WorkoutMode.Echo
             if (isEchoMode) {
                 Card(
-                    modifier = flexibleBodyModifier,
+                    modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
                         containerColor = MaterialTheme.colorScheme.surfaceContainerHigh,
                     ),

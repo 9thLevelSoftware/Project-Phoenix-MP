@@ -132,11 +132,11 @@ class JustLiftScreenWeightSliderWiringTest {
         // Vertical weights under a scrolling Column receive an unbounded height and
         // can collapse content during measurement. Cards must be content-sized.
         assertTrue(
-            !src.contains(".weight(1f)\n                        .fillMaxWidth()"),
+            !Regex("""\.weight\(1f\)\s*\.fillMaxWidth\(\)""").containsMatchIn(src),
             "Scrollable Just Lift mode cards must not use remaining-height weight().",
         )
         assertTrue(
-            !src.contains("Modifier.fillMaxSize())\n                            .padding(Spacing.small)"),
+            !Regex("""Modifier\.fillMaxSize\(\)\s*\.padding\(Spacing\.small\)""").containsMatchIn(src),
             "Scrollable Just Lift card bodies must not force fillMaxSize().",
         )
     }
