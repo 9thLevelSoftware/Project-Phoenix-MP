@@ -63,14 +63,17 @@ class MachineSafetyCoordinator(
         records.maxByOrNull { it.updatedAtEpochMs }?.let { show(it, records.any { doc -> doc.sessionId.startsWith("rejected-") }) }
     }
 
-    suspend fun recordMachineSessionArmed(document: MachineSafetyHazardDocument): Boolean = mutex.withLock {
+    suspend fun recordMachineSessionArmed(
+        document: MachineSafetyHazardDocument,
+        showRecoveryUi: Boolean = false,
+    ): Boolean = mutex.withLock {
         if (document.trainerAddress.isBlank()) return false
         val safeGeneration = maxOf(document.generation, nextGeneration + 1L)
         val persisted = document.copy(generation = safeGeneration, phase = MachineSafetyPhase.UNRESOLVED)
         return try {
             repository.replace(persisted)
             nextGeneration = safeGeneration
-            show(persisted)
+            if (showRecoveryUi) show(persisted)
             true
         } catch (_: Exception) {
             false
@@ -139,7 +142,7 @@ class MachineSafetyCoordinator(
             phase = MachineSafetyPhase.UNRESOLVED,
             physicalRelease = MachineSafetyPhysicalRelease.UNKNOWN,
         )
-        return recordMachineSessionArmed(document)
+        return recordMachineSessionArmed(document, showRecoveryUi = true)
     }
 
     fun requestReleaseRecovery() {

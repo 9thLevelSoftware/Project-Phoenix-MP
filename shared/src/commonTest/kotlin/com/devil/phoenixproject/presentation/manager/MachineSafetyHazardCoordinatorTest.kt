@@ -71,6 +71,7 @@ class MachineSafetyHazardCoordinatorTest {
         val transport = FakeSafetyTransport("trainer-1")
         val first = coordinator(store, transport)
         assertTrue(first.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
+        assertEquals(MachineSafetyUiState.Hidden, first.uiState.value)
         assertFalse(first.canStartMachine())
         first.hideTemporarily()
         assertFalse(first.canStartMachine())
