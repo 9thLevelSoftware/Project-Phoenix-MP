@@ -103,7 +103,8 @@ internal class RepNotificationFreshnessGate {
         if (isUnlimitedTimedCablePacket &&
             stateFor(lease) !is RepFreshnessState.Armed &&
             !allZero &&
-            !timedCableBaseline
+            !timedCableBaseline &&
+            notification.repsRomCount == 0
         ) {
             return RepFreshnessDecision.Drop(RepDropReason.TIMED_CABLE_BEFORE_MOVEMENT)
         }

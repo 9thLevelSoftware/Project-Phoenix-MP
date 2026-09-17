@@ -354,12 +354,12 @@ class RepNotificationFreshnessGateTest {
         repsSetTotal: Int = 0,
         timestamp: Long,
     ): RepNotification = RepNotification(
-        topCounter,
-        completeCounter,
-        0,
-        repsRomCount,
-        repsSetCount,
-        repsSetTotal,
+        topCounter = topCounter,
+        completeCounter = completeCounter,
+        repsRomCount = repsRomCount,
+        repsRomTotal = 0,
+        repsSetCount = repsSetCount,
+        repsSetTotal = repsSetTotal,
         rawData = byteArrayOf(),
         timestamp = timestamp,
     )
