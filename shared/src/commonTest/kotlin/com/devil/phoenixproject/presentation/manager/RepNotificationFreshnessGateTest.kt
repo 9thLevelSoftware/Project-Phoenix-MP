@@ -108,6 +108,49 @@ class RepNotificationFreshnessGateTest {
     }
 
     @Test
+    fun `timed cable processes target 252 warmup ROM progress without prior baseline`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 0, cutover = 1_000L).copy(isTimedCable = true)
+
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(lease, modernPacket(repsRomCount = 1, repsSetTotal = 252, timestamp = 1_001L)),
+        )
+        assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(lease, modernPacket(repsRomCount = 2, repsSetTotal = 252, timestamp = 1_002L)),
+        )
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(lease, modernPacket(repsRomCount = 3, repsSetTotal = 252, timestamp = 1_003L)),
+        )
+    }
+
+    @Test
+    fun `timed cable finite returned target remains mismatched`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 0, cutover = 1_000L).copy(isTimedCable = true)
+
+        assertEquals(
+            RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH),
+            gate.evaluate(lease, modernPacket(repsRomCount = 1, repsSetTotal = 4, timestamp = 1_001L)),
+        )
+        assertEquals(RepFreshnessState.AwaitingEvidence, gate.stateFor(lease))
+    }
+
+    @Test
+    fun `pre-cutover timed cable target 252 is still rejected`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 0, cutover = 1_000L).copy(isTimedCable = true)
+
+        assertEquals(
+            RepFreshnessDecision.Drop(RepDropReason.PRE_CUTOVER_TIMESTAMP),
+            gate.evaluate(lease, modernPacket(repsRomCount = 1, repsSetTotal = 252, timestamp = 999L)),
+        )
+    }
+
+    @Test
     fun `clean timed cable target 252 baseline arms the lease`() {
         val gate = RepNotificationFreshnessGate()
         val lease = activeLease(target = 0, cutover = 1_000L).copy(isTimedCable = true)

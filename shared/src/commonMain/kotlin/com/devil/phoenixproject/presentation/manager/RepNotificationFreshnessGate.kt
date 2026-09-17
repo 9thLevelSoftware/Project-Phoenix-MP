@@ -93,16 +93,17 @@ internal class RepNotificationFreshnessGate {
                 notification.repsSetCount > 0
             )
 
-        // A target-252 timed-cable packet can be delayed from the previous
-        // unlimited execution. Do not let it become movement evidence for a
-        // successor lease; a clean baseline or HandleState.Moving must arm
-        // the lease first.
+        // A delayed target-252 packet from a prior unlimited execution can
+        // carry working-set counts and force warmup completion on a successor
+        // lease. Current-set calibration reports ROM progress with
+        // repsSetCount == 0; accept that immediately. A clean baseline or
+        // HandleState.Moving remains the proof for working-set 252 packets.
         val timedCableBaseline = isUnlimitedTimedCablePacket &&
             notification.repsRomCount == 0 &&
             notification.repsSetCount == 0
         if (isUnlimitedTimedCablePacket &&
             stateFor(lease) !is RepFreshnessState.Armed &&
-            !timedCableBaseline
+            notification.repsSetCount > 0
         ) {
             return RepFreshnessDecision.Drop(RepDropReason.TIMED_CABLE_BEFORE_MOVEMENT)
         }
