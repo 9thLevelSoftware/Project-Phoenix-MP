@@ -482,6 +482,7 @@ class SqlDelightCompletedSetRepositoryTest {
             useCount = 0L,
             profile_id = "default",
             groupId = null,
+            deletedAt = null,
         )
     }
 

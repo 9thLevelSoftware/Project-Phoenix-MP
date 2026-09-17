@@ -120,6 +120,7 @@ class ConflictResolutionTest {
             useCount = 5L,
             profile_id = testProfileId,
             groupId = null,
+            deletedAt = null,
         )
         // Set updatedAt by re-inserting with full upsert that preserves the timestamp
         // For this test, we simulate the scenario by inserting a routine where
@@ -200,6 +201,7 @@ class ConflictResolutionTest {
             useCount = 0L,
             profile_id = testProfileId,
             groupId = null,
+            deletedAt = null,
         )
         // Add a local exercise
         database.phoenixDatabaseQueries.insertRoutineExercise(

@@ -706,6 +706,7 @@ class SqlDelightSyncRepositoryTest {
             useCount = 0,
             profile_id = "active-profile",
             groupId = null,
+            deletedAt = null,
         )
         database.phoenixDatabaseQueries.insertRoutineExercise(
             id = "rex-rack-defaults",
@@ -790,6 +791,7 @@ class SqlDelightSyncRepositoryTest {
             useCount = 0,
             profile_id = "active-profile",
             groupId = null,
+            deletedAt = null,
         )
         database.phoenixDatabaseQueries.insertRoutineExercise(
             id = "rex-scaling-basis",
@@ -874,6 +876,7 @@ class SqlDelightSyncRepositoryTest {
             useCount = 0,
             profile_id = "active-profile",
             groupId = null,
+            deletedAt = null,
         )
         database.phoenixDatabaseQueries.insertRoutineExercise(
             id = "rex-drop-set",
