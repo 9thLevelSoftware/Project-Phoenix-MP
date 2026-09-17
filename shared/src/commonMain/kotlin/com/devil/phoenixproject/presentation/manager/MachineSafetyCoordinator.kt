@@ -210,7 +210,8 @@ class MachineSafetyCoordinator(
                 throw cancelled
             } catch (_: Exception) { Result.failure(IllegalStateException("stop failed")) }
             if (!isCurrent(visible.document.generation, token)) return@launch
-            val outcome = if (write.isSuccess) connecting.copy(
+            val disconnectedDuringWrite = transport.connectedTrainerAddress != visible.document.trainerAddress
+            val outcome = if (write.isSuccess && !disconnectedDuringWrite) connecting.copy(
                 updatedAtEpochMs = nowEpochMs(),
                 phase = MachineSafetyPhase.RELEASE_REQUEST_SENT,
                 lastConnectResult = MachineSafetyConnectResult.MATCHING_READY,
@@ -219,7 +220,11 @@ class MachineSafetyCoordinator(
                 updatedAtEpochMs = nowEpochMs(),
                 phase = MachineSafetyPhase.RELEASE_REQUEST_FAILED,
                 lastConnectResult = MachineSafetyConnectResult.MATCHING_READY,
-                lastWriteResult = MachineSafetyWriteResult.TRANSPORT_FAIL,
+                lastWriteResult = if (disconnectedDuringWrite) {
+                    MachineSafetyWriteResult.DISCONNECTED_DURING_WRITE
+                } else {
+                    MachineSafetyWriteResult.TRANSPORT_FAIL
+                },
             )
             persistIfCurrent(visible.document.generation, outcome)
         }

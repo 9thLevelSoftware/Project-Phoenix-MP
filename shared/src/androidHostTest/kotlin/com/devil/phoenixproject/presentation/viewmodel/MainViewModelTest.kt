@@ -320,27 +320,86 @@ class MainViewModelTest {
     }
 
     @Test
+    fun `production graph matching trainer reset records transport ack but keeps durable hazard`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Target", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        fakeBleRepository.emitReconnectionRequest(
+            ReconnectionRequest("Vee_Target", "AA:BB:CC:DD:EE:FF", "loss", 3L),
+        )
+        advanceUntilIdle()
+
+        viewModel.requestMachineSafetyRecovery()
+        advanceUntilIdle()
+
+        val recovered = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        assertEquals(MachineSafetyPhase.RELEASE_REQUEST_SENT, recovered.document.phase)
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+        assertTrue(safetyStore.loadAll().isNotEmpty(), "transport ACK is not physical acknowledgement")
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+    }
+
+    @Test
+    fun `production graph disconnect during reset write leaves hazard and ignores stale completion`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Target", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        fakeBleRepository.emitReconnectionRequest(
+            ReconnectionRequest("Vee_Target", "AA:BB:CC:DD:EE:FF", "loss", 4L),
+        )
+        advanceUntilIdle()
+
+        val write = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
+        fakeBleRepository.stopWorkoutBlock = {
+            fakeBleRepository.simulateDisconnect()
+            write.await()
+        }
+        viewModel.requestMachineSafetyRecovery()
+        runCurrent()
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+
+        write.complete(Result.success(Unit))
+        advanceUntilIdle()
+
+        val state = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        assertTrue(state.document.phase != MachineSafetyPhase.RELEASE_REQUEST_SENT)
+        assertTrue(safetyStore.loadAll().isNotEmpty())
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+    }
+
+    @Test
     fun `production graph preserves bodyweight control without safety arm or absent link write`() = runTest(testCoroutineRule.dispatcher) {
         fakeBleRepository.simulateConnect("Vee_Bodyweight", "AA:BB:CC:DD:EE:FF")
         advanceUntilIdle()
-        viewModel.updateWorkoutParameters(
-            WorkoutParameters(
-                programMode = ProgramMode.OldSchool,
-                reps = 5,
-                warmupReps = 0,
-                weightPerCableKg = 0f,
-                isJustLift = true,
+        viewModel.loadRoutine(
+            Routine(
+                id = "routine-production-bodyweight",
+                name = "Production Bodyweight",
+                exercises = listOf(
+                    RoutineExercise(
+                        id = "routine-production-bodyweight-exercise",
+                        exercise = Exercise(
+                            id = "production-pullup",
+                            name = "Pull-Up",
+                            muscleGroup = "Back",
+                            equipment = "",
+                            isBodyweightOverride = true,
+                        ),
+                        orderIndex = 0,
+                        setReps = listOf(5),
+                        weightPerCableKg = 0f,
+                        warmupSets = emptyList(),
+                    ),
+                ),
             ),
         )
+        advanceUntilIdle()
+        viewModel.enterSetReady(0, 0)
+        advanceUntilIdle()
         fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 0f, loadB = 0f))
         viewModel.startWorkout(skipCountdown = true)
         advanceUntilIdle()
-        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
-        assertTrue(fakeBleRepository.commandsReceived.isNotEmpty())
+        assertIs<WorkoutState.BodyweightRepEntry>(viewModel.workoutState.value)
         assertTrue(fakeBleRepository.commandsReceived.none { it.isEmpty() })
-        assertTrue(safetyStore.loadAll().all { result ->
-            result is com.devil.phoenixproject.data.repository.MachineSafetyLoadResult.Loaded && result.document.trainerAddress.isNotBlank()
-        })
+        assertTrue(safetyStore.loadAll().isEmpty(), "bodyweight control must not persist a machine safety obligation: ${safetyStore.loadAll()}")
     }
 
     // ========== Connection State Tests ==========
