@@ -590,6 +590,8 @@ data class WorkoutSession(
     val formScore: Int? = null,
     // Profile scoping
     val profileId: String = "default",
+    /** Domain last-edit epoch millis used as the portal LWW wire timestamp. */
+    val updatedAt: Long? = null,
 ) {
     /** True if this session has detailed summary metrics (v0.2.1+) */
     val hasSummaryMetrics: Boolean

@@ -258,12 +258,10 @@ object PortalSyncAdapter {
                 ?: first.exerciseName
                 ?: "Just Lift".takeIf { first.isJustLift },
             startedAt = epochToIso8601(first.timestamp),
-            // LWW gate (Phase 3.2): epoch-ms push time as ISO 8601. When mobile
-            // domain starts tracking per-row updated_at end-to-end, replace
-            // with the domain value. Until then, push time is monotonic and
-            // consistent with the server-wins semantics we are preserving in
-            // Phase 3.2 (server falls back to NOW() for missing values).
-            updatedAt = epochToIso8601(currentTimeMillis()),
+            // LWW gate: wire the domain last-edit, never encode-time wall clock.
+            // Stamping NOW() at push time made every mobile sync win against a
+            // later portal edit of the same session id.
+            updatedAt = epochToIso8601(domainLastEditEpochMs(sorted.map { it.session })),
             durationSeconds = totalDuration,
             totalVolume = totalVolume,
             setCount = totalSets,
@@ -735,8 +733,9 @@ object PortalSyncAdapter {
             status = if (cycle.isActive) "active" else "draft",
             startedAt = progress?.cycleStartDate?.let { epochToIso8601(it) },
             lastUsedAt = progress?.lastCompletedDate?.let { epochToIso8601(it) },
-            // LWW gate (Phase 3.2); see PortalWorkoutSessionDto build path.
-            updatedAt = epochToIso8601(currentTimeMillis()),
+            // LWW gate: persist the domain last-edit. Cycles are pushed on every
+            // sync, so encode-time NOW() would blindly overwrite portal edits.
+            updatedAt = epochToIso8601(cycle.updatedAt ?: cycle.createdAt),
             progressionSettings = progressionJson,
             deloadSettings = null,
             days = days,
@@ -810,4 +809,12 @@ object PortalSyncAdapter {
         val instant = kotlin.time.Instant.fromEpochMilliseconds(epochMs)
         return instant.toString() // ISO 8601 format
     }
+
+    /**
+     * Latest domain last-edit among the mobile rows that collapse into one
+     * portal workout. Falls back to [WorkoutSession.timestamp] (startedAt)
+     * when a row has not yet stored updatedAt.
+     */
+    internal fun domainLastEditEpochMs(sessions: List<WorkoutSession>): Long =
+        sessions.maxOf { it.updatedAt ?: it.timestamp }
 }

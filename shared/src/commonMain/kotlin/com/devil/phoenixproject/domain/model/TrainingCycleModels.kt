@@ -40,6 +40,8 @@ data class TrainingCycle(
     val weekNumber: Int = 1,
     val profileId: String = "default",
     val templateId: String? = null,
+    /** Domain last-edit epoch millis used as the portal LWW wire timestamp. */
+    val updatedAt: Long? = null,
 ) {
     companion object {
         fun create(

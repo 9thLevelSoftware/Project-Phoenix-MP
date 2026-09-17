@@ -845,6 +845,52 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `portal session updatedAt uses domain last-edit not encode wall clock`() {
+        val domainUpdatedAt = 1_700_000_000_000L
+        val swr = makeSessionWithReps(
+            timestamp = 1_600_000_000_000L,
+            updatedAt = domainUpdatedAt,
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
+
+        assertEquals("2023-11-14T22:13:20Z", result[0].updatedAt)
+    }
+
+    @Test
+    fun `portal session updatedAt falls back to timestamp when domain updatedAt is null`() {
+        val startedAt = 1_700_000_000_000L
+        val swr = makeSessionWithReps(timestamp = startedAt, updatedAt = null)
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(swr), "user-1")
+
+        assertEquals("2023-11-14T22:13:20Z", result[0].updatedAt)
+    }
+
+    @Test
+    fun `grouped portal session updatedAt uses latest domain last-edit`() {
+        val grouped = listOf(
+            makeSessionWithReps(
+                sessionId = "s1",
+                routineSessionId = "g1",
+                timestamp = 1_600_000_000_000L,
+                updatedAt = 1_650_000_000_000L,
+            ),
+            makeSessionWithReps(
+                sessionId = "s2",
+                routineSessionId = "g1",
+                timestamp = 1_610_000_000_000L,
+                updatedAt = 1_700_000_000_000L,
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(grouped, "user-1")
+
+        assertEquals(1, result.size)
+        assertEquals("2023-11-14T22:13:20Z", result[0].updatedAt)
+    }
+
+    @Test
     fun `toPortalRoutine estimates duration based on sets and rest`() {
         val exercises = listOf(
             makeRoutineExercise(
@@ -876,6 +922,41 @@ class PortalSyncAdapterTest {
 
         assertEquals("template_531", result.templateId)
         assertEquals(3, result.currentWeek)
+    }
+
+    @Test
+    fun `toPortalTrainingCycle updatedAt uses domain last-edit not encode wall clock`() {
+        val domainUpdatedAt = 1_700_000_000_000L
+        val cycle = TrainingCycle.create(
+            id = "cycle-lww",
+            name = "LWW Cycle",
+        ).copy(
+            createdAt = 1_600_000_000_000L,
+            updatedAt = domainUpdatedAt,
+        )
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(cycle = cycle),
+            userId = "user-1",
+        )
+
+        assertEquals("2023-11-14T22:13:20Z", result.updatedAt)
+    }
+
+    @Test
+    fun `toPortalTrainingCycle updatedAt falls back to createdAt when domain updatedAt is null`() {
+        val createdAt = 1_700_000_000_000L
+        val cycle = TrainingCycle.create(
+            id = "cycle-created",
+            name = "Created Cycle",
+        ).copy(createdAt = createdAt, updatedAt = null)
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(cycle = cycle),
+            userId = "user-1",
+        )
+
+        assertEquals("2023-11-14T22:13:20Z", result.updatedAt)
     }
 
     // ========== userId passthrough ==========
@@ -1277,6 +1358,7 @@ class PortalSyncAdapterTest {
         isPr: Boolean = false,
         repMetrics: List<RepMetricData> = emptyList(),
         repBiomechanics: List<PortalSyncAdapter.RepBiomechanicsData> = emptyList(),
+        updatedAt: Long? = null,
     ): PortalSyncAdapter.SessionWithReps {
         val session = WorkoutSession(
             id = sessionId,
@@ -1294,6 +1376,7 @@ class PortalSyncAdapterTest {
             routineName = routineName,
             totalVolumeKg = totalVolumeKg,
             rpe = rpe,
+            updatedAt = updatedAt,
         )
         return PortalSyncAdapter.SessionWithReps(
             session = session,

@@ -1649,6 +1649,97 @@ class SyncManagerTest {
         )
     }
 
+    @Test
+    fun pullSessionNotesLwwPrefersUpdatedAtOverStartedAt() = runTest {
+        setupAuthenticated()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_741_000_000_000L,
+                sessions = listOf(
+                    PullWorkoutSessionDto(
+                        id = "notes-session",
+                        userId = "user-123",
+                        startedAt = "2023-11-14T22:13:20Z",
+                        updatedAt = "2024-01-01T00:00:00Z",
+                        notes = "portal notes after later edit",
+                    ),
+                ),
+            ),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        assertEquals(1, fakeSyncRepo.mergeSessionNotesCallCount)
+        val entry = fakeSyncRepo.lastMergedSessionNotes["notes-session"]
+        assertNotNull(entry, "Phase 3.5 must merge session notes keyed by portal session id")
+        assertEquals("portal notes after later edit", entry.notes)
+        assertEquals(
+            1_704_067_200_000L,
+            entry.updatedAtMillis,
+            "Notes LWW must use session.updatedAt, not startedAt",
+        )
+    }
+
+    @Test
+    fun pullSessionNotesLwwFallsBackToStartedAtWhenUpdatedAtMissing() = runTest {
+        setupAuthenticated()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1_741_000_000_000L,
+                sessions = listOf(
+                    PullWorkoutSessionDto(
+                        id = "notes-legacy",
+                        userId = "user-123",
+                        startedAt = "2023-11-14T22:13:20Z",
+                        notes = "legacy notes",
+                    ),
+                ),
+            ),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        val entry = fakeSyncRepo.lastMergedSessionNotes["notes-legacy"]
+        assertNotNull(entry)
+        assertEquals(1_700_000_000_000L, entry.updatedAtMillis)
+    }
+
+    @Test
+    fun sessionNotesLwwEpochMillisPrefersUpdatedAtThenStartedAtThenNow() {
+        assertEquals(
+            1_704_067_200_000L,
+            sessionNotesLwwEpochMillis(
+                updatedAtIso = "2024-01-01T00:00:00Z",
+                startedAtIso = "2023-11-14T22:13:20Z",
+                nowMillis = { error("now must not be used when updatedAt parses") },
+            ),
+        )
+        assertEquals(
+            1_700_000_000_000L,
+            sessionNotesLwwEpochMillis(
+                updatedAtIso = null,
+                startedAtIso = "2023-11-14T22:13:20Z",
+                nowMillis = { error("now must not be used when startedAt parses") },
+            ),
+        )
+        assertEquals(
+            42L,
+            sessionNotesLwwEpochMillis(
+                updatedAtIso = "not-a-timestamp",
+                startedAtIso = null,
+                nowMillis = { 42L },
+            ),
+        )
+    }
+
     private fun makeWorkoutSession(
         id: String,
         timestamp: Long,
