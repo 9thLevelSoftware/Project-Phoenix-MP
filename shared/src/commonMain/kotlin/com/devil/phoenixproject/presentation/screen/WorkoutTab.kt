@@ -79,6 +79,7 @@ import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
@@ -91,7 +92,6 @@ import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
-import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
@@ -344,7 +344,7 @@ fun WorkoutTab(
     // Issue #646: -1 means not currently in variable warm-up phase
     currentWarmupSetIndex: Int = -1,
     restTransitionPlan: RestTransitionPlan? = null,
-    rackItems: List<com.devil.phoenixproject.domain.model.RackItem> = emptyList(),
+    rackItems: List<RackItem> = emptyList(),
     activeRackItemIds: List<String> = emptyList(),
     activeRackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
 ) {

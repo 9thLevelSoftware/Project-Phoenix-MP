@@ -567,6 +567,14 @@ class ActiveSessionEngine(
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
 ) {
+    private data class PendingRestRackSelection(
+        val itemIds: List<String>,
+        val behaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
+    )
+
+    /** Rest edits target the resolved upcoming routine entry while the completed entry remains current. */
+    private val pendingRestRackSelections = mutableMapOf<Pair<Int, Int>, PendingRestRackSelection>()
+
     internal suspend fun discoverRoutineResume(
         routine: Routine,
         inMemoryProgress: InMemoryRoutineProgressSnapshot?,
@@ -7210,6 +7218,7 @@ class ActiveSessionEngine(
 
     fun updateActiveRackSelection(itemIds: List<String>) {
         supersedeConfigurationInputIntent()
+        val restTarget = currentRestRackTarget()
         // Issue #534: For body-weight exercises, recompute _currentRackLoadAdjustment
         // synchronously when the user toggles a vest / counterweight on the live-set
         // screen, so that applyBodyweightVolume (called from confirmBodyweightSetResult)
@@ -7222,6 +7231,13 @@ class ActiveSessionEngine(
         // (so the next set / chip UI shows the new state) but skip the adjustment
         // recompute and skip the workoutParameters mirror copy.
         val distinctIds = itemIds.filter { it.isNotBlank() }.distinct()
+        restTarget?.let { target ->
+            pendingRestRackSelections[target] = PendingRestRackSelection(
+                itemIds = distinctIds,
+                behaviorOverrides = pendingRestRackSelections[target]?.behaviorOverrides
+                    ?: coordinator._activeRackBehaviorOverrides.value,
+            )
+        }
         val currentExercise = coordinator._loadedRoutine.value
             ?.exercises
             ?.getOrNull(coordinator._currentExerciseIndex.value)
@@ -7258,9 +7274,25 @@ class ActiveSessionEngine(
     }
 
     fun updateActiveRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) {
+        currentRestRackTarget()?.let { target ->
+            pendingRestRackSelections[target] = PendingRestRackSelection(
+                itemIds = pendingRestRackSelections[target]?.itemIds ?: coordinator._activeRackItemIds.value,
+                behaviorOverrides = overrides,
+            )
+        }
         publishLoadedRoutineRackBehaviorOverrides(
             updatedRoutine = null,
             overrides = overrides,
+        )
+    }
+
+    private fun currentRestRackTarget(): Pair<Int, Int>? {
+        if (coordinator._workoutState.value !is WorkoutState.Resting) return null
+        val routine = coordinator._loadedRoutine.value ?: return null
+        return flowDelegate?.getNextStep(
+            routine,
+            coordinator._currentExerciseIndex.value,
+            coordinator._currentSetIndex.value,
         )
     }
 
@@ -11671,6 +11703,12 @@ class ActiveSessionEngine(
             }
             val nextSetIdxFromStep = nextStep?.second
 
+            // Publish the upcoming entry's defaults before the rest UI is rendered. The
+            // current exercise index intentionally remains on the completed entry during rest.
+            if (nextStep != null && nextExerciseFromStep != null && !isBodyweightExercise(nextExerciseFromStep)) {
+                flowDelegate?.seedRackSelectionForExercise(nextStep.first)
+            }
+
             // Issue #354: Always use the exercise's configured rest time, even within supersets.
             // Previously, supersets used a hardcoded short rest time, but users should configure
             // rest per exercise instead.
@@ -12734,6 +12772,10 @@ class ActiveSessionEngine(
                 // Without re-seeding rack defaults here, a vest toggled on the previous
                 // exercise leaks into captureRackLoadSnapshot for the next exercise.
                 flowDelegate?.seedRackSelectionForExercise(nextExIdx)
+                pendingRestRackSelections.remove(nextExIdx to nextSetIdx)?.let { pending ->
+                    coordinator._activeRackBehaviorOverrides.value = pending.behaviorOverrides
+                    coordinator.setActiveRackSelection(pending.itemIds)
+                }
                 repCounter.reset()
                 // Phase 35C: Initialize warm-up phase for new exercise with warmupSets
                 if (nextSetIdx == 0 && nextExercise.warmupSets.isNotEmpty() && !nextIsBodyweight) {
