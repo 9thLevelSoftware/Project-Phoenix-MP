@@ -124,6 +124,18 @@ class RepNotificationFreshnessGateTest {
     }
 
     @Test
+    fun `timed cable accepts carried directional counters as target 252 baseline`() {
+        val gate = RepNotificationFreshnessGate()
+        val lease = activeLease(target = 0, cutover = 1_000L).copy(isTimedCable = true)
+
+        assertEquals(
+            RepFreshnessDecision.BaselineOnly,
+            gate.evaluate(lease, modernPacket(topCounter = 4, completeCounter = 3, repsSetTotal = 252, timestamp = 1_001L)),
+        )
+        assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
+    }
+
+    @Test
     fun `timed cable accepts unlimited target 252 after current movement proof`() {
         val gate = RepNotificationFreshnessGate()
         val lease = activeLease(target = 0, cutover = 1_000L).copy(isTimedCable = true)

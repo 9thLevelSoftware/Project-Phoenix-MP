@@ -97,14 +97,18 @@ internal class RepNotificationFreshnessGate {
         // unlimited execution. Do not let it become movement evidence for a
         // successor lease; a clean baseline or HandleState.Moving must arm
         // the lease first.
+        val timedCableBaseline = isUnlimitedTimedCablePacket &&
+            notification.repsRomCount == 0 &&
+            notification.repsSetCount == 0
         if (isUnlimitedTimedCablePacket &&
             stateFor(lease) !is RepFreshnessState.Armed &&
-            !allZero
+            !allZero &&
+            !timedCableBaseline
         ) {
             return RepFreshnessDecision.Drop(RepDropReason.TIMED_CABLE_BEFORE_MOVEMENT)
         }
 
-        if (allZero) {
+        if (allZero || timedCableBaseline) {
             states[identity] = RepFreshnessState.Armed
             return RepFreshnessDecision.BaselineOnly
         }
