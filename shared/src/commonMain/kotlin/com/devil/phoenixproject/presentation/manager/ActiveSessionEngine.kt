@@ -8983,7 +8983,9 @@ class ActiveSessionEngine(
         val persistZeroRepStallAttempt = completion.reason == SetEndReason.STALL_FAILURE &&
             completion.routineIdentity != null &&
             hasExerciseIdentity
-        val completedSet = if (hasExerciseIdentity && (repCount.workingReps > 0 || persistZeroRepStallAttempt)) {
+        val persistTimedCableHold = completion.lease.isTimedCable &&
+            completion.reason == SetEndReason.TIMER_EXPIRED
+        val completedSet = if (hasExerciseIdentity && (repCount.workingReps > 0 || persistZeroRepStallAttempt || persistTimedCableHold)) {
             CompletedSet(
                 id = generateUUID(),
                 sessionId = lease.sessionId,
@@ -10934,7 +10936,9 @@ class ActiveSessionEngine(
         Logger.d("Saved workout session: $sessionId with ${metricsSnapshot.size} metrics")
 
         var completedSetId: String? = null
-        if (params.selectedExerciseId != null && working > 0) {
+        if (params.selectedExerciseId != null &&
+            (working > 0 || (completion.lease.isTimedCable && completion.reason == SetEndReason.TIMER_EXPIRED))
+        ) {
             val setIndex = completionLogicalSetKey?.setIndex ?: coordinator._currentSetIndex.value
             val setId = generateUUID()
             completedSetId = setId

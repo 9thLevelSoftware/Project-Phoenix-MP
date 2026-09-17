@@ -72,7 +72,7 @@ class Issue775TimedCableCountdownLifecycleTest {
             assertEquals(29, harness.coordinator.timedExerciseRemainingSeconds.value)
 
             advanceTimeBy(29_000L)
-            runCurrent()
+            advanceUntilIdle()
 
             // handleSetCompletion clears the published remaining value after expiry.
             assertTrue(
