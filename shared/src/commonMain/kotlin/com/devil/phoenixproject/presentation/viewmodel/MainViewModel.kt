@@ -540,7 +540,7 @@ class MainViewModel(
     private val countVelocityOneRepMaxImprovementsUseCase: CountVelocityOneRepMaxImprovementsUseCase,
     // Issue #517: one-time startup backfill of velocity-1RM estimates for historical data.
     private val backfillVelocityOneRepMaxUseCase: BackfillVelocityOneRepMaxUseCase,
-    private val machineSafetyCoordinator: MachineSafetyCoordinator? = null,
+    private val machineSafetyCoordinator: MachineSafetyCoordinator,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -656,6 +656,7 @@ class MainViewModel(
         workoutServiceController = workoutServiceController,
         scope = viewModelScope,
         _hapticEvents = _hapticEvents,
+        machineSafetyCoordinator = machineSafetyCoordinator,
     )
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===
@@ -723,8 +724,7 @@ class MainViewModel(
     val isAutoConnecting: StateFlow<Boolean> get() = bleConnectionManager.isAutoConnecting
     val connectionError: StateFlow<String?> get() = bleConnectionManager.connectionError
     val connectionLostDuringWorkout: StateFlow<Boolean> get() = bleConnectionManager.connectionLostDuringWorkout
-    val machineSafetyUiState: StateFlow<MachineSafetyUiState> =
-        machineSafetyCoordinator?.uiState ?: MutableStateFlow(MachineSafetyUiState.Hidden)
+    val machineSafetyUiState: StateFlow<MachineSafetyUiState> = machineSafetyCoordinator.uiState
 
     fun startScanning() = bleConnectionManager.startScanning()
     fun stopScanning() = bleConnectionManager.stopScanning()
@@ -733,15 +733,12 @@ class MainViewModel(
     fun disconnect() = bleConnectionManager.disconnect()
     fun clearConnectionError() = bleConnectionManager.clearConnectionError()
     fun dismissConnectionLostAlert() = bleConnectionManager.dismissConnectionLostAlert()
-    fun dismissMachineSafetyWarning() = machineSafetyCoordinator?.hideTemporarily()
-    fun requestMachineSafetyRecovery() {
-        if (machineSafetyCoordinator == null) reconnectInterruptedWorkout()
-        else machineSafetyCoordinator.requestReleaseRecovery()
-    }
-    fun acknowledgeMachineSafetyUnloaded(generation: Long) = machineSafetyCoordinator?.acknowledgeUnloaded(generation)
+    fun dismissMachineSafetyWarning() = machineSafetyCoordinator.hideTemporarily()
+    fun requestMachineSafetyRecovery() = machineSafetyCoordinator.requestReleaseRecovery()
+    fun acknowledgeMachineSafetyUnloaded(generation: Long) = machineSafetyCoordinator.acknowledgeUnloaded(generation)
     fun ensureConnection(onConnected: () -> Unit, onFailed: () -> Unit = {}) = bleConnectionManager.ensureConnection(onConnected, onFailed)
     fun reconnectInterruptedWorkout() {
-        if (machineSafetyCoordinator?.uiState?.value is MachineSafetyUiState.Visible) {
+        if (machineSafetyCoordinator.uiState.value is MachineSafetyUiState.Visible) {
             machineSafetyCoordinator.requestReleaseRecovery()
             return
         }
@@ -1256,10 +1253,10 @@ class MainViewModel(
     // ===== Velocity-1RM Backfill (Issue #517) =====
 
     init {
-        viewModelScope.launch { machineSafetyCoordinator?.restoreOnStartup() }
+        viewModelScope.launch { machineSafetyCoordinator.restoreOnStartup() }
         viewModelScope.launch {
             bleRepository.reconnectionRequested.collect { request ->
-                machineSafetyCoordinator?.recordConnectionLost(
+                machineSafetyCoordinator.recordConnectionLost(
                     trainerAddress = request.deviceAddress,
                     trainerName = request.deviceName,
                     kind = com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind.UNKNOWN,

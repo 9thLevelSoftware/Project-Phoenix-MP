@@ -48,7 +48,7 @@ class MachineSafetyCoordinator(
     val uiState: StateFlow<MachineSafetyUiState> = _uiState.asStateFlow()
     private var recoveryJob: Job? = null
     private var nextGeneration = 0L
-
+    private val processArmedGenerations = mutableSetOf<Long>()
     suspend fun restoreOnStartup() {
         val results = try { repository.loadAll() } catch (_: Exception) {
             listOf(MachineSafetyLoadResult.Rejected(MachineSafetyRejection.CORRUPT_JSON, null))
@@ -70,11 +70,51 @@ class MachineSafetyCoordinator(
         return try {
             repository.replace(persisted)
             nextGeneration = safeGeneration
+            processArmedGenerations += safeGeneration
             show(persisted)
             true
         } catch (_: Exception) {
             false
         }
+    }
+
+    /**
+     * Establish the durable obligation before a machine command can load force.
+     * A missing/unknown trainer identity is an intentional fail-closed result.
+     */
+    suspend fun armBeforeMachineCommand(
+        executionId: Long,
+        profileId: String?,
+        kind: MachineSafetyWorkoutKind,
+    ): Boolean {
+        val trainerAddress = transport.connectedTrainerAddress ?: return false
+        return recordMachineSessionArmed(
+            MachineSafetyHazardDocument(
+                generation = nextGeneration + 1L,
+                trainerAddress = trainerAddress,
+                sessionId = sessionIdFactory(),
+                executionId = executionId,
+                profileId = profileId,
+                workoutKind = kind,
+                createdAtEpochMs = nowEpochMs(),
+                updatedAtEpochMs = nowEpochMs(),
+                phase = MachineSafetyPhase.UNRESOLVED,
+                physicalRelease = MachineSafetyPhysicalRelease.UNKNOWN,
+            ),
+        )
+    }
+
+    /** A dismissed warning remains a durable start barrier until physical acknowledgement. */
+    suspend fun canStartMachine(): Boolean = try {
+        repository.loadAll().none { result ->
+            when (result) {
+                is MachineSafetyLoadResult.Loaded -> result.document.generation !in processArmedGenerations
+                is MachineSafetyLoadResult.Rejected -> true
+                MachineSafetyLoadResult.Missing -> false
+            }
+        }
+    } catch (_: Exception) {
+        false
     }
 
     suspend fun recordConnectionLost(

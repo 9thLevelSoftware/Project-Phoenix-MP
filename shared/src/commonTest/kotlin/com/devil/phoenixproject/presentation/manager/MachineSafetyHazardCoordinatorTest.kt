@@ -13,6 +13,7 @@ import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
 
@@ -62,6 +63,19 @@ class MachineSafetyHazardCoordinatorTest {
         assertEquals(0, transport.stopCalls)
         assertEquals(MachineSafetyPhase.RELEASE_REQUEST_FAILED, document.phase)
         assertTrue(store.rows.isNotEmpty())
+    }
+
+    @Test
+    fun `machine command is persisted before it is allowed and cold restore blocks start`() = runTest {
+        val store = FakeHazardStore()
+        val transport = FakeSafetyTransport("trainer-1")
+        val first = coordinator(store, transport)
+        assertTrue(first.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
+        assertTrue(first.canStartMachine())
+
+        val restored = coordinator(store, FakeSafetyTransport("trainer-1"))
+        restored.restoreOnStartup()
+        assertFalse(restored.canStartMachine())
     }
 
     private fun TestScope.coordinator(store: FakeHazardStore, transport: FakeSafetyTransport = FakeSafetyTransport(null)) =

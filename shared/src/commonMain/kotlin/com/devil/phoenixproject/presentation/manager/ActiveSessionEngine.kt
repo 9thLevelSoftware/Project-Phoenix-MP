@@ -25,6 +25,7 @@ import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.HandleState
 import com.devil.phoenixproject.data.repository.LogEventType
+import com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepMetricRepository
@@ -550,6 +551,7 @@ class ActiveSessionEngine(
     private val settingsManager: SettingsManager,
     private val userProfileRepository: UserProfileRepository,
     private val scope: CoroutineScope,
+    private val machineSafetyCoordinator: MachineSafetyCoordinator? = null,
     private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
     private val beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
@@ -8514,6 +8516,12 @@ class ActiveSessionEngine(
                 }
                 beforeMachineConfigurationClaimForTest?.invoke()
                 currentCoroutineContext().ensureActive()
+                val machineSafetyStartAllowed = isBodyweight ||
+                    (machineSafetyCoordinator?.canStartMachine() ?: true)
+                if (!machineSafetyStartAllowed) {
+                    failStart(lease, priorWorkoutState)
+                    return@launch
+                }
                 val configurationClaim = executionGuard.claimMachineConfiguration(
                     lease = lease,
                     expectedConfigurationInputEpoch = retryRequest?.configurationInputEpoch
@@ -8539,6 +8547,14 @@ class ActiveSessionEngine(
                 var activationAllowed = false
                 var configurationCompletion: MachineConfigurationCompletion = MachineConfigurationCompletion.Rejected
                 val configFailure: Exception? = try {
+                    if (!isBodyweight && !(machineSafetyCoordinator?.armBeforeMachineCommand(
+                            executionId = lease.executionId,
+                            profileId = readyProfile.profile.id,
+                            kind = if (isJustLiftMode || effectiveParams.isJustLift) MachineSafetyWorkoutKind.JUST_LIFT else MachineSafetyWorkoutKind.ROUTINE,
+                        ) ?: true)
+                    ) {
+                        throw IllegalStateException("machine safety obligation could not be persisted")
+                    }
                     configMayHaveReachedMachine = true
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
                     if (retryRequest != null) {

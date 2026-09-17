@@ -127,6 +127,7 @@ actual val platformModule: Module = module {
             velocityOneRepMaxRepository = get(),
             countVelocityOneRepMaxImprovementsUseCase = get(),
             backfillVelocityOneRepMaxUseCase = get(),
+            machineSafetyCoordinator = get(),
         )
     }
 }
