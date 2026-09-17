@@ -15,6 +15,7 @@ internal enum class RepDropReason {
     PRE_CUTOVER_TIMESTAMP,
     TARGET_MISMATCH,
     TERMINAL_BEFORE_EVIDENCE,
+    TIMED_CABLE_BEFORE_MOVEMENT,
 }
 
 internal sealed interface RepFreshnessDecision {
@@ -91,6 +92,17 @@ internal class RepNotificationFreshnessGate {
                 notification.repsRomCount > 0 ||
                 notification.repsSetCount > 0
             )
+
+        // A target-252 timed-cable packet can be delayed from the previous
+        // unlimited execution. Do not let it become movement evidence for a
+        // successor lease; HandleState.Moving must arm the lease first.
+        if (isUnlimitedTimedCablePacket && stateFor(lease) !is RepFreshnessState.Armed) {
+            return if (allZero) {
+                RepFreshnessDecision.BaselineOnly
+            } else {
+                RepFreshnessDecision.Drop(RepDropReason.TIMED_CABLE_BEFORE_MOVEMENT)
+            }
+        }
 
         if (allZero) {
             states[identity] = RepFreshnessState.Armed

@@ -96,26 +96,30 @@ class RepNotificationFreshnessGateTest {
     }
 
     @Test
-    fun `timed cable accepts unlimited target 252 before movement arms the lease`() {
+    fun `successor timed cable drops stale unlimited target 252 before movement`() {
         val gate = RepNotificationFreshnessGate()
         val lease = activeLease(target = 0, cutover = 1_000L).copy(isTimedCable = true)
 
         assertEquals(
-            RepFreshnessDecision.Process,
+            RepFreshnessDecision.Drop(RepDropReason.TIMED_CABLE_BEFORE_MOVEMENT),
             gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 252, timestamp = 1_001L)),
         )
-        assertEquals(RepFreshnessState.Armed, gate.stateFor(lease))
+        assertEquals(RepFreshnessState.AwaitingEvidence, gate.stateFor(lease))
     }
 
     @Test
-    fun `armed timed cable accepts unlimited target 252 after movement`() {
+    fun `timed cable accepts unlimited target 252 after current movement proof`() {
         val gate = RepNotificationFreshnessGate()
         val lease = activeLease(target = 0, cutover = 1_000L).copy(isTimedCable = true)
-        gate.observeMovement(lease)
 
         assertEquals(
-            RepFreshnessDecision.Process,
+            RepFreshnessDecision.Drop(RepDropReason.TIMED_CABLE_BEFORE_MOVEMENT),
             gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 252, timestamp = 1_001L)),
+        )
+        assertTrue(gate.observeMovement(lease))
+        assertEquals(
+            RepFreshnessDecision.Process,
+            gate.evaluate(lease, modernPacket(repsSetCount = 1, repsSetTotal = 252, timestamp = 1_002L)),
         )
     }
 
