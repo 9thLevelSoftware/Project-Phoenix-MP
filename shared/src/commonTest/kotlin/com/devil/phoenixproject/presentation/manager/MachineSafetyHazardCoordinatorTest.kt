@@ -35,7 +35,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `matching recovery sends stop only and ack does not claim physical unload`() = runTest {
         val store = FakeHazardStore()
-        val transport = FakeSafetyTransport(address = "trainer-1")
+        val transport = FakeSafetyTransport(connectedTrainerAddress = "trainer-1")
         val coordinator = coordinator(store, transport)
         coordinator.recordConnectionLost("trainer-1")
         coordinator.requestReleaseRecovery()
@@ -53,7 +53,7 @@ class MachineSafetyHazardCoordinatorTest {
     @Test
     fun `wrong trainer never sends stop or clears obligation`() = runTest {
         val store = FakeHazardStore()
-        val transport = FakeSafetyTransport(address = "other")
+        val transport = FakeSafetyTransport(connectedTrainerAddress = "other")
         val coordinator = coordinator(store, transport)
         coordinator.recordConnectionLost("trainer-1")
         coordinator.requestReleaseRecovery()
