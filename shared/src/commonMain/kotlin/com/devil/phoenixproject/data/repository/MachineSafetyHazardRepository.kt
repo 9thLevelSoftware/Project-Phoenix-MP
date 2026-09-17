@@ -79,18 +79,20 @@ class SqlDelightMachineSafetyHazardRepository internal constructor(
         queries.selectMachineSafetyHazards().executeAsList().map(::decode)
     }
 
-    override suspend fun replace(document: MachineSafetyHazardDocument) = withContext(Dispatchers.IO) {
-        queries.replaceMachineSafetyHazard(
-            trainer_address = document.trainerAddress,
-            generation = document.generation,
-            document_version = document.version.toLong(),
-            hazard_json = Json.encodeToString(document),
-            updated_at_epoch_ms = nowEpochMs(),
-        )
+    override suspend fun replace(document: MachineSafetyHazardDocument) {
+        withContext(Dispatchers.IO) {
+            queries.replaceMachineSafetyHazard(
+                trainer_address = document.trainerAddress,
+                generation = document.generation,
+                document_version = document.version.toLong(),
+                hazard_json = Json.encodeToString(document),
+                updated_at_epoch_ms = nowEpochMs(),
+            )
+        }
     }
 
     override suspend fun deleteIfGenerationMatches(trainerAddress: String, generation: Long): Boolean = withContext(Dispatchers.IO) {
-        queries.deleteMachineSafetyHazardIfGenerationMatches(trainerAddress, generation).executeAsOne() > 0
+        queries.deleteMachineSafetyHazardIfGenerationMatches(trainerAddress, generation).execute() > 0
     }
 
     private fun decode(row: com.devil.phoenixproject.database.MachineSafetyHazard): MachineSafetyLoadResult {

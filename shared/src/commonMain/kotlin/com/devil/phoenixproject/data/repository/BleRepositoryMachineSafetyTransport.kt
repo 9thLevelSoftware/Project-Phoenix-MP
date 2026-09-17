@@ -16,15 +16,14 @@ class BleRepositoryMachineSafetyTransport(
         if (trainerAddress.isBlank()) return Result.failure(IllegalArgumentException("trainer address is blank"))
         bleRepository.startScanning().getOrElse { return Result.failure(it) }
         return try {
-            val found = withTimeoutOrNull(scanTimeoutMs) {
+            val found = withTimeoutOrNull<ScannedDevice>(scanTimeoutMs) {
                 while (true) {
-                    bleRepository.scannedDevices.value.firstOrNull { it.address == trainerAddress }?.let { device ->
-                        return@withTimeoutOrNull bleRepository.connect(device)
-                    }
+                    bleRepository.scannedDevices.value.firstOrNull { it.address == trainerAddress }?.let { return@withTimeoutOrNull it }
                     delay(50L)
                 }
             }
-            found ?: Result.failure(IllegalStateException("matching trainer not found"))
+            found?.let { bleRepository.connect(it) }
+                ?: Result.failure(IllegalStateException("matching trainer not found"))
         } finally {
             bleRepository.stopScanning()
         }
