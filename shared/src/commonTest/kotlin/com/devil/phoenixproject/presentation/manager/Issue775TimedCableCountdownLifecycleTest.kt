@@ -74,7 +74,12 @@ class Issue775TimedCableCountdownLifecycleTest {
             advanceTimeBy(29_000L)
             advanceUntilIdle()
 
-            assertEquals(0, harness.coordinator.timedExerciseRemainingSeconds.value)
+            // handleSetCompletion clears the published remaining value after expiry.
+            assertTrue(
+                harness.coordinator.timedExerciseRemainingSeconds.value == 0 ||
+                    harness.coordinator.timedExerciseRemainingSeconds.value == null,
+            )
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
             val completed = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId)
             assertEquals(1, completed.size)
             assertEquals(SetEndReason.TIMER_EXPIRED, completed.single().setEndReason)
