@@ -742,6 +742,7 @@ class MainViewModel(
             machineSafetyCoordinator.requestReleaseRecovery()
             return
         }
+        machineSafetyCoordinator.authorizeInterruptedWorkoutResume()
         bleConnectionManager.dismissConnectionLostAlert()
         bleConnectionManager.ensureConnection(
             onConnected = { workoutSessionManager.reconnectInterruptedWorkout() },

@@ -197,11 +197,26 @@ class MainViewModelTest {
 
     @Test
     fun `production workout graph preserves durable safety barrier after dismissal`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f))
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertEquals(1, fakeBleRepository.commandsReceived.size)
+        viewModel.stopWorkout(exitingWorkout = true)
+        advanceUntilIdle()
+
         assertTrue(viewModel.machineSafetyCoordinator.recordConnectionLost("trainer-graph"))
         viewModel.dismissMachineSafetyWarning()
 
         assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
         assertIs<com.devil.phoenixproject.presentation.manager.MachineSafetyUiState.Hidden>(viewModel.machineSafetyUiState.value)
+
+        fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f))
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertEquals(1, fakeBleRepository.commandsReceived.size)
+        assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
     }
 
     // ========== Connection State Tests ==========

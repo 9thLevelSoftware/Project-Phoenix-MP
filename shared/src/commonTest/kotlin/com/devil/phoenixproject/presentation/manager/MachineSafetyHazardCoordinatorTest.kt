@@ -81,6 +81,21 @@ class MachineSafetyHazardCoordinatorTest {
         assertFalse(restored.canStartMachine())
     }
 
+    @Test
+    fun `interrupted resume authorization is one shot and never bypasses visible safety recovery`() = runTest {
+        val store = FakeHazardStore()
+        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        assertTrue(coordinator.armBeforeMachineCommand(9L, "profile", MachineSafetyWorkoutKind.ROUTINE))
+
+        coordinator.authorizeInterruptedWorkoutResume()
+        assertTrue(coordinator.canStartMachine())
+        assertFalse(coordinator.canStartMachine())
+
+        coordinator.recordConnectionLost("trainer-1")
+        coordinator.authorizeInterruptedWorkoutResume()
+        assertFalse(coordinator.canStartMachine())
+    }
+
     private fun TestScope.coordinator(store: FakeHazardStore, transport: FakeSafetyTransport = FakeSafetyTransport(null)) =
         MachineSafetyCoordinator(store, transport, CoroutineScope(SupervisorJob() + coroutineContext), { 1000L })
 

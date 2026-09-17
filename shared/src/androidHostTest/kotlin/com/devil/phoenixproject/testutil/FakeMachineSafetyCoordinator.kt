@@ -10,7 +10,14 @@ import kotlinx.coroutines.CoroutineScope
 fun fakeMachineSafetyCoordinator(
     scope: CoroutineScope,
     store: FakeMachineSafetyStore = FakeMachineSafetyStore(),
-): MachineSafetyCoordinator = MachineSafetyCoordinator(store, FakeMachineSafetyTransport(), scope, { 0L })
+    persistMachineArming: Boolean = false,
+): MachineSafetyCoordinator = MachineSafetyCoordinator(
+    repository = store,
+    transport = FakeMachineSafetyTransport(),
+    scope = scope,
+    nowEpochMs = { 0L },
+    persistMachineArming = persistMachineArming,
+)
 
 class FakeMachineSafetyStore : MachineSafetyHazardRepository {
     private val rows = linkedMapOf<String, MachineSafetyHazardDocument>()

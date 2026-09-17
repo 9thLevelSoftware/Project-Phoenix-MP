@@ -42,12 +42,14 @@ class MachineSafetyCoordinator(
     private val scope: CoroutineScope,
     private val nowEpochMs: () -> Long,
     private val sessionIdFactory: () -> String = { "safety-${Random.nextLong()}" },
+    private val persistMachineArming: Boolean = true,
 ) {
     private val mutex = Mutex()
     private val _uiState = MutableStateFlow<MachineSafetyUiState>(MachineSafetyUiState.Hidden)
     val uiState: StateFlow<MachineSafetyUiState> = _uiState.asStateFlow()
     private var recoveryJob: Job? = null
     private var nextGeneration = 0L
+    private var interruptedWorkoutResumeAuthorized = false
 
     suspend fun restoreOnStartup() {
         val results = try { repository.loadAll() } catch (_: Exception) {
@@ -90,6 +92,7 @@ class MachineSafetyCoordinator(
         kind: MachineSafetyWorkoutKind,
     ): Boolean {
         val trainerAddress = transport.connectedTrainerAddress ?: return false
+        if (!persistMachineArming) return true
         return recordMachineSessionArmed(
             MachineSafetyHazardDocument(
                 generation = nextGeneration + 1L,
@@ -106,14 +109,36 @@ class MachineSafetyCoordinator(
         )
     }
 
+    /**
+     * Authorize the already interrupted execution to rebuild its current set after a
+     * transport reconnect. This is deliberately separate from dismissal: it is a
+     * one-shot continuation for an existing execution, not permission for a new start.
+     * A visible safety warning never takes this path; its RESET-only recovery remains
+     * owned by [requestReleaseRecovery].
+     */
+    fun authorizeInterruptedWorkoutResume() {
+        if (_uiState.value is MachineSafetyUiState.Hidden) {
+            interruptedWorkoutResumeAuthorized = true
+        }
+    }
+
     /** A dismissed warning remains a durable start barrier until physical acknowledgement. */
     suspend fun canStartMachine(): Boolean = try {
-        repository.loadAll().none { result ->
+        val hasUnresolvedHazard = repository.loadAll().any { result ->
             when (result) {
                 is MachineSafetyLoadResult.Loaded -> true
                 is MachineSafetyLoadResult.Rejected -> true
                 MachineSafetyLoadResult.Missing -> false
             }
+        }
+        if (!hasUnresolvedHazard) {
+            interruptedWorkoutResumeAuthorized = false
+            true
+        } else if (interruptedWorkoutResumeAuthorized) {
+            interruptedWorkoutResumeAuthorized = false
+            true
+        } else {
+            false
         }
     } catch (_: Exception) {
         false
