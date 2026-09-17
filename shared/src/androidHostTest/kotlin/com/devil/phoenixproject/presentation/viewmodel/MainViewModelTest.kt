@@ -216,6 +216,9 @@ class MainViewModelTest {
         viewModel.stopWorkout(exitingWorkout = true)
         advanceUntilIdle()
 
+        // A continuation authorization belongs only to the hidden interrupted execution.
+        // A later real BLE loss must revoke it before a successor machine start is evaluated.
+        viewModel.machineSafetyCoordinator.authorizeInterruptedWorkoutResume()
         fakeBleRepository.simulateDisconnect()
         fakeBleRepository.emitReconnectionRequest(
             ReconnectionRequest("Vee_Test", "AA:BB:CC:DD:EE:FF", "test loss", 1L),

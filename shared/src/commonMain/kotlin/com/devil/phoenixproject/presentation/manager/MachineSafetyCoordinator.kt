@@ -75,7 +75,12 @@ class MachineSafetyCoordinator(
         return try {
             repository.replace(persisted)
             nextGeneration = safeGeneration
-            if (showRecoveryUi) show(persisted)
+            if (showRecoveryUi) {
+                // A new visible loss owns RESET-only recovery. Never let a continuation
+                // authorization granted for an earlier hidden execution cross this boundary.
+                interruptedWorkoutResumeAuthorized = false
+                show(persisted)
+            }
             true
         } catch (_: Exception) {
             false
@@ -134,10 +139,11 @@ class MachineSafetyCoordinator(
         if (!hasUnresolvedHazard) {
             interruptedWorkoutResumeAuthorized = false
             true
-        } else if (interruptedWorkoutResumeAuthorized) {
+        } else if (interruptedWorkoutResumeAuthorized && _uiState.value is MachineSafetyUiState.Hidden) {
             interruptedWorkoutResumeAuthorized = false
             true
         } else {
+            interruptedWorkoutResumeAuthorized = false
             false
         }
     } catch (_: Exception) {

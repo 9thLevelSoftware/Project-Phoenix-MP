@@ -96,6 +96,19 @@ class MachineSafetyHazardCoordinatorTest {
         assertFalse(coordinator.canStartMachine())
     }
 
+    @Test
+    fun `visible loss clears authorization granted before the loss`() = runTest {
+        val store = FakeHazardStore()
+        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        assertTrue(coordinator.armBeforeMachineCommand(10L, "profile", MachineSafetyWorkoutKind.ROUTINE))
+
+        coordinator.authorizeInterruptedWorkoutResume()
+        assertTrue(coordinator.recordConnectionLost("trainer-1"))
+
+        assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
+        assertFalse(coordinator.canStartMachine())
+    }
+
     private fun TestScope.coordinator(store: FakeHazardStore, transport: FakeSafetyTransport = FakeSafetyTransport(null)) =
         MachineSafetyCoordinator(store, transport, CoroutineScope(SupervisorJob() + coroutineContext), { 1000L })
 
