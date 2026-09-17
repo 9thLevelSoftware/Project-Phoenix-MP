@@ -18,7 +18,8 @@ class BleRepositoryMachineSafetyTransport(
         return try {
             val found = withTimeoutOrNull<ScannedDevice>(scanTimeoutMs) {
                 while (true) {
-                    bleRepository.scannedDevices.value.firstOrNull { it.address == trainerAddress }?.let { return@withTimeoutOrNull it }
+                    val matchingDevice = bleRepository.scannedDevices.value.firstOrNull { it.address == trainerAddress }
+                    if (matchingDevice != null) return@withTimeoutOrNull matchingDevice
                     delay(50L)
                 }
             }

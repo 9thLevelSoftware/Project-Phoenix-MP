@@ -92,7 +92,15 @@ class SqlDelightMachineSafetyHazardRepository internal constructor(
     }
 
     override suspend fun deleteIfGenerationMatches(trainerAddress: String, generation: Long): Boolean = withContext(Dispatchers.IO) {
-        queries.deleteMachineSafetyHazardIfGenerationMatches(trainerAddress, generation).execute() > 0
+        var deleted = false
+        queries.transaction {
+            val row = queries.selectMachineSafetyHazard(trainerAddress).executeAsOneOrNull()
+            if (row?.generation == generation) {
+                queries.deleteMachineSafetyHazardIfGenerationMatches(trainerAddress, generation)
+                deleted = true
+            }
+        }
+        deleted
     }
 
     private fun decode(row: com.devil.phoenixproject.database.MachineSafetyHazard): MachineSafetyLoadResult {
