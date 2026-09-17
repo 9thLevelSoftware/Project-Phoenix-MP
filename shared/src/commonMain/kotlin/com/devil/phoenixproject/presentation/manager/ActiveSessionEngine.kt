@@ -5355,8 +5355,13 @@ class ActiveSessionEngine(
         // loaded and moving, while the other is exactly unloaded and stationary
         // for every sample.  Keep the existing fallback for noisy, incomplete,
         // empty, or ambiguous telemetry (including EITHER/null hints).
+        // `metrics` contains only samples accepted by the monitor processor, so a
+        // short finite fragment cannot prove that all completed reps are covered.
+        // Require two accepted samples per reported rep before allowing the DUAL
+        // override; otherwise preserve the conservative DUAL fallback.
         val validCompleteWindow = repCount > 0 &&
-            metrics.zipWithNext().all { (previous, current) -> current.timestamp >= previous.timestamp } &&
+            metrics.size >= repCount * 2 &&
+            metrics.zipWithNext().all { (previous, current) -> current.timestamp > previous.timestamp } &&
             metrics.all { metric ->
                 metric.timestamp >= 0L &&
                     metric.loadA.isFinite() && metric.loadB.isFinite() &&
@@ -5383,6 +5388,12 @@ class ActiveSessionEngine(
                 val load = if (sideA) metric.loadB else metric.loadA
                 val velocity = if (sideA) metric.velocityB else metric.velocityA
                 load == 0f && velocity == 0.0
+            } && metrics.zipWithNext().all { (previous, current) ->
+                if (sideA) {
+                    current.positionB == previous.positionB
+                } else {
+                    current.positionA == previous.positionA
+                }
             }
             return activeSideHasLoad && hasMovement(sideA) && inactiveSideIsIdle
         }
