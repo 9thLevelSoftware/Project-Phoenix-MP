@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.model.ConnectionState
-import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** Adapter used only by the explicit safety recovery path; it never selects an arbitrary trainer. */
@@ -17,11 +17,10 @@ class BleRepositoryMachineSafetyTransport(
         bleRepository.startScanning().getOrElse { return Result.failure(it) }
         return try {
             val found = withTimeoutOrNull<ScannedDevice>(scanTimeoutMs) {
-                while (true) {
-                    val matchingDevice = bleRepository.scannedDevices.value.firstOrNull { it.address == trainerAddress }
-                    if (matchingDevice != null) return@withTimeoutOrNull matchingDevice
-                    delay(50L)
+                val devices = bleRepository.scannedDevices.first { scanned ->
+                    scanned.any { it.address == trainerAddress }
                 }
+                devices.first { it.address == trainerAddress }
             }
             found?.let { bleRepository.connect(it) }
                 ?: Result.failure(IllegalStateException("matching trainer not found"))
