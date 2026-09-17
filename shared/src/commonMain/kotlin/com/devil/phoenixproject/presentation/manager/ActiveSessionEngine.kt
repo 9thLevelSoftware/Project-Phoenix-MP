@@ -5349,9 +5349,49 @@ class ActiveSessionEngine(
             (peakCableA > 0f && peakCableB == 0f) ||
             (peakCableB > 0f && peakCableA == 0f)
 
+        // A DUAL catalog hint describes the exercise's intended setup, but it does
+        // not prove that both cables were used for this set.  Only override that
+        // hint for an unambiguous, complete unilateral window: one side must be
+        // loaded and moving, while the other is exactly unloaded and stationary
+        // for every sample.  Keep the existing fallback for noisy, incomplete,
+        // empty, or ambiguous telemetry (including EITHER/null hints).
+        val validCompleteWindow = repCount > 0 &&
+            metrics.zipWithNext().all { (previous, current) -> current.timestamp >= previous.timestamp } &&
+            metrics.all { metric ->
+                metric.timestamp >= 0L &&
+                    metric.loadA.isFinite() && metric.loadB.isFinite() &&
+                    metric.positionA.isFinite() && metric.positionB.isFinite() &&
+                    metric.velocityA.isFinite() && metric.velocityB.isFinite()
+            }
+        fun hasMovement(sideA: Boolean): Boolean {
+            return metrics.zipWithNext().any { (previous, current) ->
+                val positionDelta = if (sideA) {
+                    current.positionA - previous.positionA
+                } else {
+                    current.positionB - previous.positionB
+                }
+                val velocity = if (sideA) current.velocityA else current.velocityB
+                positionDelta != 0f || velocity != 0.0
+            }
+        }
+        fun isUnilaterallyActive(sideA: Boolean): Boolean {
+            val activeSideHasLoad = metrics.any { metric ->
+                val load = if (sideA) metric.loadA else metric.loadB
+                load > 0f
+            }
+            val inactiveSideIsIdle = metrics.all { metric ->
+                val load = if (sideA) metric.loadB else metric.loadA
+                val velocity = if (sideA) metric.velocityB else metric.velocityA
+                load == 0f && velocity == 0.0
+            }
+            return activeSideHasLoad && hasMovement(sideA) && inactiveSideIsIdle
+        }
+        val dualHintHasUnilateralWindow = validCompleteWindow && (
+            isUnilaterallyActive(sideA = true) || isUnilaterallyActive(sideA = false)
+        )
         val cableCount = when (cableCountHint) {
             1 -> 1
-            2 -> 2
+            2 -> if (dualHintHasUnilateralWindow) 1 else 2
             else -> if (heuristicIsSingleCable) 1 else 2
         }
         val isSingleCable = cableCount == 1
