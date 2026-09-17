@@ -1546,6 +1546,16 @@ class ActiveSessionEngine(
             precomputedItemsJson = preparation.rackSelection.itemsJson,
         )
         coordinator._activeRackBehaviorOverrides.value = preparation.rackSelection.behaviorOverrides
+        flowDelegate?.getNextStep(
+            preparation.resolvedRoutine,
+            document.sourceExerciseIndex,
+            document.sourceSetIndex,
+        )?.let { (nextExerciseIndex, _) ->
+            val nextExercise = preparation.resolvedRoutine.exercises.getOrNull(nextExerciseIndex)
+            if (nextExercise != null && !isBodyweightExercise(nextExercise)) {
+                flowDelegate?.seedRackSelectionForExercise(nextExerciseIndex)
+            }
+        }
         setActiveRuntimeDocument(document)
         coordinator._restTransitionPlan.value = document.restTransitionPlan
         acceptedRetryPermission = null
@@ -7067,6 +7077,7 @@ class ActiveSessionEngine(
         afterExpectedLeaseReset: (() -> Unit)? = null,
         skipMachineTeardown: Boolean = false,
     ): Boolean {
+        pendingRestRackSelections.clear()
         val expectedResetToken = expectedLease?.let { lease ->
             executionGuard.claimExpectedResetAndCaptureResetCleanupToken(lease)
                 ?: return false
@@ -7284,6 +7295,13 @@ class ActiveSessionEngine(
             updatedRoutine = null,
             overrides = overrides,
         )
+    }
+
+    private fun applyPendingRestRackSelection(target: Pair<Int, Int>): Boolean {
+        val pending = pendingRestRackSelections.remove(target) ?: return false
+        coordinator._activeRackBehaviorOverrides.value = pending.behaviorOverrides
+        coordinator.setActiveRackSelection(pending.itemIds)
+        return true
     }
 
     private fun currentRestRackTarget(): Pair<Int, Int>? {
@@ -9434,6 +9452,7 @@ class ActiveSessionEngine(
     }
 
     internal fun beginRoutineAbandonmentRuntimeCleanup() {
+        pendingRestRackSelections.clear()
         beginTrackedRuntimeCleanup(RuntimeCleanupReason.EXPLICIT_RESTART)
     }
 
@@ -10045,6 +10064,7 @@ class ActiveSessionEngine(
     }
 
     fun stopWorkout(exitingWorkout: Boolean = false) {
+        pendingRestRackSelections.clear()
         val cleanupCandidateAtInvocation = if (exitingWorkout) runtimeCleanupCandidateRef.value else null
         val restoredOwnerAtInvocation = restoredRuntimeOwnerRef.value
         val pendingNoLeaseCleanupAtInvocation = if (
@@ -12772,10 +12792,7 @@ class ActiveSessionEngine(
                 // Without re-seeding rack defaults here, a vest toggled on the previous
                 // exercise leaks into captureRackLoadSnapshot for the next exercise.
                 flowDelegate?.seedRackSelectionForExercise(nextExIdx)
-                pendingRestRackSelections.remove(nextExIdx to nextSetIdx)?.let { pending ->
-                    coordinator._activeRackBehaviorOverrides.value = pending.behaviorOverrides
-                    coordinator.setActiveRackSelection(pending.itemIds)
-                }
+                applyPendingRestRackSelection(nextExIdx to nextSetIdx)
                 repCounter.reset()
                 // Phase 35C: Initialize warm-up phase for new exercise with warmupSets
                 if (nextSetIdx == 0 && nextExercise.warmupSets.isNotEmpty() && !nextIsBodyweight) {
@@ -12788,6 +12805,9 @@ class ActiveSessionEngine(
                 }
                 resetAutoStopState()
                 startWorkoutOrSetReady(lease)
+                if (coordinator._workoutState.value is WorkoutState.Idle) {
+                    applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                }
             } else if (isSameExerciseContinuation) {
                 // Issue #572: same-exercise continuation across entries. We do NOT call
                 // startWorkout() here even when autoplay is on, because that would send
@@ -12804,6 +12824,7 @@ class ActiveSessionEngine(
                 // rest/summary UI; once the SetReady state has preserved any rest-screen
                 // edits, flip the workout state to Idle so navigation can occur.
                 flowDelegate?.enterSetReady(nextExIdx, nextSetIdx)
+                applyPendingRestRackSelection(nextExIdx to nextSetIdx)
                 coordinator._workoutState.value = WorkoutState.Idle
             } else {
                 // Same-entry set advance (isChangingExercise == false). Preserve the
@@ -12816,6 +12837,7 @@ class ActiveSessionEngine(
             }
             coordinator._userAdjustedWeightDuringRest = false
         } else {
+            pendingRestRackSelections.clear()
             coordinator._userAdjustedWeightDuringRest = false
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
             supersedeConfigurationInputIntent()
