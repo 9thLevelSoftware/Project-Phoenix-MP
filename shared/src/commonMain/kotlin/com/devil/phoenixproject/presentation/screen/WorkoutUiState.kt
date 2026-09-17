@@ -8,6 +8,8 @@ import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -102,6 +104,9 @@ data class WorkoutUiState(
     // Issue #266/#410: Configurable weight step from user preferences (kg)
     val weightStepKg: Float = 0.25f,
     val rackLoadAdjustment: RackLoadAdjustment = RackLoadAdjustment(),
+    val rackItems: List<RackItem> = emptyList(),
+    val activeRackItemIds: List<String> = emptyList(),
+    val activeRackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
     val machineTeardownState: MachineTeardownState = MachineTeardownState.Ready,
     val restTransitionPlan: RestTransitionPlan? = null,
 ) {
@@ -181,6 +186,12 @@ interface WorkoutActions {
     /** Update workout parameters */
     fun onUpdateParameters(params: WorkoutParameters)
 
+    /** Update the next set's runtime equipment selection. */
+    fun onUpdateRackSelection(itemIds: List<String>)
+
+    /** Update the next set's runtime equipment behavior overrides. */
+    fun onUpdateRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>)
+
     /** Show workout setup dialog */
     fun onShowWorkoutSetupDialog()
 
@@ -237,6 +248,8 @@ object PreviewWorkoutActions : WorkoutActions {
     override fun onStartNextExercise() {}
     override fun onJumpToExercise(index: Int) {}
     override fun onUpdateParameters(params: WorkoutParameters) {}
+    override fun onUpdateRackSelection(itemIds: List<String>) {}
+    override fun onUpdateRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) {}
     override fun onShowWorkoutSetupDialog() {}
     override fun onHideWorkoutSetupDialog() {}
     override fun kgToDisplay(kg: Float, unit: WeightUnit): Float = kg
@@ -275,6 +288,8 @@ fun workoutActions(
     onStartNextExercise: () -> Unit,
     onJumpToExercise: (Int) -> Unit,
     onUpdateParameters: (WorkoutParameters) -> Unit,
+    onUpdateRackSelection: (List<String>) -> Unit = {},
+    onUpdateRackBehaviorOverrides: (Map<String, RackItemBehavior>) -> Unit = {},
     onShowWorkoutSetupDialog: () -> Unit,
     onHideWorkoutSetupDialog: () -> Unit,
     kgToDisplay: (Float, WeightUnit) -> Float,
@@ -307,6 +322,8 @@ fun workoutActions(
     override fun onStartNextExercise() = onStartNextExercise()
     override fun onJumpToExercise(index: Int) = onJumpToExercise(index)
     override fun onUpdateParameters(params: WorkoutParameters) = onUpdateParameters(params)
+    override fun onUpdateRackSelection(itemIds: List<String>) = onUpdateRackSelection(itemIds)
+    override fun onUpdateRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) = onUpdateRackBehaviorOverrides(overrides)
     override fun onShowWorkoutSetupDialog() = onShowWorkoutSetupDialog()
     override fun onHideWorkoutSetupDialog() = onHideWorkoutSetupDialog()
     override fun kgToDisplay(kg: Float, unit: WeightUnit) = kgToDisplay(kg, unit)
