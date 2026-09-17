@@ -346,7 +346,23 @@ class RepNotificationFreshnessGateTest {
         activationCutoverTimestampMs = null,
     )
 
-    private fun modernPacket(repsSetCount: Int = 0, repsSetTotal: Int = 0, timestamp: Long): RepNotification = RepNotification(0, 0, 0, 0, repsSetCount, repsSetTotal, rawData = byteArrayOf(), timestamp = timestamp)
+    private fun modernPacket(
+        topCounter: Int = 0,
+        completeCounter: Int = 0,
+        repsRomCount: Int = 0,
+        repsSetCount: Int = 0,
+        repsSetTotal: Int = 0,
+        timestamp: Long,
+    ): RepNotification = RepNotification(
+        topCounter,
+        completeCounter,
+        0,
+        repsRomCount,
+        repsSetCount,
+        repsSetTotal,
+        rawData = byteArrayOf(),
+        timestamp = timestamp,
+    )
 
     private fun legacyPacket(topCounter: Int, completeCounter: Int, timestamp: Long): RepNotification = RepNotification(topCounter, completeCounter, 0, 0, 0, 0, rawData = byteArrayOf(), timestamp = timestamp, isLegacyFormat = true)
 }
