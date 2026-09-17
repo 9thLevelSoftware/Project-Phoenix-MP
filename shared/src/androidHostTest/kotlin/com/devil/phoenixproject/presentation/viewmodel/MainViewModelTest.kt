@@ -195,6 +195,15 @@ class MainViewModelTest {
         assertEquals(3, params.warmupReps)
     }
 
+    @Test
+    fun `production workout graph preserves durable safety barrier after dismissal`() = runTest(testCoroutineRule.dispatcher) {
+        assertTrue(viewModel.machineSafetyCoordinator.recordConnectionLost("trainer-graph"))
+        viewModel.dismissMachineSafetyWarning()
+
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+        assertIs<com.devil.phoenixproject.presentation.manager.MachineSafetyUiState.Hidden>(viewModel.machineSafetyUiState.value)
+    }
+
     // ========== Connection State Tests ==========
 
     @Test

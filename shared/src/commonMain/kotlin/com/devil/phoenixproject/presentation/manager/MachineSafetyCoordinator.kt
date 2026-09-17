@@ -48,7 +48,7 @@ class MachineSafetyCoordinator(
     val uiState: StateFlow<MachineSafetyUiState> = _uiState.asStateFlow()
     private var recoveryJob: Job? = null
     private var nextGeneration = 0L
-    private val processArmedGenerations = mutableSetOf<Long>()
+
     suspend fun restoreOnStartup() {
         val results = try { repository.loadAll() } catch (_: Exception) {
             listOf(MachineSafetyLoadResult.Rejected(MachineSafetyRejection.CORRUPT_JSON, null))
@@ -70,7 +70,6 @@ class MachineSafetyCoordinator(
         return try {
             repository.replace(persisted)
             nextGeneration = safeGeneration
-            processArmedGenerations += safeGeneration
             show(persisted)
             true
         } catch (_: Exception) {
@@ -108,7 +107,7 @@ class MachineSafetyCoordinator(
     suspend fun canStartMachine(): Boolean = try {
         repository.loadAll().none { result ->
             when (result) {
-                is MachineSafetyLoadResult.Loaded -> result.document.generation !in processArmedGenerations
+                is MachineSafetyLoadResult.Loaded -> true
                 is MachineSafetyLoadResult.Rejected -> true
                 MachineSafetyLoadResult.Missing -> false
             }

@@ -66,12 +66,14 @@ class MachineSafetyHazardCoordinatorTest {
     }
 
     @Test
-    fun `machine command is persisted before it is allowed and cold restore blocks start`() = runTest {
+    fun `machine command obligation blocks every later machine start until physical acknowledgement`() = runTest {
         val store = FakeHazardStore()
         val transport = FakeSafetyTransport("trainer-1")
         val first = coordinator(store, transport)
         assertTrue(first.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
-        assertTrue(first.canStartMachine())
+        assertFalse(first.canStartMachine())
+        first.hideTemporarily()
+        assertFalse(first.canStartMachine())
 
         val restored = coordinator(store, FakeSafetyTransport("trainer-1"))
         restored.restoreOnStartup()

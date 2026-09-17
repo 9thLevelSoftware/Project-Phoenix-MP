@@ -540,7 +540,7 @@ class MainViewModel(
     private val countVelocityOneRepMaxImprovementsUseCase: CountVelocityOneRepMaxImprovementsUseCase,
     // Issue #517: one-time startup backfill of velocity-1RM estimates for historical data.
     private val backfillVelocityOneRepMaxUseCase: BackfillVelocityOneRepMaxUseCase,
-    private val machineSafetyCoordinator: MachineSafetyCoordinator,
+    internal val machineSafetyCoordinator: MachineSafetyCoordinator,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager

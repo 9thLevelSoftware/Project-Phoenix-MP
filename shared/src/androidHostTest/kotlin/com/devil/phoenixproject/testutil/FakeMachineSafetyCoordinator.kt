@@ -7,10 +7,12 @@ import com.devil.phoenixproject.presentation.manager.MachineSafetyTransport
 import com.devil.phoenixproject.presentation.manager.MachineSafetyCoordinator
 import kotlinx.coroutines.CoroutineScope
 
-fun fakeMachineSafetyCoordinator(scope: CoroutineScope): MachineSafetyCoordinator =
-    MachineSafetyCoordinator(FakeMachineSafetyStore(), FakeMachineSafetyTransport(), scope, { 0L })
+fun fakeMachineSafetyCoordinator(
+    scope: CoroutineScope,
+    store: FakeMachineSafetyStore = FakeMachineSafetyStore(),
+): MachineSafetyCoordinator = MachineSafetyCoordinator(store, FakeMachineSafetyTransport(), scope, { 0L })
 
-private class FakeMachineSafetyStore : MachineSafetyHazardRepository {
+class FakeMachineSafetyStore : MachineSafetyHazardRepository {
     private val rows = linkedMapOf<String, MachineSafetyHazardDocument>()
 
     override suspend fun load(trainerAddress: String): MachineSafetyLoadResult =
