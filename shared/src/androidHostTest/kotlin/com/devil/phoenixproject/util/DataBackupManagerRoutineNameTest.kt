@@ -72,6 +72,33 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `full backup preserves deleted routines and their children in both exporters`() = runTest {
+        workoutRepository.saveRoutine(
+            buildRoutine("routine-active", "Active", "exercise-active", "Bench Press"),
+        )
+        workoutRepository.saveRoutine(
+            buildRoutine("routine-deleted", "Deleted", "exercise-deleted", "Row"),
+        )
+        database.phoenixDatabaseQueries.softDeleteRoutine(
+            deletedAt = 1_700_000_000_000L,
+            updatedAt = 1_700_000_000_001L,
+            id = "routine-deleted",
+        )
+
+        val legacy = backupManager.exportAllData()
+        assertEquals(listOf("routine-active", "routine-deleted"), legacy.data.routines.map { it.id })
+        assertEquals(1_700_000_000_000L, legacy.data.routines.first { it.id == "routine-deleted" }.deletedAt)
+        assertEquals(listOf("routine-active-exercise-active", "routine-deleted-exercise-deleted"), legacy.data.routineExercises.map { it.id })
+
+        val streamingPath = backupManager.exportToCachePublic()
+        val streaming = testJson.decodeFromString<BackupData>(File(streamingPath).readText())
+        assertEquals(listOf("routine-active", "routine-deleted"), streaming.data.routines.map { it.id })
+        assertEquals(1_700_000_000_000L, streaming.data.routines.first { it.id == "routine-deleted" }.deletedAt)
+        assertEquals(listOf("routine-active-exercise-active", "routine-deleted-exercise-deleted"), streaming.data.routineExercises.map { it.id })
+        File(streamingPath).delete()
+    }
+
+    @Test
     fun `normal backup excludes local active workout runtime recovery data`() = runTest {
         workoutRepository.saveSession(
             WorkoutSession(
@@ -996,6 +1023,7 @@ class DataBackupManagerRoutineNameTest {
             useCount = 3,
             profile_id = "userA",
             groupId = null,
+            deletedAt = null,
         )
 
         // 3. Build a legacy backup with null profileId containing the same IDs
@@ -1098,6 +1126,7 @@ class DataBackupManagerRoutineNameTest {
             useCount = 1,
             profile_id = "userB",
             groupId = null,
+            deletedAt = null,
         )
 
         // 3. Restore a backup that explicitly says these rows belong to "userB"

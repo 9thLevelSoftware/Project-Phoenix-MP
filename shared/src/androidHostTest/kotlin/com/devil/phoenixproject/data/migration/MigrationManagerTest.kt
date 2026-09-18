@@ -184,6 +184,7 @@ class MigrationManagerTest {
             useCount = 0,
             profile_id = "default",
             groupId = null,
+            deletedAt = null,
         )
         insertMinimalRoutineExercise(
             id = "re-bench",
@@ -219,6 +220,7 @@ class MigrationManagerTest {
             useCount = 0,
             profile_id = "default",
             groupId = null,
+            deletedAt = null,
         )
         insertMinimalRoutineExercise(
             id = "re-bench",
