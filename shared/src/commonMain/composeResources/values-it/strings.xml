@@ -66,9 +66,7 @@
 
     <!-- ==================== Incoraggiamento verbale (Issue #611) ==================== -->
     <string name="settings_verbal_encouragement_title">Incoraggiamento verbale</string>
-    <string name="settings_verbal_encouragement_description">Spinta vocale al cedimento muscolare (VBT %)</string>
     <string name="settings_vulgar_mode_title">Modalità volgare</string>
-    <string name="settings_vulgar_mode_description">Usa parolacce invece di formulazioni neutre. Disattivata per impostazione predefinita.</string>
     <string name="settings_vulgar_mode_headphone_warning">Si consiglia vivamente l\'uso delle cuffie.</string>
     <string name="settings_vulgar_mode_tier_label">Livello di volgarità</string>
     <string name="settings_vulgar_mode_tier_mild">Leggera</string>
@@ -76,7 +74,6 @@
     <string name="settings_vulgar_mode_tier_mix">Misto</string>
     <string name="settings_dominatrix_mode_title">Modalità Dominatrix</string>
     <string name="settings_dominatrix_mode_description">Comandi vocali di Charlotte. Sovrascrive il pool volgare quando attivo.</string>
-    <string name="settings_dominatrix_unlock_hint">Tocca l\'intestazione 7× per sbloccare</string>
     <string name="settings_dominatrix_unlock_toast">Modalità Dominatrix sbloccata</string>
     <string name="settings_adults_only_title">Solo per adulti</string>
     <string name="settings_adults_only_body">La modalità volgare contiene parolacce e temi per adulti. Hai 18 anni o più?</string>
