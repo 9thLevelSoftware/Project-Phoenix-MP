@@ -5908,6 +5908,117 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
+    fun `DUAL metadata resolves to one cable for complete unilateral A window`() = runTest {
+        val harness = DWSMTestHarness(this)
+
+        val summary = harness.activeSessionEngine.calculateSetSummaryMetrics(
+            metrics = listOf(
+                WorkoutMetric(timestamp = 100L, loadA = 25f, loadB = 0f, positionA = 120f, positionB = 0f, velocityA = 30.0, velocityB = 0.0),
+                WorkoutMetric(timestamp = 200L, loadA = 25f, loadB = 0f, positionA = 100f, positionB = 0f, velocityA = -30.0, velocityB = 0.0),
+                WorkoutMetric(timestamp = 300L, loadA = 25f, loadB = 0f, positionA = 120f, positionB = 0f, velocityA = 30.0, velocityB = 0.0),
+                WorkoutMetric(timestamp = 400L, loadA = 25f, loadB = 0f, positionA = 100f, positionB = 0f, velocityA = -30.0, velocityB = 0.0),
+            ),
+            repCount = 2,
+            fallbackWeightKg = 25f,
+            configuredWeightKgPerCable = 25f,
+            cableCountHint = 2,
+        )
+
+        assertEquals(1, summary.cableCount)
+        assertEquals(50f, summary.totalVolumeKg)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `DUAL metadata resolves to one cable for complete unilateral B window`() = runTest {
+        val harness = DWSMTestHarness(this)
+
+        val summary = harness.activeSessionEngine.calculateSetSummaryMetrics(
+            metrics = List(20) { index ->
+                WorkoutMetric(
+                    timestamp = (index + 1) * 100L,
+                    loadA = 0f,
+                    loadB = 25f,
+                    positionA = 0f,
+                    positionB = if (index % 2 == 0) 120f else 100f,
+                    velocityA = 0.0,
+                    velocityB = if (index % 2 == 0) 30.0 else -30.0,
+                )
+            },
+            repCount = 10,
+            fallbackWeightKg = 25f,
+            configuredWeightKgPerCable = 25f,
+            cableCountHint = 2,
+        )
+
+        assertEquals(1, summary.cableCount)
+        assertEquals(250f, summary.totalVolumeKg)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `DUAL metadata remains dual for simultaneous complete window`() = runTest {
+        val harness = DWSMTestHarness(this)
+
+        val summary = harness.activeSessionEngine.calculateSetSummaryMetrics(
+            metrics = listOf(
+                WorkoutMetric(timestamp = 100L, loadA = 25f, loadB = 25f, positionA = 120f, positionB = 120f, velocityA = 30.0, velocityB = 30.0),
+                WorkoutMetric(timestamp = 200L, loadA = 25f, loadB = 25f, positionA = 100f, positionB = 100f, velocityA = -30.0, velocityB = -30.0),
+            ),
+            repCount = 2,
+            fallbackWeightKg = 25f,
+            configuredWeightKgPerCable = 25f,
+            cableCountHint = 2,
+        )
+
+        assertEquals(2, summary.cableCount)
+        assertEquals(100f, summary.totalVolumeKg)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `DUAL metadata remains dual for fragmentary timestamp ordered telemetry`() = runTest {
+        val harness = DWSMTestHarness(this)
+
+        val summary = harness.activeSessionEngine.calculateSetSummaryMetrics(
+            metrics = listOf(
+                WorkoutMetric(timestamp = 100L, loadA = 25f, loadB = 0f, positionA = 120f, positionB = 0f, velocityA = 30.0, velocityB = 0.0),
+                WorkoutMetric(timestamp = 200L, loadA = 25f, loadB = 0f, positionA = 100f, positionB = 0f, velocityA = -30.0, velocityB = 0.0),
+            ),
+            repCount = 2,
+            fallbackWeightKg = 25f,
+            configuredWeightKgPerCable = 25f,
+            cableCountHint = 2,
+        )
+
+        assertEquals(2, summary.cableCount)
+        assertEquals(100f, summary.totalVolumeKg)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `DUAL metadata remains dual when inactive side position drifts`() = runTest {
+        val harness = DWSMTestHarness(this)
+
+        val summary = harness.activeSessionEngine.calculateSetSummaryMetrics(
+            metrics = listOf(
+                WorkoutMetric(timestamp = 100L, loadA = 25f, loadB = 0f, positionA = 120f, positionB = 0f, velocityA = 30.0, velocityB = 0.0),
+                WorkoutMetric(timestamp = 200L, loadA = 25f, loadB = 0f, positionA = 100f, positionB = 5f, velocityA = -30.0, velocityB = 0.0),
+                WorkoutMetric(timestamp = 300L, loadA = 25f, loadB = 0f, positionA = 120f, positionB = 0f, velocityA = 30.0, velocityB = 0.0),
+                WorkoutMetric(timestamp = 400L, loadA = 25f, loadB = 0f, positionA = 100f, positionB = 5f, velocityA = -30.0, velocityB = 0.0),
+            ),
+            repCount = 2,
+            fallbackWeightKg = 25f,
+            configuredWeightKgPerCable = 25f,
+            cableCountHint = 2,
+        )
+
+        assertEquals(2, summary.cableCount)
+        assertEquals(100f, summary.totalVolumeKg)
+        harness.cleanup()
+    }
+
+    @Test
     fun `Issue 358 - calorie calculation caps position deltas to prevent BLE glitch inflation`() = runTest {
         val harness = DWSMTestHarness(this)
 
