@@ -1,0 +1,8 @@
+-- Migration 47: durable trainer-keyed machine safety obligation (#769)
+CREATE TABLE MachineSafetyHazard (
+    trainer_address TEXT NOT NULL PRIMARY KEY,
+    generation INTEGER NOT NULL,
+    document_version INTEGER NOT NULL,
+    hazard_json TEXT NOT NULL,
+    updated_at_epoch_ms INTEGER NOT NULL
+);

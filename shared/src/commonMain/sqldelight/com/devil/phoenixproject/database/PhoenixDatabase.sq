@@ -2329,6 +2329,15 @@ CREATE TABLE ActiveWorkoutRuntime (
     PRIMARY KEY (profile_id, routine_session_id)
 );
 
+-- Trainer-keyed safety obligation, separate from routine recovery.
+CREATE TABLE MachineSafetyHazard (
+    trainer_address TEXT NOT NULL PRIMARY KEY,
+    generation INTEGER NOT NULL,
+    document_version INTEGER NOT NULL,
+    hazard_json TEXT NOT NULL,
+    updated_at_epoch_ms INTEGER NOT NULL
+);
+
 selectProfilePreferences:
 SELECT * FROM UserProfilePreferences WHERE profile_id = ?;
 
@@ -2622,6 +2631,23 @@ WHERE profile_id = ? AND routine_session_id = ?;
 deleteActiveWorkoutRuntimeByProfile:
 DELETE FROM ActiveWorkoutRuntime
 WHERE profile_id = ?;
+
+selectMachineSafetyHazard:
+SELECT * FROM MachineSafetyHazard
+WHERE trainer_address = ?;
+
+selectMachineSafetyHazards:
+SELECT * FROM MachineSafetyHazard
+ORDER BY updated_at_epoch_ms DESC, trainer_address;
+
+replaceMachineSafetyHazard:
+INSERT OR REPLACE INTO MachineSafetyHazard(
+    trainer_address, generation, document_version, hazard_json, updated_at_epoch_ms
+) VALUES (?, ?, ?, ?, ?);
+
+deleteMachineSafetyHazardIfGenerationMatches:
+DELETE FROM MachineSafetyHazard
+WHERE trainer_address = ? AND generation = ?;
 
 -- Queries for UserProfile
 getActiveProfile:

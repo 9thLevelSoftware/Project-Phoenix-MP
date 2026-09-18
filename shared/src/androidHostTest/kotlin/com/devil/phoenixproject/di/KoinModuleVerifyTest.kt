@@ -12,6 +12,7 @@ import com.devil.phoenixproject.util.CsvExporter
 import com.devil.phoenixproject.util.CsvImporter
 import com.devil.phoenixproject.util.DataBackupManager
 import com.russhwolf.settings.Settings
+import kotlinx.coroutines.CoroutineScope
 import org.junit.Test
 import org.koin.core.annotation.KoinExperimentalAPI
 import org.koin.test.verify.verify
@@ -38,6 +39,7 @@ class KoinModuleVerifyTest {
                 HealthIntegration::class,
                 HealthWorkoutWriter::class,
                 WorkoutServiceController::class,
+                CoroutineScope::class,
                 // Lambda types used in constructor injection (e.g. PortalApiClient tokenProvider)
                 Function0::class,
                 // Function-typed collaborators of ComputeVelocityOneRepMaxUseCase (issue #517):

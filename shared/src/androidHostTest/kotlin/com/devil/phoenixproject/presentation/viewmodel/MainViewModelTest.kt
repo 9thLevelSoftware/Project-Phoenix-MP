@@ -4,6 +4,7 @@ import androidx.lifecycle.viewModelScope
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
+import com.devil.phoenixproject.data.repository.ReconnectionRequest
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.DropSetFeatureGate
@@ -27,7 +28,11 @@ import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
+import com.devil.phoenixproject.data.repository.MachineSafetyPhase
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
+import com.devil.phoenixproject.presentation.manager.MachineSafetyCoordinator
+import com.devil.phoenixproject.presentation.manager.MachineSafetyTransport
+import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
 import com.devil.phoenixproject.testutil.FakeActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.testutil.FakeBiomechanicsRepository
@@ -80,6 +85,7 @@ class MainViewModelTest {
     private lateinit var resolveWeightsUseCase: ResolveRoutineWeightsUseCase
     private lateinit var fakeUserProfileRepository: FakeUserProfileRepository
     private lateinit var profileEquipmentRackRepository: ProfileEquipmentRackRepository
+    private lateinit var safetyStore: com.devil.phoenixproject.testutil.FakeMachineSafetyStore
 
     @Before
     fun setup() {
@@ -99,6 +105,7 @@ class MainViewModelTest {
             fakeUserProfileRepository,
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main),
         )
+        safetyStore = com.devil.phoenixproject.testutil.FakeMachineSafetyStore()
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
@@ -150,6 +157,12 @@ class MainViewModelTest {
                 hasEstimates = { _, _ -> false },
                 computeAllTime = { _, _, _ -> null },
             ),
+            machineSafetyCoordinator = MachineSafetyCoordinator(
+                repository = safetyStore,
+                transport = FakeBleMachineSafetyTransport(fakeBleRepository),
+                scope = kotlinx.coroutines.CoroutineScope(testCoroutineRule.dispatcher),
+                nowEpochMs = { testCoroutineRule.dispatcher.scheduler.currentTime },
+            ),
         )
         val deterministicElapsedRealtime: () -> Long = { testCoroutineRule.dispatcher.scheduler.currentTime }
         viewModel.workoutSessionManager.activeSessionEngine.javaClass
@@ -191,6 +204,202 @@ class MainViewModelTest {
         assertEquals(10f, params.weightPerCableKg)
         assertFalse(params.isJustLift)
         assertEquals(3, params.warmupReps)
+    }
+
+    @Test
+    fun `production workout graph preserves durable safety barrier after dismissal`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f))
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertEquals(1, fakeBleRepository.commandsReceived.size)
+        viewModel.stopWorkout(exitingWorkout = true)
+        advanceUntilIdle()
+
+        // A continuation authorization belongs only to the hidden interrupted execution.
+        // A later real BLE loss must revoke it before a successor machine start is evaluated.
+        viewModel.machineSafetyCoordinator.authorizeInterruptedWorkoutResume()
+        fakeBleRepository.simulateDisconnect()
+        fakeBleRepository.emitReconnectionRequest(
+            ReconnectionRequest("Vee_Test", "AA:BB:CC:DD:EE:FF", "test loss", 1L),
+        )
+        advanceUntilIdle()
+        assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        viewModel.dismissMachineSafetyWarning()
+
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+        assertIs<MachineSafetyUiState.Hidden>(viewModel.machineSafetyUiState.value)
+
+        fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f))
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertEquals(1, fakeBleRepository.commandsReceived.size)
+        assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
+    }
+
+    @Test
+    fun `fresh production graph restores loss barrier and does not resume routine`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f))
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        fakeBleRepository.simulateDisconnect()
+        fakeBleRepository.emitReconnectionRequest(
+            ReconnectionRequest("Vee_Test", "AA:BB:CC:DD:EE:FF", "unexpected disconnect", 1L),
+        )
+        advanceUntilIdle()
+        val firstState = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        viewModel.viewModelScope.cancel()
+
+        val secondBle = FakeBleRepository()
+        val second = newSafetyGraph(secondBle)
+        advanceUntilIdle()
+        assertIs<MachineSafetyUiState.Visible>(second.machineSafetyUiState.value)
+        second.dismissMachineSafetyWarning()
+        second.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertTrue(secondBle.commandsReceived.isEmpty())
+        assertIs<MachineSafetyUiState.Hidden>(second.machineSafetyUiState.value)
+        assertEquals(
+            firstState.document.generation,
+            safetyStore.loadAll().filterIsInstance<com.devil.phoenixproject.data.repository.MachineSafetyLoadResult.Loaded>()
+                .maxBy { it.document.generation }.document.generation,
+        )
+        second.viewModelScope.cancel()
+    }
+
+    @Test
+    fun `production graph recovery rejects wrong trainer and failed reset without clearing durable hazard`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Wrong", "11:22:33:44:55:66")
+        advanceUntilIdle()
+        fakeBleRepository.emitReconnectionRequest(
+            ReconnectionRequest("Vee_Target", "AA:BB:CC:DD:EE:FF", "loss", 1L),
+        )
+        advanceUntilIdle()
+
+        val visible = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        viewModel.requestMachineSafetyRecovery()
+        advanceUntilIdle()
+        assertEquals(MachineSafetyPhase.RELEASE_REQUEST_FAILED, (viewModel.machineSafetyUiState.value as MachineSafetyUiState.Visible).document.phase)
+        assertEquals(0, fakeBleRepository.stopWorkoutCallCount)
+        assertEquals(visible.document.generation, (safetyStore.loadAll().first() as com.devil.phoenixproject.data.repository.MachineSafetyLoadResult.Loaded).document.generation)
+
+        fakeBleRepository.simulateConnect("Vee_Target", "AA:BB:CC:DD:EE:FF")
+        fakeBleRepository.stopWorkoutBlock = { Result.failure(IllegalStateException("write failed")) }
+        viewModel.requestMachineSafetyRecovery()
+        advanceUntilIdle()
+        val failedWrite = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        assertEquals(MachineSafetyPhase.RELEASE_REQUEST_FAILED, failedWrite.document.phase)
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+        assertTrue(safetyStore.loadAll().isNotEmpty())
+    }
+
+    @Test
+    fun `production graph duplicate recovery request and cancellation never authorize a new machine start`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Target", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        fakeBleRepository.emitReconnectionRequest(
+            ReconnectionRequest("Vee_Target", "AA:BB:CC:DD:EE:FF", "loss", 2L),
+        )
+        advanceUntilIdle()
+        val pending = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
+        fakeBleRepository.stopWorkoutBlock = { pending.await() }
+
+        viewModel.requestMachineSafetyRecovery()
+        viewModel.requestMachineSafetyRecovery()
+        runCurrent()
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+        viewModel.dismissMachineSafetyWarning()
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+        pending.cancel()
+        advanceUntilIdle()
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+    }
+
+    @Test
+    fun `production graph matching trainer reset records transport ack but keeps durable hazard`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Target", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        fakeBleRepository.emitReconnectionRequest(
+            ReconnectionRequest("Vee_Target", "AA:BB:CC:DD:EE:FF", "loss", 3L),
+        )
+        advanceUntilIdle()
+
+        viewModel.requestMachineSafetyRecovery()
+        advanceUntilIdle()
+
+        val recovered = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        assertEquals(MachineSafetyPhase.RELEASE_REQUEST_SENT, recovered.document.phase)
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+        assertTrue(safetyStore.loadAll().isNotEmpty(), "transport ACK is not physical acknowledgement")
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+    }
+
+    @Test
+    fun `production graph disconnect during reset write leaves hazard and ignores stale completion`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Target", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        fakeBleRepository.emitReconnectionRequest(
+            ReconnectionRequest("Vee_Target", "AA:BB:CC:DD:EE:FF", "loss", 4L),
+        )
+        advanceUntilIdle()
+
+        val write = kotlinx.coroutines.CompletableDeferred<Result<Unit>>()
+        fakeBleRepository.stopWorkoutBlock = {
+            fakeBleRepository.simulateDisconnect()
+            write.await()
+        }
+        viewModel.requestMachineSafetyRecovery()
+        runCurrent()
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+
+        write.complete(Result.success(Unit))
+        advanceUntilIdle()
+
+        val state = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        assertTrue(state.document.phase != MachineSafetyPhase.RELEASE_REQUEST_SENT)
+        assertTrue(safetyStore.loadAll().isNotEmpty())
+        assertFalse(viewModel.machineSafetyCoordinator.canStartMachine())
+    }
+
+    @Test
+    fun `production graph preserves bodyweight control without safety arm or absent link write`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Bodyweight", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        viewModel.loadRoutine(
+            Routine(
+                id = "routine-production-bodyweight",
+                name = "Production Bodyweight",
+                exercises = listOf(
+                    RoutineExercise(
+                        id = "routine-production-bodyweight-exercise",
+                        exercise = Exercise(
+                            id = "production-pullup",
+                            name = "Pull-Up",
+                            muscleGroup = "Back",
+                            equipment = "",
+                            isBodyweightOverride = true,
+                        ),
+                        orderIndex = 0,
+                        setReps = listOf(5),
+                        weightPerCableKg = 0f,
+                        warmupSets = emptyList(),
+                    ),
+                ),
+            ),
+        )
+        advanceUntilIdle()
+        viewModel.enterSetReady(0, 0)
+        advanceUntilIdle()
+        fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 0f, loadB = 0f))
+        viewModel.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+        assertIs<WorkoutState.BodyweightRepEntry>(viewModel.workoutState.value)
+        assertTrue(fakeBleRepository.commandsReceived.none { it.isEmpty() })
+        assertTrue(safetyStore.loadAll().isEmpty(), "bodyweight control must not persist a machine safety obligation: ${safetyStore.loadAll()}")
     }
 
     // ========== Connection State Tests ==========
@@ -1044,7 +1253,19 @@ class MainViewModelTest {
         assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
 
         // startWorkout() unconditionally resets stopWorkoutInProgress (line 2352).
-        fakeBleRepository.emitMetric(metric)
+        // The durable machine obligation intentionally survives a transport RESET;
+        // acknowledge the exact visible generation before exercising the guard's
+        // next-start behavior.
+        fakeBleRepository.simulateDisconnect()
+        fakeBleRepository.emitReconnectionRequest(
+            ReconnectionRequest("Vee_Test", "AA:BB:CC:DD:EE:FF", "physical acknowledgement", 2L),
+        )
+        advanceUntilIdle()
+        val hazard = assertIs<MachineSafetyUiState.Visible>(viewModel.machineSafetyUiState.value)
+        viewModel.acknowledgeMachineSafetyUnloaded(hazard.document.generation)
+        advanceUntilIdle()
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
         viewModel.startWorkout(skipCountdown = true)
         advanceUntilIdle()
         assertFalse(
@@ -1094,6 +1315,52 @@ class MainViewModelTest {
         fakeBleRepository.emitMetric(metric)
     }
 
+    private fun newSafetyGraph(ble: FakeBleRepository): MainViewModel = MainViewModel(
+        bleRepository = ble,
+        workoutRepository = fakeWorkoutRepository,
+        exerciseRepository = fakeExerciseRepository,
+        personalRecordRepository = fakePersonalRecordRepository,
+        repCounter = RepCounterFromMachine(),
+        preferencesManager = fakePreferencesManager,
+        gamificationRepository = fakeGamificationRepository,
+        trainingCycleRepository = fakeTrainingCycleRepository,
+        completedSetRepository = fakeCompletedSetRepository,
+        activeWorkoutRuntimeRepository = FakeActiveWorkoutRuntimeRepository(),
+        dropSetEligibilityPolicy = DropSetEligibilityPolicy(DropSetFeatureGate { false }, DropSetCandidateResolver()),
+        repMetricRepository = fakeRepMetricRepository,
+        biomechanicsRepository = FakeBiomechanicsRepository(),
+        resolveWeightsUseCase = resolveWeightsUseCase,
+        recommendWeightAdjustmentUseCase = RecommendWeightAdjustmentUseCase(),
+        equipmentRackRepository = profileEquipmentRackRepository,
+        applyEquipmentRackLoadUseCase = ApplyEquipmentRackLoadUseCase(),
+        dataBackupManager = FakeDataBackupManager(),
+        userProfileRepository = fakeUserProfileRepository,
+        workoutServiceController = NoOpWorkoutServiceController,
+        computeVelocityOneRepMaxUseCase = com.devil.phoenixproject.domain.usecase.ComputeVelocityOneRepMaxUseCase(
+            workoutPoints = { _, _, _ -> emptyList() }, exerciseLookup = { null }, personalMvtLookup = { _, _ -> null },
+            mvtProvider = com.devil.phoenixproject.domain.onerepmax.MvtProvider(),
+            estimator = com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator(com.devil.phoenixproject.domain.assessment.AssessmentEngine()),
+            persist = { _, _, _, _ -> },
+        ),
+        recordPersonalMvtSampleUseCase = com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase(
+            object : com.devil.phoenixproject.data.repository.PersonalMvtRepository {
+                override suspend fun get(exerciseId: String, profileId: String) = null
+                override suspend fun upsert(exerciseId: String, profileId: String, personalMvtMs: Float, sampleCount: Int) {}
+            },
+        ),
+        velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+        countVelocityOneRepMaxImprovementsUseCase = CountVelocityOneRepMaxImprovementsUseCase(),
+        backfillVelocityOneRepMaxUseCase = com.devil.phoenixproject.domain.usecase.BackfillVelocityOneRepMaxUseCase(
+            exerciseIds = { emptyList() }, hasEstimates = { _, _ -> false }, computeAllTime = { _, _, _ -> null },
+        ),
+        machineSafetyCoordinator = MachineSafetyCoordinator(
+            repository = safetyStore,
+            transport = FakeBleMachineSafetyTransport(ble),
+            scope = kotlinx.coroutines.CoroutineScope(testCoroutineRule.dispatcher),
+            nowEpochMs = { testCoroutineRule.dispatcher.scheduler.currentTime },
+        ),
+    )
+
     private fun activeCutoverTimestamp(): Long = requireNotNull(
         viewModel.workoutSessionManager.activeSessionEngine
             .currentExecutionLeaseOrNull()
@@ -1103,4 +1370,20 @@ class MainViewModelTest {
     private fun activeWorkingRepTarget(): Int = requireNotNull(viewModel.workoutSessionManager.activeSessionEngine.currentExecutionLeaseOrNull()) {
         "MainViewModel rep fixture requires a current execution lease"
     }.workingRepTarget
+}
+
+private class FakeBleMachineSafetyTransport(
+    private val bleRepository: FakeBleRepository,
+) : MachineSafetyTransport {
+    override val connectedTrainerAddress: String?
+        get() = (bleRepository.connectionState.value as? ConnectionState.Connected)?.deviceAddress
+
+    override suspend fun connectMatchingTrainer(trainerAddress: String): Result<Unit> =
+        if (connectedTrainerAddress == trainerAddress) {
+            Result.success(Unit)
+        } else {
+            Result.failure(IllegalStateException("matching trainer unavailable"))
+        }
+
+    override suspend fun stopWorkout(): Result<Unit> = bleRepository.stopWorkout()
 }
