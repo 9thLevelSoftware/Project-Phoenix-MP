@@ -15,6 +15,7 @@ internal enum class RepDropReason {
     PRE_CUTOVER_TIMESTAMP,
     TARGET_MISMATCH,
     TERMINAL_BEFORE_EVIDENCE,
+    TIMED_CABLE_BEFORE_MOVEMENT,
 }
 
 internal sealed interface RepFreshnessDecision {
@@ -66,8 +67,11 @@ internal class RepNotificationFreshnessGate {
         val isUnlimitedAmrapPacket = lease.isAmrap &&
             lease.usesUnlimitedRepTarget &&
             notification.repsSetTotal == UNLIMITED_REPS_SET_TOTAL
+        val isUnlimitedTimedCablePacket = lease.isTimedCable &&
+            notification.repsSetTotal == UNLIMITED_REPS_SET_TOTAL
         val targetMatches = lease.isJustLift ||
             isUnlimitedAmrapPacket ||
+            isUnlimitedTimedCablePacket ||
             notification.repsSetTotal == 0 ||
             notification.repsSetTotal == lease.workingRepTarget
         if (!targetMatches) return RepFreshnessDecision.Drop(RepDropReason.TARGET_MISMATCH)
@@ -89,7 +93,22 @@ internal class RepNotificationFreshnessGate {
                 notification.repsSetCount > 0
             )
 
-        if (allZero) {
+        // A delayed target-252 packet from a prior unlimited execution can
+        // carry working-set counts and force warmup completion on a successor
+        // lease. Current-set calibration reports ROM progress with
+        // repsSetCount == 0; accept that immediately. A clean baseline or
+        // HandleState.Moving remains the proof for working-set 252 packets.
+        val timedCableBaseline = isUnlimitedTimedCablePacket &&
+            notification.repsRomCount == 0 &&
+            notification.repsSetCount == 0
+        if (isUnlimitedTimedCablePacket &&
+            stateFor(lease) !is RepFreshnessState.Armed &&
+            notification.repsSetCount > 0
+        ) {
+            return RepFreshnessDecision.Drop(RepDropReason.TIMED_CABLE_BEFORE_MOVEMENT)
+        }
+
+        if (allZero || timedCableBaseline) {
             states[identity] = RepFreshnessState.Armed
             return RepFreshnessDecision.BaselineOnly
         }
