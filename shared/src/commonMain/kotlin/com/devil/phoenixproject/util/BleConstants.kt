@@ -98,16 +98,6 @@ object BleConstants {
         const val OFFSET_PROGRESSION = 0x5C // progressionRegressionKg
     }
 
-    // Legacy aliases for backward compatibility
-    @Suppress("unused")
-    const val CMD_REGULAR = 0x4F
-
-    @Suppress("unused")
-    const val CMD_ECHO = 0x4E
-
-    @Suppress("unused")
-    const val CMD_STOP = 0x50
-
     // Data protocol constants
     @Suppress("unused") // Protocol reference documentation
     object DataProtocol {

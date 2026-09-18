@@ -124,17 +124,6 @@ class PortalTokenStorage(private val settings: Settings) {
     private val _authEvents = MutableSharedFlow<AuthEvent>(replay = 0, extraBufferCapacity = 1)
     val authEvents: SharedFlow<AuthEvent> = _authEvents.asSharedFlow()
 
-    fun saveAuth(response: PortalAuthResponse) = withPlatformLock(authLock) {
-        settings[KEY_TOKEN] = response.token
-        settings[KEY_USER_ID] = response.user.id
-        settings[KEY_USER_EMAIL] = response.user.email
-        settings[KEY_USER_NAME] = response.user.displayName
-        settings[KEY_IS_PREMIUM] = response.user.isPremium
-
-        _isAuthenticated.value = true
-        _currentUser.value = response.user
-    }
-
     fun saveGoTrueAuth(response: GoTrueAuthResponse) = withPlatformLock(authLock) {
         // Preserve existing premium status — GoTrue auth response does not include it,
         // and overwriting would reset paid users to non-premium on every sign-in.

@@ -688,26 +688,6 @@ UPDATE Exercise SET
     lastPerformed = NULL
 WHERE id = :oldId AND isCustom = 0;
 
--- Increment times performed and update last performed timestamp
-incrementPerformed:
-UPDATE Exercise
-SET timesPerformed = timesPerformed + 1,
-    lastPerformed = ?,
-    popularity = popularity + 1.0
-WHERE id = ?;
-
--- Get exercises ordered by popularity (most used first)
-selectExercisesByPopularity:
-SELECT * FROM Exercise WHERE archived = 0 ORDER BY popularity DESC, name ASC;
-
--- Get recently performed exercises
-selectRecentlyPerformed:
-SELECT * FROM Exercise WHERE archived = 0 AND lastPerformed IS NOT NULL ORDER BY lastPerformed DESC LIMIT ?;
-
--- Get exercises excluding archived
-selectActiveExercises:
-SELECT * FROM Exercise WHERE archived = 0 ORDER BY name ASC;
-
 -- Archive/unarchive exercise
 updateArchived:
 UPDATE Exercise SET archived = ? WHERE id = ?;
@@ -1176,27 +1156,6 @@ WHERE exerciseId = :exerciseId
 AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY workoutMode, prType, achievedAt DESC;
 
--- Get the best active overall PR for an exercise (prefers weight, for backwards compatibility)
-selectBestPR:
-SELECT * FROM PersonalRecord
-WHERE exerciseId = ?
-AND profile_id = :profileId AND deletedAt IS NULL
-ORDER BY weight DESC, volume DESC
-LIMIT 1;
-
--- Get the latest active MAX_WEIGHT PR for an exercise in a specific mode (backwards compatibility)
-selectLatestPR:
-SELECT * FROM PersonalRecord
-WHERE exerciseId = ? AND workoutMode = ? AND prType = 'MAX_WEIGHT'
-AND profile_id = :profileId AND deletedAt IS NULL
-LIMIT 1;
-
--- Get all active PRs grouped by exercise for analytics
-selectAllPRsGrouped:
-SELECT * FROM PersonalRecord
-WHERE profile_id = :profileId AND deletedAt IS NULL
-ORDER BY exerciseId, workoutMode, prType, achievedAt DESC;
-
 -- Insert a new PR (with prType, volume, and phase support)
 insertRecord:
 INSERT INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
@@ -1430,72 +1389,11 @@ UPDATE RoutineExercise
 SET exerciseId = ?
 WHERE id = ?;
 
--- Analytics Queries
-selectVolumeHistory:
-SELECT timestamp, totalReps, weightPerCableKg FROM WorkoutSession WHERE profile_id = :profileId ORDER BY timestamp ASC;
-
--- ==================== CONNECTION LOG QUERIES ====================
-
-insertConnectionLog:
-INSERT INTO ConnectionLog (timestamp, eventType, level, deviceAddress, deviceName, message, details, metadata)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-
-selectAllConnectionLogs:
-SELECT * FROM ConnectionLog ORDER BY timestamp DESC;
-
-selectRecentConnectionLogs:
-SELECT * FROM ConnectionLog ORDER BY timestamp DESC LIMIT ?;
-
-selectConnectionLogsByDevice:
-SELECT * FROM ConnectionLog WHERE deviceAddress = ? ORDER BY timestamp DESC;
-
-selectConnectionLogsByEventType:
-SELECT * FROM ConnectionLog WHERE eventType = ? ORDER BY timestamp DESC;
-
-selectConnectionLogsByLevel:
-SELECT * FROM ConnectionLog WHERE level = ? ORDER BY timestamp DESC;
-
-selectConnectionLogsBetween:
-SELECT * FROM ConnectionLog WHERE timestamp BETWEEN ? AND ? ORDER BY timestamp DESC;
-
-countConnectionLogsByLevel:
-SELECT COUNT(*) FROM ConnectionLog WHERE level = ?;
-
-deleteConnectionLogsOlderThan:
-DELETE FROM ConnectionLog WHERE timestamp < ?;
-
-deleteAllConnectionLogs:
-DELETE FROM ConnectionLog;
-
-selectConnectionLogsForExport:
-SELECT * FROM ConnectionLog ORDER BY timestamp ASC;
-
--- ==================== DIAGNOSTICS HISTORY QUERIES ====================
-
-insertDiagnostics:
-INSERT INTO DiagnosticsHistory (runtimeSeconds, faultMask, temp1, temp2, temp3, temp4, temp5, temp6, temp7, temp8, containsFaults, timestamp)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-
-selectRecentDiagnostics:
-SELECT * FROM DiagnosticsHistory ORDER BY timestamp DESC LIMIT ?;
-
-selectDiagnosticsWithFaults:
-SELECT * FROM DiagnosticsHistory WHERE containsFaults = 1 ORDER BY timestamp DESC;
-
-deleteDiagnosticsOlderThan:
-DELETE FROM DiagnosticsHistory WHERE timestamp < ?;
-
-countDiagnosticsFaults:
-SELECT COUNT(*) FROM DiagnosticsHistory WHERE containsFaults = 1;
-
 -- ==================== PHASE STATISTICS QUERIES ====================
 
 insertPhaseStatistics:
 INSERT INTO PhaseStatistics (sessionId, concentricKgAvg, concentricKgMax, concentricVelAvg, concentricVelMax, concentricWattAvg, concentricWattMax, eccentricKgAvg, eccentricKgMax, eccentricVelAvg, eccentricVelMax, eccentricWattAvg, eccentricWattMax, timestamp)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-
-selectPhaseStatsBySession:
-SELECT * FROM PhaseStatistics WHERE sessionId = ?;
 
 selectPhaseStatsBySessionIds:
 SELECT * FROM PhaseStatistics WHERE sessionId IN ?;
@@ -3017,23 +2915,6 @@ WHERE ws.exerciseId IS NOT NULL
   AND ws.profile_id = :profileId
   AND ws.totalReps > 0
 ORDER BY ws.exerciseId, ws.timestamp ASC;
-
--- ==================== GHOST RACING QUERIES ====================
-
--- Find the best ghost session candidate for a given exercise, mode, and weight range.
--- Returns the session with the highest avgMcvMmS within weight tolerance.
-selectBestGhostSession:
-SELECT id, exerciseName, weightPerCableKg, workingReps, avgMcvMmS
-FROM WorkoutSession
-WHERE exerciseId = ?
-  AND mode = ?
-  AND avgMcvMmS IS NOT NULL
-  AND avgMcvMmS > 0
-  AND workingReps > 0
-  AND ABS(weightPerCableKg - ?) <= ?
-  AND profile_id = :profileId
-ORDER BY avgMcvMmS DESC
-LIMIT 1;
 
 -- ─── External Activities (Third-party integrations) ─────────────────
 

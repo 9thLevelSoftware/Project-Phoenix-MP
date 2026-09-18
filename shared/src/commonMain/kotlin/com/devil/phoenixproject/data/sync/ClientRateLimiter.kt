@@ -96,13 +96,3 @@ class ClientRateLimiter(
     /** Wipe all recorded attempts. Intended for test fixtures only. */
     suspend fun resetForTest() = mutex.withLock { attempts.clear() }
 }
-
-/**
- * Typed outcome returned by rate-limited sync entry points when the client
- * refuses to issue a request. Callers can translate to UI state (show a
- * "try again in a moment" banner) or silently defer to the next trigger.
- */
-sealed class SyncRateLimitOutcome {
-    data object Allowed : SyncRateLimitOutcome()
-    data class Denied(val operation: String, val limitPerMinute: Int) : SyncRateLimitOutcome()
-}

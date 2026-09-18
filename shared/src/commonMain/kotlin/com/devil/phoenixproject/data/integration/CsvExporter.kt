@@ -77,22 +77,15 @@ object CsvExporter {
      * Returns a [LinkedHashMap] preserving insertion order so CSV rows stay chronological.
      */
     internal fun groupSessions(sessions: List<WorkoutSession>): LinkedHashMap<String, List<WorkoutSession>> {
-        val result = LinkedHashMap<String, List<WorkoutSession>>()
         val routineGroups = mutableMapOf<String, MutableList<WorkoutSession>>()
-
         for (session in sessions) {
             val routineId = session.routineSessionId
             if (routineId != null) {
                 routineGroups.getOrPut(routineId) { mutableListOf() }.add(session)
-            } else {
-                // Standalone: one group per session, keyed by session id
-                result[session.id] = listOf(session)
             }
         }
 
-        // Insert routine groups in the order of their first session's appearance.
-        // We need to merge them at the correct position relative to standalones.
-        // Rebuild result respecting original session order.
+        // Rebuild in original session order so routine groups appear at first sighting.
         val orderedResult = LinkedHashMap<String, List<WorkoutSession>>()
         val seenRoutines = mutableSetOf<String>()
 

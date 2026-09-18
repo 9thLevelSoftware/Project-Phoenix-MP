@@ -12,28 +12,15 @@ import kotlinx.atomicfu.locks.withLock
  * Captures raw BLE bytes from the monitor characteristic and logs them
  * in a copyable hex format for offline protocol analysis.
  *
- * Usage in debug builds:
+ * [MetricPollingEngine] already calls [onPacket] and auto-starts capture on debug
+ * builds. Manual usage:
  * ```
- * // Before connecting to trainer:
  * BlePacketCapture.startCapture(knownWeightKg = 50.0f)
- *
  * // ... perform workout at known weight ...
- *
- * // When done:
  * val packets = BlePacketCapture.stopCapture()
- * // Packets are also logged to Logcat with tag "BlePacketCapture"
  * ```
  *
- * Then grep Logcat for "CAPTURE_HEX".
- *
- * To hook this into the polling loop, add ONE line in MetricPollingEngine.parseMonitorData():
- * ```
- * private fun parseMonitorData(data: ByteArray) {
- *     BlePacketCapture.onPacket(data)     // <-- Add this line
- *     val packet = parseMonitorPacket(data)
- *     ...
- * }
- * ```
+ * Then grep logs for "CAPTURE_HEX".
  */
 object BlePacketCapture {
 
@@ -172,9 +159,6 @@ object BlePacketCapture {
 
     /** Check if currently capturing. */
     val isCapturing: Boolean get() = capturing
-
-    /** Number of packets captured so far. */
-    val packetCount: Int get() = packets.size
 
     /** KMP-compatible hex conversion for ByteArray. */
     private fun ByteArray.toHex(separator: String = ""): String = joinToString(separator) { (it.toInt() and 0xFF).toString(16).padStart(2, '0').uppercase() }
