@@ -39,10 +39,6 @@ sources:
     type: file
     path: iosApp/PhoenixApp/PhoenixApp/ContentView.swift
     note: Shows SwiftUI only hosts the shared Compose controller and does not own separate theme preference state.
-  - id: theme-plan
-    type: file
-    path: docs/enhancement-plans/478-system-default-theme.md
-    note: Captures the design intent for replacing the older dark-mode boolean with an explicit System or Light or Dark choice.
 status: active
 verified: 2026-06-22
 ---
@@ -62,7 +58,7 @@ The shared theme function is the load-bearing API. The older Android and iOS ove
 
 ## UI contract
 
-Settings edits the enum directly. `SettingsTab` renders a segmented selector with System, Light, and Dark labels instead of a dark-mode switch, so the shared UI can preserve the third state rather than coercing it to "not dark" [@settings-tab] [@theme-plan].
+Settings edits the enum directly. `SettingsTab` renders a segmented selector with System, Light, and Dark labels instead of a dark-mode switch, so the shared UI can preserve the third state rather than coercing it to "not dark" [@settings-tab].
 
 The compact toolbar toggle is also three-state. `ThemeToggle` cycles `SYSTEM -> LIGHT -> DARK -> SYSTEM`, which makes the shortcut reversible without losing the user's ability to return to OS-following behavior from the header itself [@theme-toggle].
 

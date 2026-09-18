@@ -75,9 +75,6 @@ tasks.matching { it.name == "clean" }.configureEach {
     }
 }
 
-// Migration verifier re-enabled after fixing migration gaps (MVP audit, Batch B).
-// Previously disabled to work around duplicate columns and missing migrations.
-//
 // Windows workaround: SQLite JDBC's native loader uses java.io.tmpdir which may resolve
 // to C:\Windows (access-denied). Set the system property before the task executes so the
 // classloader-isolated worker inherits it from the daemon JVM.

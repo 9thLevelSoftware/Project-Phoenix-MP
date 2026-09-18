@@ -182,8 +182,4 @@ Keep [[app-architecture]] nearby when the remaining question is which manager, r
 - Provider connect, import, or disconnect issue: [[integrations]] -> [[external-provider-sync]] -> [[sync]] if entitlement or transport state becomes the real gate [@integrations-page] [@sync-page]
 - Backup or repair issue that later affects sync: [[data-backup-and-repair]] -> [[local-data-model]] -> [[sync]] [@backup-repair-page] [@sync-page]
 
-## Aliases and routing rule
-
-[[health-and-external-integrations]] is archived in favor of [[integrations]], and [[portal-sync-and-auth]] is archived in favor of [[portal-sync-transport]]. New links should target the active slugs directly [@integrations-page] [@portal-page].
-
 Open [[data]] before drilling into [[workouts]] or [[sync]] when the symptom touches both clusters, because remote state and workout history converge on the same local persistence layer [@data-page].

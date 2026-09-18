@@ -37,8 +37,6 @@ verified: 2026-06-26
 ---
 Phoenix exposes three different integration paths through one shared feature area. `IntegrationsScreen` and `IntegrationsViewModel` present platform health-store controls, a Strong or CSV file interchange card, and portal-fed third-party provider cards in one surface, but the underlying code still splits cleanly between `HealthIntegration`, local CSV import or export helpers, and `IntegrationManager` [@integrations-screen] [@integrations-vm] [@health-common] [@integration-manager].
 
-Older wiki references may still use [[health-and-external-integrations]], which was the screen-title slug before this page became the integrations cluster hub. New links should point at this page directly.
-
 ## Cluster split
 
 This hub is a bridge between local and remote clusters, not a synonym for remote sync. Premium gating, portal session state, and OAuth or token persistence still belong to [[premium-entitlements]], [[sync]], or [[auth]], while Health Connect or HealthKit behavior and CSV file interchange stay local even though the same screen surfaces all three branches [@integrations-screen] [@integrations-vm].
