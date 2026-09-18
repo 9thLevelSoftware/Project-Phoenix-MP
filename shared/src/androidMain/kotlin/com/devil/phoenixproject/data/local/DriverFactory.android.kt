@@ -43,26 +43,6 @@ actual class DriverFactory(private val context: Context) {
                             "The Phoenix database schema could not be reconciled.",
                         )
                     }
-                    // Diagnostic: log Routine table state so we can debug #324
-                    try {
-                        db.query("SELECT COUNT(*) AS cnt FROM Routine").use { cursor ->
-                            if (cursor.moveToFirst()) {
-                                val count = cursor.getInt(0)
-                                Log.i(TAG, "ROUTINE_DIAG: Routine table has $count rows")
-                            }
-                        }
-                        db.query(
-                            "SELECT profile_id, COUNT(*) AS cnt FROM Routine GROUP BY profile_id",
-                        ).use { profileCursor ->
-                            while (profileCursor.moveToNext()) {
-                                val pid = profileCursor.getString(0)
-                                val cnt = profileCursor.getInt(1)
-                                Log.i(TAG, "ROUTINE_DIAG: profile_id='$pid' → $cnt routines")
-                            }
-                        }
-                    } catch (e: Exception) {
-                        Log.e(TAG, "ROUTINE_DIAG: Failed to query Routine table — ${e.message}")
-                    }
                 }
 
                 override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) {

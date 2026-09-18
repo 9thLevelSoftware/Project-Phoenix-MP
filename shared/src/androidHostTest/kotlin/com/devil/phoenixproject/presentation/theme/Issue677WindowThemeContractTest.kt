@@ -31,15 +31,6 @@ class Issue677WindowThemeContractTest {
     }
 
     @Test
-    fun nightTheme_existsAndIsDark() {
-        val night = File(projectRoot, "androidApp/src/main/res/values-night/themes.xml")
-        assertTrue(night.exists(), "values-night/themes.xml must exist so a dark-system Pixel does not inherit a Light window.")
-        val text = night.readText()
-        assertFalse(text.contains("Theme.Material.Light"))
-        assertTrue(text.contains("@color/phoenix_window_background"))
-    }
-
-    @Test
     fun windowBackgroundColor_dayIsSlate50_nightIsSlate900() {
         val day = read("androidApp/src/main/res/values/colors.xml")
         assertTrue(

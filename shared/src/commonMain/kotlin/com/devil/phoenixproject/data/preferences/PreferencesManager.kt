@@ -181,9 +181,6 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         // One-shot decline-remember flag, read at the modal-call site only (not in UserPreferences).
         private const val KEY_ADULTS_ONLY_PROMPTED = "adults_only_prompted"
 
-        // Permissions onboarding (health + microphone)
-        private const val KEY_PERMISSIONS_ONBOARDING_SHOWN = "permissions_onboarding_shown"
-
         // Issue #333: BLE small-MTU compatibility path (Auto/On/Off)
         private const val KEY_BLE_COMPATIBILITY_MODE = "ble_compatibility_mode"
 
@@ -317,12 +314,6 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
     internal suspend fun setAutoStartCountdownSeconds(seconds: Int) {
         settings.putInt(KEY_AUTOSTART_COUNTDOWN_SECONDS, seconds)
         updateAndEmit { copy(autoStartCountdownSeconds = seconds) }
-    }
-
-    fun isPermissionsOnboardingShown(): Boolean = settings.getBoolean(KEY_PERMISSIONS_ONBOARDING_SHOWN, false)
-
-    fun setPermissionsOnboardingShown(shown: Boolean) {
-        settings.putBoolean(KEY_PERMISSIONS_ONBOARDING_SHOWN, shown)
     }
 
     @Deprecated("Legacy migration read only")

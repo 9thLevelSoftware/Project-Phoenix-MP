@@ -19,12 +19,6 @@ class SafeWordListenerIosAudioTapGuardTest {
             "shared/src/iosMain/kotlin/com/devil/phoenixproject/domain/voice/SafeWordListener.ios.kt",
         )
 
-    private val optionalPermissionsSource: File
-        get() = File(
-            projectRoot,
-            "shared/src/iosMain/kotlin/com/devil/phoenixproject/presentation/components/OptionalPermissionsHandler.ios.kt",
-        )
-
     @Test
     fun iosSafeWordListener_requestsRecordPermissionBeforeInstallingAudioTap() {
         val source = safeWordListenerSource.readText()
@@ -69,14 +63,6 @@ class SafeWordListenerIosAudioTapGuardTest {
             removeGuardIndex >= 0,
             "Teardown must not call removeTapOnBus unless installTapOnBus succeeded.",
         )
-    }
-
-    @Test
-    fun iosOptionalPermissionOnboardingRequestsMicrophonePermission() {
-        val source = optionalPermissionsSource.readText()
-
-        assertTrue(source.contains("requestRecordPermission"))
-        assertTrue(source.contains("Microphone and Speech Recognition"))
     }
 
     // ---- Issue #522: foreground + AVAudioSession interruption recovery ----

@@ -390,34 +390,6 @@ internal object AndroidCueResources {
 
     val countdownTickCue: AndroidCueResource = beep
 
-    val allCues: List<AndroidCueResource> = (
-        eventCues.values +
-            badgeCues +
-            prCues +
-            repCountCues +
-            encouragementCues +
-            vulgarMildCues +
-            vulgarStrongCues +
-            dominatrixCues +
-            dominatrixUnlock +
-            countdownTickCue
-        )
-        .distinctBy { it.name }
-        .sortedBy { it.name }
-
-    // Issue #611 §9.4: One-time boot log asserting the 4 verbal-encouragement pool sizes
-    // match the PR #612 contract. Required by the implementation Gate 11-equivalent.
-    init {
-        co.touchlab.kermit.Logger.i {
-            "VBT: encouragement pool sizes — " +
-                "neutral=${encouragementCues.size} " +
-                "mild=${vulgarMildCues.size} " +
-                "strong=${vulgarStrongCues.size} " +
-                "dominatrix=${dominatrixCues.size} " +
-                "unlock=${if (dominatrixUnlock.name.isNotEmpty()) 1 else 0}"
-        }
-    }
-
     fun cueForEvent(event: HapticEvent): AndroidCueResource? = when (event) {
         is HapticEvent.BADGE_EARNED -> badgeCues[Random.nextInt(badgeCues.size)]
         is HapticEvent.PERSONAL_RECORD -> prCues[Random.nextInt(prCues.size)]
