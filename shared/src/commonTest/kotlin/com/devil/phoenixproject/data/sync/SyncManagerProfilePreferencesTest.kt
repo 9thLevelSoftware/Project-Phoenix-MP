@@ -958,10 +958,12 @@ class SyncManagerProfilePreferencesTest {
 
         init {
             profileRepository.setActiveProfileForTest("profile-a")
-            tokenStorage.saveAuth(
-                PortalAuthResponse(
-                    token = "token",
-                    user = PortalUser("user", "u@example.com", null, false),
+            tokenStorage.saveGoTrueAuth(
+                GoTrueAuthResponse(
+                    accessToken = "token",
+                    expiresIn = 3600,
+                    refreshToken = "refresh",
+                    user = GoTrueUser(id = "user", email = "u@example.com"),
                 ),
             )
         }
@@ -1012,10 +1014,12 @@ class SyncManagerProfilePreferencesTest {
         suspend fun initialize() {
             profilePreferencesRepository.seedMissingProfiles()
             profileRepository.reconcileActiveProfileContext()
-            tokenStorage.saveAuth(
-                PortalAuthResponse(
-                    token = "token",
-                    user = PortalUser("user", "u@example.com", null, false),
+            tokenStorage.saveGoTrueAuth(
+                GoTrueAuthResponse(
+                    accessToken = "token",
+                    expiresIn = 3600,
+                    refreshToken = "refresh",
+                    user = GoTrueUser(id = "user", email = "u@example.com"),
                 ),
             )
         }

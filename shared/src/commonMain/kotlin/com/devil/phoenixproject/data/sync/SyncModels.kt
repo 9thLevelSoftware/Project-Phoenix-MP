@@ -84,9 +84,6 @@ data class IdMappings(
 // === Auth DTOs ===
 
 @Serializable
-data class PortalLoginRequest(val email: String, val password: String)
-
-@Serializable
 data class PortalAuthResponse(val token: String, val user: PortalUser)
 
 @Serializable

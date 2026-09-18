@@ -129,27 +129,3 @@ object OneRepMaxCalculator {
         return if (reps <= 10) brzycki(weight, reps) else epley(weight, reps)
     }
 }
-
-/**
- * Protocol constants for machine BLE frames.
- * NOTE: older protocol revisions used different frame sizes and commands
- */
-@Suppress("unused") // Protocol reference constants
-object ProtocolConstants {
-    // Command types are in BleConstants.Commands
-
-    // Frame sizes
-    const val STOP_PACKET_SIZE = 2
-    const val REGULAR_PACKET_SIZE = 25
-    const val ECHO_PACKET_SIZE = 32 // F308: matches BlePacketFactory.createEchoControl()
-    const val ACTIVATION_PACKET_SIZE = 96 // F308: matches BlePacketFactory.createProgramParams()/ActivationPacket.SIZE
-    const val COLOR_SCHEME_SIZE = 34
-
-    // Mode values (used in ActivationPacket)
-    const val MODE_OLD_SCHOOL = 0
-    const val MODE_PUMP = 2
-    const val MODE_TUT = 3
-    const val MODE_TUT_BEAST = 4
-    const val MODE_ECCENTRIC_ONLY = 6
-    const val MODE_ECHO = 10
-}

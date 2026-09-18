@@ -86,15 +86,6 @@ class MigrationManager(
     override val requiredMigrationState: StateFlow<RequiredMigrationState> =
         _requiredMigrationState.asStateFlow()
 
-    private val _profileScopeRepairState = MutableStateFlow<ProfileScopeRepairState>(ProfileScopeRepairState.Idle)
-    val profileScopeRepairState: StateFlow<ProfileScopeRepairState> = _profileScopeRepairState.asStateFlow()
-
-    private var pendingProfileScopeRepair: PendingProfileScopeRepair? = null
-
-    // Issue #319: Track orphaned data repair state for PRs with deleted profile IDs
-    private val _orphanedDataRepairState = MutableStateFlow<OrphanedDataRepairState>(OrphanedDataRepairState.Idle)
-    val orphanedDataRepairState: StateFlow<OrphanedDataRepairState> = _orphanedDataRepairState.asStateFlow()
-
     private data class RoutineNameResolutionContext(
         val routineNameById: Map<String, String>,
         val routineIdByExerciseId: Map<String, String>,
@@ -126,14 +117,6 @@ class MigrationManager(
             rpgProfiles
         val hasAnyData: Boolean get() = totalRows > 0
     }
-
-    private data class PendingProfileScopeRepair(
-        val fromProfileId: String,
-        val toProfileId: String,
-        val toProfileName: String,
-        val fromCounts: ProfileScopedCounts,
-        val toCounts: ProfileScopedCounts,
-    )
 
     /**
      * Check for and run any pending migrations.
@@ -222,60 +205,10 @@ class MigrationManager(
 
     private suspend fun runNonCriticalRepairsNow() {
         migrationMutex.withLock {
-            _profileScopeRepairState.value = ProfileScopeRepairState.Applying("Running startup data repair")
-            pendingProfileScopeRepair = null
             try {
                 runMigrations()
-                if (_profileScopeRepairState.value !is ProfileScopeRepairState.NeedsChoice) {
-                    _profileScopeRepairState.value = ProfileScopeRepairState.Completed("Startup data repair complete")
-                }
             } catch (e: Exception) {
                 log.e(e) { "Migration failed" }
-                _profileScopeRepairState.value = ProfileScopeRepairState.Failed(
-                    e.message ?: "Startup data repair failed",
-                )
-            }
-        }
-    }
-
-    suspend fun moveDefaultDataToActiveProfile() {
-        migrationMutex.withLock {
-            val context = pendingProfileScopeRepair
-                ?: return@withLock
-            _profileScopeRepairState.value = ProfileScopeRepairState.Applying(
-                "Moving legacy data into ${context.toProfileName}",
-            )
-            try {
-                applyProfileScopeMove(context)
-                pendingProfileScopeRepair = null
-                _profileScopeRepairState.value = ProfileScopeRepairState.Completed(
-                    "Moved legacy data into ${context.toProfileName}",
-                )
-            } catch (e: Exception) {
-                log.e(e) { "Profile-scope repair failed during manual move" }
-                _profileScopeRepairState.value = ProfileScopeRepairState.Failed(
-                    e.message ?: "Profile-scope repair failed",
-                )
-            }
-        }
-    }
-
-    suspend fun switchToDefaultProfileWithoutMovingData() {
-        migrationMutex.withLock {
-            _profileScopeRepairState.value = ProfileScopeRepairState.Applying(
-                "Switching back to Default profile",
-            )
-            try {
-                setActiveProfileInternal("default")
-                pendingProfileScopeRepair = null
-                _profileScopeRepairState.value = ProfileScopeRepairState.Completed(
-                    "Using Default profile without moving data",
-                )
-            } catch (e: Exception) {
-                log.e(e) { "Profile-scope repair failed while switching to default profile" }
-                _profileScopeRepairState.value = ProfileScopeRepairState.Failed(
-                    e.message ?: "Failed to switch to Default profile",
-                )
             }
         }
     }
@@ -345,58 +278,39 @@ class MigrationManager(
             }
 
             !activeCounts.hasAnyData -> {
-                val context = PendingProfileScopeRepair(
-                    fromProfileId = "default",
-                    toProfileId = activeProfile.id,
-                    toProfileName = activeProfile.name,
-                    fromCounts = defaultCounts,
-                    toCounts = activeCounts,
-                )
-                _profileScopeRepairState.value = ProfileScopeRepairState.Applying(
-                    "Moving legacy data into ${activeProfile.name}",
-                )
-                applyProfileScopeMove(context)
+                log.i { "Profile-scope audit: moving legacy default-scoped data into ${activeProfile.name}" }
+                applyProfileScopeMove(fromProfileId = "default", toProfileId = activeProfile.id)
             }
 
             else -> {
-                pendingProfileScopeRepair = PendingProfileScopeRepair(
-                    fromProfileId = "default",
-                    toProfileId = activeProfile.id,
-                    toProfileName = activeProfile.name,
-                    fromCounts = defaultCounts,
-                    toCounts = activeCounts,
-                )
-                _profileScopeRepairState.value = ProfileScopeRepairState.NeedsChoice(
-                    activeProfileId = activeProfile.id,
-                    activeProfileName = activeProfile.name,
-                    defaultRowCount = defaultCounts.totalRows,
-                    activeRowCount = activeCounts.totalRows,
-                )
+                log.i {
+                    "Profile-scope audit: both default (${defaultCounts.totalRows} rows) and active (${activeCounts.totalRows} rows) have data; leaving both in place"
+                }
             }
         }
     }
 
-    private suspend fun applyProfileScopeMove(context: PendingProfileScopeRepair) {
+    private suspend fun applyProfileScopeMove(fromProfileId: String, toProfileId: String) {
         val moveDriver = driver
             ?: error("Profile-scope repair requires a SqlDriver")
 
         database.transaction {
-            profileScopedDataMerger.mergePersonalRecords(context.fromProfileId, context.toProfileId)
-            profileScopedDataMerger.mergeEarnedBadges(context.fromProfileId, context.toProfileId)
-            moveProfileScopedRows(moveDriver, "WorkoutSession", context.fromProfileId, context.toProfileId)
-            moveProfileScopedRows(moveDriver, "Routine", context.fromProfileId, context.toProfileId)
-            moveProfileScopedRows(moveDriver, "TrainingCycle", context.fromProfileId, context.toProfileId)
-            moveProfileScopedRows(moveDriver, "AssessmentResult", context.fromProfileId, context.toProfileId)
-            moveProfileScopedRows(moveDriver, "ProgressionEvent", context.fromProfileId, context.toProfileId)
-            moveProfileScopedRows(moveDriver, "StreakHistory", context.fromProfileId, context.toProfileId)
-            deleteProfileScopedRows(moveDriver, "GamificationStats", context.fromProfileId)
-            deleteProfileScopedRows(moveDriver, "GamificationStats", context.toProfileId)
-            deleteProfileScopedRows(moveDriver, "RpgAttributes", context.fromProfileId)
-            deleteProfileScopedRows(moveDriver, "RpgAttributes", context.toProfileId)
+            profileScopedDataMerger.mergePersonalRecords(fromProfileId, toProfileId)
+            profileScopedDataMerger.mergeEarnedBadges(fromProfileId, toProfileId)
+            moveProfileScopedRows(moveDriver, "WorkoutSession", fromProfileId, toProfileId)
+            moveProfileScopedRows(moveDriver, "Routine", fromProfileId, toProfileId)
+            moveProfileScopedRows(moveDriver, "TrainingCycle", fromProfileId, toProfileId)
+            moveProfileScopedRows(moveDriver, "AssessmentResult", fromProfileId, toProfileId)
+            moveProfileScopedRows(moveDriver, "ProgressionEvent", fromProfileId, toProfileId)
+            moveProfileScopedRows(moveDriver, "StreakHistory", fromProfileId, toProfileId)
+            deleteProfileScopedRows(moveDriver, "GamificationStats", fromProfileId)
+            deleteProfileScopedRows(moveDriver, "GamificationStats", toProfileId)
+            deleteProfileScopedRows(moveDriver, "RpgAttributes", fromProfileId)
+            deleteProfileScopedRows(moveDriver, "RpgAttributes", toProfileId)
         }
 
         validateAndRepairPrUniqueIndex(moveDriver)
-        recomputeDerivedGamification(context.toProfileId)
+        recomputeDerivedGamification(toProfileId)
         refreshProfilesIfAvailable()
     }
 
@@ -407,11 +321,6 @@ class MigrationManager(
     }
 
     private suspend fun refreshProfilesIfAvailable() {
-        userProfileRepository.refreshProfiles()
-    }
-
-    private suspend fun setActiveProfileInternal(profileId: String) {
-        userProfileRepository.setActiveProfile(profileId)
         userProfileRepository.refreshProfiles()
     }
 
@@ -796,8 +705,6 @@ class MigrationManager(
      * @return Number of records repaired
      */
     suspend fun repairOrphanedPRRecords(targetProfileId: String): Int = migrationMutex.withLock {
-        _orphanedDataRepairState.value = OrphanedDataRepairState.Repairing("Migrating orphaned PR records to $targetProfileId")
-
         val orphanedCounts = scanForOrphanedPRRecords()
         repairOrphanedPRRecordsInternal(targetProfileId, orphanedCounts)
     }
@@ -808,7 +715,6 @@ class MigrationManager(
      */
     private suspend fun repairOrphanedPRRecordsInternal(targetProfileId: String, orphanedCounts: Map<String, Int>): Int {
         if (orphanedCounts.isEmpty()) {
-            _orphanedDataRepairState.value = OrphanedDataRepairState.Completed("No orphaned records found", 0)
             return 0
         }
 
@@ -824,8 +730,6 @@ class MigrationManager(
         val moveDriver = driver
         if (moveDriver == null) {
             log.w { "Orphaned PR repair skipped: no SqlDriver available for a safe dedup-merge" }
-            _orphanedDataRepairState.value =
-                OrphanedDataRepairState.Completed("Repair skipped: no SqlDriver available", 0)
             return 0
         }
         var totalRepaired = 0
@@ -863,11 +767,6 @@ class MigrationManager(
         // Recompute gamification after repair
         recomputeDerivedGamification(targetProfileId)
 
-        _orphanedDataRepairState.value = OrphanedDataRepairState.Completed(
-            "Migrated $totalRepaired records to $targetProfileId",
-            totalRepaired,
-        )
-
         log.i { "Issue #319: Successfully repaired $totalRepaired orphaned PR records" }
         return totalRepaired
     }
@@ -884,14 +783,11 @@ class MigrationManager(
             return
         }
 
-        _orphanedDataRepairState.value = OrphanedDataRepairState.Scanning("Checking for orphaned PR records")
-
         val orphanedCounts = scanForOrphanedPRRecords()
         val activeProfile = resolveActiveProfile()
         val targetProfileId = activeProfile?.id ?: "default"
 
         if (orphanedCounts.isEmpty()) {
-            _orphanedDataRepairState.value = OrphanedDataRepairState.Idle
             return
         }
 
@@ -899,18 +795,10 @@ class MigrationManager(
 
         // Auto-repair if there's an active profile
         if (activeProfile != null) {
-            _orphanedDataRepairState.value = OrphanedDataRepairState.NeedsRepair(
-                orphanedProfileIds = orphanedCounts.keys.toList(),
-                orphanedRecordCounts = orphanedCounts,
-                targetProfileId = targetProfileId,
-            )
-
             // Auto-repair (without acquiring mutex again - already inside runMigrations)
             repairOrphanedPRRecordsInternal(targetProfileId, orphanedCounts)
         } else {
-            _orphanedDataRepairState.value = OrphanedDataRepairState.Failed(
-                "Found orphaned records but no active profile to migrate to: $orphanedCounts",
-            )
+            log.e { "Issue #319: Found orphaned records but no active profile to migrate to: $orphanedCounts" }
         }
     }
 

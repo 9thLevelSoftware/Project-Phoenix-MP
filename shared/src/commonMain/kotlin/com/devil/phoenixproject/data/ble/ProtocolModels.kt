@@ -35,11 +35,7 @@ data class DiagnosticPacket(
     val crash: DiagnosticCrash? = null,
     val warnings: Long? = null,
     val receivedAtMillis: Long = 0L,
-) {
-    val seconds: Long get() = runtimeSeconds
-    val faults: List<Int> get() = faultWords
-    val temps: List<Int> get() = temperatures
-}
+)
 
 /**
  * Optional crash details from extended diagnostics payloads.
