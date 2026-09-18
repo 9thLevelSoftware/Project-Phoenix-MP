@@ -66,6 +66,37 @@ class SqlDelightSyncRepository(
         const val BATCH_LOOKUP_CHUNK_SIZE = 500
     }
 
+    /**
+     * Preserve a local template-cycle association when the portal cannot represent it.
+     * Template routines deliberately use the cycle_routine_ prefix and are omitted from
+     * the UUID-only sync payload, so a null pull value is lossy rather than an explicit
+     * unassignment. All other null values remain authoritative.
+     */
+    private fun preservedTemplateCycleRoutineId(
+        existingCycleProfileId: String?,
+        existingCycleDeletedAt: Long?,
+        existingDays: List<com.devil.phoenixproject.database.CycleDay>,
+        portalDay: com.devil.phoenixproject.data.sync.PullCycleDayDto,
+        profileId: String,
+    ): String? {
+        if (portalDay.dayType == "rest") return null
+        if (portalDay.routineId != null) return portalDay.routineId
+        if (existingCycleProfileId != profileId || existingCycleDeletedAt != null) return null
+
+        val localRoutineId = existingDays
+            .firstOrNull { it.day_number == portalDay.dayNumber.toLong() && it.is_rest_day == 0L }
+            ?.routine_id
+            ?: return null
+        if (!localRoutineId.startsWith("cycle_routine_")) return null
+
+        val localRoutine = queries.selectRoutineById(localRoutineId).executeAsOneOrNull()
+        return localRoutineId.takeIf {
+            localRoutine != null &&
+                localRoutine.profile_id == profileId &&
+                localRoutine.deletedAt == null
+        }
+    }
+
     // === Push Operations ===
 
     override suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSessionSyncDto> = withContext(Dispatchers.IO) {
@@ -637,8 +668,12 @@ class SqlDelightSyncRepository(
                         portalActiveCycleId = portalCycle.id
                     }
 
-                    // Check existence BEFORE inserting so we can skip the redundant update for new rows.
+                    // Snapshot existing days before replacement so a lossy null pull can preserve
+                    // a valid local-only template association by day number.
                     val existing = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
+                    val existingDays = existing?.let {
+                        queries.selectCycleDaysByCycle(portalCycle.id).executeAsList()
+                    } ?: emptyList()
 
                     // Upsert cycle (INSERT OR IGNORE — keeps local if exists)
                     queries.insertTrainingCycleIgnore(
@@ -676,7 +711,13 @@ class SqlDelightSyncRepository(
                             cycle_id = day.cycleId.ifEmpty { portalCycle.id },
                             day_number = day.dayNumber.toLong(),
                             name = day.notes,
-                            routine_id = day.routineId,
+                            routine_id = preservedTemplateCycleRoutineId(
+                                existingCycleProfileId = existing?.profile_id,
+                                existingCycleDeletedAt = existing?.deletedAt,
+                                existingDays = existingDays,
+                                portalDay = day,
+                                profileId = profileId,
+                            ),
                             is_rest_day = if (day.dayType == "rest") 1L else 0L,
                             echo_level = null,
                             eccentric_load_percent = null,
@@ -1684,8 +1725,12 @@ class SqlDelightSyncRepository(
                         portalActiveCycleId = portalCycle.id
                     }
 
-                    // Check existence BEFORE inserting to guard the update against newly-inserted rows.
+                    // Snapshot existing days before replacement so a lossy null pull can preserve
+                    // a valid local-only template association by day number.
                     val existingCycle = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
+                    val existingCycleDays = existingCycle?.let {
+                        queries.selectCycleDaysByCycle(portalCycle.id).executeAsList()
+                    } ?: emptyList()
 
                     queries.insertTrainingCycleIgnore(
                         id = portalCycle.id,
@@ -1719,7 +1764,13 @@ class SqlDelightSyncRepository(
                             cycle_id = day.cycleId.ifEmpty { portalCycle.id },
                             day_number = day.dayNumber.toLong(),
                             name = day.notes,
-                            routine_id = day.routineId,
+                            routine_id = preservedTemplateCycleRoutineId(
+                                existingCycleProfileId = existingCycle?.profile_id,
+                                existingCycleDeletedAt = existingCycle?.deletedAt,
+                                existingDays = existingCycleDays,
+                                portalDay = day,
+                                profileId = profileId,
+                            ),
                             is_rest_day = if (day.dayType == "rest") 1L else 0L,
                             echo_level = null,
                             eccentric_load_percent = null,
