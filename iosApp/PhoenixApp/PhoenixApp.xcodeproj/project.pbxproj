@@ -174,15 +174,16 @@
 			files = (
 			);
 			inputPaths = (
-				"$(SRCROOT)/compose-resources",
+				"$(SRCROOT)/../../shared/build/processedResources/iosArm64/main/composeResources",
+				"$(SRCROOT)/../../shared/build/processedResources/iosSimulatorArm64/main/composeResources",
 			);
 			name = "Copy Compose Resources";
 			outputPaths = (
-				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/compose-resources",
+				"$(TARGET_BUILD_DIR)/$(UNLOCALIZED_RESOURCES_FOLDER_PATH)/compose-resources/composeResources",
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "# Copy Compose Multiplatform resources preserving directory structure.\n# Resources are placed OUTSIDE the fileSystemSynchronizedGroups directory\n# (at $SRCROOT/compose-resources/, not $SRCROOT/PhoenixApp/compose-resources/)\n# to avoid Xcode auto-including them and flattening locale-specific .cvr files.\n# This script copies the directory tree intact so DefaultIOsResourceReader\n# can find resources at their expected bundle paths.\nCOMPOSE_RES=\"$SRCROOT/compose-resources\"\nif [ -d \"$COMPOSE_RES\" ]; then\n    DEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/compose-resources\"\n    rm -rf \"$DEST\"\n    mkdir -p \"$DEST\"\n    cp -R \"$COMPOSE_RES/\" \"$DEST/\"\n    echo \"Copied Compose resources to bundle: $(find \"$DEST\" -type f | wc -l | tr -d ' ') files\"\nelse\n    echo \"warning: Compose resources not found at $COMPOSE_RES (expected for local builds without Gradle resource processing)\"\nfi\n";
+			shellScript = "set -e\ncase \"$SDK_NAME\" in\n    iphonesimulator*)\n        KOTLIN_TARGET=\"iosSimulatorArm64\"\n        ;;\n    iphoneos*)\n        KOTLIN_TARGET=\"iosArm64\"\n        ;;\n    *)\n        echo \"error: Unsupported SDK_NAME: $SDK_NAME\" >&2\n        exit 1\n        ;;\nesac\n\nSOURCE=\"$SRCROOT/../../shared/build/processedResources/${KOTLIN_TARGET}/main/composeResources\"\nDEST=\"$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH/compose-resources/composeResources\"\nrm -rf \"$DEST\"\nif [ -d \"$SOURCE\" ]; then\n    mkdir -p \"$DEST\"\n    cp -R \"$SOURCE/.\" \"$DEST/\"\nelse\n    echo \"error: Processed Compose resources not found at $SOURCE\" >&2\n    exit 1\nfi\n";
 		};
 		DFE6BD802EEE100000886589 /* Generate shared.framework dSYM */ = {
 			isa = PBXShellScriptBuildPhase;
