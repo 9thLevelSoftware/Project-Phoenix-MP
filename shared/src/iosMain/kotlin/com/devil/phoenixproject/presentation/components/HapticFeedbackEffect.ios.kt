@@ -340,22 +340,6 @@ private class IosSoundManager {
         log.d { "Dominatrix unlock SFX loaded: ${dominatrixUnlockPlayer != null}" }
     }
 
-    /**
-     * Issue #611: Play the dominatrix unlock whip-crack SFX from Settings when the
-     * 7-tap easter egg fires. Mirrors onPlayDiscoSound() in SettingsTab.kt.
-     */
-    fun playDominatrixUnlockSound() {
-        dominatrixUnlockPlayer?.let { player ->
-            try {
-                player.prepareToPlay()
-                player.currentTime = 0.0
-                player.play()
-            } catch (e: Exception) {
-                log.w { "Dominatrix unlock SFX playback failed: ${e.message}" }
-            }
-        }
-    }
-
     private fun loadSound(fileName: String): AVAudioPlayer? {
         // Try different audio formats in order of preference
         val extensions = listOf("caf", "m4a", "wav", "mp3")

@@ -432,24 +432,9 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime)
     implementation(libs.androidx.lifecycle.viewmodel)
     implementation(libs.androidx.activity.compose)
-    implementation(libs.androidx.splashscreen)
-
-    // Compose
-    implementation(platform(libs.compose.bom))
-    implementation(libs.compose.ui)
-    implementation(libs.compose.ui.graphics)
-    implementation(libs.compose.ui.tooling.preview)
-    implementation(libs.compose.material3)
-    implementation(libs.compose.material.icons.extended)
-    implementation(libs.compose.navigation)
-
-    // Compose Tooling
-    debugImplementation(libs.compose.ui.tooling)
 
     // Koin DI
     implementation(libs.koin.android)
-    implementation(libs.koin.compose)
-    implementation(libs.koin.compose.viewmodel)
 
     // Coroutines
     implementation(libs.kotlinx.coroutines.android)

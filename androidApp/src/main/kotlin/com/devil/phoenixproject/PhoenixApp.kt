@@ -39,7 +39,6 @@ open class PhoenixApp :
 
         // Initialize DeviceInfo with BuildConfig values
         DeviceInfo.initialize(
-            versionCode = BuildConfig.VERSION_CODE,
             isDebug = BuildConfig.DEBUG,
         )
 

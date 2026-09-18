@@ -2,8 +2,6 @@ package com.devil.phoenixproject
 
 import android.os.Build
 
-actual fun getDeviceName(): String = "${Build.MANUFACTURER} ${Build.MODEL}"
-
 /**
  * Android platform implementation.
  */
