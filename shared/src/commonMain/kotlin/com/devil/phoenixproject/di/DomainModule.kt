@@ -23,7 +23,6 @@ import com.devil.phoenixproject.domain.usecase.CountVelocityOneRepMaxImprovement
 import com.devil.phoenixproject.domain.usecase.DropSetCandidateResolver
 import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.domain.usecase.MvtExerciseView
-import com.devil.phoenixproject.domain.usecase.ProgressionUseCase
 import com.devil.phoenixproject.domain.usecase.RecommendWeightAdjustmentUseCase
 import com.devil.phoenixproject.domain.usecase.RecordPersonalMvtSampleUseCase
 import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
@@ -43,7 +42,6 @@ val domainModule = module {
 
     // Use Cases
     single { RepCounterFromMachine() }
-    single { ProgressionUseCase(get(), get()) }
     single { RecommendWeightAdjustmentUseCase() }
     single { ApplyEquipmentRackLoadUseCase() }
     single<DropSetFeatureGate> { EnabledDropSetFeatureGate }
