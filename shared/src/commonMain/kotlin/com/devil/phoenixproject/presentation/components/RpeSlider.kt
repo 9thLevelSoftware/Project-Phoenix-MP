@@ -252,56 +252,6 @@ fun RpeSlider(selectedRpe: Int, onRpeSelected: (Int) -> Unit, onDismiss: () -> U
 }
 
 /**
- * Inline RPE quick selector - compact horizontal buttons.
- */
-@Composable
-fun RpeQuickSelect(selectedRpe: Int?, onRpeSelected: (Int) -> Unit, modifier: Modifier = Modifier) {
-    Row(
-        modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
-    ) {
-        rpeScale.forEach { rpeInfo ->
-            val isSelected = selectedRpe == rpeInfo.value
-            Surface(
-                onClick = { onRpeSelected(rpeInfo.value) },
-                shape = MaterialTheme.shapes.extraSmall,
-                color = if (isSelected) {
-                    getRpeColor(rpeInfo.value).copy(alpha = 0.3f)
-                } else {
-                    MaterialTheme.colorScheme.surfaceContainerHigh
-                },
-                modifier = Modifier.size(44.dp),
-            ) {
-                Box(
-                    contentAlignment = Alignment.Center,
-                    modifier = Modifier.fillMaxSize(),
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                    ) {
-                        Text(
-                            text = rpeInfo.emoji,
-                            fontSize = 16.sp,
-                        )
-                        Text(
-                            text = rpeInfo.value.toString(),
-                            style = MaterialTheme.typography.labelSmall,
-                            fontSize = 10.sp,
-                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                            color = if (isSelected) {
-                                getRpeColor(rpeInfo.value)
-                            } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-/**
  * Get color for RPE value.
  */
 @Composable

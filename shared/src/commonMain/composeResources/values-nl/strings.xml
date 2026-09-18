@@ -40,8 +40,6 @@
     <string name="action_sign_up">Registreren</string>
     <string name="action_continue">Doorgaan</string>
     <string name="action_discard">Verwerpen</string>
-    <string name="action_modify">Aanpassen</string>
-    <string name="action_accept">Accepteren</string>
     <string name="action_rename">Hernoemen</string>
     <string name="action_select_different">Andere selecteren</string>
     <string name="action_go_back">Terug</string>
@@ -271,8 +269,6 @@
     <string name="delete_profile">Profiel verwijderen</string>
     <string name="delete_profile_message">Weet je zeker dat je \"%1$s\" wilt verwijderen? Dit kan niet ongedaan worden gemaakt.</string>
 
-    <string name="adjust_weight">Gewicht aanpassen</string>
-    <string name="use_this_weight">Dit gewicht gebruiken</string>
 
     <string name="resume_workout_title">Training hervatten?</string>
     <string name="resume_workout_saved">Je hebt opgeslagen voortgang:</string>
@@ -361,17 +357,10 @@
     <string name="workout_in_progress">Training bezig</string>
     <string name="stop_before_editing">Stop eerst de huidige training voordat je routines bewerkt.</string>
 
-    <string name="create_training_cycle">Trainingscyclus aanmaken</string>
-    <string name="view_cycle_details">Cyclusdetails bekijken</string>
-    <string name="no_routine_assigned">Geen routine toegewezen</string>
 
     <string name="starting_weight">Startgewicht</string>
     <string name="eccentric_overload">Excentrische overbelasting</string>
 
-    <string name="chart_load_a">Belasting A</string>
-    <string name="chart_load_b">Belasting B</string>
-    <string name="chart_pos_a">Pos A</string>
-    <string name="chart_pos_b">Pos B</string>
 
     <string name="nav_analytics">Analyse</string>
     <string name="nav_workouts">Trainingen</string>
@@ -468,12 +457,10 @@
     <string name="chart_no_data">Geen gegevens beschikbaar</string>
     <string name="chart_invalid_target">Ongeldige doelwaarde</string>
     <string name="chart_invalid_gauge">Ongeldige metergegevens</string>
-    <string name="chart_no_metrics">Geen trainingsmetrieken beschikbaar</string>
 
     <!-- contentDescription strings — accessibility labels, not translated for Beta -->
     <string name="cd_cloud_sync">Cloud Sync</string>
     <string name="cd_bluetooth_lost">Bluetooth-verbinding verloren</string>
-    <string name="cd_bluetooth_status">Bluetooth-verbindingsstatus</string>
     <string name="cd_connection_error">Verbindingsfout</string>
     <string name="cd_connection_lost">Verbinding verloren</string>
     <string name="cd_connection_logs">Verbindingslogs</string>
@@ -593,7 +580,6 @@
     <string name="cd_above_pr">Boven PR</string>
     <string name="cd_below_pr">Onder PR</string>
     <string name="cd_delete_workout">Training verwijderen</string>
-    <string name="cd_toggle_theme_cycle">Thema wisselen (huidig: %1$s, volgend: %2$s)</string>
     <string name="cd_home">Startpagina</string>
     <string name="cd_disconnect">Verbinding verbreken</string>
 

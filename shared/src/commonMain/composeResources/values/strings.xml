@@ -32,8 +32,6 @@
     <string name="action_continue">Continue</string>
     <string name="action_continue_set">Continue Set</string>
     <string name="action_discard">Discard</string>
-    <string name="action_modify">Modify</string>
-    <string name="action_accept">Accept</string>
     <string name="action_rename">Rename</string>
     <string name="action_select_different">Select Different</string>
     <string name="action_go_back">Go Back</string>
@@ -123,8 +121,6 @@
     <string name="disconnect_message">Are you sure you want to disconnect from the trainer?</string>
     <string name="disconnect_integration_title">Disconnect integration?</string>
     <string name="disconnect_integration_message">Are you sure you want to disconnect %1$s? This will remove the integration and may interrupt a scheduled sync.</string>
-    <string name="banner_not_connected_to_machine">Not connected to machine</string>
-    <string name="banner_action_connect">Connect</string>
 
     <!-- ==================== Settings screen ==================== -->
     <string name="settings_title">Settings</string>
@@ -321,8 +317,6 @@
     <string name="delete_profile_message">Are you sure you want to delete \"%1$s\"? This cannot be undone.</string>
 
     <!-- ==================== Progression Suggestion ==================== -->
-    <string name="adjust_weight">Adjust Weight</string>
-    <string name="use_this_weight">Use This Weight</string>
 
     <!-- ==================== Resume Routine ==================== -->
     <string name="resume_workout_title">Resume Workout?</string>
@@ -420,22 +414,9 @@
     <string name="workout_in_progress">Workout in Progress</string>
     <string name="stop_before_editing">Please stop the current workout before editing routines.</string>
 
-    <!-- ==================== Routine Picker ==================== -->
-
-    <!-- ==================== Up Next Widget ==================== -->
-    <string name="create_training_cycle">Create Training Cycle</string>
-    <string name="view_cycle_details">View Cycle Details</string>
-    <string name="no_routine_assigned">No routine assigned</string>
-
     <!-- ==================== Exercise Config Modal ==================== -->
     <string name="starting_weight">Starting Weight</string>
     <string name="eccentric_overload">Eccentric Overload</string>
-
-    <!-- ==================== Chart labels ==================== -->
-    <string name="chart_load_a">Load A</string>
-    <string name="chart_load_b">Load B</string>
-    <string name="chart_pos_a">Pos A</string>
-    <string name="chart_pos_b">Pos B</string>
 
     <!-- ==================== Navigation ==================== -->
     <string name="nav_analytics">Analytics</string>
@@ -552,13 +533,11 @@
     <string name="chart_no_data">No data available</string>
     <string name="chart_invalid_target">Invalid target value</string>
     <string name="chart_invalid_gauge">Invalid gauge data</string>
-    <string name="chart_no_metrics">No workout metrics available</string>
 
     <!-- ==================== Issue 7: contentDescription strings ==================== -->
     <!-- Connection -->
     <string name="cd_cloud_sync">Cloud Sync</string>
     <string name="cd_bluetooth_lost">Bluetooth connection lost</string>
-    <string name="cd_bluetooth_status">Bluetooth connection status</string>
     <string name="cd_connection_error">Connection error</string>
     <string name="cd_connection_lost">Connection lost</string>
     <string name="cd_connection_logs">Connection logs</string>
@@ -705,7 +684,6 @@
     <string name="cd_above_pr">Above PR</string>
     <string name="cd_below_pr">Below PR</string>
     <string name="cd_delete_workout">Delete workout</string>
-    <string name="cd_toggle_theme_cycle">Toggle theme (current: %1$s, next: %2$s)</string>
     <string name="cd_home">Home</string>
     <string name="cd_disconnect">Disconnect</string>
     <string name="single_exercise_unavailable">Exercise is no longer available</string>
