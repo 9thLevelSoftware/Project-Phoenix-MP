@@ -1,5 +1,6 @@
 package com.devil.phoenixproject
 
+import com.devil.phoenixproject.data.local.DatabaseDiagnosticReason
 import com.devil.phoenixproject.data.local.DatabaseFileMigrationException
 import com.devil.phoenixproject.data.local.DatabaseMigrationFailureCode
 import kotlin.test.Test
@@ -19,6 +20,7 @@ class StartupDependencyResolutionTest {
                 DatabaseFileMigrationException(
                     DatabaseMigrationFailureCode.DUAL_DATABASES,
                     "sensitive internal detail",
+                    diagnosticReason = DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET,
                 ),
             )
         }
@@ -26,6 +28,7 @@ class StartupDependencyResolutionTest {
         val failure = assertIs<StartupDependencyResolution.Failed>(result)
         assertEquals("DB_DUAL_DATABASES", failure.diagnosticCode)
         assertFalse(failure.retryAllowed)
+        assertEquals(DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET.name, failure.supportCode)
         assertFalse(failure.diagnosticCode.contains("sensitive"))
     }
 

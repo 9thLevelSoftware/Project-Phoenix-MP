@@ -29,6 +29,25 @@ internal class IosDatabaseFileOperations(
     private val excludeFromBackup: (String) -> Unit = ::excludePathFromBackup,
 ) : DatabaseFileOperations {
     private val fileManager = NSFileManager.defaultManager
+    private var capturedPresenceSnapshot: DatabasePresenceSnapshot? = null
+
+    override fun capturePresenceSnapshot(): DatabasePresenceSnapshot {
+        fun presence(path: String): DatabasePresence = DatabasePresence(
+            main = fileManager.fileExistsAtPath(path),
+            wal = fileManager.fileExistsAtPath("$path-wal"),
+            shm = fileManager.fileExistsAtPath("$path-shm"),
+            journal = fileManager.fileExistsAtPath("$path-journal"),
+        )
+        fun artifactPresence(artifact: DatabaseArtifact): DatabasePresence =
+            presence(DatabaseFileContext.databasePath(name(artifact), null))
+        return DatabasePresenceSnapshot(
+            libraryLegacy = presence(legacyLibraryRootPath()),
+            sqliterLegacy = artifactPresence(DatabaseArtifact.LEGACY),
+            target = artifactPresence(DatabaseArtifact.TARGET),
+            recovery = artifactPresence(DatabaseArtifact.RECOVERY),
+            staging = artifactPresence(DatabaseArtifact.STAGING),
+        ).also { capturedPresenceSnapshot = it }
+    }
 
     override fun inspect(): DatabaseFileLayout {
         migrateLegacyLibraryRootIfNeeded()
@@ -245,12 +264,16 @@ internal class IosDatabaseFileOperations(
             throw DatabaseFileMigrationException(
                 DatabaseMigrationFailureCode.DUAL_DATABASES,
                 "Legacy database files exist in both the old and SQLiter locations; automatic recovery is disabled.",
+                diagnosticReason = DatabaseDiagnosticReason.LIBRARY_SQLITER_LEGACY,
+                presenceSnapshot = capturedPresenceSnapshot,
             )
         }
         if (legacySidecars.isNotEmpty()) {
             throw DatabaseFileMigrationException(
                 DatabaseMigrationFailureCode.DUAL_DATABASES,
                 "Legacy database sidecars exist in the SQLiter location without its main file; automatic recovery is disabled.",
+                diagnosticReason = DatabaseDiagnosticReason.LIBRARY_MAIN_SQLITER_SIDECARS,
+                presenceSnapshot = capturedPresenceSnapshot,
             )
         }
 

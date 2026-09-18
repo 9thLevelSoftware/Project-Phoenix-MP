@@ -25,6 +25,28 @@ internal data class DatabaseFileLayout(
     val legacySidecarsExist: Boolean,
 )
 
+internal data class DatabasePresence(
+    val main: Boolean,
+    val wal: Boolean,
+    val shm: Boolean,
+    val journal: Boolean,
+)
+
+internal data class DatabasePresenceSnapshot(
+    val schemaVersion: Int = 1,
+    val libraryLegacy: DatabasePresence,
+    val sqliterLegacy: DatabasePresence,
+    val target: DatabasePresence,
+    val recovery: DatabasePresence,
+    val staging: DatabasePresence,
+)
+
+internal enum class DatabaseDiagnosticReason {
+    CANONICAL_LEGACY_TARGET,
+    LIBRARY_SQLITER_LEGACY,
+    LIBRARY_MAIN_SQLITER_SIDECARS,
+}
+
 internal data class DatabaseFingerprint(
     val fileSize: Long,
     val userVersion: Long,
@@ -46,10 +68,14 @@ internal class DatabaseFileMigrationException(
     val code: DatabaseMigrationFailureCode,
     message: String,
     cause: Throwable? = null,
+    val diagnosticReason: DatabaseDiagnosticReason? = null,
+    val presenceSnapshot: DatabasePresenceSnapshot? = null,
 ) : IllegalStateException(message, cause),
     StartupDiagnosticFailure {
     override val startupDiagnosticCode: String = "DB_${code.name}"
     override val startupRetryAllowed: Boolean = code != DatabaseMigrationFailureCode.DUAL_DATABASES
+    override val startupDiagnosticReason: String? = diagnosticReason?.name
+    override val startupPresenceSnapshot: DatabasePresenceSnapshot? = presenceSnapshot
 }
 
 internal data class DatabasePreparation(
@@ -59,6 +85,9 @@ internal data class DatabasePreparation(
 
 internal interface DatabaseFileOperations {
     fun inspect(): DatabaseFileLayout
+
+    /** Best-effort metadata only; must not open SQLite or mutate files. */
+    fun capturePresenceSnapshot(): DatabasePresenceSnapshot? = null
 
     fun checkpointAndValidate(artifact: DatabaseArtifact): DatabaseFingerprint
 
@@ -89,12 +118,15 @@ internal class DatabaseFileMigrationCoordinator(
     private var targetValidationPending = false
 
     fun prepareTarget(): DatabasePreparation = operations.withExclusiveMigrationLock {
+        val presenceSnapshot = runCatching { operations.capturePresenceSnapshot() }.getOrNull()
         val layout = operations.inspect()
 
         if (layout.legacyExists && layout.targetExists) {
             throw DatabaseFileMigrationException(
                 DatabaseMigrationFailureCode.DUAL_DATABASES,
                 "Both legacy and Phoenix database files exist; automatic recovery is disabled.",
+                diagnosticReason = DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET,
+                presenceSnapshot = presenceSnapshot,
             )
         }
 

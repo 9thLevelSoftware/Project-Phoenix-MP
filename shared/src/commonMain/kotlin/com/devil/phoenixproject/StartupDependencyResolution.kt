@@ -1,9 +1,13 @@
 package com.devil.phoenixproject
 
+import com.devil.phoenixproject.data.local.DatabasePresenceSnapshot
+
 /** A startup failure that is safe to classify without exposing its message. */
 internal interface StartupDiagnosticFailure {
     val startupDiagnosticCode: String
     val startupRetryAllowed: Boolean
+    val startupDiagnosticReason: String? get() = null
+    val startupPresenceSnapshot: DatabasePresenceSnapshot? get() = null
 }
 
 internal sealed interface StartupDependencyResolution<out T> {
@@ -12,6 +16,8 @@ internal sealed interface StartupDependencyResolution<out T> {
     data class Failed(
         val diagnosticCode: String,
         val retryAllowed: Boolean,
+        val supportCode: String? = null,
+        internal val presenceSnapshot: DatabasePresenceSnapshot? = null,
         internal val cause: Throwable,
     ) : StartupDependencyResolution<Nothing>
 }
@@ -30,10 +36,24 @@ internal inline fun <T> resolveStartupDependencies(
         StartupDependencyResolution.Failed(
             diagnosticCode = diagnostic?.startupDiagnosticCode ?: "STARTUP_INITIALIZATION_FAILED",
             retryAllowed = diagnostic?.startupRetryAllowed ?: true,
+            supportCode = diagnostic?.startupDiagnosticReason,
+            presenceSnapshot = diagnostic?.startupPresenceSnapshot,
             cause = failure,
         )
     },
 )
+
+internal fun DatabasePresenceSnapshot.safeSummary(): String = listOf(
+    "schemaVersion=$schemaVersion",
+    "libraryLegacy=${libraryLegacy.toSafeSummary()}",
+    "sqliterLegacy=${sqliterLegacy.toSafeSummary()}",
+    "target=${target.toSafeSummary()}",
+    "recovery=${recovery.toSafeSummary()}",
+    "staging=${staging.toSafeSummary()}",
+).joinToString(",")
+
+private fun com.devil.phoenixproject.data.local.DatabasePresence.toSafeSummary(): String =
+    "main=$main,wal=$wal,shm=$shm,journal=$journal"
 
 private fun Throwable.findStartupDiagnosticFailure(): StartupDiagnosticFailure? {
     var current: Throwable? = this

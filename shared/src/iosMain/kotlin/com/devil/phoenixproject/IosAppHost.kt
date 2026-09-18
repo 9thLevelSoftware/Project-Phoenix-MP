@@ -47,7 +47,11 @@ fun IosAppHost() {
 
     when (resolution) {
         is StartupDependencyResolution.Failed -> {
-            Logger.e { "iOS app dependency resolution blocked: ${resolution.diagnosticCode}" }
+            Logger.e {
+                "iOS app dependency resolution blocked: code=${resolution.diagnosticCode}, " +
+                    "support=${resolution.supportCode ?: "NONE"}, " +
+                    "presence=${resolution.presenceSnapshot?.safeSummary() ?: "UNAVAILABLE"}"
+            }
             PersistedFileStartupFailureScreen(resolution) { retryAttempt++ }
         }
 
