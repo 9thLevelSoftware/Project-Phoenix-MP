@@ -85,30 +85,3 @@ fun PRIndicator(
         }
     }
 }
-
-/**
- * Compact version of PRIndicator that shows only the percentage number.
- *
- * Useful for space-constrained layouts where the full indicator would be too large.
- *
- * @param currentWeight The current weight setting in kg
- * @param prWeight The user's PR weight for the exercise (null if no PR exists)
- * @param modifier Modifier for the composable
- */
-@Composable
-fun PRIndicatorCompact(currentWeight: Float, prWeight: Float?, modifier: Modifier = Modifier) {
-    if (prWeight == null || prWeight <= 0) return
-
-    val percentage = ((currentWeight / prWeight) * 100).toInt().coerceIn(0, 200)
-
-    Text(
-        text = "$percentage%",
-        style = MaterialTheme.typography.labelSmall,
-        color = when {
-            percentage > 100 -> MaterialTheme.colorScheme.primary
-            percentage >= 90 -> MaterialTheme.colorScheme.tertiary
-            else -> MaterialTheme.colorScheme.onSurfaceVariant
-        },
-        modifier = modifier,
-    )
-}

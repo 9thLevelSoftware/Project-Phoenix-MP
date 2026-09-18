@@ -40,8 +40,6 @@
     <string name="action_sign_up">Registrieren</string>
     <string name="action_continue">Fortfahren</string>
     <string name="action_discard">Verwerfen</string>
-    <string name="action_modify">Ändern</string>
-    <string name="action_accept">Akzeptieren</string>
     <string name="action_rename">Umbenennen</string>
     <string name="action_select_different">Andere auswählen</string>
     <string name="action_go_back">Zurück</string>
@@ -270,8 +268,6 @@
     <string name="delete_profile">Profil löschen</string>
     <string name="delete_profile_message">Bist du sicher, dass du \"%1$s\" löschen möchtest? Dies kann nicht rückgängig gemacht werden.</string>
 
-    <string name="adjust_weight">Gewicht anpassen</string>
-    <string name="use_this_weight">Dieses Gewicht verwenden</string>
 
     <string name="resume_workout_title">Training fortsetzen?</string>
     <string name="resume_workout_saved">Du hast gespeicherten Fortschritt:</string>
@@ -360,17 +356,10 @@
     <string name="workout_in_progress">Training läuft</string>
     <string name="stop_before_editing">Bitte stoppe das aktuelle Training, bevor du Routinen bearbeitest.</string>
 
-    <string name="create_training_cycle">Trainingszyklus erstellen</string>
-    <string name="view_cycle_details">Zyklusdetails anzeigen</string>
-    <string name="no_routine_assigned">Keine Routine zugewiesen</string>
 
     <string name="starting_weight">Startgewicht</string>
     <string name="eccentric_overload">Exzentrische Überlast</string>
 
-    <string name="chart_load_a">Last A</string>
-    <string name="chart_load_b">Last B</string>
-    <string name="chart_pos_a">Pos A</string>
-    <string name="chart_pos_b">Pos B</string>
 
     <string name="nav_analytics">Analyse</string>
     <string name="nav_workouts">Trainings</string>
@@ -466,13 +455,11 @@
     <string name="chart_no_data">Keine Daten verfügbar</string>
     <string name="chart_invalid_target">Invalid target value</string>
     <string name="chart_invalid_gauge">Invalid gauge data</string>
-    <string name="chart_no_metrics">Keine Trainingsmetriken verfügbar</string>
 
     <!-- ==================== Issue 7: contentDescription strings ==================== -->
     <!-- Connection -->
     <string name="cd_cloud_sync">Cloud Sync</string>
     <string name="cd_bluetooth_lost">Bluetooth connection lost</string>
-    <string name="cd_bluetooth_status">Bluetooth connection status</string>
     <string name="cd_connection_error">Connection error</string>
     <string name="cd_connection_lost">Connection lost</string>
     <string name="cd_connection_logs">Connection logs</string>
@@ -614,7 +601,6 @@
     <string name="cd_above_pr">Above PR</string>
     <string name="cd_below_pr">Below PR</string>
     <string name="cd_delete_workout">Delete workout</string>
-    <string name="cd_toggle_theme_cycle">Design wechseln (aktuell: %1$s, nächstes: %2$s)</string>
     <string name="cd_home">Startseite</string>
     <string name="cd_disconnect">Trennen</string>
 

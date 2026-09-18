@@ -1,10 +1,6 @@
-@file:Suppress("unused")
-
 package com.devil.phoenixproject.presentation.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,18 +8,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDownward
 import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.FitnessCenter
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -34,17 +25,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import com.devil.phoenixproject.data.repository.BadgeWithProgress
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
@@ -57,11 +42,8 @@ import com.devil.phoenixproject.presentation.components.charts.MuscleGroupCircle
 import com.devil.phoenixproject.presentation.components.charts.RadarChart
 import com.devil.phoenixproject.presentation.components.charts.VolumeTrendChart
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
-import com.devil.phoenixproject.util.KmpLocalDate
 import com.devil.phoenixproject.util.KmpUtils
 import kotlin.math.roundToInt
-import org.jetbrains.compose.resources.stringResource
-import projectphoenix.shared.generated.resources.Res
 
 /**
  * Insight card components for workout analytics
@@ -927,395 +909,4 @@ private fun LifetimeStatRow(label: String, value: String, subtext: String?, isFu
             }
         }
     }
-}
-
-/**
- * Data class representing a single day's workout activity
- */
-private data class DayActivity(val date: KmpLocalDate, val volume: Float, val workoutCount: Int)
-
-/**
- * Calendar Heatmap Card - GitHub-style contribution graph showing workout activity
- *
- * Displays last 13 weeks of workout activity with color intensity based on volume lifted.
- * Rows represent days of week (Mon-Sun), columns represent weeks.
- *
- * @param workoutSessions List of all workout sessions
- * @param weightUnit Weight unit for display
- * @param modifier Optional modifier
- */
-@Composable
-fun CalendarHeatmapCard(workoutSessions: List<WorkoutSession>, weightUnit: WeightUnit, modifier: Modifier = Modifier) {
-    // Calculate daily volumes for last 13 weeks (91 days)
-    val (dailyActivities, maxVolume, monthLabels) = remember(workoutSessions) {
-        val today = KmpLocalDate.today()
-        val daysToShow = 91 // 13 weeks
-        val startDate = today.minusDays(daysToShow - 1)
-
-        // Group sessions by date and calculate volume
-        val activityMap = mutableMapOf<String, DayActivity>()
-
-        workoutSessions.forEach { session ->
-            val sessionDate = KmpLocalDate.fromTimestamp(session.timestamp)
-            // Only include sessions within our date range
-            if (!sessionDate.isBefore(startDate) && !sessionDate.isAfter(today)) {
-                val key = sessionDate.toKey()
-                val volume = session.effectiveTotalVolumeKg()
-                val existing = activityMap[key]
-                if (existing != null) {
-                    activityMap[key] = existing.copy(
-                        volume = existing.volume + volume,
-                        workoutCount = existing.workoutCount + 1,
-                    )
-                } else {
-                    activityMap[key] = DayActivity(
-                        date = sessionDate,
-                        volume = volume,
-                        workoutCount = 1,
-                    )
-                }
-            }
-        }
-
-        // Build list of all days
-        val dailyList = mutableListOf<DayActivity>()
-        var currentDate = startDate
-        while (!currentDate.isAfter(today)) {
-            val key = currentDate.toKey()
-            dailyList.add(
-                activityMap[key] ?: DayActivity(
-                    date = currentDate,
-                    volume = 0f,
-                    workoutCount = 0,
-                ),
-            )
-            currentDate = currentDate.plusDays(1)
-        }
-
-        // Find max volume for intensity calculation
-        val maxVol = dailyList.maxOfOrNull { it.volume } ?: 0f
-
-        // Build month labels (find first day of each month in range)
-        val months = mutableListOf<Pair<String, Int>>() // Month name, column index
-        var prevMonth = -1
-        dailyList.forEachIndexed { index, activity ->
-            if (activity.date.month != prevMonth) {
-                val monthName = getMonthShortName(activity.date.month)
-                // Calculate which column this falls into (index / 7 for week column)
-                val weekIndex = index / 7
-                months.add(monthName to weekIndex)
-                prevMonth = activity.date.month
-            }
-        }
-
-        Triple(dailyList, maxVol, months)
-    }
-
-    // Organize into grid: 7 rows (days) x N columns (weeks)
-    // Row 0 = Monday, Row 6 = Sunday (ISO week)
-    val gridData = remember(dailyActivities) {
-        // Find the starting day of week (1=Monday, 7=Sunday)
-        val firstDayOfWeek = if (dailyActivities.isNotEmpty()) {
-            val firstDate = dailyActivities.first().date
-            getDayOfWeekIso(firstDate)
-        } else {
-            1
-        }
-
-        // Calculate total weeks needed
-        val totalDays = dailyActivities.size + (firstDayOfWeek - 1)
-        val numWeeks = (totalDays + 6) / 7
-
-        // Create grid: Array of 7 rows, each containing week columns
-        val grid = Array(7) { arrayOfNulls<DayActivity?>(numWeeks) }
-
-        // Fill in the grid
-        dailyActivities.forEachIndexed { index, activity ->
-            val adjustedIndex = index + (firstDayOfWeek - 1)
-            val weekCol = adjustedIndex / 7
-            val dayRow = adjustedIndex % 7
-            if (weekCol < numWeeks && dayRow < 7) {
-                grid[dayRow][weekCol] = activity
-            }
-        }
-
-        grid
-    }
-
-    val cellSize = 14.dp
-    val cellGap = 2.dp
-    val dayLabels = listOf("M", "T", "W", "T", "F", "S", "S")
-
-    // Count workout days for accessibility
-    val workoutDays = remember(dailyActivities) {
-        dailyActivities.count { it.workoutCount > 0 }
-    }
-
-    Card(
-        modifier = modifier
-            .fillMaxWidth()
-            .semantics {
-                contentDescription = "Activity heatmap: $workoutDays workout days in the last 13 weeks"
-            },
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = MaterialTheme.shapes.medium,
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                "Activity",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Text(
-                "Last 13 weeks",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            if (gridData.isNotEmpty() && gridData[0].isNotEmpty()) {
-                // Month labels row - simplified positioning
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(start = 20.dp), // Align with grid (day labels width)
-                    horizontalArrangement = Arrangement.Start,
-                ) {
-                    // Filter labels to avoid overlapping (keep labels at least 3 weeks apart)
-                    val filteredLabels = monthLabels.filterIndexed { idx, (_, weekIndex) ->
-                        if (idx == 0) {
-                            true
-                        } else {
-                            val prevWeek = monthLabels.getOrNull(idx - 1)?.second ?: -10
-                            weekIndex - prevWeek >= 3
-                        }
-                    }
-
-                    var currentWeek = 0
-                    filteredLabels.forEach { (monthName, weekIndex) ->
-                        if (weekIndex > currentWeek) {
-                            // Add spacer for weeks between labels
-                            val spacerWeeks = weekIndex - currentWeek
-                            Spacer(modifier = Modifier.width((spacerWeeks * 16).dp))
-                        }
-                        Text(
-                            text = monthName,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        currentWeek = weekIndex + 2 // Account for label width
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(4.dp))
-
-                // Heatmap grid with day labels
-                Row(modifier = Modifier.fillMaxWidth()) {
-                    // Day of week labels column
-                    Column(
-                        modifier = Modifier.width(20.dp),
-                        verticalArrangement = Arrangement.spacedBy(cellGap),
-                    ) {
-                        dayLabels.forEachIndexed { index, label ->
-                            // Only show labels for Mon, Wed, Fri (indices 0, 2, 4)
-                            Box(
-                                modifier = Modifier.size(cellSize),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                if (index % 2 == 0) {
-                                    Text(
-                                        text = label,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Grid of cells
-                    Row(
-                        modifier = Modifier.weight(1f),
-                        horizontalArrangement = Arrangement.spacedBy(cellGap),
-                    ) {
-                        // Each column is a week
-                        for (weekIndex in gridData[0].indices) {
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(cellGap),
-                            ) {
-                                // Each row is a day of week
-                                for (dayIndex in 0 until 7) {
-                                    val activity = gridData[dayIndex][weekIndex]
-                                    HeatmapCell(
-                                        activity = activity,
-                                        maxVolume = maxVolume,
-                                        cellSize = cellSize,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(12.dp))
-
-                // Legend
-                HeatmapLegend()
-            } else {
-                Text(
-                    "Complete workouts to see your activity heatmap.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(vertical = 32.dp),
-                )
-            }
-        }
-    }
-}
-
-/**
- * Individual heatmap cell with color based on volume intensity
- */
-@Composable
-private fun HeatmapCell(activity: DayActivity?, maxVolume: Float, cellSize: Dp, modifier: Modifier = Modifier) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
-
-    val cellColor = remember(activity, maxVolume, primaryColor, surfaceVariant) {
-        when {
-            activity == null -> Color.Transparent
-
-            activity.volume <= 0f -> surfaceVariant.copy(alpha = 0.5f)
-
-            maxVolume <= 0f -> surfaceVariant.copy(alpha = 0.5f)
-
-            else -> {
-                // Calculate intensity level (0-4)
-                val ratio = activity.volume / maxVolume
-                val level = when {
-                    ratio >= 0.75f -> 4
-                    ratio >= 0.50f -> 3
-                    ratio >= 0.25f -> 2
-                    ratio > 0f -> 1
-                    else -> 0
-                }
-                // Apply intensity to primary color
-                when (level) {
-                    0 -> surfaceVariant.copy(alpha = 0.5f)
-                    1 -> primaryColor.copy(alpha = 0.3f)
-                    2 -> primaryColor.copy(alpha = 0.5f)
-                    3 -> primaryColor.copy(alpha = 0.75f)
-                    else -> primaryColor
-                }
-            }
-        }
-    }
-
-    Box(
-        modifier = modifier
-            .size(cellSize)
-            .clip(RoundedCornerShape(2.dp))
-            .background(cellColor),
-    )
-}
-
-/**
- * Legend showing intensity levels
- */
-@Composable
-private fun HeatmapLegend(modifier: Modifier = Modifier) {
-    val primaryColor = MaterialTheme.colorScheme.primary
-    val surfaceVariant = MaterialTheme.colorScheme.surfaceVariant
-
-    Row(
-        modifier = modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.End,
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            text = "Less",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-        Spacer(modifier = Modifier.width(4.dp))
-
-        // Level 0 - no workout
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(surfaceVariant.copy(alpha = 0.5f)),
-        )
-        Spacer(modifier = Modifier.width(2.dp))
-
-        // Level 1
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(primaryColor.copy(alpha = 0.3f)),
-        )
-        Spacer(modifier = Modifier.width(2.dp))
-
-        // Level 2
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(primaryColor.copy(alpha = 0.5f)),
-        )
-        Spacer(modifier = Modifier.width(2.dp))
-
-        // Level 3
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(primaryColor.copy(alpha = 0.75f)),
-        )
-        Spacer(modifier = Modifier.width(2.dp))
-
-        // Level 4
-        Box(
-            modifier = Modifier
-                .size(10.dp)
-                .clip(RoundedCornerShape(2.dp))
-                .background(primaryColor),
-        )
-
-        Spacer(modifier = Modifier.width(4.dp))
-        Text(
-            text = "More",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-    }
-}
-
-/**
- * Get short month name from month number (1-12)
- */
-private fun getMonthShortName(month: Int): String = when (month) {
-    1 -> "Jan"
-    2 -> "Feb"
-    3 -> "Mar"
-    4 -> "Apr"
-    5 -> "May"
-    6 -> "Jun"
-    7 -> "Jul"
-    8 -> "Aug"
-    9 -> "Sep"
-    10 -> "Oct"
-    11 -> "Nov"
-    12 -> "Dec"
-    else -> ""
-}
-
-/**
- * Get ISO day of week (1=Monday, 7=Sunday) from KmpLocalDate
- */
-private fun getDayOfWeekIso(date: KmpLocalDate): Int {
-    val localDate = kotlinx.datetime.LocalDate(date.year, date.month, date.dayOfMonth)
-    return localDate.dayOfWeek.ordinal + 1 // DayOfWeek.MONDAY.ordinal is 0
 }

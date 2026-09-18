@@ -1406,9 +1406,6 @@ private fun formatTimestamp(timestamp: Long): String {
     return "$date at $time"
 }
 
-@Suppress("unused") // Available for future UI enhancements
-private fun formatRelativeTimestamp(timestamp: Long): String = KmpUtils.formatRelativeTimestamp(timestamp)
-
 private fun formatDuration(millis: Long): String {
     val totalSeconds = millis / 1000
     val minutes = totalSeconds / 60
