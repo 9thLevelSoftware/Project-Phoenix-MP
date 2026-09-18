@@ -31,27 +31,19 @@
     <string name="action_exit">Quitter</string>
     <string name="action_skip">Passer</string>
     <string name="action_stop">Arrêter</string>
-    <string name="action_start">Démarrer</string>
     <string name="action_share">Partager</string>
     <string name="action_add">Ajouter</string>
     <string name="action_clear">Effacer</string>
     <string name="action_preview">Aperçu</string>
     <string name="action_login">Se connecter</string>
-    <string name="action_sign_up">S\'inscrire</string>
     <string name="action_continue">Continuer</string>
     <string name="action_discard">Abandonner</string>
     <string name="action_rename">Renommer</string>
-    <string name="action_select_different">Sélectionner un autre</string>
-    <string name="action_go_back">Retour</string>
-
     <!-- Common labels -->
-    <string name="label_loading">Chargement…</string>
     <string name="label_please_wait">Veuillez patienter…</string>
     <string name="label_name">Nom</string>
     <string name="label_email">E-mail</string>
     <string name="label_password">Mot de passe</string>
-    <string name="label_confirm_password">Confirmer le mot de passe</string>
-    <string name="label_display_name">Nom d\'affichage</string>
     <string name="label_error">Erreur</string>
     <string name="label_premium">Premium</string>
     <string name="label_favorites">Favoris</string>
@@ -60,12 +52,9 @@
     <string name="label_done">TERMINÉ</string>
     <string name="label_reps">Répétitions</string>
     <string name="label_duration">Durée</string>
-    <string name="label_seconds">Secondes</string>
     <string name="label_kg">kg</string>
     <string name="label_lbs">lbs</string>
     <string name="label_per_cable">Par câble</string>
-    <string name="label_sets">Séries :</string>
-    <string name="label_set">Régler</string>
     <string name="label_live">EN DIRECT</string>
     <string name="label_charts">Graphiques</string>
     <string name="label_table">Tableau</string>
@@ -73,7 +62,6 @@
 
     <!-- Workout controls -->
     <string name="start_workout">Démarrer l\'entraînement</string>
-    <string name="stop_workout">Arrêter l\'entraînement</string>
     <string name="start_exercise">DÉMARRER L\'EXERCICE</string>
     <string name="stop_set">Arrêter la série</string>
     <string name="end_workout">Terminer l\'entraînement</string>
@@ -119,11 +107,8 @@
     <string name="settings_theme_dark">Sombre</string>
     <string name="settings_dynamic_color">Couleurs Material You</string>
     <string name="settings_dynamic_color_description">Utiliser les couleurs de votre fond d\'écran Android lorsqu\'elles sont disponibles</string>
-    <string name="settings_link_portal">Lier le compte Portal</string>
-    <string name="settings_sync_description">Synchronisez vos entraînements avec le Phoenix Portal pour un accès multi-appareil</string>
     <string name="settings_version">Version : %1$s</string>
     <string name="settings_language">Langue</string>
-    <string name="settings_language_description">Sélectionnez votre langue préférée</string>
     <string name="settings_language_help">Aidez à améliorer les traductions</string>
     <string name="settings_machine_diagnostics_description">Afficher un instantané expurgé des diagnostics machine : temps de fonctionnement, codes de défaut, températures, données de plantage et avertissements. Ce n\'est pas une sauvegarde complète.</string>
 
@@ -166,9 +151,6 @@
     <string name="import_records_skipped">Enregistrements ignorés (doublons) : %1$d</string>
 
     <!-- Account -->
-    <string name="account_title">Compte</string>
-    <string name="sign_in_create_account">Se connecter / Créer un compte</string>
-    <string name="upgrade_to_pro">Passer à Pro</string>
     <string name="auth_google">Google</string>
     <string name="auth_apple">Apple</string>
 
@@ -179,8 +161,6 @@
     <string name="never_synced">Jamais synchronisé</string>
     <string name="unlink_account">Délier le compte</string>
     <string name="sync_now">Synchroniser maintenant</string>
-    <string name="phoenix_pro">Phoenix Pro</string>
-
     <!-- Training Cycles -->
     <string name="create_cycle">Créer un cycle</string>
     <string name="edit_cycle">Modifier le cycle</string>
@@ -205,16 +185,8 @@
     <string name="duplicate_routines_message">De nouvelles copies seront créées avec le suffixe \'(Copie)\'.</string>
     <string name="move_to_profile">Déplacer vers le profil</string>
     <string name="copy_to_profile">Copier vers le profil</string>
-    <string name="select_target_profile">Sélectionner le profil cible</string>
-    <string name="move_routine_confirm">Déplacer \'%1$s\' vers %2$s ?</string>
     <string name="move_routines_confirm">Déplacer %1$d routines vers %2$s ?</string>
-    <string name="copy_routine_confirm">Copier \'%1$s\' vers %2$s ?</string>
     <string name="copy_routines_confirm">Copier %1$d routines vers %2$s ?</string>
-    <string name="routine_moved">Routine déplacée vers %1$s</string>
-    <string name="routines_moved">%1$d routines déplacées vers %2$s</string>
-    <string name="routine_copied">Routine copiée vers %1$s</string>
-    <string name="routines_copied">%1$d routines copiées vers %2$s</string>
-    <string name="action_move">Déplacer</string>
     <string name="no_other_profiles">Aucun autre profil disponible. Créez d\'abord un nouveau profil.</string>
     <string name="cannot_be_undone">Cette action est irréversible.</string>
     <string name="delete_all">Tout supprimer</string>
@@ -232,7 +204,6 @@
     <!-- Exercise Picker -->
     <string name="select_exercise">Sélectionner un exercice</string>
     <string name="search_exercises">Rechercher des exercices…</string>
-    <string name="search_exercises_short">Rechercher des exercices</string>
     <string name="create_exercise">Créer un exercice</string>
     <string name="clear_filters">Effacer les filtres</string>
 
@@ -241,10 +212,6 @@
     <string name="label_bodyweight">Poids corporel</string>
     <string name="delete_exercise_title">Supprimer l\'exercice ?</string>
     <string name="delete_exercise_message">Êtes-vous sûr de vouloir supprimer \"%1$s\" ? Cette action est irréversible.</string>
-
-    <string name="exercise_edit_sets">Séries :</string>
-    <string name="weight_per_cable">Poids par câble (%1$s)</string>
-    <string name="seconds_label">%1$ds</string>
 
     <!-- Workout Modes -->
     <string name="mode_old_school">Old School</string>
@@ -260,15 +227,10 @@
     <string name="echo_level">Niveau Echo</string>
     <string name="eccentric_load">Charge excentrique</string>
     <string name="select_tut_variant">Sélectionner la variante TUT</string>
-    <string name="search_exercises_placeholder">Rechercher des exercices</string>
-
     <!-- Profiles -->
     <string name="add_profile">Ajouter un profil</string>
     <string name="edit_profile">Modifier le profil</string>
     <string name="delete_profile">Supprimer le profil</string>
-    <string name="delete_profile_message">Êtes-vous sûr de vouloir supprimer \"%1$s\" ? Cette action est irréversible.</string>
-
-
     <string name="resume_workout_title">Reprendre l\'entraînement ?</string>
     <string name="resume_workout_saved">Vous avez une progression sauvegardée :</string>
     <string name="restart_from_set_1">Redémarrer depuis la série 1</string>
@@ -315,8 +277,6 @@
     <string name="cd_drop_set_candidate">Drop de %1$s, %2$s par câble</string>
     <string name="cd_drop_set_candidate_unavailable">Drop de %1$s indisponible</string>
     <string name="cd_drop_set_retry_disabled">Sélectionnez un pourcentage de drop pour réessayer</string>
-    <string name="set_weight">Régler le poids</string>
-
     <!-- Connection Logs -->
     <string name="search_logs">Rechercher dans les journaux…</string>
     <string name="auto_scroll">Défilement automatique</string>
@@ -356,18 +316,11 @@
     <string name="workout_in_progress">Entraînement en cours</string>
     <string name="stop_before_editing">Veuillez arrêter l\'entraînement en cours avant de modifier les routines.</string>
 
-
     <string name="starting_weight">Poids de départ</string>
     <string name="eccentric_overload">Surcharge excentrique</string>
 
-
     <string name="nav_analytics">Analyse</string>
-    <string name="nav_workouts">Entraînements</string>
     <string name="nav_insights">Analyses</string>
-    <string name="nav_settings">Paramètres</string>
-
-    <string name="workout_count_label">Entraînements</string>
-    <string name="delete_confirm_count">%1$d</string>
     <string name="orm_placeholder">ex. 100</string>
     <string name="percent_label">%1$d%%</string>
     <string name="nav_previous">◄</string>
@@ -379,8 +332,6 @@
     <string name="zone_slow">Lent</string>
     <string name="zone_grind">Grind</string>
 
-    <string name="ghost_you">VOUS</string>
-    <string name="ghost_best">MEILLEUR</string>
     <!-- ==================== Issue 1: AnalyticsScreen ==================== -->
     <string name="analytics_progress">Progrès</string>
     <string name="analytics_progress_subtitle">Suivez vos gains de force au fil du temps</string>
@@ -393,8 +344,6 @@
     <!-- ==================== Issue 2: SmartInsightsTab ==================== -->
     <string name="insights_title">Analyses intelligentes</string>
     <string name="insights_subtitle">Recommandations personnalisées</string>
-    <string name="insights_locked_name">Analyses intelligentes</string>
-    <string name="insights_locked_desc">Unlock with Elite tier to get personalized training insights</string>
     <string name="insights_weekly_volume">This Week's Volume</string>
     <string name="insights_training_balance">Équilibre d'entraînement</string>
     <string name="insights_exercise_variety">Variété des exercices</string>
@@ -424,10 +373,6 @@
     <string name="config_mode_tut_desc">Maintains constant resistance throughout the movement for maximum muscle engagement.</string>
     <string name="config_mode_pump_title">Pump Mode</string>
     <string name="config_mode_pump_desc">High volume with sustained tension for maximum blood flow and muscle volume.</string>
-    <string name="config_mode_echo_title">Echo Mode</string>
-    <string name="config_mode_echo_desc">Mirrors your concentric effort in the eccentric phase for balanced loading.</string>
-    <string name="config_mode_eccentric_title">Eccentric Only</string>
-    <string name="config_mode_eccentric_desc">Focus on the lowering phase with heavier loads for strength and hypertrophy.</string>
     <string name="config_meta_sets">Sets</string>
     <string name="config_meta_reps">Reps</string>
     <string name="config_meta_1rm">1RM</string>
@@ -435,14 +380,11 @@
     <!-- ==================== Issue 4: EmptyState strings ==================== -->
     <string name="empty_no_routines_title">Pas encore de routines</string>
     <string name="empty_no_routines_message">Create your first workout routine to get started</string>
-    <string name="empty_no_routines_action">Create Your First Routine</string>
     <string name="empty_no_history_title">Pas encore d'historique</string>
     <string name="empty_no_history_all">Complete your first workout to see it here</string>
     <string name="empty_no_history_period">No workouts in the last %1$s</string>
     <string name="empty_no_cycles_title">Pas encore de cycles</string>
     <string name="empty_no_cycles_message">Create a rolling workout schedule that adapts to your life, not the calendar</string>
-    <string name="empty_no_cycles_action">Create Your First Cycle</string>
-
     <!-- ==================== Import/Export messages ==================== -->
     <string name="import_complete_title">Import Complete</string>
     <string name="import_result_title">Import Result</string>
@@ -470,12 +412,10 @@
     <!-- Navigation / Actions -->
     <string name="cd_back">Back</string>
     <string name="cd_close">Close</string>
-    <string name="cd_close_menu">Close menu</string>
     <string name="cd_search">Search</string>
     <string name="cd_clear_search">Clear search</string>
     <string name="cd_menu">Menu</string>
     <string name="cd_navigate">Navigate</string>
-    <string name="cd_dismiss">Dismiss</string>
     <string name="cd_expand">Expand</string>
     <string name="cd_collapse">Collapse</string>
     <string name="cd_selected">Selected</string>
@@ -487,8 +427,6 @@
     <string name="cd_stop">Stop</string>
     <string name="cd_previous">Previous</string>
     <string name="cd_next">Next</string>
-    <string name="cd_select">Select</string>
-    <string name="cd_information">Information</string>
     <string name="cd_tip">Tip</string>
 
     <!-- Workout -->
@@ -512,34 +450,22 @@
     <string name="cd_thumbnail_for">Thumbnail for %1$s</string>
     <string name="cd_clear_filters">Clear filters</string>
     <string name="cd_alphabet_nav">Alphabet navigation. Tap a letter to jump to exercises starting with that letter.</string>
-    <string name="cd_jump_to_letter">Jump to %1$s</string>
-
     <!-- Profiles -->
-    <string name="cd_add_profile">Add profile</string>
-    <string name="cd_close_profiles">Close profiles</string>
-    <string name="cd_open_profiles">Open profiles</string>
     <string name="cd_active">Active</string>
 
     <!-- Settings / Preferences -->
     <string name="cd_settings">Settings</string>
     <string name="cd_appearance">Appearance settings</string>
     <string name="cd_dynamic_color">Paramètre de couleurs dynamiques Material You</string>
-    <string name="cd_weight_unit">Weight unit settings</string>
-    <string name="cd_advanced_settings">Advanced settings</string>
     <string name="cd_developer_tools">Developer Tools</string>
     <string name="cd_app_info">App information</string>
     <string name="cd_support_developer">Support the developer</string>
-    <string name="cd_led_feedback">LED biofeedback</string>
     <string name="cd_led_scheme">Palette de couleurs LED</string>
-    <string name="cd_leds_off">LEDs Off</string>
     <string name="cd_test_sounds">Test sounds</string>
 
     <!-- Weight -->
     <string name="cd_decrease_weight">Decrease weight</string>
     <string name="cd_increase_weight">Increase weight</string>
-    <string name="cd_current_weight">Current weight: %1$s</string>
-    <string name="cd_current_weight_tap">Current weight: %1$s per cable. Tap to open weight picker.</string>
-
     <!-- Data / Export -->
     <string name="cd_backup_data">Backup data</string>
     <string name="cd_restore_data">Restore data</string>
@@ -564,7 +490,6 @@
 
     <!-- Sets -->
     <string name="cd_add_set">Add set</string>
-    <string name="cd_remove_set">Remove set</string>
     <string name="cd_delete_set">Delete set</string>
     <string name="cd_add_30_seconds">Add 30 seconds</string>
     <string name="cd_reset_timer">Reset timer</string>
@@ -576,15 +501,10 @@
     <string name="cd_analytics">Analytics</string>
     <string name="cd_dashboard">Dashboard overview</string>
     <string name="cd_progress_tracking">Progress tracking</string>
-    <string name="cd_statistic_icon">Statistic icon</string>
     <string name="cd_achievements">Achievements</string>
-    <string name="cd_view_badges">View badges</string>
-    <string name="cd_view_all_badges">View all badges</string>
-    <string name="cd_view_details">View details</string>
     <string name="cd_earned">Earned</string>
     <string name="cd_streak">Streak</string>
     <string name="cd_personal_record">Personal Record</string>
-    <string name="cd_ghost_racing">Ghost Racing</string>
     <string name="cd_balance">Balance</string>
     <string name="cd_velocity">Velocity</string>
     <string name="cd_success">Success</string>
@@ -592,23 +512,16 @@
 
     <!-- Misc -->
     <string name="cd_empty_state">Empty state</string>
-    <string name="cd_locked">Locked</string>
-    <string name="cd_premium_feature">Premium feature</string>
     <string name="cd_trophy">Trophy celebration</string>
     <string name="cd_confetti">Celebration confetti</string>
     <string name="cd_phoenix_logo">Logo Phoenix</string>
-    <string name="cd_dismiss_readiness">Dismiss readiness briefing</string>
-    <string name="cd_above_pr">Above PR</string>
-    <string name="cd_below_pr">Below PR</string>
     <string name="cd_delete_workout">Delete workout</string>
     <string name="cd_home">Accueil</string>
     <string name="cd_disconnect">D\u00e9connecter</string>
 
     <!-- ==================== Voice Emergency Stop (Issue #141) ==================== -->
-    <string name="settings_voice_stop_title">Arr\u00eat d\'urgence vocal</string>
     <string name="settings_voice_stop_description">Dites votre mot de s\u00e9curit\u00e9 pendant un entra\u00eenement pour arr\u00eater la s\u00e9rie imm\u00e9diatement</string>
     <string name="settings_voice_stop_enable">Activer l\'arr\u00eat vocal</string>
-    <string name="settings_voice_stop_mic_required">L\'autorisation du microphone est requise</string>
     <string name="settings_safe_word_label">Mot de s\u00e9curit\u00e9</string>
     <string name="settings_safe_word_hint">Entrez un mot de s\u00e9curit\u00e9 (ex. PHOENIX)</string>
     <string name="settings_calibrate_button">Calibrer</string>
@@ -617,19 +530,14 @@
     <string name="settings_calibration_title">Calibrer le mot de s\u00e9curit\u00e9</string>
     <string name="settings_calibration_prompt">Dites votre mot de s\u00e9curit\u00e9 :</string>
     <string name="settings_calibration_listening">\u00c9coute en cours…</string>
-    <string name="settings_calibration_success">Mot de s\u00e9curit\u00e9 calibr\u00e9 avec succ\u00e8s !</string>
-    <string name="settings_calibration_fail">La d\u00e9tection n\'\u00e9tait pas fiable. Essayez un autre mot.</string>
     <string name="settings_calibration_progress">%1$d sur 3 d\u00e9tections</string>
     <string name="settings_calibration_mic_error">Impossible d\'acc\u00e9der au microphone. V\u00e9rifiez les autorisations et r\u00e9essayez.</string>
     <string name="settings_calibration_open_settings">Ouvrir les paramètres</string>
-    <string name="cd_voice_stop">Arrêt d'urgence vocal</string>
     <string name="cd_calibration_check">Vérification de calibration</string>
 
     <!-- ==================== Encouragement verbal (Issue #611) ==================== -->
     <string name="settings_verbal_encouragement_title">Encouragement verbal</string>
-    <string name="settings_verbal_encouragement_description">Motivation parlée à l\'échec musculaire (VBT %)</string>
     <string name="settings_vulgar_mode_title">Mode vulgaire</string>
-    <string name="settings_vulgar_mode_description">Utilise des grossièretés au lieu de formulations neutres. Désactivé par défaut.</string>
     <string name="settings_vulgar_mode_headphone_warning">Utilisation d\'un casque fortement recommandée.</string>
     <string name="settings_vulgar_mode_tier_label">Niveau de grossièreté</string>
     <string name="settings_vulgar_mode_tier_mild">Doux</string>
@@ -637,7 +545,6 @@
     <string name="settings_vulgar_mode_tier_mix">Mixte</string>
     <string name="settings_dominatrix_mode_title">Mode Dominatrix</string>
     <string name="settings_dominatrix_mode_description">Commandes vocales de Charlotte. Remplace le pool vulgaire lorsqu\'il est actif.</string>
-    <string name="settings_dominatrix_unlock_hint">Tape 7× sur l\'en-tête pour déverrouiller</string>
     <string name="settings_dominatrix_unlock_toast">Mode Dominatrix déverrouillé</string>
     <string name="settings_adults_only_title">Réservé aux adultes</string>
     <string name="settings_adults_only_body">Le mode vulgaire contient des grossièretés et des thèmes adultes. Avez-vous 18 ans ou plus ?</string>
@@ -689,9 +596,6 @@
     <string name="equipment_rack_manage">Gérer</string>
     <string name="equipment_rack_no_enabled_items">Aucun élément activé dans le rack.</string>
     <string name="equipment_rack_none_selected">Aucun élément sélectionné.</string>
-    <string name="equipment_rack_selected_summary">Sélectionné : %1$s</string>
-    <string name="equipment_rack_display_only_count">%1$d affichage uniquement</string>
-    <string name="equipment_rack_selected_count">%1$d sélectionné</string>
     <string name="equipment_rack_inline_context">Rack : %1$s</string>
     <string name="equipment_rack_category_weighted_vest">Gilet lesté</string>
     <string name="equipment_rack_category_dip_belt">Ceinture de lest</string>
@@ -784,9 +688,7 @@
     <string name="color_orange">Orange</string>
     <string name="cd_select_profile_color">Sélectionner %1$s comme couleur du profil</string>
     <string name="profile_automatic">Automatique</string>
-    <string name="profile_default_rest">Repos par défaut</string>
     <string name="profile_master_beeps">Bips d\'entraînement</string>
-    <string name="profile_rep_count_timing">Moment du comptage des répétitions</string>
     <string name="profile_body_weight_unset">Non défini</string>
     <string name="profile_body_weight_invalid">Saisissez un poids corporel compris entre 20 et 300 kg</string>
     <string name="profile_body_weight_imported">Correspond à une mesure de santé importée</string>
