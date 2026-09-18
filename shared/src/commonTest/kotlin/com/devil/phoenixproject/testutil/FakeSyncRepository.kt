@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.PhasePRBackfillResult
+import com.devil.phoenixproject.data.repository.SessionNotesEntry
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
@@ -275,6 +276,8 @@ class FakeSyncRepository : SyncRepository {
     var lastAtomicMergePersonalRecords: List<PersonalRecordSyncDto> = emptyList()
     var lastAtomicMergeLastSync: Long = 0L
     var lastAtomicMergeProfileId: String = ""
+    var mergeSessionNotesCallCount = 0
+    var lastMergedSessionNotes: Map<String, SessionNotesEntry> = emptyMap()
 
     /** Set to throw an exception before the ordinary repository merge commits. */
     var atomicMergeShouldFail: Boolean = false
@@ -333,5 +336,10 @@ class FakeSyncRepository : SyncRepository {
             mergePersonalRecordsCallCount++
             mergedPersonalRecords = personalRecords
         }
+    }
+
+    override suspend fun mergeSessionNotes(notes: Map<String, SessionNotesEntry>) {
+        mergeSessionNotesCallCount++
+        lastMergedSessionNotes = notes
     }
 }

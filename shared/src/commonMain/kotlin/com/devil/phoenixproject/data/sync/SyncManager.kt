@@ -1880,21 +1880,16 @@ class SyncManager(
 
         // 2b. Phase 3.5: extract session-level notes for the SessionNotes
         // side-table. Keyed on the portal `routineSessionId` (== portal
-        // session id). Sessions without notes are skipped. The updatedAt
-        // timestamp falls back to the session.startedAt when the server has
-        // not yet populated updatedAt on the pull projection (older Edge
-        // Function versions or null-on-create rows).
+        // session id). Sessions without notes are skipped. Prefer
+        // session.updatedAt for LWW; fall back to startedAt, then now, when
+        // older Edge Function versions omit updatedAt.
         val sessionNotesMap: Map<String, com.devil.phoenixproject.data.repository.SessionNotesEntry> =
             pullResponse.sessions
                 .filter { !it.notes.isNullOrBlank() }
                 .associate { ps ->
-                    val updatedAtMillis = ps.startedAt?.let { iso ->
-                        runCatching { kotlin.time.Instant.parse(iso).toEpochMilliseconds() }
-                            .getOrNull()
-                    } ?: currentTimeMillis()
                     ps.id to com.devil.phoenixproject.data.repository.SessionNotesEntry(
                         notes = ps.notes,
-                        updatedAtMillis = updatedAtMillis,
+                        updatedAtMillis = sessionNotesLwwEpochMillis(ps.updatedAt, ps.startedAt),
                     )
                 }
 
@@ -2237,3 +2232,19 @@ internal fun planSessionBatches(
     if (current.isNotEmpty()) batches.add(current)
     return batches
 }
+
+/**
+ * LWW timestamp for pulled session notes. Prefer the portal session's
+ * last-edit ([updatedAtIso]); fall back to [startedAtIso], then wall-clock
+ * only when neither ISO value can be parsed.
+ */
+internal fun sessionNotesLwwEpochMillis(
+    updatedAtIso: String?,
+    startedAtIso: String?,
+    nowMillis: () -> Long = { currentTimeMillis() },
+): Long = parseIso8601EpochMillis(updatedAtIso)
+    ?: parseIso8601EpochMillis(startedAtIso)
+    ?: nowMillis()
+
+internal fun parseIso8601EpochMillis(iso: String?): Long? =
+    iso?.let { runCatching { kotlin.time.Instant.parse(it).toEpochMilliseconds() }.getOrNull() }

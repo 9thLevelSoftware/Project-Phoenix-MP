@@ -1312,6 +1312,7 @@ class SqlDelightSyncRepository(
         strengthProfile = strengthProfile,
         formScore = formScore?.toInt(),
         profileId = profileId,
+        updatedAt = updatedAt,
     )
 
     private fun mapEccentricLoadFromDb(dbValue: Long): EccentricLoad {

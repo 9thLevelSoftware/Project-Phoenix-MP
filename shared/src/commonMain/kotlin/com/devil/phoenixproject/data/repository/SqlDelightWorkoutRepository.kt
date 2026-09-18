@@ -155,6 +155,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         externalAddedLoadKg = externalAddedLoadKg.toFloat(),
         counterweightKg = counterweightKg.toFloat(),
         rackItemsJson = rackItemsJson,
+        updatedAt = updatedAt,
     )
 
     private fun mapToRoutineBasic(

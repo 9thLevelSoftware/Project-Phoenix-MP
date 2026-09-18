@@ -1099,6 +1099,77 @@ class SqlDelightSyncRepositoryTest {
         assertEquals(0L, omittedCatalogRow.isBodyweight)
     }
 
+    @Test
+    fun `getWorkoutSessionsModifiedSince maps persisted updatedAt for push LWW`() = runTest {
+        val startedAt = 1_600_000_000_000L
+        val lastEdit = 1_700_000_000_000L
+        insertHistoricalSession(
+            id = "session-domain-updated-at",
+            timestamp = startedAt,
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            workingReps = 8,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+        )
+        database.phoenixDatabaseQueries.updateSessionTimestamp(lastEdit, "session-domain-updated-at")
+
+        val sessions = repository.getWorkoutSessionsModifiedSince(0L, "active-profile")
+        val session = sessions.single { it.id == "session-domain-updated-at" }
+        assertEquals(lastEdit, session.updatedAt)
+    }
+
+    @Test
+    fun `mergeSessionNotes prefers newer incoming updatedAt over older local startedAt stamp`() = runTest {
+        val startedAt = 1_700_000_000_000L
+        val portalUpdatedAt = 1_704_067_200_000L
+        database.phoenixDatabaseQueries.upsertSessionNotes(
+            routineSessionId = "rs-notes-lww",
+            notes = "local notes",
+            updatedAt = startedAt,
+        )
+
+        repository.mergeSessionNotes(
+            mapOf(
+                "rs-notes-lww" to SessionNotesEntry(
+                    notes = "newer portal notes",
+                    updatedAtMillis = portalUpdatedAt,
+                ),
+            ),
+        )
+
+        val after = database.phoenixDatabaseQueries.getSessionNotes("rs-notes-lww").executeAsOne()
+        assertEquals("newer portal notes", after.notes)
+        assertEquals(portalUpdatedAt, after.updatedAt)
+    }
+
+    @Test
+    fun `mergeSessionNotes rejects incoming startedAt that is older than local updatedAt`() = runTest {
+        val startedAt = 1_700_000_000_000L
+        val localUpdatedAt = 1_702_000_000_000L
+        database.phoenixDatabaseQueries.upsertSessionNotes(
+            routineSessionId = "rs-notes-local-newer",
+            notes = "local notes edit",
+            updatedAt = localUpdatedAt,
+        )
+
+        repository.mergeSessionNotes(
+            mapOf(
+                "rs-notes-local-newer" to SessionNotesEntry(
+                    notes = "stale portal notes stamped from startedAt",
+                    updatedAtMillis = startedAt,
+                ),
+            ),
+        )
+
+        val after = database.phoenixDatabaseQueries.getSessionNotes("rs-notes-local-newer").executeAsOne()
+        assertEquals("local notes edit", after.notes)
+        assertEquals(localUpdatedAt, after.updatedAt)
+    }
+
     private fun insertHistoricalSession(
         id: String,
         timestamp: Long,
