@@ -58,6 +58,12 @@ jobs:
             echo "SUPABASE_ANON_KEY = $key_escaped"
           } > iosApp/PhoenixApp/Config/Supabase.xcconfig
 
+      - name: Validate release app icons
+        run: |
+          python3 scripts/validate_ios_app_icons.py \
+            --source iosApp/AppIcon1024.png
+          python3 scripts/test_ios_app_icons.py
+
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
