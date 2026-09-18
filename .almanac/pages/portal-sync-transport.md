@@ -37,8 +37,6 @@ verified: 2026-06-22
 ---
 This page covers the transport layer that starts after [[auth]] has already established a valid portal session. `syncModule` constructs `PortalTokenStorage`, `PortalApiClient`, `SyncManager`, `SyncTriggerManager`, `IntegrationManager`, and `PortalAuthRepository` in one object graph, but the boundary here is authenticated remote movement rather than login or callback handling [@sync-module].
 
-Older wiki references may still use [[portal-sync-and-auth]], which was the earlier slug before this page narrowed to transport after login succeeds.
-
 ## Boundary
 
 `PortalAuthRepository` and `PortalTokenStorage` are still part of the object graph because sync depends on their session state, but login UX, OAuth callback validation, and account-linking behavior belong to [[auth]] rather than to this page's main boundary [@auth-repo] [@token-storage].

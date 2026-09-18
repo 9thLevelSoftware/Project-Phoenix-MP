@@ -84,8 +84,6 @@ Not every integrations-screen issue belongs in the remote cluster. [[csv-workout
 
 Read [[frontend]] before this hub when the symptom is still about auth-screen routing, shared settings entry points, or Compose-state projection and you have not yet established that a remote request or token boundary is involved.
 
-Older wiki references may still use [[portal-sync-and-auth]], but that archived slug now exists only to redirect to [[portal-sync-transport]]. Future edits should link the transport page directly.
-
 [[auth]] is the narrower hub for login state, OAuth callbacks, secure token storage, and account-linking behavior. Start there before this page when the remote symptom happens before a sync request is even eligible to run [@auth-page].
 
 Read [[project-phoenix]] before this cluster when the question is whether a remote behavior is actually required. The rescue-app contract is why offline control stays primary and why auth, premium, and provider sync are layered on instead of treated as mandatory boot prerequisites.
