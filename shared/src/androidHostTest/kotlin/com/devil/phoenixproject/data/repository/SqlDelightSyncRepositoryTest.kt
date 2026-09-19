@@ -179,6 +179,77 @@ class SqlDelightSyncRepositoryTest {
             mapOf(pulled.id to 1_700_000_150_000),
         )
         assertEquals("squat", database.phoenixDatabaseQueries.selectSessionById(pulled.id).executeAsOne().exerciseId)
+
+        // A newer pull with the same exerciseId is a no-op: the stamp does not move.
+        repository.mergeSessionsLww(
+            listOf(retagged.copy(exerciseName = "Back Squat (renamed)")),
+            mapOf(pulled.id to 1_700_000_300_000),
+        )
+        val unchanged = database.phoenixDatabaseQueries.selectSessionById(pulled.id).executeAsOne()
+        assertEquals("Back Squat", unchanged.exerciseName)
+        assertEquals(1_700_000_200_000, unchanged.updatedAt)
+    }
+
+    @Test
+    fun `newer pull does not re-tag a row that has only local RepMetric children`() = runTest {
+        val id = seedUntaggedPulledRow("rep-metric-only")
+        database.phoenixDatabaseQueries.insertRepMetric(
+            id, 1L, 0L, 1_700_000_000_000, 1_700_000_002_000, 2_000L,
+            1_000L, "[]", "[]", "[]", "[]", "[]",
+            1_000L, "[]", "[]", "[]", "[]", "[]",
+            40.0, 41.0, 20.0, 21.0, 19.0, 20.0, 0.6, 0.4, 0.3, 500.0, 120.0, 80.0, null, null,
+        )
+
+        pullRetag(id)
+
+        assertNull(database.phoenixDatabaseQueries.selectSessionById(id).executeAsOne().exerciseId)
+    }
+
+    @Test
+    fun `newer pull does not re-tag a row that has only local CompletedSet children`() = runTest {
+        val id = seedUntaggedPulledRow("completed-set-only")
+        database.phoenixDatabaseQueries.insertCompletedSet(
+            "completed-set-only-1", id, null, null, 1L, "STANDARD", 1L, 8L, 20.0, null, 0L,
+            1_700_000_002_000, "UNKNOWN",
+        )
+
+        pullRetag(id)
+
+        assertNull(database.phoenixDatabaseQueries.selectSessionById(id).executeAsOne().exerciseId)
+    }
+
+    private suspend fun seedUntaggedPulledRow(id: String): String {
+        repository.mergeSessionsLww(
+            listOf(
+                com.devil.phoenixproject.domain.model.WorkoutSession(
+                    id = id,
+                    timestamp = 1_700_000_000_000,
+                    isJustLift = true,
+                    totalReps = 8,
+                    workingReps = 8,
+                    profileId = "active-profile",
+                ),
+            ),
+            mapOf(id to 1_700_000_100_000),
+        )
+        return id
+    }
+
+    private suspend fun pullRetag(id: String) {
+        repository.mergeSessionsLww(
+            listOf(
+                com.devil.phoenixproject.domain.model.WorkoutSession(
+                    id = id,
+                    timestamp = 1_700_000_000_000,
+                    exerciseId = "squat",
+                    exerciseName = "Back Squat",
+                    totalReps = 8,
+                    workingReps = 8,
+                    profileId = "active-profile",
+                ),
+            ),
+            mapOf(id to 1_700_000_200_000),
+        )
     }
 
     @Test

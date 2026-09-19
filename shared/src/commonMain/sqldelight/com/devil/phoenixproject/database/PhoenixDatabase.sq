@@ -932,11 +932,13 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 -- Sync pull: carry a newer exercise tag (e.g. a Just Lift session re-tagged on another
 -- device) onto a row this device pulled. Only the tag columns and the stamp change. Rows
 -- with local RepMetric/CompletedSet children were captured here and keep their own tag.
+-- A pull carrying the same exerciseId is a no-op (nothing to re-tag, stamp untouched).
 updatePulledSessionTag:
 UPDATE WorkoutSession
 SET exerciseId = :exerciseId, exerciseName = :exerciseName, updatedAt = :updatedAt
 WHERE id = :id
   AND COALESCE(updatedAt, 0) < :updatedAt
+  AND exerciseId IS NOT :exerciseId
   AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = :id)
   AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = :id);
 
