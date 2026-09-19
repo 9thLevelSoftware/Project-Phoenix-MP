@@ -392,65 +392,6 @@ class SqlDelightSyncRepository(
     }
 
     /**
-     * Merge routines from server (legacy push-path).
-     *
-     * CONFLICT RESOLUTION STRATEGY: SERVER WINS (UPSERT) with local field preservation
-     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 6 "Routines"
-     *
-     * This is the legacy push-path used for initial sync. The authoritative pull-path
-     * [mergePortalRoutines] uses TIMESTAMP-BASED LWW to handle concurrent edits.
-     *
-     * Local-only fields preserved: lastUsed, useCount (server doesn't track usage stats).
-     */
-    override suspend fun mergeRoutines(routines: List<RoutineSyncDto>) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                routines.forEach { dto ->
-                    val existingByServer = dto.serverId?.let {
-                        queries.selectRoutineByServerId(it).executeAsOneOrNull()
-                    }
-
-                    val localId = existingByServer?.id ?: dto.clientId
-
-                    // Preserve local usage stats that the server doesn't track
-                    val existing = queries.selectRoutineById(localId).executeAsOneOrNull()
-
-                    val updatedAt = currentTimeMillis()
-                    val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
-                    queries.updateRoutineFields(
-                        name = dto.name,
-                        description = dto.description,
-                        createdAt = dto.createdAt,
-                        lastUsed = existing?.lastUsed,
-                        useCount = existing?.useCount ?: 0L,
-                        updatedAt = updatedAt,
-                        profile_id = profileId,
-                        groupId = existing?.groupId,
-                        id = localId,
-                    )
-                    queries.insertRoutineIgnore(
-                        id = localId,
-                        name = dto.name,
-                        description = dto.description,
-                        createdAt = dto.createdAt,
-                        lastUsed = null,
-                        useCount = 0L,
-                        updatedAt = updatedAt,
-                        profile_id = profileId,
-                        groupId = null,
-                    )
-
-                    // Update sync fields
-                    if (dto.serverId != null) {
-                        queries.updateRoutineServerId(dto.serverId, localId)
-                    }
-                }
-            }
-            Logger.d { "Merged ${routines.size} routines from server" }
-        }
-    }
-
-    /**
      * Merge custom exercises from server.
      *
      * CONFLICT RESOLUTION STRATEGY: INSERT (no conflict expected)
@@ -2320,7 +2261,14 @@ class SqlDelightSyncRepository(
                 else -> local?.dropSetMinWeightKg
             }
 
+            val weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong()
+
             if (local != null) {
+                // The per-set % list is not on the wire and resolvers prefer it over the base %.
+                // Keep it only while the base % is unchanged; after a base change on another
+                // device (e.g. a deload 80 -> 70) drop it so the new base drives the load.
+                val setWeightsPercentOfPR = local.setWeightsPercentOfPR
+                    .takeIf { exercise.prPercentage == null || weightPercentOfPR == local.weightPercentOfPR }
                 queries.updateRoutineExercise(
                     exerciseName = exercise.name,
                     exerciseMuscleGroup = exercise.muscleGroup,
@@ -2344,9 +2292,9 @@ class SqlDelightSyncRepository(
                     supersetId = exercise.supersetId,
                     orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
                     usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
-                    weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
+                    weightPercentOfPR = weightPercentOfPR,
                     prTypeForScaling = local.prTypeForScaling,
-                    setWeightsPercentOfPR = local.setWeightsPercentOfPR,
+                    setWeightsPercentOfPR = setWeightsPercentOfPR,
                     stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
                     stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
                     repCountTiming = exercise.repCountTiming ?: "TOP",
@@ -2386,7 +2334,7 @@ class SqlDelightSyncRepository(
                     supersetId = exercise.supersetId,
                     orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
                     usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
-                    weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
+                    weightPercentOfPR = weightPercentOfPR,
                     prTypeForScaling = "MAX_WEIGHT",
                     setWeightsPercentOfPR = null,
                     stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,

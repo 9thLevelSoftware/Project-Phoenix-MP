@@ -5,7 +5,6 @@ import com.devil.phoenixproject.data.sync.PortalSyncAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncPayload
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
-import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -676,29 +675,6 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
-    fun `mergeRoutines uses active profile id`() = runTest {
-        repository.mergeRoutines(
-            routines = listOf(
-                RoutineSyncDto(
-                    clientId = "routine-profile-b",
-                    serverId = "server-routine-profile-b",
-                    name = "Pull Day",
-                    description = "Synced routine",
-                    createdAt = 1_700_000_000_000,
-                    updatedAt = 1_700_000_000_100,
-                ),
-            ),
-        )
-
-        val routine = database.phoenixDatabaseQueries
-            .selectRoutineById("routine-profile-b")
-            .executeAsOneOrNull()
-
-        assertNotNull(routine)
-        assertEquals("active-profile", routine.profile_id)
-    }
-
-    @Test
     fun `mergePortalRoutines preserves local rack defaults for matching routine exercises`() = runTest {
         database.phoenixDatabaseQueries.insertRoutine(
             id = "routine-rack-defaults",
@@ -1020,7 +996,7 @@ class SqlDelightSyncRepositoryTest {
             name = "Twice Remote",
             updatedAt = 1_700_000_000_200,
             exercises = listOf(
-                PullRoutineExerciseDto(id = "rex-twice", routineId = "routine-twice", name = "Deadlift", reps = 5, weight = 65f),
+                PullRoutineExerciseDto(id = "rex-twice", routineId = "routine-twice", name = "Deadlift", reps = 5, weight = 65f, prPercentage = 80f),
             ),
         )
 
@@ -1046,6 +1022,34 @@ class SqlDelightSyncRepositoryTest {
         assertEquals("Twice Remote", queries.selectRoutineById("routine-twice").executeAsOne().name)
         assertEquals("routine-twice", queries.selectCycleDaysByCycle("cycle-link").executeAsList().single().routine_id)
         assertEquals(1, queries.selectPlannedSetsByRoutineExercise("rex-twice").executeAsList().size)
+    }
+
+    @Test
+    fun `pull drops the local per-set percent list when the base percent of PR changed elsewhere`() = runTest {
+        // Device A deloaded 80% -> 70% (its per-set list became [70,70,70]); the push only carries
+        // the base %. Device B must not keep loading its stale [80,80,80] per-set list.
+        insertLocalRoutine("routine-deload")
+        insertLocalRoutineExercise(id = "rex-deload", routineId = "routine-deload", setWeightsPercentOfPR = "[80,80,80]")
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-deload",
+                    name = "Deload",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(id = "rex-deload", routineId = "routine-deload", name = "Deadlift", reps = 5, prPercentage = 70f),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_300,
+            profileId = "active-profile",
+        )
+
+        val exercise = database.phoenixDatabaseQueries.selectExercisesByRoutine("routine-deload").executeAsList().single()
+        assertEquals(1L, exercise.usePercentOfPR)
+        assertEquals(70L, exercise.weightPercentOfPR)
+        assertNull(exercise.setWeightsPercentOfPR)
     }
 
     @Test
@@ -1084,13 +1088,16 @@ class SqlDelightSyncRepositoryTest {
     @Test
     fun `pull leaves a locally soft-deleted routine deleted`() = runTest {
         val queries = database.phoenixDatabaseQueries
-        insertLocalRoutine("routine-deleted", deletedAt = 1_700_000_000_050)
+        insertLocalRoutine("routine-deleted")
         insertLocalRoutineExercise(id = "rex-deleted", routineId = "routine-deleted")
+        // As production does: the tombstone stamps updatedAt = deletedAt, here older than lastSync
+        // (a tombstone that was never pushed, e.g. deleted under another profile).
+        queries.softDeleteRoutine(deletedAt = 1_700_000_000_050, updatedAt = 1_700_000_000_050, id = "routine-deleted")
         val portalRoutine = PullRoutineDto(
             id = "routine-deleted",
             name = "Resurrected?",
             updatedAt = 1_700_000_000_200,
-            exercises = listOf(PullRoutineExerciseDto(id = "rex-deleted", routineId = "routine-deleted", name = "Deadlift")),
+            exercises = listOf(PullRoutineExerciseDto(id = "rex-deleted", routineId = "routine-deleted", name = "Deadlift", weight = 90f)),
         )
 
         repository.mergePortalRoutines(listOf(portalRoutine), lastSync = 1_700_000_000_300, profileId = "active-profile")
@@ -1108,9 +1115,10 @@ class SqlDelightSyncRepositoryTest {
         val routine = queries.selectRoutineById("routine-deleted").executeAsOne()
         assertEquals(1_700_000_000_050, routine.deletedAt)
         assertEquals("Local routine-deleted", routine.name)
+        assertEquals(60.0, queries.selectExercisesByRoutine("routine-deleted").executeAsList().single().weightPerCableKg)
     }
 
-    private fun insertLocalRoutine(id: String, deletedAt: Long? = null) {
+    private fun insertLocalRoutine(id: String) {
         database.phoenixDatabaseQueries.insertRoutine(
             id = id,
             name = "Local $id",
@@ -1120,7 +1128,7 @@ class SqlDelightSyncRepositoryTest {
             useCount = 0,
             profile_id = "active-profile",
             groupId = null,
-            deletedAt = deletedAt,
+            deletedAt = null,
         )
     }
 

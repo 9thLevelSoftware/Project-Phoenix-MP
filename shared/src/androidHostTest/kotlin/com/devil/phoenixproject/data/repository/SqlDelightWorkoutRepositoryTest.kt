@@ -457,6 +457,17 @@ class SqlDelightWorkoutRepositoryTest {
     }
 
     @Test
+    fun `saveRoutine on a soft-deleted routine id keeps it deleted`() = runTest {
+        val routine = Routine(id = "routine-tombstoned", name = "Tombstoned", exercises = emptyList())
+        repository.saveRoutine(routine)
+        database.phoenixDatabaseQueries.softDeleteRoutine(deletedAt = 5L, updatedAt = 5L, id = "routine-tombstoned")
+
+        repository.saveRoutine(routine.copy(name = "Saved Again"))
+
+        assertEquals(5L, database.phoenixDatabaseQueries.selectRoutineById("routine-tombstoned").executeAsOne().deletedAt)
+    }
+
+    @Test
     fun `getRoutineById preserves profileId from database`() = runTest {
         val routine = Routine(
             id = "routine-profile-c",

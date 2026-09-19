@@ -1807,6 +1807,7 @@ class DataBackupManagerRoutineNameTest {
 
         val backupJson = source.manager.exportToJson()
         val target = profileFixture()
+        // // F-017/A-035 (PR 22): restore drops routine exercises whose Exercise row is missing on the target; remove this target-side seed once restore writes Exercise rows first.
         target.database.seedExercise("exercise-rack-backup", "Weighted Pull Up")
 
         val importResult = target.manager.importFromJson(backupJson)
@@ -1849,7 +1850,8 @@ class DataBackupManagerRoutineNameTest {
 
         val backupJson = sourceManager.exportToJson()
         val targetDatabase = createTestDatabase()
-        targetDatabase.seedExercise("exercise-scaling-backup", "Bench Press") // catalog row present on both devices
+        // // F-017/A-035 (PR 22): restore drops routine exercises whose Exercise row is missing on the target; remove this target-side seed once restore writes Exercise rows first.
+        targetDatabase.seedExercise("exercise-scaling-backup", "Bench Press")
         val targetManager = TestDataBackupManager(targetDatabase)
 
         val importResult = targetManager.importFromJson(backupJson)

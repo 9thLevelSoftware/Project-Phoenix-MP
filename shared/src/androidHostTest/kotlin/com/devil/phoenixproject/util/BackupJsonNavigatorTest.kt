@@ -1290,7 +1290,8 @@ class StreamingImportRoundTripTest {
         val freshFixture = preferenceFixture()
         val freshDb = freshFixture.database
         val freshManager = freshFixture.manager
-        freshDb.seedExercise("rt-exercise-bench", "Bench Press") // catalog row present on both devices
+        // // F-017/A-035 (PR 22): restore drops routine exercises whose Exercise row is missing on the target; remove this target-side seed once restore writes Exercise rows first.
+        freshDb.seedExercise("rt-exercise-bench", "Bench Press")
 
         val source = StringBackupStreamSource(exportedJson)
         source.open()
