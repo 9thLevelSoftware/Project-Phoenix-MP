@@ -4,7 +4,7 @@ This guide explains how to install Project Phoenix on your iPhone or iPad.
 
 ## Prerequisites
 
-- iPhone or iPad running iOS 14.0 or later
+- iPhone or iPad running iOS 15.0 or later
 - Bluetooth Low Energy (BLE) support
 
 ---
@@ -66,11 +66,11 @@ AltStore is a free app that lets you sideload apps using your Apple ID.
 
 #### Step 3: Install Project Phoenix
 
-1. Download the `PhoenixApp.ipa` file from [GitHub Releases](../../releases)
+1. Download the `ProjectPhoenix-vX.Y.Z.ipa` file from the [latest GitHub release](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/latest)
 2. Open AltStore on your iPhone
 3. Go to the **My Apps** tab
 4. Tap the **+** button in the top left
-5. Select the `PhoenixApp.ipa` file
+5. Select the downloaded `.ipa` file
 6. Wait for installation to complete
 
 #### Step 4: Trust the App
@@ -119,7 +119,7 @@ When you first launch the app, you'll be asked to grant permissions:
 
 ### App Crashes on Launch
 
-- Make sure your device is running iOS 14.0 or later
+- Make sure your device is running iOS 15.0 or later
 - Try deleting and reinstalling the app
 - Report the issue on GitHub with your device model and iOS version
 
@@ -127,9 +127,8 @@ When you first launch the app, you'll be asked to grant permissions:
 
 ## Data & Privacy
 
-- All workout data is stored **locally on your device**
-- No data is sent to any server
-- Deleting the app will delete your workout history
+- Deleting the app will delete your workout history unless you have backed it up or synced it
+- For what is stored on the device and what is sent when you turn on optional features such as Cloud Sync, see the [Privacy Policy](docs/privacy-policy.html)
 
 ### Backup Your Data
 
@@ -155,7 +154,7 @@ A:
 - Phoenix Trainer+ - devices starting with `VIT`
 
 **Q: Does it work on iPad?**
-A: Yes, the app works on any iPad running iOS/iPadOS 14.0 or later with Bluetooth support.
+A: Yes, the app works on any iPad running iOS/iPadOS 15.0 or later with Bluetooth support.
 
 ---
 
