@@ -204,6 +204,94 @@ class JustLiftCompletionBehaviorTest {
     }
 
     @Test
+    fun `late grab held through timed summary reset still starts the successor`() = runTest {
+        // #761: summary 5 s, auto-start countdown 2 s. A grab at +4 s starts a countdown
+        // bound to the completed lease; the summary reset at +5 s retires that lease.
+        // The handles stay Grabbed (no new edge), so the level check must restart it.
+        val harness = DWSMTestHarness(this)
+        try {
+            prepare(harness, summarySeconds = 5)
+            grabToStart(harness)
+            val first = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            completeSet(harness)
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+            assertTrue(harness.fakeBleRepo.emitPolledHandleState(HandleState.WaitingForRest))
+            runCurrent()
+            advanceTimeBy(4_000)
+            runCurrent()
+            assertTrue(harness.fakeBleRepo.emitPolledHandleState(HandleState.Grabbed))
+            runCurrent()
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+            advanceTimeBy(15_000)
+            runCurrent()
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            val successor = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertNotEquals(first, successor)
+            assertTrue(successor.isJustLift)
+            // Arming is ON: the successor passed the #782 barrier and holds its own row.
+            assertEquals(successor.executionId, harness.machineSafetyStore.rows.values.single().executionId)
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `manual stop while holding the handles never auto restarts`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepare(harness, summarySeconds = 5)
+            grabToStart(harness)
+            assertEquals(HandleState.Grabbed, harness.fakeBleRepo.handleState.value)
+            harness.dwsm.stopWorkout()
+            runCurrent()
+            assertIs<WorkoutState.SetSummary>(harness.coordinator.workoutState.value)
+            val commands = harness.fakeBleRepo.commandsReceived.size
+            val stops = harness.fakeBleRepo.stopWorkoutCallCount
+
+            // Dismissing the stopped set's summary reaches Idle with the handles still held.
+            harness.dwsm.proceedFromSummary()
+            runCurrent()
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertEquals(HandleState.Grabbed, harness.fakeBleRepo.handleState.value)
+            advanceTimeBy(15_000)
+            runCurrent()
+
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
+            assertNull(harness.coordinator.autoStartCountdown.value)
+            assertEquals(commands, harness.fakeBleRepo.commandsReceived.size)
+            assertEquals(stops, harness.fakeBleRepo.stopWorkoutCallCount)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `ending Just Lift while holding the handles never auto restarts`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            prepare(harness, summarySeconds = 5)
+            grabToStart(harness)
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            runCurrent()
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertEquals(HandleState.Grabbed, harness.fakeBleRepo.handleState.value)
+            val commands = harness.fakeBleRepo.commandsReceived.size
+            advanceTimeBy(15_000)
+            runCurrent()
+
+            assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
+            assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
+            assertNull(harness.coordinator.autoStartCountdown.value)
+            assertEquals(commands, harness.fakeBleRepo.commandsReceived.size)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `failed completion teardown blocks start until successful recovery then permits successor`() = runTest {
         val harness = DWSMTestHarness(this)
         val release = CompletableDeferred<Result<Unit>>()
