@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
 import com.devil.phoenixproject.data.sync.IdMappings
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalPullAdapter
+import com.devil.phoenixproject.data.sync.PortalSyncAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
@@ -619,6 +620,8 @@ class SqlDelightSyncRepository(
                             .associate { it.id to it.scalingBasis }
                         val localDropSetByExerciseId = localExerciseRows
                             .associate { it.id to (it.dropSetEnabled to it.dropSetMinWeightKg) }
+                        val localDurationByExerciseId = localExerciseRows
+                            .associate { it.id to (it.duration to it.durationSyncKnown) }
 
                         mergePortalExercisesForRoutine(
                             routineId = portalRoutine.id,
@@ -627,6 +630,7 @@ class SqlDelightSyncRepository(
                             localRackOverridesByExerciseId = localRackOverridesByExerciseId,
                             localScalingBasisByExerciseId = localScalingBasisByExerciseId,
                             localDropSetByExerciseId = localDropSetByExerciseId,
+                            localDurationByExerciseId = localDurationByExerciseId,
                         )
                     } else {
                         Logger.w("SyncRepository") {
@@ -1084,6 +1088,7 @@ class SqlDelightSyncRepository(
                         setRestSeconds = setRestSeconds,
                         setEchoLevels = setEchoLevels,
                         duration = exRow.duration?.toInt(),
+                        durationSyncKnown = exRow.durationSyncKnown == 1L,
                         isAMRAP = exRow.isAMRAP == 1L,
                         perSetRestTime = exRow.perSetRestTime == 1L,
                         stallDetectionEnabled = exRow.stallDetectionEnabled == 1L,
@@ -1709,6 +1714,8 @@ class SqlDelightSyncRepository(
                             .associate { it.id to it.scalingBasis }
                         val localDropSetByExerciseId = localExerciseRows2
                             .associate { it.id to (it.dropSetEnabled to it.dropSetMinWeightKg) }
+                        val localDurationByExerciseId = localExerciseRows2
+                            .associate { it.id to (it.duration to it.durationSyncKnown) }
 
                         mergePortalExercisesForRoutine(
                             routineId = portalRoutine.id,
@@ -1717,6 +1724,7 @@ class SqlDelightSyncRepository(
                             localRackOverridesByExerciseId = localRackOverridesByExerciseId,
                             localScalingBasisByExerciseId = localScalingBasisByExerciseId,
                             localDropSetByExerciseId = localDropSetByExerciseId,
+                            localDurationByExerciseId = localDurationByExerciseId,
                         )
                     }
                 }
@@ -2221,6 +2229,7 @@ class SqlDelightSyncRepository(
         localRackOverridesByExerciseId: Map<String, String?>,
         localScalingBasisByExerciseId: Map<String, String?>,
         localDropSetByExerciseId: Map<String, Pair<Long, Double?>>,
+        localDurationByExerciseId: Map<String, Pair<Long?, Long>>,
     ) {
         queries.deleteRoutineExercises(routineId)
         queries.deleteSupersetsByRoutine(routineId)
@@ -2302,6 +2311,16 @@ class SqlDelightSyncRepository(
 
             val mobileMode = PortalPullAdapter.portalModeToMobileMode(exercise.mode)
 
+            // PR 13: a server that sends durationSeconds (number or null) makes the
+            // local duration current. An older server omits the key; keep the local
+            // duration and its sync flag instead of overwriting them with null.
+            val (duration, durationSyncKnown) = if (exercise.durationSecondsPresent) {
+                PortalSyncAdapter.sanitizeDurationSeconds(exercise.durationSeconds)?.toLong() to 1L
+            } else {
+                val local = localDurationByExerciseId[exercise.id]
+                local?.first to (local?.second ?: 0L)
+            }
+
             // ID-first catalog lookup: use exerciseId when available, fall back to name (#404)
             val catalogExercise = exercise.exerciseId?.let { id ->
                 queries.selectExerciseById(id).executeAsOneOrNull()
@@ -2331,7 +2350,7 @@ class SqlDelightSyncRepository(
                 echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
                 progressionKg = 0.0,
                 restSeconds = exercise.restSeconds.toLong(),
-                duration = exercise.durationSeconds?.toLong(), // seconds
+                duration = duration, // seconds
                 setRestSeconds = setRestSeconds,
                 perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
                 isAMRAP = if (exercise.isAmrap) 1L else 0L,
@@ -2367,6 +2386,9 @@ class SqlDelightSyncRepository(
                     else -> localDropSetByExerciseId[exercise.id]?.second
                 },
             )
+            if (durationSyncKnown == 1L) {
+                queries.updateRoutineExerciseDurationSyncKnown(1L, exercise.id)
+            }
         }
     }
 

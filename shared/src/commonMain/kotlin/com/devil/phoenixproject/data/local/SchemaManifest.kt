@@ -1076,6 +1076,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 isBodyweight INTEGER,
                 dropSetEnabled INTEGER NOT NULL DEFAULT 0,
                 dropSetMinWeightKg REAL,
+                durationSyncKnown INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
                 FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -1431,6 +1432,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("RoutineExercise", "repCountTiming", "ALTER TABLE RoutineExercise ADD COLUMN repCountTiming TEXT NOT NULL DEFAULT 'TOP'"),
     SchemaHealOperation("RoutineExercise", "dropSetEnabled", "ALTER TABLE RoutineExercise ADD COLUMN dropSetEnabled INTEGER NOT NULL DEFAULT 0"),
     SchemaHealOperation("RoutineExercise", "dropSetMinWeightKg", "ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL"),
+    SchemaHealOperation("RoutineExercise", "durationSyncKnown", "ALTER TABLE RoutineExercise ADD COLUMN durationSyncKnown INTEGER NOT NULL DEFAULT 0"),
 
     // ── UserProfile (4 columns) ─────────────────────────────────────────
 

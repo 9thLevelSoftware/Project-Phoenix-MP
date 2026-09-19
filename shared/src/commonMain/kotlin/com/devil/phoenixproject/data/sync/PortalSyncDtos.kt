@@ -1,8 +1,10 @@
 package com.devil.phoenixproject.data.sync
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonTransformingSerializer
 
 /**
  * DTOs matching the portal's 3-tier database structure:
@@ -249,15 +251,17 @@ data class PortalRoutineExerciseSyncDto(
     val dropSetEnabled: Boolean = false,
     val dropSetMinWeightKg: Float? = null,
     /**
-     * Timed-exercise duration in seconds, or JSON `null` for a rep-based exercise.
-     *
-     * The key is ALWAYS sent: the server treats an absent key as "keep the stored
-     * duration" and an explicit null as "clear it". [PortalWireJson] uses
-     * `explicitNulls = false`, which drops a null `Int?` property entirely, so the
-     * field is a non-null [JsonPrimitive] holding [JsonNull] instead. Older servers
+     * Timed-exercise duration, three wire states (build it ONLY with
+     * [PortalSyncAdapter.durationSecondsWire], never by hand):
+     *  - Kotlin `null` -> key omitted (server keeps its stored duration). Used when the
+     *    local value may be stale, e.g. rows pulled by older builds that stored NULL.
+     *  - `JsonNull` -> `"durationSeconds":null` (server clears the duration).
+     *  - a positive integer -> seconds.
+     * [PortalWireJson] has `explicitNulls = false`, so a null `Int?` could not express
+     * the explicit-null state; that is why the type is `JsonPrimitive?`. Older servers
      * strip the unknown key.
      */
-    val durationSeconds: JsonPrimitive = JsonNull,
+    val durationSeconds: JsonPrimitive? = null,
 )
 
 // ─── Training Cycle Sync DTOs ─────────────────────────────────────
@@ -881,7 +885,8 @@ data class PullRoutineDto(
     val timesCompleted: Int = 0,
     val isFavorite: Boolean = false,
     val updatedAt: Long? = null,
-    val exercises: List<PullRoutineExerciseDto> = emptyList(),
+    val exercises: List<@Serializable(with = PullRoutineExerciseWireSerializer::class) PullRoutineExerciseDto> =
+        emptyList(),
 )
 
 @Serializable
@@ -920,10 +925,26 @@ data class PullRoutineExerciseDto(
     val rackBehaviorOverrides: String? = null, // JSON map of rackItemId -> behavior name
     val dropSetEnabled: Boolean? = null,
     val dropSetMinWeightKg: Float? = null,
-    // Timed-exercise duration in seconds; null for rep-based exercises and for
-    // older Edge Function versions that do not send the field.
+    // Timed-exercise duration in seconds; null for rep-based exercises.
     val durationSeconds: Int? = null,
+    // True when the server sent the durationSeconds key (number or null). Older Edge
+    // Function versions omit it, and then the local duration is kept. Set on the wire
+    // by [PullRoutineExerciseWireSerializer]; never sent by the server.
+    val durationSecondsPresent: Boolean = durationSeconds != null,
 )
+
+/**
+ * Records whether the `durationSeconds` key was present in a pulled routine exercise.
+ * With `explicitNulls = false` an explicit null and an absent key both decode to null,
+ * but they mean different things (clear vs. older server).
+ */
+internal object PullRoutineExerciseWireSerializer :
+    JsonTransformingSerializer<PullRoutineExerciseDto>(PullRoutineExerciseDto.serializer()) {
+    override fun transformDeserialize(element: JsonElement): JsonElement {
+        if (element !is JsonObject) return element
+        return JsonObject(element + ("durationSecondsPresent" to JsonPrimitive("durationSeconds" in element)))
+    }
+}
 
 /**
  * Pulled training cycle with nested days.

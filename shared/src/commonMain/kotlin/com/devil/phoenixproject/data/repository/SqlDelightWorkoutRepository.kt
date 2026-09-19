@@ -695,6 +695,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                 )
 
                 // Delete existing supersets and exercises before re-inserting
+                val previousDurations = snapshotRoutineExerciseDurations(routineId)
                 queries.deleteSupersetsByRoutine(routineId)
                 queries.deleteRoutineExercises(routineId)
 
@@ -705,7 +706,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
                 // Insert all exercises
                 routine.exercises.forEachIndexed { index, exercise ->
-                    insertRoutineExercise(routineId, exercise, index)
+                    insertRoutineExercise(routineId, exercise, index, previousDurations)
                 }
             }
 
@@ -713,7 +714,17 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         }
     }
 
-    private fun insertRoutineExercise(routineId: String, exercise: RoutineExercise, index: Int) {
+    /** Local (duration, durationSyncKnown) per routine exercise id, read before a delete-and-reinsert. */
+    private fun snapshotRoutineExerciseDurations(routineId: String): Map<String, Pair<Long?, Long>> =
+        queries.selectExercisesByRoutine(routineId).executeAsList()
+            .associate { it.id to (it.duration to it.durationSyncKnown) }
+
+    private fun insertRoutineExercise(
+        routineId: String,
+        exercise: RoutineExercise,
+        index: Int,
+        previousDurations: Map<String, Pair<Long?, Long>>,
+    ) {
         // Generate a UUID for the exercise if not provided
         val exerciseRowId = exercise.id.takeIf { it.isNotBlank() } ?: generateUUID()
 
@@ -783,6 +794,18 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
             dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
             dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
         )
+
+        // Portal sync (PR 13): the duration is known to be current when this build
+        // created the row, when it was already known, or when the user changed it.
+        // An untouched row from an older build keeps "unknown" so a stale NULL is not
+        // pushed as an explicit clear.
+        val previous = previousDurations[exerciseRowId]
+        val durationKnown = previous == null ||
+            previous.second == 1L ||
+            previous.first != exercise.duration?.toLong()
+        if (durationKnown) {
+            queries.updateRoutineExerciseDurationSyncKnown(1L, exerciseRowId)
+        }
     }
 
     private fun insertSuperset(routineId: String, superset: Superset) {
@@ -810,6 +833,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                 )
 
                 // Delete existing supersets and exercises, then re-insert
+                val previousDurations = snapshotRoutineExerciseDurations(routineId)
                 queries.deleteSupersetsByRoutine(routineId)
                 queries.deleteRoutineExercises(routineId)
 
@@ -820,7 +844,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
                 // Insert all exercises
                 routine.exercises.forEachIndexed { index, exercise ->
-                    insertRoutineExercise(routineId, exercise, index)
+                    insertRoutineExercise(routineId, exercise, index, previousDurations)
                 }
             }
 

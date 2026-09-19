@@ -1097,5 +1097,11 @@ WHERE gs.rowid = (
         "ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL",
     )
 
+    // Migration 48: portal-sync "duration known" flag on routine exercises.
+    // Mirrors 48.sqm exactly.
+    48 -> listOf(
+        "ALTER TABLE RoutineExercise ADD COLUMN durationSyncKnown INTEGER NOT NULL DEFAULT 0",
+    )
+
     else -> emptyList()
 }

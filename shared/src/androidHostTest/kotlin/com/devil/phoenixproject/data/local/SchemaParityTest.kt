@@ -900,10 +900,38 @@ class SchemaParityTest {
         assertEquals(null, queryScalar(driver, "SELECT CAST(dropSetMinWeightKg AS TEXT) FROM RoutineExercise WHERE id = 're1'"))
     }
 
+    @Test
+    fun `migration 48 to 49 adds duration sync flag defaulting to unknown`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 48)
+        driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
+        driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
+        driver.execute(
+            null,
+            "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Plank','Core',0,0.0)",
+            0,
+        )
+
+        PhoenixDatabase.Schema.migrate(driver, 48, 49)
+
+        assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "durationSyncKnown"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(durationSyncKnown AS TEXT) FROM RoutineExercise WHERE id = 're1'"))
+    }
+
+    @Test
+    fun `resilient migration 48 fallback adds the duration sync flag`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 48)
+
+        applyMigrationResilient(driver, 48)
+
+        assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "durationSyncKnown"))
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 48L
+        private const val EXPECTED_SCHEMA_VERSION = 49L
         private val CREATE_ACTIVE_RUNTIME_SQL = """
             CREATE TABLE ActiveWorkoutRuntime (
                 profile_id TEXT NOT NULL,

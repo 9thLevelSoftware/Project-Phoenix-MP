@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
+import com.devil.phoenixproject.data.sync.PortalWireJson
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncPayload
 import com.devil.phoenixproject.data.sync.PullRoutineDto
@@ -11,13 +12,22 @@ import com.devil.phoenixproject.data.sync.encodePortalSyncPayload
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import org.junit.Before
 import org.junit.Test
 
@@ -784,70 +794,198 @@ class SqlDelightSyncRepositoryTest {
         assertEquals("""["vest"]""", exercise.defaultRackItemIds)
     }
 
+    // ========== routine exercise durationSeconds (PR 13) ==========
+
     @Test
     fun `mergePortalRoutines stores pulled durationSeconds and pushes it back`() = runTest {
         repository.mergePortalRoutines(
             routines = listOf(
-                PullRoutineDto(
-                    id = "routine-timed",
-                    userId = "user",
-                    name = "Timed Remote",
-                    updatedAt = 1_700_000_000_200,
-                    exercises = listOf(
-                        PullRoutineExerciseDto(
-                            id = "rex-timed",
-                            routineId = "routine-timed",
-                            name = "Plank",
-                            muscleGroup = "Core",
-                            orderIndex = 0,
-                            durationSeconds = 45,
-                        ),
-                        PullRoutineExerciseDto(
-                            id = "rex-reps",
-                            routineId = "routine-timed",
-                            name = "Bench Press",
-                            muscleGroup = "Chest",
-                            orderIndex = 1,
-                            durationSeconds = null,
-                        ),
-                    ),
+                decodePullRoutine(
+                    """{"id":"routine-timed","name":"Timed Remote","updatedAt":1700000000200,"exercises":[
+                    {"id":"rex-timed","routineId":"routine-timed","name":"Plank","orderIndex":0,"durationSeconds":45},
+                    {"id":"rex-reps","routineId":"routine-timed","name":"Bench Press","orderIndex":1,"durationSeconds":null}
+                    ]}""",
                 ),
             ),
             lastSync = 1_700_000_000_100,
             profileId = "active-profile",
         )
 
-        val rows = database.phoenixDatabaseQueries
-            .selectExercisesByRoutine("routine-timed")
-            .executeAsList()
-            .associateBy { it.id }
+        val rows = routineExerciseRows("routine-timed")
         assertEquals(45L, rows.getValue("rex-timed").duration)
+        assertEquals(1L, rows.getValue("rex-timed").durationSyncKnown)
         assertNull(rows.getValue("rex-reps").duration)
+        assertEquals(1L, rows.getValue("rex-reps").durationSyncKnown)
 
-        val outbound = repository.getFullRoutinesModifiedSince(0L, "active-profile").single()
+        val pushed = pushedRoutineExercises()
+        assertEquals(JsonPrimitive(45), pushed.getValue("rex-timed")["durationSeconds"])
+        // Known null after a pull: explicit null so the server clears it.
+        assertTrue(pushed.getValue("rex-reps").containsKey("durationSeconds"))
+        assertEquals(JsonNull, pushed.getValue("rex-reps")["durationSeconds"])
+    }
+
+    @Test
+    fun `upgraded row with a stale null duration omits durationSeconds on push`() = runTest {
+        // A row written by an older build: duration NULL, flag at its migration default.
+        insertLegacyRoutineExercise(routineId = "routine-stale", exerciseId = "rex-stale", duration = null)
+
+        val pushed = pushedRoutineExercises()
+
+        assertEquals(0L, routineExerciseRows("routine-stale").getValue("rex-stale").durationSyncKnown)
+        assertFalse(pushed.getValue("rex-stale").containsKey("durationSeconds"))
+    }
+
+    @Test
+    fun `local save that leaves a stale null duration unchanged still omits durationSeconds`() = runTest {
+        insertLegacyRoutineExercise(routineId = "routine-stale", exerciseId = "rex-stale", duration = null)
+        val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
+        val routine = assertNotNull(workoutRepository.getRoutineById("routine-stale"))
+
+        workoutRepository.updateRoutine(routine.copy(name = "Renamed"))
+
+        assertFalse(pushedRoutineExercises().getValue("rex-stale").containsKey("durationSeconds"))
+    }
+
+    @Test
+    fun `local edit of a duration to null pushes an explicit null`() = runTest {
+        insertLegacyRoutineExercise(routineId = "routine-edit", exerciseId = "rex-edit", duration = 30L)
+        val workoutRepository = SqlDelightWorkoutRepository(database, FakeExerciseRepository())
+        val routine = assertNotNull(workoutRepository.getRoutineById("routine-edit"))
+        assertEquals(30, routine.exercises.single().duration)
+
+        workoutRepository.updateRoutine(
+            routine.copy(exercises = routine.exercises.map { it.copy(duration = null) }),
+        )
+
+        val row = routineExerciseRows("routine-edit").getValue("rex-edit")
+        assertNull(row.duration)
+        assertEquals(1L, row.durationSyncKnown)
+        val pushed = pushedRoutineExercises().getValue("rex-edit")
+        assertTrue(pushed.containsKey("durationSeconds"))
+        assertEquals(JsonNull, pushed["durationSeconds"])
+    }
+
+    @Test
+    fun `pull without a durationSeconds key keeps the local duration and its flag`() = runTest {
+        insertLegacyRoutineExercise(routineId = "routine-old-server", exerciseId = "rex-old", duration = 30L)
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                decodePullRoutine(
+                    """{"id":"routine-old-server","name":"Old Server","updatedAt":1700000000200,"exercises":[
+                    {"id":"rex-old","routineId":"routine-old-server","name":"Plank","orderIndex":0}
+                    ]}""",
+                ),
+            ),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val row = routineExerciseRows("routine-old-server").getValue("rex-old")
+        assertEquals(30L, row.duration)
+        assertEquals(0L, row.durationSyncKnown)
+    }
+
+    @Test
+    fun `pulled zero or negative durationSeconds is stored as untimed and pushed as null`() = runTest {
+        repository.mergePortalRoutines(
+            routines = listOf(
+                decodePullRoutine(
+                    """{"id":"routine-bad","name":"Bad Durations","updatedAt":1700000000200,"exercises":[
+                    {"id":"rex-negative","routineId":"routine-bad","name":"Plank","orderIndex":0,"durationSeconds":-5},
+                    {"id":"rex-zero","routineId":"routine-bad","name":"Wall Sit","orderIndex":1,"durationSeconds":0}
+                    ]}""",
+                ),
+            ),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val rows = routineExerciseRows("routine-bad")
+        assertNull(rows.getValue("rex-negative").duration)
+        assertNull(rows.getValue("rex-zero").duration)
+        val pushed = pushedRoutineExercises()
+        assertEquals(JsonNull, pushed.getValue("rex-negative")["durationSeconds"])
+        assertEquals(JsonNull, pushed.getValue("rex-zero")["durationSeconds"])
+    }
+
+    private fun decodePullRoutine(raw: String): PullRoutineDto =
+        PortalWireJson.decodeFromString(PullRoutineDto.serializer(), raw)
+
+    private fun routineExerciseRows(routineId: String) = database.phoenixDatabaseQueries
+        .selectExercisesByRoutine(routineId)
+        .executeAsList()
+        .associateBy { it.id }
+
+    /** Reads routines back for push and encodes them through the real wire path. */
+    private suspend fun pushedRoutineExercises(): Map<String, JsonObject> {
+        val routines = repository.getFullRoutinesModifiedSince(0L, "active-profile")
         val raw = encodePortalSyncPayload(
             PortalSyncPayload(
                 deviceId = "device-1",
                 platform = "android",
                 lastSync = 0L,
-                routines = listOf(PortalSyncAdapter.toPortalRoutine(outbound, "user")),
+                routines = routines.map { PortalSyncAdapter.toPortalRoutine(it, "user") },
             ),
         ).raw
-        val exercises = kotlinx.serialization.json.Json.parseToJsonElement(raw)
-            .let { it as kotlinx.serialization.json.JsonObject }
-            .getValue("routines").let { it as kotlinx.serialization.json.JsonArray }
-            .single().let { it as kotlinx.serialization.json.JsonObject }
-            .getValue("exercises").let { it as kotlinx.serialization.json.JsonArray }
-            .associateBy {
-                ((it as kotlinx.serialization.json.JsonObject).getValue("id")
-                    as kotlinx.serialization.json.JsonPrimitive).content
-            }
-        val timed = exercises.getValue("rex-timed") as kotlinx.serialization.json.JsonObject
-        val reps = exercises.getValue("rex-reps") as kotlinx.serialization.json.JsonObject
-        assertEquals(kotlinx.serialization.json.JsonPrimitive(45), timed["durationSeconds"])
-        // Key present with explicit null so the server clears any stored duration.
-        assertTrue(reps.containsKey("durationSeconds"))
-        assertEquals(kotlinx.serialization.json.JsonNull, reps["durationSeconds"])
+        return Json.parseToJsonElement(raw).jsonObject.getValue("routines").jsonArray
+            .flatMap { it.jsonObject.getValue("exercises").jsonArray }
+            .map { it.jsonObject }
+            .associateBy { it.getValue("id").jsonPrimitive.content }
+    }
+
+    private fun insertLegacyRoutineExercise(routineId: String, exerciseId: String, duration: Long?) {
+        database.phoenixDatabaseQueries.insertRoutine(
+            id = routineId,
+            name = "Legacy $routineId",
+            description = "",
+            createdAt = 1_700_000_000_000,
+            lastUsed = null,
+            useCount = 0,
+            profile_id = "active-profile",
+            groupId = null,
+            deletedAt = null,
+        )
+        database.phoenixDatabaseQueries.insertRoutineExercise(
+            id = exerciseId,
+            routineId = routineId,
+            exerciseName = "Plank",
+            exerciseMuscleGroup = "Core",
+            exerciseEquipment = "",
+            exerciseDefaultCableConfig = "DOUBLE",
+            exerciseId = null,
+            cableConfig = "DOUBLE",
+            orderIndex = 0,
+            setReps = "10",
+            weightPerCableKg = 0.0,
+            setWeights = "",
+            mode = "OldSchool",
+            eccentricLoad = 100,
+            echoLevel = 1,
+            progressionKg = 0.0,
+            restSeconds = 60,
+            duration = duration,
+            setRestSeconds = "[]",
+            perSetRestTime = 0,
+            isAMRAP = 0,
+            supersetId = null,
+            orderInSuperset = 0,
+            usePercentOfPR = 0,
+            weightPercentOfPR = 80,
+            prTypeForScaling = "MAX_WEIGHT",
+            setWeightsPercentOfPR = null,
+            stallDetectionEnabled = 1,
+            stopAtTop = 0,
+            repCountTiming = "TOP",
+            setEchoLevels = "",
+            warmupSets = "",
+            defaultRackItemIds = "[]",
+            rackBehaviorOverrides = "{}",
+            scalingBasis = null,
+            isBodyweight = null,
+            dropSetEnabled = 0L,
+            dropSetMinWeightKg = null,
+        )
     }
 
     @Test

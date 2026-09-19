@@ -16,10 +16,17 @@ import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 
 class PortalSyncAdapterTest {
 
@@ -474,32 +481,67 @@ class PortalSyncAdapterTest {
         assertEquals("OLD_SCHOOL", ex.mode)
     }
 
-    @Test
-    fun `toPortalRoutine sends durationSeconds for a timed exercise on the wire`() {
-        val routine = makeRoutine(
-            id = "r-timed",
-            exercises = listOf(makeRoutineExercise(id = "ex-timed").copy(duration = 45)),
-        )
+    // ========== durationSeconds (PR 13) ==========
 
-        val dto = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
+    private fun encodedExercise(exercise: RoutineExercise): JsonObject {
+        val dto = PortalSyncAdapter.toPortalRoutine(makeRoutine(exercises = listOf(exercise)), "user-1")
         val raw = PortalWireJson.encodeToString(PortalRoutineSyncDto.serializer(), dto)
-
-        assertTrue(raw.contains("\"durationSeconds\":45"), raw)
+        return PortalWireJson.parseToJsonElement(raw).jsonObject
+            .getValue("exercises").jsonArray.single().jsonObject
     }
 
     @Test
-    fun `toPortalRoutine sends explicit null durationSeconds for a rep-based exercise`() {
-        val routine = makeRoutine(
-            id = "r-reps",
-            exercises = listOf(makeRoutineExercise(id = "ex-reps")),
-        )
+    fun `toPortalRoutine sends durationSeconds for a timed exercise on the wire`() {
+        val wire = encodedExercise(makeRoutineExercise().copy(duration = 45))
 
-        val dto = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
-        // PortalWireJson has explicitNulls = false; the key must still be sent,
-        // because an absent key means "keep the stored duration" on the server.
-        val raw = PortalWireJson.encodeToString(PortalRoutineSyncDto.serializer(), dto)
+        assertEquals(JsonPrimitive(45), wire["durationSeconds"])
+    }
 
-        assertTrue(raw.contains("\"durationSeconds\":null"), raw)
+    @Test
+    fun `toPortalRoutine sends explicit null durationSeconds when a null duration is known`() {
+        // PortalWireJson has explicitNulls = false; the key must still be sent.
+        val wire = encodedExercise(makeRoutineExercise().copy(duration = null, durationSyncKnown = true))
+
+        assertTrue(wire.containsKey("durationSeconds"))
+        assertEquals(JsonNull, wire["durationSeconds"])
+    }
+
+    @Test
+    fun `toPortalRoutine omits durationSeconds when a null duration is not known`() {
+        val wire = encodedExercise(makeRoutineExercise().copy(duration = null, durationSyncKnown = false))
+
+        assertFalse(wire.containsKey("durationSeconds"))
+    }
+
+    @Test
+    fun `toPortalRoutine never sends a zero or negative durationSeconds`() {
+        val negative = encodedExercise(makeRoutineExercise().copy(duration = -5, durationSyncKnown = true))
+        val zero = encodedExercise(makeRoutineExercise().copy(duration = 0, durationSyncKnown = true))
+        val negativeUnknown = encodedExercise(makeRoutineExercise().copy(duration = -5))
+
+        assertEquals(JsonNull, negative["durationSeconds"])
+        assertEquals(JsonNull, zero["durationSeconds"])
+        assertFalse(negativeUnknown.containsKey("durationSeconds"))
+    }
+
+    @Test
+    fun `durationSecondsWire only produces absent, JsonNull or a positive integer`() {
+        val inputs = listOf(null, Int.MIN_VALUE, -5, -1, 0, 1, 45, Int.MAX_VALUE)
+        for (seconds in inputs) {
+            for (known in listOf(true, false)) {
+                val wire = PortalSyncAdapter.durationSecondsWire(seconds, known)
+                val positive = seconds?.takeIf { it > 0 }
+                when {
+                    positive != null -> {
+                        assertNotNull(wire)
+                        assertFalse(wire.isString, "seconds=$seconds known=$known")
+                        assertEquals(positive, wire.intOrNull)
+                    }
+                    known -> assertEquals(JsonNull, wire, "seconds=$seconds known=$known")
+                    else -> assertNull(wire, "seconds=$seconds known=$known")
+                }
+            }
+        }
     }
 
     @Test

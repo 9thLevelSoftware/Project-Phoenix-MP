@@ -557,6 +557,24 @@ object PortalSyncAdapter {
     // ─── Routine Mapping ────────────────────────────────────────────
 
     /**
+     * A usable timed-exercise duration in seconds, or null (rep-based). Zero and
+     * negative values are treated as "not timed", matching the workout engine's
+     * `takeIf { it > 0 }` and keeping the push inside the server's non-negative range.
+     */
+    fun sanitizeDurationSeconds(seconds: Int?): Int? = seconds?.takeIf { it > 0 }
+
+    /**
+     * The only producer of [PortalRoutineExerciseSyncDto.durationSeconds].
+     *  - positive duration -> the number (always safe: older builds never stored one
+     *    from a pull, so a non-null local value was set on the device);
+     *  - no duration and [known] -> explicit JSON null, which clears the server value;
+     *  - no duration and not [known] -> null, so the key is omitted and the server keeps
+     *    its stored duration (a pre-upgrade row may hold a stale NULL).
+     */
+    fun durationSecondsWire(seconds: Int?, known: Boolean): JsonPrimitive? =
+        sanitizeDurationSeconds(seconds)?.let { JsonPrimitive(it) } ?: if (known) JsonNull else null
+
+    /**
      * Convert a mobile Routine to portal-format DTO.
      */
     fun toPortalRoutine(routine: Routine, userId: String): PortalRoutineSyncDto {
@@ -633,8 +651,7 @@ object PortalSyncAdapter {
                     },
                 dropSetEnabled = ex.dropSetEnabled,
                 dropSetMinWeightKg = ex.dropSetMinWeightKg,
-                // Seconds on both sides; JsonNull (sent as explicit null) clears it.
-                durationSeconds = ex.duration?.let { JsonPrimitive(it) } ?: JsonNull,
+                durationSeconds = durationSecondsWire(ex.duration, ex.durationSyncKnown),
             )
         }
 

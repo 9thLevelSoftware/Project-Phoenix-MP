@@ -128,6 +128,11 @@ data class RoutineExercise(
     // Map of rackItemId -> RackItemBehavior. Items not in the map fall through
     // to the global RackItem.behavior. Serialized as JSON in the DB.
     val rackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
+    // Portal sync only: true when [duration] is known to be current (pulled on a build
+    // that stores durations, or edited locally). Populated by the sync push reader;
+    // false elsewhere. When false, a null duration is omitted from the push instead of
+    // being sent as an explicit "clear".
+    val durationSyncKnown: Boolean = false,
 ) {
     /** Returns true if this exercise is part of a superset */
     val isInSuperset: Boolean get() = supersetId != null

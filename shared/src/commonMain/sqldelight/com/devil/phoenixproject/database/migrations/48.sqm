@@ -1,0 +1,5 @@
+-- Migration 48: Track whether a routine exercise's duration is known to be current
+-- for portal sync. Existing rows start at 0 (unknown): builds before this one stored
+-- every pulled duration as NULL, so a NULL here may be stale and must not be pushed
+-- as an explicit "clear" to the portal.
+ALTER TABLE RoutineExercise ADD COLUMN durationSyncKnown INTEGER NOT NULL DEFAULT 0;
