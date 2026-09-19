@@ -28,7 +28,11 @@ class FakeDataBackupManager : DataBackupManager {
 
     override suspend fun exportToJson(): String = "{}"
 
-    override suspend fun importFromJson(jsonString: String): Result<ImportResult> = Result.success(
+    override suspend fun saveToFile(backup: BackupData): Result<String> = Result.success("/fake/backup.json")
+
+    override suspend fun exportToFile(onProgress: (BackupProgress) -> Unit): Result<String> = Result.success("/fake/backup.json")
+
+    override suspend fun importFromFile(filePath: String): Result<ImportResult> = Result.success(
         ImportResult(
             sessionsImported = 0,
             sessionsSkipped = 0,
@@ -40,12 +44,6 @@ class FakeDataBackupManager : DataBackupManager {
             personalRecordsSkipped = 0,
         ),
     )
-
-    override suspend fun saveToFile(backup: BackupData): Result<String> = Result.success("/fake/backup.json")
-
-    override suspend fun exportToFile(onProgress: (BackupProgress) -> Unit): Result<String> = Result.success("/fake/backup.json")
-
-    override suspend fun importFromFile(filePath: String): Result<ImportResult> = importFromJson("{}")
 
     override suspend fun getShareableContent(): String = "{}"
 
