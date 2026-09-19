@@ -1926,6 +1926,11 @@ DELETE FROM CycleDay WHERE id = ?;
 deleteCycleDaysByCycle:
 DELETE FROM CycleDay WHERE cycle_id = ?;
 
+-- Server-reported routine deletion: mirror the server FK (ON DELETE SET NULL)
+-- explicitly so it also holds when foreign_keys is off.
+clearCycleDayRoutineReferences:
+UPDATE CycleDay SET routine_id = NULL WHERE routine_id = ?;
+
 -- CycleProgress Queries
 selectCycleProgressByCycle:
 SELECT * FROM CycleProgress WHERE cycle_id = ?;

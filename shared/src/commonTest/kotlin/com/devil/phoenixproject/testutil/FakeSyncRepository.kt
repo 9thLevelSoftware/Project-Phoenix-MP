@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.PhasePRBackfillResult
+import com.devil.phoenixproject.data.repository.ServerDeletionResult
 import com.devil.phoenixproject.data.repository.SessionNotesEntry
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
@@ -341,5 +342,41 @@ class FakeSyncRepository : SyncRepository {
     override suspend fun mergeSessionNotes(notes: Map<String, SessionNotesEntry>) {
         mergeSessionNotesCallCount++
         lastMergedSessionNotes = notes
+    }
+
+    // === Server-reported deletions (PR 16 keys) ===
+
+    data class ServerDeletionCall(
+        val routineIds: List<String>,
+        val cycleIds: List<String>,
+        val lastSync: Long,
+    )
+
+    val serverDeletionCalls: MutableList<ServerDeletionCall> = mutableListOf()
+
+    /** Local cycle ids the fake pretends to hold (routines use [routinesToReturn]). */
+    var localCycleIds: MutableSet<String> = mutableSetOf()
+    var applyServerDeletionsShouldFail: Boolean = false
+
+    override suspend fun applyServerDeletions(
+        routineIds: List<String>,
+        cycleIds: List<String>,
+        lastSync: Long,
+    ): ServerDeletionResult {
+        if (applyServerDeletionsShouldFail) {
+            throw RuntimeException("Simulated server deletion failure")
+        }
+        callLog += "applyServerDeletions"
+        serverDeletionCalls += ServerDeletionCall(routineIds, cycleIds, lastSync)
+        val removedRoutines = routinesToReturn.filter { it.id in routineIds }
+        routinesToReturn = routinesToReturn - removedRoutines.toSet()
+        val removedCycles = cycleIds.filter { localCycleIds.remove(it) }
+        return ServerDeletionResult(
+            deletedRoutineIds = removedRoutines.map { it.id },
+            deletedCycleIds = removedCycles,
+            discardedRoutineEditIds = removedRoutines
+                .filter { (it.updatedAt ?: 0L) > lastSync }
+                .map { it.id },
+        )
     }
 }

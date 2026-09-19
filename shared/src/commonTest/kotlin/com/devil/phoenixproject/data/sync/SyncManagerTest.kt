@@ -1798,4 +1798,124 @@ class SyncManagerTest {
         name = name,
         profileId = "default",
     )
+
+    // ===== Server-reported deletions (PR 16 keys) =====
+
+    @Test
+    fun pullDeletedRoutineAndCycleIdsAreDeletedLocally() = runTest {
+        setupAuthenticated()
+        tokenStorage.setLastSyncTimestamp(5_000L)
+        fakeSyncRepo.routinesToReturn = listOf(
+            Routine(id = "routine-x", name = "Deleted on portal", exercises = emptyList(), updatedAt = 1_000L),
+            Routine(id = "routine-keep", name = "Kept", exercises = emptyList(), updatedAt = 1_000L),
+        )
+        fakeSyncRepo.localCycleIds = mutableSetOf("cycle-y", "cycle-keep")
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1740916800000L,
+                deletedRoutineIds = listOf("routine-x", "never-held-routine"),
+                deletedCycleIds = listOf("cycle-y"),
+            ),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val call = fakeSyncRepo.serverDeletionCalls.single()
+        assertEquals(listOf("routine-x", "never-held-routine"), call.routineIds)
+        assertEquals(listOf("cycle-y"), call.cycleIds)
+        assertEquals(5_000L, call.lastSync)
+        assertEquals(listOf("routine-keep"), fakeSyncRepo.routinesToReturn.map { it.id })
+        assertEquals(setOf("cycle-keep"), fakeSyncRepo.localCycleIds)
+        assertEquals(1740916800000L, tokenStorage.getLastSyncTimestamp())
+    }
+
+    @Test
+    fun pullWithoutDeletedKeysDeletesNothing() = runTest {
+        setupAuthenticated()
+        fakeSyncRepo.routinesToReturn = listOf(
+            Routine(id = "routine-x", name = "Still here", exercises = emptyList()),
+        )
+        fakeSyncRepo.localCycleIds = mutableSetOf("cycle-y")
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        // Old server: the response JSON has no deletedRoutineIds / deletedCycleIds keys.
+        val oldServerResponse = PortalWireJson.decodeFromString(
+            PortalSyncPullResponse.serializer(),
+            """{"syncTime":1740916800000,"routines":[],"cycles":[],"hasMore":false}""",
+        )
+        assertEquals(emptyList(), oldServerResponse.deletedRoutineIds)
+        assertEquals(emptyList(), oldServerResponse.deletedCycleIds)
+        fakeApi.pullResult = Result.success(oldServerResponse)
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        assertTrue(fakeSyncRepo.serverDeletionCalls.isEmpty(), "No deletion must be applied")
+        assertEquals(listOf("routine-x"), fakeSyncRepo.routinesToReturn.map { it.id })
+        assertEquals(setOf("cycle-y"), fakeSyncRepo.localCycleIds)
+    }
+
+    @Test
+    fun pullDeletionFailureDoesNotAdvanceLastSync() = runTest {
+        setupAuthenticated()
+        tokenStorage.setLastSyncTimestamp(1_000L)
+        fakeSyncRepo.applyServerDeletionsShouldFail = true
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(syncTime = 1740916800000L, deletedRoutineIds = listOf("routine-x")),
+        )
+
+        createManager().sync()
+
+        assertEquals(
+            1_000L,
+            tokenStorage.getLastSyncTimestamp(),
+            "A failed local delete must leave lastSync so the next pull re-reports the ids",
+        )
+    }
+
+    @Test
+    fun pushSkippedDeletedRoutinesAndCyclesAreDeletedLocally() = runTest {
+        setupAuthenticated()
+        fakeSyncRepo.routinesToReturn = listOf(
+            Routine(id = "11111111-1111-4111-8111-111111111111", name = "Re-pushed", exercises = emptyList()),
+        )
+        fakeSyncRepo.localCycleIds = mutableSetOf("22222222-2222-4222-8222-222222222222")
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                skippedDeleted = SkippedDeletedDto(
+                    routines = listOf("11111111-1111-4111-8111-111111111111"),
+                    cycles = listOf("22222222-2222-4222-8222-222222222222"),
+                ),
+            ),
+        )
+        fakeApi.pullResult = Result.success(PortalSyncPullResponse(syncTime = 1740916800000L))
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val call = fakeSyncRepo.serverDeletionCalls.single()
+        assertEquals(listOf("11111111-1111-4111-8111-111111111111"), call.routineIds)
+        assertEquals(listOf("22222222-2222-4222-8222-222222222222"), call.cycleIds)
+        assertTrue(fakeSyncRepo.routinesToReturn.isEmpty())
+        assertTrue(fakeSyncRepo.localCycleIds.isEmpty())
+    }
+
+    @Test
+    fun pushResponseWithoutSkippedDeletedKeyDecodesToEmpty() {
+        val response = PortalWireJson.decodeFromString(
+            PortalSyncPushResponse.serializer(),
+            """{"syncTime":"2026-03-02T12:00:00Z","routinesUpserted":1}""",
+        )
+        assertEquals(SkippedDeletedDto(), response.skippedDeleted)
+
+        val withKey = PortalWireJson.decodeFromString(
+            PortalSyncPushResponse.serializer(),
+            """{"syncTime":"2026-03-02T12:00:00Z","skippedDeleted":{"routines":["r1"],"cycles":["c1"]}}""",
+        )
+        assertEquals(listOf("r1"), withKey.skippedDeleted.routines)
+        assertEquals(listOf("c1"), withKey.skippedDeleted.cycles)
+    }
 }

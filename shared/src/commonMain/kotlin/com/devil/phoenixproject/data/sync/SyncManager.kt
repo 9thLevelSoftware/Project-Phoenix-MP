@@ -1304,6 +1304,22 @@ class SyncManager(
             }
         }
 
+        // Routines/cycles the server skipped because they were deleted there
+        // (PR 16 `skippedDeleted`). Delete the local copy so they stop being pushed.
+        // Non-fatal: the next pull reports the same ids via deletedRoutineIds/deletedCycleIds.
+        finalResponse?.skippedDeleted?.let { skipped ->
+            try {
+                applyServerDeletions(
+                    routineIds = skipped.routines,
+                    cycleIds = skipped.cycles,
+                    lastSync = lastSync,
+                    source = "push skippedDeleted",
+                )
+            } catch (e: Exception) {
+                Logger.w(e) { "Applying push skippedDeleted failed; next pull will retry the delete" }
+            }
+        }
+
         // Stamp pushed PRs (Issue #528) so getFullPRsModifiedSince doesn't keep
         // re-shipping the same rows on every push. Re-use the exact recentPRs
         // collected for this payload, deduped by id, and stamp only after the
@@ -1662,7 +1678,9 @@ class SyncManager(
                 (pullResponse.profilePreferenceSections?.size ?: 0) +
                 (if (pullResponse.rpgAttributes != null) 1 else 0) +
                 (if (pullResponse.gamificationStats != null) 1 else 0) +
-                pullResponse.externalActivities.size
+                pullResponse.externalActivities.size +
+                pullResponse.deletedRoutineIds.size +
+                pullResponse.deletedCycleIds.size
             totalEntitiesFetched += pageEntityCount
 
             // Empty page warning (shouldn't happen in normal operation)
@@ -1953,6 +1971,17 @@ class SyncManager(
                 )
             }
 
+            // Server-reported deletions (PR 16 keys; first page only, absent on older
+            // servers). Applied after the merge so a routine/cycle deleted on the server
+            // is removed even if this page also carried it. Failure fails the pull so
+            // lastSync does not advance and the next pull re-reports the ids.
+            applyServerDeletions(
+                routineIds = pullResponse.deletedRoutineIds,
+                cycleIds = pullResponse.deletedCycleIds,
+                lastSync = lastSync,
+                source = "pull",
+            )
+
             // Phase 3.5: persist session-level notes after ordinary repository merges
             // succeed. Kept outside the main transaction so a notes-table
             // failure cannot roll back session data.
@@ -2048,6 +2077,35 @@ class SyncManager(
         }
 
         return Result.success(Unit)
+    }
+
+    /**
+     * Hard-delete routines/cycles the server reports as deleted. No push tombstone
+     * is left behind (the server already knows). Delete wins over unsynced local
+     * edits (KD-4); discarded edits are logged.
+     */
+    private suspend fun applyServerDeletions(
+        routineIds: List<String>,
+        cycleIds: List<String>,
+        lastSync: Long,
+        source: String,
+    ) {
+        if (routineIds.isEmpty() && cycleIds.isEmpty()) return
+        val result = syncRepository.applyServerDeletions(
+            routineIds = routineIds,
+            cycleIds = cycleIds,
+            lastSync = lastSync,
+        )
+        if (result.discardedRoutineEditIds.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                "Server deleted ${result.discardedRoutineEditIds.size} routine(s) with unsynced local edits " +
+                    "($source); local edits discarded (delete wins): ${result.discardedRoutineEditIds.joinToString()}"
+            }
+        }
+        Logger.i("SyncManager") {
+            "Applied server deletions ($source): reported routines=${routineIds.size}, cycles=${cycleIds.size}; " +
+                "removed locally routines=${result.deletedRoutineIds.size}, cycles=${result.deletedCycleIds.size}"
+        }
     }
 
     private fun getPlatformName(): String {

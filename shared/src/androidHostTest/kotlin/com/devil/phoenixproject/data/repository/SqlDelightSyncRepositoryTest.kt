@@ -3,8 +3,10 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncPayload
+import com.devil.phoenixproject.data.sync.PullCycleDayDto
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
+import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.domain.model.PRType
@@ -1255,5 +1257,168 @@ class SqlDelightSyncRepositoryTest {
             counterweightKg = counterweightKg,
             rackItemsJson = rackItemsJson,
         )
+    }
+
+    // ===== Server-reported deletions (PR 16 deletedRoutineIds / deletedCycleIds) =====
+
+    private suspend fun seedRoutineAndCycles() {
+        repository.mergeAllPullData(
+            sessions = emptyList(),
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-x",
+                    userId = "user",
+                    name = "Deleted on portal",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-x-1",
+                            routineId = "routine-x",
+                            name = "Bench Press",
+                            muscleGroup = "Chest",
+                            orderIndex = 0,
+                            reps = 8,
+                            weight = 20f,
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "rex-x-2",
+                            routineId = "routine-x",
+                            name = "Row",
+                            muscleGroup = "Back",
+                            orderIndex = 1,
+                            reps = 10,
+                            weight = 15f,
+                        ),
+                    ),
+                ),
+                PullRoutineDto(
+                    id = "routine-keep",
+                    userId = "user",
+                    name = "Kept",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-keep-1",
+                            routineId = "routine-keep",
+                            name = "Squat",
+                            muscleGroup = "Legs",
+                            orderIndex = 0,
+                            reps = 5,
+                            weight = 40f,
+                        ),
+                    ),
+                ),
+            ),
+            cycles = listOf(
+                PullTrainingCycleDto(
+                    id = "cycle-keep",
+                    name = "Uses deleted routine",
+                    days = listOf(
+                        PullCycleDayDto(id = "day-keep-1", cycleId = "cycle-keep", dayNumber = 1, routineId = "routine-x"),
+                        PullCycleDayDto(id = "day-keep-2", cycleId = "cycle-keep", dayNumber = 2, routineId = "routine-keep"),
+                    ),
+                ),
+                PullTrainingCycleDto(
+                    id = "cycle-y",
+                    name = "Deleted on portal",
+                    progressionSettings = """{"frequencyCycles":"2"}""",
+                    days = listOf(
+                        PullCycleDayDto(id = "day-y-1", cycleId = "cycle-y", dayNumber = 1, routineId = "routine-keep"),
+                    ),
+                ),
+            ),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+        database.phoenixDatabaseQueries.insertCycleProgress(
+            id = "progress-y",
+            cycle_id = "cycle-y",
+            current_day_number = 1,
+            last_completed_date = null,
+            cycle_start_date = 1_700_000_000_000,
+            last_advanced_at = null,
+            completed_days = null,
+            missed_days = null,
+            rotation_count = 0,
+        )
+    }
+
+    @Test
+    fun `applyServerDeletions removes routine with exercises and cycle with children`() = runTest {
+        seedRoutineAndCycles()
+        val queries = database.phoenixDatabaseQueries
+        assertEquals(2, queries.selectExercisesByRoutine("routine-x").executeAsList().size)
+        assertNotNull(queries.selectCycleProgressByCycle("cycle-y").executeAsOneOrNull())
+        assertNotNull(queries.selectCycleProgression("cycle-y").executeAsOneOrNull())
+
+        val result = repository.applyServerDeletions(
+            routineIds = listOf("routine-x", "never-held-routine"),
+            cycleIds = listOf("cycle-y", "never-held-cycle"),
+            lastSync = 1_700_000_000_300,
+        )
+
+        assertEquals(listOf("routine-x"), result.deletedRoutineIds)
+        assertEquals(listOf("cycle-y"), result.deletedCycleIds)
+        assertTrue(result.discardedRoutineEditIds.isEmpty())
+
+        // Routine X and its exercises are gone, with no soft-delete tombstone left to push.
+        assertNull(queries.selectRoutineById("routine-x").executeAsOneOrNull())
+        assertTrue(queries.selectExercisesByRoutine("routine-x").executeAsList().isEmpty())
+        assertTrue(repository.getDeletedRoutineIdsSince(0L, "active-profile").isEmpty())
+
+        // Cycle Y and its days/progress/progression are gone, no tombstone to push.
+        assertNull(queries.selectTrainingCycleById("cycle-y").executeAsOneOrNull())
+        assertTrue(queries.selectCycleDaysByCycle("cycle-y").executeAsList().isEmpty())
+        assertNull(queries.selectCycleProgressByCycle("cycle-y").executeAsOneOrNull())
+        assertNull(queries.selectCycleProgression("cycle-y").executeAsOneOrNull())
+        assertTrue(repository.getDeletedCycleIdsSince(0L, "active-profile").isEmpty())
+
+        // Unrelated routine untouched; the surviving cycle keeps its day with the reference nulled.
+        assertEquals(1, queries.selectExercisesByRoutine("routine-keep").executeAsList().size)
+        val keptDays = queries.selectCycleDaysByCycle("cycle-keep").executeAsList()
+        assertEquals(2, keptDays.size)
+        assertNull(keptDays.single { it.day_number == 1L }.routine_id)
+        assertEquals("routine-keep", keptDays.single { it.day_number == 2L }.routine_id)
+    }
+
+    @Test
+    fun `applyServerDeletions with no ids changes nothing`() = runTest {
+        seedRoutineAndCycles()
+        val queries = database.phoenixDatabaseQueries
+
+        val result = repository.applyServerDeletions(emptyList(), emptyList(), lastSync = 1_700_000_000_300)
+
+        assertTrue(result.deletedRoutineIds.isEmpty() && result.deletedCycleIds.isEmpty())
+        assertNotNull(queries.selectRoutineById("routine-x").executeAsOneOrNull())
+        assertEquals(2, queries.selectExercisesByRoutine("routine-x").executeAsList().size)
+        assertNotNull(queries.selectTrainingCycleById("cycle-y").executeAsOneOrNull())
+        assertEquals(
+            "routine-x",
+            queries.selectCycleDaysByCycle("cycle-keep").executeAsList().single { it.day_number == 1L }.routine_id,
+        )
+    }
+
+    @Test
+    fun `applyServerDeletions deletes routine with unsynced local edit and reports it`() = runTest {
+        // updatedAt after lastSync = a local edit not yet pushed; delete still wins.
+        seedRoutineAndCycles()
+        database.phoenixDatabaseQueries.updateRoutineById(
+            name = "Edited locally",
+            description = "",
+            updatedAt = 1_700_000_000_900,
+            id = "routine-x",
+        )
+
+        val result = repository.applyServerDeletions(
+            routineIds = listOf("routine-x"),
+            cycleIds = emptyList(),
+            lastSync = 1_700_000_000_500,
+        )
+
+        assertEquals(listOf("routine-x"), result.discardedRoutineEditIds)
+        assertNull(database.phoenixDatabaseQueries.selectRoutineById("routine-x").executeAsOneOrNull())
     }
 }

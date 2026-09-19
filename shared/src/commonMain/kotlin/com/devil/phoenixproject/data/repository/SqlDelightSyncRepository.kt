@@ -1922,6 +1922,57 @@ class SqlDelightSyncRepository(
         queries.selectAllPersonalRecordUuidsByProfile(profileId).executeAsList()
     }
 
+    /** See [SyncRepository.applyServerDeletions]. */
+    override suspend fun applyServerDeletions(
+        routineIds: List<String>,
+        cycleIds: List<String>,
+        lastSync: Long,
+    ): ServerDeletionResult = withContext(Dispatchers.IO) {
+        if (routineIds.isEmpty() && cycleIds.isEmpty()) return@withContext ServerDeletionResult()
+
+        val deletedRoutines = mutableListOf<String>()
+        val discardedRoutineEdits = mutableListOf<String>()
+        val deletedCycles = mutableListOf<String>()
+
+        db.transaction {
+            for (serverRoutineId in routineIds.distinct()) {
+                // Match the local id and, for legacy rows, the stored serverId.
+                val localRows = (
+                    listOfNotNull(queries.selectRoutineById(serverRoutineId).executeAsOneOrNull()) +
+                        queries.selectRoutineByServerId(serverRoutineId).executeAsList()
+                    ).distinctBy { it.id }
+                for (row in localRows) {
+                    if (row.deletedAt == null && (row.updatedAt ?: 0L) > lastSync) {
+                        discardedRoutineEdits += row.id
+                    }
+                    queries.selectExercisesByRoutine(row.id).executeAsList().forEach { exercise ->
+                        queries.deletePlannedSetsByRoutineExercise(exercise.id)
+                    }
+                    queries.deleteRoutineExercises(row.id)
+                    queries.deleteSupersetsByRoutine(row.id)
+                    queries.clearCycleDayRoutineReferences(row.id)
+                    queries.deleteRoutineById(row.id)
+                    deletedRoutines += row.id
+                }
+            }
+
+            for (cycleId in cycleIds.distinct()) {
+                queries.selectTrainingCycleById(cycleId).executeAsOneOrNull() ?: continue
+                queries.deleteCycleDaysByCycle(cycleId)
+                queries.deleteCycleProgress(cycleId)
+                queries.deleteCycleProgression(cycleId)
+                queries.deleteTrainingCycle(cycleId)
+                deletedCycles += cycleId
+            }
+        }
+
+        ServerDeletionResult(
+            deletedRoutineIds = deletedRoutines,
+            deletedCycleIds = deletedCycles,
+            discardedRoutineEditIds = discardedRoutineEdits,
+        )
+    }
+
     /**
      * Phase 3.5 — Persist session-level notes from the portal pull.
      *
