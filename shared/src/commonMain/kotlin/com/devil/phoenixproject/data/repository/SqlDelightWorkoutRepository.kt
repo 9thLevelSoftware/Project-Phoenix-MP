@@ -19,7 +19,6 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
-import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -962,92 +961,6 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
             uuid = uuid,
         )
     }.asFlow().mapToList(Dispatchers.IO)
-
-    override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String, profileId: String) {
-        withContext(Dispatchers.IO) {
-            if (exerciseId.isBlank() || reps <= 0) return@withContext
-
-            val timestamp = currentTimeMillis()
-            val newVolume = weightKg * reps
-            val exercise = exerciseRepository.getExerciseById(exerciseId)
-            val exerciseName = exercise?.name ?: ""
-            val cableCount = exercise?.displayMultiplier
-
-            val combinedPhase = "COMBINED"
-
-            val defaultProfileId = profileId.ifBlank { "default" }
-
-            val currentWeightPR = queries.selectPRIncludingDeleted(
-                exerciseId,
-                mode,
-                PRType.MAX_WEIGHT.name,
-                combinedPhase,
-                profileId = defaultProfileId,
-            ).executeAsOneOrNull()
-
-            val currentVolumePR = queries.selectPRIncludingDeleted(
-                exerciseId,
-                mode,
-                PRType.MAX_VOLUME.name,
-                combinedPhase,
-                profileId = defaultProfileId,
-            ).executeAsOneOrNull()
-
-            val isNewWeightPR = currentWeightPR == null || weightKg > currentWeightPR.weight.toFloat()
-            val currentVolume = (currentVolumePR?.weight?.toFloat() ?: 0f) * (currentVolumePR?.reps?.toInt() ?: 0)
-            val isNewVolumePR = newVolume > currentVolume
-
-            if (!isNewWeightPR && !isNewVolumePR) return@withContext
-
-            val oneRepMax = OneRepMaxCalculator.estimate(weightKg, reps)
-
-            if (isNewWeightPR) {
-                queries.upsertPR(
-                    exerciseId = exerciseId,
-                    exerciseName = exerciseName,
-                    weight = weightKg.toDouble(),
-                    reps = reps.toLong(),
-                    oneRepMax = oneRepMax.toDouble(),
-                    achievedAt = timestamp,
-                    workoutMode = mode,
-                    prType = PRType.MAX_WEIGHT.name,
-                    volume = newVolume.toDouble(),
-                    phase = combinedPhase,
-                    profile_id = defaultProfileId,
-                    cable_count = cableCount?.toLong(),
-                    uuid = currentWeightPR?.uuid ?: generateUUID(),
-                )
-            }
-
-            if (isNewVolumePR && !isNewWeightPR) {
-                queries.upsertPR(
-                    exerciseId = exerciseId,
-                    exerciseName = exerciseName,
-                    weight = weightKg.toDouble(),
-                    reps = reps.toLong(),
-                    oneRepMax = oneRepMax.toDouble(),
-                    achievedAt = timestamp,
-                    workoutMode = mode,
-                    prType = PRType.MAX_VOLUME.name,
-                    volume = newVolume.toDouble(),
-                    phase = combinedPhase,
-                    profile_id = defaultProfileId,
-                    cable_count = cableCount?.toLong(),
-                    uuid = currentVolumePR?.uuid ?: generateUUID(),
-                )
-            }
-
-            // Sync 1RM to Exercise table for %-based training features
-            val currentExercise1RM = queries.selectExerciseById(exerciseId)
-                .executeAsOneOrNull()?.one_rep_max_kg?.toFloat() ?: 0f
-            if (oneRepMax > currentExercise1RM) {
-                queries.updateOneRepMax(
-                    one_rep_max_kg = oneRepMax.toDouble(),
-                    id = exerciseId,
-                )
-            }
-        }
-    }
 
     override suspend fun saveMetrics(sessionId: String, metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>) {
         withContext(Dispatchers.IO) {
