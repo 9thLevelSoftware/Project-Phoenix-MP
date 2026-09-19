@@ -24,7 +24,7 @@ class Issue790CycleRoutineSyncTest {
     private fun probe(applyPull: Boolean, useStandaloneMerge: Boolean = false) = runTest {
         val db = createTestDatabase()
         val q = db.phoenixDatabaseQueries
-        q.upsertRoutine(routineId, "Full Body A", "", 1L, null, 0L, 1L, "default", null)
+        q.insertRoutineIgnore(routineId, "Full Body A", "", 1L, null, 0L, 1L, "default", null)
         val local = SqlDelightTrainingCycleRepository(db)
         local.saveCycle(TrainingCycle.create(
             id = cycleId, name = "RCA fixture", days = listOf(

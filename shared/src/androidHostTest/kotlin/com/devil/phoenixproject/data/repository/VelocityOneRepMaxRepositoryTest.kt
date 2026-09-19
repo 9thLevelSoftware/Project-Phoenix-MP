@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxResult
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -10,7 +11,7 @@ import kotlinx.coroutines.test.runTest
 class VelocityOneRepMaxRepositoryTest {
 
     @Test fun `latest passing skips newer floor row and returns older usable estimate`() = runTest {
-        val repository = SqlDelightVelocityOneRepMaxRepository(createTestDatabase())
+        val repository = SqlDelightVelocityOneRepMaxRepository(createTestDatabase().apply { seedExercise("row", "Row") })
 
         repository.insert(result(100f), exerciseId = "row", computedAt = 1_000L, profileId = "default")
         repository.insert(result(1f), exerciseId = "row", computedAt = 2_000L, profileId = "default")
