@@ -2137,6 +2137,46 @@ class DataBackupManagerRoutineNameTest {
         }
     }
 
+    @Test
+    fun `backup round trip keeps each cycle's portal sync base and drops malformed ones`() = runTest {
+        val version = "2026-09-19T10:11:12.123456+00:00"
+        val q = database.phoenixDatabaseQueries
+        q.insertTrainingCycle("cycle-synced", "Synced", null, 1L, 0L, "default", null, 1L)
+        q.updateTrainingCycleServerUpdatedAt(server_updated_at = version, id = "cycle-synced")
+        q.insertTrainingCycle("cycle-local", "Local", null, 1L, 0L, "default", null, 1L)
+
+        val legacy = backupManager.exportAllData()
+        assertEquals(version, legacy.data.trainingCycles.first { it.id == "cycle-synced" }.serverUpdatedAt)
+        assertNull(legacy.data.trainingCycles.first { it.id == "cycle-local" }.serverUpdatedAt)
+        val streamingPath = backupManager.exportToCachePublic()
+        val streamingJson = File(streamingPath).readText()
+        File(streamingPath).delete()
+        assertEquals(
+            version,
+            testJson.decodeFromString<BackupData>(streamingJson).data.trainingCycles.first { it.id == "cycle-synced" }.serverUpdatedAt,
+        )
+
+        val withMalformed = legacy.copy(
+            data = legacy.data.copy(
+                trainingCycles = legacy.data.trainingCycles.map {
+                    if (it.id == "cycle-local") it.copy(serverUpdatedAt = "not-a-timestamp") else it
+                },
+            ),
+        )
+        fun storedBase(db: PhoenixDatabase, id: String) =
+            db.phoenixDatabaseQueries.selectTrainingCycleById(id).executeAsOne().server_updated_at
+
+        val legacyTarget = createTestDatabase()
+        assertTrue(TestDataBackupManager(legacyTarget).importFromJson(testJson.encodeToString(withMalformed)).isSuccess)
+        assertEquals(version, storedBase(legacyTarget, "cycle-synced"))
+        assertNull(storedBase(legacyTarget, "cycle-local"))
+
+        val streamingTarget = createTestDatabase()
+        assertTrue(TestDataBackupManager(streamingTarget).importFromStringStreaming(streamingJson).isSuccess)
+        assertEquals(version, storedBase(streamingTarget, "cycle-synced"))
+        assertNull(storedBase(streamingTarget, "cycle-local"))
+    }
+
     private class TestDataBackupManager(
         database: com.devil.phoenixproject.database.PhoenixDatabase,
         val profilePreferencesRepository: ProfilePreferencesRepository = SqlDelightProfilePreferencesRepository(database),

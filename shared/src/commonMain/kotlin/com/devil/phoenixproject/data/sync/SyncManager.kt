@@ -906,7 +906,9 @@ class SyncManager(
             }
         }
 
-        // 4b. Gather training cycles (all — no delta, lacks updatedAt), profile-scoped.
+        // 4b. Gather training cycles (all, profile-scoped — still pushed in full, no delta).
+        // Each carries its stored server_updated_at as baseUpdatedAt for the portal's
+        // structure merge.
         // Cycle days may still point at local-only template routines that are hidden from
         // the main routines list via the "cycle_routine_<uuid>" prefix. Null those
         // references for server push so one bad local ID cannot fail the entire sync.

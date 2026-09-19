@@ -309,6 +309,67 @@ class SyncManagerTest {
     }
 
     @Test
+    fun failureToStoreCycleVersionsIsLoggedAndDoesNotFailTheSync() = runTest {
+        setupAuthenticated()
+        fakeSyncRepo.updateCycleServerVersionsError = IllegalStateException("disk full")
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                cycleVersions = mapOf("11111111-1111-4111-a111-111111111111" to "2026-09-19T10:11:12.123456+00:00"),
+            ),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess, "a committed push must not be failed by a local base write")
+        assertEquals(1, fakeApi.pullCallCount, "the pull still runs")
+    }
+
+    @Test
+    fun cancellationWhileStoringCycleVersionsPropagates() = runTest {
+        setupAuthenticated()
+        fakeSyncRepo.updateCycleServerVersionsError = kotlin.coroutines.cancellation.CancellationException("cancelled")
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                cycleVersions = mapOf("11111111-1111-4111-a111-111111111111" to "2026-09-19T10:11:12.123456+00:00"),
+            ),
+        )
+        val manager = createManager()
+
+        val thrown = runCatching { manager.sync() }.exceptionOrNull()
+
+        assertIs<kotlin.coroutines.cancellation.CancellationException>(thrown)
+        assertEquals(0, fakeApi.pullCallCount)
+    }
+
+    @Test
+    fun batchedPushStoresCycleVersionsFromTheBatchThatCarriedTheCycles() = runTest {
+        setupAuthenticated()
+        val cycleId = "11111111-1111-4111-a111-111111111111"
+        fakeSyncRepo.cyclesToReturn = listOf(
+            PortalSyncAdapter.CycleWithContext(cycle = TrainingCycle.create(id = cycleId, name = "Batched")),
+        )
+        fakeSyncRepo.workoutSessionsToReturn = (0 until SyncManager.SYNC_BATCH_SIZE + 1).map { i ->
+            makeWorkoutSession(id = "batch-session-$i", timestamp = 1_740_916_800_000L + i * 60_000L)
+        }
+        val versions = mapOf(cycleId to "2026-09-19T10:11:12.123456+00:00")
+        fakeApi.pushResultsQueue = mutableListOf(
+            Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")),
+            Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:01Z", cycleVersions = versions)),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        assertEquals(2, fakeApi.pushPayloads.size, "forced a two-batch push")
+        assertTrue(fakeApi.pushPayloads.first().cycles.isEmpty())
+        assertEquals(listOf(cycleId), fakeApi.pushPayloads.last().cycles.map { it.id })
+        assertEquals(listOf(versions), fakeSyncRepo.cycleServerVersionUpdates)
+    }
+
+    @Test
     fun pushResponseWithoutCycleVersionsLeavesStoredBasesAlone() = runTest {
         setupAuthenticated()
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))

@@ -60,6 +60,45 @@ class CycleServerVersionSyncTest {
         assertEquals(acked, pushedBase(repo))
     }
 
+    private suspend fun atomicPull(repo: SqlDelightSyncRepository, updatedAt: String?) = repo.mergeAllPullData(
+        sessions = emptyList(), routines = emptyList(), badges = emptyList(),
+        gamificationStats = null, personalRecords = emptyList(), lastSync = 0L,
+        profileId = "default", cycles = listOf(pulled(updatedAt)),
+    )
+
+    @Test
+    fun rePullOfAnExistingCycleAdvancesTheBaseOnBothMergePaths() = runTest {
+        val v2 = "2026-09-19T12:00:00.000001+00:00"
+
+        val atomic = SqlDelightSyncRepository(createTestDatabase(), FakeUserProfileRepository())
+        atomicPull(atomic, serverVersion)
+        atomicPull(atomic, v2)
+        assertEquals(v2, pushedBase(atomic))
+
+        val standalone = SqlDelightSyncRepository(createTestDatabase(), FakeUserProfileRepository())
+        standalone.mergePortalCycles(listOf(pulled(serverVersion)), "default")
+        standalone.mergePortalCycles(listOf(pulled(v2)), "default")
+        assertEquals(v2, pushedBase(standalone))
+    }
+
+    @Test
+    fun malformedServerVersionsAreNeverStored() = runTest {
+        val tooLong = "2026-09-19T10:11:12" + "0".repeat(60) + "Z"
+        val malformed = listOf("", "   ", "not-a-timestamp", "12345", tooLong)
+
+        val atomic = SqlDelightSyncRepository(createTestDatabase(), FakeUserProfileRepository())
+        atomicPull(atomic, serverVersion)
+        malformed.forEach { atomicPull(atomic, it) }
+        assertEquals(serverVersion, pushedBase(atomic), "malformed pull keeps the previous base")
+
+        val standalone = SqlDelightSyncRepository(createTestDatabase(), FakeUserProfileRepository())
+        standalone.mergePortalCycles(listOf(pulled("garbage")), "default")
+        assertNull(pushedBase(standalone), "a first malformed pull stores nothing")
+        standalone.mergePortalCycles(listOf(pulled(serverVersion)), "default")
+        malformed.forEach { standalone.updateCycleServerVersions(mapOf(cycleId to it)) }
+        assertEquals(serverVersion, pushedBase(standalone), "malformed push ack keeps the previous base")
+    }
+
     @Test
     fun localOnlyCyclePushesNullBase() = runTest {
         val db = createTestDatabase()

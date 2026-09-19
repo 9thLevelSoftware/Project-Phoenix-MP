@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
 import com.devil.phoenixproject.data.sync.IdMappings
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalPullAdapter
+import com.devil.phoenixproject.data.sync.PortalSyncAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
@@ -654,13 +655,15 @@ class SqlDelightSyncRepository(
      * we ensure exactly one cycle is marked active (the most recently activated from portal,
      * or existing local active cycle if no portal cycles are active).
      *
-     * Future enhancement: Add updated_at column for timestamp-based LWW (see CONFLICT-RESOLUTION-DESIGN.md).
+     * Each cycle's portal `updatedAt` is stored verbatim in server_updated_at and sent back
+     * as baseUpdatedAt on push, so the portal keeps structure edits made after that version.
      */
     override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
                 // Track which portal cycle is active (should be at most one)
                 var portalActiveCycleId: String? = null
+                var invalidCycleVersions = 0
 
                 for (portalCycle in cycles) {
                     // Track the active cycle from portal (last one wins if multiple marked active)
@@ -702,9 +705,15 @@ class SqlDelightSyncRepository(
                         )
                     }
                     // Remember the portal's version verbatim (sent back as baseUpdatedAt).
-                    // Keep the stored base when an older portal omits updatedAt.
-                    portalCycle.updatedAt?.let {
-                        queries.updateTrainingCycleServerUpdatedAt(server_updated_at = it, id = portalCycle.id)
+                    // Keep the stored base when an older portal omits updatedAt or sends
+                    // a malformed one.
+                    portalCycle.updatedAt?.let { raw ->
+                        val version = PortalSyncAdapter.validCycleServerVersion(raw)
+                        if (version != null) {
+                            queries.updateTrainingCycleServerUpdatedAt(server_updated_at = version, id = portalCycle.id)
+                        } else {
+                            invalidCycleVersions++
+                        }
                     }
 
                     // Bulk delete existing days, reinsert from portal (same pattern as edge function)
@@ -747,6 +756,10 @@ class SqlDelightSyncRepository(
                             Logger.w(e) { "Failed to parse progressionSettings for cycle ${portalCycle.id}" }
                         }
                     }
+                }
+
+                if (invalidCycleVersions > 0) {
+                    Logger.w { "Ignored $invalidCycleVersions malformed cycle updatedAt value(s) from pull; kept stored bases" }
                 }
 
                 // SINGLE-ACTIVE ENFORCEMENT: Ensure exactly one cycle is active after merge
@@ -1136,9 +1149,18 @@ class SqlDelightSyncRepository(
 
     override suspend fun updateCycleServerVersions(versions: Map<String, String>) {
         if (versions.isEmpty()) return
+        val valid = versions.mapNotNull { (cycleId, raw) ->
+            PortalSyncAdapter.validCycleServerVersion(raw)?.let { cycleId to it }
+        }
+        val invalid = versions.size - valid.size
+        if (invalid > 0) {
+            // Keep the previous base for these; log only the count.
+            Logger.w { "Ignored $invalid malformed cycle server version(s) from push response" }
+        }
+        if (valid.isEmpty()) return
         withContext(Dispatchers.IO) {
             db.transaction {
-                versions.forEach { (cycleId, serverUpdatedAt) ->
+                valid.forEach { (cycleId, serverUpdatedAt) ->
                     queries.updateTrainingCycleServerUpdatedAt(server_updated_at = serverUpdatedAt, id = cycleId)
                 }
             }
@@ -1740,6 +1762,7 @@ class SqlDelightSyncRepository(
 
                 // 3. Cycles — SERVER WINS with single-active enforcement
                 var portalActiveCycleId: String? = null
+                var invalidCycleVersions = 0
                 for (portalCycle in cycles) {
                     if (portalCycle.status == "active") {
                         portalActiveCycleId = portalCycle.id
@@ -1777,9 +1800,15 @@ class SqlDelightSyncRepository(
                         )
                     }
                     // Remember the portal's version verbatim (sent back as baseUpdatedAt).
-                    // Keep the stored base when an older portal omits updatedAt.
-                    portalCycle.updatedAt?.let {
-                        queries.updateTrainingCycleServerUpdatedAt(server_updated_at = it, id = portalCycle.id)
+                    // Keep the stored base when an older portal omits updatedAt or sends
+                    // a malformed one.
+                    portalCycle.updatedAt?.let { raw ->
+                        val version = PortalSyncAdapter.validCycleServerVersion(raw)
+                        if (version != null) {
+                            queries.updateTrainingCycleServerUpdatedAt(server_updated_at = version, id = portalCycle.id)
+                        } else {
+                            invalidCycleVersions++
+                        }
                     }
 
                     queries.deleteCycleDaysByCycle(portalCycle.id)
@@ -1819,6 +1848,10 @@ class SqlDelightSyncRepository(
                             Logger.w(e) { "Failed to parse progressionSettings for cycle ${portalCycle.id}" }
                         }
                     }
+                }
+
+                if (invalidCycleVersions > 0) {
+                    Logger.w { "Ignored $invalidCycleVersions malformed cycle updatedAt value(s) from pull; kept stored bases" }
                 }
 
                 // Single-active enforcement for cycles
