@@ -32,6 +32,8 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.UserProfilePreferences
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestSchema
+import com.devil.phoenixproject.testutil.seedExercise
 import com.russhwolf.settings.MapSettings
 import java.io.File
 import kotlin.test.assertEquals
@@ -1170,6 +1172,7 @@ class DataBackupManagerRoutineNameTest {
     }
 
     private fun buildRoutine(routineId: String, routineName: String, exerciseId: String, exerciseName: String): Routine {
+        database.seedExercise(exerciseId, exerciseName)
         val exercise = Exercise(
             id = exerciseId,
             name = exerciseName,
@@ -1785,6 +1788,8 @@ class DataBackupManagerRoutineNameTest {
             30L,
         )
         val sourceWorkoutRepository = SqlDelightWorkoutRepository(source.database, FakeExerciseRepository())
+        // Same catalog exercise on both devices (routine exercises reference it by FK).
+        source.database.seedExercise("exercise-rack-backup", "Weighted Pull Up")
         sourceWorkoutRepository.saveRoutine(
             buildRoutine(
                 routineId = "routine-rack-backup",
@@ -1802,6 +1807,7 @@ class DataBackupManagerRoutineNameTest {
 
         val backupJson = source.manager.exportToJson()
         val target = profileFixture()
+        target.database.seedExercise("exercise-rack-backup", "Weighted Pull Up")
 
         val importResult = target.manager.importFromJson(backupJson)
 
@@ -1843,6 +1849,7 @@ class DataBackupManagerRoutineNameTest {
 
         val backupJson = sourceManager.exportToJson()
         val targetDatabase = createTestDatabase()
+        targetDatabase.seedExercise("exercise-scaling-backup", "Bench Press") // catalog row present on both devices
         val targetManager = TestDataBackupManager(targetDatabase)
 
         val importResult = targetManager.importFromJson(backupJson)
@@ -1883,7 +1890,7 @@ class DataBackupManagerRoutineNameTest {
         preferenceDecorator: (ProfilePreferencesRepository) -> ProfilePreferencesRepository = { it },
         reconcileFailure: Throwable? = null,
     ): PreferenceFixture {
-        PhoenixDatabase.Schema.create(driver)
+        createTestSchema(driver)
         val fixtureDatabase = PhoenixDatabase(driver)
         val realPreferences = SqlDelightProfilePreferencesRepository(fixtureDatabase)
         val effectivePreferences = preferenceDecorator(realPreferences)

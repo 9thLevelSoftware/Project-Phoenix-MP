@@ -13,6 +13,7 @@ import com.devil.phoenixproject.domain.model.UserProfilePreferences
 import com.devil.phoenixproject.domain.model.VbtPreferences
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
+import com.devil.phoenixproject.testutil.createTestDriver
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
@@ -43,8 +44,7 @@ class SqlDelightProfilePreferenceSyncRepositoryTest {
 
     @Before
     fun setup() {
-        driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        PhoenixDatabase.Schema.create(driver)
+        driver = createTestDriver()
         database = PhoenixDatabase(driver)
         foundationRepository = SqlDelightProfilePreferencesRepository(database)
         codec = ProfilePreferenceSyncCodec()

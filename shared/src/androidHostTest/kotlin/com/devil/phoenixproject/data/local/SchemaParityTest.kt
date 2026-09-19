@@ -20,6 +20,9 @@ import org.junit.Test
  * 2. Every intermediate version must upgrade cleanly to current with all
  *    manifest columns and indexes present after reconciliation.
  */
+// Raw JdbcSqliteDriver with foreign keys OFF on purpose (unlike createTestDriver()): production
+// runs migrations/reconciliation before it turns FKs on (Android onUpgrade before onOpen, iOS
+// after reconcileFullSchema), so schema tests must model that FK-off window.
 class SchemaParityTest {
 
     // ==================== TEST 1 ====================

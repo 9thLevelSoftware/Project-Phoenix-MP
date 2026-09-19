@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.util
 
 import app.cash.sqldelight.db.SqlDriver
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.SqlDelightGamificationRepository
@@ -26,6 +25,8 @@ import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
+import com.devil.phoenixproject.testutil.seedExercise
 import com.russhwolf.settings.MapSettings
 import java.io.File
 import kotlin.test.assertEquals
@@ -977,8 +978,7 @@ class StreamingImportRoundTripTest {
         preferenceDecorator: (ProfilePreferencesRepository) -> ProfilePreferencesRepository = { it },
         reconciliationFailure: Throwable? = null,
     ): PreferenceFixture {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        PhoenixDatabase.Schema.create(driver)
+        val driver = createTestDriver()
         val database = PhoenixDatabase(driver)
         val preferences = preferenceDecorator(SqlDelightProfilePreferencesRepository(database))
         val safetyStore = SettingsProfileLocalSafetyStore(MapSettings())
@@ -1229,6 +1229,7 @@ class StreamingImportRoundTripTest {
         )
 
         // Insert a routine with exercises
+        originalDb.seedExercise("rt-exercise-bench", "Bench Press")
         val exercise = Exercise(
             id = "rt-exercise-bench",
             name = "Bench Press",
@@ -1289,6 +1290,7 @@ class StreamingImportRoundTripTest {
         val freshFixture = preferenceFixture()
         val freshDb = freshFixture.database
         val freshManager = freshFixture.manager
+        freshDb.seedExercise("rt-exercise-bench", "Bench Press") // catalog row present on both devices
 
         val source = StringBackupStreamSource(exportedJson)
         source.open()

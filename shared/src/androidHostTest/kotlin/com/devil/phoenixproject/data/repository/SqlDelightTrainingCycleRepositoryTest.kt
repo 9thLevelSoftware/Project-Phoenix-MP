@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
@@ -245,6 +246,7 @@ class SqlDelightTrainingCycleRepositoryTest {
     }
 
     private fun insertRoutineExercise(id: String, routineId: String, name: String) {
+        database.seedExercise("bench", "Bench Press")
         database.phoenixDatabaseQueries.insertRoutineExercise(
             id = id,
             routineId = routineId,

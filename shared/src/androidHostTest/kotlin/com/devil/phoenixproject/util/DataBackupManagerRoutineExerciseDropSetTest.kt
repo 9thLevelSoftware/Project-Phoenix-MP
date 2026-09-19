@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
@@ -30,6 +31,8 @@ class DataBackupManagerRoutineExerciseDropSetTest {
 
     @Test
     fun exportImportRoundTripPreservesDropSetConfiguration() = runTest {
+        database.seedExercise("bench", "Bench Press")
+        database.seedExercise("row", "Row", muscleGroup = "Back")
         workoutRepository.saveRoutine(
             Routine(
                 id = "routine-drop",

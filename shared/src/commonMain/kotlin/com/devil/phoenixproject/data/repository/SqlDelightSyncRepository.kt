@@ -14,6 +14,8 @@ import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.database.RoutineExercise as RoutineExerciseRow
+import com.devil.phoenixproject.database.Superset as SupersetRow
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleProgression
@@ -413,16 +415,29 @@ class SqlDelightSyncRepository(
                     // Preserve local usage stats that the server doesn't track
                     val existing = queries.selectRoutineById(localId).executeAsOneOrNull()
 
-                    queries.upsertRoutine(
-                        id = localId,
+                    val updatedAt = currentTimeMillis()
+                    val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
+                    queries.updateRoutineFields(
                         name = dto.name,
                         description = dto.description,
                         createdAt = dto.createdAt,
                         lastUsed = existing?.lastUsed,
                         useCount = existing?.useCount ?: 0L,
-                        updatedAt = currentTimeMillis(),
-                        profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
+                        updatedAt = updatedAt,
+                        profile_id = profileId,
                         groupId = existing?.groupId,
+                        id = localId,
+                    )
+                    queries.insertRoutineIgnore(
+                        id = localId,
+                        name = dto.name,
+                        description = dto.description,
+                        createdAt = dto.createdAt,
+                        lastUsed = null,
+                        useCount = 0L,
+                        updatedAt = updatedAt,
+                        profile_id = profileId,
+                        groupId = null,
                     )
 
                     // Update sync fields
@@ -577,63 +592,7 @@ class SqlDelightSyncRepository(
         withContext(Dispatchers.IO) {
             db.transaction {
                 for (portalRoutine in routines) {
-                    // Check if routine exists locally
-                    val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
-
-                    if (existing != null) {
-                        // TIMESTAMP LWW: Local version is newer if modified after lastSync
-                        val localUpdatedAt = existing.updatedAt ?: 0L
-                        if (localUpdatedAt > lastSync) {
-                            // Local version is newer — skip this portal routine (local wins)
-                            Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer ($localUpdatedAt > $lastSync)" }
-                            continue
-                        }
-                    }
-
-                    // Either doesn't exist locally or portal version is newer — upsert
-                    queries.upsertRoutine(
-                        id = portalRoutine.id,
-                        name = portalRoutine.name,
-                        description = portalRoutine.description,
-                        createdAt = existing?.createdAt ?: currentTimeMillis(),
-                        lastUsed = existing?.lastUsed,
-                        useCount = existing?.useCount ?: 0L,
-                        updatedAt = portalRoutine.updatedAt ?: currentTimeMillis(),
-                        profile_id = existing?.profile_id ?: profileId,
-                        groupId = existing?.groupId,
-                    )
-
-                    // SAFETY GUARD: Only replace exercises if the portal actually sent exercises.
-                    // An empty exercises list means the payload is incomplete (server omission,
-                    // partial response, or deserialization issue). Deleting local exercises
-                    // when we have nothing to replace them with causes permanent data loss.
-                    if (portalRoutine.exercises.isNotEmpty()) {
-                        val localExerciseRows = queries
-                            .selectExercisesByRoutine(portalRoutine.id)
-                            .executeAsList()
-                        val localRackDefaultsByExerciseId = localExerciseRows
-                            .associate { it.id to it.defaultRackItemIds }
-                        val localRackOverridesByExerciseId = localExerciseRows
-                            .associate { it.id to it.rackBehaviorOverrides }
-                        val localScalingBasisByExerciseId = localExerciseRows
-                            .associate { it.id to it.scalingBasis }
-                        val localDropSetByExerciseId = localExerciseRows
-                            .associate { it.id to (it.dropSetEnabled to it.dropSetMinWeightKg) }
-
-                        mergePortalExercisesForRoutine(
-                            routineId = portalRoutine.id,
-                            portalExercises = portalRoutine.exercises,
-                            localRackDefaultsByExerciseId = localRackDefaultsByExerciseId,
-                            localRackOverridesByExerciseId = localRackOverridesByExerciseId,
-                            localScalingBasisByExerciseId = localScalingBasisByExerciseId,
-                            localDropSetByExerciseId = localDropSetByExerciseId,
-                        )
-                    } else {
-                        Logger.w("SyncRepository") {
-                            "Skipping exercise merge for routine '${portalRoutine.name}' (${portalRoutine.id}): " +
-                                "portal sent empty exercises list (exerciseCount=${portalRoutine.exerciseCount})"
-                        }
-                    }
+                    mergePortalRoutine(portalRoutine, lastSync, profileId)
                 }
             }
             Logger.d { "Merged ${routines.size} portal routines with exercises" }
@@ -1674,51 +1633,7 @@ class SqlDelightSyncRepository(
 
                 // 2. Routines — TIMESTAMP LWW (local wins if modified after lastSync)
                 for (portalRoutine in routines) {
-                    val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
-
-                    if (existing != null) {
-                        val localUpdatedAt = existing.updatedAt ?: 0L
-                        if (localUpdatedAt > lastSync) {
-                            continue // Local version is newer
-                        }
-                    }
-
-                    // Upsert routine
-                    queries.upsertRoutine(
-                        id = portalRoutine.id,
-                        name = portalRoutine.name,
-                        description = portalRoutine.description,
-                        createdAt = existing?.createdAt ?: currentTimeMillis(),
-                        lastUsed = existing?.lastUsed,
-                        useCount = existing?.useCount ?: 0L,
-                        updatedAt = portalRoutine.updatedAt ?: currentTimeMillis(),
-                        profile_id = existing?.profile_id ?: profileId,
-                        groupId = existing?.groupId,
-                    )
-
-                    // Replace exercises if portal provided them (non-empty list)
-                    if (portalRoutine.exercises.isNotEmpty()) {
-                        val localExerciseRows2 = queries
-                            .selectExercisesByRoutine(portalRoutine.id)
-                            .executeAsList()
-                        val localRackDefaultsByExerciseId = localExerciseRows2
-                            .associate { it.id to it.defaultRackItemIds }
-                        val localRackOverridesByExerciseId = localExerciseRows2
-                            .associate { it.id to it.rackBehaviorOverrides }
-                        val localScalingBasisByExerciseId = localExerciseRows2
-                            .associate { it.id to it.scalingBasis }
-                        val localDropSetByExerciseId = localExerciseRows2
-                            .associate { it.id to (it.dropSetEnabled to it.dropSetMinWeightKg) }
-
-                        mergePortalExercisesForRoutine(
-                            routineId = portalRoutine.id,
-                            portalExercises = portalRoutine.exercises,
-                            localRackDefaultsByExerciseId = localRackDefaultsByExerciseId,
-                            localRackOverridesByExerciseId = localRackOverridesByExerciseId,
-                            localScalingBasisByExerciseId = localScalingBasisByExerciseId,
-                            localDropSetByExerciseId = localDropSetByExerciseId,
-                        )
-                    }
+                    mergePortalRoutine(portalRoutine, lastSync, profileId)
                 }
 
                 // 3. Cycles — SERVER WINS with single-active enforcement
@@ -2206,26 +2121,86 @@ class SqlDelightSyncRepository(
     )
 
     /**
-     * Replace a routine's supersets and exercises with the version received from the portal.
-     * Deletes existing rows, recreates Superset entities (FK-first), then inserts each
-     * exercise with all field mappings applied.
+     * Merge one portal routine (pull path) with TIMESTAMP LWW, shared by [mergePortalRoutines]
+     * and [mergeAllPullData]. Must be called inside a [db.transaction] block.
      *
-     * Must be called inside a [db.transaction] block. The caller is responsible for reading
-     * local rack/scaling rows BEFORE calling this function, because those rows are deleted
-     * as part of the replacement.
+     * - A locally soft-deleted routine stays deleted (its tombstone may not be pushed yet).
+     * - A routine edited locally after [lastSync] wins over the portal copy.
+     * - The routine row is updated in place (never REPLACEd), so its exercises, supersets and
+     *   CycleDay links are not cascade-deleted.
+     * - SAFETY GUARD: an empty portal exercise list is treated as an incomplete payload and
+     *   leaves the local exercises alone.
+     */
+    private fun mergePortalRoutine(portalRoutine: PullRoutineDto, lastSync: Long, profileId: String) {
+        val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
+        if (existing != null) {
+            if (existing.deletedAt != null) {
+                Logger.d { "Routine '${portalRoutine.name}' skipped: deleted locally" }
+                return
+            }
+            val localUpdatedAt = existing.updatedAt ?: 0L
+            if (localUpdatedAt > lastSync) {
+                Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer ($localUpdatedAt > $lastSync)" }
+                return
+            }
+        }
+
+        // Read local structure before any write.
+        val localExercises = queries.selectExercisesByRoutine(portalRoutine.id).executeAsList()
+        val localSupersets = queries.selectSupersetsByRoutine(portalRoutine.id).executeAsList()
+
+        val updatedAt = portalRoutine.updatedAt ?: currentTimeMillis()
+        if (existing == null) {
+            queries.insertRoutineIgnore(
+                id = portalRoutine.id,
+                name = portalRoutine.name,
+                description = portalRoutine.description,
+                createdAt = currentTimeMillis(),
+                lastUsed = null,
+                useCount = 0L,
+                updatedAt = updatedAt,
+                profile_id = profileId,
+                groupId = null,
+            )
+        } else {
+            queries.updateRoutineById(
+                name = portalRoutine.name,
+                description = portalRoutine.description,
+                updatedAt = updatedAt,
+                id = portalRoutine.id,
+            )
+        }
+
+        if (portalRoutine.exercises.isNotEmpty()) {
+            mergePortalExercisesForRoutine(portalRoutine.id, portalRoutine.exercises, localExercises, localSupersets)
+        } else {
+            Logger.w("SyncRepository") {
+                "Skipping exercise merge for routine '${portalRoutine.name}' (${portalRoutine.id}): " +
+                    "portal sent empty exercises list (exerciseCount=${portalRoutine.exerciseCount})"
+            }
+        }
+    }
+
+    /**
+     * Bring a routine's supersets and exercises in line with the portal copy, diffing by id:
+     * matched rows are UPDATEd in place, new rows inserted, rows the portal no longer has deleted.
+     * Columns the wire does not carry (progressionKg, duration, prTypeForScaling,
+     * setWeightsPercentOfPR, scalingBasis, defaultRackItemIds, cableConfig, omitted drop-set
+     * config, superset name/rest) keep their local values on matched rows.
+     *
+     * Must be called inside a [db.transaction] block, with [localExercises]/[localSupersets]
+     * read before any write for this routine.
      */
     private fun mergePortalExercisesForRoutine(
         routineId: String,
         portalExercises: List<PullRoutineExerciseDto>,
-        localRackDefaultsByExerciseId: Map<String, String?>,
-        localRackOverridesByExerciseId: Map<String, String?>,
-        localScalingBasisByExerciseId: Map<String, String?>,
-        localDropSetByExerciseId: Map<String, Pair<Long, Double?>>,
+        localExercises: List<RoutineExerciseRow>,
+        localSupersets: List<SupersetRow>,
     ) {
-        queries.deleteRoutineExercises(routineId)
-        queries.deleteSupersetsByRoutine(routineId)
+        val localExercisesById = localExercises.associateBy { it.id }
+        val localSupersetsById = localSupersets.associateBy { it.id }
 
-        // Create Superset rows BEFORE inserting exercises (FK constraint).
+        // Create/update Superset rows BEFORE writing exercises (FK constraint).
         val supersetGroups = portalExercises
             .filter { it.supersetId != null }
             .groupBy { it.supersetId!! }
@@ -2246,14 +2221,26 @@ class SqlDelightSyncRepository(
             val colorIndex = colorStr?.let { colorNameToIndex[it] }
                 ?: colorStr?.toLongOrNull()
                 ?: supersetOrderIdx.toLong()
-            queries.insertSupersetIgnore(
-                id = ssId,
-                routineId = routineId,
-                name = "Superset ${supersetOrderIdx + 1}",
-                colorIndex = colorIndex,
-                restBetweenSeconds = 10L,
-                orderIndex = supersetOrderIdx.toLong(),
-            )
+            val localSuperset = localSupersetsById[ssId]
+            if (localSuperset != null) {
+                // Name and rest are not on the wire: keep the local values.
+                queries.updateSuperset(
+                    name = localSuperset.name,
+                    colorIndex = colorIndex,
+                    restBetweenSeconds = localSuperset.restBetweenSeconds,
+                    orderIndex = supersetOrderIdx.toLong(),
+                    id = ssId,
+                )
+            } else {
+                queries.insertSupersetIgnore(
+                    id = ssId,
+                    routineId = routineId,
+                    name = "Superset ${supersetOrderIdx + 1}",
+                    colorIndex = colorIndex,
+                    restBetweenSeconds = 10L,
+                    orderIndex = supersetOrderIdx.toLong(),
+                )
+            }
             supersetOrderIdx++
         }
 
@@ -2313,61 +2300,114 @@ class SqlDelightSyncRepository(
             // because reconstructed snapshot Exercises derived isBodyweight from it).
             val resolvedEquipment = catalogExercise?.equipment ?: ""
 
-            queries.insertRoutineExercise(
-                id = exercise.id,
-                routineId = routineId,
-                exerciseName = exercise.name,
-                exerciseMuscleGroup = exercise.muscleGroup,
-                exerciseEquipment = resolvedEquipment,
-                exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
-                exerciseId = catalogExercise?.id,
-                cableConfig = "DOUBLE",
-                orderIndex = exercise.orderIndex.toLong(),
-                setReps = setReps,
-                weightPerCableKg = exercise.weight.toDouble(),
-                setWeights = setWeights,
-                mode = mobileMode,
-                eccentricLoad = PortalPullAdapter.parseEccentricLoad(exercise.eccentricLoad),
-                echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
-                progressionKg = 0.0,
-                restSeconds = exercise.restSeconds.toLong(),
-                duration = null,
-                setRestSeconds = setRestSeconds,
-                perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
-                isAMRAP = if (exercise.isAmrap) 1L else 0L,
-                supersetId = exercise.supersetId,
-                orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
-                usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
-                weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
-                prTypeForScaling = "MAX_WEIGHT",
-                setWeightsPercentOfPR = null,
-                stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
-                stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
-                repCountTiming = exercise.repCountTiming ?: "TOP",
-                setEchoLevels = setEchoLevels,
-                warmupSets = exercise.warmupSets ?: "",
-                defaultRackItemIds = localRackDefaultsByExerciseId[exercise.id] ?: "[]",
-                rackBehaviorOverrides = exercise.rackBehaviorOverrides
-                    ?: localRackOverridesByExerciseId[exercise.id]
-                    ?: "{}",
-                scalingBasis = localScalingBasisByExerciseId[exercise.id],
-                // Explicit portal flag when present; otherwise inherit the catalog's
-                // stored classification (e.g. Squat = cable despite empty equipment).
-                // Never coerce an omitted field to cable, and never leave a known
-                // catalog flag behind — the push snapshot builder reconstructs the
-                // Exercise from this row alone, without a catalog lookup (#635).
-                isBodyweight = exercise.isBodyweight?.let { if (it) 1L else 0L }
-                    ?: catalogExercise?.isBodyweight,
-                dropSetEnabled = when {
-                    exercise.dropSetEnabled != null -> if (exercise.dropSetEnabled) 1L else 0L
-                    else -> localDropSetByExerciseId[exercise.id]?.first ?: 0L
-                },
-                dropSetMinWeightKg = when {
-                    exercise.dropSetEnabled != null -> exercise.dropSetMinWeightKg?.toDouble()
-                    else -> localDropSetByExerciseId[exercise.id]?.second
-                },
-            )
+            val local = localExercisesById[exercise.id]
+            // Explicit portal flag when present; otherwise inherit the catalog's
+            // stored classification (e.g. Squat = cable despite empty equipment).
+            // Never coerce an omitted field to cable, and never leave a known
+            // catalog flag behind — the push snapshot builder reconstructs the
+            // Exercise from this row alone, without a catalog lookup (#635).
+            val isBodyweight = exercise.isBodyweight?.let { if (it) 1L else 0L }
+                ?: catalogExercise?.isBodyweight
+            val rackBehaviorOverrides = exercise.rackBehaviorOverrides
+                ?: local?.rackBehaviorOverrides
+                ?: "{}"
+            val dropSetEnabled = when {
+                exercise.dropSetEnabled != null -> if (exercise.dropSetEnabled) 1L else 0L
+                else -> local?.dropSetEnabled ?: 0L
+            }
+            val dropSetMinWeightKg = when {
+                exercise.dropSetEnabled != null -> exercise.dropSetMinWeightKg?.toDouble()
+                else -> local?.dropSetMinWeightKg
+            }
+
+            if (local != null) {
+                queries.updateRoutineExercise(
+                    exerciseName = exercise.name,
+                    exerciseMuscleGroup = exercise.muscleGroup,
+                    exerciseEquipment = resolvedEquipment,
+                    exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
+                    exerciseId = catalogExercise?.id,
+                    cableConfig = local.cableConfig,
+                    orderIndex = exercise.orderIndex.toLong(),
+                    setReps = setReps,
+                    weightPerCableKg = exercise.weight.toDouble(),
+                    setWeights = setWeights,
+                    mode = mobileMode,
+                    eccentricLoad = PortalPullAdapter.parseEccentricLoad(exercise.eccentricLoad),
+                    echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
+                    progressionKg = local.progressionKg,
+                    restSeconds = exercise.restSeconds.toLong(),
+                    duration = local.duration,
+                    setRestSeconds = setRestSeconds,
+                    perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
+                    isAMRAP = if (exercise.isAmrap) 1L else 0L,
+                    supersetId = exercise.supersetId,
+                    orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
+                    usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
+                    weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
+                    prTypeForScaling = local.prTypeForScaling,
+                    setWeightsPercentOfPR = local.setWeightsPercentOfPR,
+                    stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
+                    stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
+                    repCountTiming = exercise.repCountTiming ?: "TOP",
+                    setEchoLevels = setEchoLevels,
+                    warmupSets = exercise.warmupSets ?: "",
+                    defaultRackItemIds = local.defaultRackItemIds,
+                    rackBehaviorOverrides = rackBehaviorOverrides,
+                    scalingBasis = local.scalingBasis,
+                    isBodyweight = isBodyweight,
+                    dropSetEnabled = dropSetEnabled,
+                    dropSetMinWeightKg = dropSetMinWeightKg,
+                    id = exercise.id,
+                )
+            } else {
+                queries.insertRoutineExercise(
+                    id = exercise.id,
+                    routineId = routineId,
+                    exerciseName = exercise.name,
+                    exerciseMuscleGroup = exercise.muscleGroup,
+                    exerciseEquipment = resolvedEquipment,
+                    exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
+                    exerciseId = catalogExercise?.id,
+                    cableConfig = "DOUBLE",
+                    orderIndex = exercise.orderIndex.toLong(),
+                    setReps = setReps,
+                    weightPerCableKg = exercise.weight.toDouble(),
+                    setWeights = setWeights,
+                    mode = mobileMode,
+                    eccentricLoad = PortalPullAdapter.parseEccentricLoad(exercise.eccentricLoad),
+                    echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
+                    progressionKg = 0.0,
+                    restSeconds = exercise.restSeconds.toLong(),
+                    duration = null,
+                    setRestSeconds = setRestSeconds,
+                    perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
+                    isAMRAP = if (exercise.isAmrap) 1L else 0L,
+                    supersetId = exercise.supersetId,
+                    orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
+                    usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
+                    weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
+                    prTypeForScaling = "MAX_WEIGHT",
+                    setWeightsPercentOfPR = null,
+                    stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
+                    stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
+                    repCountTiming = exercise.repCountTiming ?: "TOP",
+                    setEchoLevels = setEchoLevels,
+                    warmupSets = exercise.warmupSets ?: "",
+                    defaultRackItemIds = "[]",
+                    rackBehaviorOverrides = rackBehaviorOverrides,
+                    scalingBasis = null,
+                    isBodyweight = isBodyweight,
+                    dropSetEnabled = dropSetEnabled,
+                    dropSetMinWeightKg = dropSetMinWeightKg,
+                )
+            }
         }
+
+        // Drop what the portal no longer has (exercises first; their superset refs are SET NULL anyway).
+        val portalExerciseIds = portalExercises.mapTo(HashSet()) { it.id }
+        localExercises.filter { it.id !in portalExerciseIds }.forEach { queries.deleteRoutineExerciseById(it.id) }
+        localSupersets.filter { it.id !in supersetGroups.keys }.forEach { queries.deleteSuperset(it.id) }
     }
 
     override suspend fun mergeSessionNotes(
