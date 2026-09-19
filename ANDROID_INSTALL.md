@@ -9,22 +9,19 @@ This guide explains how to install Project Phoenix on your Android device.
 
 ---
 
-## Join the Beta
+## Install from Google Play (Recommended)
 
-The app is currently in closed beta. To get access:
-
-1. **[Sign up for the beta](https://dasblueyeddevil.github.io/Project-Phoenix-MP/#beta-signup)** with your email address
-2. You'll receive an email with download instructions once approved
+Install **[Project Phoenix from Google Play](https://play.google.com/store/apps/details?id=com.devil.phoenixproject)** (currently in open testing on Play; anyone can install it from the listing). Play installs updates automatically.
 
 ---
 
-## Installing the APK
+## Installing the APK (Alternative)
 
-Once you have access to the beta:
+If you can't use Google Play, you can install the APK from GitHub instead:
 
 ### Step 1: Download the APK
 
-1. Download the APK file from the link provided in your beta invitation email
+1. Download `ProjectPhoenix-vX.Y.Z.apk` from the [latest GitHub release](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/latest)
 2. You may see a warning about downloading APK files - tap **Download anyway**
 
 ### Step 2: Enable Installation from Unknown Sources
@@ -70,8 +67,10 @@ When you first launch the app, you'll be asked to grant permissions:
 
 ## Updating the App
 
-When a new version is released:
-1. Download the new APK from your beta access link
+If you installed from Google Play, updates arrive through Play.
+
+If you installed the APK:
+1. Download the new APK from the [latest GitHub release](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/latest)
 2. Open and install it - Android will update the existing app
 
 ---
@@ -108,10 +107,10 @@ When a new version is released:
 
 ## Data & Privacy
 
-- All workout data is stored **locally on your device**
+- Workout data stays on your device unless you turn on Cloud Sync or an integration
 - Location permission is only used for Bluetooth scanning (Android requirement) - we don't track your location
-- No data is sent to any server
-- Uninstalling the app will delete your workout history
+- Uninstalling the app will delete your workout history unless you have backed it up or synced it
+- For what is stored on the device and what is sent when you turn on optional features such as Cloud Sync, see the [Privacy Policy](https://9thlevelsoftware.github.io/Project-Phoenix-MP/privacy-policy.html)
 
 ### Backup Your Data
 
@@ -125,11 +124,8 @@ The app includes a built-in backup feature:
 
 ## FAQ
 
-**Q: Will there be a Play Store release?**
-A: Yes, we plan to release on Google Play once the app exits beta.
-
 **Q: Is it safe to install APKs?**
-A: APKs from trusted sources are safe. Our releases are built from the open-source code in this repository. You can verify or build it yourself.
+A: APKs from trusted sources are safe. Our releases are built from the source code in this repository, which is published under a source-available [proprietary license](LICENSE). You can review the code or build it yourself.
 
 **Q: Will this work on my tablet?**
 A: Yes, as long as it has Bluetooth Low Energy support and runs Android 8.0+.
