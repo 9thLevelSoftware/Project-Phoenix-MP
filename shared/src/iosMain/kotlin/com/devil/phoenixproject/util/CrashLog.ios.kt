@@ -98,7 +98,12 @@ fun installIosDiagnostics() {
 }
 
 actual fun shareCrashReport(report: String, onShown: () -> Unit) {
-    // Same presentation as IosCsvExporter.shareCSV, sharing the report as text.
+    presentShareSheet(listOf(report), onShown)
+}
+
+/** Presents the system share sheet for [items]; [onShown] runs only once it actually appeared. */
+internal fun presentShareSheet(items: List<Any>, onShown: () -> Unit) {
+    // Same presentation as IosCsvExporter.shareCSV.
     dispatch_async(dispatch_get_main_queue()) {
         val scenes = UIApplication.sharedApplication.connectedScenes
         val windowScene = scenes.firstOrNull {
@@ -113,7 +118,7 @@ actual fun shareCrashReport(report: String, onShown: () -> Unit) {
         }
 
         val activityVC = UIActivityViewController(
-            activityItems = listOf(report),
+            activityItems = items,
             applicationActivities = null,
         )
 

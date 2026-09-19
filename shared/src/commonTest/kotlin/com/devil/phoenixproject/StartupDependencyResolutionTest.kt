@@ -13,7 +13,7 @@ import org.koin.dsl.module
 
 class StartupDependencyResolutionTest {
     @Test
-    fun dualDatabaseFailureDisablesAutomaticRecovery() {
+    fun dualDatabaseFailureOffersExportSupportAndRetryButNoAutomaticRecovery() {
         val result = resolveStartupDependencies {
             throw IllegalStateException(
                 "Koin wrapper",
@@ -27,9 +27,17 @@ class StartupDependencyResolutionTest {
 
         val failure = assertIs<StartupDependencyResolution.Failed>(result)
         assertEquals("DB_DUAL_DATABASES", failure.diagnosticCode)
-        assertFalse(failure.retryAllowed)
+        assertTrue(failure.retryAllowed)
         assertEquals(DatabaseDiagnosticReason.CANONICAL_LEGACY_TARGET.name, failure.supportCode)
         assertFalse(failure.diagnosticCode.contains("sensitive"))
+        assertEquals(
+            listOf(
+                StartupFailureAction.EXPORT_DATABASE_FILES,
+                StartupFailureAction.CONTACT_SUPPORT,
+                StartupFailureAction.RETRY,
+            ),
+            startupFailureActions(failure),
+        )
     }
 
     @Test
@@ -44,6 +52,7 @@ class StartupDependencyResolutionTest {
         val failure = assertIs<StartupDependencyResolution.Failed>(result)
         assertEquals("DB_CHECKPOINT_FAILED", failure.diagnosticCode)
         assertTrue(failure.retryAllowed)
+        assertEquals(listOf(StartupFailureAction.RETRY), startupFailureActions(failure))
     }
 
     @Test

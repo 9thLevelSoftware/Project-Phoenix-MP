@@ -73,7 +73,9 @@ internal class DatabaseFileMigrationException(
 ) : IllegalStateException(message, cause),
     StartupDiagnosticFailure {
     override val startupDiagnosticCode: String = "DB_${code.name}"
-    override val startupRetryAllowed: Boolean = code != DatabaseMigrationFailureCode.DUAL_DATABASES
+    // DUAL_DATABASES stays fail-closed (nothing is chosen or deleted automatically), but a
+    // retry is harmless: the guards throw again before any mutation while the files are unchanged.
+    override val startupRetryAllowed: Boolean = true
     override val startupDiagnosticReason: String? = diagnosticReason?.name
     override val startupPresenceSnapshot: DatabasePresenceSnapshot? = presenceSnapshot
 }

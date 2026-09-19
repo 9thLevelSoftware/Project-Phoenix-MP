@@ -859,4 +859,8 @@
     <string name="crash_report_message">The app closed unexpectedly last time. Share the crash report? It contains technical details about the error; review it before posting publicly.</string>
     <string name="crash_report_share">Share</string>
     <string name="crash_report_dismiss">Not now</string>
+    <string name="startup_dual_databases_message">Phoenix found more than one copy of its local database and cannot safely choose between them, so nothing has been changed or deleted. Export the database files to keep a copy, then contact support with the diagnostic and support codes below. The files contain your workout history: send them privately to support@phoenix-portal.com rather than attaching them to a public issue. Retry checks again, for example after installing an update.</string>
+    <string name="startup_export_database_files">Export database files</string>
+    <string name="startup_export_failed">The database files could not be exported. Nothing was changed; you can try again.</string>
+    <string name="startup_contact_support">Contact support (GitHub Issues)</string>
 </resources>

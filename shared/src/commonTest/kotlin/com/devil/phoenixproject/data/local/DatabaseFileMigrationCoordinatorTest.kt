@@ -285,6 +285,29 @@ class DatabaseFileMigrationCoordinatorTest {
     }
 
     @Test
+    fun `retry with unchanged dual databases fails the same way without touching any file`() {
+        val allArtifacts = DatabaseArtifact.entries.toSet()
+        val operations = FakeDatabaseFileOperations(
+            artifacts = allArtifacts,
+            legacySidecarsExist = true,
+            fingerprints = allArtifacts.associateWith { fingerprint },
+        )
+        // Startup retry re-resolves Koin, which reuses the same DriverFactory coordinator.
+        val coordinator = DatabaseFileMigrationCoordinator(operations)
+        val first = assertFailsWith<DatabaseFileMigrationException> { coordinator.prepareTarget() }
+
+        val retry = assertFailsWith<DatabaseFileMigrationException> { coordinator.prepareTarget() }
+
+        assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, first.code)
+        assertEquals(first.code, retry.code)
+        assertEquals(first.startupDiagnosticCode, retry.startupDiagnosticCode)
+        assertTrue(retry.startupRetryAllowed)
+        assertEquals(allArtifacts, operations.artifacts())
+        assertTrue(operations.sidecarsExist())
+        assertEquals(List(2) { listOf("lock:start", "inspect", "lock:end") }.flatten(), operations.calls)
+    }
+
+    @Test
     fun `orphan staging blocks without deleting its only remaining artifact`() {
         val operations = FakeDatabaseFileOperations(artifacts = setOf(DatabaseArtifact.STAGING))
 
