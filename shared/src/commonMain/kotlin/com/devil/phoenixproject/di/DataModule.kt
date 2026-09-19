@@ -78,7 +78,6 @@ val dataModule = module {
             nowEpochMs = ::currentTimeMillis,
         )
     }
-    single<ProgressionRepository> { SqlDelightProgressionRepository(get()) }
     single<EquipmentRackRepository> {
         ProfileEquipmentRackRepository(
             profiles = get(),
