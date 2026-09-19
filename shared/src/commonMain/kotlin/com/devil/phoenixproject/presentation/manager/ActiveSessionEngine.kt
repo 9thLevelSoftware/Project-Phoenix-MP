@@ -9473,6 +9473,7 @@ class ActiveSessionEngine(
     }
 
     internal fun beginRoutineCompletedRuntimeCleanup() {
+        pendingRestRackSelections.clear()
         beginTrackedRuntimeCleanup(RuntimeCleanupReason.ROUTINE_COMPLETED)
     }
 
@@ -12817,7 +12818,13 @@ class ActiveSessionEngine(
                 // Without re-seeding rack defaults here, a vest toggled on the previous
                 // exercise leaks into captureRackLoadSnapshot for the next exercise.
                 flowDelegate?.seedRackSelectionForExercise(nextExIdx)
-                applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                // Autoplay starts the set immediately, so the rest edit must be applied
+                // before startWorkout captures its rack snapshot. Manual progression
+                // enters SetReady below, which republishes defaults; retain the pending
+                // entry until after that call instead.
+                if (settingsManager.autoplayEnabled.value) {
+                    applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                }
                 repCounter.reset()
                 // Phase 35C: Initialize warm-up phase for new exercise with warmupSets
                 if (nextSetIdx == 0 && nextExercise.warmupSets.isNotEmpty() && !nextIsBodyweight) {
@@ -12830,9 +12837,11 @@ class ActiveSessionEngine(
                 }
                 resetAutoStopState()
                 startWorkoutOrSetReady(lease)
-                if (coordinator._workoutState.value is WorkoutState.Idle) {
-                    applyPendingRestRackSelection(nextExIdx to nextSetIdx)
-                }
+                // enterSetReady republishes the upcoming exercise defaults for manual
+                // progression; reapply the rest-screen edit after that transition.
+                // Autoplay consumed the pending entry before startWorkout(), so this is
+                // intentionally a no-op on the automatic path.
+                applyPendingRestRackSelection(nextExIdx to nextSetIdx)
             } else if (isSameExerciseContinuation) {
                 // Issue #572: same-exercise continuation across entries. We do NOT call
                 // startWorkout() here even when autoplay is on, because that would send
