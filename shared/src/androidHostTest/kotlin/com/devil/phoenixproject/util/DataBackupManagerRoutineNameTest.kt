@@ -1873,53 +1873,7 @@ class DataBackupManagerRoutineNameTest {
      */
     @Test
     fun `small backup round trip restores forward references through the streaming importer`() = runTest {
-        fun session(id: String, routineId: String?, routineName: String?, isJustLift: Boolean) = WorkoutSessionBackup(
-            id = id,
-            timestamp = 1_700_000_000_000,
-            mode = "Old School",
-            targetReps = 10,
-            weightPerCableKg = 10f,
-            progressionKg = 0f,
-            duration = 0L,
-            totalReps = 10,
-            warmupReps = 0,
-            workingReps = 10,
-            isJustLift = isJustLift,
-            stopAtTop = false,
-            exerciseId = "fr-bench",
-            exerciseName = "Bench Press",
-            routineName = routineName,
-            routineId = routineId,
-        )
-        fun routineExercise(id: String, orderIndex: Int, orderInSuperset: Int) = RoutineExerciseBackup(
-            id = id,
-            routineId = "fr-routine",
-            exerciseName = "Bench Press",
-            exerciseMuscleGroup = "Chest",
-            exerciseDefaultCableConfig = "DOUBLE",
-            exerciseId = "fr-bench",
-            cableConfig = "DOUBLE",
-            orderIndex = orderIndex,
-            setReps = "10",
-            weightPerCableKg = 10f,
-            supersetId = "fr-superset",
-            orderInSuperset = orderInSuperset,
-        )
-        val backup = BackupData(
-            version = CURRENT_BACKUP_VERSION,
-            exportedAt = "2026-09-19T00:00:00Z",
-            appVersion = "test",
-            data = BackupContent(
-                workoutSessions = listOf(
-                    session("fr-routine-session", routineId = "fr-routine", routineName = null, isJustLift = false),
-                    session("fr-just-lift", routineId = null, routineName = "Bench Press", isJustLift = true),
-                ),
-                routines = listOf(RoutineBackup(id = "fr-routine", name = "Push Day", createdAt = 1L, groupId = "fr-group")),
-                routineExercises = listOf(routineExercise("fr-re-1", 0, 0), routineExercise("fr-re-2", 1, 1)),
-                supersets = listOf(SupersetBackup(id = "fr-superset", routineId = "fr-routine", name = "Pair")),
-                routineGroups = listOf(RoutineGroupBackup(id = "fr-group", name = "Strength", createdAt = 1L)),
-            ),
-        )
+        val backup = forwardReferenceBackup()
         val encoded = testJson.encodeToString(backup)
         assertTrue(
             encoded.indexOf("\"routineGroups\"") > encoded.indexOf("\"routines\"") &&
@@ -1956,12 +1910,180 @@ class DataBackupManagerRoutineNameTest {
     @Test
     fun `well-formed file with an undecodable row skips that row and imports the rest`() = runTest {
         // A row missing required fields is a per-entity error, not a whole-file failure.
-        val payload = """{ "version": 2, "exportedAt": "x", "appVersion": "x", "data": { "workoutSessions": [{}] } }"""
+        val good = testJson.encodeToString(frSession("undecodable-neighbour", routineId = null, routineName = null, isJustLift = false))
+        val payload = """{ "version": 2, "exportedAt": "x", "appVersion": "x", "data": { "workoutSessions": [{}, $good] } }"""
         val result = backupManager.importFromStringStreaming(payload)
         assertTrue(result.isSuccess, "Row-level decode failures must not abort the restore: ${result.exceptionOrNull()}")
         assertEquals(1, result.getOrThrow().entitiesWithErrors)
-        assertEquals(0, result.getOrThrow().sessionsImported)
+        assertEquals(1, result.getOrThrow().sessionsImported)
     }
+
+    @Test
+    fun `section whose rows all fail to decode fails the restore and changes nothing`() = runTest {
+        val payload = """{ "version": 2, "exportedAt": "x", "appVersion": "x", "data": { "routines": [{"id":"r-ok","name":"Kept?","createdAt":1}], "workoutSessions": [{}, {"id": 3}] } }"""
+        val result = backupManager.importFromStringStreaming(payload)
+        assertMalformedFailure(result)
+        assertTrue(database.phoenixDatabaseQueries.selectAllRoutineIds().executeAsList().isEmpty(), "failed restore must roll back")
+    }
+
+    @Test
+    fun `json without a data object is rejected as malformed`() = runTest {
+        assertMalformedFailure(backupManager.importFromStringStreaming("""{"version":5}"""))
+        assertMalformedFailure(backupManager.importFromStringStreaming("{}"))
+    }
+
+    @Test
+    fun `non-integer version is reported with the friendly malformed message`() = runTest {
+        assertMalformedFailure(
+            backupManager.importFromStringStreaming("""{"version":1.5,"exportedAt":"x","appVersion":"x","data":{}}"""),
+        )
+    }
+
+    /**
+     * R-1/R-5/R-11: the restore is one transaction. A file that breaks after sessions, metrics,
+     * sets and routines have been read leaves the database untouched, and a retry with the good
+     * file then restores everything, including per-session children and deferred links.
+     */
+    @Test
+    fun `mid-stream failure leaves the database unchanged and a retry restores everything`() = runTest {
+        database.seedExercise("fr-bench", "Bench Press")
+        val encoded = testJson.encodeToString(forwardReferenceBackup())
+        val truncated = encoded.substring(0, encoded.indexOf("\"routineGroups\"") + "\"routineGroups\":[{".length)
+        val queries = database.phoenixDatabaseQueries
+
+        assertMalformedFailure(backupManager.importFromStringStreaming(truncated))
+        assertTrue(queries.selectAllSessionIds().executeAsList().isEmpty())
+        assertTrue(queries.selectMetricsBySession("fr-routine-session").executeAsList().isEmpty())
+        assertNull(queries.selectCompletedSetById("fr-set").executeAsOneOrNull())
+        assertTrue(queries.selectAllRoutineIds().executeAsList().isEmpty())
+        assertTrue(queries.selectAllRoutineExercisesSync().executeAsList().isEmpty())
+        assertTrue(queries.selectAllRoutineGroupsSync().executeAsList().isEmpty())
+
+        val retry = backupManager.importFromStringStreaming(encoded).getOrThrow()
+        assertEquals(0, retry.entitiesWithErrors)
+        assertEquals(2, retry.sessionsImported)
+        assertEquals(1, queries.selectMetricsBySession("fr-routine-session").executeAsList().size)
+        assertNotNull(queries.selectCompletedSetById("fr-set").executeAsOneOrNull())
+        assertEquals("fr-group", queries.selectRoutineById("fr-routine").executeAsOne().groupId)
+        assertEquals(
+            setOf("fr-superset"),
+            queries.selectAllRoutineExercisesSync().executeAsList().map { it.supersetId }.toSet(),
+        )
+        assertEquals("Push Day", queries.selectSessionById("fr-routine-session").executeAsOne().routineName)
+    }
+
+    /**
+     * R-8/R-11: references whose target is not in the file stay null, and a row whose FK target is
+     * missing on this device (a progression event for an unknown exercise) is a counted skip, not an
+     * abort, so the rest of the restore, including the deferred fix-ups, still lands.
+     */
+    @Test
+    fun `dangling group and superset links stay null and an FK miss is a counted skip`() = runTest {
+        database.seedExercise("fr-bench", "Bench Press")
+        val full = forwardReferenceBackup()
+        val backup = full.copy(
+            data = full.data.copy(
+                supersets = emptyList(),
+                routineGroups = emptyList(),
+                progressionEvents = listOf(
+                    ProgressionEventBackup(
+                        id = "fr-event",
+                        exerciseId = "not-on-this-device",
+                        suggestedWeightKg = 12f,
+                        previousWeightKg = 10f,
+                        reason = "test",
+                        timestamp = 1L,
+                    ),
+                ),
+            ),
+        )
+
+        val result = backupManager.importFromStringStreaming(testJson.encodeToString(backup)).getOrThrow()
+
+        assertEquals(1, result.entitiesWithErrors, "the progression event FK miss is counted")
+        assertEquals(0, result.progressionEventsImported)
+        val queries = database.phoenixDatabaseQueries
+        assertNull(queries.selectRoutineById("fr-routine").executeAsOne().groupId)
+        val exercises = queries.selectAllRoutineExercisesSync().executeAsList()
+        assertEquals(setOf("fr-re-1", "fr-re-2"), exercises.map { it.id }.toSet())
+        assertTrue(exercises.all { it.supersetId == null })
+        assertEquals("Push Day", queries.selectSessionById("fr-routine-session").executeAsOne().routineName)
+        assertEquals("Just Lift", queries.selectSessionById("fr-just-lift").executeAsOne().routineName)
+    }
+
+    private fun assertMalformedFailure(result: Result<ImportResult>) {
+        assertTrue(result.isFailure, "expected failure, got $result")
+        val error = result.exceptionOrNull()!!
+        assertTrue(error is IllegalArgumentException, "Expected IllegalArgumentException, got ${error::class.simpleName}: ${error.message}")
+        assertTrue(
+            error.message?.contains("malformed or produced by an incompatible") == true,
+            "Error message must explain the failure mode — got: ${error.message}",
+        )
+    }
+
+    private fun frSession(id: String, routineId: String?, routineName: String?, isJustLift: Boolean) = WorkoutSessionBackup(
+        id = id,
+        timestamp = 1_700_000_000_000,
+        mode = "Old School",
+        targetReps = 10,
+        weightPerCableKg = 10f,
+        progressionKg = 0f,
+        duration = 0L,
+        totalReps = 10,
+        warmupReps = 0,
+        workingReps = 10,
+        isJustLift = isJustLift,
+        stopAtTop = false,
+        exerciseId = "fr-bench",
+        exerciseName = "Bench Press",
+        routineName = routineName,
+        routineId = routineId,
+    )
+
+    private fun frRoutineExercise(id: String, orderIndex: Int, orderInSuperset: Int) = RoutineExerciseBackup(
+        id = id,
+        routineId = "fr-routine",
+        exerciseName = "Bench Press",
+        exerciseMuscleGroup = "Chest",
+        exerciseDefaultCableConfig = "DOUBLE",
+        exerciseId = "fr-bench",
+        cableConfig = "DOUBLE",
+        orderIndex = orderIndex,
+        setReps = "10",
+        weightPerCableKg = 10f,
+        supersetId = "fr-superset",
+        orderInSuperset = orderInSuperset,
+    )
+
+    /** Sections in export order: groups and supersets arrive after the rows that reference them. */
+    private fun forwardReferenceBackup() = BackupData(
+        version = CURRENT_BACKUP_VERSION,
+        exportedAt = "2026-09-19T00:00:00Z",
+        appVersion = "test",
+        data = BackupContent(
+            workoutSessions = listOf(
+                frSession("fr-routine-session", routineId = "fr-routine", routineName = null, isJustLift = false),
+                frSession("fr-just-lift", routineId = null, routineName = "Bench Press", isJustLift = true),
+            ),
+            metricSamples = listOf(
+                MetricSampleBackup(sessionId = "fr-routine-session", timestamp = 1L, position = 0.5f, velocity = 1f, load = 10f, power = 5f),
+            ),
+            routines = listOf(RoutineBackup(id = "fr-routine", name = "Push Day", createdAt = 1L, groupId = "fr-group")),
+            routineExercises = listOf(frRoutineExercise("fr-re-1", 0, 0), frRoutineExercise("fr-re-2", 1, 1)),
+            supersets = listOf(SupersetBackup(id = "fr-superset", routineId = "fr-routine", name = "Pair")),
+            completedSets = listOf(
+                CompletedSetBackup(
+                    id = "fr-set",
+                    sessionId = "fr-routine-session",
+                    setNumber = 1,
+                    actualReps = 10,
+                    actualWeightKg = 10f,
+                    completedAt = 2L,
+                ),
+            ),
+            routineGroups = listOf(RoutineGroupBackup(id = "fr-group", name = "Strength", createdAt = 1L)),
+        ),
+    )
 
     private fun profileFixture(
         driver: SqlDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY),

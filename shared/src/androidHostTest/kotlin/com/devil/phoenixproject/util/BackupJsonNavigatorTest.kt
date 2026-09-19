@@ -672,7 +672,7 @@ class StreamingImportRoundTripTest {
     }
 
     @Test
-    fun `streaming active flags never switch target and post-identity failure normalizes then reconciles`() = runTest {
+    fun `streaming active flags never switch target and post-identity failure rolls back everything`() = runTest {
         listOf(
             listOf(false, false),
             listOf(false, true),
@@ -709,12 +709,17 @@ class StreamingImportRoundTripTest {
             }
         """.trimIndent()
 
+        val profilesBefore = failed.database.phoenixDatabaseQueries.getAllProfiles().executeAsList()
+
         val result = failed.manager.importFromStringStreaming(malformedAfterIdentityCommit)
 
         assertTrue(result.isFailure)
+        // The whole restore is one transaction: the identity section is rolled back with the
+        // rest, so nothing changed and no active-profile reconcile is needed.
         val profiles = failed.database.phoenixDatabaseQueries.getAllProfiles().executeAsList()
+        assertEquals(profilesBefore, profiles)
         assertEquals(PROFILE_A, profiles.single { it.isActive == 1L }.id)
-        assertEquals(1, failed.recordingUserProfiles.reconcileCalls)
+        assertEquals(0, failed.recordingUserProfiles.reconcileCalls)
     }
 
     @Test
