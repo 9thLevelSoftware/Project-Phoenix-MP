@@ -1,0 +1,8 @@
+-- Migration 48: Remember the portal's last-known version of each training cycle
+-- (the server's updated_at ISO string, stored verbatim) so a push can send it as
+-- baseUpdatedAt and the portal can keep edits made after that version.
+-- NULL = never synced (or pulled from a portal that does not report it).
+-- NOTE: a parallel change (routine duration sync flag) also adds 48.sqm; when both
+-- land, this file becomes 49.sqm (update MigrationStatements, SchemaManifest and
+-- SchemaParityTest numbering to match).
+ALTER TABLE TrainingCycle ADD COLUMN server_updated_at TEXT;

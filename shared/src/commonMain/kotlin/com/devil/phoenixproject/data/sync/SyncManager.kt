@@ -638,6 +638,20 @@ class SyncManager(
             }
         }
 
+        // Adopt the portal versions of cycles whose pushed structure was applied as
+        // their next baseUpdatedAt right away, so a later failed pull cannot leave a
+        // stale base. Cycles missing from cycleVersions keep their previous base.
+        if (pushResponse.cycleVersions.isNotEmpty()) {
+            try {
+                syncRepository.updateCycleServerVersions(pushResponse.cycleVersions)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                // An old base only makes the portal keep its own edits; the pull repairs it.
+                Logger.w(e) { "Failed to store ${pushResponse.cycleVersions.size} cycle server version(s)" }
+            }
+        }
+
         // Stamp pushed sessions so they aren't re-sent on next sync.
         // Sessions with NULL updatedAt would match every delta query indefinitely.
         // Use prePushLastSync (captured before push) so batched push doesn't cause

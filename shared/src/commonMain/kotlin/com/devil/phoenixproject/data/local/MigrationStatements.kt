@@ -1097,5 +1097,11 @@ WHERE gs.rowid = (
         "ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL",
     )
 
+    // Migration 48: portal version of each training cycle (sent as baseUpdatedAt).
+    // Mirrors 48.sqm exactly.
+    48 -> listOf(
+        "ALTER TABLE TrainingCycle ADD COLUMN server_updated_at TEXT",
+    )
+
     else -> emptyList()
 }

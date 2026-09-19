@@ -701,6 +701,11 @@ class SqlDelightSyncRepository(
                             id = portalCycle.id,
                         )
                     }
+                    // Remember the portal's version verbatim (sent back as baseUpdatedAt).
+                    // Keep the stored base when an older portal omits updatedAt.
+                    portalCycle.updatedAt?.let {
+                        queries.updateTrainingCycleServerUpdatedAt(server_updated_at = it, id = portalCycle.id)
+                    }
 
                     // Bulk delete existing days, reinsert from portal (same pattern as edge function)
                     queries.deleteCycleDaysByCycle(portalCycle.id)
@@ -1129,6 +1134,17 @@ class SqlDelightSyncRepository(
         }
     }
 
+    override suspend fun updateCycleServerVersions(versions: Map<String, String>) {
+        if (versions.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                versions.forEach { (cycleId, serverUpdatedAt) ->
+                    queries.updateTrainingCycleServerUpdatedAt(server_updated_at = serverUpdatedAt, id = cycleId)
+                }
+            }
+        }
+    }
+
     override suspend fun getFullCyclesForSync(profileId: String): List<CycleWithContext> = withContext(Dispatchers.IO) {
         val cycles = queries.selectTrainingCyclesByProfile(profileId = profileId).executeAsList()
         val allDays = queries.selectAllCycleDaysSync().executeAsList()
@@ -1197,6 +1213,7 @@ class SqlDelightSyncRepository(
                 ),
                 progress = progress,
                 progression = progression,
+                serverUpdatedAt = row.server_updated_at,
             )
         }
     }
@@ -1758,6 +1775,11 @@ class SqlDelightSyncRepository(
                             week_number = mergedWeekNumber,
                             id = portalCycle.id,
                         )
+                    }
+                    // Remember the portal's version verbatim (sent back as baseUpdatedAt).
+                    // Keep the stored base when an older portal omits updatedAt.
+                    portalCycle.updatedAt?.let {
+                        queries.updateTrainingCycleServerUpdatedAt(server_updated_at = it, id = portalCycle.id)
                     }
 
                     queries.deleteCycleDaysByCycle(portalCycle.id)

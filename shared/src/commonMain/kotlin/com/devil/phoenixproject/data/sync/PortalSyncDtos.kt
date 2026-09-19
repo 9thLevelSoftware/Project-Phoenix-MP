@@ -274,6 +274,13 @@ data class PortalTrainingCycleSyncDto(
     val progressionSettings: String? = null, // JSON
     val deloadSettings: String? = null, // JSON
     val days: List<PortalCycleDaySyncDto> = emptyList(),
+    /**
+     * The portal's `updated_at` for this cycle as last seen by this device (from a
+     * pull's `updatedAt` or a push response's `cycleVersions`), sent back verbatim.
+     * The portal keeps name/days edited after this version. Null (omitted on the
+     * wire) for cycles never synced; older portals ignore the key.
+     */
+    val baseUpdatedAt: String? = null,
 )
 
 /**
@@ -561,6 +568,12 @@ data class PortalSyncPushResponse(
      * the server or when every incoming row cleared the LWW gate. Phase 3.2.
      */
     val rejections: SyncRejectionsDto = SyncRejectionsDto(),
+    /**
+     * cycle id -> server `updated_at` (ISO) for cycles whose pushed structure was
+     * applied. The device stores it as the cycle's next baseUpdatedAt. A cycle
+     * missing here keeps its previous base. Absent on older portals.
+     */
+    val cycleVersions: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -930,6 +943,8 @@ data class PullTrainingCycleDto(
     val progressionSettings: String? = null,
     val deloadSettings: String? = null,
     val days: List<PullCycleDayDto> = emptyList(),
+    /** Server `updated_at` as a raw ISO string (kept verbatim; absent on older portals). */
+    val updatedAt: String? = null,
 )
 
 @Serializable

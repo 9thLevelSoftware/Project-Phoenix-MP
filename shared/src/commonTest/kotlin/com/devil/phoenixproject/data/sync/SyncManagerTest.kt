@@ -13,6 +13,7 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeCompletedSetRepository
@@ -268,6 +269,54 @@ class SyncManagerTest {
                 payload.platform.isNotEmpty(),
             "Platform should be set",
         )
+    }
+
+    @Test
+    fun pushSendsStoredCycleServerVersionAsBaseUpdatedAt() = runTest {
+        setupAuthenticated()
+        fakeSyncRepo.cyclesToReturn = listOf(
+            PortalSyncAdapter.CycleWithContext(
+                cycle = TrainingCycle.create(id = "11111111-1111-4111-a111-111111111111", name = "Synced"),
+                serverUpdatedAt = "2026-09-19T10:11:12.123456+00:00",
+            ),
+            PortalSyncAdapter.CycleWithContext(
+                cycle = TrainingCycle.create(id = "22222222-2222-4222-a222-222222222222", name = "Local only"),
+            ),
+        )
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        val manager = createManager()
+
+        manager.sync()
+
+        val cycles = assertNotNull(fakeApi.lastPushPayload).cycles.associateBy { it.id }
+        assertEquals("2026-09-19T10:11:12.123456+00:00", cycles["11111111-1111-4111-a111-111111111111"]?.baseUpdatedAt)
+        assertNull(cycles["22222222-2222-4222-a222-222222222222"]?.baseUpdatedAt)
+    }
+
+    @Test
+    fun pushResponseCycleVersionsAreStoredEvenWhenThePullFails() = runTest {
+        setupAuthenticated()
+        val versions = mapOf("11111111-1111-4111-a111-111111111111" to "2026-09-19T10:11:12.123456+00:00")
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z", cycleVersions = versions),
+        )
+        fakeApi.pullResult = Result.failure(PortalApiException("pull down", null, 500))
+        val manager = createManager()
+
+        manager.sync()
+
+        assertEquals(listOf(versions), fakeSyncRepo.cycleServerVersionUpdates)
+    }
+
+    @Test
+    fun pushResponseWithoutCycleVersionsLeavesStoredBasesAlone() = runTest {
+        setupAuthenticated()
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        val manager = createManager()
+
+        manager.sync()
+
+        assertTrue(fakeSyncRepo.cycleServerVersionUpdates.isEmpty())
     }
 
     @Test

@@ -387,4 +387,39 @@ class PortalPullAdapterTest {
         // Tests just need to verify the value is "recent", not exact
         return 1735689600000L
     }
+
+    // ========== cycle server versions (baseUpdatedAt contract) ==========
+
+    @Test
+    fun `pulled cycle updatedAt decodes verbatim with full precision`() {
+        val response = PortalWireJson.decodeFromString(
+            PortalSyncPullResponse.serializer(),
+            """{"syncTime":1,"cycles":[{"id":"c1","name":"C","updatedAt":"2026-09-19T10:11:12.123456+00:00"}]}""",
+        )
+        assertEquals("2026-09-19T10:11:12.123456+00:00", response.cycles.single().updatedAt)
+    }
+
+    @Test
+    fun `pulled cycle without updatedAt from an older portal decodes as null`() {
+        val response = PortalWireJson.decodeFromString(
+            PortalSyncPullResponse.serializer(),
+            """{"syncTime":1,"cycles":[{"id":"c1","name":"C"}]}""",
+        )
+        assertNull(response.cycles.single().updatedAt)
+    }
+
+    @Test
+    fun `push response cycleVersions decodes and defaults to empty on older portals`() {
+        val withVersions = PortalWireJson.decodeFromString(
+            PortalSyncPushResponse.serializer(),
+            """{"syncTime":"2026-09-19T00:00:00Z","cycleVersions":{"c1":"2026-09-19T10:11:12.123456+00:00"}}""",
+        )
+        assertEquals(mapOf("c1" to "2026-09-19T10:11:12.123456+00:00"), withVersions.cycleVersions)
+
+        val legacy = PortalWireJson.decodeFromString(
+            PortalSyncPushResponse.serializer(),
+            """{"syncTime":"2026-09-19T00:00:00Z"}""",
+        )
+        assertTrue(legacy.cycleVersions.isEmpty())
+    }
 }

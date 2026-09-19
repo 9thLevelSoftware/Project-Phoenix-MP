@@ -666,7 +666,13 @@ object PortalSyncAdapter {
      * Data bundle for a cycle with its optional progress + progression.
      * SyncRepository gathers these for push.
      */
-    data class CycleWithContext(val cycle: TrainingCycle, val progress: CycleProgress? = null, val progression: CycleProgression? = null)
+    data class CycleWithContext(
+        val cycle: TrainingCycle,
+        val progress: CycleProgress? = null,
+        val progression: CycleProgression? = null,
+        /** Portal `updated_at` (verbatim ISO) last pulled or acknowledged; sent as baseUpdatedAt. */
+        val serverUpdatedAt: String? = null,
+    )
 
     /**
      * Convert a mobile TrainingCycle (with context) to portal-format DTO.
@@ -739,6 +745,7 @@ object PortalSyncAdapter {
             progressionSettings = progressionJson,
             deloadSettings = null,
             days = days,
+            baseUpdatedAt = ctx.serverUpdatedAt,
         )
     }
 

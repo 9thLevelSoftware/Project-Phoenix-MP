@@ -181,6 +181,11 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun getFullCyclesForSync(profileId: String): List<CycleWithContext> = cyclesToReturn
 
+    val cycleServerVersionUpdates = mutableListOf<Map<String, String>>()
+    override suspend fun updateCycleServerVersions(versions: Map<String, String>) {
+        cycleServerVersionUpdates += versions
+    }
+
     override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> {
         callLog += "getFullPRsModifiedSince"
         return fullPRsToReturn
