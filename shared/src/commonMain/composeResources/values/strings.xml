@@ -856,7 +856,7 @@
     <string name="cd_filter_previously_completed">Filter exercises previously completed</string>
     <!-- PR 25: crash report prompt -->
     <string name="crash_report_title">Crash report available</string>
-    <string name="crash_report_message">The app closed unexpectedly last time. Share the crash report?</string>
+    <string name="crash_report_message">The app closed unexpectedly last time. Share the crash report? It contains technical details about the error; review it before posting publicly.</string>
     <string name="crash_report_share">Share</string>
     <string name="crash_report_dismiss">Not now</string>
 </resources>

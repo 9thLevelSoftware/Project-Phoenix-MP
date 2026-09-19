@@ -47,11 +47,13 @@ import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.PhoenixTheme
 import com.devil.phoenixproject.ui.theme.isDynamicColorAvailable
 import com.devil.phoenixproject.util.CrashLog
-import com.devil.phoenixproject.util.shareCrashReport
+import com.devil.phoenixproject.util.CrashReportAnswer
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.action_retry
@@ -167,27 +169,29 @@ internal fun PersistedFileStartupFailureScreen(
     }
 }
 
-/** Offers the report left by the previous run's crash; both answers delete it. */
+/** Offers the report left by the previous run's crash; see [CrashLog.answer] for when it is deleted. */
 @Composable
 private fun CrashReportPrompt() {
-    var report by remember { mutableStateOf(CrashLog.pending()) }
+    var report by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(Unit) {
+        report = withContext(Dispatchers.Default) { CrashLog.pending() }
+    }
     val pending = report ?: return
-    val answer = { share: Boolean ->
-        if (share) shareCrashReport(pending)
-        CrashLog.discard()
+    val answer = { choice: CrashReportAnswer ->
+        CrashLog.answer(choice, pending)
         report = null
     }
     AlertDialog(
-        onDismissRequest = { answer(false) },
+        onDismissRequest = { answer(CrashReportAnswer.DISMISSED) },
         title = { Text(stringResource(Res.string.crash_report_title)) },
         text = { Text(stringResource(Res.string.crash_report_message)) },
         confirmButton = {
-            TextButton(onClick = { answer(true) }) {
+            TextButton(onClick = { answer(CrashReportAnswer.SHARE) }) {
                 Text(stringResource(Res.string.crash_report_share))
             }
         },
         dismissButton = {
-            TextButton(onClick = { answer(false) }) {
+            TextButton(onClick = { answer(CrashReportAnswer.NOT_NOW) }) {
                 Text(stringResource(Res.string.crash_report_dismiss))
             }
         },

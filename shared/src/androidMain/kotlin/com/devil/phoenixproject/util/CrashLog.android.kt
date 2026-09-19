@@ -18,13 +18,15 @@ object AndroidCrashLog {
     @Volatile
     private var appContext: Context? = null
 
-    fun install(context: Context) {
+    /** [versionName]/[versionCode] come from the app's BuildConfig so the report pins the exact build. */
+    fun install(context: Context, versionName: String, versionCode: Int) {
         val app = context.applicationContext ?: context
         appContext = app
-        installHandler(File(app.filesDir, CrashLog.FILE_NAME)) { throwable ->
+        val appVersion = "$versionName ($versionCode)"
+        installHandler(crashFile(app)) { throwable ->
             CrashLog.formatReport(
                 throwable = throwable,
-                appVersion = DeviceInfo.appVersionName,
+                appVersion = appVersion,
                 platform = "Android ${Build.VERSION.RELEASE} (API ${Build.VERSION.SDK_INT}), ${Build.MANUFACTURER} ${Build.MODEL}",
                 timestampMillis = System.currentTimeMillis(),
             )
@@ -37,6 +39,9 @@ object AndroidCrashLog {
         if (previous is CrashFileHandler) return
         Thread.setDefaultUncaughtExceptionHandler(CrashFileHandler(file, previous, format))
     }
+
+    /** The same file for the handler (write) and the prompt (read/delete). */
+    internal fun crashFile(context: Context): File = File(context.filesDir, CrashLog.FILE_NAME)
 
     internal fun context(): Context? = appContext
 
@@ -56,9 +61,9 @@ object AndroidCrashLog {
     }
 }
 
-internal actual fun platformCrashLogStore(): CrashLogStore? = AndroidCrashLog.context()?.let { FileCrashLogStore(File(it.filesDir, CrashLog.FILE_NAME)) }
+internal actual fun platformCrashLogStore(): CrashLogStore? = AndroidCrashLog.context()?.let { FileCrashLogStore(AndroidCrashLog.crashFile(it)) }
 
-actual fun shareCrashReport(report: String) {
+actual fun shareCrashReport(report: String, onShown: () -> Unit) {
     val context = AndroidCrashLog.context() ?: return
     try {
         val send = Intent(Intent.ACTION_SEND).apply {
@@ -71,7 +76,9 @@ actual fun shareCrashReport(report: String) {
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             },
         )
+        onShown()
     } catch (e: Exception) {
+        // Keep the report so it is offered again next launch.
         android.util.Log.e("CrashLog", "Failed to share crash report: ${e.message}", e)
     }
 }

@@ -6,6 +6,8 @@
 
 package com.devil.phoenixproject.util
 
+import co.touchlab.kermit.Logger
+import co.touchlab.kermit.Severity
 import kotlin.native.ReportUnhandledExceptionHook
 import kotlin.native.setUnhandledExceptionHook
 import kotlin.time.Clock
@@ -14,6 +16,7 @@ import platform.UIKit.UIActivityViewController
 import platform.UIKit.UIApplication
 import platform.UIKit.UIDevice
 import platform.UIKit.UIUserInterfaceIdiomPad
+import platform.UIKit.UIViewController
 import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
@@ -23,8 +26,11 @@ private class IosCrashLogStore(private val path: String) : CrashLogStore {
 
     override fun read(): String? {
         if (!fileManager.fileExistsAtPath(path)) return null
-        @Suppress("UNCHECKED_CAST")
-        return NSString.stringWithContentsOfFile(path, NSUTF8StringEncoding, null) as? String
+        return NSString.stringWithContentsOfFile(
+            path,
+            encoding = NSUTF8StringEncoding,
+            error = null,
+        )
     }
 
     override fun write(report: String) {
@@ -54,15 +60,20 @@ internal actual fun platformCrashLogStore(): CrashLogStore? = libraryCrashLogPat
 private var crashHookInstalled = false
 
 /**
- * Writes the Kotlin stack trace of an uncaught exception to Library/crash-last.txt.
- * The runtime still terminates the process after the hook returns.
+ * Idempotent iOS diagnostics setup, called from both doInitKoin() and MainViewController()
+ * so it is in place as early as possible:
+ * - release binaries log at Warn (Debug in debug binaries), mirroring Android;
+ * - an uncaught Kotlin exception's stack trace is written to Library/crash-last.txt.
+ *   The runtime still terminates the process after the hook returns.
  */
-fun installIosCrashLog() {
+fun installIosDiagnostics() {
+    Logger.mutableConfig.minSeverity = if (DeviceInfo.isDebugBuild) Severity.Debug else Severity.Warn
     if (crashHookInstalled) return
     crashHookInstalled = true
     val store = platformCrashLogStore() ?: return
     // Resolve on the calling (main) thread; the hook may run on any thread.
-    val appVersion = DeviceInfo.appVersionName
+    val build = NSBundle.mainBundle.objectForInfoDictionaryKey("CFBundleVersion") as? String
+    val appVersion = if (build != null) "${DeviceInfo.appVersionName} ($build)" else DeviceInfo.appVersionName
     val platformName = "iOS ${UIDevice.currentDevice.systemVersion}, ${UIDevice.currentDevice.model}"
     var previous: ReportUnhandledExceptionHook? = null
     previous = setUnhandledExceptionHook { throwable ->
@@ -73,11 +84,20 @@ fun installIosCrashLog() {
             platform = platformName,
             timestampMillis = Clock.System.now().toEpochMilliseconds(),
         )
-        previous?.invoke(throwable)
+        val chained = previous
+        if (chained != null) {
+            chained(throwable)
+        } else {
+            // A set hook replaces the runtime's default stderr report; keep the trace in the console.
+            try {
+                throwable.printStackTrace()
+            } catch (_: Throwable) {
+            }
+        }
     }
 }
 
-actual fun shareCrashReport(report: String) {
+actual fun shareCrashReport(report: String, onShown: () -> Unit) {
     // Same presentation as IosCsvExporter.shareCSV, sharing the report as text.
     dispatch_async(dispatch_get_main_queue()) {
         val scenes = UIApplication.sharedApplication.connectedScenes
@@ -85,8 +105,12 @@ actual fun shareCrashReport(report: String) {
             it is platform.UIKit.UIWindowScene
         } as? platform.UIKit.UIWindowScene
 
-        val rootViewController = windowScene?.keyWindow?.rootViewController
+        var presenter: UIViewController = windowScene?.keyWindow?.rootViewController
             ?: return@dispatch_async
+        // Present from the top-most controller; presenting on one that is already presenting is ignored.
+        while (true) {
+            presenter = presenter.presentedViewController ?: break
+        }
 
         val activityVC = UIActivityViewController(
             activityItems = listOf(report),
@@ -96,14 +120,14 @@ actual fun shareCrashReport(report: String) {
         // iPad requires a popover anchor or presenting crashes.
         if (UIDevice.currentDevice.userInterfaceIdiom == UIUserInterfaceIdiomPad) {
             activityVC.valueForKey("popoverPresentationController")?.let { popover ->
-                (popover as? NSObject)?.setValue(rootViewController.view, forKey = "sourceView")
+                (popover as? NSObject)?.setValue(presenter.view, forKey = "sourceView")
             }
         }
 
-        rootViewController.presentViewController(
+        presenter.presentViewController(
             activityVC,
             animated = true,
-            completion = null,
+            completion = { onShown() },
         )
     }
 }

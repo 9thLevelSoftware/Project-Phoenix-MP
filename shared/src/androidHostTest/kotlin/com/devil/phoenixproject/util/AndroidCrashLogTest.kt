@@ -6,6 +6,7 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
@@ -48,14 +49,41 @@ class AndroidCrashLogTest {
     }
 
     @Test
-    fun handlerStillDelegatesWhenWritingFails() {
+    fun handlerStillDelegatesWhenTheFileCannotBeWritten() {
+        var delegated = 0
+        Thread.setDefaultUncaughtExceptionHandler { _, _ -> delegated++ }
+        val unwritable = File(dir, "missing-dir/${CrashLog.FILE_NAME}")
+
+        AndroidCrashLog.installHandler(unwritable) { "r" }
+        Thread.getDefaultUncaughtExceptionHandler()!!.uncaughtException(Thread.currentThread(), RuntimeException())
+
+        assertFalse(unwritable.exists())
+        assertEquals(1, delegated)
+    }
+
+    @Test
+    fun handlerStillDelegatesWhenFormattingFails() {
         var delegated = 0
         Thread.setDefaultUncaughtExceptionHandler { _, _ -> delegated++ }
 
-        AndroidCrashLog.installHandler(File(dir, "missing-dir/${CrashLog.FILE_NAME}")) { error("format failed") }
+        AndroidCrashLog.installHandler(File(dir, CrashLog.FILE_NAME)) { error("format failed") }
         Thread.getDefaultUncaughtExceptionHandler()!!.uncaughtException(Thread.currentThread(), RuntimeException())
 
         assertEquals(1, delegated)
+    }
+
+    @Test
+    fun realFormatterReportIsReadBackByThePromptStore() {
+        Thread.setDefaultUncaughtExceptionHandler { _, _ -> }
+        val file = File(dir, CrashLog.FILE_NAME)
+
+        AndroidCrashLog.installHandler(file) { CrashLog.formatReport(it, "2.0.0 (7)", "Android test", 0L) }
+        Thread.getDefaultUncaughtExceptionHandler()!!
+            .uncaughtException(Thread.currentThread(), IllegalStateException("routine add failed"))
+
+        val pending = CrashLog.pending(FileCrashLogStore(file))!!
+        assertTrue(pending.contains("App version: 2.0.0 (7)"), pending)
+        assertTrue(pending.contains("routine add failed"), pending)
     }
 
     @Test

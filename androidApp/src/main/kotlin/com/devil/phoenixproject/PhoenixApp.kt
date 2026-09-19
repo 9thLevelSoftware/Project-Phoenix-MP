@@ -34,7 +34,7 @@ open class PhoenixApp :
         super.onCreate()
 
         // Write uncaught crashes to filesDir/crash-last.txt, then delegate to the previous handler.
-        AndroidCrashLog.install(this)
+        AndroidCrashLog.install(this, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
 
         // Configure Kermit log level for release builds — suppress Debug/Verbose/Info
         if (!BuildConfig.DEBUG) {
