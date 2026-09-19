@@ -5,6 +5,8 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.measureTime
 
 class CrashLogTest {
 
@@ -67,6 +69,26 @@ class CrashLogTest {
         assertFalse(report.contains(jwt), report)
         assertTrue(report.contains("[redacted]"), report)
         assertTrue(report.contains("401 for user"), report)
+    }
+
+    @Test
+    fun redactionStaysFastOnPathologicalUnbrokenRuns() {
+        // Long hex/base64-like runs made the unbounded email pattern backtrack quadratically (minutes at 200k).
+        val inputs = listOf(
+            "x".repeat(200_000),
+            "a@" + "b".repeat(200_000),
+            "eyJ" + "a".repeat(200_000),
+            "Bearer " + "c".repeat(200_000),
+        )
+        for (input in inputs) {
+            val elapsed = measureTime { CrashLog.redact(input) }
+            assertTrue(elapsed < 1.seconds, "redact took $elapsed for ${input.take(8)}...")
+        }
+
+        val elapsed = measureTime {
+            CrashLog.formatReport(RuntimeException("x".repeat(1_000_000)), "1", "p", 0L)
+        }
+        assertTrue(elapsed < 1.seconds, "formatReport took $elapsed on a 1M-char message")
     }
 
     @Test

@@ -13,10 +13,13 @@ object CrashLog {
     const val MAX_REPORT_CHARS = 100_000
 
     private const val REDACTED = "[redacted]"
+    // Every quantifier is bounded so matching stays linear in the report length. An unbounded
+    // `[...]+@` backtracks quadratically over long unbroken runs (hex dumps, base64), which would
+    // stall the dying process inside the crash handler.
     private val secretPatterns = listOf(
-        Regex("Bearer\\s+\\S+", RegexOption.IGNORE_CASE),
-        Regex("eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+"),
-        Regex("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}"),
+        Regex("Bearer\\s{1,8}\\S{1,4096}", RegexOption.IGNORE_CASE),
+        Regex("eyJ[A-Za-z0-9_-]{1,4096}\\.[A-Za-z0-9_-]{1,4096}\\.[A-Za-z0-9_-]{1,4096}"),
+        Regex("[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9.-]{1,255}\\.[A-Za-z]{2,24}"),
     )
 
     fun formatReport(
@@ -30,8 +33,8 @@ object CrashLog {
         appendLine("Platform: $platform")
         appendLine("Time (UTC): ${Instant.fromEpochMilliseconds(timestampMillis)}")
         appendLine()
-        append(redact(throwable.stackTraceToString()))
-    }.let(::cap)
+        append(throwable.stackTraceToString())
+    }.let { cap(redact(cap(it))) } // Cap first so redaction input is bounded; re-cap since a short match can grow.
 
     /** Strips bearer tokens, JWTs and email addresses, since reports are often posted publicly. */
     internal fun redact(text: String): String = secretPatterns.fold(text) { acc, regex -> regex.replace(acc, REDACTED) }
