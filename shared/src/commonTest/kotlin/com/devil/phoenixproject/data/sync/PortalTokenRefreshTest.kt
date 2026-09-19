@@ -10,6 +10,13 @@ import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.russhwolf.settings.MapSettings
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.ContentType
+import io.ktor.http.Headers
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -17,8 +24,15 @@ import kotlin.test.assertIs
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 
 /**
@@ -34,9 +48,13 @@ import kotlinx.serialization.json.Json
  *  - Two concurrent sync calls that each see 401 are serialized via the internal syncMutex
  *    — no thundering herd of concurrent refresh attempts.
  *
- * End-to-end exercising of the HTTP 401 → forceRefresh → retry logic inside
- * PortalApiClient.authenticatedRequest requires an HTTP mock and is covered by the
- * platform-level integration tests; here we assert the multiplatform observable contract.
+ *  - Refresh failure policy over HTTP (MockEngine against a real PortalApiClient):
+ *    revoked/rotated refresh tokens (GoTrue 400 + error_code, or an error_code alone)
+ *    clear auth and emit SessionExpired; 5xx, 429 and a bare non-GoTrue 400 keep the
+ *    tokens and emit a recoverable RefreshFailed.
+ *  - Refresh serialization and the auth generation: concurrent refreshes send one
+ *    request, and a refresh in flight across a sign-out or sign-in never writes back
+ *    or clears the newer auth state.
  */
 class PortalTokenRefreshTest {
 
@@ -294,5 +312,291 @@ class PortalTokenRefreshTest {
         assertIs<SyncState.NotAuthenticated>(manager.syncState.value)
         assertEquals(0, fakeApi.pushCallCount, "push must not fire when unauthenticated")
         assertEquals(0, fakeApi.pullCallCount, "pull must not fire when unauthenticated")
+    }
+
+    // ==================== Refresh failure policy (HTTP) ====================
+
+    private val jsonHeaders = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString())
+
+    private fun runHttpTest(block: suspend CoroutineScope.() -> Unit) = runTest {
+        withContext(Dispatchers.Default) { block() }
+    }
+
+    /** Stored session whose access token is already expired, so a refresh is due. */
+    private fun saveExpiredSession() {
+        tokenStorage.saveGoTrueAuth(
+            GoTrueAuthResponse(
+                accessToken = "old-access",
+                tokenType = "bearer",
+                expiresIn = 3600,
+                expiresAt = 1L,
+                refreshToken = "old-refresh",
+                user = GoTrueUser(id = "u", email = "u@e.com"),
+            ),
+        )
+    }
+
+    private var refreshRequests = 0
+
+    private fun clientRespondingToRefresh(
+        onRefresh: suspend () -> Unit = {},
+        status: HttpStatusCode,
+        body: String,
+        headers: Headers = jsonHeaders,
+    ): PortalApiClient {
+        val engine = MockEngine { request ->
+            assertEquals("refresh_token", request.url.parameters["grant_type"])
+            refreshRequests++
+            onRefresh()
+            respond(body, status, headers)
+        }
+        return PortalApiClient(
+            SupabaseConfig("https://fake.supabase.co", "anon"),
+            tokenStorage,
+            httpClientEngine = engine,
+        )
+    }
+
+    private val refreshedSessionJson = """
+        {"access_token":"new-access","token_type":"bearer","expires_in":3600,
+         "expires_at":4102444800,"refresh_token":"new-refresh",
+         "user":{"id":"u","email":"u@e.com"}}
+    """.trimIndent()
+
+    @Test
+    fun revokedRefreshToken400ClearsAuthAndEmitsSessionExpired() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(
+            status = HttpStatusCode.BadRequest,
+            body = """{"code":400,"error_code":"refresh_token_not_found","msg":"Invalid Refresh Token: Refresh Token Not Found"}""",
+        )
+        val firstEvent = async(start = CoroutineStart.UNDISPATCHED) { tokenStorage.authEvents.first() }
+
+        val result = client.refreshIfNeeded()
+
+        assertTrue(result.isFailure)
+        assertNull(tokenStorage.getRefreshToken(), "revoked refresh token must be cleared")
+        assertNull(tokenStorage.getToken())
+        assertFalse(tokenStorage.isAuthenticated.value, "user must be sent back to sign-in")
+        assertIs<AuthEvent.SessionExpired>(withTimeout(5_000) { firstEvent.await() }, "definitive failure emits SessionExpired")
+    }
+
+    @Test
+    fun refreshErrorCodeIsDefinitiveEvenWithoutStatus400() {
+        assertTrue(
+            isDefinitiveRefreshFailure(
+                PortalApiException("Session expired", null, 422, errorCode = "session_expired"),
+            ),
+        )
+        assertFalse(isDefinitiveRefreshFailure(PortalApiException("Network error", null, null)))
+        assertFalse(isDefinitiveRefreshFailure(PortalApiException("Rate limited", null, 429)))
+    }
+
+    @Test
+    fun serverError503DuringRefreshPreservesTokens() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(
+            status = HttpStatusCode.ServiceUnavailable,
+            body = """{"msg":"upstream unavailable"}""",
+        )
+
+        val result = client.refreshIfNeeded()
+
+        assertEquals(503, (result.exceptionOrNull() as? PortalApiException)?.statusCode)
+        assertEquals("old-refresh", tokenStorage.getRefreshToken(), "transient failure keeps the refresh token")
+        assertTrue(tokenStorage.isAuthenticated.value)
+    }
+
+    @Test
+    fun signOutDuringInFlightRefreshLeavesUserSignedOut() = runHttpTest {
+        saveExpiredSession()
+        // The sign-out lands after the refresh request left but before its response
+        // is written; the late response must not resurrect the session.
+        val client = clientRespondingToRefresh(
+            onRefresh = { tokenStorage.clearAuth() },
+            status = HttpStatusCode.OK,
+            body = refreshedSessionJson,
+        )
+
+        val result = client.refreshIfNeeded()
+
+        assertTrue(result.isFailure)
+        assertNull(tokenStorage.getToken(), "stale refresh must not write tokens back")
+        assertNull(tokenStorage.getRefreshToken())
+        assertFalse(tokenStorage.isAuthenticated.value)
+    }
+
+    @Test
+    fun successfulRefreshStoresNewSession() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(status = HttpStatusCode.OK, body = refreshedSessionJson)
+
+        assertTrue(client.refreshIfNeeded().isSuccess)
+        assertEquals("new-access", tokenStorage.getToken())
+        assertEquals("new-refresh", tokenStorage.getRefreshToken())
+    }
+
+    // ----- error_code parsing, bare 400s, serialization, stale failures -----
+
+    private val otherAccountSession = GoTrueAuthResponse(
+        accessToken = "other-access",
+        tokenType = "bearer",
+        expiresIn = 3600,
+        expiresAt = 4_102_444_800L,
+        refreshToken = "other-refresh",
+        user = GoTrueUser(id = "other", email = "o@e.com"),
+    )
+
+    private val revoked400Body =
+        """{"code":400,"error_code":"refresh_token_not_found","msg":"Invalid Refresh Token"}"""
+
+    @Test
+    fun goTrueErrorCodeFromResponseBodyIsDefinitiveOutside400() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(
+            status = HttpStatusCode.UnprocessableEntity,
+            body = """{"code":422,"error_code":"session_expired","msg":"Session expired"}""",
+        )
+        val firstEvent = async(start = CoroutineStart.UNDISPATCHED) { tokenStorage.authEvents.first() }
+
+        assertTrue(client.refreshIfNeeded().isFailure)
+
+        assertNull(tokenStorage.getRefreshToken(), "error_code parsed from the body must clear auth")
+        assertIs<AuthEvent.SessionExpired>(withTimeout(5_000) { firstEvent.await() })
+    }
+
+    @Test
+    fun legacyInvalidGrant400IsDefinitive() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(
+            status = HttpStatusCode.BadRequest,
+            body = """{"error":"invalid_grant","error_description":"Invalid Refresh Token"}""",
+        )
+
+        assertTrue(client.refreshIfNeeded().isFailure)
+        assertNull(tokenStorage.getRefreshToken())
+    }
+
+    @Test
+    fun bare400WithoutGoTrueBodyIsRecoverable() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(
+            status = HttpStatusCode.BadRequest,
+            body = "<html>Bad Request</html>",
+            headers = headersOf(HttpHeaders.ContentType, ContentType.Text.Html.toString()),
+        )
+
+        val result = client.refreshIfNeeded()
+
+        assertEquals(400, (result.exceptionOrNull() as? PortalApiException)?.statusCode)
+        assertEquals("old-refresh", tokenStorage.getRefreshToken(), "a proxy/CDN 400 must not sign the user out")
+        assertTrue(tokenStorage.isAuthenticated.value)
+    }
+
+    @Test
+    fun serverError503EmitsRecoverableRefreshFailed() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(status = HttpStatusCode.ServiceUnavailable, body = """{"msg":"down"}""")
+        val firstEvent = async(start = CoroutineStart.UNDISPATCHED) { tokenStorage.authEvents.first() }
+
+        client.refreshIfNeeded()
+
+        val event = assertIs<AuthEvent.RefreshFailed>(withTimeout(5_000) { firstEvent.await() })
+        assertTrue(event.isRecoverable)
+    }
+
+    @Test
+    fun rateLimited429DuringRefreshPreservesTokens() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(status = HttpStatusCode.TooManyRequests, body = """{"msg":"slow down"}""")
+
+        val result = client.refreshIfNeeded()
+
+        assertEquals(429, (result.exceptionOrNull() as? PortalApiException)?.statusCode)
+        assertEquals("old-refresh", tokenStorage.getRefreshToken())
+    }
+
+    @Test
+    fun missingRefreshTokenClearsAuthWithSessionExpired() = runHttpTest {
+        saveExpiredSession()
+        settings.remove("portal_refresh_token")
+        val client = clientRespondingToRefresh(status = HttpStatusCode.OK, body = refreshedSessionJson)
+        val firstEvent = async(start = CoroutineStart.UNDISPATCHED) { tokenStorage.authEvents.first() }
+
+        assertTrue(client.refreshIfNeeded().isFailure)
+
+        assertFalse(tokenStorage.hasToken())
+        assertEquals(0, refreshRequests, "no refresh request without a refresh token")
+        assertIs<AuthEvent.SessionExpired>(withTimeout(5_000) { firstEvent.await() })
+    }
+
+    @Test
+    fun concurrentRefreshesSendOneRefreshRequest() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(
+            onRefresh = { delay(50) },
+            status = HttpStatusCode.OK,
+            body = refreshedSessionJson,
+        )
+
+        val a = async { client.refreshIfNeeded() }
+        val b = async { client.refreshIfNeeded() }
+
+        assertTrue(a.await().isSuccess)
+        assertTrue(b.await().isSuccess)
+        assertEquals(1, refreshRequests, "refreshMutex + double-check: one refresh token use, not two")
+    }
+
+    @Test
+    fun signInDuringInFlightRefreshKeepsNewSessionAndSucceeds() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(
+            onRefresh = { tokenStorage.saveGoTrueAuth(otherAccountSession) },
+            status = HttpStatusCode.OK,
+            body = refreshedSessionJson,
+        )
+
+        val result = client.refreshIfNeeded()
+
+        assertTrue(result.isSuccess, "the new sign-in is valid; the caller must not see 'not authenticated'")
+        assertEquals("other-access", tokenStorage.getToken(), "stale refresh must not overwrite the new account")
+    }
+
+    @Test
+    fun stale400AfterSignOutAndNewSignInKeepsNewSessionAndEmitsNothing() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(
+            onRefresh = {
+                tokenStorage.clearAuth()
+                tokenStorage.saveGoTrueAuth(otherAccountSession)
+            },
+            status = HttpStatusCode.BadRequest,
+            body = revoked400Body,
+        )
+        val firstEvent = async(start = CoroutineStart.UNDISPATCHED) { tokenStorage.authEvents.first() }
+
+        val result = client.refreshIfNeeded()
+        tokenStorage.emitAuthEvent(AuthEvent.LoggedOut) // sentinel: must be the first event seen
+
+        assertTrue(result.isSuccess)
+        assertEquals("other-access", tokenStorage.getToken(), "stale 400 must not wipe the new session")
+        assertEquals(AuthEvent.LoggedOut, withTimeout(5_000) { firstEvent.await() }, "no spurious SessionExpired")
+    }
+
+    @Test
+    fun stale400AfterDeliberateSignOutEmitsNoSessionExpired() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(
+            onRefresh = { tokenStorage.clearAuth() },
+            status = HttpStatusCode.BadRequest,
+            body = revoked400Body,
+        )
+        val firstEvent = async(start = CoroutineStart.UNDISPATCHED) { tokenStorage.authEvents.first() }
+
+        assertTrue(client.refreshIfNeeded().isFailure)
+        tokenStorage.emitAuthEvent(AuthEvent.LoggedOut)
+
+        assertFalse(tokenStorage.isAuthenticated.value)
+        assertEquals(AuthEvent.LoggedOut, withTimeout(5_000) { firstEvent.await() }, "sign-out must not be reported as expiry")
     }
 }

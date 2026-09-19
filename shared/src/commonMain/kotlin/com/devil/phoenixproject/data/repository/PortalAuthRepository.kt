@@ -4,9 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.auth.OAuthProvider
 import com.devil.phoenixproject.data.auth.generateOAuthPkce
-import com.devil.phoenixproject.data.sync.AuthEvent
 import com.devil.phoenixproject.data.sync.PortalApiClient
-import com.devil.phoenixproject.data.sync.PortalApiException
 import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.data.sync.PortalUser
 import com.devil.phoenixproject.data.sync.SupabaseConfig
@@ -181,33 +179,13 @@ class PortalAuthRepository(
         return Result.success(Unit)
     }
 
-    override suspend fun refreshSession(): Result<Unit> {
-        val refreshToken = tokenStorage.getRefreshToken()
-            ?: return Result.failure(Exception("No refresh token available"))
-
-        return apiClient.refreshToken(refreshToken)
-            .onSuccess { goTrueResponse ->
-                tokenStorage.saveGoTrueAuth(goTrueResponse)
-            }
-            .map { }
-            .onFailure { error ->
-                // F003: classify by structured HTTP status, not brittle, case-
-                // sensitive message substrings. GoTrue/Portal permanent auth
-                // failures surface as PortalApiException with statusCode 401/403
-                // (messages like "Invalid Refresh Token"/"JWT expired" would slip
-                // past the old substring check, leaving the app falsely
-                // "authenticated"). Clear auth and emit SessionExpired only for
-                // definitive auth failures; preserve tokens for transient/network
-                // failures so a later retry can refresh.
-                val isPermanentAuthFailure = error is PortalApiException &&
-                    (error.statusCode == 401 || error.statusCode == 403)
-                if (isPermanentAuthFailure) {
-                    tokenStorage.clearAuthWithEvent(
-                        AuthEvent.SessionExpired(error.message ?: "Session expired - please log in again"),
-                    )
-                }
-            }
-    }
+    /**
+     * Delegates to [PortalApiClient.refreshIfNeeded] so start-up refresh shares the
+     * client's refresh mutex (no duplicate use of one refresh token) and its
+     * failure policy: a revoked/rotated refresh token (GoTrue 400) clears auth and
+     * emits SessionExpired; transient/network failures keep the tokens.
+     */
+    override suspend fun refreshSession(): Result<Unit> = apiClient.refreshIfNeeded()
 
     /**
      * Restores a previous session on app startup.
