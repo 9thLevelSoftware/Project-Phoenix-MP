@@ -33,12 +33,12 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 text = workflow(name)
                 self.assertRegex(
                     text,
-                    r"(?ms)^  build:.*?runs-on: macos-26.*?uses: actions/upload-artifact@v4",
+                    r"(?ms)^  build:.*?runs-on: macos-26.*?uses: actions/upload-artifact@[0-9a-f]{40} # v4",
                 )
                 self.assertRegex(
                     text,
                     r"(?ms)^  upload(?:-and-distribute)?:.*?needs: build.*?runs-on: macos-15"
-                    r".*?uses: actions/download-artifact@v4"
+                    r".*?uses: actions/download-artifact@[0-9a-f]{40} # v4"
                     r".*?xcode-select -s /Applications/Xcode_16\.4\.app/Contents/Developer"
                     r".*?xcrun altool",
                 )
@@ -46,7 +46,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 self.assertGreaterEqual(text.count("testflight-ipa-${{ github.run_id }}"), 2)
                 self.assertRegex(
                     text,
-                    r"(?ms)uses: actions/upload-artifact@v4.*?overwrite: true",
+                    r"(?ms)uses: actions/upload-artifact@[0-9a-f]{40} # v4.*?overwrite: true",
                 )
 
     def test_store_jobs_are_not_blocked_by_the_other_platform(self) -> None:
@@ -76,6 +76,64 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         self.assertNotIn(
             "APK and IPA builds complete before store publication begins.",
             workflow("release-all.yml"),
+        )
+
+    def test_releases_are_gated_on_unit_tests(self) -> None:
+        self.assertIn(
+            "./gradlew -Pskip.supabase.check=true :shared:testAndroidHostTest :androidApp:testDebugUnitTest",
+            workflow("release-tests.yml"),
+        )
+        for name, first_job in (
+            ("release-all.yml", "create-release"),
+            ("release-all-existing.yml", "prepare-release"),
+            ("android-playstore.yml", "build-and-upload"),
+            ("android-release-apk.yml", "build-and-attach"),
+            ("ios-release-ipa.yml", "build-and-attach"),
+            ("ios-testflight.yml", "build"),
+            ("ios-testflight-internal.yml", "build"),
+        ):
+            with self.subTest(workflow=name):
+                text = workflow(name)
+                self.assertIn("\n  tests:\n    uses: ./.github/workflows/release-tests.yml\n", text)
+                self.assertIn(f"\n  {first_job}:\n    needs: tests\n", text)
+        # Orchestrators test once up front; the platform workflows they call skip the re-run.
+        for name in ("release-all.yml", "release-all-existing.yml"):
+            with self.subTest(workflow=name):
+                self.assertEqual(workflow(name).count("skip_tests: true"), 4)
+
+    def test_release_workflow_actions_are_sha_pinned(self) -> None:
+        for name in (
+            "release-all.yml",
+            "release-all-existing.yml",
+            "release-tests.yml",
+            "android-playstore.yml",
+            "android-release-apk.yml",
+            "ios-release-ipa.yml",
+            "ios-testflight.yml",
+            "ios-testflight-internal.yml",
+        ):
+            with self.subTest(workflow=name):
+                refs = re.findall(r"(?m)^\s*(?:- )?uses: (\S+)", workflow(name))
+                self.assertTrue(refs)
+                for ref in refs:
+                    if not ref.startswith("./"):
+                        self.assertRegex(ref, r"@[0-9a-f]{40}$")
+
+    def test_ci_ios_simulator_tests_are_non_blocking_and_skip_prs(self) -> None:
+        text = workflow("ci-tests.yml")
+        self.assertNotIn("verifyCommonMainPhoenixDatabaseMigration", text)
+        job = re.search(
+            r"(?ms)^  ios-simulator-tests:\n(?P<body>.*?)(?=^  [a-z][a-z0-9-]*:\n)", text
+        )
+        self.assertIsNotNone(job)
+        body = job.group("body")
+        self.assertIn("continue-on-error: true", body)
+        self.assertIn(":shared:iosSimulatorArm64Test", body)
+        self.assertIn("runs-on: macos-latest", body)
+        self.assertIn(
+            "if: github.event_name == 'workflow_dispatch' || "
+            "(github.event_name == 'push' && github.ref == 'refs/heads/main')",
+            body,
         )
 
 

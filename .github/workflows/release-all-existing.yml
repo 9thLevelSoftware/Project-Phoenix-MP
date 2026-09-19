@@ -41,7 +41,13 @@ permissions:
   contents: write
 
 jobs:
+  tests:
+    uses: ./.github/workflows/release-tests.yml
+    with:
+      ref: main
+
   prepare-release:
+    needs: tests
     runs-on: ubuntu-latest
     steps:
       - name: Verify workflow runs from main
@@ -74,6 +80,7 @@ jobs:
       source_ref: main
       release_tag: ${{ inputs.release_tag }}
       versionCodeOverride: ${{ inputs.versionCodeOverride }}
+      skip_tests: true
     secrets: inherit
 
   ios-ipa:
@@ -83,6 +90,7 @@ jobs:
     with:
       source_ref: main
       release_tag: ${{ inputs.release_tag }}
+      skip_tests: true
     secrets: inherit
 
   android-playstore:
@@ -93,6 +101,7 @@ jobs:
       source_ref: main
       versionCodeOverride: ${{ inputs.versionCodeOverride }}
       submitForReview: ${{ inputs.submit_android_playstore_for_review }}
+      skip_tests: true
     secrets: inherit
 
   ios-testflight:
@@ -101,11 +110,12 @@ jobs:
     uses: ./.github/workflows/ios-testflight.yml
     with:
       source_ref: main
+      skip_tests: true
     secrets: inherit
 
   summary:
     if: always()
-    needs: [prepare-release, android-apk, ios-ipa, android-playstore, ios-testflight]
+    needs: [tests, prepare-release, android-apk, ios-ipa, android-playstore, ios-testflight]
     runs-on: ubuntu-latest
     steps:
       - name: Summary
@@ -115,6 +125,7 @@ jobs:
           echo "Only the APK and IPA assets were replaced; store builds were sourced from main." >> "$GITHUB_STEP_SUMMARY"
           echo "| Platform | Result |" >> "$GITHUB_STEP_SUMMARY"
           echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Unit tests | ${{ needs.tests.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Android Release APK | ${{ needs.android-apk.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| iOS Release IPA | ${{ needs.ios-ipa.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Android Play Store | ${{ needs.android-playstore.result }} |" >> "$GITHUB_STEP_SUMMARY"
