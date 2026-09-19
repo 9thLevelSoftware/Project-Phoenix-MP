@@ -276,6 +276,39 @@ class CsvExporterTest {
         assertEquals("", CsvExporter.escapeCsvField(""))
     }
 
+    @Test
+    fun escapeCsvField_formulaPrefixes_neutralizedWithApostrophe() {
+        assertEquals("'=1+1", CsvExporter.escapeCsvField("=1+1"))
+        assertEquals("'+1", CsvExporter.escapeCsvField("+1"))
+        assertEquals("'-1", CsvExporter.escapeCsvField("-1"))
+        assertEquals("'@SUM(A1)", CsvExporter.escapeCsvField("@SUM(A1)"))
+        // Prefix is applied before RFC 4180 quoting.
+        assertEquals(
+            "\"'=HYPERLINK(\"\"http://x\"\",\"\"y\"\")\"",
+            CsvExporter.escapeCsvField("=HYPERLINK(\"http://x\",\"y\")"),
+        )
+        // Formula characters later in the text are harmless.
+        assertEquals("Bench = Press", CsvExporter.escapeCsvField("Bench = Press"))
+    }
+
+    @Test
+    fun formulaName_exportedAsText_negativeWeightColumnUnchanged() {
+        val session = WorkoutSession(
+            id = "s1",
+            timestamp = 1_700_000_000_000L,
+            weightPerCableKg = -5f,
+            totalReps = 3,
+            exerciseName = "=HYPERLINK(1)",
+        )
+
+        val cols = CsvExporter.buildRow(session, setOrder = 1, weightUnit = WeightUnit.KG).split(",")
+
+        assertEquals("'=HYPERLINK(1)", cols[1]) // Workout Name (standalone -> exercise name)
+        assertEquals("'=HYPERLINK(1)", cols[3]) // Exercise Name
+        assertEquals("-10", cols[5]) // Weight is numeric: not prefixed
+        assertEquals("3", cols[6]) // Reps
+    }
+
     // -------------------------------------------------------------------------
     // groupSessions
     // -------------------------------------------------------------------------

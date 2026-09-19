@@ -94,6 +94,7 @@ import com.devil.phoenixproject.util.BackupStats
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.ImportResult
+import com.devil.phoenixproject.util.autoBackupLocationNote
 import com.devil.phoenixproject.util.rememberBackupLocationPicker
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
@@ -852,7 +853,8 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "Automatically save single workouts and completed routines to local backup files",
+                            "Automatically save single workouts and completed routines to local backup files" +
+                                (autoBackupLocationNote?.let { ". $it" } ?: ""),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )

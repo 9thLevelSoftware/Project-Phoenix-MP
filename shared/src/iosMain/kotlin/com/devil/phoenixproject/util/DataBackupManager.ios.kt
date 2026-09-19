@@ -39,6 +39,8 @@ import platform.darwin.NSObject
 import platform.darwin.dispatch_async
 import platform.darwin.dispatch_get_main_queue
 
+actual val autoBackupLocationNote: String? = null
+
 /**
  * iOS implementation of DataBackupManager.
  * Uses NSFileManager for file operations and Documents directory for storage.

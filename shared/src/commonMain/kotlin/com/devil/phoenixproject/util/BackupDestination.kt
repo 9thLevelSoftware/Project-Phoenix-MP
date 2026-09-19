@@ -66,3 +66,10 @@ sealed class BackupDestination {
         }
     }
 }
+
+/**
+ * Platform note appended to the auto-backup setting description, or null when the
+ * default location needs no explanation. Android 9 and older keep auto-backups in
+ * app-specific storage instead of public Downloads.
+ */
+expect val autoBackupLocationNote: String?

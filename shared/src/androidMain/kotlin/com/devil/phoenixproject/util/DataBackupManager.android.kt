@@ -18,6 +18,36 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
 /**
+ * Directory for per-session auto-backups written through the file API.
+ *
+ * - Android 10+ (Q): a cache staging dir; the real write goes to MediaStore Downloads.
+ * - Android 9 and older: the app-specific external Documents dir
+ *   (`Android/data/<package>/files/Documents/PhoenixBackups`). It needs no storage
+ *   permission (the manifest declares none) and is not world-readable public Downloads.
+ *   Falls back to internal storage when external storage is unavailable. Backups here
+ *   are removed if the app is uninstalled.
+ */
+internal fun sessionBackupDirectory(
+    sdkInt: Int,
+    cacheDir: File,
+    filesDir: File,
+    externalDocumentsDir: () -> File?,
+): File = if (sdkInt >= Build.VERSION_CODES.Q) {
+    File(cacheDir, "PhoenixBackups")
+} else {
+    File(externalDocumentsDir() ?: filesDir, "PhoenixBackups")
+}
+
+/** Android 9 and older keep auto-backups in app storage; say so in the setting. */
+actual val autoBackupLocationNote: String?
+    get() = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
+        "On Android 9 and older, auto-backups are saved in app storage " +
+            "(Android/data/.../files/Documents/PhoenixBackups) and are deleted if the app is uninstalled."
+    } else {
+        null
+    }
+
+/**
  * Android implementation of DataBackupManager.
  * Uses MediaStore for Android 10+ and direct file access for older versions.
  *
@@ -42,27 +72,24 @@ class AndroidDataBackupManager(
             return dir
         }
 
+    private fun sessionBackupDir(): File = sessionBackupDirectory(
+        sdkInt = Build.VERSION.SDK_INT,
+        cacheDir = context.cacheDir,
+        filesDir = context.filesDir,
+        externalDocumentsDir = { context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) },
+    )
+
     override fun getSessionBackupDirectory(): String {
         // On Q+ we write via MediaStore, but need a staging path for base class path construction.
-        // On pre-Q we write directly to public Downloads (survives uninstall).
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val dir = File(context.cacheDir, "PhoenixBackups")
-            if (!dir.exists()) dir.mkdirs()
-            dir.absolutePath
-        } else {
-            @Suppress("DEPRECATION")
-            val dir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "PhoenixBackups",
-            )
-            if (!dir.exists()) dir.mkdirs()
-            dir.absolutePath
-        }
+        // On pre-Q we write directly to the app-specific Documents dir (see sessionBackupDirectory).
+        val dir = sessionBackupDir()
+        if (!dir.exists()) dir.mkdirs()
+        return dir.absolutePath
     }
 
     /**
      * On Android Q+, write session backups to MediaStore Downloads so they survive
-     * app uninstall. On pre-Q, the base class writes directly to public Downloads.
+     * app uninstall. On pre-Q, the base class writes to the app-specific Documents dir.
      *
      * When a custom backup destination is configured, writes there first.
      * Falls back to default location if the custom destination is inaccessible.
@@ -130,7 +157,7 @@ class AndroidDataBackupManager(
                 it.write(content.toByteArray(Charsets.UTF_8))
             }
         } else {
-            // Pre-Q: write directly to public Downloads path (already set by getSessionBackupDirectory)
+            // Pre-Q: write to the app-specific path already set by getSessionBackupDirectory
             super.writeSessionBackupFile(filePath, content)
         }
     }
@@ -152,12 +179,7 @@ class AndroidDataBackupManager(
         }
         sizes
     } else {
-        @Suppress("DEPRECATION")
-        val dir = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "PhoenixBackups",
-        )
-        dir.listFiles()
+        sessionBackupDir().listFiles()
             ?.filter { it.isFile && it.name.endsWith(".json") }
             ?.map { it.length() }
             ?: emptyList()
@@ -197,12 +219,7 @@ class AndroidDataBackupManager(
                 }
             }
         } else {
-            @Suppress("DEPRECATION")
-            val dir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "PhoenixBackups",
-            )
-            val files = dir.listFiles()
+            val files = sessionBackupDir().listFiles()
                 ?.filter { it.isFile && it.name.startsWith("phoenix-") && it.name.endsWith(".json") }
                 ?.sortedBy { it.lastModified() }
                 ?: return

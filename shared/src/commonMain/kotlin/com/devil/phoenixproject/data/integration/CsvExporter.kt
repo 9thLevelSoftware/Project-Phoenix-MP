@@ -200,17 +200,25 @@ object CsvExporter {
     }
 
     /**
-     * Escape a CSV field value per RFC 4180. Wraps in double-quotes if the value
+     * Escape a text CSV field value per RFC 4180. Wraps in double-quotes if the value
      * contains a comma, double-quote, newline, or carriage return. Internal
      * double-quotes are doubled.
+     *
+     * Text starting with `=`, `+`, `-` or `@` is prefixed with `'` so spreadsheet apps
+     * show it as text instead of evaluating it as a formula (CSV formula injection via
+     * exercise or routine names). Only text columns go through here; numeric columns
+     * (set order, weight, reps) are appended as-is, so negative numbers stay numbers.
      */
     internal fun escapeCsvField(value: String): String {
-        val needsQuoting = value.contains(',') || value.contains('"') ||
-            value.contains('\n') || value.contains('\r')
+        val text = if (value.isNotEmpty() && value[0] in FORMULA_PREFIXES) "'$value" else value
+        val needsQuoting = text.contains(',') || text.contains('"') ||
+            text.contains('\n') || text.contains('\r')
         return if (needsQuoting) {
-            "\"${value.replace("\"", "\"\"")}\""
+            "\"${text.replace("\"", "\"\"")}\""
         } else {
-            value
+            text
         }
     }
+
+    private const val FORMULA_PREFIXES = "=+-@"
 }
