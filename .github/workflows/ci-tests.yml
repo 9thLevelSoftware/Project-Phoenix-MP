@@ -182,8 +182,12 @@ jobs:
     needs: unit-tests
     if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     continue-on-error: true
+    permissions:
+      contents: read
+      checks: write
     env:
-      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx8g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g"
+      # macos-latest runners have 7 GB RAM; keep the Gradle heap well under it.
+      GRADLE_OPTS: "-Dorg.gradle.jvmargs=-Xmx4g -XX:+UseParallelGC -XX:MaxMetaspaceSize=1g"
 
     steps:
       - name: Checkout repository

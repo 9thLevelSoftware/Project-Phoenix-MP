@@ -94,12 +94,61 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         ):
             with self.subTest(workflow=name):
                 text = workflow(name)
-                self.assertIn("\n  tests:\n    uses: ./.github/workflows/release-tests.yml\n", text)
+                self.assertRegex(
+                    text,
+                    r"\n  tests:\n(?:    if: github\.ref == 'refs/heads/main'\n)?"
+                    r"    uses: \./\.github/workflows/release-tests\.yml\n",
+                )
                 self.assertIn(f"\n  {first_job}:\n    needs: tests\n", text)
-        # Orchestrators test once up front; the platform workflows they call skip the re-run.
-        for name in ("release-all.yml", "release-all-existing.yml"):
+        gate = workflow("release-tests.yml")
+        self.assertNotIn("continue-on-error", gate)
+        self.assertNotIn("|| true", gate)
+        # Orchestrators test once up front, build exactly the tested commit, and tell the
+        # platform workflows they call to skip the re-run.
+        for name, first_job in (
+            ("release-all.yml", "create-release"),
+            ("release-all-existing.yml", "prepare-release"),
+        ):
             with self.subTest(workflow=name):
-                self.assertEqual(workflow(name).count("skip_tests: true"), 4)
+                text = workflow(name)
+                self.assertEqual(text.count("skip_tests: true"), 4)
+                self.assertIn(
+                    f"\n  {first_job}:\n    needs: tests\n"
+                    "    if: ${{ !cancelled() && needs.tests.result != 'failure' }}\n",
+                    text,
+                )
+        self.assertIn("ref: ${{ needs.tests.outputs.sha }}", workflow("release-all.yml"))
+        self.assertEqual(
+            workflow("release-all-existing.yml").count(
+                "source_ref: ${{ needs.prepare-release.outputs.sha }}"
+            ),
+            4,
+        )
+        # Direct dispatch of a platform workflow must run the tests: skip only via an input
+        # that defaults to false, and test the ref that is built.
+        for name in (
+            "android-playstore.yml",
+            "android-release-apk.yml",
+            "ios-release-ipa.yml",
+            "ios-testflight.yml",
+        ):
+            with self.subTest(workflow=name):
+                text = workflow(name)
+                self.assertIn(
+                    "\n  tests:\n    uses: ./.github/workflows/release-tests.yml\n    with:\n"
+                    "      ref: ${{ inputs.source_ref }}\n"
+                    "      skip: ${{ inputs.skip_tests || false }}\n",
+                    text,
+                )
+                self.assertRegex(
+                    text,
+                    r"(?m)^      skip_tests:\n(?:        (?!default:).*\n)*        default: false\n",
+                )
+                self.assertEqual(text.count("skip_tests"), 2)
+        internal = workflow("ios-testflight-internal.yml")
+        self.assertIn(
+            "\n  tests:\n    uses: ./.github/workflows/release-tests.yml\n\n", internal
+        )  # no `with:`, so it can never be skipped
 
     def test_release_workflow_actions_are_sha_pinned(self) -> None:
         for name in (
@@ -130,6 +179,10 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         self.assertIn("continue-on-error: true", body)
         self.assertIn(":shared:iosSimulatorArm64Test", body)
         self.assertIn("runs-on: macos-latest", body)
+        self.assertIn("-Xmx4g", body)
+        self.assertIn("uses: mikepenz/action-junit-report@", body)
+        self.assertIn("fail_on_failure: false", body)
+        self.assertNotIn("fail_on_failure: true", body)
         self.assertIn(
             "if: github.event_name == 'workflow_dispatch' || "
             "(github.event_name == 'push' && github.ref == 'refs/heads/main')",

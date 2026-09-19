@@ -40,6 +40,7 @@ jobs:
   tests:
     uses: ./.github/workflows/release-tests.yml
     with:
+      ref: ${{ inputs.source_ref }}
       skip: ${{ inputs.skip_tests || false }}
 
   build-and-upload:

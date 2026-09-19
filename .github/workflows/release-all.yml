@@ -37,13 +37,16 @@ permissions:
   contents: write
 
 jobs:
+  # Off-main dispatches skip the test run; create-release then fails fast on its main-branch check.
   tests:
+    if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/release-tests.yml
     with:
       ref: main
 
   create-release:
     needs: tests
+    if: ${{ !cancelled() && needs.tests.result != 'failure' }}
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.version.outputs.tag }}
@@ -54,10 +57,10 @@ jobs:
             echo "Run Release All Platforms from main." >&2
             exit 1
           fi
-      - name: Checkout main
+      - name: Checkout the tested main commit
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: main
+          ref: ${{ needs.tests.outputs.sha }}
           fetch-depth: 0
       - name: Determine release version
         id: version

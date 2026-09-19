@@ -41,14 +41,19 @@ permissions:
   contents: write
 
 jobs:
+  # Off-main dispatches skip the test run; prepare-release then fails fast on its main-branch check.
   tests:
+    if: github.ref == 'refs/heads/main'
     uses: ./.github/workflows/release-tests.yml
     with:
       ref: main
 
   prepare-release:
     needs: tests
+    if: ${{ !cancelled() && needs.tests.result != 'failure' }}
     runs-on: ubuntu-latest
+    outputs:
+      sha: ${{ needs.tests.outputs.sha }}
     steps:
       - name: Verify workflow runs from main
         run: |
@@ -77,7 +82,7 @@ jobs:
     if: ${{ !inputs.skip_android_apk }}
     uses: ./.github/workflows/android-release-apk.yml
     with:
-      source_ref: main
+      source_ref: ${{ needs.prepare-release.outputs.sha }}
       release_tag: ${{ inputs.release_tag }}
       versionCodeOverride: ${{ inputs.versionCodeOverride }}
       skip_tests: true
@@ -88,7 +93,7 @@ jobs:
     if: ${{ !inputs.skip_ios_ipa }}
     uses: ./.github/workflows/ios-release-ipa.yml
     with:
-      source_ref: main
+      source_ref: ${{ needs.prepare-release.outputs.sha }}
       release_tag: ${{ inputs.release_tag }}
       skip_tests: true
     secrets: inherit
@@ -98,7 +103,7 @@ jobs:
     if: ${{ !inputs.skip_android_playstore }}
     uses: ./.github/workflows/android-playstore.yml
     with:
-      source_ref: main
+      source_ref: ${{ needs.prepare-release.outputs.sha }}
       versionCodeOverride: ${{ inputs.versionCodeOverride }}
       submitForReview: ${{ inputs.submit_android_playstore_for_review }}
       skip_tests: true
@@ -109,7 +114,7 @@ jobs:
     if: ${{ !inputs.skip_ios_testflight }}
     uses: ./.github/workflows/ios-testflight.yml
     with:
-      source_ref: main
+      source_ref: ${{ needs.prepare-release.outputs.sha }}
       skip_tests: true
     secrets: inherit
 
