@@ -98,6 +98,7 @@ object PortalPullAdapter {
         // Build sessions with async exercise lookup
         return portalSession.exercises.map { exercise ->
             val totalReps = exercise.sets.sumOf { it.actualReps }
+            val workingReps = pulledWorkingReps(portalSession, totalReps)
             val maxWeight = exercise.sets.maxOfOrNull { it.weightKg } ?: 0f
 
             // Attempt to resolve exerciseId from local catalog (ID-first, then name-based)
@@ -119,13 +120,16 @@ object PortalPullAdapter {
                 weightPerCableKg = maxWeight, // Already per-cable from DB
                 duration = (portalSession.durationSeconds * 1000L) / exerciseCount, // seconds → ms
                 totalReps = totalReps,
-                warmupReps = pulledWarmupReps(portalSession, exercise),
-                workingReps = pulledWorkingReps(portalSession, exercise, totalReps),
+                warmupReps = pulledWarmupReps(portalSession, totalReps, workingReps),
+                workingReps = workingReps,
                 eccentricLoad = portalSession.eccentricLoad ?: DEFAULT_SESSION.eccentricLoad,
                 echoLevel = portalSession.echoLevel ?: DEFAULT_SESSION.echoLevel,
                 exerciseId = resolvedExerciseId,
                 exerciseName = exercise.name,
                 // Standalone portal sessions carry no routineSessionId; only grouped ones do.
+                // A standalone session pushed by mobile uses its session id as the exercise
+                // id (PortalSyncAdapter.buildPortalExerciseWithTelemetry), so the pulled row's
+                // id already maps back to the same portal session.
                 routineSessionId = portalSession.routineSessionId,
                 routineName = portalSession.routineName,
                 heaviestLiftKg = maxWeight,
@@ -152,18 +156,24 @@ object PortalPullAdapter {
     private val DEFAULT_SESSION = WorkoutSession()
 
     /**
-     * The portal stores warmup/working reps once per session, taken from the first exercise
-     * row at push time (lowest orderIndex). Apply them to that row only; other rows of a
-     * grouped workout fall back to "all reps are working reps".
+     * The portal stores warmup/working reps once per session, overwritten by whichever push
+     * batch landed last (a routine is usually pushed set by set, and each partial batch writes
+     * its own first row's values). They are therefore only trustworthy for a single-exercise
+     * session. Multi-exercise rows fall back to "all reps are working reps". The values are
+     * clamped so a row is never internally inconsistent (0 <= working <= total,
+     * 0 <= warmup <= total - working).
      */
-    private fun isFirstExercise(portalSession: PullWorkoutSessionDto, exercise: PullExerciseDto): Boolean =
-        exercise === portalSession.exercises.minByOrNull { it.orderIndex }
+    private fun pulledWorkingReps(portalSession: PullWorkoutSessionDto, totalReps: Int): Int =
+        portalSession.workingReps
+            ?.takeIf { portalSession.exercises.size == 1 }
+            ?.coerceIn(0, maxOf(totalReps, 0))
+            ?: totalReps
 
-    private fun pulledWarmupReps(portalSession: PullWorkoutSessionDto, exercise: PullExerciseDto): Int =
-        portalSession.warmupReps?.takeIf { isFirstExercise(portalSession, exercise) } ?: 0
-
-    private fun pulledWorkingReps(portalSession: PullWorkoutSessionDto, exercise: PullExerciseDto, totalReps: Int): Int =
-        portalSession.workingReps?.takeIf { isFirstExercise(portalSession, exercise) } ?: totalReps
+    private fun pulledWarmupReps(portalSession: PullWorkoutSessionDto, totalReps: Int, workingReps: Int): Int =
+        portalSession.warmupReps
+            ?.takeIf { portalSession.exercises.size == 1 }
+            ?.coerceIn(0, maxOf(totalReps - workingReps, 0))
+            ?: 0
 
     /**
      * Issue #591: Aggregate per-set rep summaries into the summary-level
@@ -268,6 +278,7 @@ object PortalPullAdapter {
 
         return portalSession.exercises.map { exercise ->
             val totalReps = exercise.sets.sumOf { it.actualReps }
+            val workingReps = pulledWorkingReps(portalSession, totalReps)
             val maxWeight = exercise.sets.maxOfOrNull { it.weightKg } ?: 0f
 
             WorkoutSession(
@@ -278,13 +289,16 @@ object PortalPullAdapter {
                 weightPerCableKg = maxWeight, // Already per-cable from DB
                 duration = (portalSession.durationSeconds * 1000L) / exerciseCount, // seconds → ms
                 totalReps = totalReps,
-                warmupReps = pulledWarmupReps(portalSession, exercise),
-                workingReps = pulledWorkingReps(portalSession, exercise, totalReps),
+                warmupReps = pulledWarmupReps(portalSession, totalReps, workingReps),
+                workingReps = workingReps,
                 eccentricLoad = portalSession.eccentricLoad ?: DEFAULT_SESSION.eccentricLoad,
                 echoLevel = portalSession.echoLevel ?: DEFAULT_SESSION.echoLevel,
                 exerciseId = null, // No catalog ID from portal; requires local catalog lookup
                 exerciseName = exercise.name,
                 // Standalone portal sessions carry no routineSessionId; only grouped ones do.
+                // A standalone session pushed by mobile uses its session id as the exercise
+                // id (PortalSyncAdapter.buildPortalExerciseWithTelemetry), so the pulled row's
+                // id already maps back to the same portal session.
                 routineSessionId = portalSession.routineSessionId,
                 routineName = portalSession.routineName,
                 heaviestLiftKg = maxWeight,

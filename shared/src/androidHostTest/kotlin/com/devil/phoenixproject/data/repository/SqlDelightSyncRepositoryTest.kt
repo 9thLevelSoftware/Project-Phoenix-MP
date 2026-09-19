@@ -75,8 +75,8 @@ class SqlDelightSyncRepositoryTest {
                 com.devil.phoenixproject.domain.model.WorkoutSession(
                     id = sessionId,
                     timestamp = 1_700_000_000_000,
-                    exerciseId = "bench",
-                    exerciseName = "Bench Press",
+                    exerciseId = "incline-bench",
+                    exerciseName = "Incline Bench Press",
                     totalReps = 11,
                     warmupReps = 0,
                     workingReps = 11,
@@ -91,6 +91,8 @@ class SqlDelightSyncRepositoryTest {
         assertEquals(8L, session.workingReps)
         assertEquals(1_700_000_000_500, session.updatedAt)
         assertEquals(40.0, session.peakForceConcentricA)
+        assertEquals("bench", session.exerciseId, "a row captured here keeps its own exercise tag")
+        assertEquals("Bench Press", session.exerciseName)
         assertEquals(2, q.selectMetricsBySession(sessionId).executeAsList().size)
         assertEquals(1, q.selectPhaseStatsBySessionIds(listOf(sessionId)).executeAsList().size)
         assertEquals(1, q.selectRepMetricsBySession(sessionId).executeAsList().size)
@@ -109,6 +111,8 @@ class SqlDelightSyncRepositoryTest {
             updatedAt = "2026-03-20T10:05:00Z",
             warmupReps = 3,
             workingReps = 8,
+            eccentricLoad = 150,
+            echoLevel = 3,
             exercises = listOf(
                 PullExerciseDto(
                     id = "pulled-standalone",
@@ -129,8 +133,52 @@ class SqlDelightSyncRepositoryTest {
         assertEquals(11L, session.totalReps)
         assertEquals(3L, session.warmupReps)
         assertEquals(8L, session.workingReps)
+        assertEquals(150L, session.eccentricLoad)
+        assertEquals(3L, session.echoLevel)
         assertNull(session.routineSessionId)
         assertEquals(1_774_001_100_000, session.updatedAt)
+    }
+
+    @Test
+    fun `newer pull carries an exercise re-tag onto a pulled row and changes nothing else`() = runTest {
+        val pulled = com.devil.phoenixproject.domain.model.WorkoutSession(
+            id = "pulled-just-lift",
+            timestamp = 1_700_000_000_000,
+            exerciseId = null,
+            exerciseName = null,
+            isJustLift = true,
+            totalReps = 10,
+            workingReps = 7,
+            warmupReps = 3,
+            profileId = "active-profile",
+        )
+        repository.mergeSessionsLww(listOf(pulled), mapOf(pulled.id to 1_700_000_100_000))
+
+        // Another device tagged the Just Lift session; the portal copy is newer and lossy.
+        val retagged = pulled.copy(
+            exerciseId = "squat",
+            exerciseName = "Back Squat",
+            isJustLift = false,
+            totalReps = 10,
+            workingReps = 10,
+            warmupReps = 0,
+        )
+        repository.mergeSessionsLww(listOf(retagged), mapOf(pulled.id to 1_700_000_200_000))
+
+        val session = database.phoenixDatabaseQueries.selectSessionById(pulled.id).executeAsOne()
+        assertEquals("squat", session.exerciseId)
+        assertEquals("Back Squat", session.exerciseName)
+        assertEquals(1_700_000_200_000, session.updatedAt)
+        assertEquals(1L, session.isJustLift)
+        assertEquals(7L, session.workingReps)
+        assertEquals(3L, session.warmupReps)
+
+        // An older portal copy never reverts the tag.
+        repository.mergeSessionsLww(
+            listOf(retagged.copy(exerciseId = "deadlift", exerciseName = "Deadlift")),
+            mapOf(pulled.id to 1_700_000_150_000),
+        )
+        assertEquals("squat", database.phoenixDatabaseQueries.selectSessionById(pulled.id).executeAsOne().exerciseId)
     }
 
     @Test

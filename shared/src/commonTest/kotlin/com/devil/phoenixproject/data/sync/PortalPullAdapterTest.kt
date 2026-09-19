@@ -145,14 +145,16 @@ class PortalPullAdapterTest {
     }
 
     @Test
-    fun `pulled grouped session applies the session rep split to the first exercise only`() = runTest {
+    fun `pulled multi-exercise session ignores the session rep split even when orderIndex ties`() = runTest {
+        // Partial per-set pushes restart orderIndex at 0, so several exercises can share it,
+        // and the session-level split may belong to any of them.
         val portalSession = makePullSessionDto(
             id = "group-1",
             routineSessionId = "group-1",
             warmupReps = 2,
             workingReps = 10,
             exercises = listOf(
-                makePullExerciseDto(id = "ex-b", orderIndex = 1, reps = 9),
+                makePullExerciseDto(id = "ex-b", orderIndex = 0, reps = 9),
                 makePullExerciseDto(id = "ex-a", orderIndex = 0, reps = 12),
             ),
         )
@@ -160,12 +162,27 @@ class PortalPullAdapterTest {
         val rows = PortalPullAdapter.toWorkoutSessionsWithLookup(portalSession, "default") { _, _, _ -> null }
             .associateBy { it.id }
 
-        assertEquals(2, rows.getValue("ex-a").warmupReps)
-        assertEquals(10, rows.getValue("ex-a").workingReps)
+        assertEquals(0, rows.getValue("ex-a").warmupReps)
+        assertEquals(12, rows.getValue("ex-a").workingReps)
         assertEquals(0, rows.getValue("ex-b").warmupReps)
         assertEquals(9, rows.getValue("ex-b").workingReps)
         assertEquals("group-1", rows.getValue("ex-a").routineSessionId)
         assertEquals("group-1", rows.getValue("ex-b").routineSessionId)
+    }
+
+    @Test
+    fun `pulled rep split is clamped to the row's total reps`() = runTest {
+        val portalSession = makePullSessionDto(
+            id = "clamp-1",
+            warmupReps = 5,
+            workingReps = 20,
+            exercises = listOf(makePullExerciseDto(id = "clamp-1", orderIndex = 0, reps = 12)),
+        )
+
+        val row = PortalPullAdapter.toWorkoutSessionsWithLookup(portalSession, "default") { _, _, _ -> null }.single()
+
+        assertEquals(12, row.workingReps)
+        assertEquals(0, row.warmupReps)
     }
 
     @Test

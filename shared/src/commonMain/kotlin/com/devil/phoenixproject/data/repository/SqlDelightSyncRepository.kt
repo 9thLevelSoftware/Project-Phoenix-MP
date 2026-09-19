@@ -1495,13 +1495,17 @@ class SqlDelightSyncRepository(
 
     /**
      * Pull merge for sessions (KD-3): insert the rows this device doesn't have yet and never
-     * touch an existing row.
+     * REPLACE an existing row.
      *
-     * A local WorkoutSession row is a measurement captured on this device, and the pull
-     * projection is lossy (no rep data, session-level config). The portal web app only authors
-     * session notes, which merge separately through [mergeSessionNotes]. Rewriting an existing
-     * row could therefore only lose data, and a REPLACE would also cascade-delete its
-     * MetricSample, RepMetric, PhaseStatistics and CompletedSet children.
+     * A local WorkoutSession row is a measurement captured on a device, and the pull projection
+     * is lossy (no rep data, session-level config). Rebuilding an existing row from it could
+     * only lose data, and a REPLACE would also cascade-delete its MetricSample, RepMetric,
+     * PhaseStatistics and CompletedSet children.
+     *
+     * The one in-place change is the exercise tag: when the portal copy is newer, its
+     * exerciseId/exerciseName are applied to a pulled-origin row (no local RepMetric or
+     * CompletedSet children), so a Just Lift re-tag on another device still arrives. Nothing
+     * else on the row changes, and a null incoming exerciseId never clears a local tag.
      *
      * New rows are stamped with the portal `updatedAt` from [updatedAtBySessionId] (0 when
      * absent) so they are not picked up as local changes by the next push.
@@ -1513,7 +1517,17 @@ class SqlDelightSyncRepository(
         if (sessions.isEmpty()) return@withContext
         db.transaction {
             for (session in sessions) {
-                insertSessionIfAbsent(session, updatedAt = updatedAtBySessionId[session.id] ?: 0L)
+                val incomingTs = updatedAtBySessionId[session.id]
+                insertSessionIfAbsent(session, updatedAt = incomingTs ?: 0L)
+                val exerciseId = session.exerciseId
+                if (incomingTs != null && exerciseId != null) {
+                    queries.updatePulledSessionTag(
+                        exerciseId = exerciseId,
+                        exerciseName = session.exerciseName,
+                        updatedAt = incomingTs,
+                        id = session.id,
+                    )
+                }
             }
         }
     }

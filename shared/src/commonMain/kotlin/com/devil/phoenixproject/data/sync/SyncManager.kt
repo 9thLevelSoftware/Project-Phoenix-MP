@@ -622,6 +622,7 @@ class SyncManager(
         // Without this, rejections were decoded but never surfaced (audit F025).
         val pushResponse = pushResult.getOrThrow()
         val rejections = pushResponse.rejections
+        val rejectedSessionIds = rejections.sessions.map { it.id }.toSet()
         val totalRejections = rejections.sessions.size + rejections.routines.size +
             rejections.cycles.size + rejections.externalActivities.size +
             rejections.rpgAttributes.size + rejections.gamificationStats.size
@@ -639,10 +640,14 @@ class SyncManager(
         // Use prePushLastSync (captured before push) so batched push doesn't cause
         // earlier-batch sessions to be missed by the re-query.
         //
-        // LWW-rejected sessions are stamped too. The pull never rewrites an existing
-        // session (KD-3), so an unstamped rejected row would be re-pushed and
-        // re-rejected on every sync. A session rejection only means the portal row
-        // is newer because of a web notes edit, and notes merge through SessionNotes.
+        // Never stamp a session the server rejected under LWW. A rejection can mean
+        // the portal skipped this session's set/rep data (its children are gated on
+        // acceptance), or that a local edit never landed; stamping would mark that
+        // unsent data as synced for good. Rejected rows stay pending and are retried
+        // on the next sync. (The pull no longer rewrites existing rows, so nothing
+        // "repairs" them from the portal side; the durable fix is PR 10's watermark
+        // work.) A rejection id is the portal session id (routineSessionId for
+        // grouped routine sessions, else the local session id), so match on either.
         val stampTime = currentTimeMillis()
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
         val pushedSessions = dedupeWorkoutSessionsById(
@@ -652,12 +657,22 @@ class SyncManager(
             ),
             context = "Post-push stamping",
         )
+        var stampedCount = 0
+        var skippedRejected = 0
         pushedSessions.forEach { session ->
-            syncRepository.updateSessionTimestamp(session.id, stampTime)
+            val isRejected = session.id in rejectedSessionIds ||
+                (session.routineSessionId != null && session.routineSessionId in rejectedSessionIds)
+            if (isRejected) {
+                skippedRejected++
+            } else {
+                syncRepository.updateSessionTimestamp(session.id, stampTime)
+                stampedCount++
+            }
         }
-        if (pushedSessions.isNotEmpty()) {
+        if (stampedCount > 0 || skippedRejected > 0) {
             Logger.d("SyncManager") {
-                "Stamped ${pushedSessions.size} pushed sessions with updatedAt=$stampTime"
+                "Stamped $stampedCount pushed sessions with updatedAt=$stampTime" +
+                    (if (skippedRejected > 0) "; left $skippedRejected LWW-rejected session(s) unstamped for retry" else "")
             }
         }
 
@@ -1904,8 +1919,8 @@ class SyncManager(
             .toMap()
 
         // 3. Execute ordinary repository merges. Sessions are insert-only on both paths
-        // (existing rows are never rewritten); the updatedAt path stamps new rows with
-        // the portal updatedAt instead of the session timestamp.
+        // (existing rows are never REPLACEd); the updatedAt path stamps new rows with the
+        // portal updatedAt and also carries newer exercise tags onto pulled-origin rows.
         // These calls may commit independently of the preference repository call above.
         val sessionsHaveUpdatedAt = sessionUpdatedAtById.values.any { it > 0L }
         try {

@@ -908,7 +908,8 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 -- Includes updatedAt to prevent re-push (selectSessionsModifiedSince picks up updatedAt IS NULL).
 -- Never INSERT OR REPLACE a WorkoutSession: with foreign keys ON the implicit delete cascades
 -- to MetricSample, PhaseStatistics, RepMetric, RepBiomechanics and CompletedSet. The sync pull
--- only inserts sessions it doesn't have and never rewrites an existing row.
+-- only inserts sessions it doesn't have; the one in-place change it makes is
+-- updatePulledSessionTag below.
 insertSessionIgnore:
 INSERT OR IGNORE INTO WorkoutSession (
     id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,
@@ -927,6 +928,17 @@ INSERT OR IGNORE INTO WorkoutSession (
     display_multiplier, externalAddedLoadKg, counterweightKg, rackItemsJson
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- Sync pull: carry a newer exercise tag (e.g. a Just Lift session re-tagged on another
+-- device) onto a row this device pulled. Only the tag columns and the stamp change. Rows
+-- with local RepMetric/CompletedSet children were captured here and keep their own tag.
+updatePulledSessionTag:
+UPDATE WorkoutSession
+SET exerciseId = :exerciseId, exerciseName = :exerciseName, updatedAt = :updatedAt
+WHERE id = :id
+  AND COALESCE(updatedAt, 0) < :updatedAt
+  AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = :id)
+  AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = :id);
 
 updateSession:
 UPDATE WorkoutSession

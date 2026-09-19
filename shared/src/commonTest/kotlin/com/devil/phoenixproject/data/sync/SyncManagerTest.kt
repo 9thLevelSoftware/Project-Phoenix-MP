@@ -418,7 +418,7 @@ class SyncManagerTest {
     }
 
     @Test
-    fun syncStampsLwwRejectedSessionSoTheNextSyncDoesNotResendIt() = runTest {
+    fun syncLeavesLwwRejectedSessionUnstampedSoTheNextSyncRetriesIt() = runTest {
         setupAuthenticated()
         val sessionId = "5f1c7a1e-2b1d-4c55-9d1e-6a3f0e2b7c11"
         fakeSyncRepo.workoutSessionsToReturn = listOf(
@@ -439,18 +439,16 @@ class SyncManagerTest {
 
         assertTrue(manager.sync().isSuccess)
         assertEquals(listOf(sessionId), fakeApi.pushPayloads.single().sessions.map { it.id })
-        assertEquals(
-            listOf(sessionId),
-            fakeSyncRepo.updateSessionTimestampCalls,
-            "An LWW-rejected session is stamped like any other pushed session",
+        assertTrue(
+            fakeSyncRepo.updateSessionTimestampCalls.isEmpty(),
+            "An LWW-rejected session may carry set data the portal skipped; it must not be stamped as synced",
         )
 
         assertTrue(manager.sync().isSuccess)
-        // FakeSyncRepository mirrors selectSessionsModifiedSince: a stamped session is only
-        // re-selected while its stamp is newer than the push watermark.
-        assertTrue(
-            fakeApi.pushPayloads.drop(1).none { payload -> payload.sessions.any { it.id == sessionId } },
-            "The rejected session must not be re-sent on the next sync",
+        assertEquals(
+            listOf(sessionId),
+            fakeApi.pushPayloads.last().sessions.map { it.id },
+            "The rejected session stays pending and is retried on the next sync",
         )
     }
 

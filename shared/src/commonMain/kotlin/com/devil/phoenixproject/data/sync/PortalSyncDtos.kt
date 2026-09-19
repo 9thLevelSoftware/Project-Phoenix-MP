@@ -777,7 +777,7 @@ data class PortalSyncPullResponse(
 
 /**
  * Pulled workout session -- merged into local DB via INSERT OR IGNORE.
- * Existing local sessions are never rewritten by a pull (KD-3).
+ * Existing local sessions are never REPLACEd by a pull (KD-3).
  * Multi-device scenario: sessions from device A appear on device B after pull.
  */
 @Serializable
@@ -802,8 +802,9 @@ data class PullWorkoutSessionDto(
     val notes: String? = null,
     /**
      * Server-canonical last-write timestamp (ISO 8601). Stamped onto newly
-     * inserted pulled rows and used for the SessionNotes LWW; it never
-     * causes an existing local session row to be rewritten.
+     * inserted pulled rows, gates the exercise-tag update on pulled-origin
+     * rows, and drives the SessionNotes LWW. It never causes an existing
+     * local session row to be rebuilt.
      */
     val updatedAt: String? = null,
     // Session-level config, taken from the first exercise row at push time

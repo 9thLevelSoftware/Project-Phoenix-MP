@@ -307,15 +307,15 @@ interface SyncRepository {
 
     /**
      * Pull merge for WorkoutSession rows: inserts sessions that don't exist
-     * locally and never rewrites an existing row (KD-3). Local rows are
-     * device-captured measurements; the pull projection is lossy, and the
-     * only portal-authored session field (notes) merges through
-     * [mergeSessionNotes].
+     * locally and never REPLACEs an existing row (KD-3). Local rows are
+     * device-captured measurements and the pull projection is lossy. The only
+     * in-place change is a newer exercise tag (exerciseId/exerciseName) on a
+     * pulled-origin row, so a re-tag on another device still arrives.
      *
      * `updatedAtBySessionId` is the server timestamp that portal-sync-pull
      * returns on `PullWorkoutSessionDto.updatedAt`, keyed on the per-exercise
      * WorkoutSession.id (== portal exercise id; one portal session expands to
-     * N mobile rows). It only stamps newly inserted rows.
+     * N mobile rows). It stamps new rows and gates the tag update.
      *
      * Default no-op so unrelated test fakes do not need to implement.
      */

@@ -66,8 +66,9 @@ class FakeSyncRepository : SyncRepository {
 
     // === Portal Push Operations ===
 
-    // Mirrors selectSessionsModifiedSince: a session stamped by updateSessionTimestamp is
-    // returned only while its stamp is newer than the requested watermark.
+    // Approximates selectSessionsModifiedSince for stamped rows only: a session stamped by
+    // updateSessionTimestamp is returned while its stamp is newer than the watermark.
+    // Unstamped rows are always returned; profile and deletedAt are not filtered.
     override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> =
         workoutSessionsToReturn.filter { session ->
             updatedSessionTimestamps[session.id]?.let { it > timestamp } ?: true
