@@ -3,6 +3,9 @@ package com.devil.phoenixproject.util
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class SessionBackupDirectoryTest {
 
@@ -23,13 +26,30 @@ class SessionBackupDirectoryTest {
     }
 
     @Test
-    fun api30_usesCacheStagingDir_forMediaStoreWrite() {
-        var externalQueried = false
-        val dir = sessionBackupDirectory(30, cacheDir, filesDir) {
-            externalQueried = true
-            externalDocs
+    fun api29and30_useCacheStagingDir_forMediaStoreWrite() {
+        // 29 is the boundary: write/list/prune switch to MediaStore at >= Q.
+        for (sdk in listOf(29, 30)) {
+            var externalQueried = false
+            val dir = sessionBackupDirectory(sdk, cacheDir, filesDir) {
+                externalQueried = true
+                externalDocs
+            }
+            assertEquals(File(cacheDir, "PhoenixBackups"), dir, "sdk $sdk")
+            assertFalse(externalQueried, "sdk $sdk")
         }
-        assertEquals(File(cacheDir, "PhoenixBackups"), dir)
-        assertEquals(false, externalQueried)
+    }
+
+    @Test
+    fun settingsCopy_api28_pointsAtAppStorage_andHidesOpenFolder() {
+        assertTrue(autoBackupLocationNoteFor(28)!!.contains("Documents/PhoenixBackups"))
+        assertTrue(defaultBackupLocationLabelFor(28).contains("Documents/PhoenixBackups"))
+        assertFalse(canOpenBackupFolderFor(28))
+    }
+
+    @Test
+    fun settingsCopy_api29_pointsAtDownloads_andShowsOpenFolder() {
+        assertNull(autoBackupLocationNoteFor(29))
+        assertEquals("Downloads/PhoenixBackups", defaultBackupLocationLabelFor(29))
+        assertTrue(canOpenBackupFolderFor(29))
     }
 }

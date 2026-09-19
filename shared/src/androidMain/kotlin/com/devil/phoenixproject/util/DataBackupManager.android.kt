@@ -22,10 +22,11 @@ import kotlinx.coroutines.withContext
  *
  * - Android 10+ (Q): a cache staging dir; the real write goes to MediaStore Downloads.
  * - Android 9 and older: the app-specific external Documents dir
- *   (`Android/data/<package>/files/Documents/PhoenixBackups`). It needs no storage
- *   permission (the manifest declares none) and is not world-readable public Downloads.
- *   Falls back to internal storage when external storage is unavailable. Backups here
- *   are removed if the app is uninstalled.
+ *   (`Android/data/<package>/files/Documents/PhoenixBackups`): app-specific external
+ *   storage, so no storage permission is needed (the manifest declares none), it is
+ *   outside the public Downloads/MediaStore collection, and it is removed on uninstall.
+ *   Before scoped storage, apps holding READ_EXTERNAL_STORAGE can still read it.
+ *   Falls back to internal storage when external storage is unavailable.
  */
 internal fun sessionBackupDirectory(
     sdkInt: Int,
@@ -39,13 +40,30 @@ internal fun sessionBackupDirectory(
 }
 
 /** Android 9 and older keep auto-backups in app storage; say so in the setting. */
-actual val autoBackupLocationNote: String?
-    get() = if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-        "On Android 9 and older, auto-backups are saved in app storage " +
-            "(Android/data/.../files/Documents/PhoenixBackups) and are deleted if the app is uninstalled."
-    } else {
-        null
-    }
+internal fun autoBackupLocationNoteFor(sdkInt: Int): String? = if (sdkInt < Build.VERSION_CODES.Q) {
+    "On Android 9 and older, auto-backups are saved in app storage " +
+        "(Android/data/.../files/Documents/PhoenixBackups) and are deleted if the app is uninstalled."
+} else {
+    null
+}
+
+/** Settings label for [BackupDestination.Default]; must match [sessionBackupDirectory]. */
+internal fun defaultBackupLocationLabelFor(sdkInt: Int): String = if (sdkInt < Build.VERSION_CODES.Q) {
+    "App storage (Android/data/.../files/Documents/PhoenixBackups)"
+} else {
+    "Downloads/PhoenixBackups"
+}
+
+/**
+ * The pre-Q app-specific dir can't be opened reliably in a file manager, so the
+ * "Open Backup Folder" shortcut only exists on Android 10+.
+ */
+internal fun canOpenBackupFolderFor(sdkInt: Int): Boolean = sdkInt >= Build.VERSION_CODES.Q
+
+// Getters (not stored vals) so host tests never touch Build.VERSION on class load.
+actual val autoBackupLocationNote: String? get() = autoBackupLocationNoteFor(Build.VERSION.SDK_INT)
+actual val defaultBackupLocationLabel: String get() = defaultBackupLocationLabelFor(Build.VERSION.SDK_INT)
+actual val canOpenBackupFolder: Boolean get() = canOpenBackupFolderFor(Build.VERSION.SDK_INT)
 
 /**
  * Android implementation of DataBackupManager.
@@ -259,6 +277,11 @@ class AndroidDataBackupManager(
     }
 
     override fun openBackupFolder() {
+        if (!canOpenBackupFolder) {
+            // Pre-Q auto-backups live in app-specific storage, not Downloads (button is hidden).
+            Logger.w { "Open backup folder is not supported below Android 10" }
+            return
+        }
         try {
             // Open Downloads/PhoenixBackups in system file manager
             val intent = Intent(Intent.ACTION_VIEW).apply {

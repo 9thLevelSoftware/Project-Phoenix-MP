@@ -41,6 +41,11 @@ import platform.darwin.dispatch_get_main_queue
 
 actual val autoBackupLocationNote: String? = null
 
+// Matches getSessionBackupDirectory(): <app Documents>/PhoenixBackups.
+actual val defaultBackupLocationLabel: String = "Documents/PhoenixBackups"
+
+actual val canOpenBackupFolder: Boolean = true
+
 /**
  * iOS implementation of DataBackupManager.
  * Uses NSFileManager for file operations and Documents directory for storage.

@@ -95,6 +95,8 @@ import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.ImportResult
 import com.devil.phoenixproject.util.autoBackupLocationNote
+import com.devil.phoenixproject.util.canOpenBackupFolder
+import com.devil.phoenixproject.util.defaultBackupLocationLabel
 import com.devil.phoenixproject.util.rememberBackupLocationPicker
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
@@ -894,7 +896,7 @@ fun SettingsTab(
                         )
                         Text(
                             when (backupDestination) {
-                                is BackupDestination.Default -> "Default (Downloads/PhoenixBackups)"
+                                is BackupDestination.Default -> "Default ($defaultBackupLocationLabel)"
                                 is BackupDestination.Custom -> backupDestination.displayName
                             },
                             style = MaterialTheme.typography.bodySmall,
@@ -988,28 +990,30 @@ fun SettingsTab(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(Spacing.small))
+                        if (canOpenBackupFolder) {
+                            Spacer(modifier = Modifier.height(Spacing.small))
 
-                        // Open backup folder shortcut
-                        OutlinedButton(
-                            onClick = onOpenBackupFolder,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.small,
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-                        ) {
-                            Icon(
-                                Icons.Default.FolderOpen,
-                                contentDescription = stringResource(Res.string.cd_open_backup_folder),
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(modifier = Modifier.width(Spacing.small))
-                            Text(
-                                "Open Backup Folder",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
+                            // Open backup folder shortcut
+                            OutlinedButton(
+                                onClick = onOpenBackupFolder,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.small,
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                            ) {
+                                Icon(
+                                    Icons.Default.FolderOpen,
+                                    contentDescription = stringResource(Res.string.cd_open_backup_folder),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.small))
+                                Text(
+                                    "Open Backup Folder",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
                         }
                     }
                 }

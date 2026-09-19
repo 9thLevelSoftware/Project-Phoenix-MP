@@ -73,3 +73,9 @@ sealed class BackupDestination {
  * app-specific storage instead of public Downloads.
  */
 expect val autoBackupLocationNote: String?
+
+/** Human-readable location of [BackupDestination.Default] for the settings screen. */
+expect val defaultBackupLocationLabel: String
+
+/** Whether the "Open Backup Folder" shortcut can open the default location on this device. */
+expect val canOpenBackupFolder: Boolean

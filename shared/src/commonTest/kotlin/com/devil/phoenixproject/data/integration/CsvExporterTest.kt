@@ -289,6 +289,18 @@ class CsvExporterTest {
         )
         // Formula characters later in the text are harmless.
         assertEquals("Bench = Press", CsvExporter.escapeCsvField("Bench = Press"))
+        // OWASP also lists leading tab and carriage return.
+        assertEquals("'\t=1", CsvExporter.escapeCsvField("\t=1"))
+        assertEquals("\"'\r=1\"", CsvExporter.escapeCsvField("\r=1"))
+    }
+
+    @Test
+    fun unescapeFormulaGuard_reversesPrefix_only() {
+        assertEquals("=HYPERLINK(1)", CsvExporter.unescapeFormulaGuard("'=HYPERLINK(1)"))
+        assertEquals("-Row", CsvExporter.unescapeFormulaGuard("'-Row"))
+        assertEquals("'Tis a name", CsvExporter.unescapeFormulaGuard("'Tis a name"))
+        assertEquals("'", CsvExporter.unescapeFormulaGuard("'"))
+        assertEquals("Bench", CsvExporter.unescapeFormulaGuard("Bench"))
     }
 
     @Test

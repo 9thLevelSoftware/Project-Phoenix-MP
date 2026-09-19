@@ -204,10 +204,12 @@ object CsvExporter {
      * contains a comma, double-quote, newline, or carriage return. Internal
      * double-quotes are doubled.
      *
-     * Text starting with `=`, `+`, `-` or `@` is prefixed with `'` so spreadsheet apps
-     * show it as text instead of evaluating it as a formula (CSV formula injection via
-     * exercise or routine names). Only text columns go through here; numeric columns
-     * (set order, weight, reps) are appended as-is, so negative numbers stay numbers.
+     * Text starting with `=`, `+`, `-`, `@`, tab or carriage return (the OWASP CSV-injection
+     * set) is prefixed with `'` so spreadsheet apps show it as text instead of evaluating
+     * it as a formula (CSV formula injection via exercise or routine names). Only text
+     * columns go through here; numeric columns (set order, weight, reps, signed progress)
+     * are appended as-is, so negative numbers stay numbers. Also used by the Analytics
+     * CSV exports (util/CsvExporter platform implementations).
      */
     internal fun escapeCsvField(value: String): String {
         val text = if (value.isNotEmpty() && value[0] in FORMULA_PREFIXES) "'$value" else value
@@ -220,5 +222,12 @@ object CsvExporter {
         }
     }
 
-    private const val FORMULA_PREFIXES = "=+-@"
+    /**
+     * Undo [escapeCsvField]'s formula guard when re-importing our own exports: drops one
+     * leading `'` when it is followed by a formula prefix character. Other text is unchanged.
+     */
+    internal fun unescapeFormulaGuard(value: String): String =
+        if (value.length >= 2 && value[0] == '\'' && value[1] in FORMULA_PREFIXES) value.substring(1) else value
+
+    private const val FORMULA_PREFIXES = "=+-@\t\r"
 }
