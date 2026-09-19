@@ -269,6 +269,90 @@ class Issue591SyncLwwTest {
         assertEquals(5L, after.workingReps)
     }
 
+    // PR 29: per-exercise cableCount pulled from the portal must reach the local DB
+    // through the real LWW merge, and a pulled null (unknown) must never clobber it.
+
+    private fun pulledSession(sessionId: String, cableCount: Int?): WorkoutSession {
+        val dto = PullWorkoutSessionDto(
+            id = "portal-$sessionId",
+            userId = "user-1",
+            startedAt = "2026-01-01T00:00:00Z",
+            exerciseCount = 1,
+            exercises = listOf(
+                PullExerciseDto(
+                    id = sessionId,
+                    sessionId = "portal-$sessionId",
+                    name = "Row",
+                    cableCount = cableCount,
+                    sets = listOf(
+                        PullSetDto(id = "set-$sessionId", exerciseId = sessionId, setNumber = 1, weightKg = 40f, actualReps = 10),
+                    ),
+                ),
+            ),
+        )
+        return PortalPullAdapter.toWorkoutSessions(dto, profileId = testProfileId).single()
+    }
+
+    private fun localRowSession(sessionId: String, cableCount: Int?) = WorkoutSession(
+        id = sessionId,
+        timestamp = now,
+        mode = "OldSchool",
+        weightPerCableKg = 40f,
+        duration = 60_000L,
+        totalReps = 10,
+        workingReps = 10,
+        exerciseName = "Row",
+        cableCount = cableCount,
+        profileId = testProfileId,
+    )
+
+    @Test
+    fun `mergeSessionsLww stores pulled double cableCount over a local null`() = runTest {
+        setUp()
+        val sessionId = "pr29-cable-2-over-null"
+        insertLocalSession(localRowSession(sessionId, cableCount = null), updatedAt = now - 60_000L)
+
+        repository.mergeSessionsLww(
+            sessions = listOf(pulledSession(sessionId, cableCount = 2)),
+            updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
+        )
+
+        val after = database.phoenixDatabaseQueries.selectSessionById(sessionId).executeAsOneOrNull()
+        assertNotNull(after)
+        assertEquals(2L, after.cableCount, "pulled cableCount=2 must be persisted by the LWW merge")
+    }
+
+    @Test
+    fun `mergeSessionsLww inserts pulled double cableCount on a fresh device`() = runTest {
+        setUp()
+        val sessionId = "pr29-cable-2-fresh"
+
+        repository.mergeSessionsLww(
+            sessions = listOf(pulledSession(sessionId, cableCount = 2)),
+            updatedAtBySessionId = mapOf(sessionId to now),
+        )
+
+        val after = database.phoenixDatabaseQueries.selectSessionById(sessionId).executeAsOneOrNull()
+        assertNotNull(after, "first-time pull must insert the row")
+        assertEquals(2L, after.cableCount)
+    }
+
+    @Test
+    fun `mergeSessionsLww keeps local double cableCount when pulled cableCount is null`() = runTest {
+        setUp()
+        val sessionId = "pr29-null-over-cable-2"
+        insertLocalSession(localRowSession(sessionId, cableCount = 2), updatedAt = now - 60_000L)
+
+        repository.mergeSessionsLww(
+            sessions = listOf(pulledSession(sessionId, cableCount = null)),
+            updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
+        )
+
+        val after = database.phoenixDatabaseQueries.selectSessionById(sessionId).executeAsOneOrNull()
+        assertNotNull(after)
+        assertEquals(2L, after.cableCount, "pulled null means unknown and must not overwrite a local 2")
+    }
+
     private fun insertLocalSession(session: WorkoutSession, updatedAt: Long) {
         database.phoenixDatabaseQueries.insertSessionIgnore(
             id = session.id,

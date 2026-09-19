@@ -309,13 +309,13 @@ class PortalMappingsWeightTest {
             "Mobile must send per-cable kg; portal's ×2 would turn $sent into ${sent * 2} for display",
         )
     }
+
     // ==================== Per-exercise cableCount (portal PR 28 contract) ====================
 
-    private fun pushedCableCount(cableCount: Int?): Int? =
-        PortalSyncAdapter.toPortalWorkoutSessions(
-            listOf(sessionWithReps(weightPerCableKg = 40f, totalReps = 10, cableCount = cableCount)),
-            "user-1",
-        )[0].exercises[0].cableCount
+    private fun pushedCableCount(cableCount: Int?): Int? = PortalSyncAdapter.toPortalWorkoutSessions(
+        listOf(sessionWithReps(weightPerCableKg = 40f, totalReps = 10, cableCount = cableCount)),
+        "user-1",
+    )[0].exercises[0].cableCount
 
     private fun pullSessionWithCableCount(cableCount: Int?, weightKg: Float, reps: Int) = PullWorkoutSessionDto(
         id = "cable-rt",
