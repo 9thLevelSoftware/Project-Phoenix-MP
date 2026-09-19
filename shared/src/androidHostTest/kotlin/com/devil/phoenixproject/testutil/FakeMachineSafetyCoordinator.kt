@@ -1,16 +1,13 @@
 package com.devil.phoenixproject.testutil
 
-import com.devil.phoenixproject.data.repository.MachineSafetyHazardDocument
-import com.devil.phoenixproject.data.repository.MachineSafetyHazardRepository
-import com.devil.phoenixproject.data.repository.MachineSafetyLoadResult
 import com.devil.phoenixproject.presentation.manager.MachineSafetyTransport
 import com.devil.phoenixproject.presentation.manager.MachineSafetyCoordinator
 import kotlinx.coroutines.CoroutineScope
 
 fun fakeMachineSafetyCoordinator(
     scope: CoroutineScope,
-    store: FakeMachineSafetyStore = FakeMachineSafetyStore(),
-    persistMachineArming: Boolean = false,
+    store: InMemoryMachineSafetyHazardRepository = InMemoryMachineSafetyHazardRepository(),
+    persistMachineArming: Boolean = true,
 ): MachineSafetyCoordinator = MachineSafetyCoordinator(
     repository = store,
     transport = FakeMachineSafetyTransport(),
@@ -18,18 +15,6 @@ fun fakeMachineSafetyCoordinator(
     nowEpochMs = { 0L },
     persistMachineArming = persistMachineArming,
 )
-
-class FakeMachineSafetyStore : MachineSafetyHazardRepository {
-    private val rows = linkedMapOf<String, MachineSafetyHazardDocument>()
-
-    override suspend fun load(trainerAddress: String): MachineSafetyLoadResult =
-        rows[trainerAddress]?.let(MachineSafetyLoadResult::Loaded) ?: MachineSafetyLoadResult.Missing
-
-    override suspend fun loadAll(): List<MachineSafetyLoadResult> = rows.values.map(MachineSafetyLoadResult::Loaded)
-    override suspend fun replace(document: MachineSafetyHazardDocument) { rows[document.trainerAddress] = document }
-    override suspend fun deleteIfGenerationMatches(trainerAddress: String, generation: Long): Boolean =
-        rows[trainerAddress]?.generation == generation && rows.remove(trainerAddress) != null
-}
 
 private class FakeMachineSafetyTransport : MachineSafetyTransport {
     // The host graph's FakeBleRepository has no safety transport adapter. Keep a

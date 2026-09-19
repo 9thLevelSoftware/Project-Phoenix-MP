@@ -51,7 +51,13 @@ class MachineSafetyCoordinator(
     private var nextGeneration = 0L
     private var interruptedWorkoutResumeAuthorized = false
 
-    suspend fun restoreOnStartup() {
+    /** The hidden arm row this coordinator last persisted; only it may be resolved by a clean teardown. */
+    private var armedDocument: MachineSafetyHazardDocument? = null
+
+    suspend fun restoreOnStartup() = surfaceStoredHazard()
+
+    /** Show the most recent stored hazard, e.g. when a machine start was refused by the barrier. */
+    suspend fun surfaceStoredHazard() {
         val results = try { repository.loadAll() } catch (_: Exception) {
             listOf(MachineSafetyLoadResult.Rejected(MachineSafetyRejection.CORRUPT_JSON, null))
         }
@@ -75,6 +81,8 @@ class MachineSafetyCoordinator(
         return try {
             repository.replace(persisted)
             nextGeneration = safeGeneration
+            // A visible loss replaces the arm row and must never be cleared by a clean teardown.
+            armedDocument = if (showRecoveryUi) null else persisted
             if (showRecoveryUi) {
                 // A new visible loss owns RESET-only recovery. Never let a continuation
                 // authorization granted for an earlier hidden execution cross this boundary.
@@ -112,6 +120,30 @@ class MachineSafetyCoordinator(
                 physicalRelease = MachineSafetyPhysicalRelease.UNKNOWN,
             ),
         )
+    }
+
+    /**
+     * Clear the hidden arm row for [executionId] after its set ended through a successful
+     * RESET while still connected to the same trainer. Only the exact row this coordinator
+     * armed (same trainer, generation and execution) is deleted; a visible loss, a newer
+     * arm, or a different connected trainer leaves the durable barrier in place.
+     */
+    suspend fun resolveArmedExecution(executionId: Long): Boolean = mutex.withLock {
+        val armed = armedDocument ?: return false
+        if (armed.executionId != executionId) return false
+        if (_uiState.value !is MachineSafetyUiState.Hidden) return false
+        if (transport.connectedTrainerAddress != armed.trainerAddress) return false
+        return try {
+            val stored = (repository.load(armed.trainerAddress) as? MachineSafetyLoadResult.Loaded)?.document
+            if (stored == null || stored.generation != armed.generation || stored.executionId != executionId) return false
+            repository.deleteIfGenerationMatches(armed.trainerAddress, armed.generation).also { deleted ->
+                if (deleted) armedDocument = null
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
     }
 
     /**

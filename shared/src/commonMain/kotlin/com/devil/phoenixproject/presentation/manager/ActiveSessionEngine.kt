@@ -4587,6 +4587,9 @@ class ActiveSessionEngine(
             } else {
                 val ready = executionGuard.markTeardownReady(lease)
                 if (ready) {
+                    // #782: the set ended through a successful RESET while still connected, so its
+                    // hidden arm row is resolved before any successor start evaluates the barrier.
+                    machineSafetyCoordinator?.resolveArmedExecution(lease.executionId)
                     val resetOwner = resetMachineTeardownOwner.value
                         ?.takeIf { it.lease.sameExecutionAs(lease) }
                     if (resetOwner != null && resetMachineTeardownOwner.compareAndSet(resetOwner, null)) {
@@ -8570,6 +8573,8 @@ class ActiveSessionEngine(
                 val machineSafetyStartAllowed = isBodyweight ||
                     (machineSafetyCoordinator?.canStartMachine() ?: true)
                 if (!machineSafetyStartAllowed) {
+                    // Never refuse silently: re-show the stored hazard's recovery UI.
+                    machineSafetyCoordinator?.surfaceStoredHazard()
                     failStart(lease, priorWorkoutState)
                     return@launch
                 }
