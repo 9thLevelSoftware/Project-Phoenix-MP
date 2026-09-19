@@ -102,6 +102,13 @@ data class PortalExerciseDto(
      * this field is unverified; do not assume the portal never recomputes it.
      */
     val velocityEstimatedOneRepMaxKg: Float? = null,
+    /**
+     * Physical cables used for this exercise: exactly 1 or 2, or null when unknown.
+     * The portal rejects the whole push batch for any other value, so always build
+     * it via [PortalMappings.cableCountToWire]. Null is omitted on the wire
+     * (explicitNulls = false); older portals strip the unknown key.
+     */
+    val cableCount: Int? = null,
     val sets: List<PortalSetDto> = emptyList(),
 )
 
@@ -819,6 +826,8 @@ data class PullExerciseDto(
     val name: String = "",
     val muscleGroup: String = "General",
     val orderIndex: Int = 0,
+    /** 1 or 2; null/absent = unknown (older portals omit it). Never treat null as 2. */
+    val cableCount: Int? = null,
     val sets: List<PullSetDto> = emptyList(),
 )
 

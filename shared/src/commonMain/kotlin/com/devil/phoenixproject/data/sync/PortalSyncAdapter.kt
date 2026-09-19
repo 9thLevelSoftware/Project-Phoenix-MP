@@ -355,6 +355,9 @@ object PortalSyncAdapter {
             // the precomputed map. Distinct from the rep-based estimate above; null
             // when this exercise has no exerciseId or no passing velocity estimate.
             velocityEstimatedOneRepMaxKg = session.exerciseId?.let { velocityEstimatesByExerciseId[it] },
+            // Same cable count that drives the totalVolume normalisation above;
+            // only 1 or 2 go on the wire, anything else is sent as unknown (omitted).
+            cableCount = PortalMappings.cableCountToWire(session.cableCount),
             sets = listOf(set),
         )
         return ExerciseWithTelemetry(exercise, telemetry)
