@@ -72,10 +72,6 @@ class LinkAccountViewModel(
     /** Auth events for UI notification (session expiry, refresh failure, logout). */
     val authEvents = syncManager.authEvents
 
-    /** Returns true if the ViewModel has been cleared and should not be used. */
-    val isCleared: Boolean
-        get() = !job.isActive
-
     fun login(email: String, password: String) {
         scope.launch {
             try {

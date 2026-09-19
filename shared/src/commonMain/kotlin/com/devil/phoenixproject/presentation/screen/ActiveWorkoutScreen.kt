@@ -586,7 +586,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         }
     }
 
-    // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
+    // Connection error dialog
     connectionError?.let { error ->
         ConnectionErrorDialog(
             message = error,
