@@ -13,7 +13,6 @@ import kotlinx.serialization.json.JsonPrimitive
  * This is the inverse of PortalSyncAdapter (which converts mobile → portal for push).
  * Converts:
  *   - Sessions (with exercises/sets) → WorkoutSession domain objects
- *   - Routines (with exercises) → RoutineSyncDto
  *   - Badges → EarnedBadgeSyncDto
  *   - Gamification stats → GamificationStatsSyncDto
  *
@@ -120,18 +119,22 @@ object PortalPullAdapter {
                 weightPerCableKg = maxWeight, // Already per-cable from DB
                 duration = (portalSession.durationSeconds * 1000L) / exerciseCount, // seconds → ms
                 totalReps = totalReps,
-                warmupReps = 0, // Portal doesn't distinguish warmup vs working
-                workingReps = totalReps,
+                warmupReps = pulledWarmupReps(portalSession, exercise),
+                workingReps = pulledWorkingReps(portalSession, exercise, totalReps),
+                eccentricLoad = portalSession.eccentricLoad ?: DEFAULT_SESSION.eccentricLoad,
+                echoLevel = portalSession.echoLevel ?: DEFAULT_SESSION.echoLevel,
                 exerciseId = resolvedExerciseId,
                 exerciseName = exercise.name,
-                routineSessionId = portalSession.id,
+                // Standalone portal sessions carry no routineSessionId; only grouped ones do.
+                routineSessionId = portalSession.routineSessionId,
                 routineName = portalSession.routineName,
                 heaviestLiftKg = maxWeight,
                 totalVolumeKg = null, // Let effectiveTotalVolumeKg() compute from weightPerCableKg * cableCount * totalReps
                 cableCount = null, // Let effectiveTotalVolumeKg() use session-level cableCount if available
                 // Issue #591: best-effort hydration from per-set rep summaries.
-                // Any field that the portal does not supply stays null and
-                // falls back to the locally captured value at LWW merge time.
+                // Any field that the portal does not supply stays null. These
+                // values only land on rows this device doesn't already have;
+                // the pull never rewrites an existing local session (KD-3).
                 peakForceConcentricA = metricHydration.peakForceConcentricA,
                 peakForceConcentricB = metricHydration.peakForceConcentricB,
                 peakForceEccentricA = metricHydration.peakForceEccentricA,
@@ -145,6 +148,22 @@ object PortalPullAdapter {
             )
         }
     }
+
+    private val DEFAULT_SESSION = WorkoutSession()
+
+    /**
+     * The portal stores warmup/working reps once per session, taken from the first exercise
+     * row at push time (lowest orderIndex). Apply them to that row only; other rows of a
+     * grouped workout fall back to "all reps are working reps".
+     */
+    private fun isFirstExercise(portalSession: PullWorkoutSessionDto, exercise: PullExerciseDto): Boolean =
+        exercise === portalSession.exercises.minByOrNull { it.orderIndex }
+
+    private fun pulledWarmupReps(portalSession: PullWorkoutSessionDto, exercise: PullExerciseDto): Int =
+        portalSession.warmupReps?.takeIf { isFirstExercise(portalSession, exercise) } ?: 0
+
+    private fun pulledWorkingReps(portalSession: PullWorkoutSessionDto, exercise: PullExerciseDto, totalReps: Int): Int =
+        portalSession.workingReps?.takeIf { isFirstExercise(portalSession, exercise) } ?: totalReps
 
     /**
      * Issue #591: Aggregate per-set rep summaries into the summary-level
@@ -165,8 +184,8 @@ object PortalPullAdapter {
      * Eccentric peak/avg is harder to derive because the portal stores
      * `tutMs` and not a separate eccentric force aggregate, so this helper
      * conservatively keeps eccentric peak/avg as null unless a set DTO
-     * provides them directly. Preservation at LWW merge still protects the
-     * locally captured eccentric values when present.
+     * provides them directly. Existing local rows are never rewritten by the
+     * pull, so locally captured eccentric values are unaffected.
      */
     private fun aggregateSetMetrics(sets: List<PullSetDto>): HydratedMetrics {
         if (sets.isEmpty()) return HydratedMetrics.EMPTY
@@ -192,11 +211,11 @@ object PortalPullAdapter {
         return HydratedMetrics(
             peakForceConcentricA = peakLeft?.let { PortalMappings.newtonsToLoadKg(it) },
             peakForceConcentricB = peakRight?.let { PortalMappings.newtonsToLoadKg(it) },
-            peakForceEccentricA = null, // Portal does not surface per-cable eccentric peak; preserve local.
+            peakForceEccentricA = null, // Portal does not surface per-cable eccentric peak.
             peakForceEccentricB = null,
             avgForceConcentricA = avgLeft?.let { PortalMappings.newtonsToLoadKg(it) },
             avgForceConcentricB = avgRight?.let { PortalMappings.newtonsToLoadKg(it) },
-            avgForceEccentricA = null, // Same — preserved locally if available.
+            avgForceEccentricA = null, // Same.
             avgForceEccentricB = null,
             avgAsymmetryPercent = avgAsymmetry,
         )
@@ -259,11 +278,14 @@ object PortalPullAdapter {
                 weightPerCableKg = maxWeight, // Already per-cable from DB
                 duration = (portalSession.durationSeconds * 1000L) / exerciseCount, // seconds → ms
                 totalReps = totalReps,
-                warmupReps = 0, // Portal doesn't distinguish warmup vs working
-                workingReps = totalReps,
+                warmupReps = pulledWarmupReps(portalSession, exercise),
+                workingReps = pulledWorkingReps(portalSession, exercise, totalReps),
+                eccentricLoad = portalSession.eccentricLoad ?: DEFAULT_SESSION.eccentricLoad,
+                echoLevel = portalSession.echoLevel ?: DEFAULT_SESSION.echoLevel,
                 exerciseId = null, // No catalog ID from portal; requires local catalog lookup
                 exerciseName = exercise.name,
-                routineSessionId = portalSession.id,
+                // Standalone portal sessions carry no routineSessionId; only grouped ones do.
+                routineSessionId = portalSession.routineSessionId,
                 routineName = portalSession.routineName,
                 heaviestLiftKg = maxWeight,
                 totalVolumeKg = null, // Let effectiveTotalVolumeKg() compute from weightPerCableKg * cableCount * totalReps
@@ -271,24 +293,6 @@ object PortalPullAdapter {
                 profileId = profileId,
             )
         }
-    }
-
-    /**
-     * Convert portal routine DTO to legacy RoutineSyncDto for merge.
-     * Note: routine exercises are NOT part of RoutineSyncDto — they're handled
-     * separately by SyncRepository.mergePortalRoutines().
-     */
-    fun toRoutineSyncDto(routine: PullRoutineDto): RoutineSyncDto {
-        val now = currentTimeMillis()
-        return RoutineSyncDto(
-            clientId = routine.id,
-            serverId = routine.id, // Portal ID IS the server ID
-            name = routine.name,
-            description = routine.description,
-            deletedAt = null,
-            createdAt = now, // Portal doesn't track created_at on routines
-            updatedAt = now, // Portal doesn't track updated_at on routines
-        )
     }
 
     /**

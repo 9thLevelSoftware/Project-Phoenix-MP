@@ -418,6 +418,43 @@ class SyncManagerTest {
     }
 
     @Test
+    fun syncStampsLwwRejectedSessionSoTheNextSyncDoesNotResendIt() = runTest {
+        setupAuthenticated()
+        val sessionId = "5f1c7a1e-2b1d-4c55-9d1e-6a3f0e2b7c11"
+        fakeSyncRepo.workoutSessionsToReturn = listOf(
+            makeWorkoutSession(id = sessionId, timestamp = 1000L, exerciseName = "Bench Press"),
+        )
+        // The portal already holds a newer copy (e.g. a web notes edit) and rejects the push.
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                rejections = SyncRejectionsDto(sessions = listOf(SyncRejectionDto(id = sessionId))),
+            ),
+        )
+        // Server sync time at or after the device stamp, as in production.
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(syncTime = com.devil.phoenixproject.domain.model.currentTimeMillis() + 60_000L),
+        )
+        val manager = createManager()
+
+        assertTrue(manager.sync().isSuccess)
+        assertEquals(listOf(sessionId), fakeApi.pushPayloads.single().sessions.map { it.id })
+        assertEquals(
+            listOf(sessionId),
+            fakeSyncRepo.updateSessionTimestampCalls,
+            "An LWW-rejected session is stamped like any other pushed session",
+        )
+
+        assertTrue(manager.sync().isSuccess)
+        // FakeSyncRepository mirrors selectSessionsModifiedSince: a stamped session is only
+        // re-selected while its stamp is newer than the push watermark.
+        assertTrue(
+            fakeApi.pushPayloads.drop(1).none { payload -> payload.sessions.any { it.id == sessionId } },
+            "The rejected session must not be re-sent on the next sync",
+        )
+    }
+
+    @Test
     fun syncPushesAllPhaseSpecificPersonalRecordsForSameExerciseTimestamp() = runTest {
         setupAuthenticated()
         val exerciseId = "bicep-curl"
@@ -1640,11 +1677,11 @@ class SyncManagerTest {
 
         manager.sync()
 
-        // Verify atomic merge was called and contained the converted session (routineSessionId
-        // maps the session-level id "session-2")
+        // Verify atomic merge was called and contained the converted session (one mobile row
+        // per portal exercise, keyed by the exercise id)
         assertEquals(1, fakeSyncRepo.atomicMergeCallCount, "mergeAllPullData should be called once")
         assertTrue(
-            fakeSyncRepo.lastAtomicMergeSessions.any { it.routineSessionId == "session-2" },
+            fakeSyncRepo.lastAtomicMergeSessions.any { it.id == "exercise-1" },
             "Session returned by server (session-2) should be converted and merged into local database",
         )
     }

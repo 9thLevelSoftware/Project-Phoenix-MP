@@ -801,20 +801,6 @@ LIMIT 1;
 selectSessionById:
 SELECT * FROM WorkoutSession WHERE id = ?;
 
--- Phase 3.3 (audit item #1): cheap LWW-gate read. Returns just the
--- existing updatedAt for a given session id so the repository can
--- decide whether to accept an incoming pull row without loading the
--- full row body.
-selectSessionUpdatedAt:
-SELECT updatedAt FROM WorkoutSession WHERE id = ?;
-
--- Issue #591 follow-up: batch-read the existing updatedAt for a list of
--- session ids. Used by SqlDelightSyncRepository.mergeSessionsLww so the
--- LWW gate does not issue one round-trip per incoming pull row. Returns
--- (id, updatedAt) so the caller can build an in-memory map keyed by id.
-selectSessionsUpdatedAtByIds:
-SELECT id, updatedAt FROM WorkoutSession WHERE id IN ?;
-
 -- Issue #517: Velocity-based 1RM foundation. Returns per-set load + MCV
 -- points for a specific exercise, used by VelocityOneRepMaxEstimator.
 -- Load uses workingAvgWeightKg when available (more accurate than the
@@ -831,40 +817,6 @@ WHERE exerciseId = :exerciseId
   AND avgMcvMmS IS NOT NULL
   AND workingReps > 0
 ORDER BY timestamp DESC;
-
--- Issue #591 follow-up: batch-read the detailed metric / biomechanics
--- columns used by the LWW preservation guard for a list of session ids.
--- Mirrors the column list in
--- SqlDelightSyncRepository.preserveMetrics() so the LWW gate can fall
--- back to the locally captured values without a per-row full-row read.
-selectSessionsMetricsForPreservationByIds:
-SELECT
-    id,
-    peakForceConcentricA,
-    peakForceConcentricB,
-    peakForceEccentricA,
-    peakForceEccentricB,
-    avgForceConcentricA,
-    avgForceConcentricB,
-    avgForceEccentricA,
-    avgForceEccentricB,
-    heaviestLiftKg,
-    totalVolumeKg,
-    cableCount,
-    display_multiplier,
-    estimatedCalories,
-    warmupAvgWeightKg,
-    workingAvgWeightKg,
-    burnoutAvgWeightKg,
-    peakWeightKg,
-    rpe,
-    avgMcvMmS,
-    avgAsymmetryPercent,
-    totalVelocityLossPercent,
-    dominantSide,
-    strengthProfile,
-    formScore
-FROM WorkoutSession WHERE id IN ?;
 
 -- Backup/export session rows. Unlike selectAllSessionsSync, this must
 -- not serialize local tombstones: WorkoutSessionBackup has no deletedAt
@@ -954,32 +906,11 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 
 -- Insert session only if ID doesn't already exist (for sync pull deduplication).
 -- Includes updatedAt to prevent re-push (selectSessionsModifiedSince picks up updatedAt IS NULL).
+-- Never INSERT OR REPLACE a WorkoutSession: with foreign keys ON the implicit delete cascades
+-- to MetricSample, PhaseStatistics, RepMetric, RepBiomechanics and CompletedSet. The sync pull
+-- only inserts sessions it doesn't have and never rewrites an existing row.
 insertSessionIgnore:
 INSERT OR IGNORE INTO WorkoutSession (
-    id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,
-    duration, totalReps, warmupReps, workingReps,
-    isJustLift, stopAtTop, eccentricLoad, echoLevel,
-    exerciseId, exerciseName, routineSessionId, routineName, routineId,
-    safetyFlags, deloadWarningCount, romViolationCount, spotterActivations,
-    peakForceConcentricA, peakForceConcentricB, peakForceEccentricA, peakForceEccentricB,
-    avgForceConcentricA, avgForceConcentricB, avgForceEccentricA, avgForceEccentricB,
-    heaviestLiftKg, totalVolumeKg, cableCount, estimatedCalories,
-    warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe,
-    avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile,
-    formScore,
-    updatedAt,
-    profile_id,
-    display_multiplier, externalAddedLoadKg, counterweightKg, rackItemsJson
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-
--- Phase 3.3 (audit item #1): LWW write — overwrite existing row whose
--- id matches. The repository gates this with a prior selectSessionUpdatedAt
--- comparison so stale incoming rows never reach the REPLACE. SQLite 3.18
--- does not support `INSERT ... ON CONFLICT DO UPDATE WHERE`, hence the
--- LWW gate lives in Kotlin.
-mergeSessionLww:
-INSERT OR REPLACE INTO WorkoutSession (
     id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,
     duration, totalReps, warmupReps, workingReps,
     isJustLift, stopAtTop, eccentricLoad, echoLevel,
@@ -2820,26 +2751,6 @@ UPDATE WorkoutSession SET serverId = ? WHERE id = ?;
 softDeleteSession:
 UPDATE WorkoutSession SET deletedAt = ?, updatedAt = ? WHERE id = ?;
 
--- Upsert session from sync (for pull)
-upsertSyncSession:
-INSERT OR REPLACE INTO WorkoutSession (
-    id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,
-    duration, totalReps, warmupReps, workingReps,
-    isJustLift, stopAtTop, eccentricLoad, echoLevel,
-    exerciseId, exerciseName, routineSessionId, routineName, routineId,
-    safetyFlags, deloadWarningCount, romViolationCount, spotterActivations,
-    peakForceConcentricA, peakForceConcentricB, peakForceEccentricA, peakForceEccentricB,
-    avgForceConcentricA, avgForceConcentricB, avgForceEccentricA, avgForceEccentricB,
-    heaviestLiftKg, totalVolumeKg, cableCount, estimatedCalories,
-    warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe,
-    avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile,
-    formScore,
-    updatedAt, serverId, deletedAt,
-    profile_id,
-    display_multiplier, externalAddedLoadKg, counterweightKg, rackItemsJson
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-
 -- Get PRs modified since last sync, including tombstones for convergence.
 selectPRsModifiedSince:
 SELECT * FROM PersonalRecord
@@ -2907,10 +2818,6 @@ LIMIT 1;
 -- Update gamification stats server ID (profile-scoped)
 updateGamificationStatsServerId:
 UPDATE GamificationStats SET serverId = ? WHERE profile_id = :profileId;
-
--- Find session by server ID (for conflict resolution)
-selectSessionByServerId:
-SELECT * FROM WorkoutSession WHERE serverId = ?;
 
 -- Find PR by server ID
 selectPRByServerId:

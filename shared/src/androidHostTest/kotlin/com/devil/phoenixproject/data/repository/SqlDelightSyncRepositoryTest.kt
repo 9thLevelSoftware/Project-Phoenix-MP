@@ -1,11 +1,14 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
+import com.devil.phoenixproject.data.sync.PortalPullAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncPayload
+import com.devil.phoenixproject.data.sync.PullExerciseDto
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
-import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
+import com.devil.phoenixproject.data.sync.PullSetDto
+import com.devil.phoenixproject.data.sync.PullWorkoutSessionDto
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
@@ -34,81 +37,100 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
-    fun `mergeSessions uses active profile id`() = runTest {
-        repository.mergeSessions(
-            sessions = listOf(
-                WorkoutSessionSyncDto(
-                    clientId = "session-profile-b",
-                    serverId = "server-session-profile-b",
-                    timestamp = 1_700_000_000_000,
-                    mode = "Old School",
-                    targetReps = 8,
-                    weightPerCableKg = 42.5f,
-                    duration = 120,
-                    totalReps = 24,
-                    exerciseId = "bench",
-                    exerciseName = "Bench Press",
-                    createdAt = 1_700_000_000_000,
-                    updatedAt = 1_700_000_000_100,
-                ),
-            ),
-        )
-
-        val session = database.phoenixDatabaseQueries
-            .selectSessionById("session-profile-b")
-            .executeAsOneOrNull()
-
-        assertNotNull(session)
-        assertEquals("active-profile", session.profile_id)
-    }
-
-    @Test
-    fun `mergeSessions preserves local rack context for existing legacy server session`() = runTest {
-        val rackItemsJson = """[{"id":"vest","name":"Weighted vest"}]"""
+    fun `pull of an existing session id never rewrites the row or drops its children`() = runTest {
+        // FK-on test DB: a REPLACE of the parent row would cascade-delete every child below.
+        val sessionId = "local-session-with-children"
         insertHistoricalSession(
-            id = "local-rack-session",
+            id = sessionId,
             timestamp = 1_700_000_000_000,
-            exerciseId = "pull-up",
-            exerciseName = "Pull Up",
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
             workingReps = 8,
-            peakConcentricA = null,
-            peakConcentricB = null,
+            peakConcentricA = 40.0,
+            peakConcentricB = 41.0,
             peakEccentricA = null,
             peakEccentricB = null,
             profileId = "active-profile",
-            externalAddedLoadKg = 12.5,
-            counterweightKg = 3.0,
-            rackItemsJson = rackItemsJson,
         )
-        database.phoenixDatabaseQueries.updateSessionServerId("server-rack-session", "local-rack-session")
+        val q = database.phoenixDatabaseQueries
+        q.updateSessionTimestamp(1_700_000_000_500, sessionId)
+        q.updateSessionServerId("server-session-1", sessionId)
+        q.insertMetric(sessionId, 1_700_000_000_010, 0.5, 0.5, 0.1, 0.1, 20.0, 20.0, 40.0, 0L)
+        q.insertMetric(sessionId, 1_700_000_000_020, 0.6, 0.6, 0.2, 0.2, 21.0, 21.0, 42.0, 0L)
+        q.insertPhaseStatistics(sessionId, 20.0, 22.0, 0.4, 0.5, 80.0, 90.0, 18.0, 19.0, 0.3, 0.4, 60.0, 70.0, 1_700_000_000_030)
+        q.insertRepMetric(
+            sessionId, 1L, 0L, 1_700_000_000_000, 1_700_000_002_000, 2_000L,
+            1_000L, "[]", "[]", "[]", "[]", "[]",
+            1_000L, "[]", "[]", "[]", "[]", "[]",
+            40.0, 41.0, 20.0, 21.0, 19.0, 20.0, 0.6, 0.4, 0.3, 500.0, 120.0, 80.0, null, null,
+        )
+        q.insertCompletedSet(
+            "completed-set-1", sessionId, null, null, 1L, "STANDARD", 1L, 8L, 20.0, null, 0L,
+            1_700_000_002_000, "UNKNOWN",
+        )
 
-        repository.mergeSessions(
+        // The portal copy is newer (e.g. a web notes edit) and carries the lossy projection.
+        repository.mergeSessionsLww(
             sessions = listOf(
-                WorkoutSessionSyncDto(
-                    clientId = "remote-rack-session",
-                    serverId = "server-rack-session",
-                    timestamp = 1_700_000_000_100,
-                    mode = "Old School",
-                    targetReps = 10,
-                    weightPerCableKg = 30f,
-                    duration = 90,
-                    totalReps = 10,
-                    exerciseId = "pull-up",
-                    exerciseName = "Pull Up",
-                    createdAt = 1_700_000_000_100,
-                    updatedAt = 1_700_000_000_200,
+                com.devil.phoenixproject.domain.model.WorkoutSession(
+                    id = sessionId,
+                    timestamp = 1_700_000_000_000,
+                    exerciseId = "bench",
+                    exerciseName = "Bench Press",
+                    totalReps = 11,
+                    warmupReps = 0,
+                    workingReps = 11,
+                    profileId = "active-profile",
+                ),
+            ),
+            updatedAtBySessionId = mapOf(sessionId to 1_700_000_900_000),
+        )
+
+        val session = q.selectSessionById(sessionId).executeAsOne()
+        assertEquals("server-session-1", session.serverId)
+        assertEquals(8L, session.workingReps)
+        assertEquals(1_700_000_000_500, session.updatedAt)
+        assertEquals(40.0, session.peakForceConcentricA)
+        assertEquals(2, q.selectMetricsBySession(sessionId).executeAsList().size)
+        assertEquals(1, q.selectPhaseStatsBySessionIds(listOf(sessionId)).executeAsList().size)
+        assertEquals(1, q.selectRepMetricsBySession(sessionId).executeAsList().size)
+        assertEquals(1, q.selectCompletedSetsBySession(sessionId).executeAsList().size)
+    }
+
+    @Test
+    fun `pull of a new session stores the portal warmup and working reps`() = runTest {
+        val pulled = PullWorkoutSessionDto(
+            id = "pulled-standalone",
+            userId = "user-1",
+            startedAt = "2026-03-20T10:00:00Z",
+            durationSeconds = 120,
+            exerciseCount = 1,
+            workoutMode = "OLD_SCHOOL",
+            updatedAt = "2026-03-20T10:05:00Z",
+            warmupReps = 3,
+            workingReps = 8,
+            exercises = listOf(
+                PullExerciseDto(
+                    id = "pulled-standalone",
+                    sessionId = "pulled-standalone",
+                    name = "Bench Press",
+                    orderIndex = 0,
+                    sets = listOf(
+                        PullSetDto(id = "set-1", exerciseId = "pulled-standalone", setNumber = 1, actualReps = 11, weightKg = 40f),
+                    ),
                 ),
             ),
         )
+        val rows = PortalPullAdapter.toWorkoutSessionsWithLookup(pulled, "active-profile") { _, _, _ -> null }
 
-        val session = database.phoenixDatabaseQueries
-            .selectSessionById("local-rack-session")
-            .executeAsOne()
+        repository.mergeSessionsLww(rows, mapOf("pulled-standalone" to 1_774_001_100_000))
 
-        assertEquals(12.5, session.externalAddedLoadKg)
-        assertEquals(3.0, session.counterweightKg)
-        assertEquals(rackItemsJson, session.rackItemsJson)
-        assertEquals(2L, session.display_multiplier)
+        val session = database.phoenixDatabaseQueries.selectSessionById("pulled-standalone").executeAsOne()
+        assertEquals(11L, session.totalReps)
+        assertEquals(3L, session.warmupReps)
+        assertEquals(8L, session.workingReps)
+        assertNull(session.routineSessionId)
+        assertEquals(1_774_001_100_000, session.updatedAt)
     }
 
     @Test

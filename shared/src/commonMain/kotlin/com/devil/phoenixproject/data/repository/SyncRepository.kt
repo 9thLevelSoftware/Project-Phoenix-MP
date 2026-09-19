@@ -8,8 +8,6 @@ import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
-import com.devil.phoenixproject.data.sync.RoutineSyncDto
-import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -28,19 +26,9 @@ interface SyncRepository {
     // === Push Operations (get local changes) ===
 
     /**
-     * Get workout sessions modified since the given timestamp, scoped to profile
-     */
-    suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String = "default"): List<WorkoutSessionSyncDto>
-
-    /**
      * Get personal records modified since the given timestamp, scoped to profile
      */
     suspend fun getPRsModifiedSince(timestamp: Long, profileId: String = "default"): List<PersonalRecordSyncDto>
-
-    /**
-     * Get routines modified since the given timestamp, scoped to profile
-     */
-    suspend fun getRoutinesModifiedSince(timestamp: Long, profileId: String = "default"): List<RoutineSyncDto>
 
     /**
      * Get custom exercises modified since the given timestamp
@@ -198,19 +186,9 @@ interface SyncRepository {
     // === Pull Operations (merge remote changes) ===
 
     /**
-     * Merge sessions from server (upsert with conflict resolution)
-     */
-    suspend fun mergeSessions(sessions: List<WorkoutSessionSyncDto>)
-
-    /**
      * Merge personal records from server
      */
     suspend fun mergePRs(records: List<PersonalRecordSyncDto>)
-
-    /**
-     * Merge custom exercises from server
-     */
-    suspend fun mergeCustomExercises(exercises: List<CustomExerciseSyncDto>)
 
     /**
      * Merge badges from server, scoped to profile
@@ -328,20 +306,16 @@ interface SyncRepository {
     }
 
     /**
-     * Phase 3.3 (audit item #1): LWW pull merge for WorkoutSession rows.
+     * Pull merge for WorkoutSession rows: inserts sessions that don't exist
+     * locally and never rewrites an existing row (KD-3). Local rows are
+     * device-captured measurements; the pull projection is lossy, and the
+     * only portal-authored session field (notes) merges through
+     * [mergeSessionNotes].
      *
-     * Replaces the legacy INSERT OR IGNORE behavior (`mergeAllPullData`)
-     * which silently dropped server-newer rows. For each session, the
-     * implementation reads the existing local `updatedAt`, compares to
-     * `updatedAtBySessionId[session.id]`, and overwrites only when the
-     * incoming timestamp is newer-or-equal. NULL existing or absent map
-     * entry is treated as older (accept incoming) so first-time pulls
-     * always write.
-     *
-     * `updatedAtBySessionId` is the authoritative server timestamp that
-     * portal-sync-pull returns on `PullWorkoutSessionDto.updatedAt`. It
-     * is keyed on the per-exercise WorkoutSession.id (which equals the
-     * portal exercise id; one portal session expands to N mobile rows).
+     * `updatedAtBySessionId` is the server timestamp that portal-sync-pull
+     * returns on `PullWorkoutSessionDto.updatedAt`, keyed on the per-exercise
+     * WorkoutSession.id (== portal exercise id; one portal session expands to
+     * N mobile rows). It only stamps newly inserted rows.
      *
      * Default no-op so unrelated test fakes do not need to implement.
      */
