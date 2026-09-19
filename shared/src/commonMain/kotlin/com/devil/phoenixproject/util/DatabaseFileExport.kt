@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.util
 
 import com.devil.phoenixproject.data.local.DatabaseFileNames
+import kotlinx.coroutines.sync.Mutex
 
 /** One file to copy into the support archive: [entryName] inside the zip, [path] on disk. */
 internal data class DatabaseExportEntry(val entryName: String, val path: String)
@@ -13,6 +14,13 @@ internal data class DatabaseExportEntry(val entryName: String, val path: String)
  */
 internal object DatabaseFileExport {
     const val ARCHIVE_NAME = "phoenix-database-files.zip"
+
+    /**
+     * Serializes exports process-wide. The screen's own "exporting" flag is lost when an Android
+     * activity is recreated, while a blocking zip keeps running; two runs must never write the
+     * same archive or staging folder at once.
+     */
+    val mutex = Mutex()
 
     private val DATABASE_NAMES = listOf(
         DatabaseFileNames.LEGACY,
@@ -37,3 +45,9 @@ internal object DatabaseFileExport {
  * was nothing to export or the archive/share failed; never throws and never modifies the originals.
  */
 internal expect suspend fun shareDatabaseFiles(): Boolean
+
+/**
+ * Removes a previously exported archive. It is kept after sharing because the receiving app reads
+ * it asynchronously, so it is removed once startup succeeds instead. Never throws.
+ */
+internal expect fun deleteDatabaseExportArchive()

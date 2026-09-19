@@ -50,6 +50,7 @@ import com.devil.phoenixproject.ui.theme.PhoenixTheme
 import com.devil.phoenixproject.ui.theme.isDynamicColorAvailable
 import com.devil.phoenixproject.util.CrashLog
 import com.devil.phoenixproject.util.CrashReportAnswer
+import com.devil.phoenixproject.util.deleteDatabaseExportArchive
 import com.devil.phoenixproject.util.shareDatabaseFiles
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
@@ -219,7 +220,8 @@ internal fun PersistedFileStartupFailureScreen(
             }
             if (StartupFailureAction.RETRY in actions) {
                 Spacer(Modifier.height(16.dp))
-                Button(onClick = onRetry) {
+                // A retry may migrate files that changed; never while the export is still reading them.
+                Button(enabled = !exporting, onClick = onRetry) {
                     Text(stringResource(Res.string.action_retry))
                 }
             }
@@ -321,6 +323,11 @@ fun AppContent(
 
     LaunchedEffect(migrationManager) {
         migrationManager.runRequiredMigrations()
+    }
+
+    // Startup succeeded, so a database export made from the failure screen is no longer needed.
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.Default) { deleteDatabaseExportArchive() }
     }
 
     AppLifecycleObserver(syncTriggerManager, migrationManager)

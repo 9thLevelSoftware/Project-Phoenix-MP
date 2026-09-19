@@ -101,8 +101,11 @@ actual fun shareCrashReport(report: String, onShown: () -> Unit) {
     presentShareSheet(listOf(report), onShown)
 }
 
-/** Presents the system share sheet for [items]; [onShown] runs only once it actually appeared. */
-internal fun presentShareSheet(items: List<Any>, onShown: () -> Unit) {
+/**
+ * Presents the system share sheet for [items]; [onShown] runs only once it actually appeared,
+ * [onNotShown] when there is no window to present from.
+ */
+internal fun presentShareSheet(items: List<Any>, onShown: () -> Unit, onNotShown: () -> Unit = {}) {
     // Same presentation as IosCsvExporter.shareCSV.
     dispatch_async(dispatch_get_main_queue()) {
         val scenes = UIApplication.sharedApplication.connectedScenes
@@ -111,7 +114,10 @@ internal fun presentShareSheet(items: List<Any>, onShown: () -> Unit) {
         } as? platform.UIKit.UIWindowScene
 
         var presenter: UIViewController = windowScene?.keyWindow?.rootViewController
-            ?: return@dispatch_async
+            ?: run {
+                onNotShown()
+                return@dispatch_async
+            }
         // Present from the top-most controller; presenting on one that is already presenting is ignored.
         while (true) {
             presenter = presenter.presentedViewController ?: break

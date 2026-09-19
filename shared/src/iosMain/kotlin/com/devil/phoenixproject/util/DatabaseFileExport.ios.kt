@@ -6,6 +6,7 @@ import co.touchlab.kermit.Logger
 import co.touchlab.sqliter.DatabaseFileContext
 import com.devil.phoenixproject.data.local.DatabaseFileNames
 import com.devil.phoenixproject.data.local.legacyLibraryRootPath
+import kotlin.coroutines.resume
 import kotlinx.cinterop.ObjCObjectVar
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
@@ -13,7 +14,10 @@ import kotlinx.cinterop.ptr
 import kotlinx.cinterop.value
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import platform.Foundation.NSError
 import platform.Foundation.NSFileCoordinator
 import platform.Foundation.NSFileCoordinatorReadingForUploading
@@ -21,13 +25,25 @@ import platform.Foundation.NSFileManager
 import platform.Foundation.NSTemporaryDirectory
 import platform.Foundation.NSURL
 
+/** Bounds the wait for UIKit's presentation completion so the screen can never stay "exporting". */
+private const val PRESENTATION_TIMEOUT_MS = 10_000L
+
 internal actual suspend fun shareDatabaseFiles(): Boolean = try {
-    val archive = withContext(Dispatchers.Default) { buildDatabaseArchive() }
-    if (archive != null) {
-        presentShareSheet(listOf(NSURL.fileURLWithPath(archive))) {}
-        true
-    } else {
-        false
+    DatabaseFileExport.mutex.withLock {
+        val archive = withContext(Dispatchers.Default) { buildDatabaseArchive() }
+        if (archive == null) {
+            false
+        } else {
+            withTimeoutOrNull(PRESENTATION_TIMEOUT_MS) {
+                suspendCancellableCoroutine { continuation ->
+                    presentShareSheet(
+                        items = listOf(NSURL.fileURLWithPath(archive)),
+                        onShown = { if (continuation.isActive) continuation.resume(true) },
+                        onNotShown = { if (continuation.isActive) continuation.resume(false) },
+                    )
+                }
+            } ?: false
+        }
     }
 } catch (e: CancellationException) {
     throw e
@@ -36,12 +52,25 @@ internal actual suspend fun shareDatabaseFiles(): Boolean = try {
     false
 }
 
+internal actual fun deleteDatabaseExportArchive() {
+    try {
+        NSFileManager.defaultManager.removeItemAtPath(archivePath(), error = null)
+    } catch (_: Exception) {
+        // A leftover archive stays in the app's tmp folder; never fail startup for it.
+    }
+}
+
+private fun archivePath(): String = "${NSTemporaryDirectory().trimEnd('/')}/${DatabaseFileExport.ARCHIVE_NAME}"
+
 /**
- * Copies the candidates into a scratch folder under tmp, then lets NSFileCoordinator zip that
- * folder (the documented ForUploading behaviour for directories). Only the copies are touched.
+ * Stages the candidates in a scratch folder under tmp, then lets NSFileCoordinator zip that folder
+ * (the documented ForUploading behaviour for directories). Staging uses hard links where possible
+ * so large databases are not duplicated; removing a link never affects the original file.
  */
 private fun buildDatabaseArchive(): String? {
     val fileManager = NSFileManager.defaultManager
+    val archive = archivePath()
+    fileManager.removeItemAtPath(archive, error = null)
     val exists = { path: String -> fileManager.fileExistsAtPath(path) }
     // Guard A involves the SQLiter directory; guards B/C also the pre-SQLiter Library-root vitruvian.db.
     val sqliterDirectory = DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null).substringBeforeLast('/')
@@ -50,11 +79,8 @@ private fun buildDatabaseArchive(): String? {
         DatabaseFileExport.entries("library", libraryDirectory, exists)
     if (entries.isEmpty()) return null
 
-    val tmp = NSTemporaryDirectory().trimEnd('/')
-    val staging = "$tmp/phoenix-database-files"
-    val archive = "$tmp/${DatabaseFileExport.ARCHIVE_NAME}"
+    val staging = "${NSTemporaryDirectory().trimEnd('/')}/phoenix-database-files"
     fileManager.removeItemAtPath(staging, error = null)
-    fileManager.removeItemAtPath(archive, error = null)
     try {
         for (entry in entries) {
             val destination = "$staging/${entry.entryName}"
@@ -66,9 +92,9 @@ private fun buildDatabaseArchive(): String? {
                     error = null,
                 ),
             ) { "Could not create the export folder" }
-            check(fileManager.copyItemAtPath(entry.path, toPath = destination, error = null)) {
-                "Could not copy ${entry.entryName} for export"
-            }
+            val staged = fileManager.linkItemAtPath(entry.path, toPath = destination, error = null) ||
+                fileManager.copyItemAtPath(entry.path, toPath = destination, error = null)
+            check(staged) { "Could not stage ${entry.entryName} for export" }
         }
         return if (zipDirectory(staging, archive)) archive else null
     } finally {
@@ -78,19 +104,21 @@ private fun buildDatabaseArchive(): String? {
 
 private fun zipDirectory(directory: String, archive: String): Boolean = memScoped {
     val error = alloc<ObjCObjectVar<NSError?>>()
-    var copied = false
+    error.value = null
+    var moved = false
     NSFileCoordinator(filePresenter = null).coordinateReadingItemAtURL(
         NSURL.fileURLWithPath(directory, isDirectory = true),
         options = NSFileCoordinatorReadingForUploading,
         error = error.ptr,
-        byAccessor = { zipped: NSURL? ->
-            // The generated zip only lives for the duration of this block.
+        byAccessor = { zipped ->
+            // The generated zip is a temporary file owned by this block and deleted after it returns,
+            // so move it out here.
             val zippedPath = zipped?.path
             if (zippedPath != null) {
-                copied = NSFileManager.defaultManager.copyItemAtPath(zippedPath, toPath = archive, error = null)
+                moved = NSFileManager.defaultManager.moveItemAtPath(zippedPath, toPath = archive, error = null)
             }
         },
     )
     error.value?.let { Logger.w { "Database export zip failed: ${it.localizedDescription}" } }
-    copied
+    moved
 }

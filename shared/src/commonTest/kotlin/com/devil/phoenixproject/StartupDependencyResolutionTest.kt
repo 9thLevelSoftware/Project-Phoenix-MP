@@ -65,6 +65,32 @@ class StartupDependencyResolutionTest {
         assertEquals("STARTUP_INITIALIZATION_FAILED", failure.diagnosticCode)
         assertTrue(failure.retryAllowed)
         assertFalse(failure.diagnosticCode.contains("token"))
+        assertEquals(listOf(StartupFailureAction.RETRY), startupFailureActions(failure))
+    }
+
+    @Test
+    fun nonRetryableFailureOffersNoActions() {
+        val failure = StartupDependencyResolution.Failed(
+            diagnosticCode = "PREFS_SOMETHING",
+            retryAllowed = false,
+            cause = IllegalStateException(),
+        )
+
+        assertEquals(emptyList(), startupFailureActions(failure))
+    }
+
+    @Test
+    fun nonRetryableDualDatabasesStillOffersExportAndSupport() {
+        val failure = StartupDependencyResolution.Failed(
+            diagnosticCode = "DB_DUAL_DATABASES",
+            retryAllowed = false,
+            cause = IllegalStateException(),
+        )
+
+        assertEquals(
+            listOf(StartupFailureAction.EXPORT_DATABASE_FILES, StartupFailureAction.CONTACT_SUPPORT),
+            startupFailureActions(failure),
+        )
     }
 
     @Test

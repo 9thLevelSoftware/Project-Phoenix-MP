@@ -1,31 +1,37 @@
 package com.devil.phoenixproject.util
 
+import com.devil.phoenixproject.data.local.DatabaseFileNames
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 class DatabaseFileExportTest {
+    private val names = listOf(
+        DatabaseFileNames.LEGACY,
+        DatabaseFileNames.TARGET,
+        DatabaseFileNames.RECOVERY,
+        DatabaseFileNames.STAGING,
+    )
+    private val suffixes = listOf("", "-wal", "-shm", "-journal")
+
     @Test
-    fun entriesIncludeEveryExistingCandidateAndSidecarUnderItsFolder() {
-        val existing = setOf(
-            "/db/vitruvian.db",
-            "/db/vitruvian.db-wal",
-            "/db/phoenix.db",
-            "/db/phoenix.db-shm",
-            "/db/unrelated.db",
-            "/db/phoenix-db-migration.lock",
-        )
+    fun entriesIncludeEveryCandidateAndSidecarAndNothingElse() {
+        val candidates = names.flatMap { name -> suffixes.map { "$name$it" } }
+        val existing = candidates.map { "/db/$it" }.toSet() +
+            setOf("/db/unrelated.db", "/db/${DatabaseFileNames.LOCK}")
 
         val entries = DatabaseFileExport.entries("sqliter", "/db") { it in existing }
 
-        assertEquals(
-            listOf(
-                DatabaseExportEntry("sqliter/vitruvian.db", "/db/vitruvian.db"),
-                DatabaseExportEntry("sqliter/vitruvian.db-wal", "/db/vitruvian.db-wal"),
-                DatabaseExportEntry("sqliter/phoenix.db", "/db/phoenix.db"),
-                DatabaseExportEntry("sqliter/phoenix.db-shm", "/db/phoenix.db-shm"),
-            ),
-            entries,
-        )
+        assertEquals(16, candidates.size)
+        assertEquals(candidates.map { DatabaseExportEntry("sqliter/$it", "/db/$it") }, entries)
+    }
+
+    @Test
+    fun missingFilesAreSkipped() {
+        val existing = setOf("/db/vitruvian.db", "/db/vitruvian.db-wal", "/db/phoenix.db")
+
+        val entries = DatabaseFileExport.entries("sqliter", "/db") { it in existing }
+
+        assertEquals(listOf("sqliter/vitruvian.db", "sqliter/vitruvian.db-wal", "sqliter/phoenix.db"), entries.map { it.entryName })
     }
 
     @Test

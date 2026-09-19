@@ -8,6 +8,8 @@ import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
+import kotlin.test.assertNull
 
 class DatabaseFileExportAndroidTest {
     private lateinit var dir: File
@@ -51,5 +53,36 @@ class DatabaseFileExportAndroidTest {
             assertEquals(modified.getValue(name), source.lastModified())
         }
         assertEquals(sources.keys, databases.list()!!.toSet())
+    }
+
+    @Test
+    fun emptyDatabasesDirectoryYieldsNoArchiveAndRemovesAStaleOne() {
+        val databases = File(dir, "databases").apply { mkdirs() }
+        File(databases, "unrelated.db").writeBytes(byteArrayOf(9))
+        val cache = File(dir, "cache")
+        val stale = databaseExportArchive(cache).apply {
+            parentFile!!.mkdirs()
+            writeBytes(byteArrayOf(7))
+        }
+
+        assertNull(buildDatabaseArchive(databases, cache))
+        assertFalse(stale.exists())
+    }
+
+    @Test
+    fun buildReplacesAPreviousArchive() {
+        val databases = File(dir, "databases").apply { mkdirs() }
+        File(databases, "phoenix.db").writeBytes(byteArrayOf(1, 2))
+        val cache = File(dir, "cache")
+        databaseExportArchive(cache).apply {
+            parentFile!!.mkdirs()
+            writeBytes(ByteArray(10_000))
+        }
+
+        val archive = buildDatabaseArchive(databases, cache)!!
+
+        ZipFile(archive).use { zip ->
+            assertEquals(listOf("databases/phoenix.db"), zip.entries().asSequence().map { it.name }.toList())
+        }
     }
 }

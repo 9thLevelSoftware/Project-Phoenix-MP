@@ -301,6 +301,8 @@ class DatabaseFileMigrationCoordinatorTest {
         assertEquals(DatabaseMigrationFailureCode.DUAL_DATABASES, first.code)
         assertEquals(first.code, retry.code)
         assertEquals(first.startupDiagnosticCode, retry.startupDiagnosticCode)
+        // Regression check for this change: DUAL_DATABASES now allows retry. The assertions below are
+        // invariants that keep any future guard from mutating files on an unchanged retry.
         assertTrue(retry.startupRetryAllowed)
         assertEquals(allArtifacts, operations.artifacts())
         assertTrue(operations.sidecarsExist())
