@@ -1,3 +1,6 @@
+-- Historical - implemented in portal migration 20260715234034; portal is source of truth.
+-- Live schema: ../Phoenix-portal/supabase/migrations/20260715234034_profile_preferences.sql
+-- (it has since diverged from this file). Kept because BackendHandoffContractTest pins it.
 BEGIN;
 
 DO $preflight$
