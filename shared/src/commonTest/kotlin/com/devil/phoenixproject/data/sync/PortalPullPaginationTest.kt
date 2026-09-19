@@ -26,7 +26,7 @@ import kotlinx.serialization.json.put
  *   - Multi-page loops until hasMore=false, accumulating all entities and deduplicating by id.
  *   - nextCursor propagation: the cursor from page N is sent as request.cursor for page N+1.
  *   - hasMore=false ends the loop on the same page.
- *   - Empty page with hasMore=true is treated as "end of pagination" (SyncManager line 823-830).
+ *   - Empty page with hasMore=true follows its cursor (e.g. a customExercises-only page); a missing/blank/repeated cursor fails the pull.
  *   - Failure mid-pagination does NOT advance the lastSync timestamp (caller restarts).
  *   - knownEntityIds is built from the local repository's ID lists (parity sync).
  *   - Large knownEntityIds sets (> MAX_PARITY_IDS) are capped to the current
@@ -214,12 +214,14 @@ class PortalPullPaginationTest {
         val manager = createManager()
         val result = manager.sync()
         assertTrue(result.isSuccess, "push succeeded, so sync reports success with PartialSuccess state")
-        assertIs<SyncState.PartialSuccess>(manager.syncState.value, "empty page + hasMore=true is a pull failure")
+        // The empty page's cursor is followed; the server repeating it trips the
+        // repeated-cursor guard, which fails the pull instead of looping forever.
+        assertIs<SyncState.PartialSuccess>(manager.syncState.value, "repeated cursor is a pull failure")
         assertEquals(0L, tokenStorage.getLastSyncTimestamp(), "lastSync must not advance over unfetched pages")
         assertEquals(
-            1,
+            2,
             fakeApi.pullCallCount,
-            "Empty page + hasMore=true must break the pagination loop",
+            "Empty page + hasMore=true follows the cursor once, then the repeated cursor stops the loop",
         )
     }
 
@@ -1024,20 +1026,44 @@ class PortalPullPaginationTest {
     }
 
     @Test
-    fun emptyPageWithHasMoreDoesNotAdvanceLastSyncOrMarker() = runTest {
+    fun pageWithOnlyUndecodedEntitiesAndHasMoreIsFollowedToCompletion() = runTest {
+        // e.g. page 2 carries only customExercises (not decoded by mobile) with hasMore=true.
+        authenticate()
+        val stored = 1_740_000_000_000L
+        tokenStorage.setLastSyncTimestamp(stored) // upgrade state: no marker
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        val page1SyncTime = stored + 10
+        fakeApi.pullResultsQueue = mutableListOf(
+            routinePage(page1SyncTime, "r1", nextCursor = "customExercises-c1"),
+            Result.success(PortalSyncPullResponse(syncTime = stored + 20, hasMore = true, nextCursor = "customExercises-c2")),
+            routinePage(stored + 30, "r2"),
+        )
+
+        val manager = createManager()
+        manager.sync()
+
+        assertEquals(3, fakeApi.pullCallCount, "the empty page's cursor is followed to the final page")
+        assertEquals(listOf(null, "customExercises-c1", "customExercises-c2"), fakeApi.pullCallCursors)
+        assertIs<SyncState.Success>(manager.syncState.value)
+        assertEquals(page1SyncTime, tokenStorage.getLastSyncTimestamp(), "completed pull stores page 1's syncTime")
+        assertEquals(deltaKey, tokenStorage.getDeltaPullKey())
+    }
+
+    @Test
+    fun emptyPageWithHasMoreThenFailureDoesNotAdvanceLastSyncOrMarker() = runTest {
         authenticate()
         val stored = 1_740_000_000_000L
         tokenStorage.setLastSyncTimestamp(stored) // upgrade state: no marker
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         fakeApi.pullResultsQueue = mutableListOf(
             routinePage(stored + 10, "r1", nextCursor = "c1"),
-            Result.success(PortalSyncPullResponse(syncTime = stored + 20, hasMore = true, nextCursor = "c2")),
+            Result.success(PortalSyncPullResponse(syncTime = stored + 20, hasMore = true, nextCursor = null)),
         )
 
         val manager = createManager()
         manager.sync()
 
-        assertIs<SyncState.PartialSuccess>(manager.syncState.value)
+        assertIs<SyncState.PartialSuccess>(manager.syncState.value, "hasMore=true without a cursor fails the pull")
         assertEquals(stored, tokenStorage.getLastSyncTimestamp(), "unfetched pages must not be skipped by lastSync")
         assertNull(tokenStorage.getDeltaPullKey(), "marker must not be set by an incomplete pull")
     }

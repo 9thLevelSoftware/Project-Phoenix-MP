@@ -1471,8 +1471,9 @@ class SyncManagerTest {
         val result = manager.sync()
 
         assertTrue(result.isSuccess)
-        assertEquals(1, fakeApi.pullCallCount, "Pull should stop after empty page despite hasMore=true")
-        assertIs<SyncState.PartialSuccess>(manager.syncState.value, "empty page + hasMore=true is a pull failure")
+        // The empty page's cursor is followed once; the repeated cursor then stops the loop.
+        assertEquals(2, fakeApi.pullCallCount, "Pull should stop once the empty page's cursor repeats")
+        assertIs<SyncState.PartialSuccess>(manager.syncState.value, "repeated cursor is a pull failure")
         assertEquals(0L, tokenStorage.getLastSyncTimestamp(), "lastSync must not advance over unfetched pages")
         assertNull(tokenStorage.getDeltaPullKey())
     }

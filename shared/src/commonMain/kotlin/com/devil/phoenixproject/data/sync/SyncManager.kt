@@ -1729,16 +1729,15 @@ class SyncManager(
                 pullResponse.externalActivities.size
             totalEntitiesFetched += pageEntityCount
 
-            // Empty page with hasMore=true: stop to prevent an infinite loop, but treat it as
-            // a pull failure (like a missing cursor) so neither lastSync nor the delta-pull
-            // marker advances over pages that were never fetched.
+            // A page with no entities mobile decodes but hasMore=true is legitimate: e.g. a
+            // page holding only customExercises (paged last by the server, not decoded
+            // here). Keep following its cursor. The missing/blank/repeated-cursor guards
+            // and MAX_PAGES bound the loop; each fails the pull, so neither lastSync nor the
+            // delta-pull marker advances over pages that were never fetched.
             if (pageEntityCount == 0 && pullResponse.hasMore) {
-                val error = PortalApiException(
-                    "Pull page $pagesProcessed returned no entities but hasMore=true. " +
-                        "Processed $totalEntitiesFetched entities. Server pagination protocol error.",
-                )
-                Logger.e("SyncManager") { error.message!! }
-                return Result.failure(error)
+                Logger.d("SyncManager") {
+                    "Pull page $pagesProcessed has no decoded entities but hasMore=true; following cursor"
+                }
             }
 
             Logger.d("SyncManager") {
