@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.core.content.FileProvider
+import com.devil.phoenixproject.data.integration.CsvExporter as StrongCsvExporter
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -195,11 +196,9 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
         return "${localDateTime.year}-${monthNum.toString().padStart(2, '0')}-${localDateTime.day.toString().padStart(2, '0')}"
     }
 
-    private fun escapeCsv(value: String): String = if (value.contains(",") || value.contains("\"") || value.contains("\n")) {
-        "\"${value.replace("\"", "\"\"")}\""
-    } else {
-        value
-    }
+    // Text cells only (exercise names): RFC 4180 quoting plus the formula-injection guard.
+    // Numeric cells (weight, 1RM, signed progress) are written raw.
+    private fun escapeCsv(value: String): String = StrongCsvExporter.escapeCsvField(value)
 
     private fun calculateOneRM(weight: Float, reps: Int): Float = OneRepMaxCalculator.estimate(weight, reps)
 }

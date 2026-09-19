@@ -153,7 +153,7 @@ object CsvImporter {
         for ((_, rows) in groups) {
             try {
                 val firstRow = rows[0]
-                val workoutName = fieldAt(firstRow, colIdx["workout_name"]).trim()
+                val workoutName = CsvExporter.unescapeFormulaGuard(fieldAt(firstRow, colIdx["workout_name"]).trim())
                 val dateStr = fieldAt(firstRow, colIdx["date"]).trim()
                 val durationStr = fieldAt(firstRow, colIdx["duration"]).trim()
 

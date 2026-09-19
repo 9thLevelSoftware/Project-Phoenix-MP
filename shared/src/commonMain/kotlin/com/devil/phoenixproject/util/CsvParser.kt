@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.util
 
+import com.devil.phoenixproject.data.integration.CsvExporter as StrongCsvExporter
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.datetime.LocalDate
@@ -134,7 +135,8 @@ object CsvParser {
 
         // Required fields
         val dateStr = field("date") ?: return null
-        val exerciseName = field("exercise") ?: return null
+        // Exports prefix formula-like names with ' (StrongCsvExporter.escapeCsvField); undo that.
+        val exerciseName = field("exercise")?.let(StrongCsvExporter::unescapeFormulaGuard) ?: return null
         val mode = field("mode") ?: return null
 
         // Parse date + optional time to epoch millis.
