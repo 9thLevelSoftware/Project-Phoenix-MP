@@ -937,6 +937,15 @@ class ActiveSessionEngine(
             return deleteInvalidDiscoveredRuntime(handle, pending)
         }
         val validation = RuntimeHydrationValidation.Valid(document, preparation, source)
+        val restRackSelection = try {
+            resolveRestoredRestRackSelection(preparation)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return ActiveWorkoutRuntimeResumeResult.RetryableFailure
+        }
+        currentCoroutineContext().ensureActive()
+        if (!runtimeResumeAuthorityIsCurrent(handle, pending)) return ActiveWorkoutRuntimeResumeResult.Superseded
 
         var restoredOwner: RestoredRuntimeOwner? = null
         var restoredTimerPublication: RestoredRestTimerPublication? = null
@@ -980,6 +989,7 @@ class ActiveSessionEngine(
                     restoredTimerPublication = publishRestoredRuntime(
                         handle = handle,
                         validation = validation,
+                        restRackSelection = restRackSelection,
                         guardOwner = owner,
                         externalCommandInputStamp = pending.externalCommandInputStamp,
                     )
@@ -1477,9 +1487,31 @@ class ActiveSessionEngine(
         false
     }
 
+    private suspend fun resolveRestoredRestRackSelection(
+        preparation: RoutineRecoveryPreparation,
+    ): RoutineRackSelectionSnapshot {
+        val nextStep = flowDelegate?.getNextStepForRecovery(
+            preparation.resolvedRoutine,
+            preparation.sourceExerciseIndex,
+            preparation.sourceSetIndex,
+        ) ?: return preparation.rackSelection
+        val nextExercise = preparation.resolvedRoutine.exercises.getOrNull(nextStep.first)
+            ?: return preparation.rackSelection
+        if (isBodyweightExercise(nextExercise)) return preparation.rackSelection
+        return flowDelegate?.prepareRoutineForRecovery(
+            routine = preparation.resolvedRoutine,
+            exerciseIndex = nextStep.first,
+            setIndex = nextStep.second,
+            launchOrigin = preparation.launchOrigin,
+            cycleId = preparation.cycleId,
+            cycleDayNumber = preparation.cycleDayNumber,
+        )?.rackSelection ?: preparation.rackSelection
+    }
+
     private fun publishRestoredRuntime(
         handle: RoutineResumeHandle.Persisted,
         validation: RuntimeHydrationValidation.Valid,
+        restRackSelection: RoutineRackSelectionSnapshot,
         guardOwner: RestoredRuntimeOwnerToken,
         externalCommandInputStamp: ExternalCommandInputStamp,
     ): RestoredRestTimerPublication {
@@ -1541,21 +1573,11 @@ class ActiveSessionEngine(
         coordinator.activeCycleDayNumber = preparation.cycleDayNumber
         coordinator._workoutParameters.value = source.commandTemplate
         coordinator.setActiveRackSelection(
-            itemIds = preparation.rackSelection.itemIds,
-            precomputedAdjustment = preparation.rackSelection.adjustment,
-            precomputedItemsJson = preparation.rackSelection.itemsJson,
+            itemIds = restRackSelection.itemIds,
+            precomputedAdjustment = restRackSelection.adjustment,
+            precomputedItemsJson = restRackSelection.itemsJson,
         )
-        coordinator._activeRackBehaviorOverrides.value = preparation.rackSelection.behaviorOverrides
-        flowDelegate?.getNextStep(
-            preparation.resolvedRoutine,
-            document.sourceExerciseIndex,
-            document.sourceSetIndex,
-        )?.let { (nextExerciseIndex, _) ->
-            val nextExercise = preparation.resolvedRoutine.exercises.getOrNull(nextExerciseIndex)
-            if (nextExercise != null && !isBodyweightExercise(nextExercise)) {
-                flowDelegate?.seedRackSelectionForExercise(nextExerciseIndex)
-            }
-        }
+        coordinator._activeRackBehaviorOverrides.value = restRackSelection.behaviorOverrides
         setActiveRuntimeDocument(document)
         coordinator._restTransitionPlan.value = document.restTransitionPlan
         acceptedRetryPermission = null
@@ -1572,7 +1594,7 @@ class ActiveSessionEngine(
             documentVersion = activeRuntimeDocumentVersion,
             guardOwner = guardOwner,
             sourceContext = source,
-            rackBehaviorOverrides = preparation.rackSelection.behaviorOverrides.toMap(),
+            rackBehaviorOverrides = restRackSelection.behaviorOverrides.toMap(),
             externalCommandInputStamp = externalCommandInputStamp,
         )
         val replacedRestoredTimer = replaceRestoredRestTimerOwner(
@@ -4870,6 +4892,9 @@ class ActiveSessionEngine(
 
         /** Get current exercise from loaded routine */
         fun getCurrentExercise(): RoutineExercise?
+
+        /** Get next step without triggering an action-navigation observation. */
+        fun getNextStepForRecovery(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>?
 
         /** Get next step in routine navigation */
         fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>?
