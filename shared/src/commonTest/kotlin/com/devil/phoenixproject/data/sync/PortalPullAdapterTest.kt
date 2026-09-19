@@ -119,6 +119,31 @@ class PortalPullAdapterTest {
         assertEquals(3L, PortalPullAdapter.parseEchoLevel("Epic"))
     }
 
+    // ========== PullRoutineExerciseDto.durationSeconds ==========
+
+    @Test
+    fun `pulled routine exercise decodes durationSeconds`() {
+        val dto = PortalWireJson.decodeFromString(
+            PullRoutineExerciseDto.serializer(),
+            """{"id":"rex-1","durationSeconds":45}""",
+        )
+        assertEquals(45, dto.durationSeconds)
+    }
+
+    @Test
+    fun `pulled routine exercise with null or absent durationSeconds decodes to null`() {
+        val explicitNull = PortalWireJson.decodeFromString(
+            PullRoutineExerciseDto.serializer(),
+            """{"id":"rex-1","durationSeconds":null}""",
+        )
+        val absent = PortalWireJson.decodeFromString(
+            PullRoutineExerciseDto.serializer(),
+            """{"id":"rex-2"}""",
+        )
+        assertNull(explicitNull.durationSeconds)
+        assertNull(absent.durationSeconds)
+    }
+
     // ========== toRoutineSyncDto ==========
 
     @Test

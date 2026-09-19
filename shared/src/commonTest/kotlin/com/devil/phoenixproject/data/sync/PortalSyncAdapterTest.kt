@@ -475,6 +475,34 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `toPortalRoutine sends durationSeconds for a timed exercise on the wire`() {
+        val routine = makeRoutine(
+            id = "r-timed",
+            exercises = listOf(makeRoutineExercise(id = "ex-timed").copy(duration = 45)),
+        )
+
+        val dto = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
+        val raw = PortalWireJson.encodeToString(PortalRoutineSyncDto.serializer(), dto)
+
+        assertTrue(raw.contains("\"durationSeconds\":45"), raw)
+    }
+
+    @Test
+    fun `toPortalRoutine sends explicit null durationSeconds for a rep-based exercise`() {
+        val routine = makeRoutine(
+            id = "r-reps",
+            exercises = listOf(makeRoutineExercise(id = "ex-reps")),
+        )
+
+        val dto = PortalSyncAdapter.toPortalRoutine(routine, "user-1")
+        // PortalWireJson has explicitNulls = false; the key must still be sent,
+        // because an absent key means "keep the stored duration" on the server.
+        val raw = PortalWireJson.encodeToString(PortalRoutineSyncDto.serializer(), dto)
+
+        assertTrue(raw.contains("\"durationSeconds\":null"), raw)
+    }
+
+    @Test
     fun `toPortalRoutine maps superset colors`() {
         val superset = Superset(
             id = "ss-1",

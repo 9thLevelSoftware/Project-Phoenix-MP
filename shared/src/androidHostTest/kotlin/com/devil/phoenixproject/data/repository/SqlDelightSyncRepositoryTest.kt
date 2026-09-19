@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
+import com.devil.phoenixproject.data.sync.encodePortalSyncPayload
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
@@ -781,6 +782,72 @@ class SqlDelightSyncRepositoryTest {
             .executeAsList()
             .single()
         assertEquals("""["vest"]""", exercise.defaultRackItemIds)
+    }
+
+    @Test
+    fun `mergePortalRoutines stores pulled durationSeconds and pushes it back`() = runTest {
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-timed",
+                    userId = "user",
+                    name = "Timed Remote",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-timed",
+                            routineId = "routine-timed",
+                            name = "Plank",
+                            muscleGroup = "Core",
+                            orderIndex = 0,
+                            durationSeconds = 45,
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "rex-reps",
+                            routineId = "routine-timed",
+                            name = "Bench Press",
+                            muscleGroup = "Chest",
+                            orderIndex = 1,
+                            durationSeconds = null,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val rows = database.phoenixDatabaseQueries
+            .selectExercisesByRoutine("routine-timed")
+            .executeAsList()
+            .associateBy { it.id }
+        assertEquals(45L, rows.getValue("rex-timed").duration)
+        assertNull(rows.getValue("rex-reps").duration)
+
+        val outbound = repository.getFullRoutinesModifiedSince(0L, "active-profile").single()
+        val raw = encodePortalSyncPayload(
+            PortalSyncPayload(
+                deviceId = "device-1",
+                platform = "android",
+                lastSync = 0L,
+                routines = listOf(PortalSyncAdapter.toPortalRoutine(outbound, "user")),
+            ),
+        ).raw
+        val exercises = kotlinx.serialization.json.Json.parseToJsonElement(raw)
+            .let { it as kotlinx.serialization.json.JsonObject }
+            .getValue("routines").let { it as kotlinx.serialization.json.JsonArray }
+            .single().let { it as kotlinx.serialization.json.JsonObject }
+            .getValue("exercises").let { it as kotlinx.serialization.json.JsonArray }
+            .associateBy {
+                ((it as kotlinx.serialization.json.JsonObject).getValue("id")
+                    as kotlinx.serialization.json.JsonPrimitive).content
+            }
+        val timed = exercises.getValue("rex-timed") as kotlinx.serialization.json.JsonObject
+        val reps = exercises.getValue("rex-reps") as kotlinx.serialization.json.JsonObject
+        assertEquals(kotlinx.serialization.json.JsonPrimitive(45), timed["durationSeconds"])
+        // Key present with explicit null so the server clears any stored duration.
+        assertTrue(reps.containsKey("durationSeconds"))
+        assertEquals(kotlinx.serialization.json.JsonNull, reps["durationSeconds"])
     }
 
     @Test

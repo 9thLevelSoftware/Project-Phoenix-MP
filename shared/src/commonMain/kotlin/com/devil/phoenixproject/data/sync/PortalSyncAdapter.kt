@@ -19,6 +19,8 @@ import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Transforms mobile data structures into portal-compatible DTOs.
@@ -631,6 +633,8 @@ object PortalSyncAdapter {
                     },
                 dropSetEnabled = ex.dropSetEnabled,
                 dropSetMinWeightKg = ex.dropSetMinWeightKg,
+                // Seconds on both sides; JsonNull (sent as explicit null) clears it.
+                durationSeconds = ex.duration?.let { JsonPrimitive(it) } ?: JsonNull,
             )
         }
 

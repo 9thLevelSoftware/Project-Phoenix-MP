@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.sync
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * DTOs matching the portal's 3-tier database structure:
@@ -246,6 +248,16 @@ data class PortalRoutineExerciseSyncDto(
     val rackBehaviorOverrides: String? = null, // JSON map of rackItemId -> behavior name
     val dropSetEnabled: Boolean = false,
     val dropSetMinWeightKg: Float? = null,
+    /**
+     * Timed-exercise duration in seconds, or JSON `null` for a rep-based exercise.
+     *
+     * The key is ALWAYS sent: the server treats an absent key as "keep the stored
+     * duration" and an explicit null as "clear it". [PortalWireJson] uses
+     * `explicitNulls = false`, which drops a null `Int?` property entirely, so the
+     * field is a non-null [JsonPrimitive] holding [JsonNull] instead. Older servers
+     * strip the unknown key.
+     */
+    val durationSeconds: JsonPrimitive = JsonNull,
 )
 
 // ─── Training Cycle Sync DTOs ─────────────────────────────────────
@@ -908,6 +920,9 @@ data class PullRoutineExerciseDto(
     val rackBehaviorOverrides: String? = null, // JSON map of rackItemId -> behavior name
     val dropSetEnabled: Boolean? = null,
     val dropSetMinWeightKg: Float? = null,
+    // Timed-exercise duration in seconds; null for rep-based exercises and for
+    // older Edge Function versions that do not send the field.
+    val durationSeconds: Int? = null,
 )
 
 /**

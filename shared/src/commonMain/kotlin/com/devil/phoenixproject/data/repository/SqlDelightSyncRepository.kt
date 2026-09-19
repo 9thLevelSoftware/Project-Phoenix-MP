@@ -2331,7 +2331,7 @@ class SqlDelightSyncRepository(
                 echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
                 progressionKg = 0.0,
                 restSeconds = exercise.restSeconds.toLong(),
-                duration = null,
+                duration = exercise.durationSeconds?.toLong(), // seconds
                 setRestSeconds = setRestSeconds,
                 perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
                 isAMRAP = if (exercise.isAmrap) 1L else 0L,
