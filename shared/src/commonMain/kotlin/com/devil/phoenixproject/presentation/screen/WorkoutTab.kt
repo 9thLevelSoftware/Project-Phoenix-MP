@@ -8,16 +8,13 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -37,7 +34,6 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Badge
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -49,7 +45,6 @@ import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -64,13 +59,11 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
-import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
 import com.devil.phoenixproject.domain.model.BodyweightVariantOption
@@ -89,7 +82,6 @@ import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
-import com.devil.phoenixproject.presentation.components.ExerciseDemoImage
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
 import com.devil.phoenixproject.presentation.components.LoadingIndicator
 import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
@@ -106,8 +98,6 @@ import com.devil.phoenixproject.presentation.manager.actionIdentity
 import com.devil.phoenixproject.presentation.theme.phoenixStructuralContainerColor
 import com.devil.phoenixproject.presentation.theme.phoenixStructuralContentColor
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
-import com.devil.phoenixproject.presentation.util.LocalWindowSizeClass
-import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
@@ -140,7 +130,6 @@ import projectphoenix.shared.generated.resources.connecting
 import projectphoenix.shared.generated.resources.disconnect
 import projectphoenix.shared.generated.resources.disconnect_message
 import projectphoenix.shared.generated.resources.disconnect_title
-import projectphoenix.shared.generated.resources.label_per_cable
 import projectphoenix.shared.generated.resources.not_connected
 import projectphoenix.shared.generated.resources.reconnect
 import projectphoenix.shared.generated.resources.save_set
@@ -447,21 +436,6 @@ fun WorkoutTab(
 
                     else -> {}
                 }
-
-                // Display state-specific cards (only non-overlay cards)
-//                when (workoutState) {
-//                    is WorkoutState.Active -> {
-//                         // Legacy cards removed in favor of HUD
-//                    }
-//                    else -> {}
-//                }
-//
-//                // Only show live metrics after warmup is complete
-//                if (workoutState is WorkoutState.Active
-//                    && currentMetric != null
-//                    && repCount.isWarmupComplete) {
-//                    // Legacy LiveMetricsCard removed
-//                }
             }
 
             // Show "Workout Paused" card when connection is lost during an active workout (Issue #42)
@@ -1490,442 +1464,6 @@ fun ConnectionCard(connectionState: ConnectionState, onScan: () -> Unit, onCance
                         color = MaterialTheme.colorScheme.error,
                     )
                 }
-            }
-        }
-    }
-}
-
-/**
- * Rep Counter Card - displays current rep count
- *
- * Visual feedback flow (matches parent repo):
- * - hasPendingRep: At TOP (concentric peak) - show next rep number in grey
- * - !hasPendingRep: At BOTTOM (confirmed) - show current rep in full color
- */
-@Composable
-fun RepCounterCard(repCount: RepCount, workoutParameters: WorkoutParameters) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = phoenixStructuralContainerColor(MaterialTheme.colorScheme),
-            contentColor = phoenixStructuralContentColor(MaterialTheme.colorScheme),
-        ),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp),
-        border = BorderStroke(3.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.large),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            // Determine display values for working reps:
-            // - hasPendingRep: At TOP (concentric peak) - show next rep number in grey
-            // - !hasPendingRep: At BOTTOM (confirmed) - show current rep in full color
-            val (countText, isPending) = if (repCount.isWarmupComplete) {
-                if (repCount.hasPendingRep) {
-                    // At TOP - show PENDING rep (next number, will be confirmed at bottom)
-                    Pair((repCount.workingReps + 1).toString(), true)
-                } else {
-                    // At BOTTOM or idle - show CONFIRMED rep count
-                    Pair(repCount.workingReps.toString(), false)
-                }
-            } else {
-                Pair("${repCount.warmupReps} / ${workoutParameters.warmupReps}", false)
-            }
-
-            // Show AMRAP indicator when in AMRAP mode and warmup is complete
-            if (workoutParameters.isAMRAP && repCount.isWarmupComplete) {
-                Badge(
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.padding(bottom = Spacing.small),
-                ) {
-                    Text(
-                        text = "AMRAP",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                }
-            }
-
-            val labelText = when {
-                !repCount.isWarmupComplete -> "WARMUP"
-                workoutParameters.isAMRAP -> "REPS (As Many As Possible)"
-                else -> "REPS"
-            }
-
-            Text(
-                text = labelText,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = phoenixStructuralContentColor(MaterialTheme.colorScheme),
-            )
-            Spacer(modifier = Modifier.height(Spacing.medium))
-
-            // Rep count display with pending state (grey when at TOP, colored when confirmed)
-            Text(
-                text = countText,
-                style = MaterialTheme.typography.displayLarge,
-                fontWeight = FontWeight.Bold,
-                color = if (isPending) {
-                    // Grey color for pending rep (at TOP, waiting for eccentric)
-                    phoenixStructuralContentColor(MaterialTheme.colorScheme).copy(alpha = 0.4f)
-                } else {
-                    // Full color for confirmed rep (at BOTTOM, completed)
-                    phoenixStructuralContentColor(MaterialTheme.colorScheme)
-                },
-            )
-        }
-    }
-}
-
-/**
- * Live Metrics Card - displays real-time workout metrics
- */
-@Composable
-fun LiveMetricsCard(metric: WorkoutMetric, weightUnit: WeightUnit, formatWeight: (Float, WeightUnit) -> String) {
-    val windowSizeClass = LocalWindowSizeClass.current
-    val labelWidth = when (windowSizeClass.widthSizeClass) {
-        WindowWidthSizeClass.Expanded -> 80.dp
-        WindowWidthSizeClass.Medium -> 65.dp
-        WindowWidthSizeClass.Compact -> 50.dp
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
-        ) {
-            Text(
-                "Live Metrics",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-            )
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            // Current Load - show per-cable resistance
-            Text(
-                formatWeight(metric.totalLoad / 2f, weightUnit),
-                style = MaterialTheme.typography.displayMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.primary,
-            )
-            Text(
-                stringResource(Res.string.label_per_cable),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-
-            Spacer(modifier = Modifier.height(Spacing.medium))
-
-            // Cable Position Bars
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    "Cable Positions",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(bottom = Spacing.extraSmall),
-                )
-
-                // Cable A Position Bar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "A",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(20.dp),
-                    )
-                    LinearProgressIndicator(
-                        progress = { (metric.positionA / 1000f).coerceIn(0f, 1f) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(8.dp),
-                        color = MaterialTheme.colorScheme.primary,
-                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    )
-                    Text(
-                        "${metric.positionA.toInt()}mm",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(labelWidth).padding(start = Spacing.extraSmall),
-                        textAlign = TextAlign.End,
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(Spacing.extraSmall))
-
-                // Cable B Position Bar
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "B",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(20.dp),
-                    )
-                    LinearProgressIndicator(
-                        progress = { (metric.positionB / 1000f).coerceIn(0f, 1f) },
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(8.dp),
-                        color = MaterialTheme.colorScheme.secondary,
-                        trackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    )
-                    Text(
-                        "${metric.positionB.toInt()}mm",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.width(labelWidth).padding(start = Spacing.extraSmall),
-                        textAlign = TextAlign.End,
-                    )
-                }
-            }
-        }
-    }
-}
-
-/**
- * Vertical cable position bar for left/right side display
- */
-@Composable
-fun VerticalCablePositionBar(
-    label: String,
-    currentPosition: Int,
-    minPosition: Int?,
-    maxPosition: Int?,
-    isActive: Boolean,
-    modifier: Modifier = Modifier,
-) {
-    Column(
-        modifier = modifier.fillMaxHeight(),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween,
-    ) {
-        // Label at top
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.Bold,
-            color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(bottom = 4.dp),
-        )
-
-        // Vertical bar container
-        BoxWithConstraints(
-            modifier = Modifier
-                .weight(1f)
-                .width(40.dp)
-                .clip(MaterialTheme.shapes.medium)
-                .background(MaterialTheme.colorScheme.surfaceVariant),
-        ) {
-            val barHeight = maxHeight
-
-            // Calculate positions as fractions
-            val maxPos = 1000
-            val currentProgress = (currentPosition / maxPos.toFloat()).coerceIn(0f, 1f)
-            val minProgress = minPosition?.let { (it / maxPos.toFloat()).coerceIn(0f, 1f) }
-            val maxProgress = maxPosition?.let { (it / maxPos.toFloat()).coerceIn(0f, 1f) }
-
-            // Range zone visualization
-            if (minProgress != null && maxProgress != null && maxProgress > minProgress) {
-                val rangeHeight = maxProgress - minProgress
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(barHeight * rangeHeight)
-                        .align(Alignment.BottomCenter)
-                        .offset(y = -barHeight * minProgress)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)),
-                )
-            }
-
-            // Current position fill (from bottom up)
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(barHeight * currentProgress)
-                    .align(Alignment.BottomCenter)
-                    .background(
-                        if (isActive) {
-                            MaterialTheme.colorScheme.primary
-                        } else {
-                            MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)
-                        },
-                    ),
-            )
-
-            // Range markers
-            if (minProgress != null && maxProgress != null && maxProgress > minProgress) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .align(Alignment.BottomCenter)
-                        .offset(y = -barHeight * minProgress)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
-                )
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(2.dp)
-                        .align(Alignment.BottomCenter)
-                        .offset(y = -barHeight * maxProgress)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.6f)),
-                )
-            }
-        }
-
-        // Position value at bottom
-        Text(
-            text = "${currentPosition / 10}%",
-            style = MaterialTheme.typography.labelSmall,
-            color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp),
-        )
-    }
-}
-
-/**
- * Current Exercise Card - Shows exercise details during active workout
- */
-@Composable
-fun CurrentExerciseCard(
-    loadedRoutine: Routine?,
-    currentExerciseIndex: Int,
-    workoutParameters: WorkoutParameters,
-    exerciseRepository: ExerciseRepository,
-    enableVideoPlayback: Boolean,
-    formatWeight: (Float) -> String,
-    kgToDisplay: (Float) -> Float,
-    weightUnit: WeightUnit,
-) {
-    // Get current exercise from routine if available
-    val currentExercise = loadedRoutine?.exercises?.getOrNull(currentExerciseIndex)
-
-    // Get exercise entity and demonstration images for display
-    // Issue #142: Key the remember on currentExerciseIndex so state resets when exercise changes.
-    var exerciseEntity by remember(currentExerciseIndex) { mutableStateOf<Exercise?>(null) }
-    var images by remember(currentExerciseIndex) { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
-
-    // Load exercise and image data
-    // Issue #142: Include currentExerciseIndex in the key to ensure images reload when
-    // navigating to a different exercise position. This handles cases where the same
-    // exercise appears multiple times in a routine (same exercise.id but different index).
-    LaunchedEffect(currentExerciseIndex, currentExercise?.exercise?.id, workoutParameters.selectedExerciseId) {
-        // Clear stale data first
-        exerciseEntity = null
-        images = emptyList()
-        val exerciseId = currentExercise?.exercise?.id ?: workoutParameters.selectedExerciseId
-        if (exerciseId != null) {
-            try {
-                exerciseEntity = exerciseRepository.getExerciseById(exerciseId)
-                images = exerciseRepository.getImages(exerciseId)
-            } catch (e: Exception) {
-                co.touchlab.kermit.Logger.e("WorkoutTab") { "Failed to load exercise/images for $exerciseId: ${e.message}" }
-            }
-        }
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
-        ) {
-            // Exercise name
-            Text(
-                text = currentExercise?.exercise?.name ?: exerciseEntity?.name ?: "Exercise",
-                style = MaterialTheme.typography.headlineSmall,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            // Exercise details
-            if (currentExercise != null) {
-                val repsText = if (currentExercise.setReps.isEmpty()) {
-                    "No sets configured"
-                } else if (currentExercise.setReps.all { it == currentExercise.setReps.first() }) {
-                    "${currentExercise.setReps.size}x${currentExercise.setReps.first()}"
-                } else {
-                    currentExercise.setReps.joinToString(", ")
-                }
-
-                val isExerciseEcho = currentExercise.programMode == ProgramMode.Echo
-                val descriptionText = if (isExerciseEcho) {
-                    "$repsText reps - ${currentExercise.programMode.displayName} - Adaptive"
-                } else {
-                    val weightText = if (currentExercise.setWeightsPerCableKg.isNotEmpty()) {
-                        val displayWeights = currentExercise.setWeightsPerCableKg.map { kgToDisplay(it) }
-                        val minWeight = displayWeights.minOrNull() ?: 0f
-                        val maxWeight = displayWeights.maxOrNull() ?: 0f
-                        val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-
-                        if (minWeight == maxWeight) {
-                            "${formatFloat(minWeight, 1)} $weightSuffix/cable"
-                        } else {
-                            "${formatFloat(minWeight, 1)}-${formatFloat(maxWeight, 1)} $weightSuffix/cable"
-                        }
-                    } else {
-                        "${formatWeight(currentExercise.weightPerCableKg)}/cable"
-                    }
-
-                    "$repsText @ $weightText - ${currentExercise.programMode.displayName}"
-                }
-
-                Text(
-                    text = descriptionText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            } else {
-                val descriptionText = if (workoutParameters.isEchoMode) {
-                    "${workoutParameters.reps} reps - ${workoutParameters.programMode.displayName} - Adaptive"
-                } else {
-                    "${workoutParameters.reps} reps @ ${formatWeight(
-                        workoutParameters.weightPerCableKg,
-                    )}/cable - ${workoutParameters.programMode.displayName}"
-                }
-
-                Text(
-                    text = descriptionText,
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurface,
-                )
-            }
-
-            if (enableVideoPlayback) {
-                Spacer(modifier = Modifier.height(Spacing.medium))
-                ExerciseDemoImage(
-                    imageUrls = images.map { it.url },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
-                        .clip(MaterialTheme.shapes.small),
-                    contentDescription = currentExercise?.exercise?.name ?: exerciseEntity?.name,
-                )
             }
         }
     }

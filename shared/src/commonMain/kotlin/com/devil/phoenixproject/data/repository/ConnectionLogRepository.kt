@@ -137,15 +137,6 @@ class ConnectionLogRepository {
     }
 
     /**
-     * Clear logs older than the specified timestamp.
-     */
-    fun clearOlderThan(timestamp: Long) {
-        _logs.update { currentLogs ->
-            currentLogs.filter { it.timestamp >= timestamp }
-        }
-    }
-
-    /**
      * Enable or disable logging.
      */
     fun setEnabled(enabled: Boolean) {
@@ -174,25 +165,6 @@ class ConnectionLogRepository {
                 sb.appendLine("  Details: ${log.details}")
             }
             sb.appendLine()
-        }
-
-        return sb.toString()
-    }
-
-    /**
-     * Export logs as CSV format.
-     */
-    fun exportAsCsv(): String {
-        val sb = StringBuilder()
-        sb.appendLine("timestamp,level,event_type,message,device_name,device_address,details")
-
-        _logs.value.forEach { log ->
-            sb.appendLine(
-                "${log.timestamp},${log.level},${log.eventType}," +
-                    "\"${log.message.replace("\"", "\"\"")}\"," +
-                    "${log.deviceName ?: ""},${log.deviceAddress ?: ""}," +
-                    "\"${log.details?.replace("\"", "\"\"") ?: ""}\"",
-            )
         }
 
         return sb.toString()
