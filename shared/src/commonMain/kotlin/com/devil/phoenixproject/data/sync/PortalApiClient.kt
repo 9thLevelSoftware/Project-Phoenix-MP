@@ -309,7 +309,9 @@ open class PortalApiClient(
         Result.failure(classified.toException())
     }
 
-    suspend fun refreshToken(refreshToken: String): Result<GoTrueAuthResponse> = try {
+    // Private: every refresh must go through refreshMutex + the auth generation
+    // (refreshIfNeeded / authenticatedRequest), never straight to GoTrue.
+    private suspend fun refreshToken(refreshToken: String): Result<GoTrueAuthResponse> = try {
         val response = httpClient.post(
             "${supabaseConfig.authUrl}/token?grant_type=refresh_token",
         ) {
@@ -660,9 +662,9 @@ open class PortalApiClient(
      * Exchanges the stored refresh token for a new session. Caller must hold
      * [refreshMutex].
      *
-     * Returns the new access token, or null when the session is definitively
-     * gone (auth cleared, or cleared by a sign-out while the request was in
-     * flight). Rethrows transient/network failures with tokens preserved
+     * Returns the new access token (or, if a sign-in replaced the session while
+     * the request was in flight, that session's token), or null when the session
+     * is definitively gone (auth cleared, including by a sign-out mid-flight). Rethrows transient/network failures with tokens preserved
      * (F020/F077) so callers classify them as retryable instead of a 401.
      */
     private suspend fun refreshWithStoredTokenLocked(): String? {
@@ -680,8 +682,10 @@ open class PortalApiClient(
                 return if (tokenStorage.saveGoTrueAuth(response, expectedGeneration = generation)) {
                     response.accessToken
                 } else {
+                    // Auth changed while in flight: signed out (null) or a new
+                    // sign-in, whose token the caller should use instead.
                     Logger.i("PortalApiClient") { "Token refresh result dropped - auth changed while in flight" }
-                    null
+                    tokenStorage.getToken()
                 }
             },
             onFailure = { it },
