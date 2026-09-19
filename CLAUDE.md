@@ -22,7 +22,7 @@ Every Gradle invocation configures `androidApp`, which fails without Supabase cr
 # Android debug APK
 ./gradlew -Pskip.supabase.check=true :androidApp:assembleDebug
 
-# Tests (what CI runs). The shared suite holds most tests; don't stop at androidApp.
+# Tests (the test suites CI runs). The shared suite holds most tests; don't stop at androidApp.
 ./gradlew -Pskip.supabase.check=true :shared:testAndroidHostTest :androidApp:testDebugUnitTest --continue
 ./gradlew -Pskip.supabase.check=true :shared:testAndroidHostTest --tests '*SchemaParityTest*'   # one class
 
@@ -64,7 +64,7 @@ shared/src/
   - UART service `6e400001-b5a3-f393-e0a9-e50e24dcca9e`; the app **writes** commands to `6e400002-…` (`NUS_RX_CHAR_UUID_STRING`). No UART notify characteristic is used.
   - Telemetry arrives on the trainer's own characteristics: sample/monitor `90e991a6-…` (polled), reps `8308f2a6-…` (notify), mode `67d0dae0-…`, plus version, cable left/right, diagnostic and others listed there.
   - `CONNECTION_TIMEOUT_MS = 15000`, `SCAN_TIMEOUT_MS = 30000`, `GATT_OPERATION_TIMEOUT_MS = 5000`.
-- The scan filter accepts device names starting with `Vee_`, `VIT` or `Phoenix` (case-insensitive).
+- Device-name filters (case-insensitive, `KableBleConnectionManager.kt`): the main scan accepts `Vee_`, `VIT` or `Phoenix`; scan-and-connect and the scan dedupe checks accept only `Vee_`/`VIT`.
 
 ### Database Schema
 SQLDelight schema at `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq` (~48 tables) with migrations `migrations/1.sqm` … `N.sqm`. Core tables include `WorkoutSession`, `MetricSample`, `PersonalRecord`, `Exercise`, `Routine`/`RoutineExercise`. See "Schema changes" below before touching any of it.
@@ -95,7 +95,7 @@ See `gradle/libs.versions.toml` (single source of truth; don't copy versions int
 1. Add `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/N.sqm` (N = highest existing + 1). Keep it additive (API 26 SQLite 3.18: no `DROP COLUMN`, no `ON CONFLICT DO UPDATE`).
 2. Mirror the change in `PhoenixDatabase.sq` so a fresh install matches an upgraded one.
 3. Add the matching entries in `data/local/SchemaManifest.kt` (`manifestTables`, `manifestColumns` heal ops, `manifestIndexes`). iOS relies on this post-open heal.
-4. Add entry `N` to `getMigrationStatements` in `data/local/MigrationStatements.kt` (the resilient-migration fallback replays it when `Schema.migrate` throws).
+4. Add entry `N` to `getMigrationStatements` in `data/local/MigrationStatements.kt` (the resilient-migration fallback replays it when `Schema.migrate` throws). Keep entries contiguous with the `.sqm` files and backfill any missing N.
 5. Verify: `:shared:validateSchemaManifest` (runs automatically before codegen) and `:shared:testAndroidHostTest --tests '*SchemaParityTest*'`.
 
 The schema version is derived from the migration files (highest `N.sqm` + 1). Don't edit `version` in `shared/build.gradle.kts`; it isn't authoritative.
@@ -103,7 +103,7 @@ The schema version is derived from the migration files (highest `N.sqm` + 1). Do
 ## Releasing
 1. Bump the version with the `update-phoenix-version` skill (`.agents/skills/update-phoenix-version/`). It keeps Android `versionName`, `Constants.APP_VERSION` and both iOS `MARKETING_VERSION` values aligned.
 2. Merge to `main`, then dispatch `.github/workflows/release-all.yml` from `main`.
-3. `release-all` refuses to run if Android `versionName` and the iOS `MARKETING_VERSION`s differ or the tag `v<version>` already exists. It does not check `Constants.APP_VERSION`, so rely on the skill for that.
+3. Among its gates, `release-all` refuses to run if Android `versionName` and the iOS `MARKETING_VERSION`s differ or the tag `v<version>` already exists (read the workflow for the current full set). It does not check `Constants.APP_VERSION`, so rely on the skill for that.
 4. It creates the GitHub release `v<version>`, then calls `android-release-apk.yml`, `ios-release-ipa.yml`, `android-playstore.yml` and `ios-testflight.yml` (each can be skipped by an input).
 5. Required repo secrets, by group: release (`RELEASE_PAT`); Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY`); Android signing (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`); Play (`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`); Apple signing (`BUILD_CERTIFICATE_BASE64`, `P12_PASSWORD`, `KEYCHAIN_PASSWORD`, `PROVISION_PROFILE_BASE64`, `PROVISIONING_PROFILE_NAME`, `TEAM_ID`); App Store Connect (`APPSTORE_API_KEY`, `APPSTORE_API_KEY_ID`, `APPSTORE_ISSUER_ID`, `APP_APPLE_ID`, `TESTFLIGHT_GROUP_NAME`).
 
@@ -117,7 +117,7 @@ The schema version is derived from the migration files (highest `N.sqm` + 1). Do
 - `data/sync/PortalSyncDtos.kt` — Wire-format DTOs (camelCase JSON, matches the Edge Functions), e.g. `PortalWorkoutSessionDto`, `PortalExerciseDto`
 - `data/sync/PortalSyncAdapter.kt` / `PortalPullAdapter.kt` — Map local rows to push DTOs and pulled DTOs back to local rows
 - `data/sync/ProfilePreferenceSyncCodec.kt`, `ProfilePreferenceSyncPlanner.kt`, `ProfilePreferenceSyncRepository.kt` — Per-profile preference sections sync
-- `data/sync/SyncModels.kt` — Internal sync models (profile-preference internals, `IdMappings`), not the wire format
+- `data/sync/SyncModels.kt` — Internal (non-wire) sync models: repository/merge entity DTOs (`WorkoutSessionSyncDto`, `PersonalRecordSyncDto`, `RoutineSyncDto`, … used by `mergeSessions` etc.), profile-preference internals, `IdMappings`, auth DTOs
 - `data/sync/PortalTokenStorage.kt` — Auth token persistence
 
 ### Sync Trigger Patterns
