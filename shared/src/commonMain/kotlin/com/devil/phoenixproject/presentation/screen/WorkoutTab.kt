@@ -79,6 +79,8 @@ import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
@@ -205,8 +207,8 @@ fun WorkoutTab(
         onRetryWorkoutTeardown = actions::onRetryWorkoutTeardown,
         onReconnectWorkoutTeardown = actions::onReconnectWorkoutTeardown,
         onStopWorkout = actions::onStopWorkout,
-        onSkipRest = actions::onSkipRest,
-        onSkipRestWithIdentity = actions::onSkipRest,
+        onSkipRest = { actions.onSkipRest() },
+        onSkipRestWithIdentity = { identity -> actions.onSkipRest(identity) },
         onAcceptDropSet = actions::onAcceptDropSet,
         onDeclineDropSet = actions::onDeclineDropSet,
         onExtendRest = actions::onExtendRest,
@@ -218,6 +220,11 @@ fun WorkoutTab(
         onResetForNewWorkout = actions::onResetForNewWorkout,
         onStartNextExercise = actions::onStartNextExercise,
         onUpdateParameters = actions::onUpdateParameters,
+        onUpdateRackSelection = actions::onUpdateRackSelection,
+        onUpdateRackBehaviorOverrides = actions::onUpdateRackBehaviorOverrides,
+        rackItems = state.rackItems,
+        activeRackItemIds = state.activeRackItemIds,
+        activeRackBehaviorOverrides = state.activeRackBehaviorOverrides,
         onShowWorkoutSetupDialog = actions::onShowWorkoutSetupDialog,
         onHideWorkoutSetupDialog = actions::onHideWorkoutSetupDialog,
         modifier = modifier,
@@ -302,6 +309,8 @@ fun WorkoutTab(
     onResetForNewWorkout: () -> Unit,
     onStartNextExercise: () -> Unit = {},
     onUpdateParameters: (WorkoutParameters) -> Unit,
+    onUpdateRackSelection: (List<String>) -> Unit = {},
+    onUpdateRackBehaviorOverrides: (Map<String, RackItemBehavior>) -> Unit = {},
     onShowWorkoutSetupDialog: () -> Unit = {},
     onHideWorkoutSetupDialog: () -> Unit = {},
     modifier: Modifier = Modifier,
@@ -335,6 +344,9 @@ fun WorkoutTab(
     // Issue #646: -1 means not currently in variable warm-up phase
     currentWarmupSetIndex: Int = -1,
     restTransitionPlan: RestTransitionPlan? = null,
+    rackItems: List<RackItem> = emptyList(),
+    activeRackItemIds: List<String> = emptyList(),
+    activeRackBehaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
 ) {
     // Note: HapticFeedbackEffect is now global in EnhancedMainScreen
     // No need for local haptic effect here
@@ -671,6 +683,11 @@ fun WorkoutTab(
                         nextExerciseReps = workoutParameters.reps,
                         nextExerciseProgressionKg = if (showNextProgression) workoutParameters.progressionRegressionKg else null,
                         nextExerciseMode = workoutParameters.programMode.displayName,
+                        rackItems = rackItems,
+                        activeRackItemIds = activeRackItemIds,
+                        behaviorOverrides = activeRackBehaviorOverrides,
+                        onRackSelectionChange = onUpdateRackSelection,
+                        onRackBehaviorOverrideChange = onUpdateRackBehaviorOverrides,
                         currentExerciseIndex = if (loadedRoutine != null) currentExerciseIndex else null,
                         totalExercises = loadedRoutine?.exercises?.size,
                         weightUnit = weightUnit,
