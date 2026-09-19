@@ -235,15 +235,24 @@ private val DEFINITIVE_REFRESH_ERROR_CODES = setOf(
 /**
  * True when a `grant_type=refresh_token` failure means the session is revoked,
  * rotated or expired and retrying can never succeed, so auth must be cleared and
- * the user sent to sign in again. GoTrue reports revoked/rotated refresh tokens
- * as HTTP 400 (not 401), so any 400/401/403 from the refresh endpoint, or one of
- * [DEFINITIVE_REFRESH_ERROR_CODES], is definitive.
+ * the user sent to sign in again:
+ * - one of [DEFINITIVE_REFRESH_ERROR_CODES], whatever the status;
+ * - 401/403;
+ * - 400 carrying a parsed GoTrue error code (GoTrue reports revoked/rotated
+ *   refresh tokens as 400, e.g. `refresh_token_not_found` or legacy
+ *   `invalid_grant`). A bare 400 without a GoTrue body (CDN/WAF/proxy) stays
+ *   recoverable so an intermediary incident can't sign everyone out.
  *
  * Everything else stays recoverable: 5xx, 429, and network/timeout errors, which
  * reach here as a [PortalApiException] with a null status code.
  */
-internal fun isDefinitiveRefreshFailure(error: Throwable): Boolean = error is PortalApiException &&
-    (error.statusCode in setOf(400, 401, 403) || error.errorCode in DEFINITIVE_REFRESH_ERROR_CODES)
+internal fun isDefinitiveRefreshFailure(error: Throwable): Boolean {
+    if (error !is PortalApiException) return false
+    return error.errorCode in DEFINITIVE_REFRESH_ERROR_CODES ||
+        error.statusCode == 401 ||
+        error.statusCode == 403 ||
+        (error.statusCode == 400 && error.errorCode != null)
+}
 
 open class PortalApiClient(
     private val supabaseConfig: SupabaseConfig,
@@ -662,21 +671,27 @@ open class PortalApiClient(
      * Exchanges the stored refresh token for a new session. Caller must hold
      * [refreshMutex].
      *
-     * Returns the new access token (or, if a sign-in replaced the session while
-     * the request was in flight, that session's token), or null when the session
-     * is definitively gone (auth cleared, including by a sign-out mid-flight). Rethrows transient/network failures with tokens preserved
-     * (F020/F077) so callers classify them as retryable instead of a 401.
+     * Returns the new access token, or null when the session is definitively
+     * gone (auth cleared, including by a sign-out mid-flight). If a sign-in
+     * replaced the session while the request was in flight, the stale result is
+     * dropped and that newer session's token is returned instead.
+     *
+     * Rethrows transient/network failures with tokens preserved (F020/F077) so
+     * callers classify them as retryable instead of a 401.
      */
     private suspend fun refreshWithStoredTokenLocked(): String? {
-        val storedRefreshToken = tokenStorage.getRefreshToken() ?: run {
+        // Token and generation are read atomically: a clearAuth/sign-in landing
+        // at any point after this bumps the generation, so neither the success
+        // write nor a definitive-failure clear from this refresh can touch the
+        // newer auth state.
+        val (storedRefreshToken, generation) = tokenStorage.refreshTokenWithGeneration()
+        if (storedRefreshToken == null) {
             tokenStorage.clearAuthWithEvent(
                 AuthEvent.SessionExpired("Session expired - no refresh token available"),
+                expectedGeneration = generation,
             )
-            return null
+            return tokenStorage.getToken()
         }
-        // Captured before the network call: a clearAuth/sign-in that lands while
-        // the refresh is in flight bumps it, and the stale response is dropped.
-        val generation = tokenStorage.authGeneration()
         val error = refreshToken(storedRefreshToken).fold(
             onSuccess = { response ->
                 return if (tokenStorage.saveGoTrueAuth(response, expectedGeneration = generation)) {
@@ -692,10 +707,13 @@ open class PortalApiClient(
         )
         Logger.w("PortalApiClient") { "Token refresh failed: ${error.message}" }
         if (isDefinitiveRefreshFailure(error)) {
-            tokenStorage.clearAuthWithEvent(
+            val cleared = tokenStorage.clearAuthWithEvent(
                 AuthEvent.SessionExpired(error.message ?: "Session expired - please log in again"),
+                expectedGeneration = generation,
             )
-            return null
+            // Not cleared: auth already changed while in flight (a sign-out, so
+            // no token, or a newer sign-in whose token the caller should use).
+            return if (cleared) null else tokenStorage.getToken()
         }
         tokenStorage.emitAuthEvent(
             AuthEvent.RefreshFailed(
@@ -749,17 +767,16 @@ open class PortalApiClient(
         val errorBody = try {
             response.body<GoTrueErrorResponse>()
         } catch (_: Exception) {
-            GoTrueErrorResponse(
-                error = "unknown",
-                errorDescription = "HTTP ${response.status.value}",
-            )
+            // Unparseable body (e.g. an HTML page from a proxy): no GoTrue code.
+            GoTrueErrorResponse(errorDescription = "HTTP ${response.status.value}")
         }
         Result.failure(
             PortalApiException(
                 errorBody.resolvedMessage,
                 null,
                 response.status.value,
-                errorCode = errorBody.errorCode,
+                // `error_code`, or the legacy `error` field (e.g. "invalid_grant").
+                errorCode = errorBody.errorCode ?: errorBody.error,
             ),
         )
     }
@@ -815,6 +832,6 @@ class PortalApiException(
     cause: Throwable? = null,
     val statusCode: Int? = null,
     val retryAfterSeconds: Int? = null,
-    /** GoTrue `error_code` (e.g. `refresh_token_not_found`), when the auth server sent one. */
+    /** GoTrue `error_code` (or legacy `error`), e.g. `refresh_token_not_found`, when the auth server sent one. */
     val errorCode: String? = null,
 ) : Exception(message, cause)

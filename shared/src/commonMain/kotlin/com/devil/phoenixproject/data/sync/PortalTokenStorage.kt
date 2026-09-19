@@ -134,6 +134,14 @@ class PortalTokenStorage(private val settings: Settings) {
     fun authGeneration(): Long = withPlatformLock(authLock) { authGeneration }
 
     /**
+     * The stored refresh token and the generation it belongs to, read under one
+     * lock so a sign-out/sign-in can't land between the two reads.
+     */
+    fun refreshTokenWithGeneration(): Pair<String?, Long> = withPlatformLock(authLock) {
+        getRefreshToken() to authGeneration
+    }
+
+    /**
      * Persists a GoTrue session.
      *
      * @param expectedGeneration pass the [authGeneration] captured before a refresh
@@ -243,10 +251,23 @@ class PortalTokenStorage(private val settings: Settings) {
      * to allow the UI to show appropriate messaging to the user.
      *
      * @param event The authentication event describing why auth was cleared
+     * @param expectedGeneration when set (refresh failures), clear and emit only if
+     *   auth hasn't been cleared or replaced since that [authGeneration] was
+     *   captured, so a stale failure can't wipe a newer session or report
+     *   "session expired" after a deliberate sign-out.
+     * @return false if skipped because the generation moved.
      */
-    fun clearAuthWithEvent(event: AuthEvent) {
-        clearAuthInternal()
-        _authEvents.tryEmit(event)
+    fun clearAuthWithEvent(event: AuthEvent, expectedGeneration: Long? = null): Boolean {
+        val cleared = withPlatformLock(authLock) {
+            if (expectedGeneration != null && expectedGeneration != authGeneration) {
+                false
+            } else {
+                clearAuthInternal()
+                true
+            }
+        }
+        if (cleared) _authEvents.tryEmit(event)
+        return cleared
     }
 
     /**
