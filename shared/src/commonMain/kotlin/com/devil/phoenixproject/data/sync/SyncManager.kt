@@ -561,7 +561,9 @@ class SyncManager(
      * - Debugging sync issues where delta sync returns empty results
      *
      * This will cause the next sync to pull ALL data from the server, not just
-     * changes since the last sync. Note: push will still only send unsynced local data.
+     * changes since the last sync: the pull sends lastSync=0 and EMPTY known entity
+     * ids, so the server returns the whole profile even for rows this device
+     * already holds. Note: push will still only send unsynced local data.
      *
      * @return Result from the subsequent sync operation
      */
@@ -569,7 +571,7 @@ class SyncManager(
         Logger.i("SyncManager") { "Forcing full resync - resetting lastSyncTimestamp to 0" }
         tokenStorage.setLastSyncTimestamp(0L)
         _lastSyncTime.value = 0L
-        return sync()
+        return syncInternal(fullResync = true)
     }
 
     /**
@@ -582,7 +584,9 @@ class SyncManager(
      *
      * @see SyncState.PartialSuccess for incomplete sync handling
      */
-    suspend fun sync(): Result<Long> = syncMutex.withLock {
+    suspend fun sync(): Result<Long> = syncInternal(fullResync = false)
+
+    private suspend fun syncInternal(fullResync: Boolean): Result<Long> = syncMutex.withLock {
         if (!tokenStorage.hasToken()) {
             _syncState.value = SyncState.NotAuthenticated
             return@withLock Result.failure(PortalApiException("Not authenticated"))
@@ -692,7 +696,7 @@ class SyncManager(
         // Pull remote changes using parity-based sync (entity IDs, not timestamps).
         // Entity IDs are collected inside pullRemoteChangesWithResult to ensure we send
         // the current state of local storage after the push has completed.
-        val pullResult = pullRemoteChangesWithResult()
+        val pullResult = pullRemoteChangesWithResult(fullResync = fullResync)
 
         return@withLock if (pullResult.isSuccess) {
             // Full success: both push and pull succeeded
@@ -1457,13 +1461,31 @@ class SyncManager(
      * a list of entity IDs we already have. The server returns entities
      * that exist server-side but not in our list.
      *
+     * Delta pulls: the request carries the stored server `syncTime` of the last completed
+     * pull as `lastSync`, captured once before the page loop so every page of this pull
+     * sends the same value. The server then skips known entities unchanged since then.
+     * The caller persists the new `syncTime` only after the final page (`hasMore=false`).
+     *
+     * `lastSync=0` (full pull) is sent instead when:
+     *  - [fullResync] is set (forceFullResync), which also sends EMPTY known ids;
+     *  - no pull has completed since upgrading from builds that always sent 0 (one-time
+     *    full pull, so server-side fixes made before the upgrade reach this device);
+     *  - the stored lastSync was produced by a pull of a different profile (the stored
+     *    timestamp is global, but known ids and server filtering are per profile).
+     *
      * @return Result with final syncTime on success, or failure with classified error
      */
-    private suspend fun pullRemoteChangesWithResult(): Result<Long> {
+    private suspend fun pullRemoteChangesWithResult(fullResync: Boolean = false): Result<Long> {
         val deviceId = tokenStorage.getDeviceId()
         val activeProfileId = userProfileRepository.activeProfile.value?.id
         val mergeProfileId = activeProfileId ?: "default"
         val lastSync = tokenStorage.getLastSyncTimestamp()
+        val deltaPullProfileId = tokenStorage.getDeltaPullProfileId()
+        val requestLastSync = if (fullResync || deltaPullProfileId != mergeProfileId) 0L else lastSync
+        Logger.i("SyncManager") {
+            "Pull mode: requestLastSync=$requestLastSync (stored=$lastSync, fullResync=$fullResync, " +
+                "deltaPullProfile=${deltaPullProfileId ?: "none"}, profile=$mergeProfileId)"
+        }
 
         // Collect local entity IDs for parity comparison.
         //
@@ -1473,11 +1495,15 @@ class SyncManager(
         // the mobile-side dedupe against local DB to handle the tail. This is
         // strictly better than the prior server behavior which silently
         // returned empty for over-cap lists.
-        val rawSessionIds = syncRepository.getAllSessionIds(mergeProfileId)
-        val rawRoutineIds = syncRepository.getAllRoutineIds(mergeProfileId)
-        val rawCycleIds = syncRepository.getAllCycleIds(mergeProfileId)
-        val rawBadgeIds = syncRepository.getAllBadgeIds(mergeProfileId)
-        val rawPersonalRecordIds = syncRepository.getAllPersonalRecordIds(mergeProfileId)
+        //
+        // A forced full resync sends no known ids, so the server returns the whole
+        // profile (not only rows this device lacks).
+        val rawSessionIds = if (fullResync) emptyList() else syncRepository.getAllSessionIds(mergeProfileId)
+        val rawRoutineIds = if (fullResync) emptyList() else syncRepository.getAllRoutineIds(mergeProfileId)
+        val rawCycleIds = if (fullResync) emptyList() else syncRepository.getAllCycleIds(mergeProfileId)
+        val rawBadgeIds = if (fullResync) emptyList() else syncRepository.getAllBadgeIds(mergeProfileId)
+        val rawPersonalRecordIds =
+            if (fullResync) emptyList() else syncRepository.getAllPersonalRecordIds(mergeProfileId)
 
         // fix(pull 400): TemplateConverter mints cycle-derived routine IDs as
         // "cycle_routine_<uuid>" which aren't valid UUIDs. The server's
@@ -1615,6 +1641,7 @@ class SyncManager(
                         profileId = mergeProfileId,
                         cursor = currentCursor,
                         pageSize = SyncConfig.DEFAULT_PAGE_SIZE,
+                        lastSync = requestLastSync,
                     )
 
                     if (pullResult.isSuccess) {
@@ -1739,6 +1766,10 @@ class SyncManager(
         // to the client or updated since lastSync. Missing known IDs therefore
         // do not prove deletion. Server-side routine/cycle deletes need an
         // explicit tombstone channel before local hard-delete is safe.
+
+        // Every page merged: the caller's stored lastSync (persisted next) now belongs
+        // to this profile, so the next pull for it may send a real lastSync.
+        tokenStorage.setDeltaPullProfileId(mergeProfileId)
 
         return Result.success(finalSyncTime)
     }

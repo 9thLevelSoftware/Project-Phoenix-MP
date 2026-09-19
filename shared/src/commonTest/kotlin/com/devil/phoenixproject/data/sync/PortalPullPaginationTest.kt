@@ -890,4 +890,102 @@ class PortalPullPaginationTest {
             "First page request must send cursor=null (start from beginning)",
         )
     }
+
+    // ==================== Delta pull: stored lastSync on the wire ====================
+
+    private fun routinePage(syncTime: Long, id: String, nextCursor: String? = null) = Result.success(
+        PortalSyncPullResponse(
+            syncTime = syncTime,
+            hasMore = nextCursor != null,
+            nextCursor = nextCursor,
+            routines = listOf(PullRoutineDto(id = id, name = id)),
+        ),
+    )
+
+    @Test
+    fun deltaPullSendsStoredSyncTimeOnEveryPageAndAdvancesOnlyAfterLastPage() = runTest {
+        authenticate()
+        val stored = 1_740_000_000_000L
+        tokenStorage.setLastSyncTimestamp(stored)
+        tokenStorage.setDeltaPullProfileId("default")
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResultsQueue = mutableListOf(
+            routinePage(stored + 10, "r1", nextCursor = "c1"),
+            Result.failure(PortalApiException("boom", null, 500)),
+        )
+
+        val manager = createManager()
+        manager.sync()
+
+        assertEquals(listOf(stored, stored), fakeApi.pullCallLastSyncs, "every page carries the stored syncTime")
+        assertEquals(stored, tokenStorage.getLastSyncTimestamp(), "a page after the first failing must not advance lastSync")
+
+        val finalSyncTime = stored + 30
+        fakeApi.pullCallLastSyncs.clear()
+        fakeApi.pullResultsQueue = mutableListOf(
+            routinePage(stored + 20, "r1", nextCursor = "c1"),
+            routinePage(finalSyncTime, "r2"),
+        )
+        manager.sync()
+
+        assertEquals(listOf(stored, stored), fakeApi.pullCallLastSyncs, "intermediate page syncTime is not sent mid-pull")
+        assertEquals(finalSyncTime, tokenStorage.getLastSyncTimestamp(), "lastSync advances to the final page's syncTime")
+
+        fakeApi.pullCallLastSyncs.clear()
+        fakeApi.pullResultsQueue = mutableListOf(routinePage(finalSyncTime + 1, "r3"))
+        manager.sync()
+        assertEquals(listOf(finalSyncTime), fakeApi.pullCallLastSyncs, "next pull sends the newly stored syncTime")
+    }
+
+    @Test
+    fun firstPullAfterUpgradeSendsZeroUntilOneFullPullCompletes() = runTest {
+        authenticate()
+        // Stored by an older build that always pulled with lastSync=0: no delta-pull marker.
+        val stored = 1_740_000_000_000L
+        tokenStorage.setLastSyncTimestamp(stored)
+        assertNull(tokenStorage.getDeltaPullProfileId())
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        val manager = createManager()
+
+        // Upgrade full pull fails: marker is not set, so the next sync retries the full pull.
+        fakeApi.pullResultsQueue = mutableListOf(Result.failure(PortalApiException("boom", null, 500)))
+        manager.sync()
+        assertNull(tokenStorage.getDeltaPullProfileId())
+
+        val finalSyncTime = stored + 100
+        fakeApi.pullResultsQueue = mutableListOf(routinePage(finalSyncTime, "r1"))
+        manager.sync()
+        assertEquals("default", tokenStorage.getDeltaPullProfileId())
+
+        fakeApi.pullResultsQueue = mutableListOf(routinePage(finalSyncTime + 1, "r2"))
+        manager.sync()
+
+        assertEquals(
+            listOf(0L, 0L, finalSyncTime),
+            fakeApi.pullCallLastSyncs,
+            "full lastSync=0 pull until one completes after upgrade, then the stored syncTime",
+        )
+    }
+
+    @Test
+    fun pullForDifferentProfileThanStoredLastSyncSendsZero() = runTest {
+        authenticate()
+        val stored = 1_740_000_000_000L
+        tokenStorage.setLastSyncTimestamp(stored)
+        tokenStorage.setDeltaPullProfileId("profile-a")
+        fakeUserProfileRepo.setActiveProfileForTest(id = "profile-b")
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResultsQueue = mutableListOf(routinePage(stored + 5, "r1"), routinePage(stored + 6, "r2"))
+
+        val manager = createManager()
+        manager.sync()
+        manager.sync()
+
+        assertEquals(
+            listOf(0L, stored + 5),
+            fakeApi.pullCallLastSyncs,
+            "a lastSync produced by another profile's pull must not skip this profile's known rows",
+        )
+        assertEquals("profile-b", tokenStorage.getDeltaPullProfileId())
+    }
 }

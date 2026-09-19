@@ -1326,12 +1326,12 @@ class SyncManagerTest {
     // ===== Pull Uses Push Timestamp (Task 1.6) =====
 
     @Test
-    fun pullIsCalledWithKnownEntityIdsAfterPush() = runTest {
+    fun pullIsCalledWithKnownEntityIdsAndStoredLastSyncAfterPush() = runTest {
         setupAuthenticated()
-        // With parity-based sync, pull no longer uses a lastSync timestamp.
-        // Instead it sends the local entity IDs and the server returns what's missing.
-        // This test verifies that pull is called with knownEntityIds (not a timestamp).
+        // Pull sends the local entity IDs plus the stored server syncTime of the last
+        // completed pull; the server returns unknown rows and known rows changed since then.
         tokenStorage.setLastSyncTimestamp(1000L)
+        tokenStorage.setDeltaPullProfileId("default")
         val pushSyncTimeIso = "2026-03-02T12:00:00Z"
         fakeApi.pushResult = Result.success(
             PortalSyncPushResponse(syncTime = pushSyncTimeIso),
@@ -1343,6 +1343,33 @@ class SyncManagerTest {
         // The pull should have been called with a KnownEntityIds object (parity-based sync)
         assertNotNull(fakeApi.lastPullKnownEntityIds, "Pull should have been called with knownEntityIds")
         assertEquals(1, fakeApi.pullCallCount, "Pull should be called once")
+        assertEquals(listOf(1000L), fakeApi.pullCallLastSyncs, "Pull should carry the stored lastSync, not 0")
+    }
+
+    @Test
+    fun forceFullResyncSendsZeroLastSyncAndEmptyKnownIds() = runTest {
+        setupAuthenticated()
+        tokenStorage.setLastSyncTimestamp(5000L)
+        tokenStorage.setDeltaPullProfileId("default")
+        fakeSyncRepo.sessionIds = listOf("11111111-1111-4111-a111-111111111111")
+        fakeSyncRepo.routineIds = listOf("33333333-3333-4333-a333-333333333333")
+        fakeSyncRepo.cycleIds = listOf("77777777-7777-4777-a777-777777777777")
+        fakeSyncRepo.badgeIds = listOf("44444444-4444-4444-a444-444444444444")
+        fakeSyncRepo.personalRecordIds = listOf("66666666-6666-4666-a666-666666666666")
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResult = Result.success(PortalSyncPullResponse(syncTime = 9000L))
+        val manager = createManager()
+
+        manager.forceFullResync()
+
+        assertEquals(listOf(0L), fakeApi.pullCallLastSyncs, "forced resync must send lastSync=0")
+        assertEquals(KnownEntityIds(), fakeApi.lastPullKnownEntityIds, "forced resync must send no known ids")
+        assertEquals(9000L, tokenStorage.getLastSyncTimestamp())
+
+        // The next ordinary sync is a delta pull again with the device's known ids.
+        manager.sync()
+        assertEquals(listOf(0L, 9000L), fakeApi.pullCallLastSyncs)
+        assertEquals(1, fakeApi.lastPullKnownEntityIds?.sessionIds?.size)
     }
 
     // ===== Pagination Tests (Plan 03-05) =====

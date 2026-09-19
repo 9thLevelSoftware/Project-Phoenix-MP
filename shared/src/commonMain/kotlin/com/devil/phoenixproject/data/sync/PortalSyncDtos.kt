@@ -729,7 +729,10 @@ data class KnownEntityIds(
 @Serializable
 data class PortalSyncPullRequest(
     val deviceId: String,
-    /** @deprecated Use knownEntityIds for parity-based sync. Kept for backward compatibility. */
+    /**
+     * Server `syncTime` (epoch millis) of the last completed pull; 0 asks for everything.
+     * Combined with [knownEntityIds]: known entities unchanged since lastSync are skipped.
+     */
     val lastSync: Long = 0,
     val profileId: String? = null,
     val cursor: String? = null,
