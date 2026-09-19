@@ -854,4 +854,6 @@
     <string name="profile_adult_enable_partial_failure">Age confirmation was saved, but Vulgar Mode could not be enabled. Try again.</string>
     <string name="label_previously_completed">Previously completed</string>
     <string name="cd_filter_previously_completed">Filter exercises previously completed</string>
+    <!-- PR 21: restore result -->
+    <string name="import_records_unreadable">Records that could not be restored (skipped): %1$d</string>
 </resources>
