@@ -37,7 +37,16 @@ permissions:
   contents: write
 
 jobs:
+  # Off-main dispatches skip the test run; create-release then fails fast on its main-branch check.
+  tests:
+    if: github.ref == 'refs/heads/main'
+    uses: ./.github/workflows/release-tests.yml
+    with:
+      ref: main
+
   create-release:
+    needs: tests
+    if: ${{ !cancelled() && needs.tests.result != 'failure' }}
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.version.outputs.tag }}
@@ -48,10 +57,10 @@ jobs:
             echo "Run Release All Platforms from main." >&2
             exit 1
           fi
-      - name: Checkout main
-        uses: actions/checkout@v6
+      - name: Checkout the tested main commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: main
+          ref: ${{ needs.tests.outputs.sha }}
           fetch-depth: 0
       - name: Determine release version
         id: version
@@ -95,6 +104,7 @@ jobs:
       source_ref: ${{ needs.create-release.outputs.tag }}
       release_tag: ${{ needs.create-release.outputs.tag }}
       versionCodeOverride: ${{ inputs.versionCodeOverride }}
+      skip_tests: true
     secrets: inherit
   ios-ipa:
     needs: create-release
@@ -103,6 +113,7 @@ jobs:
     with:
       source_ref: ${{ needs.create-release.outputs.tag }}
       release_tag: ${{ needs.create-release.outputs.tag }}
+      skip_tests: true
     secrets: inherit
   android-playstore:
     needs: [create-release, android-apk]
@@ -112,6 +123,7 @@ jobs:
       source_ref: ${{ needs.create-release.outputs.tag }}
       versionCodeOverride: ${{ inputs.versionCodeOverride }}
       submitForReview: ${{ inputs.submit_android_playstore_for_review }}
+      skip_tests: true
     secrets: inherit
   ios-testflight:
     needs: [create-release, ios-ipa]
@@ -119,10 +131,11 @@ jobs:
     uses: ./.github/workflows/ios-testflight.yml
     with:
       source_ref: ${{ needs.create-release.outputs.tag }}
+      skip_tests: true
     secrets: inherit
   summary:
     if: always()
-    needs: [create-release, android-apk, ios-ipa, android-playstore, ios-testflight]
+    needs: [tests, create-release, android-apk, ios-ipa, android-playstore, ios-testflight]
     runs-on: ubuntu-latest
     steps:
       - name: Summary
@@ -132,6 +145,7 @@ jobs:
           echo "Each store publication begins after its matching platform asset succeeds." >> "$GITHUB_STEP_SUMMARY"
           echo "| Platform | Result |" >> "$GITHUB_STEP_SUMMARY"
           echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Unit tests | ${{ needs.tests.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Android Release APK | ${{ needs.android-apk.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| iOS Release IPA | ${{ needs.ios-ipa.result }} |" >> "$GITHUB_STEP_SUMMARY"
           echo "| Android Play Store | ${{ needs.android-playstore.result }} |" >> "$GITHUB_STEP_SUMMARY"
