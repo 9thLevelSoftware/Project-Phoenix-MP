@@ -84,7 +84,7 @@ Your support helps cover development, testing, and platform costs and keeps this
 - No account required
 - Works completely offline
 - Backup & restore your data anytime
-- Optional Cloud Sync and integrations; see the [Privacy Policy](docs/privacy-policy.html) for what they send
+- Optional Cloud Sync and integrations; see the [Privacy Policy](https://9thlevelsoftware.github.io/Project-Phoenix-MP/privacy-policy.html) for what they send
 
 ---
 
@@ -181,4 +181,4 @@ Proprietary License - All Rights Reserved. See [LICENSE](LICENSE) file for detai
 
 ---
 
-*Project Phoenix is a community rescue project. It is not affiliated with or endorsed by the original equipment manufacturer.*
+*Project Phoenix is a community rescue project. It is not affiliated with or endorsed by Vitruvian/RCI Fitness.*

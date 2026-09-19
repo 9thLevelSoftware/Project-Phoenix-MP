@@ -126,7 +126,7 @@ The app supports background BLE execution via `UIBackgroundModes` with `bluetoot
 
 ## Beta Preparation
 
-### Quick Setup (Recommended)
+### Quick Setup
 
 Run the automated setup script on macOS:
 
@@ -141,6 +141,8 @@ This script will:
 2. Convert sound files from OGG to CAF (requires ffmpeg)
 3. Generate all app icon sizes
 4. Create launch screen assets
+
+The script does not build the framework or the Compose resources that the Xcode project uses, so run the Gradle tasks in [Building the Shared Framework](#building-the-shared-framework) as well.
 
 ### Manual Setup
 

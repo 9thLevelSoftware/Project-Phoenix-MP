@@ -11,7 +11,7 @@ This guide explains how to install Project Phoenix on your Android device.
 
 ## Install from Google Play (Recommended)
 
-Install **[Project Phoenix from Google Play](https://play.google.com/store/apps/details?id=com.devil.phoenixproject)**. Play installs updates automatically.
+Install **[Project Phoenix from Google Play](https://play.google.com/store/apps/details?id=com.devil.phoenixproject)** (currently in open testing on Play; anyone can install it from the listing). Play installs updates automatically.
 
 ---
 
@@ -107,9 +107,10 @@ If you installed the APK:
 
 ## Data & Privacy
 
+- Workout data stays on your device unless you turn on Cloud Sync or an integration
 - Location permission is only used for Bluetooth scanning (Android requirement) - we don't track your location
 - Uninstalling the app will delete your workout history unless you have backed it up or synced it
-- For what is stored on the device and what is sent when you turn on optional features such as Cloud Sync, see the [Privacy Policy](docs/privacy-policy.html)
+- For what is stored on the device and what is sent when you turn on optional features such as Cloud Sync, see the [Privacy Policy](https://9thlevelsoftware.github.io/Project-Phoenix-MP/privacy-policy.html)
 
 ### Backup Your Data
 

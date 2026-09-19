@@ -127,8 +127,9 @@ When you first launch the app, you'll be asked to grant permissions:
 
 ## Data & Privacy
 
+- Workout data stays on your device unless you turn on Cloud Sync or an integration
 - Deleting the app will delete your workout history unless you have backed it up or synced it
-- For what is stored on the device and what is sent when you turn on optional features such as Cloud Sync, see the [Privacy Policy](docs/privacy-policy.html)
+- For what is stored on the device and what is sent when you turn on optional features such as Cloud Sync, see the [Privacy Policy](https://9thlevelsoftware.github.io/Project-Phoenix-MP/privacy-policy.html)
 
 ### Backup Your Data
 

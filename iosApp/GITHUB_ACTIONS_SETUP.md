@@ -57,9 +57,9 @@ GitHub secrets before the next release.
 | `TEAM_ID` | 10-character Apple Team ID | See Step 3 below |
 | `PROVISIONING_PROFILE_NAME` | Name of provisioning profile | e.g., "Phoenix Distribution" |
 
-### App Store Connect Secrets
+### App Store Connect Secrets (TestFlight only)
 
-All three iOS workflows use the API key secrets. The TestFlight workflows also need the app's Apple ID, and `ios-testflight.yml` needs the tester group name.
+Both TestFlight workflows use the API key secrets and `APP_APPLE_ID`; `ios-testflight.yml` also needs `TESTFLIGHT_GROUP_NAME`. `ios-release-ipa.yml` needs only the signing and Supabase secrets.
 
 | Secret Name | Description | How to Get |
 |-------------|-------------|------------|
@@ -127,7 +127,7 @@ All three iOS workflows use the API key secrets. The TestFlight workflows also n
    <string>YOUR_ACTUAL_TEAM_ID</string>
    ```
 
-### Step 4: Create App Store Connect API Key (Optional - for TestFlight)
+### Step 4: Create App Store Connect API Key (for the TestFlight workflows)
 
 1. Go to [App Store Connect → Users and Access → Keys](https://appstoreconnect.apple.com/access/api)
 2. Click **+** to generate a new key
@@ -254,7 +254,7 @@ PROVISIONING_PROFILE_NAME   = name of profile in Apple Developer
 SUPABASE_URL                = Supabase project URL
 SUPABASE_ANON_KEY           = Supabase anon key
 
-# App Store Connect:
+# App Store Connect (TestFlight workflows only):
 APPSTORE_API_KEY_ID         = App Store Connect API Key ID
 APPSTORE_ISSUER_ID          = App Store Connect Issuer ID
 APPSTORE_API_KEY            = contents of .p8 file
