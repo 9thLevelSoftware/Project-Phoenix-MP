@@ -9,8 +9,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -18,6 +20,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -43,6 +46,8 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.presentation.viewmodel.ThemeViewModel
 import com.devil.phoenixproject.ui.theme.PhoenixTheme
 import com.devil.phoenixproject.ui.theme.isDynamicColorAvailable
+import com.devil.phoenixproject.util.CrashLog
+import com.devil.phoenixproject.util.shareCrashReport
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
@@ -50,6 +55,10 @@ import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.action_retry
+import projectphoenix.shared.generated.resources.crash_report_dismiss
+import projectphoenix.shared.generated.resources.crash_report_message
+import projectphoenix.shared.generated.resources.crash_report_share
+import projectphoenix.shared.generated.resources.crash_report_title
 
 private const val LAUNCH_SPLASH_DURATION_MS = 2_500L
 
@@ -158,6 +167,33 @@ internal fun PersistedFileStartupFailureScreen(
     }
 }
 
+/** Offers the report left by the previous run's crash; both answers delete it. */
+@Composable
+private fun CrashReportPrompt() {
+    var report by remember { mutableStateOf(CrashLog.pending()) }
+    val pending = report ?: return
+    val answer = { share: Boolean ->
+        if (share) shareCrashReport(pending)
+        CrashLog.discard()
+        report = null
+    }
+    AlertDialog(
+        onDismissRequest = { answer(false) },
+        title = { Text(stringResource(Res.string.crash_report_title)) },
+        text = { Text(stringResource(Res.string.crash_report_message)) },
+        confirmButton = {
+            TextButton(onClick = { answer(true) }) {
+                Text(stringResource(Res.string.crash_report_share))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { answer(false) }) {
+                Text(stringResource(Res.string.crash_report_dismiss))
+            }
+        },
+    )
+}
+
 @Composable
 private fun MigrationRetryScreen(message: String, onRetry: () -> Unit) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -251,6 +287,7 @@ fun AppContent(
                     onDynamicColorEnabledChange = themeViewModel::setDynamicColorEnabled,
                 )
             }
+            if (eulaAccepted) CrashReportPrompt()
         }
     }
 }

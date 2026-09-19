@@ -1,11 +1,15 @@
 package com.devil.phoenixproject
 
 import androidx.compose.ui.window.ComposeUIViewController
+import co.touchlab.kermit.Logger
+import co.touchlab.kermit.Severity
 import coil3.ImageLoader
 import coil3.SingletonImageLoader
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.util.DebugLogger
+import com.devil.phoenixproject.util.DeviceInfo
+import com.devil.phoenixproject.util.installIosCrashLog
 import kotlin.native.Platform as NativePlatform
 import platform.Foundation.NSLog
 
@@ -14,6 +18,9 @@ import platform.Foundation.NSLog
  * This is called from Swift via: MainViewControllerKt.MainViewController()
  */
 fun MainViewController() = run {
+    installIosCrashLog()
+    // Mirror Android release builds: suppress Verbose/Debug/Info logging outside debug binaries.
+    Logger.mutableConfig.minSeverity = if (DeviceInfo.isDebugBuild) Severity.Debug else Severity.Warn
     NSLog("iOS UI: MainViewController() called - creating ComposeUIViewController...")
     ComposeUIViewController {
         NSLog("iOS UI: ComposeUIViewController content block executing...")

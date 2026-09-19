@@ -15,6 +15,7 @@ import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.di.initKoin
 import com.devil.phoenixproject.ui.theme.applyPersistedApplicationNightMode
 import com.devil.phoenixproject.util.ActivityHolder
+import com.devil.phoenixproject.util.AndroidCrashLog
 import com.devil.phoenixproject.util.DeviceInfo
 import org.koin.android.ext.koin.androidContext
 import org.koin.android.ext.koin.androidLogger
@@ -31,6 +32,9 @@ open class PhoenixApp :
 
     override fun onCreate() {
         super.onCreate()
+
+        // Write uncaught crashes to filesDir/crash-last.txt, then delegate to the previous handler.
+        AndroidCrashLog.install(this)
 
         // Configure Kermit log level for release builds — suppress Debug/Verbose/Info
         if (!BuildConfig.DEBUG) {
