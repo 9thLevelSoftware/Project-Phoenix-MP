@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
@@ -62,6 +63,69 @@ class MachineSafetyArmingEngineTest {
     }
 
     @Test
+    fun `arm row is resolved before the teardown publishes Ready or runs its successor start`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val gate = CompletableDeferred<Unit>()
+        try {
+            startFirstRoutineSet(harness, setsPerExercise = 2)
+            val first = assertArmedActive(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            val commandsBefore = harness.fakeBleRepo.commandsReceived.size
+            harness.machineSafetyStore.beforeDelete = { gate.await() }
+            var continuations = 0
+
+            assertTrue(
+                harness.activeSessionEngine.requestTeardownForTransition(lease, TeardownReason.STOP_SET) {
+                    continuations++
+                    harness.dwsm.startWorkout(skipCountdown = true)
+                },
+            )
+            runCurrent()
+
+            // RESET succeeded, but the durable delete is still in flight: nothing downstream may run.
+            assertEquals(1, harness.fakeBleRepo.stopWorkoutCallCount)
+            assertIs<MachineTeardownState.TearingDown>(harness.dwsm.machineTeardownState.value)
+            assertEquals(0, continuations)
+            assertEquals(first, harness.machineSafetyStore.rows.values.single().executionId)
+            // A user start in the window is held off by the teardown, never refused by the barrier.
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+            assertEquals(commandsBefore, harness.fakeBleRepo.commandsReceived.size)
+            assertEquals(MachineSafetyUiState.Hidden, harness.machineSafetyCoordinator?.uiState?.value)
+
+            gate.complete(Unit)
+            advanceUntilIdle()
+            assertEquals(1, continuations)
+            assertEquals(MachineSafetyUiState.Hidden, harness.machineSafetyCoordinator?.uiState?.value)
+            assertNotEquals(first, assertArmedActive(harness))
+        } finally {
+            gate.complete(Unit)
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `replacement start over a live armed set is refused without a false hazard warning`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startFirstRoutineSet(harness, setsPerExercise = 2)
+            val first = assertArmedActive(harness)
+            val commandsBefore = harness.fakeBleRepo.commandsReceived.size
+
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+
+            // Pinned behavior: B is refused at the barrier by A's own live arm row, no command
+            // is sent, and no hazard is surfaced for it.
+            assertEquals(commandsBefore, harness.fakeBleRepo.commandsReceived.size)
+            assertEquals(MachineSafetyUiState.Hidden, harness.machineSafetyCoordinator?.uiState?.value)
+            assertEquals(first, harness.machineSafetyStore.rows.values.single().executionId)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `failed teardown reset keeps the row and a later start is refused with visible recovery`() = runTest {
         assertFailedTeardownKeepsBarrier { harness -> Result.failure(IllegalStateException("reset write failed")) }
     }
@@ -90,6 +154,12 @@ class MachineSafetyArmingEngineTest {
             assertEquals(armed, harness.machineSafetyStore.rows.values.single().executionId)
             assertEquals(MachineSafetyUiState.Hidden, harness.machineSafetyCoordinator?.uiState?.value)
 
+            // In-process, the teardown-recovery guard refuses the next start before the barrier.
+            val commandsAfterFailure = harness.fakeBleRepo.commandsReceived.size
+            harness.startCableSet(targetReps = 5)
+            assertEquals(commandsAfterFailure, harness.fakeBleRepo.commandsReceived.size)
+            assertEquals(armed, harness.machineSafetyStore.rows.values.single().executionId)
+
             // A relaunched process sees the persisted row: the start is refused, no command is
             // sent, and the recovery UI is shown instead of a silent failure.
             relaunched.fakeBleRepo.simulateConnect("Vee_Test")
@@ -99,6 +169,14 @@ class MachineSafetyArmingEngineTest {
             val visible = assertIs<MachineSafetyUiState.Visible>(relaunched.machineSafetyCoordinator?.uiState?.value)
             assertEquals(armed, visible.document.executionId)
             assertEquals(1, relaunched.machineSafetyStore.rows.size)
+
+            // The user's explicit physical check clears the barrier; the next start goes live.
+            relaunched.machineSafetyCoordinator?.acknowledgeUnloaded(visible.document.generation)
+            advanceUntilIdle()
+            assertTrue(relaunched.machineSafetyStore.rows.isEmpty())
+            relaunched.startCableSet(targetReps = 5)
+            assertEquals(WorkoutState.Active, relaunched.coordinator.workoutState.value)
+            assertEquals(1, relaunched.fakeBleRepo.commandsReceived.size)
         } finally {
             relaunched.cleanup()
             harness.cleanup()

@@ -4585,11 +4585,16 @@ class ActiveSessionEngine(
             if (failureReason != null) {
                 executionGuard.markRecoveryRequired(lease, failureReason)
             } else {
+                // #782: the set ended through a successful RESET while still connected, so its
+                // hidden arm row is resolved while this lease still owns the teardown, i.e. before
+                // the guard publishes Ready and before any successor start or continuation runs.
+                if (executionGuard.captureMachineTeardownLease()?.sameExecutionAs(lease) == true) {
+                    withContext(NonCancellable) {
+                        machineSafetyCoordinator?.resolveArmedExecution(lease.executionId)
+                    }
+                }
                 val ready = executionGuard.markTeardownReady(lease)
                 if (ready) {
-                    // #782: the set ended through a successful RESET while still connected, so its
-                    // hidden arm row is resolved before any successor start evaluates the barrier.
-                    machineSafetyCoordinator?.resolveArmedExecution(lease.executionId)
                     val resetOwner = resetMachineTeardownOwner.value
                         ?.takeIf { it.lease.sameExecutionAs(lease) }
                     if (resetOwner != null && resetMachineTeardownOwner.compareAndSet(resetOwner, null)) {
@@ -8573,8 +8578,9 @@ class ActiveSessionEngine(
                 val machineSafetyStartAllowed = isBodyweight ||
                     (machineSafetyCoordinator?.canStartMachine() ?: true)
                 if (!machineSafetyStartAllowed) {
-                    // Never refuse silently: re-show the stored hazard's recovery UI.
-                    machineSafetyCoordinator?.surfaceStoredHazard()
+                    // Never refuse silently: re-show the stored hazard's recovery UI (unless the only
+                    // row is the replaced live set's own arm, which its teardown will resolve).
+                    machineSafetyCoordinator?.surfaceStoredHazard(liveExecutionId = outgoingLease?.executionId)
                     failStart(lease, priorWorkoutState)
                     return@launch
                 }

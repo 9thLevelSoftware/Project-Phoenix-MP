@@ -8,6 +8,9 @@ import com.devil.phoenixproject.data.repository.MachineSafetyLoadResult
 class InMemoryMachineSafetyHazardRepository : MachineSafetyHazardRepository {
     val rows = linkedMapOf<String, MachineSafetyHazardDocument>()
 
+    /** Optional suspension point before a conditional delete, to model a slow durable store. */
+    var beforeDelete: (suspend () -> Unit)? = null
+
     override suspend fun load(trainerAddress: String): MachineSafetyLoadResult =
         rows[trainerAddress]?.let(MachineSafetyLoadResult::Loaded) ?: MachineSafetyLoadResult.Missing
 
@@ -17,6 +20,8 @@ class InMemoryMachineSafetyHazardRepository : MachineSafetyHazardRepository {
         rows[document.trainerAddress] = document
     }
 
-    override suspend fun deleteIfGenerationMatches(trainerAddress: String, generation: Long): Boolean =
-        rows[trainerAddress]?.generation == generation && rows.remove(trainerAddress) != null
+    override suspend fun deleteIfGenerationMatches(trainerAddress: String, generation: Long): Boolean {
+        beforeDelete?.invoke()
+        return rows[trainerAddress]?.generation == generation && rows.remove(trainerAddress) != null
+    }
 }

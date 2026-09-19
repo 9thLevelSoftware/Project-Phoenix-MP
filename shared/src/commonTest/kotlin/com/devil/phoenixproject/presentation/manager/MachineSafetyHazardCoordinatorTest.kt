@@ -4,15 +4,19 @@ import com.devil.phoenixproject.data.repository.MachineSafetyPhase
 import com.devil.phoenixproject.data.repository.MachineSafetyPhysicalRelease
 import com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind
 import com.devil.phoenixproject.testutil.InMemoryMachineSafetyHazardRepository
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
 class MachineSafetyHazardCoordinatorTest {
@@ -118,7 +122,7 @@ class MachineSafetyHazardCoordinatorTest {
     }
 
     @Test
-    fun `resolve never clears a recorded connection loss even after it is dismissed`() = runTest {
+    fun `direct resolve never clears a recorded connection loss even after it is dismissed`() = runTest {
         val store = InMemoryMachineSafetyHazardRepository()
         val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
         assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
@@ -140,6 +144,100 @@ class MachineSafetyHazardCoordinatorTest {
 
         coordinator.surfaceStoredHazard()
         assertEquals(7L, assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value).document.executionId)
+        // Once shown, the row needs explicit acknowledgement; a clean teardown can't clear it.
+        assertFalse(coordinator.resolveArmedExecution(7L))
+        assertEquals(1, store.rows.size)
+    }
+
+    @Test
+    fun `refusal caused only by the live set's own arm row is not surfaced`() = runTest {
+        val store = InMemoryMachineSafetyHazardRepository()
+        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
+
+        coordinator.surfaceStoredHazard(liveExecutionId = 7L)
+        assertEquals(MachineSafetyUiState.Hidden, coordinator.uiState.value)
+        assertTrue(coordinator.resolveArmedExecution(7L))
+
+        assertTrue(coordinator.armBeforeMachineCommand(8L, "profile", MachineSafetyWorkoutKind.ROUTINE))
+        coordinator.surfaceStoredHazard(liveExecutionId = 7L)
+        assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value)
+    }
+
+    @Test
+    fun `surfacing never replaces a warning that is already visible`() = runTest {
+        val store = InMemoryMachineSafetyHazardRepository()
+        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        assertTrue(coordinator.recordConnectionLost("trainer-1"))
+        val shown = assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value).document
+        store.rows["trainer-1"] = shown.copy(phase = MachineSafetyPhase.RELEASE_REQUEST_FAILED)
+
+        coordinator.surfaceStoredHazard()
+        assertEquals(shown, assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value).document)
+    }
+
+    @Test
+    fun `start gate waits for an in-flight resolve instead of reading the row it is clearing`() = runTest {
+        val store = InMemoryMachineSafetyHazardRepository()
+        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
+        val gate = CompletableDeferred<Unit>()
+        store.beforeDelete = { gate.await() }
+
+        val resolve = launch { assertTrue(coordinator.resolveArmedExecution(7L)) }
+        runCurrent()
+        var canStart: Boolean? = null
+        launch { canStart = coordinator.canStartMachine() }
+        runCurrent()
+        assertNull(canStart, "the gate must wait for the resolve holding the row")
+
+        gate.complete(Unit)
+        advanceUntilIdle()
+        resolve.join()
+        assertEquals(true, canStart)
+    }
+
+    @Test
+    fun `resumed set after a dismissed loss is resolved by its clean RESET`() = runTest {
+        // Accepted KD-1 behavior: the resumed set's arm replaces the loss row, and a clean
+        // teardown RESET acknowledged while connected to the same trainer is the unload proof.
+        val store = InMemoryMachineSafetyHazardRepository()
+        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        assertTrue(coordinator.recordConnectionLost("trainer-1", executionId = 7L))
+        coordinator.hideTemporarily()
+        coordinator.authorizeInterruptedWorkoutResume()
+        assertTrue(coordinator.canStartMachine())
+        assertTrue(coordinator.armBeforeMachineCommand(8L, "profile", MachineSafetyWorkoutKind.ROUTINE))
+
+        assertTrue(coordinator.resolveArmedExecution(8L))
+        assertTrue(store.rows.isEmpty())
+        assertTrue(coordinator.canStartMachine())
+    }
+
+    @Test
+    fun `a loss on another trainer keeps this trainer's arm resolvable`() = runTest {
+        val store = InMemoryMachineSafetyHazardRepository()
+        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        assertTrue(coordinator.armBeforeMachineCommand(7L, "profile", MachineSafetyWorkoutKind.ROUTINE))
+        assertTrue(coordinator.recordConnectionLost("trainer-2"))
+        coordinator.hideTemporarily()
+
+        assertTrue(coordinator.resolveArmedExecution(7L))
+        assertEquals(setOf("trainer-2"), store.rows.keys)
+    }
+
+    @Test
+    fun `acknowledged loss row allows the next start`() = runTest {
+        val store = InMemoryMachineSafetyHazardRepository()
+        val coordinator = coordinator(store, FakeSafetyTransport("trainer-1"))
+        assertTrue(coordinator.recordConnectionLost("trainer-1"))
+        assertFalse(coordinator.canStartMachine())
+
+        coordinator.acknowledgeUnloaded(assertIs<MachineSafetyUiState.Visible>(coordinator.uiState.value).document.generation)
+        advanceUntilIdle()
+        assertEquals(MachineSafetyUiState.Hidden, coordinator.uiState.value)
+        assertTrue(store.rows.isEmpty())
+        assertTrue(coordinator.canStartMachine())
     }
 
     @Test

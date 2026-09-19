@@ -35,7 +35,14 @@ sealed interface MachineSafetyUiState {
     ) : MachineSafetyUiState
 }
 
-/** Durable, trainer-identity-bound safety recovery. Never equates transport ACK with unload. */
+/**
+ * Durable, trainer-identity-bound safety recovery. A transport ACK is never treated as unload,
+ * with one exception: [resolveArmedExecution] clears this process's own hidden arm row after a
+ * clean teardown RESET that succeeded while still connected to the armed trainer. That includes
+ * a set resumed after a dismissed connection loss, whose re-arm replaced the loss row. A row
+ * that is visible, or that this process did not arm (for example after a relaunch), still needs
+ * the user's explicit acknowledgement through [acknowledgeUnloaded].
+ */
 class MachineSafetyCoordinator(
     private val repository: MachineSafetyHazardRepository,
     private val transport: MachineSafetyTransport,
@@ -56,8 +63,14 @@ class MachineSafetyCoordinator(
 
     suspend fun restoreOnStartup() = surfaceStoredHazard()
 
-    /** Show the most recent stored hazard, e.g. when a machine start was refused by the barrier. */
-    suspend fun surfaceStoredHazard() {
+    /**
+     * Show the most recent stored hazard, e.g. when a machine start was refused by the barrier.
+     * Does nothing while a warning is already visible, so an in-flight recovery is never replaced.
+     * A refusal caused only by [liveExecutionId]'s own hidden arm row is a replacement-start
+     * race over a live set, not a hazard, so it is not surfaced.
+     */
+    suspend fun surfaceStoredHazard(liveExecutionId: Long? = null): Unit = mutex.withLock {
+        if (_uiState.value is MachineSafetyUiState.Visible) return
         val results = try { repository.loadAll() } catch (_: Exception) {
             listOf(MachineSafetyLoadResult.Rejected(MachineSafetyRejection.CORRUPT_JSON, null))
         }
@@ -68,6 +81,10 @@ class MachineSafetyCoordinator(
                 MachineSafetyLoadResult.Missing -> null
             }
         }
+        val armed = armedDocument
+        val onlyLiveArm = liveExecutionId != null && armed != null && armed.executionId == liveExecutionId &&
+            results.all { (it as? MachineSafetyLoadResult.Loaded)?.document?.generation == armed.generation }
+        if (onlyLiveArm) return
         records.maxByOrNull { it.updatedAtEpochMs }?.let { show(it, records.any { doc -> doc.sessionId.startsWith("rejected-") }) }
     }
 
@@ -81,8 +98,12 @@ class MachineSafetyCoordinator(
         return try {
             repository.replace(persisted)
             nextGeneration = safeGeneration
-            // A visible loss replaces the arm row and must never be cleared by a clean teardown.
-            armedDocument = if (showRecoveryUi) null else persisted
+            // A visible loss replaces that trainer's arm row and is never cleared by a clean teardown.
+            if (!showRecoveryUi) {
+                armedDocument = persisted
+            } else if (armedDocument?.trainerAddress == persisted.trainerAddress) {
+                armedDocument = null
+            }
             if (showRecoveryUi) {
                 // A new visible loss owns RESET-only recovery. Never let a continuation
                 // authorization granted for an earlier hidden execution cross this boundary.
@@ -159,8 +180,13 @@ class MachineSafetyCoordinator(
         }
     }
 
-    /** A dismissed warning remains a durable start barrier until physical acknowledgement. */
-    suspend fun canStartMachine(): Boolean = try {
+    /**
+     * A dismissed warning remains a durable start barrier until physical acknowledgement.
+     * Serialized with [resolveArmedExecution], so a start never reads a row a resolve is clearing.
+     */
+    suspend fun canStartMachine(): Boolean = mutex.withLock { canStartMachineLocked() }
+
+    private suspend fun canStartMachineLocked(): Boolean = try {
         val hasUnresolvedHazard = repository.loadAll().any { result ->
             when (result) {
                 is MachineSafetyLoadResult.Loaded -> true
@@ -178,6 +204,8 @@ class MachineSafetyCoordinator(
             interruptedWorkoutResumeAuthorized = false
             false
         }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
     } catch (_: Exception) {
         false
     }

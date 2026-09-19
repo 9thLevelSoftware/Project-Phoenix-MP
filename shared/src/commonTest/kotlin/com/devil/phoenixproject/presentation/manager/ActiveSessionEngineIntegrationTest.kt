@@ -686,6 +686,9 @@ class ActiveSessionEngineIntegrationTest {
             engine.startWorkout(skipCountdown = true)
             harness.testScope.advanceUntilIdle()
         }
+        // Whichever path started it, the live set must be exactly the requested one.
+        assertEquals(exerciseIndex, harness.coordinator.currentExerciseIndex.value)
+        assertEquals(setIndex, harness.coordinator.currentSetIndex.value)
 
         harness.coordinator._repCount.value = RepCount(
             warmupReps = 0,
