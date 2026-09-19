@@ -2265,10 +2265,14 @@ class SqlDelightSyncRepository(
 
             if (local != null) {
                 // The per-set % list is not on the wire and resolvers prefer it over the base %.
-                // Keep it only while the base % is unchanged; after a base change on another
-                // device (e.g. a deload 80 -> 70) drop it so the new base drives the load.
-                val setWeightsPercentOfPR = local.setWeightsPercentOfPR
-                    .takeIf { exercise.prPercentage == null || weightPercentOfPR == local.weightPercentOfPR }
+                // Keep it only when the portal sends no % (mode off, list unused) or when the row
+                // was already in %-of-PR mode at the same base. A base change on another device
+                // (e.g. a deload 80 -> 70) or re-enabling % mode (the stored base may be the
+                // `?: 80` fallback) clears it so the incoming base drives the load.
+                val setWeightsPercentOfPR = local.setWeightsPercentOfPR.takeIf {
+                    exercise.prPercentage == null ||
+                        (local.usePercentOfPR == 1L && weightPercentOfPR == local.weightPercentOfPR)
+                }
                 queries.updateRoutineExercise(
                     exerciseName = exercise.name,
                     exerciseMuscleGroup = exercise.muscleGroup,

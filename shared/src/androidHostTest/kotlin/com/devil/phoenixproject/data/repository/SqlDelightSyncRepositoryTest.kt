@@ -1086,6 +1086,34 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `pull re-enabling percent of PR clears a per-set list stored while the mode was off`() = runTest {
+        // A pull without prPercentage stores the fallback base 80 and turns the mode off; the
+        // per-set list is kept but unused. Re-enabling at 80 must not revive that stale list.
+        insertLocalRoutine("routine-reenable")
+        insertLocalRoutineExercise(id = "rex-reenable", routineId = "routine-reenable", usePercentOfPR = 0, setWeightsPercentOfPR = "[90,90,90]")
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-reenable",
+                    name = "Re-enable",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(id = "rex-reenable", routineId = "routine-reenable", name = "Deadlift", reps = 5, prPercentage = 80f),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_300,
+            profileId = "active-profile",
+        )
+
+        val exercise = database.phoenixDatabaseQueries.selectExercisesByRoutine("routine-reenable").executeAsList().single()
+        assertEquals(1L, exercise.usePercentOfPR)
+        assertEquals(80L, exercise.weightPercentOfPR)
+        assertNull(exercise.setWeightsPercentOfPR)
+    }
+
+    @Test
     fun `pull leaves a locally soft-deleted routine deleted`() = runTest {
         val queries = database.phoenixDatabaseQueries
         insertLocalRoutine("routine-deleted")
@@ -1146,6 +1174,7 @@ class SqlDelightSyncRepositoryTest {
         setWeightsPercentOfPR: String? = null,
         scalingBasis: String? = null,
         supersetId: String? = null,
+        usePercentOfPR: Long = 1,
     ) {
         database.phoenixDatabaseQueries.insertRoutineExercise(
             id = id,
@@ -1171,7 +1200,7 @@ class SqlDelightSyncRepositoryTest {
             isAMRAP = 0,
             supersetId = supersetId,
             orderInSuperset = 0,
-            usePercentOfPR = 1,
+            usePercentOfPR = usePercentOfPR,
             weightPercentOfPR = 80,
             prTypeForScaling = prTypeForScaling,
             setWeightsPercentOfPR = setWeightsPercentOfPR,
