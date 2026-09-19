@@ -678,10 +678,17 @@ class ActiveSessionEngineIntegrationTest {
         setIndex: Int,
         engine: ActiveSessionEngine,
     ) {
-        harness.dwsm.enterSetReady(exerciseIndex, setIndex)
-        harness.testScope.advanceUntilIdle()
-        engine.startWorkout(skipCountdown = true)
-        harness.testScope.advanceUntilIdle()
+        // Rest autoplay may already have started this set; starting it again over the armed
+        // execution would be a replacement start that the #782 barrier refuses.
+        if (harness.coordinator.workoutState.value !is com.devil.phoenixproject.domain.model.WorkoutState.Active) {
+            harness.dwsm.enterSetReady(exerciseIndex, setIndex)
+            harness.testScope.advanceUntilIdle()
+            engine.startWorkout(skipCountdown = true)
+            harness.testScope.advanceUntilIdle()
+        }
+        // Whichever path started it, the live set must be exactly the requested one.
+        assertEquals(exerciseIndex, harness.coordinator.currentExerciseIndex.value)
+        assertEquals(setIndex, harness.coordinator.currentSetIndex.value)
 
         harness.coordinator._repCount.value = RepCount(
             warmupReps = 0,

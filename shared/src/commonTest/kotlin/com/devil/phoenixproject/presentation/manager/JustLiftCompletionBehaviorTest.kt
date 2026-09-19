@@ -66,9 +66,13 @@ class JustLiftCompletionBehaviorTest {
             prepare(harness, summarySeconds = -1)
             val executionIds = mutableSetOf<Long>()
             repeat(3) { index ->
+                // Each auto-started successor passes the #782 barrier (arming ON by default).
                 grabToStart(harness)
-                assertTrue(executionIds.add(harness.activeSessionEngine.currentExecutionLeaseForTest().executionId))
+                val executionId = harness.activeSessionEngine.currentExecutionLeaseForTest().executionId
+                assertTrue(executionIds.add(executionId))
+                assertEquals(executionId, harness.machineSafetyStore.rows.values.single().executionId)
                 completeSet(harness)
+                assertTrue(harness.machineSafetyStore.rows.isEmpty())
                 assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
                 assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
                 assertEquals(30, harness.coordinator.justLiftRestCountdown.value)
@@ -225,6 +229,8 @@ class JustLiftCompletionBehaviorTest {
             assertFalse(harness.coordinator.workoutState.value is WorkoutState.Idle)
             assertIs<MachineTeardownState.RecoveryRequired>(harness.dwsm.machineTeardownState.value)
             assertFalse(harness.fakeBleRepo.monitorPollingActive)
+            // The failed RESET keeps the source set's arm row.
+            assertEquals(source.executionId, harness.machineSafetyStore.rows.values.single().executionId)
 
             harness.fakeBleRepo.stopWorkoutBlock = { Result.success(Unit) }
             harness.dwsm.retryMachineTeardown()
@@ -232,6 +238,8 @@ class JustLiftCompletionBehaviorTest {
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
             assertEquals(2, harness.fakeBleRepo.stopWorkoutCallCount)
             assertEquals(1, harness.fakeBleRepo.restartPollingCallCount)
+            // The successful retry RESET resolves it through the same teardown success branch.
+            assertTrue(harness.machineSafetyStore.rows.isEmpty())
             grabToStart(harness)
             assertNotEquals(source, harness.activeSessionEngine.currentExecutionLeaseForTest())
         } finally {
