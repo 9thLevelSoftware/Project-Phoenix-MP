@@ -23,6 +23,10 @@ data class ServerDeletionResult(
     val deletedCycleIds: List<String> = emptyList(),
     /** Deleted routines that carried a local edit newer than lastSync (discarded: delete wins). */
     val discardedRoutineEditIds: List<String> = emptyList(),
+    /** Deleted cycles that were active or had progress (user-visible loss of the current program). */
+    val deletedActiveCycleIds: List<String> = emptyList(),
+    /** Local-only `cycle_routine_*` template routines removed with their deleted cycle. */
+    val deletedTemplateRoutineIds: List<String> = emptyList(),
 )
 
 data class PhasePRBackfillResult(
@@ -352,6 +356,9 @@ interface SyncRepository {
      * (routine `updatedAt > lastSync`); those are reported in the result so
      * the caller can log them. Cycle days that referenced a deleted routine
      * keep the day with `routine_id = NULL`, mirroring the server FK.
+     * Local-only `cycle_routine_*` template routines used only by a deleted
+     * cycle are removed with it. Discarded edits are not classified when
+     * `lastSync == 0` (no sync base).
      *
      * Default no-op so unrelated test fakes do not need to implement.
      */

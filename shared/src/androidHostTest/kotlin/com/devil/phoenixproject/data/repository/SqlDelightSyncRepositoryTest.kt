@@ -1292,6 +1292,23 @@ class SqlDelightSyncRepositoryTest {
                     ),
                 ),
                 PullRoutineDto(
+                    id = "local-legacy",
+                    userId = "user",
+                    name = "Legacy local id",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-legacy-1",
+                            routineId = "local-legacy",
+                            name = "Curl",
+                            muscleGroup = "Arms",
+                            orderIndex = 0,
+                            reps = 12,
+                            weight = 10f,
+                        ),
+                    ),
+                ),
+                PullRoutineDto(
                     id = "routine-keep",
                     userId = "user",
                     name = "Kept",
@@ -1316,6 +1333,7 @@ class SqlDelightSyncRepositoryTest {
                     days = listOf(
                         PullCycleDayDto(id = "day-keep-1", cycleId = "cycle-keep", dayNumber = 1, routineId = "routine-x"),
                         PullCycleDayDto(id = "day-keep-2", cycleId = "cycle-keep", dayNumber = 2, routineId = "routine-keep"),
+                        PullCycleDayDto(id = "day-keep-3", cycleId = "cycle-keep", dayNumber = 3, routineId = "cycle_routine_shared"),
                     ),
                 ),
                 PullTrainingCycleDto(
@@ -1324,6 +1342,8 @@ class SqlDelightSyncRepositoryTest {
                     progressionSettings = """{"frequencyCycles":"2"}""",
                     days = listOf(
                         PullCycleDayDto(id = "day-y-1", cycleId = "cycle-y", dayNumber = 1, routineId = "routine-keep"),
+                        PullCycleDayDto(id = "day-y-2", cycleId = "cycle-y", dayNumber = 2, routineId = "cycle_routine_only-y"),
+                        PullCycleDayDto(id = "day-y-3", cycleId = "cycle-y", dayNumber = 3, routineId = "cycle_routine_shared"),
                     ),
                 ),
             ),
@@ -1333,6 +1353,42 @@ class SqlDelightSyncRepositoryTest {
             lastSync = 1_700_000_000_100,
             profileId = "active-profile",
         )
+        val queries = database.phoenixDatabaseQueries
+        // Legacy row: local id differs from the id the server knows (serverId column).
+        queries.updateRoutineServerId("routine-srv", "local-legacy")
+        // Children that FK cascades would remove, but the test driver runs with foreign_keys off.
+        queries.insertPlannedSet(
+            id = "planned-x-1",
+            routine_exercise_id = "rex-x-1",
+            set_number = 1,
+            set_type = "STANDARD",
+            target_reps = 8,
+            target_weight_kg = 20.0,
+            target_rpe = null,
+            rest_seconds = 60,
+        )
+        queries.insertSuperset(
+            id = "superset-x",
+            routineId = "routine-x",
+            name = "Pair",
+            colorIndex = 0,
+            restBetweenSeconds = 10,
+            orderIndex = 0,
+        )
+        // Local-only template routines used by cycle days.
+        for (templateId in listOf("cycle_routine_only-y", "cycle_routine_shared")) {
+            queries.insertRoutine(
+                id = templateId,
+                name = "Template $templateId",
+                description = "",
+                createdAt = 1_700_000_000_000,
+                lastUsed = null,
+                useCount = 0,
+                profile_id = "active-profile",
+                groupId = null,
+                deletedAt = null,
+            )
+        }
         database.phoenixDatabaseQueries.insertCycleProgress(
             id = "progress-y",
             cycle_id = "cycle-y",
@@ -1351,6 +1407,8 @@ class SqlDelightSyncRepositoryTest {
         seedRoutineAndCycles()
         val queries = database.phoenixDatabaseQueries
         assertEquals(2, queries.selectExercisesByRoutine("routine-x").executeAsList().size)
+        assertEquals(1, queries.selectPlannedSetsByRoutineExercise("rex-x-1").executeAsList().size)
+        assertEquals(1, queries.selectSupersetsByRoutine("routine-x").executeAsList().size)
         assertNotNull(queries.selectCycleProgressByCycle("cycle-y").executeAsOneOrNull())
         assertNotNull(queries.selectCycleProgression("cycle-y").executeAsOneOrNull())
 
@@ -1363,10 +1421,15 @@ class SqlDelightSyncRepositoryTest {
         assertEquals(listOf("routine-x"), result.deletedRoutineIds)
         assertEquals(listOf("cycle-y"), result.deletedCycleIds)
         assertTrue(result.discardedRoutineEditIds.isEmpty())
+        // cycle-y had a CycleProgress row -> reported as an in-progress cycle loss.
+        assertEquals(listOf("cycle-y"), result.deletedActiveCycleIds)
 
-        // Routine X and its exercises are gone, with no soft-delete tombstone left to push.
+        // Routine X and its exercises, planned sets and supersets are gone, with no
+        // soft-delete tombstone left to push.
         assertNull(queries.selectRoutineById("routine-x").executeAsOneOrNull())
         assertTrue(queries.selectExercisesByRoutine("routine-x").executeAsList().isEmpty())
+        assertTrue(queries.selectPlannedSetsByRoutineExercise("rex-x-1").executeAsList().isEmpty())
+        assertTrue(queries.selectSupersetsByRoutine("routine-x").executeAsList().isEmpty())
         assertTrue(repository.getDeletedRoutineIdsSince(0L, "active-profile").isEmpty())
 
         // Cycle Y and its days/progress/progression are gone, no tombstone to push.
@@ -1379,9 +1442,66 @@ class SqlDelightSyncRepositoryTest {
         // Unrelated routine untouched; the surviving cycle keeps its day with the reference nulled.
         assertEquals(1, queries.selectExercisesByRoutine("routine-keep").executeAsList().size)
         val keptDays = queries.selectCycleDaysByCycle("cycle-keep").executeAsList()
-        assertEquals(2, keptDays.size)
+        assertEquals(3, keptDays.size)
         assertNull(keptDays.single { it.day_number == 1L }.routine_id)
         assertEquals("routine-keep", keptDays.single { it.day_number == 2L }.routine_id)
+
+        // Template routine used only by the deleted cycle is removed; the one another
+        // cycle still references stays.
+        assertEquals(listOf("cycle_routine_only-y"), result.deletedTemplateRoutineIds)
+        assertNull(queries.selectRoutineById("cycle_routine_only-y").executeAsOneOrNull())
+        assertNotNull(queries.selectRoutineById("cycle_routine_shared").executeAsOneOrNull())
+        assertEquals("cycle_routine_shared", keptDays.single { it.day_number == 3L }.routine_id)
+    }
+
+    @Test
+    fun `applyServerDeletions matches legacy routine by serverId`() = runTest {
+        seedRoutineAndCycles()
+        val queries = database.phoenixDatabaseQueries
+
+        val result = repository.applyServerDeletions(
+            routineIds = listOf("routine-srv"),
+            cycleIds = emptyList(),
+            lastSync = 1_700_000_000_300,
+        )
+
+        assertEquals(listOf("local-legacy"), result.deletedRoutineIds)
+        assertNull(queries.selectRoutineById("local-legacy").executeAsOneOrNull())
+        assertTrue(queries.selectExercisesByRoutine("local-legacy").executeAsList().isEmpty())
+        assertNotNull(queries.selectRoutineById("routine-x").executeAsOneOrNull())
+    }
+
+    @Test
+    fun `applyServerDeletions keeps workout history that names the deleted routine`() = runTest {
+        seedRoutineAndCycles()
+        insertHistoricalSession(
+            id = "session-uses-routine-x",
+            timestamp = 1_700_000_000_000,
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            workingReps = 8,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+        )
+        database.phoenixDatabaseQueries.updateSessionRoutineId("routine-x", "session-uses-routine-x")
+
+        repository.applyServerDeletions(listOf("routine-x"), emptyList(), lastSync = 1_700_000_000_300)
+
+        val session = database.phoenixDatabaseQueries.selectSessionById("session-uses-routine-x").executeAsOneOrNull()
+        assertNotNull(session, "Deleting a routine must never remove workout history")
+    }
+
+    @Test
+    fun `applyServerDeletions does not classify discarded edits when lastSync is zero`() = runTest {
+        seedRoutineAndCycles()
+
+        val result = repository.applyServerDeletions(listOf("routine-x"), emptyList(), lastSync = 0L)
+
+        assertEquals(listOf("routine-x"), result.deletedRoutineIds)
+        assertTrue(result.discardedRoutineEditIds.isEmpty())
     }
 
     @Test

@@ -32,6 +32,24 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
+/**
+ * User-visible summary of a destructive server-reported delete (delete wins, KD-4).
+ */
+data class ServerDeletionNotice(
+    val discardedRoutineEditIds: List<String> = emptyList(),
+    val deletedActiveCycleIds: List<String> = emptyList(),
+) {
+    val message: String
+        get() = buildList {
+            if (deletedActiveCycleIds.isNotEmpty()) {
+                add("A training cycle in progress was deleted on the portal and removed from this device.")
+            }
+            if (discardedRoutineEditIds.isNotEmpty()) {
+                add("A routine deleted on the portal had unsynced changes on this device; those changes were discarded.")
+            }
+        }.joinToString(" ")
+}
+
 sealed class SyncState {
     object Idle : SyncState()
     object Syncing : SyncState()
@@ -392,6 +410,15 @@ class SyncManager(
 
     private val _lastSyncTime = MutableStateFlow(tokenStorage.getLastSyncTimestamp())
     val lastSyncTime: StateFlow<Long> = _lastSyncTime.asStateFlow()
+
+    private val _serverDeletionNotice = MutableStateFlow<ServerDeletionNotice?>(null)
+
+    /**
+     * Set when a server-reported delete removed something the user will notice
+     * (an unsynced routine edit, or the active / in-progress cycle). The UI can
+     * show [ServerDeletionNotice.message] and then call [clearServerDeletionNotice].
+     */
+    val serverDeletionNotice: StateFlow<ServerDeletionNotice?> = _serverDeletionNotice.asStateFlow()
 
     val isAuthenticated: StateFlow<Boolean> = tokenStorage.isAuthenticated
     val currentUser: StateFlow<PortalUser?> = tokenStorage.currentUser
@@ -1316,6 +1343,7 @@ class SyncManager(
                     source = "push skippedDeleted",
                 )
             } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 Logger.w(e) { "Applying push skippedDeleted failed; next pull will retry the delete" }
             }
         }
@@ -1755,8 +1783,10 @@ class SyncManager(
 
         // The portal pull response is a delta: it returns entities that are new
         // to the client or updated since lastSync. Missing known IDs therefore
-        // do not prove deletion. Server-side routine/cycle deletes need an
-        // explicit tombstone channel before local hard-delete is safe.
+        // do not prove deletion. Server-side routine/cycle deletes arrive only
+        // through the explicit tombstone keys (pull deletedRoutineIds /
+        // deletedCycleIds, push skippedDeleted), applied by applyServerDeletions
+        // in mergePullPage and in the push skippedDeleted handling.
 
         return Result.success(finalSyncTime)
     }
@@ -2102,10 +2132,28 @@ class SyncManager(
                     "($source); local edits discarded (delete wins): ${result.discardedRoutineEditIds.joinToString()}"
             }
         }
+        if (result.deletedActiveCycleIds.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                "Server deleted ${result.deletedActiveCycleIds.size} active/in-progress cycle(s) ($source); " +
+                    "local cycle progress removed (delete wins): ${result.deletedActiveCycleIds.joinToString()}"
+            }
+        }
+        if (result.discardedRoutineEditIds.isNotEmpty() || result.deletedActiveCycleIds.isNotEmpty()) {
+            _serverDeletionNotice.value = ServerDeletionNotice(
+                discardedRoutineEditIds = result.discardedRoutineEditIds,
+                deletedActiveCycleIds = result.deletedActiveCycleIds,
+            )
+        }
         Logger.i("SyncManager") {
             "Applied server deletions ($source): reported routines=${routineIds.size}, cycles=${cycleIds.size}; " +
-                "removed locally routines=${result.deletedRoutineIds.size}, cycles=${result.deletedCycleIds.size}"
+                "removed locally routines=${result.deletedRoutineIds.size}, cycles=${result.deletedCycleIds.size}, " +
+                "template routines=${result.deletedTemplateRoutineIds.size}"
         }
+    }
+
+    /** Clears [serverDeletionNotice] once the UI has shown it. */
+    fun clearServerDeletionNotice() {
+        _serverDeletionNotice.value = null
     }
 
     private fun getPlatformName(): String {

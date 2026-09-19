@@ -1931,6 +1931,9 @@ DELETE FROM CycleDay WHERE cycle_id = ?;
 clearCycleDayRoutineReferences:
 UPDATE CycleDay SET routine_id = NULL WHERE routine_id = ?;
 
+countCycleDaysReferencingRoutine:
+SELECT COUNT(*) FROM CycleDay WHERE routine_id = ?;
+
 -- CycleProgress Queries
 selectCycleProgressByCycle:
 SELECT * FROM CycleProgress WHERE cycle_id = ?;

@@ -299,6 +299,7 @@ class FakeSyncRepository : SyncRepository {
         }
 
         onMergeAllPullData?.invoke()
+        callLog += "mergeAllPullData"
         atomicMergeCallCount++
         lastAtomicMergeSessions = sessions
         lastAtomicMergeRoutines = routines
@@ -356,6 +357,9 @@ class FakeSyncRepository : SyncRepository {
 
     /** Local cycle ids the fake pretends to hold (routines use [routinesToReturn]). */
     var localCycleIds: MutableSet<String> = mutableSetOf()
+
+    /** Subset of [localCycleIds] the fake treats as active / in progress. */
+    var activeLocalCycleIds: MutableSet<String> = mutableSetOf()
     var applyServerDeletionsShouldFail: Boolean = false
 
     override suspend fun applyServerDeletions(
@@ -375,8 +379,9 @@ class FakeSyncRepository : SyncRepository {
             deletedRoutineIds = removedRoutines.map { it.id },
             deletedCycleIds = removedCycles,
             discardedRoutineEditIds = removedRoutines
-                .filter { (it.updatedAt ?: 0L) > lastSync }
+                .filter { lastSync > 0L && (it.updatedAt ?: 0L) > lastSync }
                 .map { it.id },
+            deletedActiveCycleIds = removedCycles.filter { it in activeLocalCycleIds },
         )
     }
 }

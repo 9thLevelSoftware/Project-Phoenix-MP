@@ -64,6 +64,9 @@ class SqlDelightSyncRepository(
      */
     private companion object {
         const val BATCH_LOOKUP_CHUNK_SIZE = 500
+
+        /** Local-only routines generated for template cycles (never synced). */
+        const val CYCLE_TEMPLATE_ROUTINE_PREFIX = "cycle_routine_"
     }
 
     /**
@@ -1933,6 +1936,8 @@ class SqlDelightSyncRepository(
         val deletedRoutines = mutableListOf<String>()
         val discardedRoutineEdits = mutableListOf<String>()
         val deletedCycles = mutableListOf<String>()
+        val deletedActiveCycles = mutableListOf<String>()
+        val deletedTemplateRoutines = mutableListOf<String>()
 
         db.transaction {
             for (serverRoutineId in routineIds.distinct()) {
@@ -1942,27 +1947,40 @@ class SqlDelightSyncRepository(
                         queries.selectRoutineByServerId(serverRoutineId).executeAsList()
                     ).distinctBy { it.id }
                 for (row in localRows) {
-                    if (row.deletedAt == null && (row.updatedAt ?: 0L) > lastSync) {
+                    // lastSync == 0 (first pull / forced resync) has no sync base, so an
+                    // edit cannot be classified as "unsynced"; skip the report then.
+                    if (lastSync > 0L && row.deletedAt == null && (row.updatedAt ?: 0L) > lastSync) {
                         discardedRoutineEdits += row.id
                     }
-                    queries.selectExercisesByRoutine(row.id).executeAsList().forEach { exercise ->
-                        queries.deletePlannedSetsByRoutineExercise(exercise.id)
-                    }
-                    queries.deleteRoutineExercises(row.id)
-                    queries.deleteSupersetsByRoutine(row.id)
-                    queries.clearCycleDayRoutineReferences(row.id)
-                    queries.deleteRoutineById(row.id)
+                    hardDeleteRoutineWithChildren(row.id)
                     deletedRoutines += row.id
                 }
             }
 
             for (cycleId in cycleIds.distinct()) {
-                queries.selectTrainingCycleById(cycleId).executeAsOneOrNull() ?: continue
+                val cycle = queries.selectTrainingCycleById(cycleId).executeAsOneOrNull() ?: continue
+                val hadProgress = queries.selectCycleProgressByCycle(cycleId).executeAsOneOrNull() != null
+                if (cycle.deletedAt == null && (cycle.is_active == 1L || hadProgress)) {
+                    deletedActiveCycles += cycleId
+                }
+                // Local-only template routines ("cycle_routine_<uuid>") are hidden from the
+                // routines list and never pushed; once this cycle's days go they would be
+                // unreachable, so remove them too unless another cycle day still uses them.
+                val templateRoutineIds = queries.selectCycleDaysByCycle(cycleId).executeAsList()
+                    .mapNotNull { it.routine_id }
+                    .filter { it.startsWith(CYCLE_TEMPLATE_ROUTINE_PREFIX) }
+                    .distinct()
                 queries.deleteCycleDaysByCycle(cycleId)
                 queries.deleteCycleProgress(cycleId)
                 queries.deleteCycleProgression(cycleId)
                 queries.deleteTrainingCycle(cycleId)
                 deletedCycles += cycleId
+                for (templateRoutineId in templateRoutineIds) {
+                    if (queries.countCycleDaysReferencingRoutine(templateRoutineId).executeAsOne() == 0L) {
+                        hardDeleteRoutineWithChildren(templateRoutineId)
+                        deletedTemplateRoutines += templateRoutineId
+                    }
+                }
             }
         }
 
@@ -1970,7 +1988,20 @@ class SqlDelightSyncRepository(
             deletedRoutineIds = deletedRoutines,
             deletedCycleIds = deletedCycles,
             discardedRoutineEditIds = discardedRoutineEdits,
+            deletedActiveCycleIds = deletedActiveCycles,
+            deletedTemplateRoutineIds = deletedTemplateRoutines,
         )
+    }
+
+    /** Must run inside a transaction. Children are deleted explicitly (foreign_keys may be off). */
+    private fun hardDeleteRoutineWithChildren(routineId: String) {
+        queries.selectExercisesByRoutine(routineId).executeAsList().forEach { exercise ->
+            queries.deletePlannedSetsByRoutineExercise(exercise.id)
+        }
+        queries.deleteRoutineExercises(routineId)
+        queries.deleteSupersetsByRoutine(routineId)
+        queries.clearCycleDayRoutineReferences(routineId)
+        queries.deleteRoutineById(routineId)
     }
 
     /**
