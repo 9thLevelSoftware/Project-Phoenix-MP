@@ -1311,13 +1311,29 @@ class MainViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        workoutSessionManager.cleanup()
         bleConnectionManager.cancelConnectionJob()
+        // Read before cleanup(), which invalidates the lease. Mid-set or mid-teardown
+        // the trainer may still be resisting after the link drops, so try a RESET first.
+        val holdsMachineLease = workoutSessionManager.coordinator.workoutState.value !is WorkoutState.Idle ||
+            workoutSessionManager.machineTeardownState.value !is MachineTeardownState.Ready
 
         // Issue: BLE resource leak - Disconnect BLE when ViewModel is cleared
         // to prevent battery drain and orphaned connections.
         // Use NonCancellable context since viewModelScope may be cancelled during onCleared
         viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
+            if (holdsMachineLease) {
+                // Raw BLE RESET only: the engine's teardown path would resolve the #782 arm
+                // row, and this unconfirmed exit must keep it so the relaunch warning fires.
+                try {
+                    val result = kotlinx.coroutines.withTimeoutOrNull(com.devil.phoenixproject.util.BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+                        bleRepository.stopWorkout()
+                    }
+                    Logger.i { "RESET before ViewModel teardown: ${result ?: "timed out"}" }
+                } catch (e: Exception) {
+                    Logger.e { "RESET before ViewModel teardown failed: ${e.message}" }
+                }
+            }
+            workoutSessionManager.cleanup()
             try {
                 bleRepository.disconnect()
                 Logger.i { "BLE disconnected during ViewModel cleanup" }

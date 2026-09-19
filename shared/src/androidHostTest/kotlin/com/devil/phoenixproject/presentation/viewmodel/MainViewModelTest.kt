@@ -1281,6 +1281,75 @@ class MainViewModelTest {
         assertEquals(WorkoutState.Active, viewModel.workoutState.value, "Resume must succeed after guard is reset by startWorkout()")
     }
 
+    // ========== ViewModel teardown mid-set (F-013, A-002) ==========
+
+    @Test
+    fun `clearing the ViewModel mid Just Lift set sends RESET before disconnect and keeps the arm row`() = runTest(testCoroutineRule.dispatcher) {
+        val armRow = startArmedSet(isJustLift = true)
+
+        clearViewModelLikeTheActivity()
+        advanceUntilIdle()
+
+        val stopEntered = fakeBleRepository.events.indexOf(FakeBleRepository.Event.StopWorkoutEntered)
+        val stopCompleted = fakeBleRepository.events.indexOf(FakeBleRepository.Event.StopWorkoutCompleted)
+        val disconnected = fakeBleRepository.events.indexOf(FakeBleRepository.Event.Disconnected)
+        assertTrue(stopEntered >= 0, "RESET must be attempted when the Activity scope dies mid-set")
+        assertTrue(stopEntered < stopCompleted && stopCompleted < disconnected, "RESET must finish before disconnect: ${fakeBleRepository.events}")
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+        assertEquals(1, fakeBleRepository.disconnectCallCount)
+        assertEquals(listOf(armRow), loadedSafetyRows(), "An unconfirmed teardown must keep the #782 arm row for the relaunch warning")
+    }
+
+    @Test
+    fun `clearing the ViewModel mid set still disconnects when RESET times out`() = runTest(testCoroutineRule.dispatcher) {
+        val armRow = startArmedSet(isJustLift = false)
+        fakeBleRepository.stopWorkoutBlock = { kotlinx.coroutines.awaitCancellation() }
+        val clearedAt = testCoroutineRule.dispatcher.scheduler.currentTime
+
+        clearViewModelLikeTheActivity()
+        advanceUntilIdle()
+
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount, "RESET must be attempted before disconnect")
+        assertFalse(FakeBleRepository.Event.StopWorkoutCompleted in fakeBleRepository.events)
+        assertEquals(1, fakeBleRepository.disconnectCallCount, "A hung RESET must not block disconnect")
+        assertTrue(
+            testCoroutineRule.dispatcher.scheduler.currentTime - clearedAt >= com.devil.phoenixproject.util.BleConstants.GATT_OPERATION_TIMEOUT_MS,
+            "Disconnect waits for the bounded RESET attempt",
+        )
+        assertEquals(listOf(armRow), loadedSafetyRows())
+    }
+
+    /** Starts one armed machine set and returns its single #782 arm row. */
+    private suspend fun kotlinx.coroutines.test.TestScope.startArmedSet(isJustLift: Boolean): com.devil.phoenixproject.data.repository.MachineSafetyHazardDocument {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        viewModel.updateWorkoutParameters(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 10,
+                warmupReps = 0,
+                weightPerCableKg = 20f,
+                isJustLift = isJustLift,
+            ),
+        )
+        fakeBleRepository.emitMetric(WorkoutMetric(positionA = 100f, positionB = 100f, loadA = 10f, loadB = 10f))
+        viewModel.startWorkout(skipCountdown = true, isJustLiftMode = isJustLift)
+        advanceUntilIdle()
+        assertEquals(WorkoutState.Active, viewModel.workoutState.value)
+        assertEquals(0, fakeBleRepository.stopWorkoutCallCount)
+        assertIs<MachineSafetyUiState.Hidden>(viewModel.machineSafetyUiState.value)
+        return loadedSafetyRows().single()
+    }
+
+    private suspend fun loadedSafetyRows() = safetyStore.loadAll()
+        .filterIsInstance<com.devil.phoenixproject.data.repository.MachineSafetyLoadResult.Loaded>()
+        .map { it.document }
+
+    /** Production order: ViewModelStore.clear() cancels viewModelScope, then calls onCleared(). */
+    private fun clearViewModelLikeTheActivity() {
+        androidx.lifecycle.ViewModelStore().apply { put("main", viewModel) }.clear()
+    }
+
     private fun forceAutoStopTimerElapsed() {
         val coordinator = viewModel.workoutSessionManager.coordinator
         val field = coordinator::class.java.getDeclaredField("autoStopStartTime")
