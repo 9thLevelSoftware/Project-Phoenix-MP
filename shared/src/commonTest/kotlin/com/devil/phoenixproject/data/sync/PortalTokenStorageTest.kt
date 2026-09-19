@@ -345,4 +345,43 @@ class PortalTokenStorageTest {
             "updatePremiumStatus should not affect the stored tier",
         )
     }
+
+    @Test
+    fun recordCompletedPullStoresLastSyncAndDeltaMarkerTogether() {
+        val storage = PortalTokenStorage(MapSettings())
+        storage.recordCompletedPull(1234L, "u1:default")
+        assertEquals(1234L, storage.getLastSyncTimestamp())
+        assertEquals("u1:default", storage.getDeltaPullKey())
+
+        storage.recordCompletedPull(5678L, null)
+        assertEquals(5678L, storage.getLastSyncTimestamp())
+        assertNull(storage.getDeltaPullKey(), "null key drops the marker so the next pull is full")
+    }
+
+    @Test
+    fun signInAsDifferentUserDropsDeltaMarkerButSameUserKeepsIt() {
+        val storage = PortalTokenStorage(MapSettings())
+        fun auth(userId: String) = storage.saveGoTrueAuth(
+            GoTrueAuthResponse(
+                accessToken = "tok",
+                tokenType = "bearer",
+                expiresIn = 3600,
+                refreshToken = "rtok",
+                user = GoTrueUser(id = userId, email = "$userId@e.com"),
+            ),
+        )
+        auth("u1")
+        storage.recordCompletedPull(1234L, "u1:default")
+
+        auth("u1")
+        assertEquals("u1:default", storage.getDeltaPullKey(), "token refresh for the same user keeps the marker")
+
+        auth("u2")
+        assertNull(storage.getDeltaPullKey(), "account switch drops the marker")
+        assertEquals(1234L, storage.getLastSyncTimestamp(), "push bound is kept")
+
+        storage.recordCompletedPull(2000L, "u2:default")
+        storage.clearAuth()
+        assertNull(storage.getDeltaPullKey())
+    }
 }

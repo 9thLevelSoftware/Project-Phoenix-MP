@@ -282,6 +282,7 @@ class FakeSyncRepository : SyncRepository {
     /** Set to throw an exception before the ordinary repository merge commits. */
     var atomicMergeShouldFail: Boolean = false
     var onMergeAllPullData: (() -> Unit)? = null
+    val mergeServerWinsRoutineIdsHistory: MutableList<Set<String>> = mutableListOf()
 
     override suspend fun mergeAllPullData(
         sessions: List<WorkoutSession>,
@@ -292,7 +293,9 @@ class FakeSyncRepository : SyncRepository {
         personalRecords: List<PersonalRecordSyncDto>,
         lastSync: Long,
         profileId: String,
+        serverWinsRoutineIds: Set<String>,
     ) {
+        mergeServerWinsRoutineIdsHistory += serverWinsRoutineIds
         if (atomicMergeShouldFail) {
             throw RuntimeException("Simulated ordinary repository merge failure")
         }

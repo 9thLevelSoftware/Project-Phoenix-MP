@@ -763,6 +763,8 @@ data class PortalSyncPullResponse(
     // Pagination metadata (Plan 03-05)
     val nextCursor: String? = null,
     val hasMore: Boolean = false,
+    /** True when the server hit its external-activities cap (500) and omitted the rest. */
+    val externalActivitiesHasMore: Boolean = false,
     // Entity data
     val sessions: List<PullWorkoutSessionDto> = emptyList(), // Merged via INSERT OR IGNORE (local wins)
     val routines: List<PullRoutineDto> = emptyList(),

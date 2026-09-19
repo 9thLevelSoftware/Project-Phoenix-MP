@@ -1330,8 +1330,7 @@ class SyncManagerTest {
         setupAuthenticated()
         // Pull sends the local entity IDs plus the stored server syncTime of the last
         // completed pull; the server returns unknown rows and known rows changed since then.
-        tokenStorage.setLastSyncTimestamp(1000L)
-        tokenStorage.setDeltaPullProfileId("default")
+        tokenStorage.recordCompletedPull(1000L, "user-123:default")
         val pushSyncTimeIso = "2026-03-02T12:00:00Z"
         fakeApi.pushResult = Result.success(
             PortalSyncPushResponse(syncTime = pushSyncTimeIso),
@@ -1347,29 +1346,70 @@ class SyncManagerTest {
     }
 
     @Test
-    fun forceFullResyncSendsZeroLastSyncAndEmptyKnownIds() = runTest {
+    fun forceFullResyncSendsZeroLastSyncWithKnownIds() = runTest {
         setupAuthenticated()
-        tokenStorage.setLastSyncTimestamp(5000L)
-        tokenStorage.setDeltaPullProfileId("default")
-        fakeSyncRepo.sessionIds = listOf("11111111-1111-4111-a111-111111111111")
-        fakeSyncRepo.routineIds = listOf("33333333-3333-4333-a333-333333333333")
-        fakeSyncRepo.cycleIds = listOf("77777777-7777-4777-a777-777777777777")
-        fakeSyncRepo.badgeIds = listOf("44444444-4444-4444-a444-444444444444")
-        fakeSyncRepo.personalRecordIds = listOf("66666666-6666-4666-a666-666666666666")
+        tokenStorage.recordCompletedPull(5000L, "user-123:default")
+        val sessionId = "11111111-1111-4111-a111-111111111111"
+        val prId = "66666666-6666-4666-a666-666666666666"
+        fakeSyncRepo.sessionIds = listOf(sessionId)
+        fakeSyncRepo.personalRecordIds = listOf(prId)
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
-        fakeApi.pullResult = Result.success(PortalSyncPullResponse(syncTime = 9000L))
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.failure(PortalApiException("boom", null, 500)),
+            Result.success(PortalSyncPullResponse(syncTime = 9000L)),
+            Result.success(PortalSyncPullResponse(syncTime = 9500L)),
+        )
         val manager = createManager()
 
+        // Forced resync whose pull fails, then retryPull: both send lastSync=0 with known ids
+        // (known ids let the server return tombstones for rows this device holds).
         manager.forceFullResync()
+        assertEquals(0L, tokenStorage.getLastSyncTimestamp())
+        manager.retryPull()
 
-        assertEquals(listOf(0L), fakeApi.pullCallLastSyncs, "forced resync must send lastSync=0")
-        assertEquals(KnownEntityIds(), fakeApi.lastPullKnownEntityIds, "forced resync must send no known ids")
+        assertEquals(listOf(0L, 0L), fakeApi.pullCallLastSyncs, "forced resync and its retry must send lastSync=0")
+        fakeApi.pullKnownEntityIdsHistory.forEach { known ->
+            assertEquals(listOf(sessionId), known.sessionIds)
+            assertEquals(listOf(prId), known.personalRecordIds)
+        }
         assertEquals(9000L, tokenStorage.getLastSyncTimestamp())
 
-        // The next ordinary sync is a delta pull again with the device's known ids.
+        // The next ordinary sync is a delta pull again.
         manager.sync()
-        assertEquals(listOf(0L, 9000L), fakeApi.pullCallLastSyncs)
-        assertEquals(1, fakeApi.lastPullKnownEntityIds?.sessionIds?.size)
+        assertEquals(listOf(0L, 0L, 9000L), fakeApi.pullCallLastSyncs)
+    }
+
+    @Test
+    fun lwwRejectedRoutineIsMergedServerWinsUntilAPullCompletes() = runTest {
+        setupAuthenticated()
+        tokenStorage.recordCompletedPull(1000L, "user-123:default")
+        val routineId = "33333333-3333-4333-a333-333333333333"
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                rejections = SyncRejectionsDto(routines = listOf(SyncRejectionDto(id = routineId))),
+            ),
+        )
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.failure(PortalApiException("boom", null, 500)),
+            Result.success(
+                PortalSyncPullResponse(syncTime = 2000L, routines = listOf(PullRoutineDto(id = routineId, name = "Portal"))),
+            ),
+            Result.success(PortalSyncPullResponse(syncTime = 3000L, routines = listOf(PullRoutineDto(id = "r-other", name = "x")))),
+        )
+        val manager = createManager()
+
+        manager.sync() // push rejected, pull fails before merging
+        manager.retryPull() // pull merges the server version for the rejected routine
+        assertEquals(listOf(setOf(routineId)), fakeSyncRepo.mergeServerWinsRoutineIdsHistory)
+
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:01:00Z"))
+        manager.sync()
+        assertEquals(
+            listOf(setOf(routineId), emptySet()),
+            fakeSyncRepo.mergeServerWinsRoutineIdsHistory,
+            "server-wins set is cleared once a pull has completed",
+        )
     }
 
     // ===== Pagination Tests (Plan 03-05) =====
@@ -1432,6 +1472,9 @@ class SyncManagerTest {
 
         assertTrue(result.isSuccess)
         assertEquals(1, fakeApi.pullCallCount, "Pull should stop after empty page despite hasMore=true")
+        assertIs<SyncState.PartialSuccess>(manager.syncState.value, "empty page + hasMore=true is a pull failure")
+        assertEquals(0L, tokenStorage.getLastSyncTimestamp(), "lastSync must not advance over unfetched pages")
+        assertNull(tokenStorage.getDeltaPullKey())
     }
 
     @Test
@@ -1499,9 +1542,9 @@ class SyncManagerTest {
 
         assertTrue(result.isSuccess)
         assertEquals(
-            finalSyncTime,
+            1740916800000L,
             tokenStorage.getLastSyncTimestamp(),
-            "lastSyncTimestamp should be updated to final page's syncTime",
+            "lastSyncTimestamp should be updated (after the final page) to the earliest page's syncTime",
         )
     }
 

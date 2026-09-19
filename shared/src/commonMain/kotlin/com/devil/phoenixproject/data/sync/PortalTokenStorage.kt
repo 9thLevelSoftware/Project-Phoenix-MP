@@ -63,11 +63,12 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_LAST_SYNC = "portal_last_sync_timestamp"
 
         /**
-         * Profile whose completed pull produced the stored [KEY_LAST_SYNC]. Absent on the
-         * first sync after upgrading from builds that always pulled with lastSync=0, so that
-         * sync sends one full lastSync=0 pull before switching to delta pulls.
+         * "userId:profileId" of the completed pull that produced the stored [KEY_LAST_SYNC].
+         * Absent on the first sync after upgrading from builds that always pulled with
+         * lastSync=0, so sync sends one full lastSync=0 pull before switching to delta pulls.
+         * A pull for another user or profile also sends lastSync=0.
          */
-        private const val KEY_DELTA_PULL_PROFILE_ID = "portal_delta_pull_profile_id"
+        private const val KEY_DELTA_PULL_KEY = "portal_delta_pull_key"
         private const val KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX = "portal_phase_pr_backfill_checkpoint_"
         private const val KEY_DEVICE_ID = "portal_device_id"
         private const val KEY_STORAGE_VERIFIED = "portal_storage_verified"
@@ -146,6 +147,13 @@ class PortalTokenStorage(private val settings: Settings) {
         val previousUserId: String? = settings.getStringOrNull(KEY_USER_ID)
         val sameUser = previousUserId != null && previousUserId == response.user.id
         val existingPremium: Boolean = if (sameUser) settings[KEY_IS_PREMIUM, false] else false
+        if (!sameUser) {
+            // A different account must not reuse the previous account's delta-pull state:
+            // its first pull is a full lastSync=0 pull (the marker is also user-keyed).
+            // KEY_LAST_SYNC itself is kept because push uses it as the "modified since"
+            // bound; resetting it would upload all local history to the new account.
+            settings.remove(KEY_DELTA_PULL_KEY)
+        }
 
         settings[KEY_TOKEN] = response.accessToken
         settings[KEY_REFRESH_TOKEN] = response.refreshToken
@@ -189,11 +197,21 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_LAST_SYNC] = timestamp
     }
 
-    /** Profile id of the last completed pull, or null if no delta-capable pull has completed yet. */
-    fun getDeltaPullProfileId(): String? = settings.getStringOrNull(KEY_DELTA_PULL_PROFILE_ID)
+    /** "userId:profileId" of the pull that produced the stored lastSync, or null if unknown. */
+    fun getDeltaPullKey(): String? = settings.getStringOrNull(KEY_DELTA_PULL_KEY)
 
-    fun setDeltaPullProfileId(profileId: String) {
-        settings[KEY_DELTA_PULL_PROFILE_ID] = profileId
+    /**
+     * Records a completed pull: the new lastSync first, then the delta-pull marker, so an
+     * interruption between the two writes leaves an absent/stale marker (next pull is a
+     * safe full pull) rather than a marker vouching for an older lastSync. A null
+     * [deltaPullKey] removes the marker so the next pull is a full pull.
+     */
+    fun recordCompletedPull(syncTime: Long, deltaPullKey: String?) {
+        settings.remove(KEY_DELTA_PULL_KEY)
+        settings[KEY_LAST_SYNC] = syncTime
+        if (deltaPullKey != null) {
+            settings[KEY_DELTA_PULL_KEY] = deltaPullKey
+        }
     }
 
     fun getPhasePRBackfillCheckpoint(profileId: String): Long = settings[phasePRBackfillCheckpointKey(profileId), 0L]
@@ -267,7 +285,7 @@ class PortalTokenStorage(private val settings: Settings) {
         settings.remove(KEY_IS_PREMIUM)
         settings.remove(KEY_SUBSCRIPTION_TIER)
         settings.remove(KEY_LAST_SYNC) // Reset so re-link does a full pull
-        settings.remove(KEY_DELTA_PULL_PROFILE_ID)
+        settings.remove(KEY_DELTA_PULL_KEY)
         // Keep device ID for stable identity
 
         _isAuthenticated.value = false

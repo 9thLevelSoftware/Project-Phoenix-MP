@@ -1607,6 +1607,7 @@ class SqlDelightSyncRepository(
         personalRecords: List<PersonalRecordSyncDto>,
         lastSync: Long,
         profileId: String,
+        serverWinsRoutineIds: Set<String>,
     ) {
         withContext(Dispatchers.IO) {
             // Use a single outer transaction that wraps all entity merges.
@@ -1676,7 +1677,7 @@ class SqlDelightSyncRepository(
                 for (portalRoutine in routines) {
                     val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
 
-                    if (existing != null) {
+                    if (existing != null && portalRoutine.id !in serverWinsRoutineIds) {
                         val localUpdatedAt = existing.updatedAt ?: 0L
                         if (localUpdatedAt > lastSync) {
                             continue // Local version is newer

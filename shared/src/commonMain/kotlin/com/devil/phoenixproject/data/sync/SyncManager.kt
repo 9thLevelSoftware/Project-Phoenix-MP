@@ -386,6 +386,15 @@ class SyncManager(
      */
     private var lastFailedBatchHash: Int? = null
 
+    /**
+     * Routine ids whose push the server rejected under LWW (server copy is newer).
+     * The next completed pull applies the server version for these even though the
+     * local row was edited after lastSync; otherwise the "local wins" routine merge
+     * would keep the stale local copy and delta pulls would never re-send the server
+     * row. Cleared once a pull completes. Guarded by [syncMutex].
+     */
+    private val pendingServerWinsRoutineIds = mutableSetOf<String>()
+
     private val syncMutex = Mutex()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
@@ -561,9 +570,12 @@ class SyncManager(
      * - Debugging sync issues where delta sync returns empty results
      *
      * This will cause the next sync to pull ALL data from the server, not just
-     * changes since the last sync: the pull sends lastSync=0 and EMPTY known entity
-     * ids, so the server returns the whole profile even for rows this device
-     * already holds. Note: push will still only send unsynced local data.
+     * changes since the last sync: the pull sends lastSync=0, so the server returns
+     * the whole profile. It still sends the device's known entity ids so the server
+     * also returns tombstones (e.g. deleted personal records) for rows this device
+     * holds. A [retryPull] after a failed forced resync behaves the same, because the
+     * stored lastSync stays 0 until a pull completes. Note: push will still only send
+     * unsynced local data.
      *
      * @return Result from the subsequent sync operation
      */
@@ -571,7 +583,7 @@ class SyncManager(
         Logger.i("SyncManager") { "Forcing full resync - resetting lastSyncTimestamp to 0" }
         tokenStorage.setLastSyncTimestamp(0L)
         _lastSyncTime.value = 0L
-        return syncInternal(fullResync = true)
+        return sync()
     }
 
     /**
@@ -584,9 +596,7 @@ class SyncManager(
      *
      * @see SyncState.PartialSuccess for incomplete sync handling
      */
-    suspend fun sync(): Result<Long> = syncInternal(fullResync = false)
-
-    private suspend fun syncInternal(fullResync: Boolean): Result<Long> = syncMutex.withLock {
+    suspend fun sync(): Result<Long> = syncMutex.withLock {
         if (!tokenStorage.hasToken()) {
             _syncState.value = SyncState.NotAuthenticated
             return@withLock Result.failure(PortalApiException("Not authenticated"))
@@ -629,6 +639,7 @@ class SyncManager(
         val pushResponse = pushResult.getOrThrow()
         val rejections = pushResponse.rejections
         val rejectedSessionIds = rejections.sessions.map { it.id }.toSet()
+        pendingServerWinsRoutineIds += rejections.routines.map { it.id }
         val totalRejections = rejections.sessions.size + rejections.routines.size +
             rejections.cycles.size + rejections.externalActivities.size +
             rejections.rpgAttributes.size + rejections.gamificationStats.size
@@ -693,15 +704,16 @@ class SyncManager(
             currentTimeMillis()
         }
 
-        // Pull remote changes using parity-based sync (entity IDs, not timestamps).
+        // Pull remote changes using parity-based sync (entity IDs plus the stored lastSync).
         // Entity IDs are collected inside pullRemoteChangesWithResult to ensure we send
         // the current state of local storage after the push has completed.
-        val pullResult = pullRemoteChangesWithResult(fullResync = fullResync)
+        val pullResult = pullRemoteChangesWithResult()
 
         return@withLock if (pullResult.isSuccess) {
             // Full success: both push and pull succeeded
-            val finalSyncTime = pullResult.getOrThrow()
-            tokenStorage.setLastSyncTimestamp(finalSyncTime)
+            val completedPull = pullResult.getOrThrow()
+            val finalSyncTime = completedPull.syncTime
+            recordCompletedPull(completedPull)
             _lastSyncTime.value = finalSyncTime
             _syncState.value = SyncState.Success(finalSyncTime)
             Result.success(finalSyncTime)
@@ -747,8 +759,9 @@ class SyncManager(
         val pullResult = pullRemoteChangesWithResult()
 
         return@withLock if (pullResult.isSuccess) {
-            val finalSyncTime = pullResult.getOrThrow()
-            tokenStorage.setLastSyncTimestamp(finalSyncTime)
+            val completedPull = pullResult.getOrThrow()
+            val finalSyncTime = completedPull.syncTime
+            recordCompletedPull(completedPull)
             _lastSyncTime.value = finalSyncTime
             _syncState.value = SyncState.Success(finalSyncTime)
             Logger.i("SyncManager") { "Pull retry succeeded, updated timestamp to $finalSyncTime" }
@@ -769,6 +782,23 @@ class SyncManager(
     }
 
     // === Private Helpers ===
+
+    /** Result of a pull whose every page merged (loop ended with `hasMore=false`). */
+    private data class CompletedPull(
+        /** Earliest server `syncTime` across the pull's pages; the next pull's lastSync. */
+        val syncTime: Long,
+        /** Delta-pull marker to store with [syncTime], or null to force a full pull next time. */
+        val deltaPullKey: String?,
+    )
+
+    /**
+     * Persists lastSync and the delta-pull marker together (lastSync first), and clears
+     * the LWW server-wins routine set that this pull has now applied.
+     */
+    private fun recordCompletedPull(completedPull: CompletedPull) {
+        tokenStorage.recordCompletedPull(completedPull.syncTime, completedPull.deltaPullKey)
+        pendingServerWinsRoutineIds.clear()
+    }
 
     private suspend fun pushLocalChanges(): Result<PortalSyncPushResponse> {
         val userId = tokenStorage.currentUser.value?.id
@@ -1463,28 +1493,37 @@ class SyncManager(
      *
      * Delta pulls: the request carries the stored server `syncTime` of the last completed
      * pull as `lastSync`, captured once before the page loop so every page of this pull
-     * sends the same value. The server then skips known entities unchanged since then.
-     * The caller persists the new `syncTime` only after the final page (`hasMore=false`).
+     * sends the same value. The server then skips known entities unchanged since then
+     * (minus a small overlap). The caller persists the new value only after the final
+     * page (`hasMore=false`). The new value is the EARLIEST page `syncTime` of this pull:
+     * a known row edited while later pages were being fetched is then re-sent by the
+     * next pull instead of being skipped for good.
      *
-     * `lastSync=0` (full pull) is sent instead when:
-     *  - [fullResync] is set (forceFullResync), which also sends EMPTY known ids;
+     * `lastSync=0` (full pull) is sent instead when the stored value is not known to
+     * belong to this user + profile (delta-pull marker absent or different):
      *  - no pull has completed since upgrading from builds that always sent 0 (one-time
      *    full pull, so server-side fixes made before the upgrade reach this device);
-     *  - the stored lastSync was produced by a pull of a different profile (the stored
-     *    timestamp is global, but known ids and server filtering are per profile).
+     *  - the stored lastSync was produced by a pull of a different profile or account
+     *    (the stored timestamp is global, but known ids and server filtering are per
+     *    user and profile);
+     *  - the previous pull's external activities were truncated by the server cap.
+     * [forceFullResync] resets the stored value to 0 and so also sends 0.
      *
-     * @return Result with final syncTime on success, or failure with classified error
+     * @return Result with the completed pull on success, or failure with classified error
      */
-    private suspend fun pullRemoteChangesWithResult(fullResync: Boolean = false): Result<Long> {
+    private suspend fun pullRemoteChangesWithResult(): Result<CompletedPull> {
         val deviceId = tokenStorage.getDeviceId()
         val activeProfileId = userProfileRepository.activeProfile.value?.id
         val mergeProfileId = activeProfileId ?: "default"
         val lastSync = tokenStorage.getLastSyncTimestamp()
-        val deltaPullProfileId = tokenStorage.getDeltaPullProfileId()
-        val requestLastSync = if (fullResync || deltaPullProfileId != mergeProfileId) 0L else lastSync
+        val deltaPullKey = tokenStorage.currentUser.value?.id?.let { userId -> "$userId:$mergeProfileId" }
+        val storedDeltaPullKey = tokenStorage.getDeltaPullKey()
+        val deltaMarkerMatches = deltaPullKey != null && storedDeltaPullKey == deltaPullKey
+        val requestLastSync = if (deltaMarkerMatches) lastSync else 0L
+        val serverWinsRoutineIds = pendingServerWinsRoutineIds.toSet()
         Logger.i("SyncManager") {
-            "Pull mode: requestLastSync=$requestLastSync (stored=$lastSync, fullResync=$fullResync, " +
-                "deltaPullProfile=${deltaPullProfileId ?: "none"}, profile=$mergeProfileId)"
+            "Pull mode: requestLastSync=$requestLastSync (stored=$lastSync, deltaMarkerMatches=$deltaMarkerMatches, " +
+                "profile=$mergeProfileId, serverWinsRoutines=${serverWinsRoutineIds.size})"
         }
 
         // Collect local entity IDs for parity comparison.
@@ -1495,15 +1534,11 @@ class SyncManager(
         // the mobile-side dedupe against local DB to handle the tail. This is
         // strictly better than the prior server behavior which silently
         // returned empty for over-cap lists.
-        //
-        // A forced full resync sends no known ids, so the server returns the whole
-        // profile (not only rows this device lacks).
-        val rawSessionIds = if (fullResync) emptyList() else syncRepository.getAllSessionIds(mergeProfileId)
-        val rawRoutineIds = if (fullResync) emptyList() else syncRepository.getAllRoutineIds(mergeProfileId)
-        val rawCycleIds = if (fullResync) emptyList() else syncRepository.getAllCycleIds(mergeProfileId)
-        val rawBadgeIds = if (fullResync) emptyList() else syncRepository.getAllBadgeIds(mergeProfileId)
-        val rawPersonalRecordIds =
-            if (fullResync) emptyList() else syncRepository.getAllPersonalRecordIds(mergeProfileId)
+        val rawSessionIds = syncRepository.getAllSessionIds(mergeProfileId)
+        val rawRoutineIds = syncRepository.getAllRoutineIds(mergeProfileId)
+        val rawCycleIds = syncRepository.getAllCycleIds(mergeProfileId)
+        val rawBadgeIds = syncRepository.getAllBadgeIds(mergeProfileId)
+        val rawPersonalRecordIds = syncRepository.getAllPersonalRecordIds(mergeProfileId)
 
         // fix(pull 400): TemplateConverter mints cycle-derived routine IDs as
         // "cycle_routine_<uuid>" which aren't valid UUIDs. The server's
@@ -1565,7 +1600,9 @@ class SyncManager(
         var pagesProcessed = 0
         var totalEntitiesFetched = 0
         var currentCursor: String? = null
-        var finalSyncTime: Long = 0
+        // Earliest server syncTime across pages: the snapshot boundary the whole pull is safe from.
+        var pullSyncTime: Long? = null
+        var externalActivitiesTruncated = false
         val seenCursors = mutableSetOf<String>() // cursor-repetition detection (issue #679)
 
         // Pagination loop: fetch pages until hasMore is false
@@ -1692,14 +1729,16 @@ class SyncManager(
                 pullResponse.externalActivities.size
             totalEntitiesFetched += pageEntityCount
 
-            // Empty page warning (shouldn't happen in normal operation)
+            // Empty page with hasMore=true: stop to prevent an infinite loop, but treat it as
+            // a pull failure (like a missing cursor) so neither lastSync nor the delta-pull
+            // marker advances over pages that were never fetched.
             if (pageEntityCount == 0 && pullResponse.hasMore) {
-                Logger.w("SyncManager") {
-                    "Pull page $pagesProcessed returned empty but hasMore=true. Breaking to prevent infinite loop."
-                }
-                // Treat as end of pagination
-                finalSyncTime = pullResponse.syncTime
-                break
+                val error = PortalApiException(
+                    "Pull page $pagesProcessed returned no entities but hasMore=true. " +
+                        "Processed $totalEntitiesFetched entities. Server pagination protocol error.",
+                )
+                Logger.e("SyncManager") { error.message!! }
+                return Result.failure(error)
             }
 
             Logger.d("SyncManager") {
@@ -1723,6 +1762,7 @@ class SyncManager(
                 lastSync = lastSync,
                 mergeProfileId = mergeProfileId,
                 isFirstPage = pagesProcessed == 1,
+                serverWinsRoutineIds = serverWinsRoutineIds,
             )
             if (mergeResult.isFailure) {
                 // Map Result<Unit> to Result<Long> for consistent return type
@@ -1737,7 +1777,10 @@ class SyncManager(
             }
 
             // Update pagination state
-            finalSyncTime = pullResponse.syncTime
+            pullSyncTime = pullSyncTime?.let { minOf(it, pullResponse.syncTime) } ?: pullResponse.syncTime
+            if (pullResponse.externalActivitiesHasMore) {
+                externalActivitiesTruncated = true
+            }
 
             if (!pullResponse.hasMore) {
                 // All pages complete
@@ -1767,11 +1810,26 @@ class SyncManager(
         // do not prove deletion. Server-side routine/cycle deletes need an
         // explicit tombstone channel before local hard-delete is safe.
 
-        // Every page merged: the caller's stored lastSync (persisted next) now belongs
-        // to this profile, so the next pull for it may send a real lastSync.
-        tokenStorage.setDeltaPullProfileId(mergeProfileId)
+        // The server caps external activities at 500 per pull (oldest synced_at first)
+        // and has no cursor for the rest. A delta lastSync would skip the truncated tail
+        // for good, so drop the delta-pull marker: the next pull is a full lastSync=0
+        // pull (the pre-delta behaviour). Delivering the tail needs a server cursor.
+        val completedDeltaPullKey = if (externalActivitiesTruncated) {
+            Logger.w("SyncManager") {
+                "Pull: server truncated external activities (externalActivitiesHasMore=true); " +
+                    "next pull will be a full pull. Activities beyond the server cap are not delivered."
+            }
+            null
+        } else {
+            deltaPullKey
+        }
 
-        return Result.success(finalSyncTime)
+        return Result.success(
+            CompletedPull(
+                syncTime = pullSyncTime ?: lastSync,
+                deltaPullKey = completedDeltaPullKey,
+            ),
+        )
     }
 
     private suspend fun applyPulledProfilePreferences(
@@ -1861,6 +1919,7 @@ class SyncManager(
         lastSync: Long,
         mergeProfileId: String,
         isFirstPage: Boolean,
+        serverWinsRoutineIds: Set<String>,
     ): Result<Unit> {
         applyPulledProfilePreferences(
             dtos = pullResponse.profilePreferenceSections,
@@ -1970,6 +2029,7 @@ class SyncManager(
                     personalRecords = prDtos,
                     lastSync = lastSync,
                     profileId = mergeProfileId,
+                    serverWinsRoutineIds = serverWinsRoutineIds,
                 )
             } else {
                 syncRepository.mergeAllPullData(
@@ -1981,6 +2041,7 @@ class SyncManager(
                     personalRecords = prDtos,
                     lastSync = lastSync,
                     profileId = mergeProfileId,
+                    serverWinsRoutineIds = serverWinsRoutineIds,
                 )
             }
 

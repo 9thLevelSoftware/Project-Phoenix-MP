@@ -311,6 +311,45 @@ class ConflictResolutionTest {
         assertEquals(1L, exercise.isAMRAP)
     }
 
+    @Test
+    fun `mergeAllPullData - LWW-rejected routine takes the server version even if edited after lastSync`() = runTest {
+        val lastSync = now
+        fun localRoutine(id: String) = database.phoenixDatabaseQueries.upsertRoutine(
+            id = id,
+            name = "Local edit",
+            description = "",
+            createdAt = now - 10_000L,
+            lastUsed = null,
+            useCount = 0L,
+            updatedAt = lastSync + 1_000L, // edited after lastSync
+            profile_id = testProfileId,
+            groupId = null,
+        )
+        localRoutine("rejected-routine")
+        localRoutine("other-routine")
+
+        repository.mergeAllPullData(
+            sessions = emptyList(),
+            routines = listOf(
+                PullRoutineDto(id = "rejected-routine", name = "Portal edit", updatedAt = lastSync + 2_000L),
+                PullRoutineDto(id = "other-routine", name = "Portal edit", updatedAt = lastSync + 2_000L),
+            ),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = lastSync,
+            profileId = testProfileId,
+            serverWinsRoutineIds = setOf("rejected-routine"),
+        )
+
+        val rejected = database.phoenixDatabaseQueries.selectRoutineById("rejected-routine").executeAsOne()
+        assertEquals("Portal edit", rejected.name, "server version wins for a routine whose push was LWW-rejected")
+        assertEquals(lastSync + 2_000L, rejected.updatedAt)
+        val other = database.phoenixDatabaseQueries.selectRoutineById("other-routine").executeAsOne()
+        assertEquals("Local edit", other.name, "other locally edited routines still win")
+    }
+
     // ─── Training Cycle Merge Tests (SINGLE-ACTIVE ENFORCEMENT) ─────────────────
     //
     // NOTE: Current Implementation vs. Target State
