@@ -27,6 +27,7 @@ class FakeBleRepository : BleRepository {
     sealed interface Event {
         data object StopWorkoutEntered : Event
         data object StopWorkoutCompleted : Event
+        data object Disconnected : Event
         data class WorkoutCommand(val bytes: ByteArray) : Event {
             override fun equals(other: Any?): Boolean = other is WorkoutCommand && bytes.contentEquals(other.bytes)
 
@@ -248,6 +249,7 @@ class FakeBleRepository : BleRepository {
 
     override suspend fun disconnect() {
         disconnectCallCount++
+        events += Event.Disconnected
         setConnectionState(ConnectionState.Disconnected)
     }
 
