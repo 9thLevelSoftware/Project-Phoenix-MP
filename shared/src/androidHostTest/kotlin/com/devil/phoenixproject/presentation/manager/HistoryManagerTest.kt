@@ -304,7 +304,7 @@ class HistoryManagerTest {
             advanceUntilIdle()
             assertEquals(1, latestHistory.size)
 
-            manager.deleteAllWorkouts()
+            manager.deleteAllWorkouts("default")
             advanceUntilIdle()
             assertEquals(0, latestHistory.size)
 

@@ -1,6 +1,8 @@
 package com.devil.phoenixproject.data.sync
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.repository.ProfileRecoverySourceSnapshot
+import com.devil.phoenixproject.data.repository.ProfileRecoverySourceVerification
 import io.ktor.client.HttpClient
 import io.ktor.client.HttpClientConfig
 import io.ktor.client.call.body
@@ -226,6 +228,7 @@ fun classifyByStatusCode(
 
 /** GoTrue error codes meaning the refresh token or its session is gone for good. */
 private val DEFINITIVE_REFRESH_ERROR_CODES = setOf(
+    "invalid_grant",
     "refresh_token_not_found",
     "refresh_token_already_used",
     "session_not_found",
@@ -238,10 +241,8 @@ private val DEFINITIVE_REFRESH_ERROR_CODES = setOf(
  * the user sent to sign in again:
  * - one of [DEFINITIVE_REFRESH_ERROR_CODES], whatever the status;
  * - 401/403;
- * - 400 carrying a parsed GoTrue error code (GoTrue reports revoked/rotated
- *   refresh tokens as 400, e.g. `refresh_token_not_found` or legacy
- *   `invalid_grant`). A bare 400 without a GoTrue body (CDN/WAF/proxy) stays
- *   recoverable so an intermediary incident can't sign everyone out.
+ * A bare or unknown 400 (CDN/WAF/proxy) stays recoverable so an intermediary
+ * incident can't sign everyone out.
  *
  * Everything else stays recoverable: 5xx, 429, and network/timeout errors, which
  * reach here as a [PortalApiException] with a null status code.
@@ -250,8 +251,7 @@ internal fun isDefinitiveRefreshFailure(error: Throwable): Boolean {
     if (error !is PortalApiException) return false
     return error.errorCode in DEFINITIVE_REFRESH_ERROR_CODES ||
         error.statusCode == 401 ||
-        error.statusCode == 403 ||
-        (error.statusCode == 400 && error.errorCode != null)
+        error.statusCode == 403
 }
 
 open class PortalApiClient(
@@ -584,6 +584,36 @@ open class PortalApiClient(
                 ),
             )
         }
+    }
+
+    internal suspend fun verifyProfileRecoverySource(
+        source: ProfileRecoverySourceSnapshot,
+    ): Result<ProfileRecoverySourceVerification> = authenticatedRequest<List<ProfileRecoverySourceRpcRow>> { token ->
+        httpClient.post("${supabaseConfig.url}/rest/v1/rpc/verify_profile_recovery_source") {
+            bearerAuth(token)
+            header("apikey", supabaseConfig.anonKey)
+            setBody(
+                ProfileRecoverySourceRpcRequest(
+                    sourceProfileId = source.sourceProfileId,
+                    workoutSessionIds = source.workoutSessionIds,
+                    routineIds = source.routineIds,
+                    cycleIds = source.cycleIds,
+                    personalRecordIds = source.personalRecordIds,
+                    proofWorkoutSessionIds = source.proofWorkoutSessionIds,
+                    proofRoutineIds = source.proofRoutineIds,
+                    proofCycleIds = source.proofCycleIds,
+                    proofPersonalRecordIds = source.proofPersonalRecordIds,
+                ),
+            )
+        }
+    }.mapCatching { rows ->
+        val row = rows.singleOrNull()
+            ?: throw PortalApiException("Recovery source verification returned ${rows.size} rows")
+        ProfileRecoverySourceVerification(
+            verified = row.verified,
+            authenticatedOwnerUserId = row.authenticatedOwnerUserId,
+            verifiedProofCount = row.verifiedProofCount,
+        )
     }
 
     open suspend fun callIntegrationSync(request: IntegrationSyncRequest): Result<IntegrationSyncResponse> = authenticatedRequest { token ->

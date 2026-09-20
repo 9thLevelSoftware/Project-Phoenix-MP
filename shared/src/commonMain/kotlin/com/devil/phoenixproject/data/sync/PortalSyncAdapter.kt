@@ -178,7 +178,8 @@ object PortalSyncAdapter {
 
         // Aggregate metrics across all exercises in this workout
         val totalDuration = sorted.sumOf { (it.session.duration / 1000).toInt() } // ms → s
-        // Portal expects per-cable volume and applies ×2 transform for display.
+        // Portal stores per-cable volume (KD-8); it does NOT double it. Display shows
+        // per-cable first, with the total (× cable_count) only when the cable count is known.
         // - Measured totalVolumeKg is TOTAL (both cables) → divide by cableCount
         // - Fallback weightPerCableKg × totalReps is already per-cable
         val totalVolume = sorted.sumOf { swr ->
@@ -355,6 +356,9 @@ object PortalSyncAdapter {
             // the precomputed map. Distinct from the rep-based estimate above; null
             // when this exercise has no exerciseId or no passing velocity estimate.
             velocityEstimatedOneRepMaxKg = session.exerciseId?.let { velocityEstimatesByExerciseId[it] },
+            // Same cable count that drives the totalVolume normalisation above;
+            // only 1 or 2 go on the wire, anything else is sent as unknown (omitted).
+            cableCount = PortalMappings.cableCountToWire(session.cableCount),
             sets = listOf(set),
         )
         return ExerciseWithTelemetry(exercise, telemetry)
@@ -666,7 +670,27 @@ object PortalSyncAdapter {
      * Data bundle for a cycle with its optional progress + progression.
      * SyncRepository gathers these for push.
      */
-    data class CycleWithContext(val cycle: TrainingCycle, val progress: CycleProgress? = null, val progression: CycleProgression? = null)
+    /** Longest server version string accepted (a timestamptz ISO string is ~32 chars). */
+    private const val MAX_CYCLE_SERVER_VERSION_LENGTH = 64
+
+    /**
+     * Returns [raw] unchanged when it is a usable portal cycle version (non-blank,
+     * at most 64 chars, parseable as an ISO-8601 instant), else null. The value is
+     * echoed back as baseUpdatedAt, and the portal rejects the whole push (400) for an
+     * unparseable one, so a malformed value must never be stored.
+     */
+    fun validCycleServerVersion(raw: String?): String? {
+        if (raw.isNullOrBlank() || raw.length > MAX_CYCLE_SERVER_VERSION_LENGTH) return null
+        return raw.takeIf { runCatching { kotlin.time.Instant.parse(it) }.isSuccess }
+    }
+
+    data class CycleWithContext(
+        val cycle: TrainingCycle,
+        val progress: CycleProgress? = null,
+        val progression: CycleProgression? = null,
+        /** Portal `updated_at` (verbatim ISO) last pulled or acknowledged; sent as baseUpdatedAt. */
+        val serverUpdatedAt: String? = null,
+    )
 
     /**
      * Convert a mobile TrainingCycle (with context) to portal-format DTO.
@@ -717,6 +741,10 @@ object PortalSyncAdapter {
                 restOverride = day.restTimeOverrideSeconds,
                 restType = null,
                 notes = day.name,
+                echoLevelPresent = true,
+                echoLevel = day.echoLevel?.name,
+                eccentricLoadPercentPresent = true,
+                eccentricLoadPercent = day.eccentricLoadPercent,
             )
         }
 
@@ -736,9 +764,23 @@ object PortalSyncAdapter {
             // LWW gate: persist the domain last-edit. Cycles are pushed on every
             // sync, so encode-time NOW() would blindly overwrite portal edits.
             updatedAt = epochToIso8601(cycle.updatedAt ?: cycle.createdAt),
+            progressionSettingsPresent = true,
             progressionSettings = progressionJson,
             deloadSettings = null,
+            progressStatePresent = true,
+            progressState = progress?.let {
+                PortalCycleProgressStateSyncDto(
+                    currentDayNumber = it.currentDayNumber,
+                    lastCompletedDate = it.lastCompletedDate,
+                    cycleStartDate = it.cycleStartDate,
+                    lastAdvancedAt = it.lastAdvancedAt,
+                    completedDays = it.completedDays.sorted(),
+                    missedDays = it.missedDays.sorted(),
+                    rotationCount = it.rotationCount,
+                )
+            },
             days = days,
+            baseUpdatedAt = ctx.serverUpdatedAt,
         )
     }
 

@@ -393,6 +393,35 @@ class PortalTokenRefreshTest {
     }
 
     @Test
+    fun refresh400OnlyClearsAuthForKnownGoTrueCodes() {
+        assertTrue(
+            isDefinitiveRefreshFailure(
+                PortalApiException("Invalid grant", null, 400, errorCode = "invalid_grant"),
+            ),
+        )
+        assertFalse(
+            isDefinitiveRefreshFailure(
+                PortalApiException("Proxy rejected request", null, 400, errorCode = "proxy_error"),
+            ),
+        )
+    }
+
+    @Test
+    fun unknownRefresh400PreservesAuthForRecovery() = runHttpTest {
+        saveExpiredSession()
+        val client = clientRespondingToRefresh(
+            status = HttpStatusCode.BadRequest,
+            body = """{"error_code":"proxy_error","msg":"upstream rejected request"}""",
+        )
+
+        val result = client.refreshIfNeeded()
+
+        assertEquals(400, (result.exceptionOrNull() as? PortalApiException)?.statusCode)
+        assertEquals("old-refresh", tokenStorage.getRefreshToken())
+        assertTrue(tokenStorage.isAuthenticated.value)
+    }
+
+    @Test
     fun serverError503DuringRefreshPreservesTokens() = runHttpTest {
         saveExpiredSession()
         val client = clientRespondingToRefresh(

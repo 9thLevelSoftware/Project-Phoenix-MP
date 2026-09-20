@@ -55,7 +55,6 @@
 
     <!-- ==================== Workout controls ==================== -->
     <string name="start_workout">Start Workout</string>
-    <string name="stop_workout">Stop Workout</string>
     <string name="start_exercise">START EXERCISE</string>
     <string name="stop_set">Stop Set</string>
     <string name="end_workout">End Workout</string>
@@ -222,7 +221,6 @@
     <string name="duplicate_routines_message">New copies will be created with \'(Copy)\' suffix.</string>
     <string name="move_to_profile">Move to Profile</string>
     <string name="copy_to_profile">Copy to Profile</string>
-    <string name="select_target_profile">Select Target Profile</string>
     <string name="move_routines_confirm">Move %1$d routines to %2$s?</string>
     <string name="copy_routines_confirm">Copy %1$d routines to %2$s?</string>
     <string name="no_other_profiles">No other profiles available. Create a new profile first.</string>
@@ -517,7 +515,6 @@
     <string name="cd_stop">Stop</string>
     <string name="cd_previous">Previous</string>
     <string name="cd_next">Next</string>
-    <string name="cd_select">Select</string>
     <string name="cd_tip">Tip</string>
 
     <!-- Workout -->
@@ -747,7 +744,7 @@
     <string name="delete_routine_session_title">Delete Routine Session?</string>
     <string name="delete_routine_session_message">This will delete all %1$d sets from this routine. This action cannot be undone.</string>
     <string name="delete_all_workouts_title">Delete All Workouts?</string>
-    <string name="delete_all_workouts_message">This will permanently delete all workout history. This action cannot be undone.</string>
+    <string name="delete_all_workouts_message">This will permanently delete all workout history for %1$s. This action cannot be undone.</string>
 
     <!-- ==================== Dialog slot/hierarchy fixes (task-3.8) ==================== -->
     <string name="bulk_weight_adjust_select_hint">Select a percentage or enter a value to enable Apply</string>
@@ -863,4 +860,14 @@
     <string name="startup_export_database_files">Export database files</string>
     <string name="startup_export_failed">The database files could not be exported. Nothing was changed; you can try again.</string>
     <string name="startup_contact_support">Contact support (GitHub Issues)</string>
+    <!-- PR 28: voice safe-word emergency stop availability -->
+    <string name="voice_stop_unavailable_chip">Voice stop unavailable: %1$s</string>
+    <string name="voice_stop_unavailable_snackbar">Voice stop unavailable: %1$s. Use the on-screen Stop button to end the set.</string>
+    <string name="voice_stop_reason_profile_switching">profile is still loading</string>
+    <string name="voice_stop_reason_not_configured">no safe word set</string>
+    <string name="voice_stop_reason_not_calibrated">safe word not calibrated</string>
+    <string name="voice_stop_reason_recognizer_unavailable">speech recognition unavailable on this device</string>
+    <string name="voice_stop_reason_permission">microphone permission denied</string>
+    <string name="voice_stop_reason_audio_focus_lost">another app took the microphone</string>
+    <string name="voice_stop_reason_start_failed">speech recognition could not start</string>
 </resources>

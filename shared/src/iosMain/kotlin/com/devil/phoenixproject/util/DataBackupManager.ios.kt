@@ -9,6 +9,7 @@ import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
@@ -343,28 +344,15 @@ class IosDataBackupManager(
 
     override suspend fun importFromFile(filePath: String): Result<ImportResult> = withContext(Dispatchers.IO) {
         try {
-            val attrs = fileManager.attributesOfItemAtPath(filePath, error = null)
-            val fileSize = (attrs?.get(NSFileSize) as? NSNumber)?.longValue
-
-            if (fileSize != null && fileSize < STREAMING_IMPORT_THRESHOLD) {
-                // Small file: use proven non-streaming path
-                val data = NSData.dataWithContentsOfFile(filePath)
-                    ?: throw Exception("Cannot read file")
-                val jsonString = NSString.create(data, NSUTF8StringEncoding)?.toString()
-                    ?: throw Exception("Cannot decode file contents")
-                importFromJson(jsonString)
-            } else {
-                // Large file or unknown size: streaming import to avoid OOM
-                Logger.i { "Using streaming import for file (size=${fileSize ?: "unknown"} bytes)" }
-                val source = FileBackupStreamSource(filePath)
-                try {
-                    source.open()
-                    importFromStream(source)
-                } finally {
-                    source.close()
-                }
+            val source = FileBackupStreamSource(filePath)
+            try {
+                source.open()
+                importFromStream(source)
+            } finally {
+                source.close()
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }

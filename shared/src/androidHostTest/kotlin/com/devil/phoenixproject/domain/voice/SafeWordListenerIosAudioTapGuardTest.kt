@@ -16,7 +16,7 @@ class SafeWordListenerIosAudioTapGuardTest {
     private val safeWordListenerSource: File
         get() = File(
             projectRoot,
-            "shared/src/iosMain/kotlin/com/devil/phoenixproject/domain/voice/SafeWordListener.ios.kt",
+            "shared/src/iosMain/kotlin/com/devil/phoenixproject/domain/voice/IosSafeWordListener.kt",
         )
 
     @Test
@@ -187,7 +187,7 @@ class SafeWordListenerIosAudioTapGuardTest {
             "iOS safe-word listener must call NSNotificationCenter.removeObserver(observer) on cleanup.",
         )
 
-        val stopListeningIndex = source.indexOf("actual fun stopListening()")
+        val stopListeningIndex = source.indexOf("override fun stopListening()")
         val removeCallIndex = source.indexOf("removeLifecycleObservers()", stopListeningIndex)
         assertTrue(
             stopListeningIndex >= 0,
@@ -196,6 +196,31 @@ class SafeWordListenerIosAudioTapGuardTest {
         assertTrue(
             removeCallIndex >= 0 && removeCallIndex > stopListeningIndex,
             "stopListening() must call removeLifecycleObservers() to detach foreground / interruption observers.",
+        )
+    }
+
+    // ---- F-039 / review R-7: the armed claim must be earned ----
+
+    @Test
+    fun iosSafeWordListener_armsOnlyAfterTheAudioEngineIsRunningAndBoundsRestarts() {
+        val source = safeWordListenerSource.readText()
+
+        assertTrue(
+            !source.contains("_state.value = SafeWordState.Armed"),
+            "Armed must come from armingTracker.onRecognizerReady(), so a restart loop that never " +
+                "opens the microphone cannot claim the voice emergency stop is live.",
+        )
+        val engineStartedIndex = source.indexOf("if (!engineStarted)")
+        val armedIndex = source.indexOf("armingTracker.onRecognizerReady()")
+        assertTrue(engineStartedIndex >= 0, "iOS listener must check that the audio engine started.")
+        assertTrue(
+            armedIndex > engineStartedIndex,
+            "The listener may only arm after the audio engine is actually running.",
+        )
+        assertTrue(
+            source.contains("armingTracker.onStartAttempt()"),
+            "Every start attempt must go through the arming budget so a permanently failing " +
+                "recognizer is reported instead of restarting forever.",
         )
     }
 }
