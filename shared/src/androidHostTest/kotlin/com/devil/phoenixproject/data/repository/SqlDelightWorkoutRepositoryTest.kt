@@ -487,6 +487,42 @@ class SqlDelightWorkoutRepositoryTest {
         assertEquals(exercise.id, reloaded!!.exercises.first().exercise.id)
     }
 
+    @Test
+    fun `unrelated routine save preserves quarantined portal duration state`() = runTest {
+        database.seedExercise(id = "bench", name = "Bench Press", muscleGroup = "Chest")
+        val routine = Routine(
+            id = "routine-quarantined-duration",
+            name = "Quarantined duration",
+            exercises = listOf(
+                RoutineExercise(
+                    id = "re-quarantined-duration",
+                    exercise = Exercise(
+                        id = "bench",
+                        name = "Bench Press",
+                        muscleGroup = "Chest",
+                    ),
+                    orderIndex = 0,
+                    setReps = listOf(10),
+                    weightPerCableKg = 50f,
+                    duration = null,
+                ),
+            ),
+        )
+        repository.saveRoutine(routine)
+        database.phoenixDatabaseQueries.updateRoutineExerciseDurationSyncKnown(
+            durationSyncKnown = 2L,
+            id = "re-quarantined-duration",
+        )
+
+        repository.saveRoutine(routine.copy(name = "Renamed"))
+
+        val row = database.phoenixDatabaseQueries
+            .selectExercisesByRoutine("routine-quarantined-duration")
+            .executeAsOne()
+        assertNull(row.duration)
+        assertEquals(2L, row.durationSyncKnown)
+    }
+
     // ========== Profile ID Preservation Tests ==========
 
     @Test

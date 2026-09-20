@@ -1374,21 +1374,20 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
-    fun `mergePortalRoutines accepts supported durations and rejects out of range values`() = runTest {
-        repository.mergePortalRoutines(
-            routines = listOf(
-                PullRoutineDto(
-                    id = "routine-duration-bounds",
-                    name = "Duration bounds",
-                    updatedAt = 1_700_000_000_200,
-                    exercises = listOf(
-                        PullRoutineExerciseDto(id = "duration-min", name = "Min", durationSeconds = 10),
-                        PullRoutineExerciseDto(id = "duration-max", name = "Max", durationSeconds = 300),
-                        PullRoutineExerciseDto(id = "duration-short", name = "Short", durationSeconds = 9),
-                        PullRoutineExerciseDto(id = "duration-long", name = "Long", durationSeconds = 301),
-                    ),
-                ),
+    fun `mergePortalRoutines accepts supported durations and quarantines malformed present values`() = runTest {
+        val portalRoutine = PullRoutineDto(
+            id = "routine-duration-bounds",
+            name = "Duration bounds",
+            updatedAt = 1_700_000_000_200,
+            exercises = listOf(
+                PullRoutineExerciseDto(id = "duration-min", name = "Min", durationSeconds = 10),
+                PullRoutineExerciseDto(id = "duration-max", name = "Max", durationSeconds = 300),
+                PullRoutineExerciseDto(id = "duration-short", name = "Short", durationSeconds = 9),
+                PullRoutineExerciseDto(id = "duration-long", name = "Long", durationSeconds = 301),
             ),
+        )
+        repository.mergePortalRoutines(
+            routines = listOf(portalRoutine),
             lastSync = 1_700_000_000_100,
             profileId = "active-profile",
         )
@@ -1401,8 +1400,47 @@ class SqlDelightSyncRepositoryTest {
         assertEquals(1L, rows.getValue("duration-max").durationSyncKnown)
         assertNull(rows.getValue("duration-short").duration)
         assertNull(rows.getValue("duration-long").duration)
-        assertEquals(0L, rows.getValue("duration-short").durationSyncKnown)
-        assertEquals(0L, rows.getValue("duration-long").durationSyncKnown)
+        assertEquals(2L, rows.getValue("duration-short").durationSyncKnown)
+        assertEquals(2L, rows.getValue("duration-long").durationSyncKnown)
+        assertEquals(emptyList(), repository.getRoutineIdsNeedingDurationBackfill("active-profile"))
+
+        val outbound = repository.getFullRoutinesModifiedSince(0L, "active-profile").single()
+        val wireExercises = PortalSyncAdapter.toPortalRoutine(outbound, "user").exercises.associateBy { it.id }
+        assertNull(wireExercises.getValue("duration-short").durationSeconds)
+        assertNull(wireExercises.getValue("duration-long").durationSeconds)
+
+        // A repeated malformed full-pull response remains quarantined and does not restart backfill.
+        repository.mergePortalRoutines(
+            routines = listOf(portalRoutine),
+            lastSync = 0L,
+            profileId = "active-profile",
+        )
+        assertEquals(emptyList(), repository.getRoutineIdsNeedingDurationBackfill("active-profile"))
+
+        // A later corrected value can replace quarantine even while the locally newer parent wins.
+        repository.mergePortalRoutines(
+            routines = listOf(
+                portalRoutine.copy(
+                    exercises = portalRoutine.exercises.map { exercise ->
+                        when (exercise.id) {
+                            "duration-short" -> exercise.copy(durationSeconds = 60)
+                            "duration-long" -> exercise.copy(durationSeconds = 120)
+                            else -> exercise
+                        }
+                    },
+                ),
+            ),
+            lastSync = 0L,
+            profileId = "active-profile",
+        )
+        val correctedRows = database.phoenixDatabaseQueries
+            .selectExercisesByRoutine("routine-duration-bounds")
+            .executeAsList()
+            .associateBy { it.id }
+        assertEquals(60L, correctedRows.getValue("duration-short").duration)
+        assertEquals(120L, correctedRows.getValue("duration-long").duration)
+        assertEquals(1L, correctedRows.getValue("duration-short").durationSyncKnown)
+        assertEquals(1L, correctedRows.getValue("duration-long").durationSyncKnown)
     }
 
     @Test
@@ -1575,7 +1613,7 @@ class SqlDelightSyncRepositoryTest {
             id = "duration-preserve",
             routineId = "routine-duration-preserve",
             duration = 45,
-            durationSyncKnown = 1,
+            durationSyncKnown = 0,
         )
 
         repository.mergePortalRoutines(
@@ -1600,7 +1638,13 @@ class SqlDelightSyncRepositoryTest {
         val row = database.phoenixDatabaseQueries.selectExercisesByRoutine("routine-duration-preserve")
             .executeAsList().single()
         assertEquals(45L, row.duration)
-        assertEquals(1L, row.durationSyncKnown)
+        assertEquals(2L, row.durationSyncKnown)
+        assertEquals(emptyList(), repository.getRoutineIdsNeedingDurationBackfill("active-profile"))
+        val outbound = repository.getFullRoutinesModifiedSince(0L, "active-profile").single()
+        assertEquals(
+            "45",
+            PortalSyncAdapter.toPortalRoutine(outbound, "user").exercises.single().durationSeconds?.content,
+        )
     }
 
     @Test

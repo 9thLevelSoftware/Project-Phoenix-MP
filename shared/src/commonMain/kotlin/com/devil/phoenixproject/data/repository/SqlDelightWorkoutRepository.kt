@@ -921,11 +921,17 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         // An untouched row from an older build keeps "unknown" so a stale NULL is not
         // pushed as an explicit clear.
         val previous = previousDurations[exerciseRowId]
-        val durationKnown = previous == null ||
-            previous.second == 1L ||
-            previous.first != exercise.duration?.toLong()
-        if (durationKnown) {
-            queries.updateRoutineExerciseDurationSyncKnown(1L, exerciseRowId)
+        val durationSyncState = when {
+            previous == null ||
+                previous.second == 1L ||
+                previous.first != exercise.duration?.toLong() -> 1L
+            // Preserve both legacy-unknown (0) and observed-malformed (2) when an
+            // unrelated local edit rewrites the row. State 2 prevents another full
+            // pull while still omitting a null duration from the next push.
+            else -> previous.second
+        }
+        if (durationSyncState != 0L) {
+            queries.updateRoutineExerciseDurationSyncKnown(durationSyncState, exerciseRowId)
         }
     }
 

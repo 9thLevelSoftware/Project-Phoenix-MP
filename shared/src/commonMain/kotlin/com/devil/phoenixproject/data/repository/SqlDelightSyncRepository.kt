@@ -79,6 +79,9 @@ class SqlDelightSyncRepository(
      */
     private companion object {
         const val BATCH_LOOKUP_CHUNK_SIZE = 500
+        const val DURATION_SYNC_UNKNOWN = 0L
+        const val DURATION_SYNC_KNOWN = 1L
+        const val DURATION_SYNC_MALFORMED = 2L
     }
 
     /**
@@ -2887,7 +2890,16 @@ class SqlDelightSyncRepository(
         portalRoutine.exercises.forEach { exercise ->
             if (!exercise.durationSecondsPresent) return@forEach
             val incomingDuration = exercise.durationSeconds?.let(PortalSyncAdapter::sanitizeDurationSeconds)
-            if (exercise.durationSeconds != null && incomingDuration == null) return@forEach
+            if (exercise.durationSeconds != null && incomingDuration == null) {
+                val local = localExercises[exercise.id]
+                if (local?.durationSyncKnown == DURATION_SYNC_UNKNOWN) {
+                    // The field was present, so backfill is complete, but its value cannot be
+                    // accepted. State 2 omits a local null from push instead of clearing the
+                    // server and remains eligible for a later corrected portal value.
+                    queries.updateRoutineExerciseDurationSyncKnown(DURATION_SYNC_MALFORMED, exercise.id)
+                }
+                return@forEach
+            }
             val localDuration = localExercises[exercise.id]?.duration
             val localDurationIsSupported = localDuration?.let {
                 it in RoutineExercise.MIN_TIMED_DURATION_SECONDS.toLong()..
@@ -3030,7 +3042,7 @@ class SqlDelightSyncRepository(
             val incomingDuration = exercise.durationSeconds?.let(PortalSyncAdapter::sanitizeDurationSeconds)
             val incomingDurationIsSupported = exercise.durationSeconds == null || incomingDuration != null
             val localHasSupportedUnknownDuration = local?.let { row ->
-                row.durationSyncKnown == 0L && row.duration?.let {
+                row.durationSyncKnown == DURATION_SYNC_UNKNOWN && row.duration?.let {
                     it in RoutineExercise.MIN_TIMED_DURATION_SECONDS.toLong()..
                         RoutineExercise.MAX_TIMED_DURATION_SECONDS.toLong()
                 } == true
@@ -3042,9 +3054,14 @@ class SqlDelightSyncRepository(
                 acceptIncomingDuration -> incomingDuration?.toLong()
                 else -> local?.duration
             }
+            val retainedKnownDurationState = local?.durationSyncKnown
+                ?.takeIf { it == DURATION_SYNC_KNOWN }
             val durationSyncKnown = when {
-                acceptIncomingDuration -> 1L
-                else -> local?.durationSyncKnown ?: 0L
+                acceptIncomingDuration -> DURATION_SYNC_KNOWN
+                exercise.durationSecondsPresent &&
+                    exercise.durationSeconds != null &&
+                    incomingDuration == null -> retainedKnownDurationState ?: DURATION_SYNC_MALFORMED
+                else -> local?.durationSyncKnown ?: DURATION_SYNC_UNKNOWN
             }
             // Explicit portal flag when present; otherwise inherit the catalog's
             // stored classification (e.g. Squat = cable despite empty equipment).

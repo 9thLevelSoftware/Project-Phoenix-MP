@@ -272,7 +272,7 @@ CREATE TABLE RoutineExercise (
     -- Drop set offer (added in migration 46, issue #673 PR 3)
     dropSetEnabled INTEGER NOT NULL DEFAULT 0,
     dropSetMinWeightKg REAL,
-    -- 1 when `duration` is known to be current for portal sync (added in migration 53)
+    -- Duration sync state: 0 unknown, 1 authoritative, 2 malformed portal value observed.
     durationSyncKnown INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
@@ -1468,7 +1468,7 @@ WHERE id = ?;
 hydrateRoutineExerciseDurationFromSync:
 UPDATE RoutineExercise
 SET duration = :duration, durationSyncKnown = 1
-WHERE id = :id AND routineId = :routineId AND durationSyncKnown = 0;
+WHERE id = :id AND routineId = :routineId AND durationSyncKnown != 1;
 
 -- Heal legacy routine rows that are missing an exerciseId by resolving from exerciseName.
 updateRoutineExerciseId:
