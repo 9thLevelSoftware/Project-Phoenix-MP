@@ -462,6 +462,98 @@ class DWSMEquipmentRackTest {
     }
 
     @Test
+    fun `manual cross exercise rest retains edited rack selection and behavior override at set ready`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeEquipmentRackRepo.saveItems(
+                listOf(
+                    rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE),
+                    rackItem("assist", 10f, RackItemBehavior.COUNTERWEIGHT),
+                ),
+            )
+            harness.setActiveSummaryCountdownSeconds(0)
+            val routine = Routine(
+                id = "routine-issue-582-manual-rest-rack",
+                name = "Manual Rest Rack Retention",
+                exercises = listOf(
+                    routineExercise("rex-1", "Cable Row", emptyList()),
+                    routineExercise("rex-2", "Cable Curl", listOf("assist")),
+                ),
+            )
+
+            assertTrue(harness.dwsm.loadRoutineAsync(routine))
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+                restSecondsRemaining = 0,
+                nextExerciseName = routine.exercises[1].exercise.displayName,
+                isLastExercise = false,
+                currentSet = 1,
+                totalSets = 1,
+            )
+            harness.dwsm.updateActiveRackSelection(listOf("vest"))
+            harness.dwsm.updateActiveRackBehaviorOverrides(
+                mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
+            )
+
+            harness.dwsm.startNextSet()
+            advanceUntilIdle()
+
+            assertEquals(1, harness.dwsm.coordinator.currentExerciseIndex.value)
+            assertEquals(0, harness.dwsm.coordinator.currentSetIndex.value)
+            assertEquals(listOf("vest"), harness.dwsm.coordinator.activeRackItemIds.value)
+            assertEquals(
+                mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
+                harness.dwsm.coordinator.activeRackBehaviorOverrides.value,
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `routine completion clears pending rest rack selection before a later autoplay advance`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.fakeEquipmentRackRepo.saveItems(
+                listOf(
+                    rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE),
+                    rackItem("assist", 10f, RackItemBehavior.COUNTERWEIGHT),
+                ),
+            )
+            harness.setActiveSummaryCountdownSeconds(10)
+            val routine = Routine(
+                id = "routine-issue-582-completion-clears-rest-rack",
+                name = "Completion Clears Rest Rack",
+                exercises = listOf(
+                    routineExercise("rex-1", "Cable Row", emptyList()),
+                    routineExercise("rex-2", "Cable Curl", listOf("assist")),
+                ),
+            )
+
+            assertTrue(harness.dwsm.loadRoutineAsync(routine))
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+                restSecondsRemaining = 0,
+                nextExerciseName = routine.exercises[1].exercise.displayName,
+                isLastExercise = false,
+                currentSet = 1,
+                totalSets = 1,
+            )
+            harness.dwsm.updateActiveRackSelection(listOf("vest"))
+            harness.activeSessionEngine.beginRoutineCompletedRuntimeCleanup()
+
+            harness.dwsm.startNextSet()
+
+            assertEquals(listOf("assist"), harness.dwsm.coordinator.activeRackItemIds.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `single exercise completion persists rack defaults`() = runTest {
         // Issue #593: routine-bodyweight exercises now require a rep-entry
         // confirmation before `saveWorkoutSession()` runs. This test is

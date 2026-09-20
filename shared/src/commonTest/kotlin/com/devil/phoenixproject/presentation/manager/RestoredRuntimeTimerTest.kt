@@ -13,6 +13,7 @@ import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.ExerciseLoadOverlay
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSetAttemptState
+import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExecutionIdentity
 import com.devil.phoenixproject.domain.model.RoutineExercise
@@ -82,6 +83,59 @@ class RestoredRuntimeTimerTest {
             )
             assertTrue(harness.activeSessionEngine.currentRestoredRestTimerJobForTest() === timerJob)
             assertTrue(timerJob.isActive)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `resuming rest retains its owner when the next exercise has rack defaults`() = runTest {
+        val wallClockEpochMs = DWSMTestHarness.TEST_WALL_CLOCK_EPOCH_MS
+        val harness = DWSMTestHarness(this, wallClockMillisProvider = { wallClockEpochMs })
+        try {
+            val upcomingRackId = "restored-upcoming-rack"
+            harness.fakeEquipmentRackRepo.saveItems(
+                listOf(RackItem(id = upcomingRackId, name = "Upcoming Rack", weightKg = 10f)),
+            )
+            runCurrent()
+            assertEquals(listOf(upcomingRackId), harness.fakeEquipmentRackRepo.rackItems.value.map { it.id })
+            val routine = WorkoutStateFixtures.createTestRoutine(exerciseCount = 2, setsPerExercise = 1).let { baseRoutine ->
+                baseRoutine.copy(
+                    exercises = baseRoutine.exercises.mapIndexed { index, exercise ->
+                        exercise.copy(
+                            exercise = if (index == 0) exercise.exercise else baseRoutine.exercises.first().exercise,
+                            defaultRackItemIds = if (index == 0) emptyList() else listOf(upcomingRackId),
+                        )
+                    },
+                )
+            }
+            assertFalse(routine.exercises[1].exercise.isBodyweight)
+            assertEquals(listOf(upcomingRackId), routine.exercises[1].defaultRackItemIds)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            val installed = installTimerRuntime(
+                harness = harness,
+                routineSessionId = "restored-rack-defaults",
+                restDeadlineEpochMs = wallClockEpochMs + 30_000L,
+                routineOverride = routine,
+            )
+
+            assertIs<ActiveWorkoutRuntimeResumeResult.RestoredRest>(
+                harness.dwsm.resumeRoutine(installed.handle),
+            )
+            runCurrent()
+
+            assertEquals(0, harness.dwsm.restTransitionNavigationLookupsForTest)
+            val restoredOwner = assertNotNull(harness.activeSessionEngine.currentRestoredRuntimeOwnerForTest())
+            assertEquals(restoredOwner, harness.activeSessionEngine.currentRestoredRestTimerOwnerForTest())
+            assertTrue(assertNotNull(harness.activeSessionEngine.currentRestoredRestTimerJobForTest()).isActive)
+            assertEquals(listOf(upcomingRackId), harness.coordinator.activeRackItemIds.value)
+
+            harness.dwsm.extendRestTime(10)
+            runCurrent()
+
+            assertEquals(0, harness.dwsm.restTransitionNavigationLookupsForTest)
+            assertEquals(restoredOwner, harness.activeSessionEngine.currentRestoredRestTimerOwnerForTest())
+            assertEquals(40, harness.coordinator._restSecondsRemaining.value)
         } finally {
             harness.cleanup()
         }
@@ -727,13 +781,14 @@ class RestoredRuntimeTimerTest {
         pausedRestRemainingSeconds: Int? = null,
         isRestPaused: Boolean = false,
         planCase: TimerPlanCase = TimerPlanCase.NORMAL,
+        routineOverride: Routine? = null,
     ): InstalledTimerRuntime {
-        val routine = WorkoutStateFixtures.createTestRoutine(
+        val routine = routineOverride ?: WorkoutStateFixtures.createTestRoutine(
             exerciseCount = 1,
             setsPerExercise = 2,
             weightKg = 25f,
         )
-        val exercise = routine.exercises.single()
+        val exercise = routine.exercises.first()
         val profileId = harness.fakeUserProfileRepo.activeProfile.value?.id ?: "default"
         val sourceStableSessionId = "source-$routineSessionId"
         val logicalSetKey = LogicalSetKey(

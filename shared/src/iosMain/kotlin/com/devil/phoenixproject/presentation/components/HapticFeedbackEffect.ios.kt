@@ -75,12 +75,11 @@ private class IosSoundManager {
     private val repCountSoundPlayers = mutableListOf<AVAudioPlayer?>()
     private var countdownTickPlayer: AVAudioPlayer? = null // Issue #100
 
-    // Issue #611: Verbal encouragement pools (4 pools + 1 unlock SFX from PR #612)
+    // Issue #611: Verbal encouragement pools (unlock SFX is the event-keyed players map)
     private val encouragementNeutralSoundPlayers = mutableListOf<AVAudioPlayer?>()
     private val encouragementMildSoundPlayers = mutableListOf<AVAudioPlayer?>()
     private val encouragementStrongSoundPlayers = mutableListOf<AVAudioPlayer?>()
     private val encouragementDominatrixSoundPlayers = mutableListOf<AVAudioPlayer?>()
-    private var dominatrixUnlockPlayer: AVAudioPlayer? = null
 
     // Issue #522: Observer tokens for foreground + AVAudioSession interruption
     // notifications. Removed in release() to avoid leaking observers across
@@ -98,16 +97,15 @@ private class IosSoundManager {
         loadEncouragementMildSounds()
         loadEncouragementStrongSounds()
         loadEncouragementDominatrixSounds()
-        loadDominatrixUnlockSound()
         // Issue #611 §9.4: One-time boot log asserting the 4 verbal-encouragement pool sizes
         // match the PR #612 contract. Required by the implementation Gate 11-equivalent.
+        // Unlock SFX is the event-keyed `players` map entry for DOMINATRIX_MODE_UNLOCKED.
         log.i {
             "VBT: encouragement pool sizes — " +
                 "neutral=${encouragementNeutralSoundPlayers.size} " +
                 "mild=${encouragementMildSoundPlayers.size} " +
                 "strong=${encouragementStrongSoundPlayers.size} " +
-                "dominatrix=${encouragementDominatrixSoundPlayers.size} " +
-                "unlock=${if (dominatrixUnlockPlayer != null) 1 else 0}"
+                "dominatrix=${encouragementDominatrixSoundPlayers.size}"
         }
         installLifecycleObservers()
     }
@@ -191,12 +189,11 @@ private class IosSoundManager {
         prSoundPlayers.forEach { it?.prepareToPlay() }
         repCountSoundPlayers.forEach { it?.prepareToPlay() }
         countdownTickPlayer?.prepareToPlay()
-        // Issue #611: Verbal encouragement pools + dominatrix unlock SFX
+        // Issue #611: Verbal encouragement pools
         encouragementNeutralSoundPlayers.forEach { it?.prepareToPlay() }
         encouragementMildSoundPlayers.forEach { it?.prepareToPlay() }
         encouragementStrongSoundPlayers.forEach { it?.prepareToPlay() }
         encouragementDominatrixSoundPlayers.forEach { it?.prepareToPlay() }
-        dominatrixUnlockPlayer?.prepareToPlay()
     }
 
     private fun loadSounds() {
@@ -333,11 +330,6 @@ private class IosSoundManager {
             loadSound(fileName)?.let { encouragementDominatrixSoundPlayers.add(it) }
         }
         log.d { "Loaded ${encouragementDominatrixSoundPlayers.size} dominatrix sounds" }
-    }
-
-    private fun loadDominatrixUnlockSound() {
-        dominatrixUnlockPlayer = loadSound("dominatrix_unlock")
-        log.d { "Dominatrix unlock SFX loaded: ${dominatrixUnlockPlayer != null}" }
     }
 
     private fun loadSound(fileName: String): AVAudioPlayer? {
@@ -531,12 +523,6 @@ private class IosSoundManager {
             }
             pool.clear()
         }
-        try {
-            dominatrixUnlockPlayer?.stop()
-        } catch (e: Exception) {
-            // Ignore cleanup errors
-        }
-        dominatrixUnlockPlayer = null
 
         try {
             // F063: AVAudioSession is process-wide. If SafeWordListener currently

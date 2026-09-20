@@ -5,7 +5,6 @@ import com.devil.phoenixproject.data.sync.PortalSyncAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncPayload
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
-import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -676,29 +675,6 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
-    fun `mergeRoutines uses active profile id`() = runTest {
-        repository.mergeRoutines(
-            routines = listOf(
-                RoutineSyncDto(
-                    clientId = "routine-profile-b",
-                    serverId = "server-routine-profile-b",
-                    name = "Pull Day",
-                    description = "Synced routine",
-                    createdAt = 1_700_000_000_000,
-                    updatedAt = 1_700_000_000_100,
-                ),
-            ),
-        )
-
-        val routine = database.phoenixDatabaseQueries
-            .selectRoutineById("routine-profile-b")
-            .executeAsOneOrNull()
-
-        assertNotNull(routine)
-        assertEquals("active-profile", routine.profile_id)
-    }
-
-    @Test
     fun `mergePortalRoutines preserves local rack defaults for matching routine exercises`() = runTest {
         database.phoenixDatabaseQueries.insertRoutine(
             id = "routine-rack-defaults",
@@ -999,6 +975,247 @@ class SqlDelightSyncRepositoryTest {
             .single()
         assertEquals(0L, disabled.dropSetEnabled)
         assertEquals(null, disabled.dropSetMinWeightKg)
+    }
+
+    @Test
+    fun `pulling the same routine twice keeps local-only exercise settings and cycle links`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        insertLocalRoutine("routine-twice")
+        insertLocalRoutineExercise(
+            id = "rex-twice",
+            routineId = "routine-twice",
+            progressionKg = 2.5,
+            prTypeForScaling = "MAX_VOLUME",
+            setWeightsPercentOfPR = "[70,80,90]",
+            scalingBasis = "ESTIMATED_1RM",
+        )
+        queries.insertPlannedSet("planned-twice", "rex-twice", 1, "STANDARD", 5, 60.0, null, 90)
+        insertCycleDayFor("routine-twice")
+        val portalRoutine = PullRoutineDto(
+            id = "routine-twice",
+            name = "Twice Remote",
+            updatedAt = 1_700_000_000_200,
+            exercises = listOf(
+                PullRoutineExerciseDto(id = "rex-twice", routineId = "routine-twice", name = "Deadlift", reps = 5, weight = 65f, prPercentage = 80f),
+            ),
+        )
+
+        repeat(2) {
+            repository.mergeAllPullData(
+                sessions = emptyList(),
+                routines = listOf(portalRoutine),
+                cycles = emptyList(),
+                badges = emptyList(),
+                gamificationStats = null,
+                personalRecords = emptyList(),
+                lastSync = 1_700_000_000_300,
+                profileId = "active-profile",
+            )
+        }
+
+        val exercise = queries.selectExercisesByRoutine("routine-twice").executeAsList().single()
+        assertEquals(65.0, exercise.weightPerCableKg)
+        assertEquals(2.5, exercise.progressionKg)
+        assertEquals("MAX_VOLUME", exercise.prTypeForScaling)
+        assertEquals("[70,80,90]", exercise.setWeightsPercentOfPR)
+        assertEquals("ESTIMATED_1RM", exercise.scalingBasis)
+        assertEquals("Twice Remote", queries.selectRoutineById("routine-twice").executeAsOne().name)
+        assertEquals("routine-twice", queries.selectCycleDaysByCycle("cycle-link").executeAsList().single().routine_id)
+        assertEquals(1, queries.selectPlannedSetsByRoutineExercise("rex-twice").executeAsList().size)
+    }
+
+    @Test
+    fun `pull drops the local per-set percent list when the base percent of PR changed elsewhere`() = runTest {
+        // Device A deloaded 80% -> 70% (its per-set list became [70,70,70]); the push only carries
+        // the base %. Device B must not keep loading its stale [80,80,80] per-set list.
+        insertLocalRoutine("routine-deload")
+        insertLocalRoutineExercise(id = "rex-deload", routineId = "routine-deload", setWeightsPercentOfPR = "[80,80,80]")
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-deload",
+                    name = "Deload",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(id = "rex-deload", routineId = "routine-deload", name = "Deadlift", reps = 5, prPercentage = 70f),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_300,
+            profileId = "active-profile",
+        )
+
+        val exercise = database.phoenixDatabaseQueries.selectExercisesByRoutine("routine-deload").executeAsList().single()
+        assertEquals(1L, exercise.usePercentOfPR)
+        assertEquals(70L, exercise.weightPercentOfPR)
+        assertNull(exercise.setWeightsPercentOfPR)
+    }
+
+    @Test
+    fun `pull diffs routine exercises by id and keeps local superset names`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        insertLocalRoutine("routine-diff")
+        queries.insertSuperset("ss-kept", "routine-diff", "Arms finisher", 0, 45, 0)
+        queries.insertSuperset("ss-dropped", "routine-diff", "Old pair", 1, 10, 1)
+        insertLocalRoutineExercise(id = "rex-kept", routineId = "routine-diff", supersetId = "ss-kept")
+        insertLocalRoutineExercise(id = "rex-removed", routineId = "routine-diff", supersetId = "ss-dropped")
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-diff",
+                    name = "Diff",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(id = "rex-kept", routineId = "routine-diff", name = "Curl", supersetId = "ss-kept", supersetColor = "pink"),
+                        PullRoutineExerciseDto(id = "rex-new", routineId = "routine-diff", name = "Row", orderIndex = 1),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_300,
+            profileId = "active-profile",
+        )
+
+        assertEquals(listOf("rex-kept", "rex-new"), queries.selectExercisesByRoutine("routine-diff").executeAsList().map { it.id })
+        val superset = queries.selectSupersetsByRoutine("routine-diff").executeAsList().single()
+        assertEquals("ss-kept", superset.id)
+        assertEquals("Arms finisher", superset.name)
+        assertEquals(45L, superset.restBetweenSeconds)
+        assertEquals(1L, superset.colorIndex)
+    }
+
+    @Test
+    fun `pull re-enabling percent of PR clears a per-set list stored while the mode was off`() = runTest {
+        // A pull without prPercentage stores the fallback base 80 and turns the mode off; the
+        // per-set list is kept but unused. Re-enabling at 80 must not revive that stale list.
+        insertLocalRoutine("routine-reenable")
+        insertLocalRoutineExercise(id = "rex-reenable", routineId = "routine-reenable", usePercentOfPR = 0, setWeightsPercentOfPR = "[90,90,90]")
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-reenable",
+                    name = "Re-enable",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(id = "rex-reenable", routineId = "routine-reenable", name = "Deadlift", reps = 5, prPercentage = 80f),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_300,
+            profileId = "active-profile",
+        )
+
+        val exercise = database.phoenixDatabaseQueries.selectExercisesByRoutine("routine-reenable").executeAsList().single()
+        assertEquals(1L, exercise.usePercentOfPR)
+        assertEquals(80L, exercise.weightPercentOfPR)
+        assertNull(exercise.setWeightsPercentOfPR)
+    }
+
+    @Test
+    fun `pull leaves a locally soft-deleted routine deleted`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        insertLocalRoutine("routine-deleted")
+        insertLocalRoutineExercise(id = "rex-deleted", routineId = "routine-deleted")
+        // As production does: the tombstone stamps updatedAt = deletedAt, here older than lastSync
+        // (a tombstone that was never pushed, e.g. deleted under another profile).
+        queries.softDeleteRoutine(deletedAt = 1_700_000_000_050, updatedAt = 1_700_000_000_050, id = "routine-deleted")
+        val portalRoutine = PullRoutineDto(
+            id = "routine-deleted",
+            name = "Resurrected?",
+            updatedAt = 1_700_000_000_200,
+            exercises = listOf(PullRoutineExerciseDto(id = "rex-deleted", routineId = "routine-deleted", name = "Deadlift", weight = 90f)),
+        )
+
+        repository.mergePortalRoutines(listOf(portalRoutine), lastSync = 1_700_000_000_300, profileId = "active-profile")
+        repository.mergeAllPullData(
+            sessions = emptyList(),
+            routines = listOf(portalRoutine),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 1_700_000_000_300,
+            profileId = "active-profile",
+        )
+
+        val routine = queries.selectRoutineById("routine-deleted").executeAsOne()
+        assertEquals(1_700_000_000_050, routine.deletedAt)
+        assertEquals("Local routine-deleted", routine.name)
+        assertEquals(60.0, queries.selectExercisesByRoutine("routine-deleted").executeAsList().single().weightPerCableKg)
+    }
+
+    private fun insertLocalRoutine(id: String) {
+        database.phoenixDatabaseQueries.insertRoutine(
+            id = id,
+            name = "Local $id",
+            description = "",
+            createdAt = 1_700_000_000_000,
+            lastUsed = null,
+            useCount = 0,
+            profile_id = "active-profile",
+            groupId = null,
+            deletedAt = null,
+        )
+    }
+
+    private fun insertCycleDayFor(routineId: String) {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertTrainingCycle("cycle-link", "Cycle", null, 1_700_000_000_000, 1, "active-profile", null, 1)
+        queries.insertCycleDay("cycle-day-link", "cycle-link", 1, "Day 1", routineId, 0, null, null, null, null, null)
+    }
+
+    private fun insertLocalRoutineExercise(
+        id: String,
+        routineId: String,
+        progressionKg: Double = 0.0,
+        prTypeForScaling: String = "MAX_WEIGHT",
+        setWeightsPercentOfPR: String? = null,
+        scalingBasis: String? = null,
+        supersetId: String? = null,
+        usePercentOfPR: Long = 1,
+    ) {
+        database.phoenixDatabaseQueries.insertRoutineExercise(
+            id = id,
+            routineId = routineId,
+            exerciseName = "Deadlift",
+            exerciseMuscleGroup = "Back",
+            exerciseEquipment = "Cable",
+            exerciseDefaultCableConfig = "DOUBLE",
+            exerciseId = null,
+            cableConfig = "DOUBLE",
+            orderIndex = 0,
+            setReps = "5",
+            weightPerCableKg = 60.0,
+            setWeights = "",
+            mode = "OldSchool",
+            eccentricLoad = 100,
+            echoLevel = 1,
+            progressionKg = progressionKg,
+            restSeconds = 90,
+            duration = null,
+            setRestSeconds = "[]",
+            perSetRestTime = 0,
+            isAMRAP = 0,
+            supersetId = supersetId,
+            orderInSuperset = 0,
+            usePercentOfPR = usePercentOfPR,
+            weightPercentOfPR = 80,
+            prTypeForScaling = prTypeForScaling,
+            setWeightsPercentOfPR = setWeightsPercentOfPR,
+            stallDetectionEnabled = 1,
+            stopAtTop = 0,
+            repCountTiming = "TOP",
+            setEchoLevels = "",
+            warmupSets = "",
+            defaultRackItemIds = "[]",
+            rackBehaviorOverrides = "{}",
+            scalingBasis = scalingBasis,
+            isBodyweight = null,
+            dropSetEnabled = 0L,
+            dropSetMinWeightKg = null,
+        )
     }
 
     @Test

@@ -19,7 +19,6 @@ import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
 import com.devil.phoenixproject.domain.onerepmax.WorkoutVelocityPoint
-import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -220,14 +219,14 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                                 Logger.w {
                                     "Routine exercise had stale exerciseId=$exerciseId; resolved by name '${row.exerciseName}' -> ${byName.id} and healing row ${row.id}"
                                 }
-                                queries.updateRoutineExerciseId(byName.id, row.id)
+                                healRoutineExerciseId(byName.id, row.id)
                             }
                 } ?: exerciseRepository.findByName(row.exerciseName)
                     ?.also { byName ->
                         Logger.i {
                             "Routine exercise missing exerciseId for '${row.exerciseName}'; resolved to ${byName.id} and healing row ${row.id}"
                         }
-                        queries.updateRoutineExerciseId(byName.id, row.id)
+                        healRoutineExerciseId(byName.id, row.id)
                     }
 
                 val exercise = resolvedExercise ?: run {
@@ -248,7 +247,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                                 "(was null in RoutineExercise ${row.id})"
                         }
                         // Heal the DB row so subsequent loads don't repeat this
-                        queries.updateRoutineExerciseId(autoCreated.id!!, row.id)
+                        healRoutineExerciseId(autoCreated.id!!, row.id)
                         autoCreated
                     } else {
                         // Last resort: generate a synthetic ID to prevent null propagation
@@ -675,21 +674,47 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
             }
         }
 
+    /**
+     * Best-effort heal of a RoutineExercise.exerciseId. A failed write (e.g. a foreign-key
+     * violation) must not drop the exercise from the loaded routine: the caller keeps the
+     * resolved exercise and the row stays unhealed until the next load (F-083).
+     */
+    private fun healRoutineExerciseId(exerciseId: String?, rowId: String) {
+        try {
+            queries.updateRoutineExerciseId(exerciseId, rowId)
+        } catch (e: Exception) {
+            Logger.w(e) { "Could not heal exerciseId for routine exercise $rowId; keeping the unhealed row" }
+        }
+    }
+
     override suspend fun saveRoutine(routine: Routine) {
         withContext(Dispatchers.IO) {
             // Generate a UUID for the routine if not provided
             val routineId = routine.id.takeIf { it.isNotBlank() } ?: generateUUID()
 
             db.transaction {
-                // Upsert the routine (handles both new and existing routines)
-                queries.upsertRoutine(
-                    id = routineId,
+                // Upsert in place: UPDATE, then INSERT OR IGNORE. A REPLACE would cascade-delete
+                // the routine and null CycleDay.routine_id for any training cycle using it.
+                val updatedAt = currentTimeMillis()
+                queries.updateRoutineFields(
                     name = routine.name,
                     description = "", // Default empty description
                     createdAt = routine.createdAt,
                     lastUsed = routine.lastUsed,
                     useCount = routine.useCount.toLong(),
-                    updatedAt = currentTimeMillis(),
+                    updatedAt = updatedAt,
+                    profile_id = routine.profileId,
+                    groupId = routine.groupId,
+                    id = routineId,
+                )
+                queries.insertRoutineIgnore(
+                    id = routineId,
+                    name = routine.name,
+                    description = "",
+                    createdAt = routine.createdAt,
+                    lastUsed = routine.lastUsed,
+                    useCount = routine.useCount.toLong(),
+                    updatedAt = updatedAt,
                     profile_id = routine.profileId,
                     groupId = routine.groupId,
                 )
@@ -962,92 +987,6 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
             uuid = uuid,
         )
     }.asFlow().mapToList(Dispatchers.IO)
-
-    override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String, profileId: String) {
-        withContext(Dispatchers.IO) {
-            if (exerciseId.isBlank() || reps <= 0) return@withContext
-
-            val timestamp = currentTimeMillis()
-            val newVolume = weightKg * reps
-            val exercise = exerciseRepository.getExerciseById(exerciseId)
-            val exerciseName = exercise?.name ?: ""
-            val cableCount = exercise?.displayMultiplier
-
-            val combinedPhase = "COMBINED"
-
-            val defaultProfileId = profileId.ifBlank { "default" }
-
-            val currentWeightPR = queries.selectPRIncludingDeleted(
-                exerciseId,
-                mode,
-                PRType.MAX_WEIGHT.name,
-                combinedPhase,
-                profileId = defaultProfileId,
-            ).executeAsOneOrNull()
-
-            val currentVolumePR = queries.selectPRIncludingDeleted(
-                exerciseId,
-                mode,
-                PRType.MAX_VOLUME.name,
-                combinedPhase,
-                profileId = defaultProfileId,
-            ).executeAsOneOrNull()
-
-            val isNewWeightPR = currentWeightPR == null || weightKg > currentWeightPR.weight.toFloat()
-            val currentVolume = (currentVolumePR?.weight?.toFloat() ?: 0f) * (currentVolumePR?.reps?.toInt() ?: 0)
-            val isNewVolumePR = newVolume > currentVolume
-
-            if (!isNewWeightPR && !isNewVolumePR) return@withContext
-
-            val oneRepMax = OneRepMaxCalculator.estimate(weightKg, reps)
-
-            if (isNewWeightPR) {
-                queries.upsertPR(
-                    exerciseId = exerciseId,
-                    exerciseName = exerciseName,
-                    weight = weightKg.toDouble(),
-                    reps = reps.toLong(),
-                    oneRepMax = oneRepMax.toDouble(),
-                    achievedAt = timestamp,
-                    workoutMode = mode,
-                    prType = PRType.MAX_WEIGHT.name,
-                    volume = newVolume.toDouble(),
-                    phase = combinedPhase,
-                    profile_id = defaultProfileId,
-                    cable_count = cableCount?.toLong(),
-                    uuid = currentWeightPR?.uuid ?: generateUUID(),
-                )
-            }
-
-            if (isNewVolumePR && !isNewWeightPR) {
-                queries.upsertPR(
-                    exerciseId = exerciseId,
-                    exerciseName = exerciseName,
-                    weight = weightKg.toDouble(),
-                    reps = reps.toLong(),
-                    oneRepMax = oneRepMax.toDouble(),
-                    achievedAt = timestamp,
-                    workoutMode = mode,
-                    prType = PRType.MAX_VOLUME.name,
-                    volume = newVolume.toDouble(),
-                    phase = combinedPhase,
-                    profile_id = defaultProfileId,
-                    cable_count = cableCount?.toLong(),
-                    uuid = currentVolumePR?.uuid ?: generateUUID(),
-                )
-            }
-
-            // Sync 1RM to Exercise table for %-based training features
-            val currentExercise1RM = queries.selectExerciseById(exerciseId)
-                .executeAsOneOrNull()?.one_rep_max_kg?.toFloat() ?: 0f
-            if (oneRepMax > currentExercise1RM) {
-                queries.updateOneRepMax(
-                    one_rep_max_kg = oneRepMax.toDouble(),
-                    id = exerciseId,
-                )
-            }
-        }
-    }
 
     override suspend fun saveMetrics(sessionId: String, metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>) {
         withContext(Dispatchers.IO) {

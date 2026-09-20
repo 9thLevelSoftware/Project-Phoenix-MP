@@ -13,7 +13,6 @@ import com.devil.phoenixproject.data.ble.MetricPollingEngine
 import com.devil.phoenixproject.data.ble.MonitorDataProcessor
 import com.devil.phoenixproject.data.ble.decodeDiagnosticFaults
 import com.devil.phoenixproject.data.ble.formatDiagnosticUInt32
-import com.devil.phoenixproject.data.ble.parseMonitorPacket
 import com.devil.phoenixproject.data.ble.parseRepPacket
 import com.devil.phoenixproject.data.ble.toPhoenixHex
 import com.devil.phoenixproject.domain.model.ConnectionState
@@ -160,10 +159,7 @@ class KableBleRepository : BleRepository {
         onReconnectionRequested = { request ->
             publishSafetyEvent(_reconnectionRequested, request, BleCriticalEventType.RECONNECTION_REQUEST)
         },
-        onCommandResponse = { _ -> /* no external consumer currently */ },
         onRepEventFromCharacteristic = { data -> parseRepsCharacteristicData(data) },
-        onRepEventFromRx = { data -> parseRepNotification(data) },
-        onMetricFromRx = { data -> parseMetricsPacket(data) },
         onDiagnosticData = { packet -> publishDiagnostics(packet) },
     )
 
@@ -295,60 +291,6 @@ class KableBleRepository : BleRepository {
     }
 
     // ===== Parsing methods (stay in facade) =====
-
-    /** Parse metrics packet from RX notifications (0x01). Delegates to [parseMonitorPacket] for unit consistency. */
-    private fun parseMetricsPacket(data: ByteArray) {
-        if (data.size < 17) return
-        try {
-            val monitor = parseMonitorPacket(data.copyOfRange(1, data.size)) ?: return
-            val currentTime = currentTimeMillis()
-            val rawVelocityA = monitor.firmwareVelA / 10.0
-            val rawVelocityB = monitor.firmwareVelB / 10.0
-            val metric = WorkoutMetric(
-                timestamp = currentTime,
-                loadA = monitor.loadA,
-                loadB = monitor.loadB,
-                positionA = monitor.posA,
-                positionB = monitor.posB,
-                velocityA = rawVelocityA,
-                velocityB = rawVelocityB,
-            )
-            _metricsFlow.tryEmit(metric)
-            handleDetector.processMetric(metric)
-        } catch (e: Exception) {
-            log.e { "Error parsing metrics: ${e.message}" }
-        }
-    }
-
-    /** Parse rep notification from RX characteristic (with opcode 0x02 prefix). */
-    private fun parseRepNotification(data: ByteArray) {
-        try {
-            val currentTime = currentTimeMillis()
-            val notification = parseRepPacket(data, hasOpcodePrefix = true, timestamp = currentTime)
-
-            if (notification == null) {
-                log.w { "Rep notification too short: ${data.size} bytes (minimum 7)" }
-                return
-            }
-
-            if (notification.isLegacyFormat) {
-                log.w { "Rep notification (LEGACY 6-byte format - Issue #187 fallback):" }
-                log.w { "  top=${notification.topCounter}, complete=${notification.completeCounter}" }
-                log.w { "  hex=${data.joinToString(" ") { it.toPhoenixHex() }}" }
-            } else {
-                log.d { "Rep notification (24-byte format, RX):" }
-                log.d { "  up=${notification.topCounter}, down=${notification.completeCounter}" }
-                log.d { "  repsRomCount=${notification.repsRomCount} (warmup done), repsRomTotal=${notification.repsRomTotal} (warmup target)" }
-                log.d { "  repsSetCount=${notification.repsSetCount} (working done), repsSetTotal=${notification.repsSetTotal} (working target)" }
-                log.d { "  hex=${data.joinToString(" ") { it.toPhoenixHex() }}" }
-            }
-
-            val emitted = publishRepEvent(notification, source = "rx")
-            log.d { "Emitted rep event (RX): success=$emitted, legacy=${notification.isLegacyFormat}" }
-        } catch (e: Exception) {
-            log.e { "Error parsing rep notification: ${e.message}" }
-        }
-    }
 
     /** Parse rep data from REPS characteristic notifications (NO opcode prefix). */
     private fun parseRepsCharacteristicData(data: ByteArray) {

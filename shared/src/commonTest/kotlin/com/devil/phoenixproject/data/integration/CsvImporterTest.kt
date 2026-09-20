@@ -68,6 +68,13 @@ class CsvImporterTest {
     // -------------------------------------------------------------------------
 
     @Test
+    fun strongCsv_exportFormulaGuard_strippedFromWorkoutName() {
+        val csv = strongCsv("2023-10-15 09:30:00,'=Push Day,1h 0m,Bench Press,1,80,10,,,, ")
+        val preview = CsvImporter.parse(csv, WeightUnit.KG, "user1", isPaidUser = true)
+        assertEquals("=Push Day", preview.activities.single().name)
+    }
+
+    @Test
     fun strongCsv_singleWorkout_createsOneActivity() {
         val csv = strongCsv(
             "2023-10-15 09:30:00,Push Day,1h 0m,Bench Press,1,80,10,,,, \n" +

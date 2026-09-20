@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.screen
 
 import com.devil.phoenixproject.testutil.readProjectFile
+import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
@@ -11,8 +12,16 @@ import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
+import org.junit.Assume
+import org.junit.Before
 
 class IosComposeResourceContractTest {
+    /** The staging script runs under /bin/sh; skip on hosts without it (Windows). CI runs it on Linux. */
+    @Before
+    fun requirePosixShell() {
+        Assume.assumeTrue("/bin/sh not available on this host", File("/bin/sh").canExecute())
+    }
+
     @Test
     fun xcodeStagesResourcesForSimulatorAndDeviceTargets() {
         val shellScript = resourceStagingScript()

@@ -74,6 +74,9 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val currentMetric by viewModel.currentMetric.collectAsState()
     val currentHeuristicKgMax by viewModel.currentHeuristicKgMax.collectAsState()
     val workoutParameters by viewModel.workoutParameters.collectAsState()
+    val rackItems by viewModel.rackItems.collectAsState()
+    val activeRackItemIds by viewModel.activeRackItemIds.collectAsState()
+    val activeRackBehaviorOverrides by viewModel.activeRackBehaviorOverrides.collectAsState()
     val repCount by viewModel.repCount.collectAsState()
     val repRanges by viewModel.repRanges.collectAsState()
     val autoStopState by viewModel.autoStopState.collectAsState()
@@ -384,6 +387,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         userPreferences.velocityLossThresholdPercent,
         userPreferences.effectiveWeightIncrementKg,
         currentRackLoadAdjustment,
+        rackItems, activeRackItemIds, activeRackBehaviorOverrides,
         machineTeardownState,
         restTransitionPlan,
     ) {
@@ -426,6 +430,9 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             velocityLossThresholdPercent = userPreferences.velocityLossThresholdPercent,
             weightStepKg = userPreferences.effectiveWeightIncrementKg,
             rackLoadAdjustment = currentRackLoadAdjustment,
+            rackItems = rackItems,
+            activeRackItemIds = activeRackItemIds,
+            activeRackBehaviorOverrides = activeRackBehaviorOverrides,
             machineTeardownState = machineTeardownState,
             restTransitionPlan = restTransitionPlan,
         )
@@ -459,6 +466,8 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             onStartNextExercise = { viewModel.advanceToNextExercise() },
             onJumpToExercise = { viewModel.jumpToExercise(it) },
             onUpdateParameters = { viewModel.updateWorkoutParameters(it) },
+            onUpdateRackSelection = { viewModel.updateActiveRackSelection(it) },
+            onUpdateRackBehaviorOverrides = { viewModel.updateActiveRackBehaviorOverrides(it) },
             onShowWorkoutSetupDialog = { /* Not used in ActiveWorkoutScreen */ },
             onHideWorkoutSetupDialog = { /* Not used in ActiveWorkoutScreen */ },
             kgToDisplay = viewModel::kgToDisplay,
@@ -601,7 +610,7 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         }
     }
 
-    // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
+    // Connection error dialog
     connectionError?.let { error ->
         ConnectionErrorDialog(
             message = error,

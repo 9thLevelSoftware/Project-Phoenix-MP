@@ -106,6 +106,7 @@ val domainModule = module {
             profileLocalSafetyStore = get(),
             legacyProfilePreferencesReader = get(),
             profileScopedDataMerger = get(),
+            driver = get(),
         )
     }
     single<RequiredMigrationGate> { get<MigrationManager>() }
