@@ -1927,6 +1927,31 @@ class SyncManagerTest {
     }
 
     @Test
+    fun rpgAttributeMergeFailureDoesNotAdvancePullCheckpoint() = runTest {
+        setupAuthenticated()
+        tokenStorage.recordCompletedPull(1_000L, "user-123:default")
+        fakeGamificationRepo.saveRpgProfileFailure = IllegalStateException("database unavailable")
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 2_000L,
+                rpgAttributes = PullRpgAttributesDto(strength = 42, characterClass = "TITAN"),
+            ),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess, "push success remains reportable as partial sync")
+        assertIs<SyncState.PartialSuccess>(manager.syncState.value)
+        assertEquals(1_000L, tokenStorage.getLastSyncTimestamp())
+        assertEquals("user-123:default", tokenStorage.getDeltaPullKey())
+        assertEquals(1, fakeGamificationRepo.saveRpgProfileCallCount)
+    }
+
+    @Test
     fun pullUpdatesTimestampOnlyAfterAllPagesComplete() = runTest {
         setupAuthenticated()
         tokenStorage.setLastSyncTimestamp(0L)

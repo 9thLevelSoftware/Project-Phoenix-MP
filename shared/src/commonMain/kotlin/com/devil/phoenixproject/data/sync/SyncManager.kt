@@ -2271,8 +2271,9 @@ class SyncManager(
             return Result.failure(PortalApiException("Pull merge failed: ${e.message}"))
         }
 
-        // RPG attributes use a separate repository and remain best effort. A failure does not
-        // roll back the already committed ordinary or preference data.
+        // RPG attributes are checkpoint-critical because the server filters them by lastSync.
+        // A failure does not roll back earlier repository commits, but it must fail the page so
+        // the checkpoint stays unchanged and the idempotent retry receives the RPG row again.
         try {
             // RPG attributes — server wins (overwrite local)
             pullResponse.rpgAttributes?.let { rpg ->
@@ -2296,7 +2297,8 @@ class SyncManager(
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Logger.w(e) { "RPG pull merge failed; non-fatal, core sync data is preserved." }
+            Logger.e(e) { "RPG attribute pull merge failed; checkpoint will not advance." }
+            return Result.failure(PortalApiException("RPG attribute pull merge failed: ${e.message}"))
         }
 
         // External activities are checkpoint-critical. If this write fails, fail the page so

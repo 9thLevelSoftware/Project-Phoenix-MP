@@ -230,9 +230,8 @@ class PortalTokenStorage(private val settings: Settings) {
         val existingPremium: Boolean = if (sameUser) settings[KEY_IS_PREMIUM, false] else false
         if (!sameUser) {
             // A different account must not reuse the previous account's delta-pull state:
-            // its first pull is a full lastSync=0 pull (the marker is also user-keyed).
-            // KEY_LAST_SYNC itself is kept because push uses it as the "modified since"
-            // bound; resetting it would upload all local history to the new account.
+            // clear the user-keyed marker here. KEY_LAST_SYNC is reset below with the
+            // rest of the account-scoped sync and entitlement state.
             settings.remove(KEY_DELTA_PULL_KEY)
         }
 

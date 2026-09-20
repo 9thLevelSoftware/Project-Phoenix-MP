@@ -378,11 +378,13 @@ class PortalTokenStorageTest {
 
         auth("u2")
         assertNull(storage.getDeltaPullKey(), "account switch drops the marker")
-        assertEquals(1234L, storage.getLastSyncTimestamp(), "push bound is kept")
+        assertEquals(0L, storage.getLastSyncTimestamp(), "account switch resets the sync checkpoint")
 
         storage.recordCompletedPull(2000L, "u2:default")
         storage.clearAuth()
         assertNull(storage.getDeltaPullKey())
+    }
+
     // ===== Auth generation (stale refresh writes) =====
 
     @Test
