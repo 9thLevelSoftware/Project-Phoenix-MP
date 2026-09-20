@@ -20,43 +20,6 @@ import kotlinx.serialization.json.JsonPrimitive
  */
 object PortalPullAdapter {
 
-    private data class PulledSessionShape(
-        val isStandalone: Boolean,
-        val portalParentId: String?,
-        val mayUseSessionHeaderConfig: Boolean,
-    )
-
-    private fun PullWorkoutSessionDto.sessionShape(): PulledSessionShape {
-        val isStandalone = routineSessionId.isNullOrBlank() && exercises.size == 1
-        return PulledSessionShape(
-            isStandalone = isStandalone,
-            portalParentId = routineSessionId?.takeIf { it.isNotBlank() }
-                ?: id.takeIf { it.isNotBlank() },
-            // Session-level Echo fields are projected from the first child by the portal.
-            // They are only unambiguous when the parent contains one exercise.
-            mayUseSessionHeaderConfig = exercises.size == 1,
-        )
-    }
-
-    private fun localWorkoutSessionId(
-        shape: PulledSessionShape,
-        exercise: PullExerciseDto,
-    ): String = if (shape.isStandalone) shape.portalParentId ?: exercise.id else exercise.id
-
-    private fun localRoutineSessionId(
-        shape: PulledSessionShape,
-        exercise: PullExerciseDto,
-    ): String? = if (shape.isStandalone) {
-        null
-    } else {
-        shape.portalParentId ?: exercise.sessionId.takeIf { it.isNotBlank() }
-    }
-
-    internal fun localWorkoutSessionIds(portalSession: PullWorkoutSessionDto): List<String> {
-        val shape = portalSession.sessionShape()
-        return portalSession.exercises.map { localWorkoutSessionId(shape, it) }
-    }
-
     fun toCanonicalProfilePreferenceSection(
         dto: PortalProfilePreferenceSectionCanonicalDto,
     ): ProfilePreferenceCanonicalDecodeResult {
@@ -131,7 +94,9 @@ object PortalPullAdapter {
 
         val mobileMode = portalModeToMobileMode(portalSession.workoutMode ?: "OLD_SCHOOL")
         val exerciseCount = maxOf(portalSession.exerciseCount, portalSession.exercises.size, 1)
-        val sessionShape = portalSession.sessionShape()
+        val mayUseSessionHeaderConfig = portalSession.exercises.size == 1
+        val portalParentId = portalSession.routineSessionId?.takeIf { it.isNotBlank() }
+            ?: portalSession.id.takeIf { it.isNotBlank() }
 
         // Build sessions with async exercise lookup
         return portalSession.exercises.map { exercise ->
@@ -151,11 +116,10 @@ object PortalPullAdapter {
             val metricHydration = aggregateSetMetrics(exercise.sets)
 
             WorkoutSession(
-                // A standalone mobile session originally used its WorkoutSession id as
-                // the portal parent id. Restore that same identity so a pull merges into
-                // the local row and remains an ungrouped history item. Grouped parents
-                // keep distinct child ids and carry their portal parent separately.
-                id = localWorkoutSessionId(sessionShape, exercise),
+                // Keep the long-standing portal component id as the local primary key.
+                // The parent id lives in routineSessionId for both standalone and grouped
+                // portal workouts, which keeps LWW updates stable across app upgrades.
+                id = exercise.id,
                 timestamp = timestamp,
                 mode = mobileMode,
                 reps = exercise.sets.firstOrNull()?.targetReps ?: totalReps / maxOf(exercise.sets.size, 1),
@@ -169,14 +133,14 @@ object PortalPullAdapter {
                 // them across a grouped workout would assign the first exercise's Echo
                 // configuration to every child.
                 eccentricLoad = portalSession.eccentricLoad
-                    ?.takeIf { sessionShape.mayUseSessionHeaderConfig }
+                    ?.takeIf { mayUseSessionHeaderConfig }
                     ?: DEFAULT_SESSION.eccentricLoad,
                 echoLevel = portalSession.echoLevel
-                    ?.takeIf { sessionShape.mayUseSessionHeaderConfig }
+                    ?.takeIf { mayUseSessionHeaderConfig }
                     ?: DEFAULT_SESSION.echoLevel,
                 exerciseId = resolvedExerciseId,
                 exerciseName = exercise.name,
-                routineSessionId = localRoutineSessionId(sessionShape, exercise),
+                routineSessionId = portalParentId ?: exercise.sessionId.takeIf { it.isNotBlank() },
                 routineName = portalSession.routineName,
                 heaviestLiftKg = maxWeight,
                 totalVolumeKg = null, // Let effectiveTotalVolumeKg() compute from weightPerCableKg * cableCount * totalReps
@@ -323,7 +287,9 @@ object PortalPullAdapter {
 
         val mobileMode = portalModeToMobileMode(portalSession.workoutMode ?: "OLD_SCHOOL")
         val exerciseCount = maxOf(portalSession.exerciseCount, portalSession.exercises.size, 1)
-        val sessionShape = portalSession.sessionShape()
+        val mayUseSessionHeaderConfig = portalSession.exercises.size == 1
+        val portalParentId = portalSession.routineSessionId?.takeIf { it.isNotBlank() }
+            ?: portalSession.id.takeIf { it.isNotBlank() }
 
         return portalSession.exercises.map { exercise ->
             val totalReps = exercise.sets.sumOf { it.actualReps }
@@ -331,7 +297,7 @@ object PortalPullAdapter {
             val maxWeight = exercise.sets.maxOfOrNull { it.weightKg } ?: 0f
 
             WorkoutSession(
-                id = localWorkoutSessionId(sessionShape, exercise),
+                id = exercise.id,
                 timestamp = timestamp,
                 mode = mobileMode,
                 reps = exercise.sets.firstOrNull()?.targetReps ?: totalReps / maxOf(exercise.sets.size, 1),
@@ -341,14 +307,14 @@ object PortalPullAdapter {
                 warmupReps = pulledWarmupReps(portalSession, totalReps, workingReps),
                 workingReps = workingReps,
                 eccentricLoad = portalSession.eccentricLoad
-                    ?.takeIf { sessionShape.mayUseSessionHeaderConfig }
+                    ?.takeIf { mayUseSessionHeaderConfig }
                     ?: DEFAULT_SESSION.eccentricLoad,
                 echoLevel = portalSession.echoLevel
-                    ?.takeIf { sessionShape.mayUseSessionHeaderConfig }
+                    ?.takeIf { mayUseSessionHeaderConfig }
                     ?: DEFAULT_SESSION.echoLevel,
                 exerciseId = null, // No catalog ID from portal; requires local catalog lookup
                 exerciseName = exercise.name,
-                routineSessionId = localRoutineSessionId(sessionShape, exercise),
+                routineSessionId = portalParentId ?: exercise.sessionId.takeIf { it.isNotBlank() },
                 routineName = portalSession.routineName,
                 heaviestLiftKg = maxWeight,
                 totalVolumeKg = null, // Let effectiveTotalVolumeKg() compute from weightPerCableKg * cableCount * totalReps

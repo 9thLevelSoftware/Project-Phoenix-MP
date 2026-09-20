@@ -2,7 +2,6 @@ package com.devil.phoenixproject.data.sync
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertNull
 
 class PortalPullAdapterSessionTest {
 
@@ -46,10 +45,8 @@ class PortalPullAdapterSessionTest {
         assertEquals("OldSchool", session.mode) // portalModeToMobileMode converts SCREAMING_SNAKE to PascalCase
         assertEquals(60f, session.weightPerCableKg) // max weight across sets (DB stores per-cable, no division needed)
         assertEquals(28, session.totalReps) // 10 + 10 + 8
-        assertEquals("portal-session-1", session.id)
-        assertNull(session.routineSessionId, "standalone portal sessions remain ungrouped in history")
-        assertEquals("portal-session-1", session.routineSessionId ?: session.id)
-        assertEquals(listOf("portal-session-1"), PortalPullAdapter.localWorkoutSessionIds(portalSession))
+        assertEquals("ex-1", session.id)
+        assertEquals("portal-session-1", session.routineSessionId)
         assertEquals(120, session.eccentricLoad)
         assertEquals(3, session.echoLevel)
         assertEquals("default", session.profileId)
@@ -103,7 +100,6 @@ class PortalPullAdapterSessionTest {
         assertEquals("portal-session-2", sessions[0].routineSessionId)
         assertEquals("portal-session-2", sessions[1].routineSessionId)
         assertEquals("Push Day", sessions[0].routineName)
-        assertEquals(listOf("ex-1", "ex-2"), PortalPullAdapter.localWorkoutSessionIds(portalSession))
         assertEquals(100, sessions[0].eccentricLoad)
         assertEquals(100, sessions[1].eccentricLoad)
         assertEquals(2, sessions[0].echoLevel)
