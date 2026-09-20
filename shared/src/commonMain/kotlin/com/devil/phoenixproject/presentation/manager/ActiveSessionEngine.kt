@@ -8432,7 +8432,7 @@ class ActiveSessionEngine(
                     }
                 }
                 Logger.w("Issue390") {
-                    "BLE PARAMS FINAL: weightPerCableKg=${bleParams.weightPerCableKg}kg, " +
+                    "BLE PARAMS PRE-LIMIT: weightPerCableKg=${bleParams.weightPerCableKg}kg, " +
                         "progressionRegressionKg=${bleParams.progressionRegressionKg}kg, " +
                         "reps=${bleParams.reps}, isAMRAP=${bleParams.isAMRAP}, " +
                         "isJustLift=${bleParams.isJustLift}, mode=${bleParams.programMode}"
@@ -8469,7 +8469,10 @@ class ActiveSessionEngine(
                     weightPerCableKg = limits.weightPerCableKg,
                     progressionRegressionKg = limits.progressionKg,
                 )
-                emitCommandLimitNotice(limits)
+                // The notice is emitted only once the command has actually reached the
+                // machine (below), so a start that is refused by the safety barrier, the
+                // configuration claim or the validator never announces a cap for a set that
+                // never happened.
 
                 val commandValidation = if (commandParams.isEchoMode) {
                     WorkoutCommandValidator.validateEchoControl(
@@ -8643,6 +8646,7 @@ class ActiveSessionEngine(
                     }
                     configMayHaveReachedMachine = true
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
+                    emitCommandLimitNotice(limits)
                     if (retryRequest != null) {
                         afterAcceptedRetryConfigSentForTest?.invoke()
                         currentCoroutineContext().ensureActive()

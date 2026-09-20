@@ -9141,6 +9141,7 @@ class DWSMWorkoutLifecycleTest {
             // is 1 above), so exactly one further program frame reaches the machine. This used
             // to read an always-empty list and could not observe a start at all.
             assertEquals(starts + 1, harness.fakeBleRepo.programCommands.size)
+            assertEquals(WorkoutState.Active, harness.coordinator.workoutState.value)
             assertEquals(replacementsBeforeResume + 2, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
             runCurrent()
             assertEquals(replacementsBeforeResume + 2, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)

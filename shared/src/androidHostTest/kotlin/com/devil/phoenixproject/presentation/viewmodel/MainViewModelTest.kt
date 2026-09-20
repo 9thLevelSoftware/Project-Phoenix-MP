@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.domain.model.ConnectionState
 import com.devil.phoenixproject.domain.model.DropSetFeatureGate
 import com.devil.phoenixproject.domain.model.Exercise
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
@@ -204,6 +205,27 @@ class MainViewModelTest {
         assertEquals(10f, params.weightPerCableKg)
         assertFalse(params.isJustLift)
         assertEquals(3, params.warmupReps)
+    }
+
+    @Test
+    fun `connecting remembers the trainer model for the offline planning sliders`() = runTest(testCoroutineRule.dispatcher) {
+        // KD-9: planning/editor screens run offline, so they need the LAST connected model.
+        assertEquals(PhoenixModel.Unknown, fakePreferencesManager.preferencesFlow.value.lastConnectedModel)
+
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF", PhoenixModel.VFormTrainer)
+        advanceUntilIdle()
+        assertEquals(PhoenixModel.VFormTrainer, fakePreferencesManager.preferencesFlow.value.lastConnectedModel)
+
+        // An unidentifiable device must never narrow a known owner's planning range.
+        fakeBleRepository.simulateDisconnect()
+        fakeBleRepository.simulateConnect("Mystery", "AA:BB:CC:DD:EE:F0", PhoenixModel.Unknown)
+        advanceUntilIdle()
+        assertEquals(PhoenixModel.VFormTrainer, fakePreferencesManager.preferencesFlow.value.lastConnectedModel)
+
+        fakeBleRepository.simulateDisconnect()
+        fakeBleRepository.simulateConnect("VIT_Test", "AA:BB:CC:DD:EE:F1", PhoenixModel.TrainerPlus)
+        advanceUntilIdle()
+        assertEquals(PhoenixModel.TrainerPlus, fakePreferencesManager.preferencesFlow.value.lastConnectedModel)
     }
 
     @Test
