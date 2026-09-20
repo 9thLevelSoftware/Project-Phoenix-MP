@@ -671,9 +671,17 @@ class SyncManagerTest {
     @Test
     fun pushResponseCycleVersionsAreStoredEvenWhenThePullFails() = runTest {
         setupAuthenticated()
-        val versions = mapOf("11111111-1111-4111-a111-111111111111" to "2026-09-19T10:11:12.123456+00:00")
+        val cycleId = "11111111-1111-4111-a111-111111111111"
+        fakeSyncRepo.cyclesToReturn = listOf(
+            PortalSyncAdapter.CycleWithContext(cycle = TrainingCycle.create(id = cycleId, name = "Synced")),
+        )
+        val versions = mapOf(cycleId to "2026-09-19T10:11:12.123456+00:00")
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z", cycleVersions = versions),
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                acknowledgedCycleIds = listOf(cycleId),
+                cycleVersions = versions,
+            ),
         )
         fakeApi.pullResult = Result.failure(PortalApiException("pull down", null, 500))
         val manager = createManager()
@@ -686,11 +694,16 @@ class SyncManagerTest {
     @Test
     fun failureToStoreCycleVersionsIsLoggedAndDoesNotFailTheSync() = runTest {
         setupAuthenticated()
+        val cycleId = "11111111-1111-4111-a111-111111111111"
+        fakeSyncRepo.cyclesToReturn = listOf(
+            PortalSyncAdapter.CycleWithContext(cycle = TrainingCycle.create(id = cycleId, name = "Synced")),
+        )
         fakeSyncRepo.updateCycleServerVersionsError = IllegalStateException("disk full")
         fakeApi.pushResult = Result.success(
             PortalSyncPushResponse(
                 syncTime = "2026-03-02T12:00:00Z",
-                cycleVersions = mapOf("11111111-1111-4111-a111-111111111111" to "2026-09-19T10:11:12.123456+00:00"),
+                acknowledgedCycleIds = listOf(cycleId),
+                cycleVersions = mapOf(cycleId to "2026-09-19T10:11:12.123456+00:00"),
             ),
         )
         val manager = createManager()
@@ -704,11 +717,16 @@ class SyncManagerTest {
     @Test
     fun cancellationWhileStoringCycleVersionsPropagates() = runTest {
         setupAuthenticated()
+        val cycleId = "11111111-1111-4111-a111-111111111111"
+        fakeSyncRepo.cyclesToReturn = listOf(
+            PortalSyncAdapter.CycleWithContext(cycle = TrainingCycle.create(id = cycleId, name = "Synced")),
+        )
         fakeSyncRepo.updateCycleServerVersionsError = kotlin.coroutines.cancellation.CancellationException("cancelled")
         fakeApi.pushResult = Result.success(
             PortalSyncPushResponse(
                 syncTime = "2026-03-02T12:00:00Z",
-                cycleVersions = mapOf("11111111-1111-4111-a111-111111111111" to "2026-09-19T10:11:12.123456+00:00"),
+                acknowledgedCycleIds = listOf(cycleId),
+                cycleVersions = mapOf(cycleId to "2026-09-19T10:11:12.123456+00:00"),
             ),
         )
         val manager = createManager()
@@ -732,7 +750,13 @@ class SyncManagerTest {
         val versions = mapOf(cycleId to "2026-09-19T10:11:12.123456+00:00")
         fakeApi.pushResultsQueue = mutableListOf(
             Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")),
-            Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:01Z", cycleVersions = versions)),
+            Result.success(
+                PortalSyncPushResponse(
+                    syncTime = "2026-03-02T12:00:01Z",
+                    acknowledgedCycleIds = listOf(cycleId),
+                    cycleVersions = versions,
+                ),
+            ),
         )
         val manager = createManager()
 
@@ -751,6 +775,54 @@ class SyncManagerTest {
         val manager = createManager()
 
         manager.sync()
+
+        assertTrue(fakeSyncRepo.cycleServerVersionUpdates.isEmpty())
+    }
+
+    @Test
+    fun pushResponseCycleVersionsIgnoreCyclesNotSentByThisDevice() = runTest {
+        setupAuthenticated()
+        val sentCycleId = "11111111-1111-4111-a111-111111111111"
+        fakeSyncRepo.cyclesToReturn = listOf(
+            PortalSyncAdapter.CycleWithContext(cycle = TrainingCycle.create(id = sentCycleId, name = "Sent")),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                acknowledgedCycleIds = listOf(sentCycleId),
+                cycleVersions = mapOf(
+                    sentCycleId to "2026-09-19T10:11:12.123456+00:00",
+                    "22222222-2222-4222-a222-222222222222" to "2026-09-19T11:00:00Z",
+                ),
+            ),
+        )
+
+        createManager().sync()
+
+        assertEquals(
+            listOf(mapOf(sentCycleId to "2026-09-19T10:11:12.123456+00:00")),
+            fakeSyncRepo.cycleServerVersionUpdates,
+        )
+    }
+
+    @Test
+    fun pushResponseCycleVersionWithoutExactAcknowledgementKeepsPreviousBase() = runTest {
+        setupAuthenticated()
+        val cycleId = "11111111-1111-4111-a111-111111111111"
+        fakeSyncRepo.cyclesToReturn = listOf(
+            PortalSyncAdapter.CycleWithContext(cycle = TrainingCycle.create(id = cycleId, name = "Rejected")),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                cycleVersions = mapOf(cycleId to "2026-09-19T11:00:00Z"),
+                rejections = SyncRejectionsDto(
+                    cycles = listOf(SyncRejectionDto(id = cycleId, serverUpdatedAt = "2026-09-19T11:00:00Z")),
+                ),
+            ),
+        )
+
+        createManager().sync()
 
         assertTrue(fakeSyncRepo.cycleServerVersionUpdates.isEmpty())
     }

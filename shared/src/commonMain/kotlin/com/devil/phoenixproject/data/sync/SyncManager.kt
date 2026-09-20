@@ -658,20 +658,6 @@ class SyncManager(
             }
         }
 
-        // Adopt the portal versions of cycles whose pushed structure was applied as
-        // their next baseUpdatedAt right away, so a later failed pull cannot leave a
-        // stale base. Cycles missing from cycleVersions keep their previous base.
-        if (pushResponse.cycleVersions.isNotEmpty()) {
-            try {
-                syncRepository.updateCycleServerVersions(pushResponse.cycleVersions)
-            } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (e: Exception) {
-                // An old base only makes the portal keep its own edits; the pull repairs it.
-                Logger.w(e) { "Failed to store ${pushResponse.cycleVersions.size} cycle server version(s)" }
-            }
-        }
-
         // Parse syncTime from ISO 8601 to epoch millis
         val syncTimeEpoch = try {
             kotlin.time.Instant.parse(pushResponse.syncTime).toEpochMilliseconds()
@@ -1532,9 +1518,24 @@ class SyncManager(
         response: PortalSyncPushResponse,
     ) {
         if (sentCycleIds.isEmpty()) return
-        val rejections = response.rejections.cycles.associateBy { it.id }
         val acceptedCycleIds = response.acknowledgedCycleIds
             .filterTo(linkedSetOf()) { it in sentCycleIds }
+        // A server version is safe to adopt only for a cycle this exact request sent and
+        // the portal explicitly acknowledged as applied. A rejected cycle keeps its old
+        // base until pull convergence, so a failed pull cannot turn the rejection into an
+        // overwrite on retry. Unexpected ids also cannot change another profile's base.
+        val acceptedCycleVersions = response.cycleVersions.filterKeys { it in acceptedCycleIds }
+        if (acceptedCycleVersions.isNotEmpty()) {
+            try {
+                syncRepository.updateCycleServerVersions(acceptedCycleVersions)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (e: Exception) {
+                // An old base only makes the portal keep its own edits; the pull repairs it.
+                Logger.w(e) { "Failed to store ${acceptedCycleVersions.size} cycle server version(s)" }
+            }
+        }
+        val rejections = response.rejections.cycles.associateBy { it.id }
         syncRepository.acknowledgeCycleSnapshot(cycleSnapshot, acceptedCycleIds)
         val sentComponentsById = cycleSnapshot.components.associateBy { it.context.cycle.id }
         rejections.forEach { (cycleId, rejection) ->

@@ -3024,9 +3024,9 @@ class DataBackupManagerRoutineNameTest {
     fun `backup round trip keeps each cycle's portal sync base and drops malformed ones`() = runTest {
         val version = "2026-09-19T10:11:12.123456+00:00"
         val q = database.phoenixDatabaseQueries
-        q.insertTrainingCycle("cycle-synced", "Synced", null, 1L, 0L, "default", null, 1L)
+        q.insertTrainingCycle("cycle-synced", "Synced", null, 1L, 0L, "default", null, 1L, 1L)
         q.updateTrainingCycleServerUpdatedAt(server_updated_at = version, id = "cycle-synced")
-        q.insertTrainingCycle("cycle-local", "Local", null, 1L, 0L, "default", null, 1L)
+        q.insertTrainingCycle("cycle-local", "Local", null, 1L, 0L, "default", null, 1L, 1L)
 
         val legacy = backupManager.exportAllData()
         assertEquals(version, legacy.data.trainingCycles.first { it.id == "cycle-synced" }.serverUpdatedAt)
