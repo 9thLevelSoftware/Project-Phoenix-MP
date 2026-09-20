@@ -53,11 +53,13 @@ class SetSummaryWorkingRepsTest {
     private fun DWSMTestHarness.summary(
         warmupRepsCount: Int,
         warmupCompleteTimeMs: Long,
+        isEchoMode: Boolean = false,
     ) = activeSessionEngine.calculateSetSummaryMetrics(
         metrics = warmupMetrics + workingMetrics,
         repCount = 5,
         fallbackWeightKg = 20f,
         configuredWeightKgPerCable = 20f,
+        isEchoMode = isEchoMode,
         warmupRepsCount = warmupRepsCount,
         workingRepsCount = 5,
         warmupCompleteTimeMs = warmupCompleteTimeMs,
@@ -71,6 +73,39 @@ class SetSummaryWorkingRepsTest {
 
         assertEquals(20f, summary.heaviestLiftKgPerCable, "Warm-up samples must not set a max-weight PR")
         assertEquals(20f, summary.peakLoadKgPerCable)
+        assertTrue(
+            summary.avgLoadKgPerCable <= summary.peakLoadKgPerCable,
+            "The set's average load must not exceed its peak (${summary.avgLoadKgPerCable} > ${summary.peakLoadKgPerCable})",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `a warmup transient cannot set a phase specific max weight PR`() = runTest {
+        val harness = DWSMTestHarness(this)
+
+        val summary = harness.summary(warmupRepsCount = 3, warmupCompleteTimeMs = 1_500L)
+
+        // These two peaks become PostSaveWorkoutInput.peakConcentricForceKg /
+        // peakEccentricForceKg -> updatePhaseSpecificPRs -> MAX_WEIGHT rows with phase
+        // CONCENTRIC/ECCENTRIC, which the "% of PR" resolver prefers over COMBINED.
+        assertEquals(20f, summary.peakForceConcentricA, "A warm-up transient must not set a CONCENTRIC PR")
+        assertEquals(20f, summary.peakForceConcentricB)
+        assertEquals(20f, summary.peakForceEccentricA, "A warm-up transient must not set an ECCENTRIC PR")
+        assertEquals(20f, summary.peakForceEccentricB)
+        assertTrue(summary.avgForceConcentricA <= summary.peakForceConcentricA)
+        assertTrue(summary.avgForceEccentricA <= summary.peakForceEccentricA)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `echo volume follows the working peak`() = runTest {
+        val harness = DWSMTestHarness(this)
+
+        val summary = harness.summary(warmupRepsCount = 3, warmupCompleteTimeMs = 1_500L, isEchoMode = true)
+
+        // Echo logs measured force as its volume weight, and totalVolumeKg is persisted.
+        assertEquals(20f * 2f * 5f, summary.totalVolumeKg, "Echo volume must use the working peak")
         harness.cleanup()
     }
 
@@ -90,7 +125,9 @@ class SetSummaryWorkingRepsTest {
 
         // A set with no warm-up marks warm-up complete on its first active sample, so the
         // mark sits at set start. Filtering on it could only drop a genuine working sample.
-        val summary = harness.summary(warmupRepsCount = 0, warmupCompleteTimeMs = 1_050L)
+        // The mark is past both 30 kg samples, so dropping the `warmupRepsCount > 0` half
+        // of the gate would filter the peak down to 28 and fail this assertion (R-3/R-10).
+        val summary = harness.summary(warmupRepsCount = 0, warmupCompleteTimeMs = 1_150L)
 
         assertEquals(30f, summary.heaviestLiftKgPerCable)
         harness.cleanup()
@@ -165,6 +202,107 @@ class SetSummaryWorkingRepsTest {
             result.velocity.meanConcentricVelocityMmS,
             "Rep 1's MCV must come from the working rep alone, with dead-band samples excluded",
         )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `a set without warmup reps leaves the rep boundary list untouched`() = runTest {
+        val harness = DWSMTestHarness(this)
+        harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        harness.startCableSet(targetReps = 10)
+        // Issue #222 forces every *cable* set to the 3-rep firmware calibration buffer,
+        // so the zero-warmup shape (bodyweight, Just Lift) is driven through the shared
+        // rep counter rather than through the workout parameters.
+        harness.repCounter.configure(
+            warmupTarget = 0,
+            workingTarget = 10,
+            isJustLift = false,
+            stopAtTop = false,
+        )
+
+        listOf(1_000L, 1_100L, 1_200L).forEach { timestamp ->
+            harness.fakeBleRepo.emitMetric(metric(timestamp = timestamp, load = 20f, velocity = 150.0))
+        }
+        advanceUntilIdle()
+
+        assertTrue(harness.coordinator.repCount.value.isWarmupComplete, "No warm-up target means warm-up is complete")
+        assertEquals(1_000L, harness.coordinator.warmupCompleteTimeMs, "The mark is still stamped for the duration")
+        assertTrue(
+            harness.coordinator.repBoundaryTimestamps.value.isEmpty(),
+            "A set without warm-up reps must keep rep 1 on the whole-set fallback window",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `no warmup mark is recorded when the machine reports working rep 1 first`() = runTest {
+        val harness = DWSMTestHarness(this)
+        startWarmupSet(harness)
+
+        listOf(1_000L, 1_500L, 2_000L).forEach { timestamp ->
+            harness.fakeBleRepo.emitMetric(metric(timestamp = timestamp, load = 30f, velocity = 150.0))
+        }
+        advanceUntilIdle()
+
+        // A dropped packet: the machine's first report already carries working rep 1, so
+        // RepCounterFromMachine force-completes the warm-up in the same notification.
+        harness.fakeBleRepo.emitRepNotification(
+            harness.modernRepPacket(
+                repsSetCount = 1,
+                repsSetTotal = 8,
+                timestamp = harness.nowMs + 1L,
+                topCounter = 4,
+                completeCounter = 4,
+                repsRomCount = 0,
+            ),
+        )
+        advanceUntilIdle()
+        harness.fakeBleRepo.emitMetric(metric(timestamp = 2_500L, load = 5f, velocity = -20.0))
+        advanceUntilIdle()
+
+        val repCount = harness.coordinator.repCount.value
+        assertEquals(3, repCount.warmupReps, "The counter force-completes the warm-up")
+        assertEquals(1, repCount.workingReps)
+        assertEquals(
+            0L,
+            harness.coordinator.warmupCompleteTimeMs,
+            "A mark stamped after working rep 1 would subtract rep 1 from the max-weight PR",
+        )
+
+        // With no mark the peak covers the whole set, exactly as before this PR.
+        val summary = harness.summary(
+            warmupRepsCount = repCount.warmupReps,
+            warmupCompleteTimeMs = harness.coordinator.warmupCompleteTimeMs,
+        )
+        assertEquals(30f, summary.heaviestLiftKgPerCable)
+        harness.cleanup()
+    }
+
+    @Test
+    fun `working rep 1 still produces a result when no sample follows the warmup mark`() = runTest {
+        val harness = DWSMTestHarness(this, biomechanicsDispatcher = StandardTestDispatcher(testScheduler))
+        startWarmupSet(harness)
+        completeWarmup(harness)
+
+        // Rep 1's notification arrives with no sample after the mark, so the seeded
+        // window (mark + 1 .. notification) is empty.
+        harness.fakeBleRepo.emitRepNotification(
+            harness.modernRepPacket(
+                repsSetCount = 1,
+                repsSetTotal = 8,
+                timestamp = harness.nowMs + 2L,
+                topCounter = 4,
+                completeCounter = 4,
+                repsRomCount = 3,
+            ),
+        )
+        advanceUntilIdle()
+
+        val result = assertNotNull(
+            harness.coordinator.biomechanicsEngine.latestRepResult.value,
+            "Rep 1 must still establish the velocity-loss baseline instead of dropping out",
+        )
+        assertEquals(1, result.repNumber)
         harness.cleanup()
     }
 
