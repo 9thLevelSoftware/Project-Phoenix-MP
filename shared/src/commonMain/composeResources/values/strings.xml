@@ -31,6 +31,7 @@
     <string name="action_continue_set">Continue Set</string>
     <string name="action_discard">Discard</string>
     <string name="action_rename">Rename</string>
+
     <!-- ==================== Common labels ==================== -->
     <string name="label_please_wait">Please wait…</string>
     <string name="label_name">Name</string>
@@ -176,6 +177,7 @@
     <string name="import_records_skipped">Records skipped (duplicates): %1$d</string>
 
     <!-- ==================== Account ==================== -->
+
     <!-- ==================== Auth ==================== -->
     <string name="auth_google">Google</string>
     <string name="auth_apple">Apple</string>
@@ -192,6 +194,7 @@
     <string name="sync_now">Sync Now</string>
 
     <!-- ==================== Paywall ==================== -->
+
     <!-- ==================== Training Cycles ==================== -->
     <string name="create_cycle">Create Cycle</string>
     <string name="edit_cycle">Edit Cycle</string>
@@ -249,6 +252,7 @@
     <string name="delete_exercise_message">Are you sure you want to delete \"%1$s\"? This action cannot be undone.</string>
 
     <!-- ==================== Exercise Detail ==================== -->
+
     <!-- ==================== Workout Modes ==================== -->
     <string name="mode_old_school">Old School</string>
     <string name="mode_pump">Pump</string>
@@ -273,10 +277,12 @@
     <string name="select_tut_variant">Select TUT Variant</string>
 
     <!-- ==================== Workout Setup ==================== -->
+
     <!-- ==================== Profiles ==================== -->
     <string name="add_profile">Add Profile</string>
     <string name="edit_profile">Edit Profile</string>
     <string name="delete_profile">Delete Profile</string>
+
     <!-- ==================== Progression Suggestion ==================== -->
 
     <!-- ==================== Resume Routine ==================== -->
@@ -330,6 +336,7 @@
     <string name="cd_drop_set_retry_disabled">Select a drop percentage to retry</string>
 
     <!-- ==================== Weight Adjustment ==================== -->
+
     <!-- ==================== Connection Logs ==================== -->
     <string name="search_logs">Search logs…</string>
     <string name="auto_scroll">Auto-scroll</string>
@@ -380,7 +387,9 @@
     <!-- ==================== Navigation ==================== -->
     <string name="nav_analytics">Analytics</string>
     <string name="nav_insights">Insights</string>
+
     <!-- ==================== Misc ==================== -->
+
     <!-- ==================== OneRepMax ==================== -->
     <string name="orm_placeholder">e.g., 100</string>
 
@@ -405,6 +414,7 @@
     <string name="zone_grind">Grind</string>
 
     <!-- ==================== Ghost Racing ==================== -->
+
     <!-- ==================== Issue 1: AnalyticsScreen ==================== -->
     <string name="analytics_progress">Progress</string>
     <string name="analytics_progress_subtitle">Track your strength gains over time</string>
@@ -528,6 +538,7 @@
     <string name="cd_thumbnail_for">Thumbnail for %1$s</string>
     <string name="cd_clear_filters">Clear filters</string>
     <string name="cd_alphabet_nav">Alphabet navigation. Tap a letter to jump to exercises starting with that letter.</string>
+
     <!-- Profiles -->
     <string name="cd_active">Active</string>
 
@@ -544,6 +555,7 @@
     <!-- Weight -->
     <string name="cd_decrease_weight">Decrease weight</string>
     <string name="cd_increase_weight">Increase weight</string>
+
     <!-- Weight Stepper (BLE config context — machine always uses kg) -->
     <string name="weight_kg_per_cable">kg per cable</string>
     <string name="weight_total_two_cables">Total: %1$s kg (both cables)</string>
@@ -732,7 +744,7 @@
     <string name="delete_routine_session_title">Delete Routine Session?</string>
     <string name="delete_routine_session_message">This will delete all %1$d sets from this routine. This action cannot be undone.</string>
     <string name="delete_all_workouts_title">Delete All Workouts?</string>
-    <string name="delete_all_workouts_message">This will permanently delete all workout history. This action cannot be undone.</string>
+    <string name="delete_all_workouts_message">This will permanently delete all workout history for %1$s. This action cannot be undone.</string>
 
     <!-- ==================== Dialog slot/hierarchy fixes (task-3.8) ==================== -->
     <string name="bulk_weight_adjust_select_hint">Select a percentage or enter a value to enable Apply</string>
@@ -839,4 +851,23 @@
     <string name="profile_adult_enable_partial_failure">Age confirmation was saved, but Vulgar Mode could not be enabled. Try again.</string>
     <string name="label_previously_completed">Previously completed</string>
     <string name="cd_filter_previously_completed">Filter exercises previously completed</string>
+    <!-- PR 25: crash report prompt -->
+    <string name="crash_report_title">Crash report available</string>
+    <string name="crash_report_message">The app closed unexpectedly last time. Share the crash report? It contains technical details about the error; review it before posting publicly.</string>
+    <string name="crash_report_share">Share</string>
+    <string name="crash_report_dismiss">Not now</string>
+    <string name="startup_dual_databases_message">Phoenix found more than one copy of its local database and cannot safely choose between them, so nothing has been changed or deleted. Export the database files to keep a copy, then contact support with the diagnostic and support codes below. The files contain your workout history: send them privately to support@phoenix-portal.com rather than attaching them to a public issue. Retry checks again once support has helped you resolve the duplicate files.</string>
+    <string name="startup_export_database_files">Export database files</string>
+    <string name="startup_export_failed">The database files could not be exported. Nothing was changed; you can try again.</string>
+    <string name="startup_contact_support">Contact support (GitHub Issues)</string>
+    <!-- PR 28: voice safe-word emergency stop availability -->
+    <string name="voice_stop_unavailable_chip">Voice stop unavailable: %1$s</string>
+    <string name="voice_stop_unavailable_snackbar">Voice stop unavailable: %1$s. Use the on-screen Stop button to end the set.</string>
+    <string name="voice_stop_reason_profile_switching">profile is still loading</string>
+    <string name="voice_stop_reason_not_configured">no safe word set</string>
+    <string name="voice_stop_reason_not_calibrated">safe word not calibrated</string>
+    <string name="voice_stop_reason_recognizer_unavailable">speech recognition unavailable on this device</string>
+    <string name="voice_stop_reason_permission">microphone permission denied</string>
+    <string name="voice_stop_reason_audio_focus_lost">another app took the microphone</string>
+    <string name="voice_stop_reason_start_failed">speech recognition could not start</string>
 </resources>

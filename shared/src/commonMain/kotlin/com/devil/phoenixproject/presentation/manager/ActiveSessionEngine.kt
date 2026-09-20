@@ -569,6 +569,14 @@ class ActiveSessionEngine(
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
 ) {
+    private data class PendingRestRackSelection(
+        val itemIds: List<String>,
+        val behaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
+    )
+
+    /** Rest edits target the resolved upcoming routine entry while the completed entry remains current. */
+    private val pendingRestRackSelections = mutableMapOf<Pair<Int, Int>, PendingRestRackSelection>()
+
     internal suspend fun discoverRoutineResume(
         routine: Routine,
         inMemoryProgress: InMemoryRoutineProgressSnapshot?,
@@ -931,6 +939,15 @@ class ActiveSessionEngine(
             return deleteInvalidDiscoveredRuntime(handle, pending)
         }
         val validation = RuntimeHydrationValidation.Valid(document, preparation, source)
+        val restRackSelection = try {
+            resolveRestoredRestRackSelection(preparation)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return ActiveWorkoutRuntimeResumeResult.RetryableFailure
+        }
+        currentCoroutineContext().ensureActive()
+        if (!runtimeResumeAuthorityIsCurrent(handle, pending)) return ActiveWorkoutRuntimeResumeResult.Superseded
 
         var restoredOwner: RestoredRuntimeOwner? = null
         var restoredTimerPublication: RestoredRestTimerPublication? = null
@@ -974,6 +991,7 @@ class ActiveSessionEngine(
                     restoredTimerPublication = publishRestoredRuntime(
                         handle = handle,
                         validation = validation,
+                        restRackSelection = restRackSelection,
                         guardOwner = owner,
                         externalCommandInputStamp = pending.externalCommandInputStamp,
                     )
@@ -1471,9 +1489,31 @@ class ActiveSessionEngine(
         false
     }
 
+    private suspend fun resolveRestoredRestRackSelection(
+        preparation: RoutineRecoveryPreparation,
+    ): RoutineRackSelectionSnapshot {
+        val nextStep = flowDelegate?.getNextStepForRecovery(
+            preparation.resolvedRoutine,
+            preparation.sourceExerciseIndex,
+            preparation.sourceSetIndex,
+        ) ?: return preparation.rackSelection
+        val nextExercise = preparation.resolvedRoutine.exercises.getOrNull(nextStep.first)
+            ?: return preparation.rackSelection
+        if (isBodyweightExercise(nextExercise)) return preparation.rackSelection
+        return flowDelegate?.prepareRoutineForRecovery(
+            routine = preparation.resolvedRoutine,
+            exerciseIndex = nextStep.first,
+            setIndex = nextStep.second,
+            launchOrigin = preparation.launchOrigin,
+            cycleId = preparation.cycleId,
+            cycleDayNumber = preparation.cycleDayNumber,
+        )?.rackSelection ?: preparation.rackSelection
+    }
+
     private fun publishRestoredRuntime(
         handle: RoutineResumeHandle.Persisted,
         validation: RuntimeHydrationValidation.Valid,
+        restRackSelection: RoutineRackSelectionSnapshot,
         guardOwner: RestoredRuntimeOwnerToken,
         externalCommandInputStamp: ExternalCommandInputStamp,
     ): RestoredRestTimerPublication {
@@ -1535,11 +1575,11 @@ class ActiveSessionEngine(
         coordinator.activeCycleDayNumber = preparation.cycleDayNumber
         coordinator._workoutParameters.value = source.commandTemplate
         coordinator.setActiveRackSelection(
-            itemIds = preparation.rackSelection.itemIds,
-            precomputedAdjustment = preparation.rackSelection.adjustment,
-            precomputedItemsJson = preparation.rackSelection.itemsJson,
+            itemIds = restRackSelection.itemIds,
+            precomputedAdjustment = restRackSelection.adjustment,
+            precomputedItemsJson = restRackSelection.itemsJson,
         )
-        coordinator._activeRackBehaviorOverrides.value = preparation.rackSelection.behaviorOverrides
+        coordinator._activeRackBehaviorOverrides.value = restRackSelection.behaviorOverrides
         setActiveRuntimeDocument(document)
         coordinator._restTransitionPlan.value = document.restTransitionPlan
         acceptedRetryPermission = null
@@ -1556,7 +1596,7 @@ class ActiveSessionEngine(
             documentVersion = activeRuntimeDocumentVersion,
             guardOwner = guardOwner,
             sourceContext = source,
-            rackBehaviorOverrides = preparation.rackSelection.behaviorOverrides.toMap(),
+            rackBehaviorOverrides = restRackSelection.behaviorOverrides.toMap(),
             externalCommandInputStamp = externalCommandInputStamp,
         )
         val replacedRestoredTimer = replaceRestoredRestTimerOwner(
@@ -4585,6 +4625,14 @@ class ActiveSessionEngine(
             if (failureReason != null) {
                 executionGuard.markRecoveryRequired(lease, failureReason)
             } else {
+                // #782: the set ended through a successful RESET while still connected, so its
+                // hidden arm row is resolved while this lease still owns the teardown, i.e. before
+                // the guard publishes Ready and before any successor start or continuation runs.
+                if (executionGuard.captureMachineTeardownLease()?.sameExecutionAs(lease) == true) {
+                    withContext(NonCancellable) {
+                        machineSafetyCoordinator?.resolveArmedExecution(lease.executionId)
+                    }
+                }
                 val ready = executionGuard.markTeardownReady(lease)
                 if (ready) {
                     val resetOwner = resetMachineTeardownOwner.value
@@ -4723,8 +4771,7 @@ class ActiveSessionEngine(
         if (!routineContextIsCoherent) return null
         val exerciseIndex = coordinator._currentExerciseIndex.value
         val exercise = loadedRoutine?.exercises?.getOrNull(exerciseIndex)
-        val startOverride = pendingStartOverride
-        val params = (startOverride?.params ?: coordinator._workoutParameters.value).let { current ->
+        val params = coordinator._workoutParameters.value.let { current ->
             current.copy(activeRackItemIds = current.activeRackItemIds.toList())
         }
         return QueuedStartCandidate(
@@ -4855,6 +4902,9 @@ class ActiveSessionEngine(
         /** Get current exercise from loaded routine */
         fun getCurrentExercise(): RoutineExercise?
 
+        /** Get next step without triggering an action-navigation observation. */
+        fun getNextStepForRecovery(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>?
+
         /** Get next step in routine navigation */
         fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>?
 
@@ -4897,42 +4947,6 @@ class ActiveSessionEngine(
      * Set by DWSM after construction.
      */
     internal var flowDelegate: WorkoutFlowDelegate? = null
-
-    private data class InterruptedSetRecoverySnapshot(
-        val routineId: String,
-        val exerciseIndex: Int,
-        val setIndex: Int,
-        val warmupSetIndex: Int,
-        val repCount: RepCount,
-    )
-
-    private data class StartWorkoutOverride(
-        val params: WorkoutParameters,
-        val preserveWarmupReps: Boolean,
-        val skipVariableWarmupOverride: Boolean,
-    )
-
-    private sealed interface InterruptedWorkoutRecoveryPlan {
-        data class Resume(
-            val params: WorkoutParameters,
-            val warmupSetIndex: Int,
-            val preserveWarmupReps: Boolean,
-            val skipVariableWarmupOverride: Boolean,
-        ) : InterruptedWorkoutRecoveryPlan
-
-        data class EnterSetReady(
-            val exerciseIndex: Int,
-            val setIndex: Int,
-            val adjustedWeight: Float,
-            val adjustedReps: Int,
-            val feedback: String,
-        ) : InterruptedWorkoutRecoveryPlan
-
-        data class ShowRoutineComplete(val feedback: String) : InterruptedWorkoutRecoveryPlan
-    }
-
-    private var interruptedSetRecovery: InterruptedSetRecoverySnapshot? = null
-    private var pendingStartOverride: StartWorkoutOverride? = null
 
     /** Detector for identifying rep phase boundaries from position data */
     private val repBoundaryDetector = RepBoundaryDetector()
@@ -7101,6 +7115,7 @@ class ActiveSessionEngine(
             expectedLease = lease,
             afterExpectedLeaseReset = {
                 if (restSeconds > 0) startJustLiftEggTimer(restSeconds)
+                if (completion.reason != SetEndReason.USER_STOPPED) restartJustLiftAutoStartIfHandlesHeld()
                 afterJustLiftResetPresentationForTest?.invoke()
             },
             skipMachineTeardown = true,
@@ -7112,6 +7127,7 @@ class ActiveSessionEngine(
         afterExpectedLeaseReset: (() -> Unit)? = null,
         skipMachineTeardown: Boolean = false,
     ): Boolean {
+        pendingRestRackSelections.clear()
         val expectedResetToken = expectedLease?.let { lease ->
             executionGuard.claimExpectedResetAndCaptureResetCleanupToken(lease)
                 ?: return false
@@ -7186,8 +7202,6 @@ class ActiveSessionEngine(
 
     private fun clearSharedStateForNewWorkout() {
         cancelJustLiftEggTimer()
-        interruptedSetRecovery = null
-        pendingStartOverride = null
         coordinator.currentSessionId = null
         coordinator.workoutStartTime = 0
         coordinator.collectedMetrics.value = emptyList()
@@ -7263,6 +7277,7 @@ class ActiveSessionEngine(
 
     fun updateActiveRackSelection(itemIds: List<String>) {
         supersedeConfigurationInputIntent()
+        val restTarget = currentRestRackTarget()
         // Issue #534: For body-weight exercises, recompute _currentRackLoadAdjustment
         // synchronously when the user toggles a vest / counterweight on the live-set
         // screen, so that applyBodyweightVolume (called from confirmBodyweightSetResult)
@@ -7275,6 +7290,13 @@ class ActiveSessionEngine(
         // (so the next set / chip UI shows the new state) but skip the adjustment
         // recompute and skip the workoutParameters mirror copy.
         val distinctIds = itemIds.filter { it.isNotBlank() }.distinct()
+        restTarget?.let { target ->
+            pendingRestRackSelections[target] = PendingRestRackSelection(
+                itemIds = distinctIds,
+                behaviorOverrides = pendingRestRackSelections[target]?.behaviorOverrides
+                    ?: coordinator._activeRackBehaviorOverrides.value,
+            )
+        }
         val currentExercise = coordinator._loadedRoutine.value
             ?.exercises
             ?.getOrNull(coordinator._currentExerciseIndex.value)
@@ -7311,9 +7333,51 @@ class ActiveSessionEngine(
     }
 
     fun updateActiveRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) {
+        currentRestRackTarget()?.let { target ->
+            pendingRestRackSelections[target] = PendingRestRackSelection(
+                itemIds = pendingRestRackSelections[target]?.itemIds ?: coordinator._activeRackItemIds.value,
+                behaviorOverrides = overrides,
+            )
+        }
         publishLoadedRoutineRackBehaviorOverrides(
             updatedRoutine = null,
             overrides = overrides,
+        )
+    }
+
+    private fun applyPendingRestRackSelection(target: Pair<Int, Int>): Boolean {
+        val pending = pendingRestRackSelections.remove(target) ?: return false
+        val exercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(target.first)
+        val params = coordinator._workoutParameters.value
+        val selectedItems = equipmentRackRepository.rackItems.value
+            .filter { it.enabled && it.id in pending.itemIds }
+        val adjustment = applyEquipmentRackLoadUseCase.calculate(
+            programmedWeightPerCableKg = params.weightPerCableKg,
+            physicalCableCount = exercise?.exercise?.preferredCableCount ?: 1,
+            selectedItems = selectedItems,
+            isEchoMode = params.isEchoMode,
+            validatorMinimumPerCableKg = validatorSafeMinimum(params),
+            behaviorOverrides = pending.behaviorOverrides,
+        )
+        coordinator._activeRackBehaviorOverrides.value = pending.behaviorOverrides
+        coordinator.setActiveRackSelection(
+            itemIds = pending.itemIds,
+            precomputedAdjustment = adjustment,
+            precomputedItemsJson = rackJson.encodeToString(
+                ListSerializer(RackItem.serializer()),
+                selectedItems,
+            ),
+        )
+        return true
+    }
+
+    private fun currentRestRackTarget(): Pair<Int, Int>? {
+        if (coordinator._workoutState.value !is WorkoutState.Resting) return null
+        val routine = coordinator._loadedRoutine.value ?: return null
+        return flowDelegate?.getNextStep(
+            routine,
+            coordinator._currentExerciseIndex.value,
+            coordinator._currentSetIndex.value,
         )
     }
 
@@ -7407,294 +7471,6 @@ class ActiveSessionEngine(
 
     internal fun endConfigurationInputMutation(token: ConfigurationInputMutationToken) {
         executionGuard.endConfigurationInputMutation(token)
-    }
-
-    fun captureInterruptedWorkoutForRecovery() {
-        val routine = coordinator._loadedRoutine.value
-        if (coordinator._workoutState.value !is WorkoutState.Active || routine == null) {
-            interruptedSetRecovery = null
-            return
-        }
-
-        interruptedSetRecovery = InterruptedSetRecoverySnapshot(
-            routineId = routine.id,
-            exerciseIndex = coordinator._currentExerciseIndex.value,
-            setIndex = coordinator._currentSetIndex.value,
-            warmupSetIndex = coordinator._currentWarmupSetIndex.value,
-            repCount = coordinator._repCount.value,
-        )
-        Logger.w {
-            "Captured interrupted set recovery snapshot: routine=${routine.name}, " +
-                "exerciseIndex=${coordinator._currentExerciseIndex.value}, setIndex=${coordinator._currentSetIndex.value}, " +
-                "warmupSetIndex=${coordinator._currentWarmupSetIndex.value}, reps=${coordinator._repCount.value}"
-        }
-    }
-
-    fun reconnectInterruptedWorkout() {
-        supersedeConfigurationInputIntent()
-        val plan = buildInterruptedWorkoutRecoveryPlan()
-        applyInterruptedWorkoutRecoveryPlan(plan)
-    }
-
-    private fun buildInterruptedWorkoutRecoveryPlan(): InterruptedWorkoutRecoveryPlan {
-        val snapshot = interruptedSetRecovery
-        val routine = coordinator._loadedRoutine.value
-        if (snapshot == null || routine == null || routine.id != snapshot.routineId) {
-            return InterruptedWorkoutRecoveryPlan.EnterSetReady(
-                exerciseIndex = coordinator._currentExerciseIndex.value,
-                setIndex = coordinator._currentSetIndex.value,
-                adjustedWeight = coordinator._workoutParameters.value.weightPerCableKg,
-                adjustedReps = coordinator._workoutParameters.value.reps,
-                feedback = "Phoenix reconnected, but couldn't rebuild the interrupted set. Restart it from Set Ready.",
-            )
-        }
-
-        val exercise = routine.exercises.getOrNull(snapshot.exerciseIndex) ?: return InterruptedWorkoutRecoveryPlan.EnterSetReady(
-            exerciseIndex = snapshot.exerciseIndex,
-            setIndex = snapshot.setIndex,
-            adjustedWeight = coordinator._workoutParameters.value.weightPerCableKg,
-            adjustedReps = coordinator._workoutParameters.value.reps,
-            feedback = "Phoenix reconnected, but the interrupted exercise could not be resolved safely.",
-        )
-
-        val baseParams = buildRoutineRecoveryBaseParameters(exercise, snapshot.setIndex)
-        if (isBodyweightExercise(exercise) || exercise.duration != null || baseParams.isAMRAP || baseParams.isJustLift) {
-            return InterruptedWorkoutRecoveryPlan.EnterSetReady(
-                exerciseIndex = snapshot.exerciseIndex,
-                setIndex = snapshot.setIndex,
-                adjustedWeight = baseParams.weightPerCableKg,
-                adjustedReps = baseParams.reps,
-                feedback = "Phoenix reconnected, but this set type needs a manual restart from Set Ready.",
-            )
-        }
-
-        return if (snapshot.warmupSetIndex >= 0) {
-            buildVariableWarmupRecoveryPlan(snapshot, routine, exercise, baseParams)
-        } else {
-            buildStandardRecoveryPlan(snapshot, routine, exercise, baseParams)
-        }
-    }
-
-    private fun buildStandardRecoveryPlan(
-        snapshot: InterruptedSetRecoverySnapshot,
-        routine: Routine,
-        exercise: RoutineExercise,
-        baseParams: WorkoutParameters,
-    ): InterruptedWorkoutRecoveryPlan {
-        val warmupRemaining = (baseParams.warmupReps - snapshot.repCount.warmupReps).coerceAtLeast(0)
-        val workingRemaining = if (warmupRemaining > 0) {
-            baseParams.reps
-        } else {
-            (baseParams.reps - snapshot.repCount.workingReps).coerceAtLeast(0)
-        }
-
-        if (warmupRemaining == 0 && workingRemaining == 0) {
-            return nextRoutineStepPlan(
-                routine = routine,
-                exercise = exercise,
-                exerciseIndex = snapshot.exerciseIndex,
-                setIndex = snapshot.setIndex,
-                feedback = "Phoenix reconnected after the set had already completed. Continue from the next step.",
-            )
-        }
-
-        return InterruptedWorkoutRecoveryPlan.Resume(
-            params = baseParams.copy(
-                warmupReps = warmupRemaining,
-                reps = workingRemaining,
-            ),
-            warmupSetIndex = -1,
-            preserveWarmupReps = true,
-            skipVariableWarmupOverride = false,
-        )
-    }
-
-    private fun buildVariableWarmupRecoveryPlan(
-        snapshot: InterruptedSetRecoverySnapshot,
-        routine: Routine,
-        exercise: RoutineExercise,
-        baseParams: WorkoutParameters,
-    ): InterruptedWorkoutRecoveryPlan {
-        val warmupSet = exercise.warmupSets.getOrNull(snapshot.warmupSetIndex)
-            ?: return InterruptedWorkoutRecoveryPlan.EnterSetReady(
-                exerciseIndex = snapshot.exerciseIndex,
-                setIndex = snapshot.setIndex,
-                adjustedWeight = baseParams.weightPerCableKg,
-                adjustedReps = baseParams.reps,
-                feedback = "Phoenix reconnected, but the interrupted warm-up set could not be rebuilt safely.",
-            )
-
-        val completedReps = snapshot.repCount.workingReps
-        val remainingReps = (warmupSet.reps - completedReps).coerceAtLeast(0)
-        if (remainingReps > 0) {
-            return InterruptedWorkoutRecoveryPlan.Resume(
-                params = buildWarmupOverrideParams(
-                    baseParams = baseParams,
-                    workingWeightKg = baseParams.weightPerCableKg,
-                    warmupSet = warmupSet,
-                    reps = remainingReps,
-                ),
-                warmupSetIndex = snapshot.warmupSetIndex,
-                preserveWarmupReps = true,
-                skipVariableWarmupOverride = true,
-            )
-        }
-
-        val nextWarmupIndex = snapshot.warmupSetIndex + 1
-        if (nextWarmupIndex < exercise.warmupSets.size) {
-            return InterruptedWorkoutRecoveryPlan.Resume(
-                params = buildWarmupOverrideParams(
-                    baseParams = baseParams,
-                    workingWeightKg = baseParams.weightPerCableKg,
-                    warmupSet = exercise.warmupSets[nextWarmupIndex],
-                    reps = exercise.warmupSets[nextWarmupIndex].reps,
-                ),
-                warmupSetIndex = nextWarmupIndex,
-                preserveWarmupReps = true,
-                skipVariableWarmupOverride = true,
-            )
-        }
-
-        return InterruptedWorkoutRecoveryPlan.Resume(
-            params = baseParams,
-            warmupSetIndex = -1,
-            preserveWarmupReps = true,
-            skipVariableWarmupOverride = false,
-        )
-    }
-
-    private fun nextRoutineStepPlan(
-        routine: Routine,
-        exercise: RoutineExercise,
-        exerciseIndex: Int,
-        setIndex: Int,
-        feedback: String,
-    ): InterruptedWorkoutRecoveryPlan {
-        val nextStep = flowDelegate?.getNextStep(routine, exerciseIndex, setIndex)
-        if (nextStep == null) {
-            return InterruptedWorkoutRecoveryPlan.ShowRoutineComplete(feedback)
-        }
-
-        val (nextExerciseIndex, nextSetIndex) = nextStep
-        val nextExercise = routine.exercises.getOrNull(nextExerciseIndex) ?: return InterruptedWorkoutRecoveryPlan.ShowRoutineComplete(feedback)
-        val nextParams = buildRoutineRecoveryBaseParameters(nextExercise, nextSetIndex)
-        return InterruptedWorkoutRecoveryPlan.EnterSetReady(
-            exerciseIndex = nextExerciseIndex,
-            setIndex = nextSetIndex,
-            adjustedWeight = nextParams.weightPerCableKg,
-            adjustedReps = nextParams.reps,
-            feedback = feedback,
-        )
-    }
-
-    private fun buildRoutineRecoveryBaseParameters(exercise: RoutineExercise, setIndex: Int): WorkoutParameters {
-        val rawSetReps = exercise.setReps.getOrNull(setIndex)
-        val resolvedSetReps = rawSetReps ?: exercise.reps
-        return coordinator._workoutParameters.value.copy(
-            programMode = exercise.programMode,
-            weightPerCableKg = resolveOccurrenceSetWeight(exercise, setIndex),
-            reps = resolvedSetReps,
-            warmupReps = Constants.DEFAULT_WARMUP_REPS,
-            echoLevel = exercise.getEchoLevelForSet(setIndex),
-            eccentricLoad = exercise.eccentricLoad,
-            selectedExerciseId = exercise.exercise.id,
-            stallDetectionEnabled = exercise.stallDetectionEnabled,
-            repCountTiming = exercise.repCountTiming,
-            stopAtTop = exercise.stopAtTop,
-            isAMRAP = rawSetReps == null,
-            progressionRegressionKg = exercise.progressionKg,
-            isJustLift = false,
-            useAutoStart = false,
-        )
-    }
-
-    private fun buildWarmupOverrideParams(
-        baseParams: WorkoutParameters,
-        workingWeightKg: Float,
-        warmupSet: com.devil.phoenixproject.domain.model.WarmupSet,
-        reps: Int,
-    ): WorkoutParameters {
-        val warmupWeight = (workingWeightKg * warmupSet.percentOfWorking / 100f).coerceIn(0f, 110f)
-        return baseParams.copy(
-            weightPerCableKg = warmupWeight,
-            reps = reps,
-            warmupReps = Constants.DEFAULT_WARMUP_REPS,
-            isAMRAP = false,
-        )
-    }
-
-    private fun applyInterruptedWorkoutRecoveryPlan(plan: InterruptedWorkoutRecoveryPlan) {
-        when (plan) {
-            is InterruptedWorkoutRecoveryPlan.Resume -> {
-                Logger.i {
-                    "Rebuilding interrupted set: exerciseIndex=${coordinator._currentExerciseIndex.value}, " +
-                        "setIndex=${coordinator._currentSetIndex.value}, warmupSetIndex=${plan.warmupSetIndex}, params=${plan.params}"
-                }
-                interruptedSetRecovery = null
-                executionGuard.mutateConfigurationInputs {
-                    pendingStartOverride = StartWorkoutOverride(
-                        params = plan.params,
-                        preserveWarmupReps = plan.preserveWarmupReps,
-                        skipVariableWarmupOverride = plan.skipVariableWarmupOverride,
-                    )
-                    coordinator._currentWarmupSetIndex.value = plan.warmupSetIndex
-                    coordinator._workoutParameters.value = plan.params
-                }
-                resetInterruptedWorkoutTrackingState()
-                startWorkout(skipCountdown = true)
-            }
-
-            is InterruptedWorkoutRecoveryPlan.EnterSetReady -> {
-                Logger.w { "Interrupted workout requires manual restart from Set Ready" }
-                interruptedSetRecovery = null
-                pendingStartOverride = null
-                resetInterruptedWorkoutTrackingState()
-                coordinator._workoutState.value = WorkoutState.Idle
-                flowDelegate?.enterSetReadyWithAdjustments(
-                    exerciseIndex = plan.exerciseIndex,
-                    setIndex = plan.setIndex,
-                    adjustedWeight = plan.adjustedWeight,
-                    adjustedReps = plan.adjustedReps,
-                )
-                coordinator._userFeedbackEvents.tryEmit(plan.feedback)
-            }
-
-            is InterruptedWorkoutRecoveryPlan.ShowRoutineComplete -> {
-                Logger.w { "Interrupted workout already completed before reconnect; showing routine complete" }
-                // Issue #395: Write aggregate health workout before clearing routine state
-                writeRoutineHealthData()
-                autoBackupRoutineIfEnabled("interrupted-routine-complete")
-                interruptedSetRecovery = null
-                pendingStartOverride = null
-                resetInterruptedWorkoutTrackingState()
-                coordinator._workoutState.value = WorkoutState.Idle
-                flowDelegate?.showRoutineComplete()
-                coordinator._userFeedbackEvents.tryEmit(plan.feedback)
-            }
-        }
-    }
-
-    private fun resetInterruptedWorkoutTrackingState() {
-        coordinator.workoutJob?.cancel()
-        coordinator.workoutJob = null
-        repCounter.reset()
-        resetAutoStopState()
-        coordinator._repCount.value = RepCount()
-        coordinator._repRanges.value = null
-        coordinator._timedExerciseRemainingSeconds.value = null
-        coordinator._currentHeuristicKgMax.value = 0f
-        coordinator.collectedMetrics.value = emptyList()
-        coordinator.setRepMetrics.value = emptyList()
-        coordinator.repBoundaryTimestamps.value = emptyList()
-        executionGuard.currentLease?.let(::resetBiomechanicsContext)
-        coordinator.repQualityScorer.reset()
-        coordinator._latestRepQuality.value = null
-        coordinator._loadBaselineA.value = 0f
-        coordinator._loadBaselineB.value = 0f
-        coordinator.warmupCompleteTimeMs = 0
-        coordinator.currentSessionId = null
-        coordinator.bodyweightTimerJob?.cancel()
-        coordinator.bodyweightTimerJob = null
     }
 
     private fun rejectStart(reason: StartRejectionReason) {
@@ -7879,13 +7655,7 @@ class ActiveSessionEngine(
             return null
         }
 
-        val capturedStartOverride = if (retryRequest == null) {
-            pendingStartOverride
-        } else {
-            null
-        }
         val seedParams = retryRequest?.params
-            ?: capturedStartOverride?.params
             ?: queuedStartCandidate?.workoutParameters
             ?: coordinator._workoutParameters.value
         val durationSeconds = currentExercise?.duration?.takeIf { it > 0 }
@@ -7947,9 +7717,6 @@ class ActiveSessionEngine(
         if (queuedStartCandidate != null && captureQueuedStartCandidate() != queuedStartCandidate) {
             executionGuard.invalidate(lease, ExecutionInvalidationReason.START_FAILED)
             return null
-        }
-        if (retryRequest == null && pendingStartOverride === capturedStartOverride) {
-            pendingStartOverride = null
         }
         outgoingLease?.let(::discardTeardownReadyContinuation)
         afterExecutionBegin(outgoingLease?.executionId, lease.executionId)
@@ -8013,16 +7780,11 @@ class ActiveSessionEngine(
             var configurationTeardownHandedOff = false
             var retryStartCommitted = false
             try {
-                val startOverride = capturedStartOverride
-                if (startOverride != null) {
-                    coordinator._workoutParameters.value = startOverride.params
-                }
                 if (queuedStartCandidate != null && captureQueuedStartCandidate() != queuedStartCandidate) {
                     failStart(lease, priorWorkoutState)
                     return@launch
                 }
                 val baseParams = retryRequest?.params
-                    ?: startOverride?.params
                     ?: queuedStartCandidate?.workoutParameters
                     ?: coordinator._workoutParameters.value
 
@@ -8281,8 +8043,7 @@ class ActiveSessionEngine(
                 }
 
                 val effectiveWarmupReps = Constants.DEFAULT_WARMUP_REPS
-                val preserveWarmupReps = startOverride?.preserveWarmupReps == true
-                val effectiveParams = if (!preserveWarmupReps && params.warmupReps != effectiveWarmupReps) {
+                val effectiveParams = if (params.warmupReps != effectiveWarmupReps) {
                     Logger.d("ActiveSessionEngine") { "Issue #222: Forcing warmupReps=$effectiveWarmupReps for cable exercise (was ${params.warmupReps})" }
                     val updated = params.copy(warmupReps = effectiveWarmupReps)
                     coordinator._workoutParameters.value = updated
@@ -8307,9 +8068,8 @@ class ActiveSessionEngine(
                 // Each warm-up set is a separate BLE stop/start cycle at a percentage of working weight.
                 val warmupSetIndex = coordinator._currentWarmupSetIndex.value
                 val isInWarmupPhase = warmupSetIndex >= 0
-                val skipVariableWarmupOverride = startOverride?.skipVariableWarmupOverride == true
                 val hasVariableWarmupOverrideApplied: Boolean
-                val warmupOverrideParams = if (!skipVariableWarmupOverride && isInWarmupPhase && currentExercise != null) {
+                val warmupOverrideParams = if (isInWarmupPhase && currentExercise != null) {
                     val warmupSet = currentExercise.warmupSets.getOrNull(warmupSetIndex)
                     if (warmupSet != null) {
                         val warmupWeight = (effectiveParams.weightPerCableKg * warmupSet.percentOfWorking / 100f)
@@ -8354,14 +8114,12 @@ class ActiveSessionEngine(
                     // Issue #481: Variable warm-up sets must never carry the working-set's
                     // per-rep weight progression to the machine — the firmware applies the
                     // increment to every rep, including warm-up reps. The warm-up override
-                    // (inline above and buildWarmupOverrideParams) intentionally inherits
+                    // (inline above) intentionally inherits
                     // progressionRegressionKg so that _workoutParameters retains the working
                     // value for the warm-up→working transition (handleSetCompletion restores
                     // weight/reps but NOT progression). So zero it here for the BLE packet
                     // ONLY, leaving persisted state intact. Covers both the inline override
-                    // and the interrupted-workout recovery replay (skipVariableWarmupOverride).
-                    val sendingWarmupSet = hasVariableWarmupOverrideApplied ||
-                        (skipVariableWarmupOverride && isInWarmupPhase)
+                    val sendingWarmupSet = hasVariableWarmupOverrideApplied
                     if (sendingWarmupSet && base.progressionRegressionKg != 0f) {
                         Logger.d { "Issue #481: zeroing per-rep progression for warm-up BLE packet (was ${base.progressionRegressionKg}kg)" }
                         base.copy(progressionRegressionKg = 0f)
@@ -8417,8 +8175,7 @@ class ActiveSessionEngine(
                             "routineExercise.setWeightsPerCableKg=${routineExercise.setWeightsPerCableKg}, " +
                             "routineExercise.usePercentOfPR=${routineExercise.usePercentOfPR}, " +
                             "routineExercise.weightPercentOfPR=${routineExercise.weightPercentOfPR}%, " +
-                            "setIndex=${coordinator._currentSetIndex.value}, " +
-                            "hadStartOverride=${startOverride != null}"
+                            "setIndex=${coordinator._currentSetIndex.value}"
                     }
                 }
                 Logger.w("Issue390") {
@@ -8570,6 +8327,9 @@ class ActiveSessionEngine(
                 val machineSafetyStartAllowed = isBodyweight ||
                     (machineSafetyCoordinator?.canStartMachine() ?: true)
                 if (!machineSafetyStartAllowed) {
+                    // Never refuse silently: re-show the stored hazard's recovery UI (unless the only
+                    // row is the replaced live set's own arm, which its teardown will resolve).
+                    machineSafetyCoordinator?.surfaceStoredHazard(liveExecutionId = outgoingLease?.executionId)
                     failStart(lease, priorWorkoutState)
                     return@launch
                 }
@@ -9467,10 +9227,12 @@ class ActiveSessionEngine(
     }
 
     internal fun beginRoutineCompletedRuntimeCleanup() {
+        pendingRestRackSelections.clear()
         beginTrackedRuntimeCleanup(RuntimeCleanupReason.ROUTINE_COMPLETED)
     }
 
     internal fun beginRoutineAbandonmentRuntimeCleanup() {
+        pendingRestRackSelections.clear()
         beginTrackedRuntimeCleanup(RuntimeCleanupReason.EXPLICIT_RESTART)
     }
 
@@ -10082,6 +9844,7 @@ class ActiveSessionEngine(
     }
 
     fun stopWorkout(exitingWorkout: Boolean = false) {
+        pendingRestRackSelections.clear()
         val cleanupCandidateAtInvocation = if (exitingWorkout) runtimeCleanupCandidateRef.value else null
         val restoredOwnerAtInvocation = restoredRuntimeOwnerRef.value
         val pendingNoLeaseCleanupAtInvocation = if (
@@ -11482,6 +11245,8 @@ class ActiveSessionEngine(
                                 Logger.d("Just Lift: Starting egg timer ($justLiftRestSeconds s)")
                                 startJustLiftEggTimer(justLiftRestSeconds)
                             }
+                            // #761. Defensive: no Just Lift completion carries USER_STOPPED here today.
+                            if (completion.reason != SetEndReason.USER_STOPPED) restartJustLiftAutoStartIfHandlesHeld()
                             afterJustLiftResetPresentationForTest?.invoke()
                         }, skipMachineTeardown = true)
                         if (!resetSucceeded) return@launchCompletionJob
@@ -11741,6 +11506,12 @@ class ActiveSessionEngine(
                 null
             }
             val nextSetIdxFromStep = nextStep?.second
+
+            // Publish the upcoming entry's defaults before the rest UI is rendered. The
+            // current exercise index intentionally remains on the completed entry during rest.
+            if (nextStep != null && nextExerciseFromStep != null && !isBodyweightExercise(nextExerciseFromStep)) {
+                flowDelegate?.seedRackSelectionForExercise(nextStep.first)
+            }
 
             // Issue #354: Always use the exercise's configured rest time, even within supersets.
             // Previously, supersets used a hardcoded short rest time, but users should configure
@@ -12614,6 +12385,13 @@ class ActiveSessionEngine(
                 stallDetectionEnabled = currentExercise.stallDetectionEnabled,
                 progressionRegressionKg = setProgressionKg,
             )
+            // The rest UI may have captured a rack edit for this exact next set. Keep
+            // the same ordering as every routine transition: destination defaults first,
+            // then the pending user selection, before startWorkout snapshots command inputs.
+            flowDelegate?.seedRackSelectionForExercise(coordinator._currentExerciseIndex.value)
+            applyPendingRestRackSelection(
+                coordinator._currentExerciseIndex.value to coordinator._currentSetIndex.value,
+            )
             Logger.d { "advanceToNextSetInSingleExercise: Issue #203 - setIdx=${coordinator._currentSetIndex.value}, isAMRAP=$nextIsAMRAP" }
 
             repCounter.resetCountsOnly()
@@ -12635,9 +12413,8 @@ class ActiveSessionEngine(
     /**
      * Start workout or enter SetReady based on autoplay preference.
      */
-    private fun startWorkoutOrSetReady(lease: ExecutionLease?) {
+    private fun startWorkoutOrSetReady(lease: ExecutionLease?, autoplay: Boolean) {
         if (!hasExpectedAuthority(lease, "workout_or_set_ready")) return
-        val autoplay = settingsManager.autoplayEnabled.value
         if (autoplay) {
             startWorkout(skipCountdown = true)
         } else {
@@ -12700,6 +12477,7 @@ class ActiveSessionEngine(
             val (nextExIdx, nextSetIdx) = nextStep
             val nextExercise = routine.exercises[nextExIdx]
             val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value)
+            val autoplay = settingsManager.autoplayEnabled.value
 
             val isChangingExercise = nextExIdx != coordinator._currentExerciseIndex.value
             // Issue #572: when getNextStep advances to the next entry but the new entry
@@ -12801,10 +12579,12 @@ class ActiveSessionEngine(
             }
 
             if (isChangingExercise && !isSameExerciseContinuation) {
-                // Issue #536: autoplay advances via startNextSetOrExercise, not enterSetReady.
-                // Without re-seeding rack defaults here, a vest toggled on the previous
-                // exercise leaks into captureRackLoadSnapshot for the next exercise.
-                flowDelegate?.seedRackSelectionForExercise(nextExIdx)
+                if (autoplay) {
+                    // Autoplay bypasses SetReady, so publish the destination defaults and
+                    // then consume the rest edit before startWorkout captures command inputs.
+                    flowDelegate?.seedRackSelectionForExercise(nextExIdx)
+                    applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                }
                 repCounter.reset()
                 // Phase 35C: Initialize warm-up phase for new exercise with warmupSets
                 if (nextSetIdx == 0 && nextExercise.warmupSets.isNotEmpty() && !nextIsBodyweight) {
@@ -12816,7 +12596,11 @@ class ActiveSessionEngine(
                     coordinator._totalWarmupSets.value = 0
                 }
                 resetAutoStopState()
-                startWorkoutOrSetReady(lease)
+                startWorkoutOrSetReady(lease, autoplay)
+                if (!autoplay) {
+                    // Manual progression lets SetReady seed destination defaults first.
+                    applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                }
             } else if (isSameExerciseContinuation) {
                 // Issue #572: same-exercise continuation across entries. We do NOT call
                 // startWorkout() here even when autoplay is on, because that would send
@@ -12833,18 +12617,23 @@ class ActiveSessionEngine(
                 // rest/summary UI; once the SetReady state has preserved any rest-screen
                 // edits, flip the workout state to Idle so navigation can occur.
                 flowDelegate?.enterSetReady(nextExIdx, nextSetIdx)
+                applyPendingRestRackSelection(nextExIdx to nextSetIdx)
                 coordinator._workoutState.value = WorkoutState.Idle
             } else {
-                // Same-entry set advance (isChangingExercise == false). Preserve the
-                // existing behaviour so that manual rest-screen weight/rep edits
-                // (captured by _userAdjustedWeightDuringRest above) are kept when
-                // startWorkoutOrSetReady() runs.
                 repCounter.resetCountsOnly()
                 resetAutoStopState()
-                startWorkoutOrSetReady(lease)
+                if (autoplay) {
+                    applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                }
+                startWorkoutOrSetReady(lease, autoplay)
+                if (!autoplay) {
+                    // SetReady republishes this entry's defaults even for a later set.
+                    applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                }
             }
             coordinator._userAdjustedWeightDuringRest = false
         } else {
+            pendingRestRackSelections.clear()
             coordinator._userAdjustedWeightDuringRest = false
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
             supersedeConfigurationInputIntent()
@@ -13545,6 +13334,27 @@ class ActiveSessionEngine(
                 }
             }
         }
+    }
+
+    /**
+     * #761: auto-start is edge-triggered on handleState. A grab late in a timed Just Lift
+     * summary starts a countdown bound to the completed lease; the summary reset retires
+     * that lease, the countdown aborts, and the still-held handles never produce a new
+     * Grabbed edge. Called only from the Just Lift waiting-for-successor resets (timed
+     * summary expiry and manual dismissal of a non-user-stopped completion), so
+     * stop/end/skip teardowns never auto-restart a user holding the handles.
+     */
+    private fun restartJustLiftAutoStartIfHandlesHeld() {
+        val params = coordinator._workoutParameters.value
+        if (!params.isJustLift || !params.useAutoStart) return
+        // The detector keeps its last state across an unexpected link drop; never
+        // re-arm from a reading that may predate a disconnect.
+        if (bleRepository.connectionState.value !is ConnectionState.Connected) return
+        if (bleRepository.handleState.value != HandleState.Grabbed) return
+        // Any countdown still running was bound to the lease this reset just retired
+        // and can never complete. Restart unbound: it only runs while no lease exists.
+        cancelAutoStartTimer()
+        startAutoStartTimer(expectedLease = null)
     }
 
     private fun cancelAutoStartTimer() {

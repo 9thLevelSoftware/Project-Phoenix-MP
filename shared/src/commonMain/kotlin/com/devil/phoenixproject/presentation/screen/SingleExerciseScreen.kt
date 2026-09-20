@@ -424,7 +424,7 @@ fun SingleExerciseScreen(
             }
         }
 
-        // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
+        // Connection error dialog
         connectionError?.let { error ->
             ConnectionErrorDialog(
                 message = error,

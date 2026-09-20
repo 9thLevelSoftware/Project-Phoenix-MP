@@ -1,6 +1,7 @@
 package com.devil.phoenixproject
 
 import com.devil.phoenixproject.data.local.DatabasePresenceSnapshot
+import kotlin.coroutines.cancellation.CancellationException
 
 /** A startup failure that is safe to classify without exposing its message. */
 internal interface StartupDiagnosticFailure {
@@ -41,6 +42,39 @@ internal inline fun <T> resolveStartupDependencies(
             cause = failure,
         )
     },
+)
+
+/**
+ * Suspended startup boundary used by platform hosts. The initial implementation
+ * intentionally keeps behavior minimal while ordering is specified by tests.
+ */
+internal suspend fun <S, T> prepareStartupDependencies(
+    resolveStartupOnly: () -> S,
+    prepareRequired: suspend (S) -> Unit,
+    resolveFeatures: (S) -> T,
+): StartupDependencyResolution<T> {
+    val startup = resolveStartupDependencies(resolveStartupOnly)
+    if (startup is StartupDependencyResolution.Failed) return startup
+    startup as StartupDependencyResolution.Ready
+    return try {
+        prepareRequired(startup.dependencies)
+        resolveStartupDependencies { resolveFeatures(startup.dependencies) }
+    } catch (failure: CancellationException) {
+        throw failure
+    } catch (failure: Throwable) {
+        resolveStartupDependencies<T> { throw failure }
+    }
+}
+
+/** Shared Android/iOS host gate; feature resolution is impossible before required startup succeeds. */
+internal suspend fun <S, T> prepareAppHostDependencies(
+    resolveStartupOnly: () -> S,
+    prepareRequired: suspend (S) -> Unit,
+    resolveFeatures: (S) -> T,
+): StartupDependencyResolution<T> = prepareStartupDependencies(
+    resolveStartupOnly = resolveStartupOnly,
+    prepareRequired = prepareRequired,
+    resolveFeatures = resolveFeatures,
 )
 
 internal fun DatabasePresenceSnapshot.safeSummary(): String = listOf(

@@ -1,5 +1,3 @@
-@file:Suppress("unused")
-
 package com.devil.phoenixproject.presentation.components.charts
 
 import androidx.compose.animation.core.animateFloatAsState

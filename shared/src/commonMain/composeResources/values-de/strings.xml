@@ -39,6 +39,7 @@
     <string name="action_continue">Fortfahren</string>
     <string name="action_discard">Verwerfen</string>
     <string name="action_rename">Umbenennen</string>
+
     <!-- Common labels -->
     <string name="label_please_wait">Bitte warten…</string>
     <string name="label_name">Name</string>
@@ -161,6 +162,7 @@
     <string name="never_synced">Nie synchronisiert</string>
     <string name="unlink_account">Konto trennen</string>
     <string name="sync_now">Jetzt synchronisieren</string>
+
     <!-- Training Cycles -->
     <string name="create_cycle">Zyklus erstellen</string>
     <string name="edit_cycle">Zyklus bearbeiten</string>
@@ -227,6 +229,7 @@
     <string name="echo_level">Echo-Stufe</string>
     <string name="eccentric_load">Exzentrische Last</string>
     <string name="select_tut_variant">TUT-Variante wählen</string>
+
     <!-- Profiles -->
     <string name="add_profile">Profil hinzufügen</string>
     <string name="edit_profile">Profil bearbeiten</string>
@@ -277,6 +280,7 @@
     <string name="cd_drop_set_candidate">%1$s Drop, %2$s je Seil</string>
     <string name="cd_drop_set_candidate_unavailable">%1$s Drop nicht verfügbar</string>
     <string name="cd_drop_set_retry_disabled">Wähle einen Drop-Prozentsatz zum Wiederholen</string>
+
     <!-- Connection Logs -->
     <string name="search_logs">Logs durchsuchen…</string>
     <string name="auto_scroll">Auto-Scroll</string>
@@ -385,6 +389,7 @@
     <string name="empty_no_history_period">No workouts in the last %1$s</string>
     <string name="empty_no_cycles_title">Noch keine Trainingszyklen</string>
     <string name="empty_no_cycles_message">Create a rolling workout schedule that adapts to your life, not the calendar</string>
+
     <!-- ==================== Import/Export messages ==================== -->
     <string name="import_complete_title">Import Complete</string>
     <string name="import_result_title">Import Result</string>
@@ -450,6 +455,7 @@
     <string name="cd_thumbnail_for">Thumbnail for %1$s</string>
     <string name="cd_clear_filters">Clear filters</string>
     <string name="cd_alphabet_nav">Alphabet navigation. Tap a letter to jump to exercises starting with that letter.</string>
+
     <!-- Profiles -->
     <string name="cd_active">Active</string>
 
@@ -466,6 +472,7 @@
     <!-- Weight -->
     <string name="cd_decrease_weight">Decrease weight</string>
     <string name="cd_increase_weight">Increase weight</string>
+
     <!-- Data / Export -->
     <string name="cd_backup_data">Backup data</string>
     <string name="cd_restore_data">Restore data</string>

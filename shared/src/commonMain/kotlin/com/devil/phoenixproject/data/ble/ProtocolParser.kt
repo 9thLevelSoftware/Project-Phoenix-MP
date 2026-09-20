@@ -44,17 +44,6 @@ fun getInt16LE(data: ByteArray, offset: Int): Int {
 }
 
 /**
- * Read unsigned 16-bit integer in BIG-ENDIAN format (MSB first).
- * Used for some packet types in the protocol.
- *
- * @param data The byte array to read from
- * @param offset The starting position in the array
- * @return Unsigned value in range [0, 65535]
- */
-fun getUInt16BE(data: ByteArray, offset: Int): Int = ((data[offset].toInt() and 0xFF) shl 8) or
-    (data[offset + 1].toInt() and 0xFF)
-
-/**
  * Read signed 32-bit integer in LITTLE-ENDIAN format.
  * Used for rep counters in 24-byte packets.
  *

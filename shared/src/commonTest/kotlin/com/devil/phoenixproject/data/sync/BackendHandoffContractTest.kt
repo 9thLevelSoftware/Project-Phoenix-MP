@@ -46,7 +46,7 @@ class BackendHandoffContractTest {
 
     // Task 2 RED only. Replace this RHS after reviewing the complete amended handoff.
     private val EXPECTED_EDGE_HANDOFF_SHA256 =
-        "8d4dcf592e7c27e7be52aa2179e85cf5e90e151d38a6072f2452c5525ff5a3a2"
+        "3aae2d805300ba0f41287cf7c179ab55f76e371f42ea11573532edd7a0b28de7"
 
     private fun normalizedEdgeHandoff(value: String): String =
         value.replace("\r\n", "\n").replace('\r', '\n')

@@ -4,7 +4,7 @@ import com.devil.phoenixproject.domain.usecase.DropSetEligibilityPolicy
 import com.devil.phoenixproject.presentation.manager.ActiveSessionEngine
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
-import kotlin.test.assertNotNull
+import org.junit.Assert.assertNotNull
 import org.junit.Test
 
 class PublicConstructorApiTest {

@@ -19,6 +19,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -65,9 +67,12 @@ import androidx.compose.ui.unit.sp
 import com.devil.phoenixproject.domain.model.DropPercentage
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.percentLabel
 import com.devil.phoenixproject.presentation.components.EchoLevelPillSelector
+import com.devil.phoenixproject.presentation.components.EquipmentRackSelectionCard
 import com.devil.phoenixproject.presentation.components.ExpressiveSlider
 import com.devil.phoenixproject.presentation.components.SliderWithButtons
 import com.devil.phoenixproject.presentation.components.WeightChangePerRepControl
@@ -168,6 +173,11 @@ fun RestTimerCard(
     isNextExerciseBodyweight: Boolean = false,
     // Issue #266/#410: Configurable weight step from user preferences
     weightStepKg: Float = 0.25f,
+    rackItems: List<RackItem> = emptyList(),
+    activeRackItemIds: List<String> = emptyList(),
+    behaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
+    onRackSelectionChange: (List<String>) -> Unit = {},
+    onRackBehaviorOverrideChange: (Map<String, RackItemBehavior>) -> Unit = {},
     dropSetOffer: DropSetOfferUiState? = null,
     onAcceptDropSet: (RestActionIdentity, DropPercentage) -> Unit = { _, _ -> },
     onDeclineDropSet: (RestActionIdentity) -> Unit = {},
@@ -251,7 +261,8 @@ fun RestTimerCard(
 
         Column(
             modifier = Modifier
-                .fillMaxSize(),
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.SpaceBetween,
         ) {
@@ -473,6 +484,19 @@ fun RestTimerCard(
                 (isEchoMode && (echoLevel != null || nextExerciseReps != null)) ||
                     (!isEchoMode && (nextExerciseWeight != null || nextExerciseReps != null || nextExerciseProgressionKg != null))
                 )
+
+            if (!isLastExercise && !isNextExerciseBodyweight) {
+                EquipmentRackSelectionCard(
+                    rackItems = rackItems,
+                    activeRackItemIds = activeRackItemIds,
+                    behaviorOverrides = behaviorOverrides,
+                    weightUnit = weightUnit,
+                    formatWeight = formatWeightWithUnit ?: { _, _ -> "" },
+                    onSelectionChange = onRackSelectionChange,
+                    onBehaviorOverrideChange = onRackBehaviorOverrideChange,
+                    showBehaviorOverrides = true,
+                )
+            }
 
             if (showConfigCard) {
                 Spacer(modifier = Modifier.height(Spacing.small))

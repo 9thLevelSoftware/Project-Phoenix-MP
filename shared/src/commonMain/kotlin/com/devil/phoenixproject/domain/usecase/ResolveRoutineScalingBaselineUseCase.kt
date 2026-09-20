@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.domain.usecase
 
-import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.getBestVolumePRForWorkoutMode
 import com.devil.phoenixproject.data.repository.getBestWeightPRForWorkoutMode
@@ -21,7 +21,7 @@ import com.devil.phoenixproject.domain.onerepmax.VelocityOneRepMaxEstimator
  */
 class ResolveRoutineScalingBaselineUseCase(
     private val prRepository: PersonalRecordRepository,
-    private val exerciseRepository: ExerciseRepository,
+    private val baselineRepository: ProfileExerciseBaselineRepository,
     private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository,
 ) {
     suspend operator fun invoke(
@@ -47,7 +47,7 @@ class ResolveRoutineScalingBaselineUseCase(
         crossModeWeightPR(exerciseId, mode, profileId)?.let { record ->
             return record.toBaseline(basis, RoutineScalingBaselineSource.CROSS_MODE_PR)
         }
-        return storedOneRepMaxBaseline(exerciseId, basis)
+        return storedOneRepMaxBaseline(profileId, exerciseId, basis)
     }
 
     private suspend fun resolveMaxVolume(
@@ -62,7 +62,7 @@ class ResolveRoutineScalingBaselineUseCase(
         crossModeVolumePR(exerciseId, mode, profileId)?.let { record ->
             return record.toBaseline(basis, RoutineScalingBaselineSource.CROSS_MODE_PR)
         }
-        return storedOneRepMaxBaseline(exerciseId, basis)
+        return storedOneRepMaxBaseline(profileId, exerciseId, basis)
     }
 
     private suspend fun resolveEstimatedOneRepMax(
@@ -88,7 +88,7 @@ class ResolveRoutineScalingBaselineUseCase(
                 )
             }
 
-        storedOneRepMaxBaseline(exerciseId, basis)?.let { return it }
+        storedOneRepMaxBaseline(profileId, exerciseId, basis)?.let { return it }
 
         currentModeWeightPR(exerciseId, mode, profileId)?.let { record ->
             return record.toBaseline(basis, RoutineScalingBaselineSource.CURRENT_MODE_PR)
@@ -107,10 +107,11 @@ class ResolveRoutineScalingBaselineUseCase(
         ?.takeIf { it.weightPerCableKg > 0 }
 
     private suspend fun storedOneRepMaxBaseline(
+        profileId: String,
         exerciseId: String,
         basis: ScalingBasis,
-    ): RoutineScalingBaseline? = exerciseRepository.getExerciseById(exerciseId)
-        ?.oneRepMaxKg
+    ): RoutineScalingBaseline? = baselineRepository.get(profileId, exerciseId)
+        ?.oneRepMaxPerCableKg
         ?.takeIf { it > 0 }
         ?.let { storedOneRepMax ->
             RoutineScalingBaseline(

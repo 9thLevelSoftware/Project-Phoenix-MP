@@ -11,9 +11,12 @@ import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
+import com.devil.phoenixproject.data.sync.PulledWorkoutDeletionDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.database.RoutineExercise as RoutineExerciseRow
+import com.devil.phoenixproject.database.Superset as SupersetRow
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleProgression
@@ -27,6 +30,10 @@ import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
+import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.SetEndReason
+import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WarmupSet
@@ -34,10 +41,15 @@ import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
+import com.devil.phoenixproject.util.CycleDayBackup
+import com.devil.phoenixproject.util.CycleProgressBackup
+import com.devil.phoenixproject.util.CycleProgressionBackup
+import com.devil.phoenixproject.util.TrainingCycleBackup
 import kotlin.math.roundToLong
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 
 /**
@@ -47,6 +59,8 @@ import kotlinx.serialization.json.Json
 class SqlDelightSyncRepository(
     private val db: PhoenixDatabase,
     private val userProfileRepository: UserProfileRepository,
+    private val localOwnershipClaimLookup: LocalOwnershipClaimLookup =
+        SqlDelightLocalOwnershipClaimLookup(db),
 ) : SyncRepository {
 
     private val queries = db.phoenixDatabaseQueries
@@ -262,19 +276,16 @@ class SqlDelightSyncRepository(
     /**
      * Merge sessions from server (legacy push-path).
      *
-     * CONFLICT RESOLUTION STRATEGY: SERVER WINS (UPSERT)
-     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 1 "Workout Sessions"
-     *
-     * This is the legacy push-path merge used for initial sync/migration.
-     * For the authoritative pull-path, see [mergePortalSessions] which uses LOCAL WINS.
-     *
-     * Sessions are immutable workout records created by BLE execution. Mobile is authoritative.
-     * The push-path upsert allows server data to populate initially, but the pull-path
-     * (INSERT OR IGNORE) ensures local sessions are never overwritten after initial sync.
+     * This legacy DTO path follows the same provenance guard as the current portal
+     * pull path: a missing row is materialized as portal-origin, while an existing
+     * row is updateable only when it is already portal-origin, belongs to the active
+     * profile, is not newer, and is not a retained tombstone. The narrow UPDATE
+     * intentionally leaves local capture columns and FK children untouched.
      */
     override suspend fun mergeSessions(sessions: List<WorkoutSessionSyncDto>) {
         withContext(Dispatchers.IO) {
             db.transaction {
+                val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
                 sessions.forEach { dto ->
                     // Check if we have this session locally (by serverId or clientId)
                     val existingByServer = dto.serverId?.let {
@@ -284,63 +295,95 @@ class SqlDelightSyncRepository(
                     val existingLocalSession = existingByServer ?: queries.selectSessionById(dto.clientId).executeAsOneOrNull()
                     val localId = existingLocalSession?.id ?: dto.clientId
 
-                    // Server wins for initial population (upsert pattern)
-                    queries.upsertSyncSession(
-                        id = localId,
-                        timestamp = dto.timestamp,
-                        mode = dto.mode,
-                        targetReps = dto.targetReps.toLong(),
-                        weightPerCableKg = dto.weightPerCableKg.toDouble(),
-                        progressionKg = 0.0,
-                        duration = dto.duration, // Already Long ms
-                        totalReps = dto.totalReps.toLong(),
-                        warmupReps = 0L,
-                        workingReps = dto.totalReps.toLong(),
-                        isJustLift = 0L,
-                        stopAtTop = 0L,
-                        eccentricLoad = 100L,
-                        echoLevel = 1L,
-                        exerciseId = dto.exerciseId,
-                        exerciseName = dto.exerciseName,
-                        routineSessionId = null,
-                        routineName = null,
-                        routineId = null,
-                        safetyFlags = 0L,
-                        deloadWarningCount = 0L,
-                        romViolationCount = 0L,
-                        spotterActivations = 0L,
-                        peakForceConcentricA = null,
-                        peakForceConcentricB = null,
-                        peakForceEccentricA = null,
-                        peakForceEccentricB = null,
-                        avgForceConcentricA = null,
-                        avgForceConcentricB = null,
-                        avgForceEccentricA = null,
-                        avgForceEccentricB = null,
-                        heaviestLiftKg = null,
-                        totalVolumeKg = null,
-                        cableCount = null,
-                        estimatedCalories = null,
-                        warmupAvgWeightKg = null,
-                        workingAvgWeightKg = null,
-                        burnoutAvgWeightKg = null,
-                        peakWeightKg = null,
-                        rpe = null,
-                        avgMcvMmS = null,
-                        avgAsymmetryPercent = null,
-                        totalVelocityLossPercent = null,
-                        dominantSide = null,
-                        strengthProfile = null,
-                        formScore = null,
-                        updatedAt = dto.updatedAt,
-                        serverId = dto.serverId,
-                        deletedAt = dto.deletedAt,
-                        profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
-                        display_multiplier = existingLocalSession?.display_multiplier,
-                        externalAddedLoadKg = existingLocalSession?.externalAddedLoadKg ?: 0.0,
-                        counterweightKg = existingLocalSession?.counterweightKg ?: 0.0,
-                        rackItemsJson = existingLocalSession?.rackItemsJson ?: "[]",
-                    )
+                    if (existingLocalSession == null) {
+                        queries.upsertSyncSession(
+                            id = localId,
+                            timestamp = dto.timestamp,
+                            mode = dto.mode,
+                            targetReps = dto.targetReps.toLong(),
+                            weightPerCableKg = dto.weightPerCableKg.toDouble(),
+                            progressionKg = 0.0,
+                            duration = dto.duration,
+                            totalReps = dto.totalReps.toLong(),
+                            warmupReps = 0L,
+                            workingReps = dto.totalReps.toLong(),
+                            isJustLift = 0L,
+                            stopAtTop = 0L,
+                            eccentricLoad = 100L,
+                            echoLevel = 1L,
+                            exerciseId = dto.exerciseId,
+                            exerciseName = dto.exerciseName,
+                            routineSessionId = null,
+                            routineName = null,
+                            routineId = null,
+                            safetyFlags = 0L,
+                            deloadWarningCount = 0L,
+                            romViolationCount = 0L,
+                            spotterActivations = 0L,
+                            peakForceConcentricA = null,
+                            peakForceConcentricB = null,
+                            peakForceEccentricA = null,
+                            peakForceEccentricB = null,
+                            avgForceConcentricA = null,
+                            avgForceConcentricB = null,
+                            avgForceEccentricA = null,
+                            avgForceEccentricB = null,
+                            heaviestLiftKg = null,
+                            totalVolumeKg = null,
+                            cableCount = null,
+                            estimatedCalories = null,
+                            warmupAvgWeightKg = null,
+                            workingAvgWeightKg = null,
+                            burnoutAvgWeightKg = null,
+                            peakWeightKg = null,
+                            rpe = null,
+                            avgMcvMmS = null,
+                            avgAsymmetryPercent = null,
+                            totalVelocityLossPercent = null,
+                            dominantSide = null,
+                            strengthProfile = null,
+                            formScore = null,
+                            updatedAt = dto.updatedAt,
+                            serverId = dto.serverId,
+                            deletedAt = dto.deletedAt,
+                            profile_id = activeProfileId,
+                            display_multiplier = dto.displayMultiplier?.toLong(),
+                            externalAddedLoadKg = 0.0,
+                            counterweightKg = 0.0,
+                            rackItemsJson = "[]",
+                        )
+                        return@forEach
+                    }
+
+                    if (existingLocalSession.profile_id == activeProfileId && dto.serverId != null) {
+                        queries.attachSessionServerIdIfAbsent(dto.serverId, localId)
+                    }
+
+                    val incomingIsCurrent = existingLocalSession.updatedAt == null ||
+                        dto.updatedAt >= existingLocalSession.updatedAt
+                    val preservesTombstone = existingLocalSession.deletedAt == null || dto.deletedAt != null
+                    if (
+                        existingLocalSession.portalOrigin == 1L &&
+                        existingLocalSession.profile_id == activeProfileId &&
+                        incomingIsCurrent &&
+                        preservesTombstone
+                    ) {
+                        queries.updateLegacyPortalSessionProjection(
+                            timestamp = dto.timestamp,
+                            mode = dto.mode,
+                            targetReps = dto.targetReps.toLong(),
+                            weightPerCableKg = dto.weightPerCableKg.toDouble(),
+                            duration = dto.duration,
+                            totalReps = dto.totalReps.toLong(),
+                            workingReps = dto.totalReps.toLong(),
+                            exerciseId = dto.exerciseId,
+                            exerciseName = dto.exerciseName,
+                            updatedAt = dto.updatedAt,
+                            serverId = dto.serverId,
+                            deletedAt = dto.deletedAt,
+                            id = localId,
+                        )
+                    }
                 }
             }
             Logger.d { "Merged ${sessions.size} sessions from server" }
@@ -390,52 +433,6 @@ class SqlDelightSyncRepository(
     }
 
     /**
-     * Merge routines from server (legacy push-path).
-     *
-     * CONFLICT RESOLUTION STRATEGY: SERVER WINS (UPSERT) with local field preservation
-     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 6 "Routines"
-     *
-     * This is the legacy push-path used for initial sync. The authoritative pull-path
-     * [mergePortalRoutines] uses TIMESTAMP-BASED LWW to handle concurrent edits.
-     *
-     * Local-only fields preserved: lastUsed, useCount (server doesn't track usage stats).
-     */
-    override suspend fun mergeRoutines(routines: List<RoutineSyncDto>) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                routines.forEach { dto ->
-                    val existingByServer = dto.serverId?.let {
-                        queries.selectRoutineByServerId(it).executeAsOneOrNull()
-                    }
-
-                    val localId = existingByServer?.id ?: dto.clientId
-
-                    // Preserve local usage stats that the server doesn't track
-                    val existing = queries.selectRoutineById(localId).executeAsOneOrNull()
-
-                    queries.upsertRoutine(
-                        id = localId,
-                        name = dto.name,
-                        description = dto.description,
-                        createdAt = dto.createdAt,
-                        lastUsed = existing?.lastUsed,
-                        useCount = existing?.useCount ?: 0L,
-                        updatedAt = currentTimeMillis(),
-                        profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
-                        groupId = existing?.groupId,
-                    )
-
-                    // Update sync fields
-                    if (dto.serverId != null) {
-                        queries.updateRoutineServerId(dto.serverId, localId)
-                    }
-                }
-            }
-            Logger.d { "Merged ${routines.size} routines from server" }
-        }
-    }
-
-    /**
      * Merge custom exercises from server.
      *
      * CONFLICT RESOLUTION STRATEGY: INSERT (no conflict expected)
@@ -449,8 +446,9 @@ class SqlDelightSyncRepository(
         withContext(Dispatchers.IO) {
             db.transaction {
                 exercises.forEach { dto ->
-                    // Custom exercises - insert by clientId (no conflict expected)
-                    queries.insertExercise(
+                    // Never replace an Exercise FK parent. Seed missing rows, then update
+                    // only sync-representable fields while preserving user metadata and children.
+                    queries.insertExerciseIfAbsent(
                         id = dto.clientId,
                         name = dto.name,
                         displayName = dto.displayName, // Carry display name from sync (#404)
@@ -479,9 +477,18 @@ class SqlDelightSyncRepository(
                         isBodyweight = null,
                     )
 
-                    if (dto.serverId != null) {
-                        queries.updateExerciseServerId(dto.serverId, dto.clientId)
-                    }
+                    queries.updateCustomExerciseFromSync(
+                        name = dto.name,
+                        displayName = dto.displayName,
+                        muscleGroup = dto.muscleGroup,
+                        muscleGroups = dto.muscleGroup,
+                        equipment = dto.equipment,
+                        defaultCableConfig = dto.defaultCableConfig,
+                        updatedAt = dto.updatedAt,
+                        serverId = dto.serverId,
+                        deletedAt = dto.deletedAt,
+                        id = dto.clientId,
+                    )
                 }
             }
             Logger.d { "Merged ${exercises.size} custom exercises from server" }
@@ -577,63 +584,7 @@ class SqlDelightSyncRepository(
         withContext(Dispatchers.IO) {
             db.transaction {
                 for (portalRoutine in routines) {
-                    // Check if routine exists locally
-                    val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
-
-                    if (existing != null) {
-                        // TIMESTAMP LWW: Local version is newer if modified after lastSync
-                        val localUpdatedAt = existing.updatedAt ?: 0L
-                        if (localUpdatedAt > lastSync) {
-                            // Local version is newer — skip this portal routine (local wins)
-                            Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer ($localUpdatedAt > $lastSync)" }
-                            continue
-                        }
-                    }
-
-                    // Either doesn't exist locally or portal version is newer — upsert
-                    queries.upsertRoutine(
-                        id = portalRoutine.id,
-                        name = portalRoutine.name,
-                        description = portalRoutine.description,
-                        createdAt = existing?.createdAt ?: currentTimeMillis(),
-                        lastUsed = existing?.lastUsed,
-                        useCount = existing?.useCount ?: 0L,
-                        updatedAt = portalRoutine.updatedAt ?: currentTimeMillis(),
-                        profile_id = existing?.profile_id ?: profileId,
-                        groupId = existing?.groupId,
-                    )
-
-                    // SAFETY GUARD: Only replace exercises if the portal actually sent exercises.
-                    // An empty exercises list means the payload is incomplete (server omission,
-                    // partial response, or deserialization issue). Deleting local exercises
-                    // when we have nothing to replace them with causes permanent data loss.
-                    if (portalRoutine.exercises.isNotEmpty()) {
-                        val localExerciseRows = queries
-                            .selectExercisesByRoutine(portalRoutine.id)
-                            .executeAsList()
-                        val localRackDefaultsByExerciseId = localExerciseRows
-                            .associate { it.id to it.defaultRackItemIds }
-                        val localRackOverridesByExerciseId = localExerciseRows
-                            .associate { it.id to it.rackBehaviorOverrides }
-                        val localScalingBasisByExerciseId = localExerciseRows
-                            .associate { it.id to it.scalingBasis }
-                        val localDropSetByExerciseId = localExerciseRows
-                            .associate { it.id to (it.dropSetEnabled to it.dropSetMinWeightKg) }
-
-                        mergePortalExercisesForRoutine(
-                            routineId = portalRoutine.id,
-                            portalExercises = portalRoutine.exercises,
-                            localRackDefaultsByExerciseId = localRackDefaultsByExerciseId,
-                            localRackOverridesByExerciseId = localRackOverridesByExerciseId,
-                            localScalingBasisByExerciseId = localScalingBasisByExerciseId,
-                            localDropSetByExerciseId = localDropSetByExerciseId,
-                        )
-                    } else {
-                        Logger.w("SyncRepository") {
-                            "Skipping exercise merge for routine '${portalRoutine.name}' (${portalRoutine.id}): " +
-                                "portal sent empty exercises list (exerciseCount=${portalRoutine.exerciseCount})"
-                        }
-                    }
+                    mergePortalRoutine(portalRoutine, lastSync, profileId)
                 }
             }
             Logger.d { "Merged ${routines.size} portal routines with exercises" }
@@ -663,17 +614,25 @@ class SqlDelightSyncRepository(
                 var portalActiveCycleId: String? = null
 
                 for (portalCycle in cycles) {
-                    // Track the active cycle from portal (last one wins if multiple marked active)
-                    if (portalCycle.status == "active") {
-                        portalActiveCycleId = portalCycle.id
-                    }
-
                     // Snapshot existing days before replacement so a lossy null pull can preserve
                     // a valid local-only template association by day number.
                     val existing = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
+                    val incomingUpdatedAt = portalCycle.updatedAt
+                    if (existing != null && (incomingUpdatedAt == null || incomingUpdatedAt < existing.updatedAt)) {
+                        continue
+                    }
+                    if (portalCycle.status == "active") {
+                        portalActiveCycleId = portalCycle.id
+                    }
                     val existingDays = existing?.let {
                         queries.selectCycleDaysByCycle(portalCycle.id).executeAsList()
                     } ?: emptyList()
+
+                    captureCycleConflictDraftIfNeeded(
+                        existing = existing,
+                        existingDays = existingDays,
+                        incomingUpdatedAt = incomingUpdatedAt,
+                    )
 
                     // Upsert cycle (INSERT OR IGNORE — keeps local if exists)
                     queries.insertTrainingCycleIgnore(
@@ -685,6 +644,16 @@ class SqlDelightSyncRepository(
                         profile_id = profileId,
                         template_id = portalCycle.templateId,
                         week_number = portalCycle.currentWeek?.toLong() ?: 1L,
+                        updatedAt = incomingUpdatedAt ?: 0L,
+                    )
+                    queries.insertCycleSyncStateIfAbsent(
+                        cycleId = portalCycle.id,
+                        profileId = profileId,
+                        accountId = null,
+                        dirtyGeneration = 0L,
+                        acknowledgedGeneration = 0L,
+                        pendingDeleteUpdatedAt = null,
+                        pendingDeleteGeneration = null,
                     )
 
                     // For pre-existing cycles only: update metadata (but NOT is_active - enforce single-active at end).
@@ -698,6 +667,7 @@ class SqlDelightSyncRepository(
                             is_active = existing.is_active, // Preserve; single-active enforcement runs at end
                             template_id = mergedTemplateId,
                             week_number = mergedWeekNumber,
+                            updatedAt = requireNotNull(incomingUpdatedAt),
                             id = portalCycle.id,
                         )
                     }
@@ -706,6 +676,8 @@ class SqlDelightSyncRepository(
                     queries.deleteCycleDaysByCycle(portalCycle.id)
 
                     for (day in portalCycle.days) {
+                        val existingDay = existingDays.firstOrNull { it.id == day.id }
+                            ?: existingDays.firstOrNull { it.day_number == day.dayNumber.toLong() }
                         queries.insertCycleDayIgnore(
                             id = day.id,
                             cycle_id = day.cycleId.ifEmpty { portalCycle.id },
@@ -719,29 +691,20 @@ class SqlDelightSyncRepository(
                                 profileId = profileId,
                             ),
                             is_rest_day = if (day.dayType == "rest") 1L else 0L,
-                            echo_level = null,
-                            eccentric_load_percent = null,
+                            echo_level = if (day.echoLevelPresent == true) day.echoLevel else existingDay?.echo_level,
+                            eccentric_load_percent = if (day.eccentricLoadPercentPresent == true) {
+                                day.eccentricLoadPercent?.toLong()
+                            } else {
+                                existingDay?.eccentric_load_percent
+                            },
                             weight_progression_percent = day.weightAdjustment.toDouble(),
                             rep_modifier = day.repModifier.toLong(),
                             rest_time_override_seconds = day.restOverride?.toLong(),
                         )
                     }
 
-                    // Restore CycleProgression from portal's progressionSettings JSON
-                    portalCycle.progressionSettings?.let { jsonStr ->
-                        try {
-                            val map = json.decodeFromString<Map<String, String>>(jsonStr)
-                            queries.upsertCycleProgression(
-                                cycle_id = portalCycle.id,
-                                frequency_cycles = map["frequencyCycles"]?.toLongOrNull() ?: 2L,
-                                weight_increase_percent = map["weightIncreasePercent"]?.toDoubleOrNull(),
-                                echo_level_increase = if (map["echoLevelIncrease"] == "true") 1L else 0L,
-                                eccentric_load_increase_percent = map["eccentricLoadIncreasePercent"]?.toLongOrNull(),
-                            )
-                        } catch (e: Exception) {
-                            Logger.w(e) { "Failed to parse progressionSettings for cycle ${portalCycle.id}" }
-                        }
-                    }
+                    mergePulledCycleProgression(portalCycle)
+                    mergePulledCycleProgress(portalCycle)
                 }
 
                 // SINGLE-ACTIVE ENFORCEMENT: Ensure exactly one cycle is active after merge
@@ -757,6 +720,7 @@ class SqlDelightSyncRepository(
                         is_active = 1L,
                         template_id = storedActiveCycle.template_id,
                         week_number = storedActiveCycle.week_number,
+                        updatedAt = storedActiveCycle.updatedAt,
                         id = portalActiveCycleId,
                     )
                     Logger.d { "Set active cycle from portal: $portalActiveCycleId" }
@@ -779,6 +743,7 @@ class SqlDelightSyncRepository(
                             is_active = 1L,
                             template_id = storedActiveCycle.template_id,
                             week_number = storedActiveCycle.week_number,
+                            updatedAt = storedActiveCycle.updatedAt,
                             id = id,
                         )
                     }
@@ -940,6 +905,147 @@ class SqlDelightSyncRepository(
 
     override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> = withContext(Dispatchers.IO) {
         queries.selectSessionsModifiedSince(timestamp, profileId = profileId, ::mapToWorkoutSession).executeAsList()
+    }
+
+    override suspend fun getDirtyWorkoutSnapshot(profileId: String): WorkoutSyncSnapshot =
+        withContext(Dispatchers.IO) {
+            var snapshot = WorkoutSyncSnapshot(emptyList())
+            db.transaction {
+                val portalSessionIds = queries
+                    .selectDirtyWorkoutPortalParentIds(profileId)
+                    .executeAsList()
+                if (portalSessionIds.isEmpty()) return@transaction
+
+                val storageRows = queries
+                    .selectLiveWorkoutComponentsForPortalParents(profileId, portalSessionIds)
+                    .executeAsList()
+                val sessions = queries
+                    .selectLiveWorkoutComponentsForPortalParents(
+                        profileId = profileId,
+                        portalSessionIds = portalSessionIds,
+                        mapper = ::mapToWorkoutSession,
+                    )
+                    .executeAsList()
+                check(storageRows.size == sessions.size) {
+                    "Workout snapshot storage/domain projection size mismatch"
+                }
+                val componentIds = storageRows.map { it.id }
+                val repMetricsByComponentId = componentIds.associateWith { componentId ->
+                    queries.selectRepMetricsBySession(componentId).executeAsList().map { row ->
+                        RepMetricData(
+                            repNumber = row.repNumber.toInt(),
+                            isWarmup = row.isWarmup != 0L,
+                            startTimestamp = row.startTimestamp,
+                            endTimestamp = row.endTimestamp,
+                            durationMs = row.durationMs,
+                            concentricDurationMs = row.concentricDurationMs,
+                            concentricPositions = row.concentricPositions.toFloatArrayFromJson(),
+                            concentricLoadsA = row.concentricLoadsA.toFloatArrayFromJson(),
+                            concentricLoadsB = row.concentricLoadsB.toFloatArrayFromJson(),
+                            concentricVelocities = row.concentricVelocities.toFloatArrayFromJson(),
+                            concentricTimestamps = row.concentricTimestamps.toLongArrayFromJson(),
+                            eccentricDurationMs = row.eccentricDurationMs,
+                            eccentricPositions = row.eccentricPositions.toFloatArrayFromJson(),
+                            eccentricLoadsA = row.eccentricLoadsA.toFloatArrayFromJson(),
+                            eccentricLoadsB = row.eccentricLoadsB.toFloatArrayFromJson(),
+                            eccentricVelocities = row.eccentricVelocities.toFloatArrayFromJson(),
+                            eccentricTimestamps = row.eccentricTimestamps.toLongArrayFromJson(),
+                            peakForceA = row.peakForceA.toFloat(),
+                            peakForceB = row.peakForceB.toFloat(),
+                            avgForceConcentricA = row.avgForceConcentricA.toFloat(),
+                            avgForceConcentricB = row.avgForceConcentricB.toFloat(),
+                            avgForceEccentricA = row.avgForceEccentricA.toFloat(),
+                            avgForceEccentricB = row.avgForceEccentricB.toFloat(),
+                            peakVelocity = row.peakVelocity.toFloat(),
+                            avgVelocityConcentric = row.avgVelocityConcentric.toFloat(),
+                            avgVelocityEccentric = row.avgVelocityEccentric.toFloat(),
+                            rangeOfMotionMm = row.rangeOfMotionMm.toFloat(),
+                            peakPowerWatts = row.peakPowerWatts.toFloat(),
+                            avgPowerWatts = row.avgPowerWatts.toFloat(),
+                        )
+                    }
+                }
+                val completedSets = if (componentIds.isEmpty()) {
+                    emptyList()
+                } else {
+                    queries.selectCompletedSetsBySessionIds(componentIds) {
+                            id,
+                            sessionId,
+                            plannedSetId,
+                            routineExerciseId,
+                            setNumber,
+                            setType,
+                            attemptNumber,
+                            actualReps,
+                            actualWeightKg,
+                            loggedRpe,
+                            isPr,
+                            completedAt,
+                            setEndReason,
+                        ->
+                        CompletedSet(
+                            id = id,
+                            sessionId = sessionId,
+                            plannedSetId = plannedSetId,
+                            routineExerciseId = routineExerciseId,
+                            setNumber = setNumber.toInt(),
+                            setType = SetType.valueOf(setType),
+                            attemptNumber = attemptNumber.toInt().coerceAtLeast(1),
+                            actualReps = actualReps.toInt(),
+                            actualWeightKg = actualWeightKg.toFloat(),
+                            loggedRpe = loggedRpe?.toInt(),
+                            isPr = isPr == 1L,
+                            completedAt = completedAt,
+                            setEndReason = SetEndReason.fromPersisted(setEndReason),
+                        )
+                    }.executeAsList()
+                }
+                val phaseStatistics = componentIds.chunked(BATCH_LOOKUP_CHUNK_SIZE)
+                    .flatMap { ids -> queries.selectPhaseStatsBySessionIds(ids).executeAsList() }
+                val portalSessionIdsForNotes = storageRows.mapTo(linkedSetOf()) { row ->
+                    row.routineSessionId?.takeIf { it.isNotBlank() } ?: row.id
+                }
+                val sessionNotesByPortalId = portalSessionIdsForNotes.chunked(BATCH_LOOKUP_CHUNK_SIZE)
+                    .flatMap { ids -> queries.selectSessionNotesForIds(ids).executeAsList() }
+                    .associate { row ->
+                        row.routineSessionId to SessionNotesEntry(
+                            notes = row.notes,
+                            updatedAtMillis = row.updatedAt ?: 0L,
+                        )
+                    }
+                snapshot = WorkoutSyncSnapshot(
+                    components = storageRows.zip(sessions) { row, session ->
+                        WorkoutComponentSnapshot(
+                            session = session,
+                            portalSessionId = row.routineSessionId?.takeIf { it.isNotBlank() } ?: row.id,
+                            localSyncGeneration = row.local_sync_generation,
+                        )
+                    },
+                    repMetricsByComponentId = repMetricsByComponentId,
+                    completedSetsByComponentId = completedSets.groupBy { it.sessionId },
+                    phaseStatisticsByComponentId = phaseStatistics.groupBy { it.sessionId },
+                    sessionNotesByPortalId = sessionNotesByPortalId,
+                )
+            }
+            snapshot
+        }
+
+    override suspend fun acknowledgeWorkoutSnapshot(
+        snapshot: WorkoutSyncSnapshot,
+        acceptedPortalSessionIds: Set<String>,
+    ) = withContext(Dispatchers.IO) {
+        if (acceptedPortalSessionIds.isEmpty()) return@withContext
+        db.transaction {
+            snapshot.components
+                .asSequence()
+                .filter { it.portalSessionId in acceptedPortalSessionIds }
+                .forEach { component ->
+                    queries.ackWorkoutComponentSnapshot(
+                        id = component.session.id,
+                        snapshotGeneration = component.localSyncGeneration,
+                    )
+                }
+        }
     }
 
     override suspend fun getDeletedRoutineIdsSince(timestamp: Long, profileId: String): List<String> = withContext(Dispatchers.IO) {
@@ -1130,6 +1236,10 @@ class SqlDelightSyncRepository(
     }
 
     override suspend fun getFullCyclesForSync(profileId: String): List<CycleWithContext> = withContext(Dispatchers.IO) {
+        getFullCyclesForSyncNow(profileId)
+    }
+
+    private fun getFullCyclesForSyncNow(profileId: String): List<CycleWithContext> {
         val cycles = queries.selectTrainingCyclesByProfile(profileId = profileId).executeAsList()
         val allDays = queries.selectAllCycleDaysSync().executeAsList()
         val allProgress = queries.selectAllCycleProgressSync().executeAsList()
@@ -1139,7 +1249,7 @@ class SqlDelightSyncRepository(
         val progressByCycle = allProgress.associateBy { it.cycle_id }
         val progressionByCycle = allProgressions.associateBy { it.cycle_id }
 
-        cycles.map { row ->
+        return cycles.map { row ->
             val days = (daysByCycle[row.id] ?: emptyList()).map { d ->
                 CycleDay(
                     id = d.id,
@@ -1170,6 +1280,9 @@ class SqlDelightSyncRepository(
                     lastCompletedDate = p.last_completed_date,
                     cycleStartDate = p.cycle_start_date,
                     lastAdvancedAt = p.last_advanced_at,
+                    completedDays = parseCycleDaySet(p.completed_days),
+                    missedDays = parseCycleDaySet(p.missed_days),
+                    rotationCount = p.rotation_count.toInt(),
                 )
             }
 
@@ -1194,6 +1307,7 @@ class SqlDelightSyncRepository(
                     weekNumber = row.week_number.toInt(),
                     profileId = row.profile_id,
                     templateId = row.template_id,
+                    updatedAt = row.updatedAt,
                 ),
                 progress = progress,
                 progression = progression,
@@ -1262,6 +1376,9 @@ class SqlDelightSyncRepository(
         externalAddedLoadKg: Double,
         counterweightKg: Double,
         rackItemsJson: String,
+        portalOrigin: Long,
+        localSyncGeneration: Long,
+        syncedSyncGeneration: Long,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -1407,7 +1524,10 @@ class SqlDelightSyncRepository(
         profileId: String,
         fromSessionTimestamp: Long,
     ): PhasePRBackfillResult = withContext(Dispatchers.IO) {
-        val prRepository = SqlDelightPersonalRecordRepository(db)
+        val prRepository = SqlDelightPersonalRecordRepository(
+            db,
+            SqlDelightProfileExerciseBaselineRepository(db),
+        )
         val sessions = queries.selectSessionsForPhasePRBackfill(
             fromSessionTimestamp = fromSessionTimestamp,
             profileId = profileId,
@@ -1526,6 +1646,147 @@ class SqlDelightSyncRepository(
         }
     }
 
+    /** Must run inside the same transaction that accepts the incoming cycle projection. */
+    private fun captureCycleConflictDraftIfNeeded(
+        existing: com.devil.phoenixproject.database.TrainingCycle?,
+        existingDays: List<com.devil.phoenixproject.database.CycleDay>,
+        incomingUpdatedAt: Long?,
+    ) {
+        if (existing == null || incomingUpdatedAt == null || incomingUpdatedAt <= existing.updatedAt) return
+        val syncState = queries.selectCycleSyncState(existing.id).executeAsOneOrNull() ?: return
+        if (existing.deletedAt != null || syncState.dirty_generation <= syncState.acknowledged_generation) return
+
+        val progress = queries.selectCycleProgressByCycle(existing.id).executeAsOneOrNull()
+        val progression = queries.selectCycleProgression(existing.id).executeAsOneOrNull()
+        val payload = PersistedCycleDraftPayload(
+            cycle = TrainingCycleBackup(
+                id = existing.id,
+                name = existing.name,
+                description = existing.description,
+                createdAt = existing.created_at,
+                isActive = false,
+                profileId = existing.profile_id,
+                templateId = existing.template_id,
+                weekNumber = existing.week_number.toInt(),
+                updatedAt = existing.updatedAt,
+            ),
+            days = existingDays.map { day ->
+                CycleDayBackup(
+                    id = day.id,
+                    cycleId = day.cycle_id,
+                    dayNumber = day.day_number.toInt(),
+                    name = day.name,
+                    routineId = day.routine_id,
+                    isRestDay = day.is_rest_day == 1L,
+                    echoLevel = day.echo_level,
+                    eccentricLoadPercent = day.eccentric_load_percent?.toInt(),
+                    weightProgressionPercent = day.weight_progression_percent?.toFloat(),
+                    repModifier = day.rep_modifier?.toInt(),
+                    restTimeOverrideSeconds = day.rest_time_override_seconds?.toInt(),
+                )
+            },
+            progress = progress?.let {
+                CycleProgressBackup(
+                    id = it.id,
+                    cycleId = it.cycle_id,
+                    currentDayNumber = it.current_day_number.toInt(),
+                    lastCompletedDate = it.last_completed_date,
+                    cycleStartDate = it.cycle_start_date,
+                    lastAdvancedAt = it.last_advanced_at,
+                    completedDays = it.completed_days,
+                    missedDays = it.missed_days,
+                    rotationCount = it.rotation_count.toInt(),
+                )
+            },
+            progression = progression?.let {
+                CycleProgressionBackup(
+                    cycleId = it.cycle_id,
+                    frequencyCycles = it.frequency_cycles.toInt(),
+                    weightIncreasePercent = it.weight_increase_percent?.toFloat(),
+                    echoLevelIncrease = if (it.echo_level_increase != 0L) 1 else 0,
+                    eccentricLoadIncreasePercent = it.eccentric_load_increase_percent?.toInt(),
+                )
+            },
+        )
+        queries.insertCycleConflictDraftIfAbsent(
+            id = "${existing.id}:${existing.updatedAt}",
+            cycleId = existing.id,
+            originalProfileId = existing.profile_id,
+            rejectedUpdatedAt = incomingUpdatedAt,
+            payloadJson = json.encodeToString(payload),
+            createdAt = currentTimeMillis(),
+            resolution = null,
+        )
+    }
+
+    /**
+     * Applies an authoritative progression projection without confusing an explicit clear
+     * with an older payload that did not carry presence metadata.
+     *
+     * Legacy payloads with a non-null value still update the row. A missing value without
+     * `progressionSettingsPresent=true` preserves the local row, while true + null deletes it.
+     */
+    private fun mergePulledCycleProgression(portalCycle: PullTrainingCycleDto) {
+        val progressionJson = portalCycle.progressionSettings
+        val authoritative = portalCycle.progressionSettingsPresent == true
+        if (!authoritative && progressionJson == null) return
+        if (authoritative && progressionJson == null) {
+            queries.deleteCycleProgression(portalCycle.id)
+            return
+        }
+
+        try {
+            val map = json.decodeFromString<Map<String, String>>(requireNotNull(progressionJson))
+            queries.upsertCycleProgression(
+                cycle_id = portalCycle.id,
+                frequency_cycles = map["frequencyCycles"]?.toLongOrNull() ?: 2L,
+                weight_increase_percent = map["weightIncreasePercent"]?.toDoubleOrNull(),
+                echo_level_increase = if (map["echoLevelIncrease"] == "true") 1L else 0L,
+                eccentric_load_increase_percent = map["eccentricLoadIncreasePercent"]?.toLongOrNull(),
+            )
+        } catch (error: Exception) {
+            Logger.w(error) { "Failed to parse progressionSettings for cycle ${portalCycle.id}" }
+        }
+    }
+
+    /** Apply complete remote progress only when the presence bit makes it authoritative. */
+    private fun mergePulledCycleProgress(portalCycle: PullTrainingCycleDto) {
+        if (portalCycle.progressStatePresent != true) return
+        val state = portalCycle.progressState
+        if (state == null) {
+            queries.deleteCycleProgress(portalCycle.id)
+            return
+        }
+
+        val existing = queries.selectCycleProgressByCycle(portalCycle.id).executeAsOneOrNull()
+        val completedDays = json.encodeToString(state.completedDays.distinct().sorted())
+        val missedDays = json.encodeToString(state.missedDays.distinct().sorted())
+        if (existing == null) {
+            queries.insertCycleProgress(
+                id = generateUUID(),
+                cycle_id = portalCycle.id,
+                current_day_number = state.currentDayNumber.toLong(),
+                last_completed_date = state.lastCompletedDate,
+                cycle_start_date = state.cycleStartDate,
+                last_advanced_at = state.lastAdvancedAt,
+                completed_days = completedDays,
+                missed_days = missedDays,
+                rotation_count = state.rotationCount.toLong(),
+            )
+        } else {
+            queries.updateCycleProgress(
+                current_day_number = state.currentDayNumber.toLong(),
+                last_completed_date = state.lastCompletedDate,
+                cycle_start_date = state.cycleStartDate,
+                last_advanced_at = state.lastAdvancedAt,
+                completed_days = completedDays,
+                missed_days = missedDays,
+                rotation_count = state.rotationCount.toLong(),
+                cycle_id = portalCycle.id,
+            )
+        }
+    }
+
     private fun mergePersonalRecordRows(records: List<PersonalRecordSyncDto>, profileId: String) {
         records.forEach { dto ->
             val prUuid = dto.clientId.ifBlank { generateUUID() }
@@ -1599,6 +1860,8 @@ class SqlDelightSyncRepository(
      * @see mergePersonalRecords for PR conflict resolution (LOCAL WINS)
      */
     override suspend fun mergeAllPullData(
+        ownerUserId: String,
+        workoutDeletions: List<PulledWorkoutDeletionDto>,
         sessions: List<WorkoutSession>,
         routines: List<PullRoutineDto>,
         cycles: List<PullTrainingCycleDto>,
@@ -1607,15 +1870,58 @@ class SqlDelightSyncRepository(
         personalRecords: List<PersonalRecordSyncDto>,
         lastSync: Long,
         profileId: String,
+        sessionNotes: Map<String, SessionNotesEntry>,
+        sessionUpdatedAtById: Map<String, Long>,
     ) {
         withContext(Dispatchers.IO) {
             // Use a single outer transaction that wraps all entity merges.
             // SQLDelight handles nested transactions via savepoints, so if any inner
             // operation throws, the entire outer transaction rolls back.
             db.transaction {
+                // Permanent account-scoped tombstones are applied before any live
+                // projection so a stale/late pull cannot resurrect deleted content.
+                for (deletion in workoutDeletions) {
+                    applyPulledWorkoutDeletion(ownerUserId, deletion, profileId)
+                }
+
+                val routedSessions = sessions.map { session ->
+                    val portalSessionId = session.routineSessionId?.takeIf { it.isNotBlank() } ?: session.id
+                    val claimedTargetProfileId = claimedPullProfileId(
+                        ownerUserId = ownerUserId,
+                        entityType = OwnershipEntityType.WORKOUT,
+                        entityId = portalSessionId,
+                    )
+                    val targetProfileId = claimedTargetProfileId ?: profileId
+                    if (claimedTargetProfileId != null) {
+                        queries.adoptSessionProfile(profileId = targetProfileId, id = session.id)
+                    }
+                    session.copy(profileId = targetProfileId)
+                }
+
+                val liveSessions = routedSessions.filterNot { session ->
+                    val portalSessionId = session.routineSessionId?.takeIf { it.isNotBlank() } ?: session.id
+                    queries.selectBlockingWorkoutDeletion(
+                        ownerUserId = ownerUserId,
+                        portalSessionId = portalSessionId,
+                        componentSessionId = session.id,
+                    ).executeAsOneOrNull() != null
+                }
+                val liveSessionNotes = sessionNotes.filterKeys { portalSessionId ->
+                    queries.selectBlockingWorkoutDeletion(
+                        ownerUserId = ownerUserId,
+                        portalSessionId = portalSessionId,
+                        componentSessionId = null,
+                    ).executeAsOneOrNull() == null
+                }
+
+                val useLwwProjection = sessionUpdatedAtById.values.any { it > 0L }
+                if (useLwwProjection) {
+                    mergeSessionsLwwInTransaction(liveSessions, sessionUpdatedAtById)
+                }
+
                 // 1. Sessions — INSERT OR IGNORE (local wins)
                 // Full field list matches mergePortalSessions
-                for (session in sessions) {
+                for (session in if (useLwwProjection) emptyList() else liveSessions) {
                     queries.insertSessionIgnore(
                         id = session.id,
                         timestamp = session.timestamp,
@@ -1664,7 +1970,7 @@ class SqlDelightSyncRepository(
                         strengthProfile = session.strengthProfile,
                         formScore = session.formScore?.toLong(),
                         updatedAt = session.timestamp, // Mark as already-synced
-                        profile_id = profileId,
+                        profile_id = session.profileId,
                         display_multiplier = session.displayMultiplier?.toLong(),
                         externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
                         counterweightKg = session.counterweightKg.toDouble(),
@@ -1674,66 +1980,57 @@ class SqlDelightSyncRepository(
 
                 // 2. Routines — TIMESTAMP LWW (local wins if modified after lastSync)
                 for (portalRoutine in routines) {
-                    val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
-
-                    if (existing != null) {
-                        val localUpdatedAt = existing.updatedAt ?: 0L
-                        if (localUpdatedAt > lastSync) {
-                            continue // Local version is newer
-                        }
-                    }
-
-                    // Upsert routine
-                    queries.upsertRoutine(
-                        id = portalRoutine.id,
-                        name = portalRoutine.name,
-                        description = portalRoutine.description,
-                        createdAt = existing?.createdAt ?: currentTimeMillis(),
-                        lastUsed = existing?.lastUsed,
-                        useCount = existing?.useCount ?: 0L,
-                        updatedAt = portalRoutine.updatedAt ?: currentTimeMillis(),
-                        profile_id = existing?.profile_id ?: profileId,
-                        groupId = existing?.groupId,
+                    val claimedTargetProfileId = claimedPullProfileId(
+                        ownerUserId = ownerUserId,
+                        entityType = OwnershipEntityType.ROUTINE,
+                        entityId = portalRoutine.id,
                     )
-
-                    // Replace exercises if portal provided them (non-empty list)
-                    if (portalRoutine.exercises.isNotEmpty()) {
-                        val localExerciseRows2 = queries
-                            .selectExercisesByRoutine(portalRoutine.id)
-                            .executeAsList()
-                        val localRackDefaultsByExerciseId = localExerciseRows2
-                            .associate { it.id to it.defaultRackItemIds }
-                        val localRackOverridesByExerciseId = localExerciseRows2
-                            .associate { it.id to it.rackBehaviorOverrides }
-                        val localScalingBasisByExerciseId = localExerciseRows2
-                            .associate { it.id to it.scalingBasis }
-                        val localDropSetByExerciseId = localExerciseRows2
-                            .associate { it.id to (it.dropSetEnabled to it.dropSetMinWeightKg) }
-
-                        mergePortalExercisesForRoutine(
-                            routineId = portalRoutine.id,
-                            portalExercises = portalRoutine.exercises,
-                            localRackDefaultsByExerciseId = localRackDefaultsByExerciseId,
-                            localRackOverridesByExerciseId = localRackOverridesByExerciseId,
-                            localScalingBasisByExerciseId = localScalingBasisByExerciseId,
-                            localDropSetByExerciseId = localDropSetByExerciseId,
-                        )
+                    val targetProfileId = claimedTargetProfileId ?: profileId
+                    if (claimedTargetProfileId != null) {
+                        queries.adoptRoutineProfile(profileId = targetProfileId, id = portalRoutine.id)
                     }
+                    mergePortalRoutine(portalRoutine, lastSync, targetProfileId)
                 }
 
                 // 3. Cycles — SERVER WINS with single-active enforcement
-                var portalActiveCycleId: String? = null
+                val portalActiveCycleIdsByProfile = linkedMapOf<String, String>()
+                val affectedCycleProfileIds = linkedSetOf<String>()
                 for (portalCycle in cycles) {
-                    if (portalCycle.status == "active") {
-                        portalActiveCycleId = portalCycle.id
+                    val claimedTargetProfileId = claimedPullProfileId(
+                        ownerUserId = ownerUserId,
+                        entityType = OwnershipEntityType.CYCLE,
+                        entityId = portalCycle.id,
+                    )
+                    val targetProfileId = claimedTargetProfileId ?: profileId
+                    affectedCycleProfileIds += targetProfileId
+                    if (claimedTargetProfileId != null) {
+                        queries.adoptTrainingCycleProfile(profileId = targetProfileId, id = portalCycle.id)
+                        queries.adoptCycleSyncStateForCycle(
+                            targetProfileId = targetProfileId,
+                            cycleId = portalCycle.id,
+                        )
                     }
-
                     // Snapshot existing days before replacement so a lossy null pull can preserve
                     // a valid local-only template association by day number.
                     val existingCycle = queries.selectTrainingCycleById(portalCycle.id).executeAsOneOrNull()
+                    val incomingUpdatedAt = portalCycle.updatedAt
+                    if (existingCycle != null &&
+                        (incomingUpdatedAt == null || incomingUpdatedAt < existingCycle.updatedAt)
+                    ) {
+                        continue
+                    }
+                    if (portalCycle.status == "active") {
+                        portalActiveCycleIdsByProfile[targetProfileId] = portalCycle.id
+                    }
                     val existingCycleDays = existingCycle?.let {
                         queries.selectCycleDaysByCycle(portalCycle.id).executeAsList()
                     } ?: emptyList()
+
+                    captureCycleConflictDraftIfNeeded(
+                        existing = existingCycle,
+                        existingDays = existingCycleDays,
+                        incomingUpdatedAt = incomingUpdatedAt,
+                    )
 
                     queries.insertTrainingCycleIgnore(
                         id = portalCycle.id,
@@ -1741,9 +2038,19 @@ class SqlDelightSyncRepository(
                         description = portalCycle.description,
                         created_at = currentTimeMillis(),
                         is_active = 0L,
-                        profile_id = profileId,
+                        profile_id = targetProfileId,
                         template_id = portalCycle.templateId,
                         week_number = portalCycle.currentWeek?.toLong() ?: 1L,
+                        updatedAt = incomingUpdatedAt ?: 0L,
+                    )
+                    queries.insertCycleSyncStateIfAbsent(
+                        cycleId = portalCycle.id,
+                        profileId = targetProfileId,
+                        accountId = ownerUserId,
+                        dirtyGeneration = 0L,
+                        acknowledgedGeneration = 0L,
+                        pendingDeleteUpdatedAt = null,
+                        pendingDeleteGeneration = null,
                     )
 
                     // Only update pre-existing cycles; newly-inserted rows already have correct values.
@@ -1756,12 +2063,15 @@ class SqlDelightSyncRepository(
                             is_active = existingCycle.is_active, // Preserve; single-active enforcement runs at end
                             template_id = mergedTemplateId,
                             week_number = mergedWeekNumber,
+                            updatedAt = requireNotNull(incomingUpdatedAt),
                             id = portalCycle.id,
                         )
                     }
 
                     queries.deleteCycleDaysByCycle(portalCycle.id)
                     for (day in portalCycle.days) {
+                        val existingDay = existingCycleDays.firstOrNull { it.id == day.id }
+                            ?: existingCycleDays.firstOrNull { it.day_number == day.dayNumber.toLong() }
                         queries.insertCycleDayIgnore(
                             id = day.id,
                             cycle_id = day.cycleId.ifEmpty { portalCycle.id },
@@ -1772,36 +2082,28 @@ class SqlDelightSyncRepository(
                                 existingCycleDeletedAt = existingCycle?.deletedAt,
                                 existingDays = existingCycleDays,
                                 portalDay = day,
-                                profileId = profileId,
+                                profileId = targetProfileId,
                             ),
                             is_rest_day = if (day.dayType == "rest") 1L else 0L,
-                            echo_level = null,
-                            eccentric_load_percent = null,
+                            echo_level = if (day.echoLevelPresent == true) day.echoLevel else existingDay?.echo_level,
+                            eccentric_load_percent = if (day.eccentricLoadPercentPresent == true) {
+                                day.eccentricLoadPercent?.toLong()
+                            } else {
+                                existingDay?.eccentric_load_percent
+                            },
                             weight_progression_percent = day.weightAdjustment.toDouble(),
                             rep_modifier = day.repModifier.toLong(),
                             rest_time_override_seconds = day.restOverride?.toLong(),
                         )
                     }
 
-                    portalCycle.progressionSettings?.let { jsonStr ->
-                        try {
-                            val map = json.decodeFromString<Map<String, String>>(jsonStr)
-                            queries.upsertCycleProgression(
-                                cycle_id = portalCycle.id,
-                                frequency_cycles = map["frequencyCycles"]?.toLongOrNull() ?: 2L,
-                                weight_increase_percent = map["weightIncreasePercent"]?.toDoubleOrNull(),
-                                echo_level_increase = if (map["echoLevelIncrease"] == "true") 1L else 0L,
-                                eccentric_load_increase_percent = map["eccentricLoadIncreasePercent"]?.toLongOrNull(),
-                            )
-                        } catch (e: Exception) {
-                            Logger.w(e) { "Failed to parse progressionSettings for cycle ${portalCycle.id}" }
-                        }
-                    }
+                    mergePulledCycleProgression(portalCycle)
+                    mergePulledCycleProgress(portalCycle)
                 }
 
                 // Single-active enforcement for cycles
-                if (portalActiveCycleId != null) {
-                    queries.deactivateAllCycles(profileId)
+                for ((targetProfileId, portalActiveCycleId) in portalActiveCycleIdsByProfile) {
+                    queries.deactivateAllCycles(targetProfileId)
                     val activeCycle = cycles.first { it.id == portalActiveCycleId }
                     val storedActiveCycle = queries.selectTrainingCycleById(portalActiveCycleId).executeAsOne()
                     queries.updateTrainingCycle(
@@ -1810,26 +2112,30 @@ class SqlDelightSyncRepository(
                         is_active = 1L,
                         template_id = storedActiveCycle.template_id,
                         week_number = storedActiveCycle.week_number,
+                        updatedAt = storedActiveCycle.updatedAt,
                         id = portalActiveCycleId,
                     )
                 }
 
                 // Post-merge invariant check for cycles
-                val activeCycleCount = queries.countActiveCycles(profileId).executeAsOne()
-                if (activeCycleCount > 1) {
-                    Logger.e { "INVARIANT VIOLATION in atomic merge: Found $activeCycleCount active cycles. Forcing deactivation." }
-                    queries.deactivateAllCycles(profileId)
-                    portalActiveCycleId?.let { id ->
-                        val activeCycle = cycles.first { it.id == id }
-                        val storedActiveCycle = queries.selectTrainingCycleById(id).executeAsOne()
-                        queries.updateTrainingCycle(
-                            name = activeCycle.name,
-                            description = activeCycle.description,
-                            is_active = 1L,
-                            template_id = storedActiveCycle.template_id,
-                            week_number = storedActiveCycle.week_number,
-                            id = id,
-                        )
+                for (targetProfileId in affectedCycleProfileIds) {
+                    val activeCycleCount = queries.countActiveCycles(targetProfileId).executeAsOne()
+                    if (activeCycleCount > 1) {
+                        Logger.e { "INVARIANT VIOLATION in atomic merge: Found $activeCycleCount active cycles. Forcing deactivation." }
+                        queries.deactivateAllCycles(targetProfileId)
+                        portalActiveCycleIdsByProfile[targetProfileId]?.let { id ->
+                            val activeCycle = cycles.first { it.id == id }
+                            val storedActiveCycle = queries.selectTrainingCycleById(id).executeAsOne()
+                            queries.updateTrainingCycle(
+                                name = activeCycle.name,
+                                description = activeCycle.description,
+                                is_active = 1L,
+                                template_id = storedActiveCycle.template_id,
+                                week_number = storedActiveCycle.week_number,
+                                updatedAt = storedActiveCycle.updatedAt,
+                                id = id,
+                            )
+                        }
                     }
                 }
 
@@ -1861,7 +2167,26 @@ class SqlDelightSyncRepository(
                 }
 
                 // 6. Personal records — INSERT OR IGNORE (local wins)
-                mergePersonalRecordRows(personalRecords, profileId)
+                for (personalRecord in personalRecords) {
+                    val stableId = personalRecord.clientId.ifBlank { generateUUID() }
+                    val claimedTargetProfileId = claimedPullProfileId(
+                        ownerUserId = ownerUserId,
+                        entityType = OwnershipEntityType.PERSONAL_RECORD,
+                        entityId = stableId,
+                    )
+                    val targetProfileId = claimedTargetProfileId ?: profileId
+                    if (claimedTargetProfileId != null) {
+                        queries.adoptPersonalRecordProfileByUuid(
+                            profileId = targetProfileId,
+                            uuid = stableId,
+                        )
+                    }
+                    mergePersonalRecordRows(listOf(personalRecord), targetProfileId)
+                }
+
+                // Session notes share the deletion/live transaction. A WORKOUT
+                // tombstone blocks its aggregate note row permanently.
+                mergeSessionNotesInTransaction(liveSessionNotes)
             }
 
             Logger.d {
@@ -1933,12 +2258,11 @@ class SqlDelightSyncRepository(
      */
 
     /**
-     * Phase 3.3 (audit item #1): replace the legacy INSERT OR IGNORE pull
-     * merge with `updatedAt`-gated LWW. SQLite 3.18 does not support
-     * `INSERT ... ON CONFLICT DO UPDATE WHERE`, so the gate lives here:
-     * SELECT existing.updatedAt → compare to incoming → INSERT OR REPLACE
-     * iff incoming wins. Wrapped in a single transaction so the read+write
-     * pair is atomic per row.
+     * Merge the portal exercise-row projection without replacing its local parent
+     * row. New rows are inserted as portal-origin. Existing rows are eligible only
+     * when their stored provenance is portal-origin, their owner matches, the
+     * incoming version is current, and no retained tombstone would be resurrected.
+     * The read, version decision, and narrow UPDATE share one transaction.
      *
      * `updatedAtBySessionId` keys on the per-exercise WorkoutSession.id
      * (== portal exercise id; one portal session expands to N mobile rows
@@ -1947,13 +2271,9 @@ class SqlDelightSyncRepository(
      *
      * Issue #591: When the incoming pull row is null in detailed metric
      * columns (`peakForce*`, `avgForce*`, biomechanics, etc.) but the
-     * local row captured real measurements during recording, do not erase
-     * the locally captured metrics. LWW still applies for non-metric
-     * columns (timestamps, reps, mode, exercise tags) — only metric
-     * columns fall back to the existing local value when the incoming is
-     * null. This prevents the History "after v0.2.1" placeholder from
-     * appearing for current sessions whose metrics were lost during sync
-     * rehydration.
+     * local row has richer measurements, do not erase those measurements.
+     * Only portal-origin rows reach this field-level projection; captured and
+     * legacy-local rows are preserved as complete local facts.
      */
     override suspend fun mergeSessionsLww(
         sessions: List<WorkoutSession>,
@@ -1961,6 +2281,154 @@ class SqlDelightSyncRepository(
     ) = withContext(Dispatchers.IO) {
         if (sessions.isEmpty()) return@withContext
         db.transaction {
+            mergeSessionsLwwInTransaction(sessions, updatedAtBySessionId)
+        }
+    }
+
+    private fun parseCycleDaySet(value: String?): Set<Int> = value
+        ?.trim('[', ']')
+        ?.split(',')
+        ?.mapNotNull { it.trim().toIntOrNull() }
+        ?.toSet()
+        .orEmpty()
+
+    override suspend fun getDirtyCycleSnapshot(profileId: String): CycleSyncSnapshot = withContext(Dispatchers.IO) {
+        db.transactionWithResult {
+            val dirtyGenerations = queries.selectDirtyCycleStates(profileId)
+                .executeAsList()
+                .associate { it.cycle_id to it.dirty_generation }
+            if (dirtyGenerations.isEmpty()) return@transactionWithResult CycleSyncSnapshot(emptyList())
+            val complete = getFullCyclesForSyncNow(profileId).associateBy { it.cycle.id }
+            CycleSyncSnapshot(
+                dirtyGenerations.mapNotNull { (cycleId, generation) ->
+                    complete[cycleId]?.let { context ->
+                        CycleComponentSnapshot(context, generation)
+                    }
+                },
+            )
+        }
+    }
+
+    override suspend fun acknowledgeCycleSnapshot(
+        snapshot: CycleSyncSnapshot,
+        acceptedCycleIds: Set<String>,
+    ) {
+        if (acceptedCycleIds.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                snapshot.components.forEach { component ->
+                    if (component.context.cycle.id in acceptedCycleIds) {
+                        queries.ackCycleStateIfGenerationMatches(
+                            generation = component.localSyncGeneration,
+                            cycleId = component.context.cycle.id,
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    private fun applyPulledWorkoutDeletion(
+        ownerUserId: String,
+        deletion: PulledWorkoutDeletionDto,
+        fallbackProfileId: String,
+    ) {
+        require(ownerUserId.isNotBlank()) { "ownerUserId must not be blank" }
+        val deletedAt = kotlin.time.Instant.parse(deletion.deletedAt).toEpochMilliseconds()
+        val routedProfileId = deletion.profileId?.takeIf { it.isNotBlank() } ?: fallbackProfileId
+        val componentSessionId = deletion.componentSessionId
+        require(deletion.scope != WorkoutDeletionScope.COMPONENT || !componentSessionId.isNullOrBlank()) {
+            "COMPONENT workout deletion requires componentSessionId"
+        }
+
+        val existing = queries.selectWorkoutDeletionByMutationId(deletion.mutationId).executeAsOneOrNull()
+        if (existing == null) {
+            queries.insertWorkoutDeletion(
+                mutationId = deletion.mutationId,
+                ownerUserId = ownerUserId,
+                profileId = routedProfileId,
+                scope = deletion.scope.name,
+                portalSessionId = deletion.portalSessionId,
+                componentSessionId = componentSessionId,
+                deletedAt = deletedAt,
+                source = WorkoutDeletionSource.REMOTE.name,
+            )
+        } else {
+            check(existing.owner_user_id == ownerUserId) {
+                "Workout deletion mutation owner conflict: ${deletion.mutationId}"
+            }
+            check(
+                existing.scope == deletion.scope.name &&
+                    existing.portal_session_id == deletion.portalSessionId &&
+                    existing.component_session_id == componentSessionId &&
+                    existing.deleted_at == deletedAt,
+            ) {
+                "Workout deletion mutation body conflict: ${deletion.mutationId}"
+            }
+        }
+
+        when (deletion.scope) {
+            WorkoutDeletionScope.WORKOUT -> {
+                val targets = queries.selectLiveWorkoutComponentsForDeletion(deletion.portalSessionId).executeAsList()
+                targets.forEach { target ->
+                    if (profileOwnerMatches(target.profile_id, ownerUserId)) {
+                        queries.hardDeleteWorkoutComponent(target.id)
+                    }
+                }
+            }
+
+            WorkoutDeletionScope.COMPONENT -> {
+                val exactId = requireNotNull(componentSessionId)
+                val target = queries.selectSessionById(exactId).executeAsOneOrNull()
+                val targetPortalParent = target?.routineSessionId?.takeIf { it.isNotBlank() } ?: target?.id
+                if (
+                    target != null &&
+                    targetPortalParent == deletion.portalSessionId &&
+                    profileOwnerMatches(target.profile_id, ownerUserId)
+                ) {
+                    queries.hardDeleteWorkoutComponent(exactId)
+                }
+            }
+        }
+    }
+
+    private fun profileOwnerMatches(profileId: String, expectedOwnerUserId: String): Boolean =
+        queries.getProfileById(profileId).executeAsOneOrNull()?.supabase_user_id == expectedOwnerUserId
+
+    /**
+     * Resolve a retained ownership claim before a pulled root is materialized. Claims outlive
+     * source-profile deletion, so the target profile is authoritative for every later pull.
+     * A claim may point at an unbound local profile, but never at another account's profile.
+     */
+    private fun claimedPullProfileId(
+        ownerUserId: String,
+        entityType: OwnershipEntityType,
+        entityId: String,
+    ): String? {
+        val claimedProfileId = localOwnershipClaimLookup.targetProfileId(
+            ownerUserId = ownerUserId,
+            entityType = entityType,
+            entityId = entityId,
+        ) ?: return null
+        val claimedProfile = queries.getProfileById(claimedProfileId).executeAsOneOrNull()
+            ?: throw IllegalStateException(
+                "Ownership claim target profile does not exist: owner=$ownerUserId " +
+                    "entity=${entityType.name}:$entityId target=$claimedProfileId",
+            )
+        val boundOwner = claimedProfile.supabase_user_id
+        if (boundOwner != null && boundOwner != ownerUserId) {
+            throw IllegalStateException(
+                "Ownership claim target belongs to another account: owner=$ownerUserId " +
+                    "entity=${entityType.name}:$entityId target=$claimedProfileId",
+            )
+        }
+        return claimedProfileId
+    }
+
+    private fun mergeSessionsLwwInTransaction(
+        sessions: List<WorkoutSession>,
+        updatedAtBySessionId: Map<String, Long>,
+    ) {
             // Issue #591 follow-up: collapse the per-row
             // selectSessionUpdatedAt + selectSessionById pair into a single
             // batched round-trip per concern. For a 20-set routine this
@@ -1975,13 +2443,22 @@ class SqlDelightSyncRepository(
             // Chunking at CHUNK_SIZE 500 keeps us safely under both
             // limits while still eliminating the per-row round-trips.
             val ids = sessions.map { it.id }
-            val existingUpdatedAtById: Map<String, Long?> =
+            val existingStateById: Map<String, SessionMergeState> =
                 ids.chunked(BATCH_LOOKUP_CHUNK_SIZE)
                     .flatMap { chunk ->
                         queries.selectSessionsUpdatedAtByIds(chunk)
                             .executeAsList()
+                            .map {
+                                SessionMergeState(
+                                    id = it.id,
+                                    updatedAt = it.updatedAt,
+                                    deletedAt = it.deletedAt,
+                                    profileId = it.profile_id,
+                                    portalOrigin = it.portalOrigin == 1L,
+                                )
+                            }
                     }
-                    .associate { it.id to it.updatedAt }
+                    .associateBy { it.id }
             val preservationRowsById: Map<String, PreservationRow> =
                 ids.chunked(BATCH_LOOKUP_CHUNK_SIZE)
                     .flatMap { chunk ->
@@ -1992,14 +2469,74 @@ class SqlDelightSyncRepository(
                     .associate { it.id to it }
 
             for (session in sessions) {
-                val existingTs = existingUpdatedAtById[session.id]
+                val existing = existingStateById[session.id]
                 val incomingTs = updatedAtBySessionId[session.id]
-                // Accept when: the local row is absent (first-time pull), OR the incoming has a
-                // real timestamp that is at least as recent as the local row. When a local row
-                // exists but incomingTs is absent from the map, we cannot determine recency —
-                // skip to preserve the existing local data (rather than the original 0L default
-                // which silently lost every LWW comparison against any non-zero existing timestamp).
-                val accept = existingTs == null || (incomingTs != null && incomingTs >= existingTs)
+                if (existing == null) {
+                    queries.mergeSessionLww(
+                        id = session.id,
+                        timestamp = session.timestamp,
+                        mode = session.mode,
+                        targetReps = session.reps.toLong(),
+                        weightPerCableKg = session.weightPerCableKg.toDouble(),
+                        progressionKg = session.progressionKg.toDouble(),
+                        duration = session.duration,
+                        totalReps = session.totalReps.toLong(),
+                        warmupReps = session.warmupReps.toLong(),
+                        workingReps = session.workingReps.toLong(),
+                        isJustLift = if (session.isJustLift) 1L else 0L,
+                        stopAtTop = if (session.stopAtTop) 1L else 0L,
+                        eccentricLoad = session.eccentricLoad.toLong(),
+                        echoLevel = session.echoLevel.toLong(),
+                        exerciseId = session.exerciseId,
+                        exerciseName = session.exerciseName,
+                        routineSessionId = session.routineSessionId,
+                        routineName = session.routineName,
+                        routineId = session.routineId,
+                        safetyFlags = session.safetyFlags.toLong(),
+                        deloadWarningCount = session.deloadWarningCount.toLong(),
+                        romViolationCount = session.romViolationCount.toLong(),
+                        spotterActivations = session.spotterActivations.toLong(),
+                        peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+                        peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+                        peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+                        peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+                        avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+                        avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+                        avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+                        avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+                        heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+                        totalVolumeKg = session.totalVolumeKg?.toDouble(),
+                        cableCount = session.cableCount?.toLong(),
+                        estimatedCalories = session.estimatedCalories?.toDouble(),
+                        warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+                        workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+                        burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+                        peakWeightKg = session.peakWeightKg?.toDouble(),
+                        rpe = session.rpe?.toLong(),
+                        avgMcvMmS = session.avgMcvMmS?.toDouble(),
+                        avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
+                        totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
+                        dominantSide = session.dominantSide,
+                        strengthProfile = session.strengthProfile,
+                        formScore = session.formScore?.toLong(),
+                        updatedAt = incomingTs ?: 0L,
+                        profile_id = session.profileId,
+                        display_multiplier = session.displayMultiplier?.toLong(),
+                        externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+                        counterweightKg = session.counterweightKg.toDouble(),
+                        rackItemsJson = session.rackItemsJson,
+                    )
+                    continue
+                }
+
+                // A portal projection can update only a row originally materialized by
+                // portal pull, within the same owner/profile, with a non-stale version.
+                // Retained tombstones are never resurrected by an active projection.
+                val accept = existing.portalOrigin &&
+                    existing.profileId == session.profileId &&
+                    existing.deletedAt == null &&
+                    incomingTs != null &&
+                    (existing.updatedAt == null || incomingTs >= existing.updatedAt)
                 if (!accept) continue
 
                 // Issue #591: Preserve non-null detailed metric columns from
@@ -2016,30 +2553,20 @@ class SqlDelightSyncRepository(
                     session
                 }
 
-                queries.mergeSessionLww(
+                queries.updatePortalSessionProjection(
                     id = preserved.id,
                     timestamp = preserved.timestamp,
                     mode = preserved.mode,
                     targetReps = preserved.reps.toLong(),
                     weightPerCableKg = preserved.weightPerCableKg.toDouble(),
-                    progressionKg = preserved.progressionKg.toDouble(),
                     duration = preserved.duration,
                     totalReps = preserved.totalReps.toLong(),
                     warmupReps = preserved.warmupReps.toLong(),
                     workingReps = preserved.workingReps.toLong(),
-                    isJustLift = if (preserved.isJustLift) 1L else 0L,
-                    stopAtTop = if (preserved.stopAtTop) 1L else 0L,
-                    eccentricLoad = preserved.eccentricLoad.toLong(),
-                    echoLevel = preserved.echoLevel.toLong(),
                     exerciseId = preserved.exerciseId,
                     exerciseName = preserved.exerciseName,
                     routineSessionId = preserved.routineSessionId,
                     routineName = preserved.routineName,
-                    routineId = preserved.routineId,
-                    safetyFlags = preserved.safetyFlags.toLong(),
-                    deloadWarningCount = preserved.deloadWarningCount.toLong(),
-                    romViolationCount = preserved.romViolationCount.toLong(),
-                    spotterActivations = preserved.spotterActivations.toLong(),
                     peakForceConcentricA = preserved.peakForceConcentricA?.toDouble(),
                     peakForceConcentricB = preserved.peakForceConcentricB?.toDouble(),
                     peakForceEccentricA = preserved.peakForceEccentricA?.toDouble(),
@@ -2063,17 +2590,9 @@ class SqlDelightSyncRepository(
                     dominantSide = preserved.dominantSide,
                     strengthProfile = preserved.strengthProfile,
                     formScore = preserved.formScore?.toLong(),
-                    // Stamp with the real incoming timestamp; fall back to 0L for new rows
-                    // that have no timestamp in the map (accept=true only when existingTs==null).
-                    updatedAt = incomingTs ?: 0L,
-                    profile_id = preserved.profileId,
-                    display_multiplier = preserved.displayMultiplier?.toLong(),
-                    externalAddedLoadKg = preserved.externalAddedLoadKg.toDouble(),
-                    counterweightKg = preserved.counterweightKg.toDouble(),
-                    rackItemsJson = preserved.rackItemsJson,
+                    updatedAt = incomingTs,
                 )
             }
-        }
     }
 
     /**
@@ -2102,9 +2621,8 @@ class SqlDelightSyncRepository(
      *   - cableCount, displayMultiplier
      *   - rpe, formScore
      *
-     * Note: `weightPerCableKg`, `totalReps`, `duration`, and exercise/routine
-     * identity are intentionally NOT preserved — those should follow LWW so
-     * the row matches whatever the server / push thinks the workout was.
+     * `weightPerCableKg`, `totalReps`, `duration`, and exercise/routine identity
+     * follow the incoming projection only for rows already marked portal-origin.
      */
     private fun preserveMetrics(
         existing: PreservationRow,
@@ -2171,6 +2689,14 @@ class SqlDelightSyncRepository(
         val formScore: Long?,
     )
 
+    private data class SessionMergeState(
+        val id: String,
+        val updatedAt: Long?,
+        val deletedAt: Long?,
+        val profileId: String,
+        val portalOrigin: Boolean,
+    )
+
     /**
      * Bridge the SqlDelight-generated row into [PreservationRow]. The
      * generated row type name follows the SQL query name
@@ -2206,26 +2732,86 @@ class SqlDelightSyncRepository(
     )
 
     /**
-     * Replace a routine's supersets and exercises with the version received from the portal.
-     * Deletes existing rows, recreates Superset entities (FK-first), then inserts each
-     * exercise with all field mappings applied.
+     * Merge one portal routine (pull path) with TIMESTAMP LWW, shared by [mergePortalRoutines]
+     * and [mergeAllPullData]. Must be called inside a [db.transaction] block.
      *
-     * Must be called inside a [db.transaction] block. The caller is responsible for reading
-     * local rack/scaling rows BEFORE calling this function, because those rows are deleted
-     * as part of the replacement.
+     * - A locally soft-deleted routine stays deleted (its tombstone may not be pushed yet).
+     * - A routine edited locally after [lastSync] wins over the portal copy.
+     * - The routine row is updated in place (never REPLACEd), so its exercises, supersets and
+     *   CycleDay links are not cascade-deleted.
+     * - SAFETY GUARD: an empty portal exercise list is treated as an incomplete payload and
+     *   leaves the local exercises alone.
+     */
+    private fun mergePortalRoutine(portalRoutine: PullRoutineDto, lastSync: Long, profileId: String) {
+        val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
+        if (existing != null) {
+            if (existing.deletedAt != null) {
+                Logger.d { "Routine '${portalRoutine.name}' skipped: deleted locally" }
+                return
+            }
+            val localUpdatedAt = existing.updatedAt ?: 0L
+            if (localUpdatedAt > lastSync) {
+                Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer ($localUpdatedAt > $lastSync)" }
+                return
+            }
+        }
+
+        // Read local structure before any write.
+        val localExercises = queries.selectExercisesByRoutine(portalRoutine.id).executeAsList()
+        val localSupersets = queries.selectSupersetsByRoutine(portalRoutine.id).executeAsList()
+
+        val updatedAt = portalRoutine.updatedAt ?: currentTimeMillis()
+        if (existing == null) {
+            queries.insertRoutineIgnore(
+                id = portalRoutine.id,
+                name = portalRoutine.name,
+                description = portalRoutine.description,
+                createdAt = currentTimeMillis(),
+                lastUsed = null,
+                useCount = 0L,
+                updatedAt = updatedAt,
+                profile_id = profileId,
+                groupId = null,
+            )
+        } else {
+            queries.updateRoutineById(
+                name = portalRoutine.name,
+                description = portalRoutine.description,
+                updatedAt = updatedAt,
+                id = portalRoutine.id,
+            )
+        }
+
+        if (portalRoutine.exercises.isNotEmpty()) {
+            mergePortalExercisesForRoutine(portalRoutine.id, portalRoutine.exercises, localExercises, localSupersets)
+        } else {
+            Logger.w("SyncRepository") {
+                "Skipping exercise merge for routine '${portalRoutine.name}' (${portalRoutine.id}): " +
+                    "portal sent empty exercises list (exerciseCount=${portalRoutine.exerciseCount})"
+            }
+        }
+    }
+
+    /**
+     * Bring a routine's supersets and exercises in line with the portal copy, diffing by id:
+     * matched rows are UPDATEd in place, new rows inserted, rows the portal no longer has deleted.
+     * Columns the wire does not carry (progressionKg, duration, prTypeForScaling,
+     * setWeightsPercentOfPR, scalingBasis, defaultRackItemIds, cableConfig, omitted drop-set
+     * config, superset name/rest) keep their local values on matched rows.
+     *
+     * Must be called inside a [db.transaction] block, with [localExercises]/[localSupersets]
+     * read before any write for this routine.
      */
     private fun mergePortalExercisesForRoutine(
         routineId: String,
         portalExercises: List<PullRoutineExerciseDto>,
-        localRackDefaultsByExerciseId: Map<String, String?>,
-        localRackOverridesByExerciseId: Map<String, String?>,
-        localScalingBasisByExerciseId: Map<String, String?>,
-        localDropSetByExerciseId: Map<String, Pair<Long, Double?>>,
+        localExercises: List<RoutineExerciseRow>,
+        localSupersets: List<SupersetRow>,
     ) {
-        queries.deleteRoutineExercises(routineId)
-        queries.deleteSupersetsByRoutine(routineId)
+        val localExercisesById = localExercises.associateBy { it.id }
+        val localSupersetsById = localSupersets.associateBy { it.id }
 
-        // Create Superset rows BEFORE inserting exercises (FK constraint).
+        // Create/update Superset rows BEFORE writing exercises (FK constraint).
         val supersetGroups = portalExercises
             .filter { it.supersetId != null }
             .groupBy { it.supersetId!! }
@@ -2246,14 +2832,26 @@ class SqlDelightSyncRepository(
             val colorIndex = colorStr?.let { colorNameToIndex[it] }
                 ?: colorStr?.toLongOrNull()
                 ?: supersetOrderIdx.toLong()
-            queries.insertSupersetIgnore(
-                id = ssId,
-                routineId = routineId,
-                name = "Superset ${supersetOrderIdx + 1}",
-                colorIndex = colorIndex,
-                restBetweenSeconds = 10L,
-                orderIndex = supersetOrderIdx.toLong(),
-            )
+            val localSuperset = localSupersetsById[ssId]
+            if (localSuperset != null) {
+                // Name and rest are not on the wire: keep the local values.
+                queries.updateSuperset(
+                    name = localSuperset.name,
+                    colorIndex = colorIndex,
+                    restBetweenSeconds = localSuperset.restBetweenSeconds,
+                    orderIndex = supersetOrderIdx.toLong(),
+                    id = ssId,
+                )
+            } else {
+                queries.insertSupersetIgnore(
+                    id = ssId,
+                    routineId = routineId,
+                    name = "Superset ${supersetOrderIdx + 1}",
+                    colorIndex = colorIndex,
+                    restBetweenSeconds = 10L,
+                    orderIndex = supersetOrderIdx.toLong(),
+                )
+            }
             supersetOrderIdx++
         }
 
@@ -2313,61 +2911,125 @@ class SqlDelightSyncRepository(
             // because reconstructed snapshot Exercises derived isBodyweight from it).
             val resolvedEquipment = catalogExercise?.equipment ?: ""
 
-            queries.insertRoutineExercise(
-                id = exercise.id,
-                routineId = routineId,
-                exerciseName = exercise.name,
-                exerciseMuscleGroup = exercise.muscleGroup,
-                exerciseEquipment = resolvedEquipment,
-                exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
-                exerciseId = catalogExercise?.id,
-                cableConfig = "DOUBLE",
-                orderIndex = exercise.orderIndex.toLong(),
-                setReps = setReps,
-                weightPerCableKg = exercise.weight.toDouble(),
-                setWeights = setWeights,
-                mode = mobileMode,
-                eccentricLoad = PortalPullAdapter.parseEccentricLoad(exercise.eccentricLoad),
-                echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
-                progressionKg = 0.0,
-                restSeconds = exercise.restSeconds.toLong(),
-                duration = null,
-                setRestSeconds = setRestSeconds,
-                perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
-                isAMRAP = if (exercise.isAmrap) 1L else 0L,
-                supersetId = exercise.supersetId,
-                orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
-                usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
-                weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong(),
-                prTypeForScaling = "MAX_WEIGHT",
-                setWeightsPercentOfPR = null,
-                stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
-                stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
-                repCountTiming = exercise.repCountTiming ?: "TOP",
-                setEchoLevels = setEchoLevels,
-                warmupSets = exercise.warmupSets ?: "",
-                defaultRackItemIds = localRackDefaultsByExerciseId[exercise.id] ?: "[]",
-                rackBehaviorOverrides = exercise.rackBehaviorOverrides
-                    ?: localRackOverridesByExerciseId[exercise.id]
-                    ?: "{}",
-                scalingBasis = localScalingBasisByExerciseId[exercise.id],
-                // Explicit portal flag when present; otherwise inherit the catalog's
-                // stored classification (e.g. Squat = cable despite empty equipment).
-                // Never coerce an omitted field to cable, and never leave a known
-                // catalog flag behind — the push snapshot builder reconstructs the
-                // Exercise from this row alone, without a catalog lookup (#635).
-                isBodyweight = exercise.isBodyweight?.let { if (it) 1L else 0L }
-                    ?: catalogExercise?.isBodyweight,
-                dropSetEnabled = when {
-                    exercise.dropSetEnabled != null -> if (exercise.dropSetEnabled) 1L else 0L
-                    else -> localDropSetByExerciseId[exercise.id]?.first ?: 0L
-                },
-                dropSetMinWeightKg = when {
-                    exercise.dropSetEnabled != null -> exercise.dropSetMinWeightKg?.toDouble()
-                    else -> localDropSetByExerciseId[exercise.id]?.second
-                },
-            )
+            val local = localExercisesById[exercise.id]
+            // Explicit portal flag when present; otherwise inherit the catalog's
+            // stored classification (e.g. Squat = cable despite empty equipment).
+            // Never coerce an omitted field to cable, and never leave a known
+            // catalog flag behind — the push snapshot builder reconstructs the
+            // Exercise from this row alone, without a catalog lookup (#635).
+            val isBodyweight = exercise.isBodyweight?.let { if (it) 1L else 0L }
+                ?: catalogExercise?.isBodyweight
+            val rackBehaviorOverrides = exercise.rackBehaviorOverrides
+                ?: local?.rackBehaviorOverrides
+                ?: "{}"
+            val dropSetEnabled = when {
+                exercise.dropSetEnabled != null -> if (exercise.dropSetEnabled) 1L else 0L
+                else -> local?.dropSetEnabled ?: 0L
+            }
+            val dropSetMinWeightKg = when {
+                exercise.dropSetEnabled != null -> exercise.dropSetMinWeightKg?.toDouble()
+                else -> local?.dropSetMinWeightKg
+            }
+
+            val weightPercentOfPR = (exercise.prPercentage?.toInt() ?: 80).toLong()
+
+            if (local != null) {
+                // The per-set % list is not on the wire and resolvers prefer it over the base %.
+                // Keep it only when the portal sends no % (mode off, list unused) or when the row
+                // was already in %-of-PR mode at the same base. A base change on another device
+                // (e.g. a deload 80 -> 70) or re-enabling % mode (the stored base may be the
+                // `?: 80` fallback) clears it so the incoming base drives the load.
+                val setWeightsPercentOfPR = local.setWeightsPercentOfPR.takeIf {
+                    exercise.prPercentage == null ||
+                        (local.usePercentOfPR == 1L && weightPercentOfPR == local.weightPercentOfPR)
+                }
+                queries.updateRoutineExercise(
+                    exerciseName = exercise.name,
+                    exerciseMuscleGroup = exercise.muscleGroup,
+                    exerciseEquipment = resolvedEquipment,
+                    exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
+                    exerciseId = catalogExercise?.id,
+                    cableConfig = local.cableConfig,
+                    orderIndex = exercise.orderIndex.toLong(),
+                    setReps = setReps,
+                    weightPerCableKg = exercise.weight.toDouble(),
+                    setWeights = setWeights,
+                    mode = mobileMode,
+                    eccentricLoad = PortalPullAdapter.parseEccentricLoad(exercise.eccentricLoad),
+                    echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
+                    progressionKg = local.progressionKg,
+                    restSeconds = exercise.restSeconds.toLong(),
+                    duration = local.duration,
+                    setRestSeconds = setRestSeconds,
+                    perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
+                    isAMRAP = if (exercise.isAmrap) 1L else 0L,
+                    supersetId = exercise.supersetId,
+                    orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
+                    usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
+                    weightPercentOfPR = weightPercentOfPR,
+                    prTypeForScaling = local.prTypeForScaling,
+                    setWeightsPercentOfPR = setWeightsPercentOfPR,
+                    stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
+                    stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
+                    repCountTiming = exercise.repCountTiming ?: "TOP",
+                    setEchoLevels = setEchoLevels,
+                    warmupSets = exercise.warmupSets ?: "",
+                    defaultRackItemIds = local.defaultRackItemIds,
+                    rackBehaviorOverrides = rackBehaviorOverrides,
+                    scalingBasis = local.scalingBasis,
+                    isBodyweight = isBodyweight,
+                    dropSetEnabled = dropSetEnabled,
+                    dropSetMinWeightKg = dropSetMinWeightKg,
+                    id = exercise.id,
+                )
+            } else {
+                queries.insertRoutineExercise(
+                    id = exercise.id,
+                    routineId = routineId,
+                    exerciseName = exercise.name,
+                    exerciseMuscleGroup = exercise.muscleGroup,
+                    exerciseEquipment = resolvedEquipment,
+                    exerciseDefaultCableConfig = catalogExercise?.defaultCableConfig ?: "DOUBLE",
+                    exerciseId = catalogExercise?.id,
+                    cableConfig = "DOUBLE",
+                    orderIndex = exercise.orderIndex.toLong(),
+                    setReps = setReps,
+                    weightPerCableKg = exercise.weight.toDouble(),
+                    setWeights = setWeights,
+                    mode = mobileMode,
+                    eccentricLoad = PortalPullAdapter.parseEccentricLoad(exercise.eccentricLoad),
+                    echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
+                    progressionKg = 0.0,
+                    restSeconds = exercise.restSeconds.toLong(),
+                    duration = null,
+                    setRestSeconds = setRestSeconds,
+                    perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
+                    isAMRAP = if (exercise.isAmrap) 1L else 0L,
+                    supersetId = exercise.supersetId,
+                    orderInSuperset = (exercise.supersetOrder ?: 0).toLong(),
+                    usePercentOfPR = if (exercise.prPercentage != null) 1L else 0L,
+                    weightPercentOfPR = weightPercentOfPR,
+                    prTypeForScaling = "MAX_WEIGHT",
+                    setWeightsPercentOfPR = null,
+                    stallDetectionEnabled = if (exercise.stallDetection) 1L else 0L,
+                    stopAtTop = if (exercise.stopAtPosition == "TOP") 1L else 0L,
+                    repCountTiming = exercise.repCountTiming ?: "TOP",
+                    setEchoLevels = setEchoLevels,
+                    warmupSets = exercise.warmupSets ?: "",
+                    defaultRackItemIds = "[]",
+                    rackBehaviorOverrides = rackBehaviorOverrides,
+                    scalingBasis = null,
+                    isBodyweight = isBodyweight,
+                    dropSetEnabled = dropSetEnabled,
+                    dropSetMinWeightKg = dropSetMinWeightKg,
+                )
+            }
         }
+
+        // Drop what the portal no longer has (exercises first; their superset refs are SET NULL anyway).
+        val portalExerciseIds = portalExercises.mapTo(HashSet()) { it.id }
+        localExercises.filter { it.id !in portalExerciseIds }.forEach { queries.deleteRoutineExerciseById(it.id) }
+        localSupersets.filter { it.id !in supersetGroups.keys }.forEach { queries.deleteSuperset(it.id) }
     }
 
     override suspend fun mergeSessionNotes(
@@ -2375,21 +3037,54 @@ class SqlDelightSyncRepository(
     ) = withContext(Dispatchers.IO) {
         if (notes.isEmpty()) return@withContext
         db.transaction {
-            for ((routineSessionId, entry) in notes) {
-                val existingUpdatedAt = queries
-                    .selectSessionNotesUpdatedAt(routineSessionId)
-                    .executeAsOneOrNull()
-                    ?.updatedAt
-                val incomingMillis = entry.updatedAtMillis
-                val accept = existingUpdatedAt == null ||
-                    incomingMillis >= existingUpdatedAt
-                if (accept) {
-                    queries.upsertSessionNotes(
-                        routineSessionId = routineSessionId,
-                        notes = entry.notes,
-                        updatedAt = incomingMillis,
-                    )
-                }
+            mergeSessionNotesInTransaction(notes)
+        }
+    }
+
+    override suspend fun saveLocalSessionNotes(
+        portalSessionId: String,
+        notes: String?,
+        updatedAtMillis: Long,
+    ) = withContext(Dispatchers.IO) {
+        require(portalSessionId.isNotBlank()) { "portalSessionId must not be blank" }
+        db.transaction {
+            queries.upsertSessionNotes(
+                routineSessionId = portalSessionId,
+                notes = notes,
+                updatedAt = updatedAtMillis,
+            )
+            queries.markWorkoutPortalParentDirty(portalSessionId)
+        }
+    }
+
+    override suspend fun getSessionNotesForPortalParents(
+        portalSessionIds: List<String>,
+    ): Map<String, SessionNotesEntry> = withContext(Dispatchers.IO) {
+        if (portalSessionIds.isEmpty()) return@withContext emptyMap()
+        portalSessionIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE)
+            .flatMap { ids -> queries.selectSessionNotesForIds(ids).executeAsList() }
+            .associate { row ->
+                row.routineSessionId to SessionNotesEntry(
+                    notes = row.notes,
+                    updatedAtMillis = row.updatedAt ?: 0L,
+                )
+            }
+    }
+
+    private fun mergeSessionNotesInTransaction(notes: Map<String, SessionNotesEntry>) {
+        for ((routineSessionId, entry) in notes) {
+            val existingUpdatedAt = queries
+                .selectSessionNotesUpdatedAt(routineSessionId)
+                .executeAsOneOrNull()
+                ?.updatedAt
+            val incomingMillis = entry.updatedAtMillis
+            val accept = existingUpdatedAt == null || incomingMillis >= existingUpdatedAt
+            if (accept) {
+                queries.upsertSessionNotes(
+                    routineSessionId = routineSessionId,
+                    notes = entry.notes,
+                    updatedAt = incomingMillis,
+                )
             }
         }
     }

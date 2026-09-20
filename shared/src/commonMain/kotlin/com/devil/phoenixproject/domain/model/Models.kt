@@ -699,34 +699,6 @@ fun WorkoutSession.toSetSummary(): WorkoutState.SetSummary? {
 expect fun generateUUID(): String
 
 /**
- * Chart data point for visualization
- * Position values are in millimeters (mm), range -1000.0 to +1000.0 (Issue #197)
- */
-@Suppress("unused")
-data class ChartDataPoint(
-    val timestamp: Long,
-    val totalLoad: Float,
-    val loadA: Float,
-    val loadB: Float,
-    val positionA: Float, // Position in mm (changed from Int in Issue #197)
-    val positionB: Float, // Position in mm (changed from Int in Issue #197)
-)
-
-/**
- * Chart event markers
- */
-sealed class ChartEvent(val timestamp: Long, val label: String) {
-    @Suppress("unused")
-    class RepStart(timestamp: Long, repNumber: Int) : ChartEvent(timestamp, "Rep $repNumber")
-
-    @Suppress("unused")
-    class RepComplete(timestamp: Long, repNumber: Int) : ChartEvent(timestamp, "Rep $repNumber Complete")
-
-    @Suppress("unused")
-    class WarmupComplete(timestamp: Long) : ChartEvent(timestamp, "Warmup Complete")
-}
-
-/**
  * PR Celebration Event - Triggered when user achieves a new Personal Record
  */
 data class PRCelebrationEvent(

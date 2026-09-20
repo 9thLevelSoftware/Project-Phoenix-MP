@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
+import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.Routine
@@ -8,7 +9,9 @@ import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
+import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
@@ -21,13 +24,14 @@ import org.junit.Test
 class SqlDelightWorkoutRepositoryTest {
 
     private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
-    private lateinit var exerciseRepository: FakeExerciseRepository
     private lateinit var repository: SqlDelightWorkoutRepository
 
     @Before
     fun setup() {
         database = createTestDatabase()
-        exerciseRepository = FakeExerciseRepository()
+        // Real exercise repository: the routine-exercise heal writes an exerciseId that
+        // must exist in the Exercise table (FK), which a fake catalog cannot provide.
+        val exerciseRepository = SqlDelightExerciseRepository(database, ExerciseImporter(database), FakePreferencesManager())
         repository = SqlDelightWorkoutRepository(database, exerciseRepository)
     }
 
@@ -57,6 +61,7 @@ class SqlDelightWorkoutRepositoryTest {
         )
         val retrySnapshot = listOf(firstAttempt.single { it.timestamp == 20L })
 
+        repository.saveSession(createTestSession(id = "stable-session"))
         repository.saveMetrics("stable-session", firstAttempt)
         repository.saveMetrics("stable-session", retrySnapshot)
 
@@ -90,6 +95,84 @@ class SqlDelightWorkoutRepositoryTest {
 
         val result = repository.getSession("to-delete")
         assertNull(result)
+    }
+
+    @Test
+    fun `deleting one grouped component records component tombstone and keeps sibling`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-1", 1L, "default")
+        repository.saveSession(
+            createTestSession("component-a").copy(routineSessionId = "portal-parent"),
+        )
+        repository.saveSession(
+            createTestSession("component-b").copy(routineSessionId = "portal-parent"),
+        )
+
+        repository.deleteSession("component-a")
+
+        assertNull(repository.getSession("component-a"))
+        assertNotNull(repository.getSession("component-b"))
+        val deletion = database.phoenixDatabaseQueries
+            .selectPendingWorkoutDeletions("owner-1", "default")
+            .executeAsOne()
+        assertEquals("COMPONENT", deletion.scope)
+        assertEquals("portal-parent", deletion.portal_session_id)
+        assertEquals("component-a", deletion.component_session_id)
+    }
+
+    @Test
+    fun `deleting final grouped component records workout tombstone`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-1", 1L, "default")
+        repository.saveSession(
+            createTestSession("component-only").copy(routineSessionId = "portal-parent"),
+        )
+
+        repository.deleteSession("component-only")
+
+        val deletion = database.phoenixDatabaseQueries
+            .selectPendingWorkoutDeletions("owner-1", "default")
+            .executeAsOne()
+        assertEquals("WORKOUT", deletion.scope)
+        assertEquals("portal-parent", deletion.portal_session_id)
+        assertNull(deletion.component_session_id)
+    }
+
+    @Test
+    fun `internal discard hard deletes without durable tombstone`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-1", 1L, "default")
+        repository.saveSession(createTestSession("assessment-temp"))
+
+        repository.discardSessionInternal("assessment-temp")
+
+        assertNull(repository.getSession("assessment-temp"))
+        assertTrue(
+            database.phoenixDatabaseQueries
+                .selectPendingWorkoutDeletions("owner-1", "default")
+                .executeAsList()
+                .isEmpty(),
+        )
+    }
+
+    @Test
+    fun `workout deletion acknowledgement is exact owner and retains ledger row`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-1", 1L, "default")
+        repository.saveSession(createTestSession("delete-me"))
+        repository.deleteSession("delete-me")
+        val deletionRepository = SqlDelightWorkoutDeletionRepository(database)
+        val mutation = deletionRepository.pendingForOwner("owner-1").single()
+
+        deletionRepository.acknowledge("other-owner", setOf(mutation.mutationId), 10L)
+        assertEquals(1, deletionRepository.pendingForOwner("owner-1").size)
+
+        deletionRepository.acknowledge("owner-1", setOf(mutation.mutationId), 20L)
+        assertTrue(deletionRepository.pendingForOwner("owner-1").isEmpty())
+        val retained = database.phoenixDatabaseQueries
+            .selectWorkoutDeletionByMutationId(mutation.mutationId)
+            .executeAsOne()
+        assertEquals(20L, retained.acknowledged_at)
     }
 
     @Test
@@ -189,7 +272,7 @@ class SqlDelightWorkoutRepositoryTest {
         repository.saveSession(createTestSession(id = "session-1"))
         repository.saveSession(createTestSession(id = "session-2"))
 
-        repository.deleteAllSessions()
+        repository.deleteAllSessions("default")
 
         repository.getAllSessions("default").test {
             val sessions = awaitItem()
@@ -304,14 +387,7 @@ class SqlDelightWorkoutRepositoryTest {
 
     @Test
     fun `getRoutineById heals missing exerciseId by resolving exercise name`() = runTest {
-        val customExercise = Exercise(
-            id = "custom_bayesian_curl",
-            name = "Bayesian Cable Curl",
-            muscleGroup = "Biceps",
-            equipment = "Cable",
-            isCustom = true,
-        )
-        exerciseRepository.addExercise(customExercise)
+        database.seedExercise(id = "custom_bayesian_curl", name = "Bayesian Cable Curl", muscleGroup = "Biceps", equipment = "Cable", isCustom = true)
 
         val legacyRoutine = Routine(
             id = "routine-legacy",
@@ -340,6 +416,37 @@ class SqlDelightWorkoutRepositoryTest {
         // Verify DB self-heal so subsequent loads don't regress to null ID.
         val healedRow = database.phoenixDatabaseQueries.selectExercisesByRoutine("routine-legacy").executeAsOne()
         assertEquals("custom_bayesian_curl", healedRow.exerciseId)
+    }
+
+    @Test
+    fun `getRoutineById keeps the exercise when the exerciseId heal write fails`() = runTest {
+        // The catalog resolves the name to an id with no Exercise row, so the heal UPDATE
+        // violates the RoutineExercise -> Exercise foreign key (F-083).
+        val catalogWithoutRows = FakeExerciseRepository().apply {
+            addExercise(Exercise(id = "catalog-only", name = "Bayesian Cable Curl", muscleGroup = "Biceps", equipment = "Cable"))
+        }
+        val healFailingRepository = SqlDelightWorkoutRepository(database, catalogWithoutRows)
+        healFailingRepository.saveRoutine(
+            Routine(
+                id = "routine-heal-fails",
+                name = "Heal Fails",
+                exercises = listOf(
+                    RoutineExercise(
+                        id = "re-heal",
+                        exercise = Exercise(id = null, name = "Bayesian Cable Curl", muscleGroup = "Biceps", equipment = "Cable"),
+                        orderIndex = 0,
+                        setReps = listOf(10),
+                        weightPerCableKg = 12.5f,
+                    ),
+                ),
+            ),
+        )
+
+        val loaded = healFailingRepository.getRoutineById("routine-heal-fails")
+
+        assertNotNull(loaded)
+        assertEquals(listOf("Bayesian Cable Curl"), loaded.exercises.map { it.exercise.name })
+        assertNull(database.phoenixDatabaseQueries.selectExercisesByRoutine("routine-heal-fails").executeAsOne().exerciseId)
     }
 
     @Test
@@ -402,7 +509,7 @@ class SqlDelightWorkoutRepositoryTest {
             ),
             profileId = "profile-b",
         )
-        exerciseRepository.addExercise(Exercise(id = "bench", name = "Bench Press", muscleGroup = "Chest"))
+        database.seedExercise(id = "bench", name = "Bench Press", muscleGroup = "Chest")
         repository.saveRoutine(routine)
 
         repository.getAllRoutines("profile-b").test {
@@ -411,6 +518,31 @@ class SqlDelightWorkoutRepositoryTest {
             assertEquals("profile-b", routines.first().profileId)
             cancelAndIgnoreRemainingEvents()
         }
+    }
+
+    @Test
+    fun `saveRoutine on a routine used by a training cycle keeps the cycle day link`() = runTest {
+        val routine = Routine(id = "routine-in-cycle", name = "Cycle Routine", exercises = emptyList())
+        repository.saveRoutine(routine)
+        val queries = database.phoenixDatabaseQueries
+        queries.insertTrainingCycle("cycle-1", "Cycle", null, 1L, 1L, "default", null, 1L, 1L)
+        queries.insertCycleDay("cycle-day-1", "cycle-1", 1L, "Day 1", "routine-in-cycle", 0L, null, null, null, null, null)
+
+        repository.saveRoutine(routine.copy(name = "Cycle Routine Renamed"))
+
+        assertEquals("routine-in-cycle", queries.selectCycleDaysByCycle("cycle-1").executeAsOne().routine_id)
+        assertEquals("Cycle Routine Renamed", queries.selectRoutineById("routine-in-cycle").executeAsOne().name)
+    }
+
+    @Test
+    fun `saveRoutine on a soft-deleted routine id keeps it deleted`() = runTest {
+        val routine = Routine(id = "routine-tombstoned", name = "Tombstoned", exercises = emptyList())
+        repository.saveRoutine(routine)
+        database.phoenixDatabaseQueries.softDeleteRoutine(deletedAt = 5L, updatedAt = 5L, id = "routine-tombstoned")
+
+        repository.saveRoutine(routine.copy(name = "Saved Again"))
+
+        assertEquals(5L, database.phoenixDatabaseQueries.selectRoutineById("routine-tombstoned").executeAsOne().deletedAt)
     }
 
     @Test
@@ -433,7 +565,7 @@ class SqlDelightWorkoutRepositoryTest {
             ),
             profileId = "profile-c",
         )
-        exerciseRepository.addExercise(Exercise(id = "bench", name = "Bench Press", muscleGroup = "Chest"))
+        database.seedExercise(id = "bench", name = "Bench Press", muscleGroup = "Chest")
         repository.saveRoutine(routine)
 
         val loaded = repository.getRoutineById("routine-profile-c")

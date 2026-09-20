@@ -39,6 +39,7 @@
     <string name="action_continue">Doorgaan</string>
     <string name="action_discard">Verwerpen</string>
     <string name="action_rename">Hernoemen</string>
+
     <!-- Common labels -->
     <string name="label_please_wait">Even geduld…</string>
     <string name="label_name">Naam</string>
@@ -161,6 +162,7 @@
     <string name="never_synced">Nooit gesynchroniseerd</string>
     <string name="unlink_account">Account ontkoppelen</string>
     <string name="sync_now">Nu synchroniseren</string>
+
     <!-- Training Cycles -->
     <string name="create_cycle">Cyclus aanmaken</string>
     <string name="edit_cycle">Cyclus bewerken</string>
@@ -228,6 +230,7 @@
     <string name="echo_level">Echo-niveau</string>
     <string name="eccentric_load">Excentrische belasting</string>
     <string name="select_tut_variant">Selecteer TUT-variant</string>
+
     <!-- Profiles -->
     <string name="add_profile">Profiel toevoegen</string>
     <string name="edit_profile">Profiel bewerken</string>
@@ -278,6 +281,7 @@
     <string name="cd_drop_set_candidate">%1$s drop, %2$s per kabel</string>
     <string name="cd_drop_set_candidate_unavailable">%1$s drop niet beschikbaar</string>
     <string name="cd_drop_set_retry_disabled">Selecteer een droppercentage om opnieuw te proberen</string>
+
     <!-- Connection Logs -->
     <string name="search_logs">Logs doorzoeken…</string>
     <string name="auto_scroll">Auto-scroll</string>
@@ -386,6 +390,7 @@
     <string name="empty_no_history_period">Geen trainingen in de laatste %1$s</string>
     <string name="empty_no_cycles_title">Nog geen trainingscycli</string>
     <string name="empty_no_cycles_message">Maak een roterend trainingsschema dat zich aanpast aan je leven, niet de kalender</string>
+
     <!-- Import/Export messages -->
     <string name="import_complete_title">Import voltooid</string>
     <string name="import_result_title">Importresultaat</string>

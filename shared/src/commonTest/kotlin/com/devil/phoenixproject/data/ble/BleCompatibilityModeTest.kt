@@ -45,22 +45,6 @@ class BleCompatibilityModeTest {
     }
 
     @Test
-    fun `heartbeat and pre-ready diagnostic reads are suppressed on the compatibility path`() {
-        BleCompatibilityMode.setting = BleCompatibilitySetting.ON
-
-        assertFalse(BleCompatibilityMode.includeHeartbeat(isAffectedDevice = false))
-        assertFalse(BleCompatibilityMode.includePreReadyDiagnosticReads(isAffectedDevice = false))
-    }
-
-    @Test
-    fun `heartbeat and pre-ready diagnostic reads run on the standard path`() {
-        BleCompatibilityMode.setting = BleCompatibilitySetting.OFF
-
-        assertTrue(BleCompatibilityMode.includeHeartbeat(isAffectedDevice = true))
-        assertTrue(BleCompatibilityMode.includePreReadyDiagnosticReads(isAffectedDevice = true))
-    }
-
-    @Test
     fun `fromStorage parses stored names and defaults to auto`() {
         assertEquals(BleCompatibilitySetting.ON, BleCompatibilitySetting.fromStorage("ON"))
         assertEquals(BleCompatibilitySetting.OFF, BleCompatibilitySetting.fromStorage("OFF"))

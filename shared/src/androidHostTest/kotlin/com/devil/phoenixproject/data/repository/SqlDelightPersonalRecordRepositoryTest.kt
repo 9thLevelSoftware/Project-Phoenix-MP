@@ -1,9 +1,9 @@
 package com.devil.phoenixproject.data.repository
 
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -17,11 +17,14 @@ class SqlDelightPersonalRecordRepositoryTest {
 
     private lateinit var database: PhoenixDatabase
     private lateinit var repository: SqlDelightPersonalRecordRepository
+    private lateinit var baselineRepository: SqlDelightProfileExerciseBaselineRepository
 
     @Before
     fun setup() {
         database = createTestDatabase()
-        repository = SqlDelightPersonalRecordRepository(database)
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
+        baselineRepository = SqlDelightProfileExerciseBaselineRepository(database)
+        repository = SqlDelightPersonalRecordRepository(database, baselineRepository)
         insertExercise(id = "bench", name = "Bench Press")
     }
 
@@ -63,9 +66,7 @@ class SqlDelightPersonalRecordRepositoryTest {
 
         val weightPr = repository.getWeightPR("bench", "Old School", profileId = "default")
         val volumePr = repository.getVolumePR("bench", "Old School", profileId = "default")
-        val exercise = database.phoenixDatabaseQueries.selectExerciseById(
-            "bench",
-        ).executeAsOneOrNull()
+        val baseline = baselineRepository.get("default", "bench")
 
         assertEquals(60f, weightPr?.weightPerCableKg)
         assertEquals(300f, weightPr?.volume)
@@ -75,7 +76,7 @@ class SqlDelightPersonalRecordRepositoryTest {
             // Canonical hybrid: reps=5 ≤ 10 → Brzycki = 60 × 36/(37-5) = 67.5
             // (was epley(60,5)=70.0; updated to reflect OneRepMaxCalculator.estimate)
             OneRepMaxCalculator.estimate(60f, 5).toDouble(),
-            exercise?.one_rep_max_kg,
+            baseline?.oneRepMaxPerCableKg?.toDouble(),
         )
     }
 
@@ -155,10 +156,14 @@ class SqlDelightPersonalRecordRepositoryTest {
     @Test
     fun `Issue 319 transaction rollback prevents partial PR writes when downstream write fails`() = runTest {
         // Create a dedicated database with driver reference for raw SQL trigger injection
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        PhoenixDatabase.Schema.create(driver)
+        val driver = createTestDriver()
         val testDb = PhoenixDatabase(driver)
-        val testRepo = SqlDelightPersonalRecordRepository(testDb)
+        testDb.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
+        val testBaselineRepository = SqlDelightProfileExerciseBaselineRepository(testDb)
+        val testRepo = SqlDelightPersonalRecordRepository(
+            testDb,
+            testBaselineRepository,
+        )
 
         testDb.phoenixDatabaseQueries.insertExercise(
             id = "squat", name = "Squat", displayName = null, description = null,
@@ -176,7 +181,7 @@ class SqlDelightPersonalRecordRepositoryTest {
         // AFTER weight-PR and volume-PR upserts have already executed.
         driver.execute(
             null,
-            "CREATE TRIGGER fail_1rm_update BEFORE UPDATE OF one_rep_max_kg ON Exercise " +
+            "CREATE TRIGGER fail_1rm_update BEFORE INSERT ON ProfileExerciseBaseline " +
                 "BEGIN SELECT RAISE(ABORT, 'Issue 319: simulated 1RM sync failure'); END",
             0,
         )
@@ -206,9 +211,10 @@ class SqlDelightPersonalRecordRepositoryTest {
             "Volume PR must not survive a rolled-back transaction",
         )
 
-        // Exercise 1RM should remain null (trigger prevented the UPDATE)
-        val exercise = testDb.phoenixDatabaseQueries.selectExerciseById("squat").executeAsOneOrNull()
-        assertNull(exercise?.one_rep_max_kg, "Exercise 1RM should still be null after rollback")
+        assertNull(
+            testBaselineRepository.get("default", "squat"),
+            "Scoped baseline should still be absent after rollback",
+        )
 
         // Positive control: remove trigger, verify the exact same call now succeeds
         driver.execute(null, "DROP TRIGGER fail_1rm_update", 0)
