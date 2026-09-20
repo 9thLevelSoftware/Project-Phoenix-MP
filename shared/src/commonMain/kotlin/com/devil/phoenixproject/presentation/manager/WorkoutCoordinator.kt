@@ -45,15 +45,29 @@ import kotlinx.coroutines.flow.combine
  * the whole list thousands of times). Nothing ever observed those flows as
  * flows — every reader took `.value` — so the flow machinery is gone with them.
  *
- * Threading: access is single-dispatcher today. Appends, reads and clears all
- * run on the engine's `scope`, which is the ViewModel's main dispatcher, and the
- * one background consumer (`processBiomechanicsForRep`) takes its [snapshot]
- * before switching to the biomechanics dispatcher. The lock is defensive — it
- * keeps a future off-main reader from copying a half-grown list — and
- * uncontended it costs far less than the per-sample copy it replaces.
+ * **Threading: the lock is required, not optional — do not remove it.** [append]
+ * and [clear] run on the engine's `scope` (the ViewModel's main dispatcher), but
+ * [snapshot] is also reached from `Dispatchers.Default` on a shipped path, while
+ * that main-thread collector is still appending:
+ *
+ * `ActiveSessionEngine.processBiomechanicsForRep` → `scope.launch(biomechanicsDispatcher)`
+ * → `evaluateLatestVbtResult` → (VBT auto-end on velocity loss)
+ * `handleSetCompletion(lease, VBT_AUTO_END)` → `captureExitSnapshot` →
+ * `buildExitSnapshot`, which snapshots **both** buffers with no dispatcher switch
+ * in between. (`processBiomechanicsForRep` snapshots before its own `launch`; the
+ * VBT continuation does not.)
+ *
+ * Without the lock that is a real data race on the live rep-scoring path: an
+ * unsynchronised `ArrayList` loses concurrent appends outright and hands the
+ * reader a torn or null-padded copy. `CollectedMetricsBufferConcurrencyTest`
+ * (androidHostTest) fails on both counts if `withLock` is deleted. Uncontended
+ * the lock still costs far less than the per-sample copy it replaces.
  *
  * [snapshot] returns a private copy, so a caller may hold and iterate it while
  * the collector keeps appending.
+ *
+ * [size] and [isEmpty] exist for logging and test assertions; the live path only
+ * uses [append], [snapshot] and [clear].
  */
 internal class CollectedMetricsBuffer<T> {
     private val lock = reentrantLock()
@@ -443,8 +457,10 @@ class WorkoutCoordinator(
     internal var routineStartTime: Long = 0 // Issue #195: Track routine start separately from per-set start
     internal val collectedMetrics = CollectedMetricsBuffer<WorkoutMetric>()
 
-    // C3: readers take a private snapshot() copy, so rep processing and set completion
-    // can iterate while the collector keeps appending — see CollectedMetricsBuffer.
+    // C3: rep processing and set completion iterate a private snapshot() copy while the
+    // collector keeps appending, and buildExitSnapshot reads BOTH buffers off the main
+    // dispatcher on the VBT auto-end path — CollectedMetricsBuffer's lock is what makes
+    // that safe. See its KDoc before touching it.
     internal val setRepMetrics = CollectedMetricsBuffer<RepMetricData>()
 
     internal var currentRoutineSessionId: String? = null
