@@ -2294,6 +2294,22 @@ class SqlDelightSyncRepositoryTest {
             last_auth_at = 1_700_000_000_000,
             id = "active-profile",
         )
+        val queries = database.phoenixDatabaseQueries
+        // CycleDay.routine_id has an enforced FK. Seed the local-only template
+        // routines before the pulled cycle graph that references them.
+        for (templateId in listOf("cycle_routine_only-y", "cycle_routine_shared")) {
+            queries.insertRoutine(
+                id = templateId,
+                name = "Template $templateId",
+                description = "",
+                createdAt = 1_700_000_000_000,
+                lastUsed = null,
+                useCount = 0,
+                profile_id = "active-profile",
+                groupId = null,
+                deletedAt = null,
+            )
+        }
         repository.mergeAllPullData(
             sessions = emptyList(),
             routines = listOf(
@@ -2385,7 +2401,6 @@ class SqlDelightSyncRepositoryTest {
             lastSync = 1_700_000_000_100,
             profileId = "active-profile",
         )
-        val queries = database.phoenixDatabaseQueries
         // Legacy row: local id differs from the id the server knows (serverId column).
         queries.updateRoutineServerId("routine-srv", "local-legacy")
         // Children that FK cascades would remove, but the test driver runs with foreign_keys off.
@@ -2407,20 +2422,6 @@ class SqlDelightSyncRepositoryTest {
             restBetweenSeconds = 10,
             orderIndex = 0,
         )
-        // Local-only template routines used by cycle days.
-        for (templateId in listOf("cycle_routine_only-y", "cycle_routine_shared")) {
-            queries.insertRoutine(
-                id = templateId,
-                name = "Template $templateId",
-                description = "",
-                createdAt = 1_700_000_000_000,
-                lastUsed = null,
-                useCount = 0,
-                profile_id = "active-profile",
-                groupId = null,
-                deletedAt = null,
-            )
-        }
         database.phoenixDatabaseQueries.insertCycleProgress(
             id = "progress-y",
             cycle_id = "cycle-y",
