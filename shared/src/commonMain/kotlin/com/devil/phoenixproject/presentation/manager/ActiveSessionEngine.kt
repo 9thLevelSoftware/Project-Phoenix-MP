@@ -3658,21 +3658,33 @@ class ActiveSessionEngine(
             expectedWeightPerCableKg < sourceConfiguredStartWeightPerCableKg
     }
 
-    private fun validateWorkoutCommand(params: WorkoutParameters): Result<Unit> = if (params.isEchoMode) {
+    private fun validateResolvedWorkoutCommand(
+        params: WorkoutParameters,
+        isJustLiftMode: Boolean,
+        maxWeightPerCableKg: Float,
+    ): Result<Unit> = if (params.isEchoMode) {
         WorkoutCommandValidator.validateEchoControl(
             level = params.echoLevel,
             warmupReps = params.warmupReps,
             targetReps = params.reps,
-            isJustLift = params.isJustLift,
+            isJustLift = isJustLiftMode || params.isJustLift,
             isAMRAP = params.isAMRAP,
             eccentricPct = params.eccentricLoad.percentage,
         )
     } else {
+        WorkoutCommandValidator.validateProgramParams(params, maxWeightPerCableKg)
+    }
+
+    private fun validateWorkoutCommand(params: WorkoutParameters): Result<Unit> {
         // Feasibility gate for a drop-set retry candidate, not the send itself. It uses the
         // ABSOLUTE hardware maximum so an over-ceiling stored routine is not fail-closed out
         // of a retry it is otherwise allowed to start; the send site applies the connected
         // model's ceiling after CommandLimits.resolve has clamped.
-        WorkoutCommandValidator.validateProgramParams(params, Constants.MAX_WEIGHT_PER_CABLE_KG)
+        return validateResolvedWorkoutCommand(
+            params = params,
+            isJustLiftMode = false,
+            maxWeightPerCableKg = Constants.MAX_WEIGHT_PER_CABLE_KG,
+        )
     }
 
     private suspend fun failAcceptedRetryClosed(
@@ -5635,10 +5647,11 @@ class ActiveSessionEngine(
                     0f
                 }
 
-                val totalReps = warmupRepsCount + workingRepsCount
-                if (burnoutSamples.isNotEmpty() && totalReps > 0) {
+                if (burnoutSamples.isNotEmpty() && workingRepsCount > 0) {
                     val burnoutRatio = burnoutSamples.size.toFloat() / weightSamples.size.toFloat()
-                    burnoutReps = (totalReps * burnoutRatio).toInt().coerceAtLeast(0)
+                    // weightSamples already excludes the warmup window, so its phase
+                    // ratio applies only to the reported working reps.
+                    burnoutReps = (workingRepsCount * burnoutRatio).toInt().coerceAtLeast(0)
                 }
             } else {
                 workingAvgWeightKg = weightSamples.average().toFloat()
@@ -7898,6 +7911,7 @@ class ActiveSessionEngine(
 
         coordinator.workoutJob = scope.launch {
             var configMayHaveReachedMachine = false
+            var commandValidationFailed = false
             var recoveryTeardownScheduled = false
             var configurationTeardownHandedOff = false
             var retryStartCommitted = false
@@ -8321,41 +8335,26 @@ class ActiveSessionEngine(
                     }
                 }
 
-                // KD-9: the one command-resolution clamp. Every start path — set 1, later
-                // sets, recovery replay, DWSM's next-exercise advance and Just Lift —
-                // reaches the machine through this block, so bounding here also covers
-                // values that arrived from a portal pull, a backup or a CSV import without
-                // rewriting what the user has stored. bleParams itself is left alone: the
-                // accepted-retry matcher below compares it against the captured request.
-                val connectedModel = bleRepository.connectedModel
-                val commandCeilingKg = CommandLimits.maxWeightPerCableKg(connectedModel)
-                val limits = CommandLimits.resolve(
+                // Reject model-independent malformed fields before the countdown and before
+                // persisting a machine-safety arm. Weight/progression are resolved first so
+                // valid imported values above a trainer limit remain clampable rather than
+                // being rejected. The connected model is resolved again at the write boundary.
+                val preflightModel = bleRepository.connectedModel
+                val preflightCeilingKg = CommandLimits.maxWeightPerCableKg(preflightModel)
+                val preflightLimits = CommandLimits.resolve(
                     weightKg = bleParams.weightPerCableKg,
                     progressionKg = bleParams.progressionRegressionKg,
-                    model = connectedModel,
+                    model = preflightModel,
                 )
-                val commandParams = bleParams.copy(
-                    weightPerCableKg = limits.weightPerCableKg,
-                    progressionRegressionKg = limits.progressionKg,
+                val preflightParams = bleParams.copy(
+                    weightPerCableKg = preflightLimits.weightPerCableKg,
+                    progressionRegressionKg = preflightLimits.progressionKg,
                 )
-                // The notice is emitted only once the command has actually reached the
-                // machine (below), so a start that is refused by the safety barrier, the
-                // configuration claim or the validator never announces a cap for a set that
-                // never happened.
-
-                val commandValidation = if (commandParams.isEchoMode) {
-                    WorkoutCommandValidator.validateEchoControl(
-                        level = commandParams.echoLevel,
-                        warmupReps = commandParams.warmupReps,
-                        targetReps = commandParams.reps,
-                        isJustLift = isJustLiftMode || commandParams.isJustLift,
-                        isAMRAP = commandParams.isAMRAP,
-                        eccentricPct = commandParams.eccentricLoad.percentage,
-                    )
-                } else {
-                    WorkoutCommandValidator.validateProgramParams(commandParams, commandCeilingKg)
-                }
-                commandValidation.onFailure { error ->
+                validateResolvedWorkoutCommand(
+                    params = preflightParams,
+                    isJustLiftMode = isJustLiftMode,
+                    maxWeightPerCableKg = preflightCeilingKg,
+                ).onFailure { error ->
                     Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
                     coordinator._bleErrorEvents.tryEmit("Invalid BLE workout command: ${error.message}")
                     if (retryRequest != null) {
@@ -8365,23 +8364,6 @@ class ActiveSessionEngine(
                     }
                     return@launch
                 }
-
-                val command = if (commandParams.isEchoMode) {
-                    BlePacketFactory.createEchoControl(
-                        level = commandParams.echoLevel,
-                        warmupReps = commandParams.warmupReps,
-                        targetReps = commandParams.reps,
-                        isJustLift = isJustLiftMode || commandParams.isJustLift,
-                        isAMRAP = commandParams.isAMRAP,
-                        eccentricPct = commandParams.eccentricLoad.percentage,
-                    )
-                } else {
-                    BlePacketFactory.createProgramParams(
-                        params = commandParams,
-                        maxWeightPerCableKg = commandCeilingKg,
-                    )
-                }
-                Logger.d { "Built ${command.size}-byte workout command for ${commandParams.programMode}" }
 
                 coordinator._repCount.value = RepCount()
                 coordinator.warmupCompleteTimeMs = 0
@@ -8513,6 +8495,52 @@ class ActiveSessionEngine(
                     ) {
                         throw IllegalStateException("machine safety obligation could not be persisted")
                     }
+                    // Resolve limits from the model that is connected at the write boundary.
+                    // The user can reconnect to a different trainer during the countdown;
+                    // a frame prepared before that delay may exceed the replacement model.
+                    // bleParams remains the captured logical request for retry/rack checks.
+                    val connectedModel = bleRepository.connectedModel
+                    val commandCeilingKg = CommandLimits.maxWeightPerCableKg(connectedModel)
+                    val limits = CommandLimits.resolve(
+                        weightKg = bleParams.weightPerCableKg,
+                        progressionKg = bleParams.progressionRegressionKg,
+                        model = connectedModel,
+                    )
+                    val commandParams = bleParams.copy(
+                        weightPerCableKg = limits.weightPerCableKg,
+                        progressionRegressionKg = limits.progressionKg,
+                    )
+                    val commandValidation = validateResolvedWorkoutCommand(
+                        params = commandParams,
+                        isJustLiftMode = isJustLiftMode,
+                        maxWeightPerCableKg = commandCeilingKg,
+                    )
+                    commandValidation.onFailure { error ->
+                        commandValidationFailed = true
+                        Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
+                        coordinator._bleErrorEvents.tryEmit("Invalid BLE workout command: ${error.message}")
+                        // The safety row was armed just above, but no frame has reached the
+                        // trainer. Clear this execution's arm so a malformed command cannot
+                        // leave a hidden durable hazard that blocks the next valid start.
+                        machineSafetyCoordinator?.resolveArmedExecution(lease.executionId)
+                        throw error
+                    }
+                    val command = if (commandParams.isEchoMode) {
+                        BlePacketFactory.createEchoControl(
+                            level = commandParams.echoLevel,
+                            warmupReps = commandParams.warmupReps,
+                            targetReps = commandParams.reps,
+                            isJustLift = isJustLiftMode || commandParams.isJustLift,
+                            isAMRAP = commandParams.isAMRAP,
+                            eccentricPct = commandParams.eccentricLoad.percentage,
+                        )
+                    } else {
+                        BlePacketFactory.createProgramParams(
+                            params = commandParams,
+                            maxWeightPerCableKg = commandCeilingKg,
+                        )
+                    }
+                    Logger.d { "Built ${command.size}-byte workout command for ${commandParams.programMode}" }
                     configMayHaveReachedMachine = true
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
                     // Freeze what the trainer actually received on this execution. The stored
@@ -8523,18 +8551,26 @@ class ActiveSessionEngine(
                             context.lease.executionId == lease.executionId &&
                             context.lease.sessionId == lease.sessionId
                         ) {
-                            // History stores the programmed cable weight together with rack
-                            // metadata. Apply only the command-resolution delta so that an
-                            // ordinary rack adjustment retains that representation while a
-                            // firmware-limit clamp records the equivalent load that ran.
-                            val executedWeight = warmupOverrideParams.weightPerCableKg +
-                                (commandParams.weightPerCableKg - bleParams.weightPerCableKg)
-                            context.copy(
-                                completionFacts = context.completionFacts.copy(
-                                    executedWeightPerCableKg = executedWeight,
-                                    executedProgressionKg = commandParams.progressionRegressionKg,
-                                ),
-                            )
+                            if (commandParams.isEchoMode) {
+                                // Echo configuration packets encode the Echo level rather
+                                // than target weight or per-rep progression. Command-limit
+                                // normalization therefore did not change either value on the
+                                // trainer, so keep the user's original history metadata.
+                                context
+                            } else {
+                                // History stores the programmed cable weight together with rack
+                                // metadata. Apply only the command-resolution delta so that an
+                                // ordinary rack adjustment retains that representation while a
+                                // firmware-limit clamp records the equivalent load that ran.
+                                val executedWeight = warmupOverrideParams.weightPerCableKg +
+                                    (commandParams.weightPerCableKg - bleParams.weightPerCableKg)
+                                context.copy(
+                                    completionFacts = context.completionFacts.copy(
+                                        executedWeightPerCableKg = executedWeight,
+                                        executedProgressionKg = commandParams.progressionRegressionKg,
+                                    ),
+                                )
+                            }
                         } else {
                             // The send suspended and a successor execution won authority.
                             // Never let this stale completion erase its context.
@@ -8629,8 +8665,10 @@ class ActiveSessionEngine(
                 }
                 if (configurationTeardownHandedOff) return@launch
                 if (configFailure != null) {
-                    Logger.e(configFailure) { "Failed to send config command" }
-                    coordinator._bleErrorEvents.tryEmit("Failed to send command: ${configFailure.message}")
+                    if (!commandValidationFailed) {
+                        Logger.e(configFailure) { "Failed to send config command" }
+                        coordinator._bleErrorEvents.tryEmit("Failed to send command: ${configFailure.message}")
+                    }
                     if (retryRequest != null) {
                         recoveryTeardownScheduled = recoverRetryStartAfterConfigAttempt(
                             retryRequest,

@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.domain.model.PhoenixModel
+import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.WorkoutState
@@ -8,12 +9,14 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures
 import com.devil.phoenixproject.util.CommandLimits
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 
@@ -118,6 +121,80 @@ class StoredRoutineLimitsTest {
 
             assertEquals(105f, harness.fakeBleRepo.programCommands.single().weightPerCableKg)
             assertNull(harness.coordinator.commandLimitNotice.value)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `Echo keeps original weight and progression metadata because its packet encodes neither`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startRoutine(
+                harness,
+                model = PhoenixModel.VFormTrainer,
+                weightPerCableKg = 105f,
+                progressionKg = 5f,
+                programMode = ProgramMode.Echo,
+            )
+
+            stopCurrentSet(harness)
+            advanceUntilIdle()
+
+            val saved = harness.fakeWorkoutRepo.saveSessionAttempts.single()
+            assertEquals(105f, saved.weightPerCableKg)
+            assertEquals(5f, saved.progressionKg)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `countdown reconnect resolves limits from the trainer that receives the command`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Trainer_Plus", hardwareModel = PhoenixModel.TrainerPlus)
+            val routine = WorkoutStateFixtures.createTestRoutine(
+                exerciseCount = 1,
+                setsPerExercise = 1,
+                weightKg = 105f,
+            )
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.startWorkout(skipCountdown = false)
+            runCurrent()
+            assertIs<WorkoutState.Countdown>(harness.coordinator.workoutState.value)
+
+            harness.fakeBleRepo.simulateConnect("Vee_Reconnected", hardwareModel = PhoenixModel.VFormTrainer)
+            advanceTimeBy(5_000)
+            runCurrent()
+
+            assertEquals(100f, harness.fakeBleRepo.programCommands.single().weightPerCableKg)
+            assertEquals(
+                "Weight capped to 100 kg/cable for this trainer",
+                harness.coordinator.commandLimitNotice.value,
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `invalid stored command is rejected before machine safety is armed`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startRoutine(
+                harness,
+                model = PhoenixModel.TrainerPlus,
+                weightPerCableKg = 25f,
+                progressionKg = Float.NaN,
+            )
+
+            assertTrue(harness.fakeBleRepo.programCommands.isEmpty())
+            assertTrue(harness.machineSafetyStore.rows.isEmpty())
+            assertTrue(requireNotNull(harness.machineSafetyCoordinator).canStartMachine())
         } finally {
             harness.cleanup()
         }
@@ -238,6 +315,7 @@ class StoredRoutineLimitsTest {
         weightPerCableKg: Float,
         progressionKg: Float,
         setsPerExercise: Int = 1,
+        programMode: ProgramMode? = null,
     ) {
         harness.fakeBleRepo.simulateConnect("Test_Trainer", hardwareModel = model)
         val base = WorkoutStateFixtures.createTestRoutine(
@@ -246,7 +324,12 @@ class StoredRoutineLimitsTest {
             weightKg = weightPerCableKg,
         )
         val routine = base.copy(
-            exercises = base.exercises.map { it.copy(progressionKg = progressionKg) },
+            exercises = base.exercises.map {
+                it.copy(
+                    progressionKg = progressionKg,
+                    programMode = programMode ?: it.programMode,
+                )
+            },
         )
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
         harness.dwsm.loadRoutine(routine)

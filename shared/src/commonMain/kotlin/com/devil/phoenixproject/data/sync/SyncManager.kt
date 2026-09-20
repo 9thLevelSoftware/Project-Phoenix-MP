@@ -2136,16 +2136,16 @@ class SyncManager(
             }
         }
 
-        // Phase 3.3 (audit item #1): build per-session updatedAt map keyed
-        // on the per-exercise WorkoutSession.id (== portal exercise id).
-        // Each portal session's updatedAt applies to all child mobile rows.
+        // Phase 3.3 (audit item #1): key timestamps by the identity used for the
+        // reconstructed mobile row. Grouped children use portal exercise ids;
+        // standalone rows use their portal parent id to merge back into the original.
         val sessionUpdatedAtById: Map<String, Long> = pullResponse.sessions
             .flatMap { ps ->
                 val ts = ps.updatedAt?.let { iso ->
                     runCatching { kotlin.time.Instant.parse(iso).toEpochMilliseconds() }
                         .getOrNull()
                 } ?: 0L
-                ps.exercises.map { ex -> ex.id to ts }
+                PortalPullAdapter.localWorkoutSessionIds(ps).map { sessionId -> sessionId to ts }
             }
             .toMap()
 
