@@ -303,6 +303,11 @@ class SetSummaryWorkingRepsTest {
             "Rep 1 must still establish the velocity-loss baseline instead of dropping out",
         )
         assertEquals(1, result.repNumber)
+        assertEquals(
+            1,
+            harness.coordinator.setRepMetrics.value.size,
+            "Rep 1 must still write its quality row",
+        )
         harness.cleanup()
     }
 
