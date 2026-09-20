@@ -52,13 +52,6 @@ interface ProfileExerciseBaselineRepository {
         updatedAt: Long,
     ): AssessmentBaselineWriteReceipt
 
-    fun raiseIfGreater(
-        profileId: String,
-        exerciseId: String,
-        oneRepMaxPerCableKg: Float,
-        updatedAt: Long,
-    ): Boolean
-
     /** Atomically increments an existing non-null baseline; returns null when none exists. */
     suspend fun increment(
         profileId: String,
@@ -171,39 +164,6 @@ class SqlDelightProfileExerciseBaselineRepository(
             receipt = AssessmentBaselineWriteReceipt(previous = previous, written = written)
         }
         requireNotNull(receipt)
-    }
-
-    override fun raiseIfGreater(
-        profileId: String,
-        exerciseId: String,
-        oneRepMaxPerCableKg: Float,
-        updatedAt: Long,
-    ): Boolean {
-        validateIds(profileId, exerciseId)
-        validateValue(oneRepMaxPerCableKg)
-        var changed = false
-        database.transaction {
-            val existing = select(profileId, exerciseId)
-            if (existing == null) {
-                queries.insertProfileExerciseBaselineIfAbsent(
-                    profileId = profileId,
-                    exerciseId = exerciseId,
-                    oneRepMaxPerCableKg = oneRepMaxPerCableKg.toDouble(),
-                    updatedAt = updatedAt,
-                    revision = 1L,
-                )
-                changed = queries.selectChangedRowCount().executeAsOne() == 1L
-            } else {
-                queries.raiseProfileExerciseBaselineIfGreater(
-                    oneRepMaxPerCableKg = oneRepMaxPerCableKg.toDouble(),
-                    updatedAt = updatedAt,
-                    profileId = profileId,
-                    exerciseId = exerciseId,
-                )
-                changed = queries.selectChangedRowCount().executeAsOne() == 1L
-            }
-        }
-        return changed
     }
 
     override suspend fun increment(

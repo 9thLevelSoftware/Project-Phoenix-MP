@@ -58,26 +58,6 @@ class FakeProfileExerciseBaselineRepository : ProfileExerciseBaselineRepository 
         return AssessmentBaselineWriteReceipt(previous = previous, written = written)
     }
 
-    override fun raiseIfGreater(
-        profileId: String,
-        exerciseId: String,
-        oneRepMaxPerCableKg: Float,
-        updatedAt: Long,
-    ): Boolean {
-        val current = rows[profileId to exerciseId]
-        if (current?.oneRepMaxPerCableKg != null && current.oneRepMaxPerCableKg >= oneRepMaxPerCableKg) {
-            return false
-        }
-        rows[profileId to exerciseId] = ProfileExerciseBaseline(
-            profileId = profileId,
-            exerciseId = exerciseId,
-            oneRepMaxPerCableKg = oneRepMaxPerCableKg,
-            updatedAt = updatedAt,
-            revision = (current?.revision ?: 0L) + 1L,
-        )
-        return true
-    }
-
     override suspend fun increment(
         profileId: String,
         exerciseId: String,

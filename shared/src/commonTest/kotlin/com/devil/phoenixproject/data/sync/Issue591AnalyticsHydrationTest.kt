@@ -200,9 +200,7 @@ class Issue591AnalyticsHydrationTest {
         ) { _, _, _ -> "exercise-catalog-id-3" }
 
         val session = sessions.single()
-        // Hydration must NOT fabricate values — they stay null so the
-        // SqlDelightSyncRepository.mergeSessionsLww LWW gate can fall
-        // back to the locally captured row.
+        // Hydration must NOT fabricate values — they stay null.
         assertNull(session.peakForceConcentricA)
         assertNull(session.peakForceConcentricB)
         assertNull(session.peakForceEccentricA)

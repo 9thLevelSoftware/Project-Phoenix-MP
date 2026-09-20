@@ -129,7 +129,7 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
     /**
      * Throw a descriptive parse error including the approximate character position.
      */
-    private fun parseError(message: String): Nothing = throw IllegalStateException("$message (at character position ~$charCount)")
+    private fun parseError(message: String): Nothing = throw MalformedBackupException("$message (at character position ~$charCount)")
 
     // -- Navigation: structural tokens -------------------------------------------
 
@@ -624,3 +624,6 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
         private const val BUFFER_SIZE = 8192
     }
 }
+
+/** Structural JSON error in a backup file (still an [IllegalStateException] for existing callers). */
+class MalformedBackupException(message: String) : IllegalStateException(message)

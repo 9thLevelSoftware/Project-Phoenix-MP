@@ -1157,10 +1157,7 @@ class SqlDelightSyncRepositoryTest {
             peakEccentricB = 39.0,
             profileId = "active-profile",
         )
-        val prRepository = SqlDelightPersonalRecordRepository(
-            database,
-            SqlDelightProfileExerciseBaselineRepository(database),
-        )
+        val prRepository = SqlDelightPersonalRecordRepository(database)
         prRepository.updatePhaseSpecificPRs(
             exerciseId = "bicep-curl",
             workoutMode = "Old School",
@@ -1372,6 +1369,280 @@ class SqlDelightSyncRepositoryTest {
             .executeAsList()
             .single()
         assertEquals("""["vest"]""", exercise.defaultRackItemIds)
+    }
+
+    @Test
+    fun `mergePortalRoutines accepts supported durations and quarantines malformed present values`() = runTest {
+        val portalRoutine = PullRoutineDto(
+            id = "routine-duration-bounds",
+            name = "Duration bounds",
+            updatedAt = 1_700_000_000_200,
+            exercises = listOf(
+                PullRoutineExerciseDto(id = "duration-min", name = "Min", durationSeconds = 10),
+                PullRoutineExerciseDto(id = "duration-max", name = "Max", durationSeconds = 300),
+                PullRoutineExerciseDto(id = "duration-short", name = "Short", durationSeconds = 9),
+                PullRoutineExerciseDto(id = "duration-long", name = "Long", durationSeconds = 301),
+            ),
+        )
+        repository.mergePortalRoutines(
+            routines = listOf(portalRoutine),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val rows = database.phoenixDatabaseQueries.selectExercisesByRoutine("routine-duration-bounds")
+            .executeAsList().associateBy { it.id }
+        assertEquals(10L, rows.getValue("duration-min").duration)
+        assertEquals(300L, rows.getValue("duration-max").duration)
+        assertEquals(1L, rows.getValue("duration-min").durationSyncKnown)
+        assertEquals(1L, rows.getValue("duration-max").durationSyncKnown)
+        assertNull(rows.getValue("duration-short").duration)
+        assertNull(rows.getValue("duration-long").duration)
+        assertEquals(2L, rows.getValue("duration-short").durationSyncKnown)
+        assertEquals(2L, rows.getValue("duration-long").durationSyncKnown)
+        assertEquals(emptyList(), repository.getRoutineIdsNeedingDurationBackfill("active-profile"))
+
+        val outbound = repository.getFullRoutinesModifiedSince(0L, "active-profile").single()
+        val wireExercises = PortalSyncAdapter.toPortalRoutine(outbound, "user").exercises.associateBy { it.id }
+        assertNull(wireExercises.getValue("duration-short").durationSeconds)
+        assertNull(wireExercises.getValue("duration-long").durationSeconds)
+
+        // A repeated malformed full-pull response remains quarantined and does not restart backfill.
+        repository.mergePortalRoutines(
+            routines = listOf(portalRoutine),
+            lastSync = 0L,
+            profileId = "active-profile",
+        )
+        assertEquals(emptyList(), repository.getRoutineIdsNeedingDurationBackfill("active-profile"))
+
+        // A later corrected value can replace quarantine even while the locally newer parent wins.
+        repository.mergePortalRoutines(
+            routines = listOf(
+                portalRoutine.copy(
+                    exercises = portalRoutine.exercises.map { exercise ->
+                        when (exercise.id) {
+                            "duration-short" -> exercise.copy(durationSeconds = 60)
+                            "duration-long" -> exercise.copy(durationSeconds = 120)
+                            else -> exercise
+                        }
+                    },
+                ),
+            ),
+            lastSync = 0L,
+            profileId = "active-profile",
+        )
+        val correctedRows = database.phoenixDatabaseQueries
+            .selectExercisesByRoutine("routine-duration-bounds")
+            .executeAsList()
+            .associateBy { it.id }
+        assertEquals(60L, correctedRows.getValue("duration-short").duration)
+        assertEquals(120L, correctedRows.getValue("duration-long").duration)
+        assertEquals(1L, correctedRows.getValue("duration-short").durationSyncKnown)
+        assertEquals(1L, correctedRows.getValue("duration-long").durationSyncKnown)
+    }
+
+    @Test
+    fun `legacy unknown duration makes its unchanged parent eligible without dirtying it`() = runTest {
+        insertLocalRoutine("routine-duration-backfill")
+        database.phoenixDatabaseQueries.updateRoutineById(
+            name = "Local routine-duration-backfill",
+            description = "",
+            updatedAt = 100L,
+            id = "routine-duration-backfill",
+        )
+        insertLocalRoutineExercise(
+            id = "duration-backfill",
+            routineId = "routine-duration-backfill",
+            duration = 45,
+            durationSyncKnown = 0,
+        )
+
+        val outbound = repository.getFullRoutinesModifiedSince(1_000L, "active-profile").single()
+
+        assertEquals("routine-duration-backfill", outbound.id)
+        assertEquals(45, outbound.exercises.single().duration)
+        assertEquals(false, outbound.exercises.single().durationSyncKnown)
+        assertEquals(
+            "45",
+            PortalSyncAdapter.toPortalRoutine(outbound, "user").exercises.single().durationSeconds?.content,
+            "a supported legacy duration must be sent even while its backfill marker is unknown",
+        )
+        assertEquals(
+            listOf("routine-duration-backfill"),
+            repository.getRoutineIdsNeedingDurationBackfill("active-profile"),
+        )
+        assertEquals(
+            100L,
+            database.phoenixDatabaseQueries.selectRoutineById("routine-duration-backfill").executeAsOne().updatedAt,
+            "backfill eligibility must not dirty the parent routine",
+        )
+    }
+
+    @Test
+    fun `local wins merge still hydrates only unknown portal durations`() = runTest {
+        insertLocalRoutine("routine-duration-local-wins")
+        database.phoenixDatabaseQueries.updateRoutineById(
+            name = "Local name",
+            description = "local description",
+            updatedAt = 300L,
+            id = "routine-duration-local-wins",
+        )
+        insertLocalRoutineExercise(
+            id = "duration-value",
+            routineId = "routine-duration-local-wins",
+            duration = null,
+            durationSyncKnown = 0,
+        )
+        insertLocalRoutineExercise(
+            id = "duration-clear",
+            routineId = "routine-duration-local-wins",
+            duration = 30,
+            durationSyncKnown = 0,
+        )
+        insertLocalRoutineExercise(
+            id = "duration-null",
+            routineId = "routine-duration-local-wins",
+            duration = null,
+            durationSyncKnown = 0,
+        )
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-duration-local-wins",
+                    name = "Portal name",
+                    updatedAt = 200L,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "duration-value",
+                            durationSeconds = 45,
+                            durationSecondsPresent = true,
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "duration-clear",
+                            durationSeconds = null,
+                            durationSecondsPresent = true,
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "duration-null",
+                            durationSeconds = null,
+                            durationSecondsPresent = true,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 100L,
+            profileId = "active-profile",
+        )
+
+        val routine = database.phoenixDatabaseQueries
+            .selectRoutineById("routine-duration-local-wins")
+            .executeAsOne()
+        val rows = database.phoenixDatabaseQueries
+            .selectExercisesByRoutine("routine-duration-local-wins")
+            .executeAsList()
+            .associateBy { it.id }
+        assertEquals("Local name", routine.name)
+        assertEquals("local description", routine.description)
+        assertEquals(300L, routine.updatedAt)
+        assertEquals(45L, rows.getValue("duration-value").duration)
+        assertEquals(1L, rows.getValue("duration-value").durationSyncKnown)
+        assertEquals(30L, rows.getValue("duration-clear").duration)
+        assertEquals(0L, rows.getValue("duration-clear").durationSyncKnown)
+        assertNull(rows.getValue("duration-null").duration)
+        assertEquals(1L, rows.getValue("duration-null").durationSyncKnown)
+    }
+
+    @Test
+    fun `LWW rejected duration backfill accepts the authoritative portal null`() = runTest {
+        val routineId = "routine-duration-server-wins"
+        val exerciseId = "duration-server-wins"
+        insertLocalRoutine(routineId)
+        database.phoenixDatabaseQueries.updateRoutineById(
+            name = "Local edit",
+            description = "",
+            updatedAt = 300L,
+            id = routineId,
+        )
+        insertLocalRoutineExercise(
+            id = exerciseId,
+            routineId = routineId,
+            duration = 45,
+            durationSyncKnown = 0,
+        )
+
+        repository.mergeAllPullData(
+            sessions = emptyList(),
+            routines = listOf(
+                PullRoutineDto(
+                    id = routineId,
+                    name = "Portal edit",
+                    updatedAt = 200L,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = exerciseId,
+                            name = "Deadlift",
+                            durationSeconds = null,
+                            durationSecondsPresent = true,
+                        ),
+                    ),
+                ),
+            ),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 100L,
+            profileId = "active-profile",
+            serverWinsRoutineIds = setOf(routineId),
+        )
+
+        val routine = database.phoenixDatabaseQueries.selectRoutineById(routineId).executeAsOne()
+        val exercise = database.phoenixDatabaseQueries.selectExercisesByRoutine(routineId).executeAsOne()
+        assertEquals("Portal edit", routine.name)
+        assertNull(exercise.duration, "a rejected push must converge to the portal's explicit null")
+        assertEquals(1L, exercise.durationSyncKnown)
+    }
+
+    @Test
+    fun `out of range portal duration preserves a supported local duration`() = runTest {
+        insertLocalRoutine("routine-duration-preserve")
+        insertLocalRoutineExercise(
+            id = "duration-preserve",
+            routineId = "routine-duration-preserve",
+            duration = 45,
+            durationSyncKnown = 0,
+        )
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-duration-preserve",
+                    name = "Duration preserve",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "duration-preserve",
+                            name = "Deadlift",
+                            durationSeconds = Int.MAX_VALUE,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+
+        val row = database.phoenixDatabaseQueries.selectExercisesByRoutine("routine-duration-preserve")
+            .executeAsList().single()
+        assertEquals(45L, row.duration)
+        assertEquals(2L, row.durationSyncKnown)
+        assertEquals(emptyList(), repository.getRoutineIdsNeedingDurationBackfill("active-profile"))
+        val outbound = repository.getFullRoutinesModifiedSince(0L, "active-profile").single()
+        assertEquals(
+            "45",
+            PortalSyncAdapter.toPortalRoutine(outbound, "user").exercises.single().durationSeconds?.content,
+        )
     }
 
     @Test
@@ -1800,6 +2071,8 @@ class SqlDelightSyncRepositoryTest {
         scalingBasis: String? = null,
         supersetId: String? = null,
         usePercentOfPR: Long = 1,
+        duration: Long? = null,
+        durationSyncKnown: Long = 0,
     ) {
         database.phoenixDatabaseQueries.insertRoutineExercise(
             id = id,
@@ -1819,7 +2092,7 @@ class SqlDelightSyncRepositoryTest {
             echoLevel = 1,
             progressionKg = progressionKg,
             restSeconds = 90,
-            duration = null,
+            duration = duration,
             setRestSeconds = "[]",
             perSetRestTime = 0,
             isAMRAP = 0,
@@ -1841,6 +2114,7 @@ class SqlDelightSyncRepositoryTest {
             dropSetEnabled = 0L,
             dropSetMinWeightKg = null,
         )
+        database.phoenixDatabaseQueries.updateRoutineExerciseDurationSyncKnown(durationSyncKnown, id)
     }
 
     @Test

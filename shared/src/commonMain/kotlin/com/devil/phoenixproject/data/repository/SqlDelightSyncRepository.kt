@@ -79,6 +79,9 @@ class SqlDelightSyncRepository(
      */
     private companion object {
         const val BATCH_LOOKUP_CHUNK_SIZE = 500
+        const val DURATION_SYNC_UNKNOWN = 0L
+        const val DURATION_SYNC_KNOWN = 1L
+        const val DURATION_SYNC_MALFORMED = 2L
 
         /** Local-only routines generated for template cycles (never synced). */
         const val CYCLE_TEMPLATE_ROUTINE_PREFIX = "cycle_routine_"
@@ -1236,6 +1239,7 @@ class SqlDelightSyncRepository(
                         warmupSets = warmupSets,
                         defaultRackItemIds = defaultRackItemIds,
                         rackBehaviorOverrides = rackBehaviorOverrides,
+                        durationSyncKnown = exRow.durationSyncKnown == 1L,
                     )
                 } catch (e: Exception) {
                     Logger.e(e) { "Failed to map routine exercise: ${exRow.exerciseId}" }
@@ -1569,10 +1573,7 @@ class SqlDelightSyncRepository(
         profileId: String,
         fromSessionTimestamp: Long,
     ): PhasePRBackfillResult = withContext(Dispatchers.IO) {
-        val prRepository = SqlDelightPersonalRecordRepository(
-            db,
-            SqlDelightProfileExerciseBaselineRepository(db),
-        )
+        val prRepository = SqlDelightPersonalRecordRepository(db)
         val sessions = queries.selectSessionsForPhasePRBackfill(
             fromSessionTimestamp = fromSessionTimestamp,
             profileId = profileId,
@@ -2305,6 +2306,10 @@ class SqlDelightSyncRepository(
         queries.selectAllRoutineIdsByProfile(profileId).executeAsList()
     }
 
+    override suspend fun getRoutineIdsNeedingDurationBackfill(profileId: String): List<String> = withContext(Dispatchers.IO) {
+        queries.selectRoutineIdsNeedingDurationBackfill(profileId).executeAsList()
+    }
+
     override suspend fun getAllCycleIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
         queries.selectAllCycleIdsByProfile(profileId).executeAsList()
     }
@@ -2323,6 +2328,7 @@ class SqlDelightSyncRepository(
         routineIds: List<String>,
         cycleIds: List<String>,
         lastSync: Long,
+        syncProfileId: String?,
     ): ServerDeletionResult = withContext(Dispatchers.IO) {
         if (routineIds.isEmpty() && cycleIds.isEmpty()) return@withContext ServerDeletionResult()
 
@@ -2341,7 +2347,7 @@ class SqlDelightSyncRepository(
                         queries.selectRoutineByServerId(serverRoutineId).executeAsList()
                     ).distinctBy { it.id }
                 for (row in localRows) {
-                    if (!profileOwnerMatches(row.profile_id, ownerUserId)) continue
+                    if (!profileOwnerMatches(row.profile_id, ownerUserId, syncProfileId)) continue
                     // lastSync == 0 (first pull / forced resync) has no sync base, so an
                     // edit cannot be classified as "unsynced"; skip the report then.
                     if (lastSync > 0L && row.deletedAt == null && (row.updatedAt ?: 0L) > lastSync) {
@@ -2354,7 +2360,7 @@ class SqlDelightSyncRepository(
 
             for (cycleId in cycleIds.distinct()) {
                 val cycle = queries.selectTrainingCycleById(cycleId).executeAsOneOrNull() ?: continue
-                if (!profileOwnerMatches(cycle.profile_id, ownerUserId)) continue
+                if (!profileOwnerMatches(cycle.profile_id, ownerUserId, syncProfileId)) continue
                 val hadProgress = queries.selectCycleProgressByCycle(cycleId).executeAsOneOrNull() != null
                 if (lastSync > 0L && cycle.deletedAt == null && cycle.updatedAt > lastSync) {
                     discardedCycleEdits += cycleId
@@ -2379,7 +2385,7 @@ class SqlDelightSyncRepository(
                     val templateRoutine = queries.selectRoutineById(templateRoutineId).executeAsOneOrNull()
                     if (
                         templateRoutine != null &&
-                        profileOwnerMatches(templateRoutine.profile_id, ownerUserId) &&
+                        profileOwnerMatches(templateRoutine.profile_id, ownerUserId, syncProfileId) &&
                         queries.countCycleDaysReferencingRoutine(templateRoutineId).executeAsOne() == 0L
                     ) {
                         hardDeleteRoutineWithChildren(templateRoutineId)
@@ -2555,8 +2561,15 @@ class SqlDelightSyncRepository(
         }
     }
 
-    private fun profileOwnerMatches(profileId: String, expectedOwnerUserId: String): Boolean =
-        queries.getProfileById(profileId).executeAsOneOrNull()?.supabase_user_id == expectedOwnerUserId
+    private fun profileOwnerMatches(
+        profileId: String,
+        expectedOwnerUserId: String,
+        permittedUnboundProfileId: String? = null,
+    ): Boolean {
+        val profile = queries.getProfileById(profileId).executeAsOneOrNull() ?: return false
+        return profile.supabase_user_id == expectedOwnerUserId ||
+            (profile.supabase_user_id == null && profileId == permittedUnboundProfileId)
+    }
 
     /**
      * Resolve a retained ownership claim before a pulled root is materialized. Claims outlive
@@ -2919,6 +2932,7 @@ class SqlDelightSyncRepository(
             }
             val localUpdatedAt = existing.updatedAt ?: 0L
             if (!serverWins && localUpdatedAt > lastSync) {
+                hydrateUnknownRoutineDurations(portalRoutine)
                 Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer ($localUpdatedAt > $lastSync)" }
                 return
             }
@@ -2951,7 +2965,13 @@ class SqlDelightSyncRepository(
         }
 
         if (portalRoutine.exercises.isNotEmpty()) {
-            mergePortalExercisesForRoutine(portalRoutine.id, portalRoutine.exercises, localExercises, localSupersets)
+            mergePortalExercisesForRoutine(
+                portalRoutine.id,
+                portalRoutine.exercises,
+                localExercises,
+                localSupersets,
+                serverWins,
+            )
         } else {
             Logger.w("SyncRepository") {
                 "Skipping exercise merge for routine '${portalRoutine.name}' (${portalRoutine.id}): " +
@@ -2961,9 +2981,48 @@ class SqlDelightSyncRepository(
     }
 
     /**
+     * A full upgrade pull can meet a locally newer routine. Keep every locally edited
+     * field while filling only duration columns that older app versions never stored.
+     */
+    private fun hydrateUnknownRoutineDurations(portalRoutine: PullRoutineDto) {
+        val localExercises = queries.selectExercisesByRoutine(portalRoutine.id)
+            .executeAsList()
+            .associateBy { it.id }
+        portalRoutine.exercises.forEach { exercise ->
+            if (!exercise.durationSecondsPresent) return@forEach
+            val incomingDuration = exercise.durationSeconds?.let(PortalSyncAdapter::sanitizeDurationSeconds)
+            if (exercise.durationSeconds != null && incomingDuration == null) {
+                val local = localExercises[exercise.id]
+                if (local?.durationSyncKnown == DURATION_SYNC_UNKNOWN) {
+                    // The field was present, so backfill is complete, but its value cannot be
+                    // accepted. State 2 omits a local null from push instead of clearing the
+                    // server and remains eligible for a later corrected portal value.
+                    queries.updateRoutineExerciseDurationSyncKnown(DURATION_SYNC_MALFORMED, exercise.id)
+                }
+                return@forEach
+            }
+            val localDuration = localExercises[exercise.id]?.duration
+            val localDurationIsSupported = localDuration?.let {
+                it in RoutineExercise.MIN_TIMED_DURATION_SECONDS.toLong()..
+                    RoutineExercise.MAX_TIMED_DURATION_SECONDS.toLong()
+            } == true
+            if (incomingDuration == null && localDurationIsSupported) {
+                // A supported legacy local value is already included in the preceding push.
+                // Do not let a stale portal null erase it if that push was rejected or delayed.
+                return@forEach
+            }
+            queries.hydrateRoutineExerciseDurationFromSync(
+                duration = incomingDuration?.toLong(),
+                id = exercise.id,
+                routineId = portalRoutine.id,
+            )
+        }
+    }
+
+    /**
      * Bring a routine's supersets and exercises in line with the portal copy, diffing by id:
      * matched rows are UPDATEd in place, new rows inserted, rows the portal no longer has deleted.
-     * Columns the wire does not carry (progressionKg, duration, prTypeForScaling,
+     * Columns the wire does not carry (progressionKg, prTypeForScaling,
      * setWeightsPercentOfPR, scalingBasis, defaultRackItemIds, cableConfig, omitted drop-set
      * config, superset name/rest) keep their local values on matched rows.
      *
@@ -2975,6 +3034,7 @@ class SqlDelightSyncRepository(
         portalExercises: List<PullRoutineExerciseDto>,
         localExercises: List<RoutineExerciseRow>,
         localSupersets: List<SupersetRow>,
+        serverWins: Boolean,
     ) {
         val localExercisesById = localExercises.associateBy { it.id }
         val localSupersetsById = localSupersets.associateBy { it.id }
@@ -3080,6 +3140,30 @@ class SqlDelightSyncRepository(
             val resolvedEquipment = catalogExercise?.equipment ?: ""
 
             val local = localExercisesById[exercise.id]
+            val incomingDuration = exercise.durationSeconds?.let(PortalSyncAdapter::sanitizeDurationSeconds)
+            val incomingDurationIsSupported = exercise.durationSeconds == null || incomingDuration != null
+            val localHasSupportedUnknownDuration = local?.let { row ->
+                row.durationSyncKnown == DURATION_SYNC_UNKNOWN && row.duration?.let {
+                    it in RoutineExercise.MIN_TIMED_DURATION_SECONDS.toLong()..
+                        RoutineExercise.MAX_TIMED_DURATION_SECONDS.toLong()
+                } == true
+            } == true
+            val acceptIncomingDuration = exercise.durationSecondsPresent &&
+                incomingDurationIsSupported &&
+                !(incomingDuration == null && localHasSupportedUnknownDuration && !serverWins)
+            val resolvedDuration = when {
+                acceptIncomingDuration -> incomingDuration?.toLong()
+                else -> local?.duration
+            }
+            val retainedKnownDurationState = local?.durationSyncKnown
+                ?.takeIf { it == DURATION_SYNC_KNOWN }
+            val durationSyncKnown = when {
+                acceptIncomingDuration -> DURATION_SYNC_KNOWN
+                exercise.durationSecondsPresent &&
+                    exercise.durationSeconds != null &&
+                    incomingDuration == null -> retainedKnownDurationState ?: DURATION_SYNC_MALFORMED
+                else -> local?.durationSyncKnown ?: DURATION_SYNC_UNKNOWN
+            }
             // Explicit portal flag when present; otherwise inherit the catalog's
             // stored classification (e.g. Squat = cable despite empty equipment).
             // Never coerce an omitted field to cable, and never leave a known
@@ -3127,7 +3211,7 @@ class SqlDelightSyncRepository(
                     echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
                     progressionKg = local.progressionKg,
                     restSeconds = exercise.restSeconds.toLong(),
-                    duration = local.duration,
+                    duration = resolvedDuration,
                     setRestSeconds = setRestSeconds,
                     perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
                     isAMRAP = if (exercise.isAmrap) 1L else 0L,
@@ -3169,7 +3253,7 @@ class SqlDelightSyncRepository(
                     echoLevel = PortalPullAdapter.parseEchoLevel(exercise.echoLevel),
                     progressionKg = 0.0,
                     restSeconds = exercise.restSeconds.toLong(),
-                    duration = null,
+                    duration = resolvedDuration,
                     setRestSeconds = setRestSeconds,
                     perSetRestTime = if (exercise.perSetRest != null) 1L else 0L,
                     isAMRAP = if (exercise.isAmrap) 1L else 0L,
@@ -3192,6 +3276,7 @@ class SqlDelightSyncRepository(
                     dropSetMinWeightKg = dropSetMinWeightKg,
                 )
             }
+            queries.updateRoutineExerciseDurationSyncKnown(durationSyncKnown, exercise.id)
         }
 
         // Drop what the portal no longer has (exercises first; their superset refs are SET NULL anyway).

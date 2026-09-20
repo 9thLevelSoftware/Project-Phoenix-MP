@@ -19,6 +19,8 @@ class PortalPullAdapterSessionTest {
             prCount = 0,
             routineName = null,
             workoutMode = "OLD_SCHOOL",
+            eccentricLoad = 120,
+            echoLevel = 3,
             exercises = listOf(
                 PullExerciseDto(
                     id = "ex-1",
@@ -43,7 +45,10 @@ class PortalPullAdapterSessionTest {
         assertEquals("OldSchool", session.mode) // portalModeToMobileMode converts SCREAMING_SNAKE to PascalCase
         assertEquals(60f, session.weightPerCableKg) // max weight across sets (DB stores per-cable, no division needed)
         assertEquals(28, session.totalReps) // 10 + 10 + 8
+        assertEquals("ex-1", session.id)
         assertEquals("portal-session-1", session.routineSessionId)
+        assertEquals(120, session.eccentricLoad)
+        assertEquals(3, session.echoLevel)
         assertEquals("default", session.profileId)
     }
 
@@ -59,6 +64,9 @@ class PortalPullAdapterSessionTest {
             exerciseCount = 2,
             routineName = "Push Day",
             workoutMode = "OLD_SCHOOL",
+            routineSessionId = "portal-session-2",
+            eccentricLoad = 150,
+            echoLevel = 3,
             exercises = listOf(
                 PullExerciseDto(
                     id = "ex-1",
@@ -88,9 +96,14 @@ class PortalPullAdapterSessionTest {
         assertEquals(2, sessions.size)
         assertEquals("Bench Press", sessions[0].exerciseName)
         assertEquals("Shoulder Press", sessions[1].exerciseName)
-        // Both share the same routineSessionId
-        assertEquals(sessions[0].routineSessionId, sessions[1].routineSessionId)
+        // Both share the portal routineSessionId
+        assertEquals("portal-session-2", sessions[0].routineSessionId)
+        assertEquals("portal-session-2", sessions[1].routineSessionId)
         assertEquals("Push Day", sessions[0].routineName)
+        assertEquals(100, sessions[0].eccentricLoad)
+        assertEquals(100, sessions[1].eccentricLoad)
+        assertEquals(2, sessions[0].echoLevel)
+        assertEquals(2, sessions[1].echoLevel)
     }
 
     @Test

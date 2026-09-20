@@ -236,6 +236,9 @@ interface SyncRepository {
      */
     suspend fun getAllRoutineIds(profileId: String = "default"): List<String>
 
+    /** Routine IDs whose legacy exercises still need an authoritative portal duration. */
+    suspend fun getRoutineIdsNeedingDurationBackfill(profileId: String = "default"): List<String> = emptyList()
+
     /**
      * Get all training cycle IDs for the given profile.
      */
@@ -443,6 +446,10 @@ interface SyncRepository {
      * cycle are removed with it. Discarded edits are not classified when
      * `lastSync == 0` (no sync base).
      *
+     * [syncProfileId] is the profile captured for this sync. An unbound profile
+     * may be mutated only when its id exactly matches this value. Profiles bound
+     * to another account and other unbound profiles are always preserved.
+     *
      * Default no-op so unrelated test fakes do not need to implement.
      */
     suspend fun applyServerDeletions(
@@ -450,6 +457,7 @@ interface SyncRepository {
         routineIds: List<String>,
         cycleIds: List<String>,
         lastSync: Long,
+        syncProfileId: String? = null,
     ): ServerDeletionResult = ServerDeletionResult()
 
     /**

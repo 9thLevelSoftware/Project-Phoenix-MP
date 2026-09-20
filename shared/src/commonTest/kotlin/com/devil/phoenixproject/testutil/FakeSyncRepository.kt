@@ -88,7 +88,10 @@ class FakeSyncRepository : SyncRepository {
 
     // === Portal Push Operations ===
 
-    override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> = workoutSessionsToReturn
+    override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> =
+        workoutSessionsToReturn.filter { session ->
+            updatedSessionTimestamps[session.id]?.let { it > timestamp } ?: true
+        }
 
     override suspend fun getDirtyWorkoutSnapshot(profileId: String): WorkoutSyncSnapshot = WorkoutSyncSnapshot(
         components = workoutSessionsToReturn.map { session ->
@@ -182,6 +185,7 @@ class FakeSyncRepository : SyncRepository {
 
     var sessionIds: List<String> = emptyList()
     var routineIds: List<String> = emptyList()
+    var routineIdsNeedingDurationBackfill: List<String> = emptyList()
     var cycleIds: List<String> = emptyList()
     var badgeIds: List<String> = emptyList()
     var personalRecordIds: List<String> = emptyList()
@@ -189,6 +193,8 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun getAllSessionIds(profileId: String): List<String> = sessionIds
     override suspend fun getAllRoutineIds(profileId: String): List<String> = routineIds
+    override suspend fun getRoutineIdsNeedingDurationBackfill(profileId: String): List<String> =
+        routineIdsNeedingDurationBackfill
     override suspend fun getAllCycleIds(profileId: String): List<String> = cycleIds
     override suspend fun getAllBadgeIds(profileId: String): List<String> = badgeIds
     override suspend fun getAllPersonalRecordIds(profileId: String): List<String> = personalRecordIds
@@ -399,6 +405,7 @@ class FakeSyncRepository : SyncRepository {
 
     data class ServerDeletionCall(
         val ownerUserId: String,
+        val syncProfileId: String?,
         val routineIds: List<String>,
         val cycleIds: List<String>,
         val lastSync: Long,
@@ -420,12 +427,13 @@ class FakeSyncRepository : SyncRepository {
         routineIds: List<String>,
         cycleIds: List<String>,
         lastSync: Long,
+        syncProfileId: String?,
     ): ServerDeletionResult {
         if (applyServerDeletionsShouldFail) {
             throw RuntimeException("Simulated server deletion failure")
         }
         callLog += "applyServerDeletions"
-        serverDeletionCalls += ServerDeletionCall(ownerUserId, routineIds, cycleIds, lastSync)
+        serverDeletionCalls += ServerDeletionCall(ownerUserId, syncProfileId, routineIds, cycleIds, lastSync)
         val removedRoutines = routinesToReturn.filter { it.id in routineIds }
         routinesToReturn = routinesToReturn - removedRoutines.toSet()
         val removedCycles = cycleIds.filter { localCycleIds.remove(it) }

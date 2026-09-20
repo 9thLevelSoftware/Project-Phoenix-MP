@@ -1253,5 +1253,11 @@ WHERE gs.rowid = (
         "ALTER TABLE TrainingCycle ADD COLUMN server_updated_at TEXT",
     )
 
+    // Migration 53: remember whether routine duration is authoritative for sync.
+    // Mirrors 53.sqm exactly.
+    53 -> listOf(
+        "ALTER TABLE RoutineExercise ADD COLUMN durationSyncKnown INTEGER NOT NULL DEFAULT 0",
+    )
+
     else -> emptyList()
 }

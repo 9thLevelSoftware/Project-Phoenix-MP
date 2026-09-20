@@ -572,6 +572,13 @@ class MainViewModel(
             .map { it?.id ?: "default" }
             .stateIn(viewModelScope, SharingStarted.Eagerly, "default")
 
+    // Name of the same profile, so a profile-scoped destructive action can say whose data
+    // it deletes ("Delete all workouts for <profile>").
+    val activeProfileName: StateFlow<String> =
+        userProfileRepository.activeProfile
+            .map { it?.name?.takeIf(String::isNotBlank) ?: "Default" }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, "Default")
+
     /**
      * Picker-safe completed IDs.  The tag and loading sentinel prevent a picker from ever
      * using a prior profile's history during an active-profile transition.
