@@ -7109,6 +7109,7 @@ class ActiveSessionEngine(
             expectedLease = lease,
             afterExpectedLeaseReset = {
                 if (restSeconds > 0) startJustLiftEggTimer(restSeconds)
+                if (completion.reason != SetEndReason.USER_STOPPED) restartJustLiftAutoStartIfHandlesHeld()
                 afterJustLiftResetPresentationForTest?.invoke()
             },
             skipMachineTeardown = true,
@@ -11493,6 +11494,8 @@ class ActiveSessionEngine(
                                 Logger.d("Just Lift: Starting egg timer ($justLiftRestSeconds s)")
                                 startJustLiftEggTimer(justLiftRestSeconds)
                             }
+                            // #761. Defensive: no Just Lift completion carries USER_STOPPED here today.
+                            if (completion.reason != SetEndReason.USER_STOPPED) restartJustLiftAutoStartIfHandlesHeld()
                             afterJustLiftResetPresentationForTest?.invoke()
                         }, skipMachineTeardown = true)
                         if (!resetSucceeded) return@launchCompletionJob
@@ -13556,6 +13559,27 @@ class ActiveSessionEngine(
                 }
             }
         }
+    }
+
+    /**
+     * #761: auto-start is edge-triggered on handleState. A grab late in a timed Just Lift
+     * summary starts a countdown bound to the completed lease; the summary reset retires
+     * that lease, the countdown aborts, and the still-held handles never produce a new
+     * Grabbed edge. Called only from the Just Lift waiting-for-successor resets (timed
+     * summary expiry and manual dismissal of a non-user-stopped completion), so
+     * stop/end/skip teardowns never auto-restart a user holding the handles.
+     */
+    private fun restartJustLiftAutoStartIfHandlesHeld() {
+        val params = coordinator._workoutParameters.value
+        if (!params.isJustLift || !params.useAutoStart) return
+        // The detector keeps its last state across an unexpected link drop; never
+        // re-arm from a reading that may predate a disconnect.
+        if (bleRepository.connectionState.value !is ConnectionState.Connected) return
+        if (bleRepository.handleState.value != HandleState.Grabbed) return
+        // Any countdown still running was bound to the lease this reset just retired
+        // and can never complete. Restart unbound: it only runs while no lease exists.
+        cancelAutoStartTimer()
+        startAutoStartTimer(expectedLease = null)
     }
 
     private fun cancelAutoStartTimer() {
