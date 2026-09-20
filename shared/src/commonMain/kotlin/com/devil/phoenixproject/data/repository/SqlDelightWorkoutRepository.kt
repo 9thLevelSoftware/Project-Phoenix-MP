@@ -563,7 +563,51 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
     override suspend fun saveSession(session: WorkoutSession) {
         withContext(Dispatchers.IO) {
-            queries.insertSession(
+            insertSessionRow(session)
+        }
+    }
+
+    /**
+     * F-012: the whole completion in one transaction. See
+     * [WorkoutRepository.commitCompletedSet] for the contract; the guards here
+     * are the ones the former six-call sequence used, so a retry is a no-op.
+     */
+    override suspend fun commitCompletedSet(
+        session: WorkoutSession,
+        metrics: List<com.devil.phoenixproject.domain.model.WorkoutMetric>,
+        completedSet: com.devil.phoenixproject.domain.model.CompletedSet?,
+        repMetrics: List<com.devil.phoenixproject.domain.model.RepMetricData>,
+        repBiomechanics: List<com.devil.phoenixproject.domain.model.BiomechanicsRepResult>,
+    ) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                if (queries.selectSessionById(session.id).executeAsOneOrNull() == null) {
+                    insertSessionRow(session)
+                }
+                if (metrics.isNotEmpty()) {
+                    queries.deleteMetricsBySession(session.id)
+                    metrics.forEach { metric -> insertMetricRow(session.id, metric) }
+                }
+                if (completedSet != null &&
+                    queries.selectCompletedSetById(completedSet.id).executeAsOneOrNull() == null
+                ) {
+                    queries.insertCompletedSetRow(completedSet)
+                }
+                queries.deleteRepMetricsBySession(session.id)
+                repMetrics.forEach { metric -> queries.insertRepMetricRow(session.id, metric) }
+                queries.deleteRepBiomechanicsBySession(session.id)
+                repBiomechanics.forEach { result -> queries.insertRepBiomechanicsRow(session.id, result) }
+                // Main's newer sync-dirty contract: every child write marks its
+                // session. The atomic commit writes those children in one
+                // transaction, so it must dirty the session the same way the
+                // old per-repo calls did — otherwise a committed set never pushes.
+                queries.markWorkoutComponentDirty(session.id)
+            }
+        }
+    }
+
+    private fun insertSessionRow(session: WorkoutSession) {
+        queries.insertSession(
                 id = session.id,
                 timestamp = session.timestamp,
                 mode = session.mode,
@@ -621,7 +665,23 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                 counterweightKg = session.counterweightKg.toDouble(),
                 rackItemsJson = session.rackItemsJson,
             )
-        }
+    }
+
+    private fun insertMetricRow(sessionId: String, metric: com.devil.phoenixproject.domain.model.WorkoutMetric) {
+        // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
+        val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
+        queries.insertMetric(
+            sessionId = sessionId,
+            timestamp = metric.timestamp,
+            position = metric.positionA.toDouble(),
+            positionB = metric.positionB.toDouble(),
+            velocity = metric.velocityA,
+            velocityB = metric.velocityB,
+            load = metric.loadA.toDouble(),
+            loadB = metric.loadB.toDouble(),
+            power = power.toDouble(),
+            status = metric.status.toLong(),
+        )
     }
 
     override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {
@@ -1118,22 +1178,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         withContext(Dispatchers.IO) {
             db.transaction {
                 queries.deleteMetricsBySession(sessionId)
-                metrics.forEach { metric ->
-                    // Calculate power: P = (loadA + loadB) × v (combined force × velocity for dual-cable)
-                    val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
-                    queries.insertMetric(
-                        sessionId = sessionId,
-                        timestamp = metric.timestamp,
-                        position = metric.positionA.toDouble(),
-                        positionB = metric.positionB.toDouble(),
-                        velocity = metric.velocityA,
-                        velocityB = metric.velocityB,
-                        load = metric.loadA.toDouble(),
-                        loadB = metric.loadB.toDouble(),
-                        power = power.toDouble(),
-                        status = metric.status.toLong(),
-                    )
-                }
+                metrics.forEach { metric -> insertMetricRow(sessionId, metric) }
                 queries.markWorkoutComponentDirty(sessionId)
             }
         }

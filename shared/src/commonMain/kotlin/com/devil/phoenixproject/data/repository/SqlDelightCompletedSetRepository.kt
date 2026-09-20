@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.database.PhoenixDatabaseQueries
 import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.PlannedSet
@@ -193,21 +194,7 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
     override suspend fun saveCompletedSet(set: CompletedSet) {
         withContext(Dispatchers.IO) {
             db.transaction {
-                queries.insertCompletedSet(
-                id = set.id,
-                session_id = set.sessionId,
-                planned_set_id = set.plannedSetId,
-                routine_exercise_id = set.routineExerciseId,
-                set_number = set.setNumber.toLong(),
-                set_type = set.setType.name,
-                attempt_number = set.attemptNumber.coerceAtLeast(1).toLong(),
-                actual_reps = set.actualReps.toLong(),
-                actual_weight_kg = set.actualWeightKg.toDouble(),
-                logged_rpe = set.loggedRpe?.toLong(),
-                is_pr = if (set.isPr) 1L else 0L,
-                completed_at = set.completedAt,
-                set_end_reason = set.setEndReason.name,
-                )
+                queries.insertCompletedSetRow(set)
                 queries.markWorkoutComponentDirty(set.sessionId)
             }
         }
@@ -254,21 +241,7 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
             completedAt = completedAt,
         )
 
-        queries.insertCompletedSet(
-            id = completedSet.id,
-            session_id = completedSet.sessionId,
-            planned_set_id = completedSet.plannedSetId,
-            routine_exercise_id = completedSet.routineExerciseId,
-            set_number = completedSet.setNumber.toLong(),
-            set_type = completedSet.setType.name,
-            attempt_number = completedSet.attemptNumber.coerceAtLeast(1).toLong(),
-            actual_reps = completedSet.actualReps.toLong(),
-            actual_weight_kg = completedSet.actualWeightKg.toDouble(),
-            logged_rpe = completedSet.loggedRpe?.toLong(),
-            is_pr = if (completedSet.isPr) 1L else 0L,
-            completed_at = completedSet.completedAt,
-            set_end_reason = completedSet.setEndReason.name,
-        )
+        queries.insertCompletedSetRow(completedSet)
         queries.markWorkoutComponentDirty(session.id)
 
         completedSet
@@ -277,23 +250,7 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
     override suspend fun saveCompletedSets(sets: List<CompletedSet>) {
         withContext(Dispatchers.IO) {
             db.transaction {
-                sets.forEach { set ->
-                queries.insertCompletedSet(
-                    id = set.id,
-                    session_id = set.sessionId,
-                    planned_set_id = set.plannedSetId,
-                    routine_exercise_id = set.routineExerciseId,
-                    set_number = set.setNumber.toLong(),
-                    set_type = set.setType.name,
-                    attempt_number = set.attemptNumber.coerceAtLeast(1).toLong(),
-                    actual_reps = set.actualReps.toLong(),
-                    actual_weight_kg = set.actualWeightKg.toDouble(),
-                    logged_rpe = set.loggedRpe?.toLong(),
-                    is_pr = if (set.isPr) 1L else 0L,
-                    completed_at = set.completedAt,
-                    set_end_reason = set.setEndReason.name,
-                )
-                }
+                sets.forEach { set -> queries.insertCompletedSetRow(set) }
                 sets.mapTo(linkedSetOf()) { it.sessionId }.forEach(queries::markWorkoutComponentDirty)
             }
         }
@@ -362,4 +319,27 @@ class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : Comple
             }
         }
     }
+}
+
+/**
+ * The single CompletedSet insert. Shared with
+ * [SqlDelightWorkoutRepository.commitCompletedSet] so the atomic completion
+ * transaction writes exactly the row this repository would have written.
+ */
+internal fun PhoenixDatabaseQueries.insertCompletedSetRow(set: CompletedSet) {
+    insertCompletedSet(
+        id = set.id,
+        session_id = set.sessionId,
+        planned_set_id = set.plannedSetId,
+        routine_exercise_id = set.routineExerciseId,
+        set_number = set.setNumber.toLong(),
+        set_type = set.setType.name,
+        attempt_number = set.attemptNumber.coerceAtLeast(1).toLong(),
+        actual_reps = set.actualReps.toLong(),
+        actual_weight_kg = set.actualWeightKg.toDouble(),
+        logged_rpe = set.loggedRpe?.toLong(),
+        is_pr = if (set.isPr) 1L else 0L,
+        completed_at = set.completedAt,
+        set_end_reason = set.setEndReason.name,
+    )
 }

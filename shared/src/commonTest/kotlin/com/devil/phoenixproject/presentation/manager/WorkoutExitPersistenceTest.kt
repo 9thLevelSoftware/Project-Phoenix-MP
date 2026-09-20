@@ -21,6 +21,7 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures
 import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.util.Constants
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -35,6 +36,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -977,6 +979,175 @@ class WorkoutExitPersistenceTest {
         sourceScores.clear()
 
         assertEquals(1, snapshot.qualitySummary?.repScores?.size)
+    }
+
+    /**
+     * F-058: `is_pr` is a data fact, not a display preference. With gamification
+     * off nothing celebrates, but the PR rows are still written and History's PR
+     * marker must still appear.
+     */
+    @Test
+    fun `a weight PR still marks the completed set when gamification is off`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.settingsManager.setGamificationEnabled(false)
+            advanceUntilIdle()
+            assertFalse(
+                harness.settingsManager.gamificationEnabled.value,
+                "The fixture must actually turn gamification off",
+            )
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            val savedSet = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId).single()
+            assertTrue(
+                harness.fakePRRepo.updateCalls.isNotEmpty(),
+                "PR evaluation must run regardless of the gamification toggle",
+            )
+            assertTrue(savedSet.isPr, "A broken weight PR must mark the set even with gamification off")
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * F-021: the PR is stamped with the session's own timestamp, not the
+     * post-save wall clock, so the portal push key `"$exerciseId:$timestamp"`
+     * can match it back to the session that set it.
+     */
+    @Test
+    fun `a PR from a completed set carries the session timestamp`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            advanceTimeBy(45_000L)
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            val session = harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId }
+            val prTimestamps = harness.fakePRRepo.updateCalls.map { it.timestamp }.distinct()
+            assertTrue(session.duration > 0L, "The fixture must span real time, or the two stamps cannot differ")
+            assertEquals(
+                listOf(session.timestamp),
+                prTimestamps,
+                "Every PR written for this set must carry the session's timestamp",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * F-040: post-save bookkeeping runs on top of a workout that is already
+     * durable, so its failure must not claim the workout was not saved.
+     */
+    @Test
+    fun `a post save failure does not report that the workout could not be saved`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val feedback = mutableListOf<String>()
+        try {
+            harness.fakeCompletedSetRepo.beforeMarkAsPr = {
+                throw IllegalStateException("post-save bookkeeping failed")
+            }
+            val collector = launch(Dispatchers.Unconfined) {
+                harness.coordinator.userFeedbackEvents.collect(feedback::add)
+            }
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            collector.cancel()
+
+            assertNull(
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "A post-save failure must not raise a save failure",
+            )
+            assertTrue(feedback.isEmpty(), "A post-save failure must not emit a user-facing save error")
+            assertEquals(
+                1,
+                harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId },
+                "The workout itself must be saved",
+            )
+            assertEquals(1, harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId).size)
+            assertFalse(
+                harness.activeSessionEngine.hasRetainedWorkoutExitSnapshotForTest(lease.sessionId),
+                "A committed set must not be retained for retry",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * The other half of F-040: when the COMMIT itself fails the user is told, and
+     * the failure names the session so the UI can offer a Retry that works.
+     */
+    @Test
+    fun `a commit failure raises a retryable save failure`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeWorkoutRepo.beforeSaveSession = {
+                throw IllegalStateException("disk full")
+            }
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertEquals(
+                lease.sessionId,
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "A failed commit must name the session the Retry action needs",
+            )
+            harness.fakeWorkoutRepo.beforeSaveSession = {}
+            assertTrue(
+                harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId),
+                "The named session must still be retryable",
+            )
+            advanceUntilIdle()
+            assertEquals(1, harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId })
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * A completed set records the load the machine was COMMANDED to hold. A
+     * request above the hardware maximum is refused before the set can start,
+     * so it must not appear in the session row, the CompletedSet or the volume
+     * PR input — all three read the same commanded figure.
+     */
+    @Test
+    fun `a set records the commanded load, not an out-of-range request`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._workoutParameters.value =
+                harness.coordinator._workoutParameters.value.copy(weightPerCableKg = 500f)
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            val session = harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId }
+            val savedSet = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId).single()
+            assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, session.weightPerCableKg)
+            assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, savedSet.actualWeightKg)
+            assertEquals(
+                Constants.MAX_WEIGHT_PER_CABLE_KG,
+                harness.fakePRRepo.updateCalls.map { it.volumePRWeightPerCableKg }.distinct().single(),
+                "The volume PR must be computed from the commanded load too",
+            )
+        } finally {
+            harness.cleanup()
+        }
     }
 
     private fun startTrackedCableSet(harness: DWSMTestHarness) {

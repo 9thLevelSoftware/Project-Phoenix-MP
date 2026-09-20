@@ -1213,11 +1213,20 @@ class SqlDelightSyncRepositoryTest {
         assertEquals(336.0, eccentricVolume.volume)
     }
 
+    /**
+     * F-021: the lookup keys on the SESSION's start timestamp, so the fixture
+     * gives the two sessions distinct realistic start times (a set is not
+     * instantaneous — `insertHistoricalSession` gives each a 60-second
+     * duration) instead of sharing one literal, which used to hide the fact
+     * that a PR stamped at any other instant resolves to nothing.
+     */
     @Test
     fun `findSessionIdsForPersonalRecords resolves sessions outside delta batch`() = runTest {
+        val activeProfileSessionStart = 1_700_000_000_000L
+        val otherProfileSessionStart = 1_700_000_180_000L
         insertHistoricalSession(
             id = "historical-bicep-curl",
-            timestamp = 1_700_000_000_000L,
+            timestamp = activeProfileSessionStart,
             exerciseId = "bicep-curl",
             exerciseName = "Bicep Curl",
             workingReps = 8,
@@ -1229,7 +1238,7 @@ class SqlDelightSyncRepositoryTest {
         )
         insertHistoricalSession(
             id = "other-profile-session",
-            timestamp = 1_700_000_000_000L,
+            timestamp = otherProfileSessionStart,
             exerciseId = "bicep-curl",
             exerciseName = "Bicep Curl",
             workingReps = 8,
@@ -1239,13 +1248,13 @@ class SqlDelightSyncRepositoryTest {
             peakEccentricB = 41.0,
             profileId = "other-profile",
         )
-        val record = PersonalRecord(
+        fun record(timestamp: Long) = PersonalRecord(
             exerciseId = "bicep-curl",
             exerciseName = "Bicep Curl",
             weightPerCableKg = 42f,
             reps = 8,
             oneRepMax = 42f,
-            timestamp = 1_700_000_000_000L,
+            timestamp = timestamp,
             workoutMode = "OldSchool",
             prType = PRType.MAX_WEIGHT,
             volume = 336f,
@@ -1253,11 +1262,23 @@ class SqlDelightSyncRepositoryTest {
             profileId = "active-profile",
         )
 
-        val sessionIds = repository.findSessionIdsForPersonalRecords(listOf(record), "active-profile")
+        val sessionIds = repository.findSessionIdsForPersonalRecords(
+            listOf(record(activeProfileSessionStart)),
+            "active-profile",
+        )
 
         assertEquals(
-            mapOf("bicep-curl:1700000000000" to "historical-bicep-curl"),
+            mapOf("bicep-curl:$activeProfileSessionStart" to "historical-bicep-curl"),
             sessionIds,
+            "A PR carrying its session's start timestamp resolves to that session, and never to another profile's",
+        )
+        assertEquals(
+            emptyMap(),
+            repository.findSessionIdsForPersonalRecords(
+                listOf(record(activeProfileSessionStart + 60_000L)),
+                "active-profile",
+            ),
+            "A PR stamped when the set ENDED matches nothing — which is why the PR must carry the session's timestamp",
         )
     }
 

@@ -195,6 +195,18 @@ class WorkoutCoordinator(
         _commandLimitNotice.value = null
     }
 
+    /**
+     * F-040: the stable session id of a completion whose commit failed, or null.
+     *
+     * A drainable StateFlow rather than a one-shot event, because the commit can
+     * fail after teardown has already moved the UI on, and a replay-0 emission
+     * to a screen that is not composed yet is simply dropped. The screen that
+     * shows the failure drains it (back to null) once it has offered Retry, so
+     * the offer is made exactly once.
+     */
+    internal val _workoutSaveFailureSessionId = MutableStateFlow<String?>(null)
+    val workoutSaveFailureSessionId: StateFlow<String?> = _workoutSaveFailureSessionId.asStateFlow()
+
     // ===== Workout State =====
 
     internal val _workoutState = MutableStateFlow<WorkoutState>(WorkoutState.Idle)

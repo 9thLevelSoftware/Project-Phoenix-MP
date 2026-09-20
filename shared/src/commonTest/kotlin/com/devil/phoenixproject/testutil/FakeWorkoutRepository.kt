@@ -1,10 +1,16 @@
 package com.devil.phoenixproject.testutil
 
+import com.devil.phoenixproject.data.repository.BiomechanicsRepository
+import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.PersonalRecordEntity
 import com.devil.phoenixproject.data.repository.PhaseStatisticsData
+import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -36,6 +42,15 @@ class FakeWorkoutRepository : WorkoutRepository {
     private val _routinesFlow = MutableStateFlow<List<Routine>>(emptyList())
     private val _personalRecordsFlow = MutableStateFlow<List<PersonalRecordEntity>>(emptyList())
     private val _phaseStatisticsFlow = MutableStateFlow<List<PhaseStatisticsData>>(emptyList())
+
+    /**
+     * The sibling fakes [commitCompletedSet] writes through. Production keeps
+     * these tables in one database, so one repository can commit them together;
+     * the harness wires the equivalent here.
+     */
+    var completedSetRepository: CompletedSetRepository? = null
+    var repMetricRepository: RepMetricRepository? = null
+    var biomechanicsRepository: BiomechanicsRepository? = null
 
     val recentCompletedRequests = mutableListOf<RecentCompletedRequest>()
     val saveSessionAttempts = mutableListOf<WorkoutSession>()
@@ -81,6 +96,9 @@ class FakeWorkoutRepository : WorkoutRepository {
         saveMetricsAttempts.clear()
         beforeSaveSession = {}
         afterSaveSession = {}
+        completedSetRepository = null
+        repMetricRepository = null
+        biomechanicsRepository = null
         recentCompletedFailure = null
         mostRecentCompletedExerciseFailure = null
         updateSessionsFlow()
@@ -171,6 +189,45 @@ class FakeWorkoutRepository : WorkoutRepository {
         sessions[session.id] = session
         updateSessionsFlow()
         afterSaveSession(session)
+    }
+
+    /**
+     * In-memory stand-in for the production single transaction. It cannot be
+     * atomic — the fakes are plain maps — so it keeps the production ORDER and
+     * GUARDS instead, and reaches the sibling fakes through
+     * [completedSetRepository] / [repMetricRepository] / [biomechanicsRepository]
+     * so every existing assertion on them (and every injected failure hook)
+     * still sees exactly what the step-by-step save produced.
+     */
+    override suspend fun commitCompletedSet(
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        repBiomechanics: List<BiomechanicsRepResult>,
+    ) {
+        if (getSession(session.id) == null) {
+            saveSession(session)
+        }
+        if (metrics.isNotEmpty()) {
+            saveMetrics(session.id, metrics)
+        }
+        val completedSetRepo = completedSetRepository
+        if (completedSet != null && completedSetRepo != null) {
+            val alreadySaved = completedSetRepo.getCompletedSets(session.id)
+                .any { it.id == completedSet.id }
+            if (!alreadySaved) {
+                completedSetRepo.saveCompletedSet(completedSet)
+            }
+        }
+        repMetricRepository?.let { repo ->
+            repo.deleteRepMetrics(session.id)
+            if (repMetrics.isNotEmpty()) repo.saveRepMetrics(session.id, repMetrics)
+        }
+        biomechanicsRepository?.let { repo ->
+            repo.deleteRepBiomechanics(session.id)
+            if (repBiomechanics.isNotEmpty()) repo.saveRepBiomechanics(session.id, repBiomechanics)
+        }
     }
 
     override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {

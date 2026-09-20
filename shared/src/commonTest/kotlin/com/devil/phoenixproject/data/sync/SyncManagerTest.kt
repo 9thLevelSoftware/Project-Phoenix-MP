@@ -1356,6 +1356,98 @@ class SyncManagerTest {
         assertEquals("default", payload.personalRecords.single().localProfileId)
     }
 
+    /**
+     * F-021: a PR broken during a live set reaches its session only when the PR
+     * row carries the SESSION's timestamp. The push key is
+     * `"$exerciseId:$timestamp"`, and the set's own completion time is a
+     * different, later instant (a 45-second set here), so stamping the PR at
+     * post-save wall-clock time left every live PR orphaned.
+     */
+    @Test
+    fun syncLinksPrToItsSessionWhenPrCarriesTheSessionTimestamp() = runTest {
+        setupAuthenticated()
+        val sessionStart = 1_740_916_800_000L
+        val session = makeWorkoutSession(
+            id = "live-pr-session",
+            timestamp = sessionStart,
+            exerciseId = "bicep-curl",
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(session)
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            makePersonalRecord(
+                id = 7,
+                exerciseId = "bicep-curl",
+                exerciseName = "Bicep Curl",
+                weightPerCableKg = 42f,
+                reps = 8,
+                timestamp = sessionStart,
+                prType = PRType.MAX_WEIGHT,
+                phase = WorkoutPhase.COMBINED,
+            ),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Push payload should be captured")
+        assertTrue(
+            payload.sessions.single().exercises.single().sets.single().isPr,
+            "The pushed set must be flagged as a PR set",
+        )
+        assertEquals(
+            "live-pr-session",
+            payload.personalRecords.single().sessionId,
+            "The pushed PR must name the session that set it",
+        )
+    }
+
+    /**
+     * The failure mode the fix removes: a PR stamped when post-save processing
+     * ran (session start + the set's duration) matches no session key at all.
+     */
+    @Test
+    fun syncCannotLinkAPrStampedAtPostSaveWallClockTime() = runTest {
+        setupAuthenticated()
+        val sessionStart = 1_740_916_800_000L
+        val session = makeWorkoutSession(
+            id = "live-pr-session",
+            timestamp = sessionStart,
+            exerciseId = "bicep-curl",
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(session)
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            makePersonalRecord(
+                id = 7,
+                exerciseId = "bicep-curl",
+                exerciseName = "Bicep Curl",
+                weightPerCableKg = 42f,
+                reps = 8,
+                timestamp = sessionStart + session.duration,
+                prType = PRType.MAX_WEIGHT,
+                phase = WorkoutPhase.COMBINED,
+            ),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Push payload should be captured")
+        assertFalse(
+            payload.sessions.single().exercises.single().sets.single().isPr,
+            "A PR stamped after the set cannot be matched to it",
+        )
+        assertNull(
+            payload.personalRecords.single().sessionId,
+            "A PR stamped after the set cannot be matched to it",
+        )
+    }
+
     @Test
     fun syncResolvesSessionIdForDedicatedPROutsideDeltaSessionBatch() = runTest {
         setupAuthenticated()

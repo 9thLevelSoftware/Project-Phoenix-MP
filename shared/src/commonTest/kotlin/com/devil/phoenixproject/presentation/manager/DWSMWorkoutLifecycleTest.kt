@@ -6334,7 +6334,7 @@ class DWSMWorkoutLifecycleTest {
             isEchoMode = false,
         )
 
-        assertFalse(result)
+        assertFalse(result.celebrate)
         assertEquals(0, harness.fakePRRepo.updateCalls.size, "Invalid completions should not update PRs")
         assertEquals(0, harness.fakeGamificationRepo.updateStatsCallCount, "Invalid completions should not update gamification stats")
         assertEquals(0, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount, "Invalid completions should not award badges")
@@ -6364,7 +6364,7 @@ class DWSMWorkoutLifecycleTest {
             isEchoMode = false,
         )
 
-        assertFalse(result)
+        assertFalse(result.celebrate)
         assertEquals(0, harness.fakePRRepo.updateCalls.size, "Untagged completions should not update PRs")
         assertEquals(1, harness.fakeGamificationRepo.updateStatsCallCount, "Valid untagged completions should update gamification stats")
         assertEquals(1, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount, "Valid untagged completions should award stat badges")

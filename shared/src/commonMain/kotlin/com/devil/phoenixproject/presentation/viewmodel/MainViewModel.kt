@@ -724,6 +724,29 @@ class MainViewModel(
     val commandLimitNotice: StateFlow<String?> get() = workoutSessionManager.coordinator.commandLimitNotice
 
     fun consumeCommandLimitNotice() = workoutSessionManager.coordinator.consumeCommandLimitNotice()
+
+    /**
+     * F-040: the session id of a completion whose commit failed, or null. The
+     * screen that shows it offers Retry and then drains it, so the offer is
+     * made exactly once even though the failure can outlive the screen.
+     */
+    val workoutSaveFailureSessionId: StateFlow<String?> get() = workoutSessionManager.coordinator.workoutSaveFailureSessionId
+
+    /**
+     * Retry the failed commit of [sessionId]. Returns false when the retained
+     * snapshot is gone or another attempt already owns it — there is then
+     * nothing left to retry. The offer is dropped either way.
+     */
+    fun retryWorkoutSave(sessionId: String): Boolean {
+        dismissWorkoutSaveFailure(sessionId)
+        return workoutSessionManager.activeSessionEngine.retryWorkoutExitPersistence(sessionId)
+    }
+
+    /** Drop the save-failure offer for [sessionId] without retrying. */
+    fun dismissWorkoutSaveFailure(sessionId: String) {
+        workoutSessionManager.coordinator._workoutSaveFailureSessionId.compareAndSet(sessionId, null)
+    }
+
     val routines: StateFlow<List<Routine>> get() = workoutSessionManager.coordinator.routines
     val routineGroups: StateFlow<List<RoutineGroup>> get() = workoutSessionManager.coordinator.routineGroups
     val loadedRoutine: StateFlow<Routine?> get() = workoutSessionManager.coordinator.loadedRoutine
