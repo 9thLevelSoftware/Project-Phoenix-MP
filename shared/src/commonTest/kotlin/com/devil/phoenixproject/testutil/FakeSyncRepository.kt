@@ -399,6 +399,7 @@ class FakeSyncRepository : SyncRepository {
 
     data class ServerDeletionCall(
         val ownerUserId: String,
+        val syncProfileId: String?,
         val routineIds: List<String>,
         val cycleIds: List<String>,
         val lastSync: Long,
@@ -420,12 +421,13 @@ class FakeSyncRepository : SyncRepository {
         routineIds: List<String>,
         cycleIds: List<String>,
         lastSync: Long,
+        syncProfileId: String?,
     ): ServerDeletionResult {
         if (applyServerDeletionsShouldFail) {
             throw RuntimeException("Simulated server deletion failure")
         }
         callLog += "applyServerDeletions"
-        serverDeletionCalls += ServerDeletionCall(ownerUserId, routineIds, cycleIds, lastSync)
+        serverDeletionCalls += ServerDeletionCall(ownerUserId, syncProfileId, routineIds, cycleIds, lastSync)
         val removedRoutines = routinesToReturn.filter { it.id in routineIds }
         routinesToReturn = routinesToReturn - removedRoutines.toSet()
         val removedCycles = cycleIds.filter { localCycleIds.remove(it) }

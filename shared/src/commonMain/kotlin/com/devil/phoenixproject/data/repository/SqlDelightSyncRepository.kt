@@ -2323,6 +2323,7 @@ class SqlDelightSyncRepository(
         routineIds: List<String>,
         cycleIds: List<String>,
         lastSync: Long,
+        syncProfileId: String?,
     ): ServerDeletionResult = withContext(Dispatchers.IO) {
         if (routineIds.isEmpty() && cycleIds.isEmpty()) return@withContext ServerDeletionResult()
 
@@ -2341,7 +2342,7 @@ class SqlDelightSyncRepository(
                         queries.selectRoutineByServerId(serverRoutineId).executeAsList()
                     ).distinctBy { it.id }
                 for (row in localRows) {
-                    if (!profileOwnerMatches(row.profile_id, ownerUserId)) continue
+                    if (!profileOwnerMatches(row.profile_id, ownerUserId, syncProfileId)) continue
                     // lastSync == 0 (first pull / forced resync) has no sync base, so an
                     // edit cannot be classified as "unsynced"; skip the report then.
                     if (lastSync > 0L && row.deletedAt == null && (row.updatedAt ?: 0L) > lastSync) {
@@ -2354,7 +2355,7 @@ class SqlDelightSyncRepository(
 
             for (cycleId in cycleIds.distinct()) {
                 val cycle = queries.selectTrainingCycleById(cycleId).executeAsOneOrNull() ?: continue
-                if (!profileOwnerMatches(cycle.profile_id, ownerUserId)) continue
+                if (!profileOwnerMatches(cycle.profile_id, ownerUserId, syncProfileId)) continue
                 val hadProgress = queries.selectCycleProgressByCycle(cycleId).executeAsOneOrNull() != null
                 if (lastSync > 0L && cycle.deletedAt == null && cycle.updatedAt > lastSync) {
                     discardedCycleEdits += cycleId
@@ -2379,7 +2380,7 @@ class SqlDelightSyncRepository(
                     val templateRoutine = queries.selectRoutineById(templateRoutineId).executeAsOneOrNull()
                     if (
                         templateRoutine != null &&
-                        profileOwnerMatches(templateRoutine.profile_id, ownerUserId) &&
+                        profileOwnerMatches(templateRoutine.profile_id, ownerUserId, syncProfileId) &&
                         queries.countCycleDaysReferencingRoutine(templateRoutineId).executeAsOne() == 0L
                     ) {
                         hardDeleteRoutineWithChildren(templateRoutineId)
@@ -2555,8 +2556,15 @@ class SqlDelightSyncRepository(
         }
     }
 
-    private fun profileOwnerMatches(profileId: String, expectedOwnerUserId: String): Boolean =
-        queries.getProfileById(profileId).executeAsOneOrNull()?.supabase_user_id == expectedOwnerUserId
+    private fun profileOwnerMatches(
+        profileId: String,
+        expectedOwnerUserId: String,
+        permittedUnboundProfileId: String? = null,
+    ): Boolean {
+        val profile = queries.getProfileById(profileId).executeAsOneOrNull() ?: return false
+        return profile.supabase_user_id == expectedOwnerUserId ||
+            (profile.supabase_user_id == null && profileId == permittedUnboundProfileId)
+    }
 
     /**
      * Resolve a retained ownership claim before a pulled root is materialized. Claims outlive
