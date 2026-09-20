@@ -1572,6 +1572,7 @@ class SyncManager(
             try {
                 applyServerDeletions(
                     ownerUserId = userId,
+                    syncProfileId = activeProfile?.id,
                     routineIds = skipped.routines,
                     cycleIds = skipped.cycles,
                     lastSync = lastSync,
@@ -2068,6 +2069,7 @@ class SyncManager(
                 pullResponse = pullResponse,
                 lastSync = mergeLastSync,
                 mergeProfileId = mergeProfileId,
+                activeSyncProfileId = activeProfileId,
                 isFirstPage = pagesProcessed == 1,
                 serverWinsRoutineIds = serverWinsRoutineIds,
             )
@@ -2228,6 +2230,7 @@ class SyncManager(
         pullResponse: PortalSyncPullResponse,
         lastSync: Long,
         mergeProfileId: String,
+        activeSyncProfileId: String?,
         isFirstPage: Boolean,
         serverWinsRoutineIds: Set<String>,
     ): Result<Unit> {
@@ -2368,6 +2371,7 @@ class SyncManager(
             // keeps the checkpoint unchanged and makes the next pull report the ids again.
             applyServerDeletions(
                 ownerUserId = ownerUserId,
+                syncProfileId = activeSyncProfileId,
                 routineIds = pullResponse.deletedRoutineIds,
                 cycleIds = pullResponse.deletedCycleIds,
                 lastSync = lastSync,
@@ -2470,6 +2474,7 @@ class SyncManager(
      */
     private suspend fun applyServerDeletions(
         ownerUserId: String,
+        syncProfileId: String?,
         routineIds: List<String>,
         cycleIds: List<String>,
         lastSync: Long,
@@ -2478,6 +2483,7 @@ class SyncManager(
         if (routineIds.isEmpty() && cycleIds.isEmpty()) return
         val result = syncRepository.applyServerDeletions(
             ownerUserId = ownerUserId,
+            syncProfileId = syncProfileId,
             routineIds = routineIds,
             cycleIds = cycleIds,
             lastSync = lastSync,

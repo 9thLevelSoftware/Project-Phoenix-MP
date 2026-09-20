@@ -813,10 +813,12 @@ class ConflictResolutionTest {
     }
 
     @Test
-    fun `server deletions are scoped to the authenticated owner and clean cycle sync state`() = runTest {
+    fun `server deletions allow only the authenticated owner or exact unbound sync profile`() = runTest {
         val queries = database.phoenixDatabaseQueries
         queries.insertProfile("profile-owner-a", "Owner A", 0L, now, 0L)
         queries.insertProfile("profile-owner-b", "Owner B", 1L, now, 0L)
+        queries.insertProfile("profile-unbound-active", "New active", 2L, now, 0L)
+        queries.insertProfile("profile-unbound-other", "Other unbound", 3L, now, 0L)
         queries.linkProfileToSupabase("owner-a", now, "profile-owner-a")
         queries.linkProfileToSupabase("owner-b", now, "profile-owner-b")
 
@@ -833,7 +835,7 @@ class ConflictResolutionTest {
                 deletedAt = null,
             )
         }
-        fun insertCycle(id: String, profileId: String) {
+        fun insertCycle(id: String, profileId: String, accountId: String?) {
             queries.insertTrainingCycle(
                 id = id,
                 name = id,
@@ -848,7 +850,7 @@ class ConflictResolutionTest {
             queries.insertCycleSyncState(
                 cycleId = id,
                 profileId = profileId,
-                accountId = if (profileId == "profile-owner-a") "owner-a" else "owner-b",
+                accountId = accountId,
                 dirtyGeneration = 1L,
                 acknowledgedGeneration = 0L,
                 pendingDeleteUpdatedAt = null,
@@ -857,24 +859,62 @@ class ConflictResolutionTest {
         }
         insertRoutine("routine-owner-a", "profile-owner-a")
         insertRoutine("routine-owner-b", "profile-owner-b")
-        insertCycle("cycle-owner-a", "profile-owner-a")
-        insertCycle("cycle-owner-b", "profile-owner-b")
+        insertRoutine("routine-unbound-active", "profile-unbound-active")
+        insertRoutine("routine-unbound-other", "profile-unbound-other")
+        insertCycle("cycle-owner-a", "profile-owner-a", "owner-a")
+        insertCycle("cycle-owner-b", "profile-owner-b", "owner-b")
+        insertCycle("cycle-unbound-active", "profile-unbound-active", null)
+        insertCycle("cycle-unbound-other", "profile-unbound-other", null)
 
-        val result = repository.applyServerDeletions(
+        val boundResult = repository.applyServerDeletions(
             ownerUserId = "owner-a",
             routineIds = listOf("routine-owner-a", "routine-owner-b"),
             cycleIds = listOf("cycle-owner-a", "cycle-owner-b"),
             lastSync = now - 1,
+            // Even the captured sync profile is protected when another account owns it.
+            syncProfileId = "profile-owner-b",
         )
 
-        assertEquals(listOf("routine-owner-a"), result.deletedRoutineIds)
-        assertEquals(listOf("cycle-owner-a"), result.deletedCycleIds)
+        assertEquals(listOf("routine-owner-a"), boundResult.deletedRoutineIds)
+        assertEquals(listOf("cycle-owner-a"), boundResult.deletedCycleIds)
         assertEquals(null, queries.selectRoutineById("routine-owner-a").executeAsOneOrNull())
         assertNotNull(queries.selectRoutineById("routine-owner-b").executeAsOneOrNull())
         assertEquals(null, queries.selectTrainingCycleById("cycle-owner-a").executeAsOneOrNull())
         assertNotNull(queries.selectTrainingCycleById("cycle-owner-b").executeAsOneOrNull())
         assertEquals(null, queries.selectCycleSyncState("cycle-owner-a").executeAsOneOrNull())
         assertNotNull(queries.selectCycleSyncState("cycle-owner-b").executeAsOneOrNull())
+
+        val noActiveProfileResult = repository.applyServerDeletions(
+            ownerUserId = "owner-a",
+            routineIds = listOf("routine-unbound-active", "routine-unbound-other"),
+            cycleIds = listOf("cycle-unbound-active", "cycle-unbound-other"),
+            lastSync = now - 1,
+            syncProfileId = null,
+        )
+
+        assertTrue(noActiveProfileResult.deletedRoutineIds.isEmpty())
+        assertTrue(noActiveProfileResult.deletedCycleIds.isEmpty())
+        assertNotNull(queries.selectRoutineById("routine-unbound-active").executeAsOneOrNull())
+        assertNotNull(queries.selectRoutineById("routine-unbound-other").executeAsOneOrNull())
+        assertNotNull(queries.selectTrainingCycleById("cycle-unbound-active").executeAsOneOrNull())
+        assertNotNull(queries.selectTrainingCycleById("cycle-unbound-other").executeAsOneOrNull())
+
+        val unboundResult = repository.applyServerDeletions(
+            ownerUserId = "owner-a",
+            routineIds = listOf("routine-unbound-active", "routine-unbound-other"),
+            cycleIds = listOf("cycle-unbound-active", "cycle-unbound-other"),
+            lastSync = now - 1,
+            syncProfileId = "profile-unbound-active",
+        )
+
+        assertEquals(listOf("routine-unbound-active"), unboundResult.deletedRoutineIds)
+        assertEquals(listOf("cycle-unbound-active"), unboundResult.deletedCycleIds)
+        assertEquals(null, queries.selectRoutineById("routine-unbound-active").executeAsOneOrNull())
+        assertNotNull(queries.selectRoutineById("routine-unbound-other").executeAsOneOrNull())
+        assertEquals(null, queries.selectTrainingCycleById("cycle-unbound-active").executeAsOneOrNull())
+        assertNotNull(queries.selectTrainingCycleById("cycle-unbound-other").executeAsOneOrNull())
+        assertEquals(null, queries.selectCycleSyncState("cycle-unbound-active").executeAsOneOrNull())
+        assertNotNull(queries.selectCycleSyncState("cycle-unbound-other").executeAsOneOrNull())
     }
 
     // ─── Helper Functions ─────────────────────────────────────────────

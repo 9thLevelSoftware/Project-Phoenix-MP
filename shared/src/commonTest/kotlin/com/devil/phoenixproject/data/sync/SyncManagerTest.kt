@@ -2874,6 +2874,31 @@ class SyncManagerTest {
     }
 
     @Test
+    fun authenticatedNewProfileUsesItsCapturedIdForServerDeletion() = runTest {
+        setupAuthenticated()
+        val newProfile = fakeUserProfileRepo.createAndActivateProfile("New profile", 1)
+        assertNull(newProfile.supabaseUserId)
+        fakeSyncRepo.routinesToReturn = listOf(
+            Routine(id = "routine-new-profile", name = "Deleted on portal", exercises = emptyList()),
+        )
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1740916800000L,
+                deletedRoutineIds = listOf("routine-new-profile"),
+            ),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val deletion = fakeSyncRepo.serverDeletionCalls.single()
+        assertEquals("user-123", deletion.ownerUserId)
+        assertEquals(newProfile.id, deletion.syncProfileId)
+        assertTrue(fakeSyncRepo.routinesToReturn.isEmpty())
+    }
+
+    @Test
     fun deletingActiveCycleSurfacesNotice() = runTest {
         setupAuthenticated()
         tokenStorage.setLastSyncTimestamp(5_000L)
