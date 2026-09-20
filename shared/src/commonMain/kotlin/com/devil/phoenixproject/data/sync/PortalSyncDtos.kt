@@ -83,6 +83,14 @@ data class PortalWorkoutSessionDto(
     val notes: String? = null,
     val workoutMode: String? = null, // SCREAMING_SNAKE
     val routineSessionId: String? = null,
+    /**
+     * Session-level note, authored on the portal website. The portal's session upsert
+     * writes `notes = EXCLUDED.notes` on every accepted push, so a push that leaves
+     * this null DELETES the note (AF-4). Mobile has no note editor of its own: the
+     * adapter fills this from the local SessionNotes side-table that the pull
+     * populates, so an accepted push simply hands the portal back its own note.
+     */
+    val notes: String? = null,
     val exercises: List<PortalExerciseDto> = emptyList(),
     // --- Session enrichment (GAPs 3-6) ---
     // Biomechanics summary

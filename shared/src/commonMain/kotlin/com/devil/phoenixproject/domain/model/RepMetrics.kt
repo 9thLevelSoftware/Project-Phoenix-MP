@@ -4,8 +4,9 @@ package com.devil.phoenixproject.domain.model
  * Complete metric data for a single rep.
  * Captured in real-time during workout, persisted at set completion.
  *
- * Curve arrays store sampled data at the capture rate (downsampled to 25Hz for DB storage).
- * JSON serialization for DB storage is handled in the repository layer (Plan 02).
+ * Curve arrays hold every sample captured for the rep, at the rate the machine
+ * notified it. Nothing downsamples them on the way to the database.
+ * JSON serialization for DB storage is handled in the repository layer.
  */
 data class RepMetricData(
     val repNumber: Int, // 1-indexed within the set

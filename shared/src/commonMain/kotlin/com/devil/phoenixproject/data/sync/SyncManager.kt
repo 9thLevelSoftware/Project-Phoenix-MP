@@ -398,6 +398,13 @@ class SyncManager(
         private const val COMPLETED_SET_IDENTITY_CHUNK = 500
 
         /**
+         * Routine groups the one-time portal-history repair re-sends per sync. Small
+         * enough that a device with years of history spreads the rebuild over many
+         * syncs instead of one huge push.
+         */
+        const val ROUTINE_GROUP_REPAIR_BATCH = 20
+
+        /**
          * Subscription tier that entitles a user to sync 50 Hz rep telemetry
          * (raw force curves) to the portal. Matches the portal's "Session replay
          * with 50 Hz telemetry" and "Force curves & VBT zones" Inferno features.
@@ -696,8 +703,9 @@ class SyncManager(
         // and mobile is expected to log the conflict and let the next pull
         // repair convergence). Without this, rejections were decoded but never
         // surfaced (audit F025).
-        val pushResponse = pushResult.getOrThrow()
-        val rejections = pushResponse.rejections
+        val pushOutcome = pushResult.getOrThrow()
+        val pushResponse = pushOutcome.response
+        val rejections = pushOutcome.rejections
         val rejectedRoutineIds = rejections.routines.mapTo(mutableSetOf()) { it.id }
         if (rejectedRoutineIds.isNotEmpty()) {
             tokenStorage.currentUser.value?.id?.let { userId ->
@@ -708,6 +716,7 @@ class SyncManager(
                     .addAll(rejectedRoutineIds)
             }
         }
+        val rejectedSessionIds = rejections.sessions.mapTo(mutableSetOf()) { it.id }
         val totalRejections = rejections.sessions.size + rejections.routines.size +
             rejections.cycles.size + rejections.externalActivities.size +
             rejections.rpgAttributes.size + rejections.gamificationStats.size
@@ -718,6 +727,47 @@ class SyncManager(
                     "cycles=${rejections.cycles.size}, externalActivities=${rejections.externalActivities.size}, " +
                     "rpgAttributes=${rejections.rpgAttributes.size}, gamificationStats=${rejections.gamificationStats.size}. " +
                     "Next pull will repair convergence."
+            }
+        }
+
+        // Stamp EXACTLY the local rows this push sent and the portal accepted.
+        // Sessions with NULL updatedAt would match every delta query indefinitely, but
+        // a row that never went out — because its routine group was held, or because it
+        // was saved while the push was in flight — must stay in the next delta.
+        //
+        // Never stamp a session the server rejected under LWW. A rejection can mean
+        // the portal skipped this session's set/rep data (its children are gated on
+        // acceptance), or that a local edit never landed; stamping would mark that
+        // unsent data as synced for good. Rejected rows stay pending; the re-push
+        // below gets one attempt at them after the pull, and anything still rejected
+        // waits for the next sync. A rejection id is the portal session id
+        // (routineSessionId for grouped routine sessions, else the local session id),
+        // which is exactly how the push indexed the rows it sent.
+        val gatherStartedAt = pushOutcome.gatherStartedAt
+        val acceptedRowIds = pushOutcome.localRowIdsByPortalSessionId
+            .filterKeys { it !in rejectedSessionIds }
+            .values
+            .flatten()
+        val rejectedRowCount = pushOutcome.localRowIdsByPortalSessionId
+            .filterKeys { it in rejectedSessionIds }
+            .values
+            .sumOf { it.size }
+        val stampedCount = syncRepository.updateSessionTimestamps(
+            sessionIds = acceptedRowIds,
+            timestamp = gatherStartedAt,
+            gatherStartedAt = gatherStartedAt,
+        )
+        if (acceptedRowIds.isNotEmpty() || rejectedRowCount > 0) {
+            Logger.d("SyncManager") {
+                "Stamped $stampedCount of ${acceptedRowIds.size} accepted session row(s) with updatedAt=$gatherStartedAt" +
+                    (
+                        if (acceptedRowIds.size > stampedCount) {
+                            "; ${acceptedRowIds.size - stampedCount} row(s) were edited during the push and stay pending"
+                        } else {
+                            ""
+                        }
+                        ) +
+                    (if (rejectedRowCount > 0) "; left $rejectedRowCount LWW-rejected session row(s) unstamped" else "")
             }
         }
 
@@ -736,7 +786,21 @@ class SyncManager(
         // the current state of local storage after the push has completed.
         val pullResult = pullRemoteChangesWithResult()
 
-        return if (pullResult.isSuccess) {
+        // One retry for sessions the portal's LWW gate turned away. The pull has just
+        // run, so any note written on the website is now in SessionNotes and will be
+        // sent back rather than erased. Ordering matters: pull first, re-push second.
+        if (pullResult.isSuccess && rejections.sessions.isNotEmpty()) {
+            runCatching {
+                rePushRejectedSessions(pushOutcome, rejections.sessions)
+            }.onFailure { e ->
+                Logger.w(e) {
+                    "LWW re-push threw after a successful push and pull; " +
+                        "rejected rows stay unstamped for the next sync."
+                }
+            }
+        }
+
+        return@withLock if (pullResult.isSuccess) {
             // Full success: both push and pull succeeded
             val completedPull = pullResult.getOrThrow()
             val finalSyncTime = completedPull.syncTime
@@ -836,10 +900,44 @@ class SyncManager(
     private suspend fun <T> withProfileMutationBarrier(block: suspend () -> T): T =
         profileMutationBarrier?.withExclusive(block) ?: block()
 
-    private suspend fun pushLocalChanges(): Result<PortalSyncPushResponse> {
+    /**
+     * What one push did, beyond the server's response.
+     *
+     * The caller needs all of it: which local rows actually went out (so it can stamp
+     * exactly those the portal accepted), the session DTOs as sent (so a session the
+     * portal LWW-rejected can be re-sent once with a timestamp it will take), and the
+     * device time the gather started (so a row edited mid-push is left for next time).
+     */
+    private data class PushOutcome(
+        val response: PortalSyncPushResponse,
+        val gatherStartedAt: Long,
+        /** Portal session id → the local WorkoutSession row ids sent under it. */
+        val localRowIdsByPortalSessionId: Map<String, List<String>>,
+        val sentSessionsById: Map<String, PortalWorkoutSessionDto>,
+        val telemetryByPortalSessionId: Map<String, List<PortalRepTelemetryDto>>,
+        /** Rejections from EVERY batch, not just the last response. */
+        val rejections: SyncRejectionsDto,
+        val rePushContext: RePushContext,
+    )
+
+    /** The payload envelope fields a post-rejection re-push has to repeat. */
+    private data class RePushContext(
+        val deviceId: String,
+        val platform: String,
+        val lastSync: Long,
+        val profileId: String,
+        val profileName: String,
+    )
+
+    private suspend fun pushLocalChanges(): Result<PushOutcome> {
         val userId = tokenStorage.currentUser.value?.id
             ?: return Result.failure(PortalApiException("Not authenticated", null, 401))
 
+        // Device time taken BEFORE anything is gathered. Two things key off it: the
+        // post-push stamp skips rows edited after it (they hold data the portal never
+        // saw), and a routine group with unsent rows is sent with at least this
+        // timestamp so the portal's server-clock LWW gate accepts it.
+        val gatherStartedAt = currentTimeMillis()
         val deviceId = tokenStorage.getDeviceId()
         val lastSync = tokenStorage.getLastSyncTimestamp()
         val platform = getPlatformName()
@@ -866,8 +964,11 @@ class SyncManager(
 
         // 1. Freeze the dirty workout generation snapshot, expanding each dirty
         // portal parent to all live component rows before any payload is built.
+        // The snapshot is already group-complete (every live row under a dirty portal
+        // parent). PR 8's group expansion below then adds repair rows and applies the
+        // hold guard on top of it.
         val workoutSnapshot = syncRepository.getDirtyWorkoutSnapshot(activeProfileId)
-        val sessions = dedupeWorkoutSessionsById(
+        val delta = dedupeWorkoutSessionsById(
             workoutSnapshot.sessions,
             context = "Push payload",
         )
@@ -892,6 +993,58 @@ class SyncManager(
             ?.getPendingCycleDeletions(userId, activeProfileId)
             .orEmpty()
             .filter { CANONICAL_UUID_REGEX.matches(it.id) }
+
+        // 1a. Group-complete gather (AF-3). One portal workout = every mobile row that
+        // shares a routineSessionId, and the portal's replace_session_children DELETEs
+        // all of a workout's exercises before re-inserting the payload. Sending only the
+        // changed rows therefore deletes the sets pushed by earlier syncs — which, with
+        // one sync per completed set, is every set but the last. Re-gather the whole
+        // group whenever any of its rows is in the delta.
+        val deltaGroupIds = delta.mapNotNullTo(linkedSetOf()) { it.routineSessionId }
+        val repairGroupIds = routineGroupRepairCandidates(activeProfileId, exclude = deltaGroupIds)
+        val groupIds = deltaGroupIds + repairGroupIds.keys
+
+        // 1b. Hold, never split. A sibling this device only pulled and has no
+        // measurements for cannot be rebuilt from local data, so the group can only be
+        // sent incomplete — and that deletes the sibling's exercise, sets and telemetry
+        // on the portal. Hold the whole group instead: the portal keeps what it has and
+        // the rows stay unstamped. In normal use this cannot lose an upload, because
+        // every workout gets a fresh routineSessionId.
+        val blockedSiblingsByGroup = syncRepository.getBlockedRoutineGroupSiblings(groupIds, activeProfileId)
+        val heldGroupIds = blockedSiblingsByGroup.keys
+        if (heldGroupIds.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                "Push payload: holding ${heldGroupIds.size} routine group(s) — a sibling was pulled from " +
+                    "the portal and this device has no rep data for it, so sending the group would delete " +
+                    "that sibling's portal sets. Groups/blocking rows: " +
+                    blockedSiblingsByGroup.entries.take(10).joinToString { (group, blocking) ->
+                        "$group<-[${blocking.joinToString()}]"
+                    }
+            }
+        }
+
+        val pushableGroupIds = groupIds - heldGroupIds
+        val groupSiblings = syncRepository.getWorkoutSessionsByRoutineSessionIds(
+            pushableGroupIds,
+            activeProfileId,
+        )
+        val deltaIds = delta.mapTo(HashSet()) { it.id }
+        val heldDeltaRowCount = delta.count { it.routineSessionId in heldGroupIds }
+        if (heldDeltaRowCount > 0) {
+            Logger.w("SyncManager") {
+                "Push payload: $heldDeltaRowCount local row(s) stay unstamped because their routine group is held"
+            }
+        }
+        val sessions = dedupeWorkoutSessionsById(
+            delta.filter { it.routineSessionId !in heldGroupIds } + groupSiblings,
+            context = "Push payload (group-complete)",
+        )
+        if (sessions.size > delta.size - heldDeltaRowCount) {
+            Logger.d("SyncManager") {
+                "Push payload: re-gathered ${sessions.size - (delta.size - heldDeltaRowCount)} routine sibling row(s) " +
+                    "across ${pushableGroupIds.size} group(s) so no portal workout is sent partially"
+            }
+        }
 
         // Dedicated PR rows need the full snapshot so stable UUID, updatedAt, and
         // deletedAt all reach the portal. Reuse that same projection for legacy
@@ -941,6 +1094,7 @@ class SyncManager(
                     session,
                     completedSetsBySessionId[session.id].orEmpty(),
                 ),
+                isPendingUpload = session.id in deltaIds,
             )
         }
         val personalRecordDtos = recentPRs.map { pr ->
@@ -1104,34 +1258,65 @@ class SyncManager(
         // exercise IDs may be missing remotely even after a successful sync.
         val customExerciseDtos = syncRepository.getCustomExercisesModifiedSince(0L)
 
-        // 7. Build the velocity-based 1RM map (catalog exerciseId → latest passing
-        // per-cable estimate). Looked up here (suspend context with repo + profile)
-        // so the pure adapter just attaches the value. Distinct from the rep-based
-        // estimate the adapter computes inline.
+        // 7. Build the velocity-based 1RM map (catalog exerciseId → its passing
+        // per-cable estimates, oldest first). Looked up here (suspend context with
+        // repo + profile) so the pure adapter just attaches the value. Distinct from
+        // the rep-based estimate the adapter computes inline.
         //
         // Single query for the whole profile (getAllPassing) instead of one
         // getLatestPassing per distinct exercise — avoids an N+1 during full sync.
-        // getAllPassing returns the full passing history; pick the latest per
-        // exercise with the SAME ordering as getLatestPassing (computedAt DESC,
-        // then id DESC as the tie-break) so the two paths agree exactly. The
-        // adapter only reads keys for exercises actually in this push, so a
-        // superset map is harmless.
+        // The whole passing history is kept, ordered the same way getLatestPassing
+        // orders it (computedAt, then id as the tie-break), so the adapter can attach
+        // the estimate that was current when each session was recorded instead of
+        // stamping today's number onto last year's workout. The adapter only reads
+        // keys for exercises actually in this push, so a superset map is harmless.
         val velocityEstimatesByExerciseId = velocityOneRepMaxRepository
             .getAllPassing(activeProfileId)
+            .sortedWith(compareBy({ it.computedAt }, { it.id }))
             .groupBy { it.exerciseId }
-            .mapNotNull { (exId, estimates) ->
-                estimates
-                    .maxWithOrNull(compareBy({ it.computedAt }, { it.id }))
-                    ?.let { exId to it.estimatedPerCableKg }
+            .mapValues { (_, estimates) ->
+                estimates.map {
+                    PortalSyncAdapter.VelocityOneRepMaxPoint(it.computedAt, it.estimatedPerCableKg)
+                }
             }
             .toMap()
+
+        // Gate telemetry push behind the Inferno tier. Force-curve / 50 Hz session
+        // replay is an Inferno-only feature per the subscription matrix. Other
+        // tiers (Ember, Flame) and users whose tier is unresolved (offline login,
+        // network error during subscription check) fail closed — no telemetry on
+        // the wire. Rep summaries still ship in `sessions` regardless of tier so
+        // Ember/Flame users get full history, PRs, and analytics without the raw
+        // per-sample payload that blows past the server cap. When Inferno
+        // launches, this gate automatically opens for those subscribers with no
+        // further code changes.
+        //
+        // Decided BEFORE the build so the telemetry DTOs are never constructed for a
+        // tier that cannot send them: a 50 Hz force curve is the largest thing in a
+        // push payload and it used to be built in full and then thrown away.
+        val tier = tokenStorage.getSubscriptionTier()
+        val telemetryAllowed = tier == TELEMETRY_SYNC_TIER
+
+        // 7a. Notes the portal already holds for these workouts. The portal's session
+        // upsert writes notes = EXCLUDED.notes on every accepted push, so a push that
+        // omits them deletes a note written on the website (AF-4).
+        val portalSessionIds = sessions.mapTo(linkedSetOf()) { it.routineSessionId ?: it.id }
+        val notesByPortalSessionId = syncRepository.getSessionNotesForIds(portalSessionIds)
 
         // 7b. Build portal session + telemetry DTOs (telemetry setIds match generated exercise set IDs)
         val buildResult = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(
             sessionsWithReps,
             userId,
             velocityEstimatesByExerciseId,
+            notesByPortalSessionId = notesByPortalSessionId,
+            groupPushFloorEpochMs = gatherStartedAt,
+            includeTelemetry = telemetryAllowed,
         )
+        val effectiveTelemetry = buildResult.telemetry
+        // Main's post-build notes floor: a note newer than the session's own updatedAt
+        // must push the session's updatedAt forward so the portal's LWW gate takes the
+        // note. PR 8's adapter already filled `notes` from notesByPortalSessionId; this
+        // only raises updatedAt when SessionNotes is newer.
         val sessionNotesByPortalId = workoutSnapshot.sessionNotesByPortalId
         val portalSessions = buildResult.sessions.map { session ->
             val notes = sessionNotesByPortalId[session.id] ?: return@map session
@@ -1145,24 +1330,10 @@ class SyncManager(
                 ).toString(),
             )
         }
-
-        // Gate telemetry push behind the Inferno tier. Force-curve / 50 Hz session
-        // replay is an Inferno-only feature per the subscription matrix. Other
-        // tiers (Ember, Flame) and users whose tier is unresolved (offline login,
-        // network error during subscription check) fail closed — no telemetry on
-        // the wire. Rep summaries still ship in `sessions` regardless of tier so
-        // Ember/Flame users get full history, PRs, and analytics without the raw
-        // per-sample payload that blows past the server cap. When Inferno
-        // launches, this gate automatically opens for those subscribers with no
-        // further code changes.
-        val tier = tokenStorage.getSubscriptionTier()
-        val telemetryAllowed = tier == TELEMETRY_SYNC_TIER
-        val effectiveTelemetry = if (telemetryAllowed) buildResult.telemetry else emptyList()
-        if (!telemetryAllowed && buildResult.telemetry.isNotEmpty()) {
-            Logger.i("SyncManager") {
+        if (!telemetryAllowed) {
+            Logger.d("SyncManager") {
                 "Telemetry push gated off: tier=${tier ?: "unknown"} " +
-                    "($TELEMETRY_SYNC_TIER required). Skipping ${buildResult.telemetry.size} points; " +
-                    "rep summaries still sync."
+                    "($TELEMETRY_SYNC_TIER required); rep summaries still sync."
             }
         }
 
@@ -1365,6 +1536,9 @@ class SyncManager(
                 "${assessmentDtos.size} assessments"
         }
 
+        // Rejections from EVERY batch. Reading only the last response's list would
+        // silently stamp rows an earlier batch's rejection covered.
+        val collectedRejections = mutableListOf<SyncRejectionsDto>()
         if (batchPlan.size <= 1) {
             // --- Single-push fast path (most common case) ---
             val payload = PortalSyncPayload(
@@ -1388,11 +1562,12 @@ class SyncManager(
                 externalActivities = externalActivityDtos,
                 personalRecords = personalRecordDtos,
             )
-            rejectDuplicatePushPayloadKeys(payload)?.let { return it }
+            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
             val result = pushPayloadWithRateLimit(payload)
-            if (result.isFailure) return result
+            if (result.isFailure) return Result.failure(result.pushError())
             val singleResponse = result.getOrThrow()
             lastResponse = singleResponse
+            collectedRejections += singleResponse.rejections
             acknowledgeAcceptedWorkoutParents(
                 workoutSnapshot = workoutSnapshot,
                 sentPortalSessionIds = allSessions.mapTo(linkedSetOf()) { it.id },
@@ -1450,7 +1625,7 @@ class SyncManager(
                     personalRecords = if (isLastBatch) personalRecordDtos else emptyList(),
                 )
 
-                rejectDuplicatePushPayloadKeys(payload)?.let { return it }
+                rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
                 val result = pushPayloadWithRateLimit(payload)
                 if (result.isFailure) {
                     val error = result.exceptionOrNull()
@@ -1489,11 +1664,12 @@ class SyncManager(
                     // CRITICAL: Do NOT update lastSync timestamp on failure.
                     // All batches must succeed before we advance the timestamp.
                     // On next retry, the full batch sequence will be re-sent.
-                    return result
+                    return Result.failure(result.pushError())
                 }
 
                 val batchResponse = result.getOrThrow()
                 lastResponse = batchResponse
+                collectedRejections += batchResponse.rejections
                 acknowledgeAcceptedWorkoutParents(
                     workoutSnapshot = workoutSnapshot,
                     sentPortalSessionIds = batchSessions.mapTo(linkedSetOf()) { it.id },
@@ -1602,7 +1778,35 @@ class SyncManager(
             }
         }
 
-        return Result.success(lastResponse!!)
+        // Walk the repair cursor past the groups this push handled (including any it
+        // had to hold), so the one-time history repair works backwards a batch at a
+        // time instead of re-reading the same groups forever. Only after the push
+        // succeeded: a failure returns above and the cursor is retried untouched.
+        advanceRoutineGroupRepairCursor(activeProfileId, repairGroupIds)
+
+        return Result.success(
+            PushOutcome(
+                response = lastResponse!!,
+                gatherStartedAt = gatherStartedAt,
+                localRowIdsByPortalSessionId = sessions.groupBy(
+                    keySelector = { it.routineSessionId ?: it.id },
+                    valueTransform = { it.id },
+                ),
+                sentSessionsById = allSessions.associateBy { it.id },
+                telemetryByPortalSessionId = allSessions.associate { session ->
+                    val setIds = sessionSetIds[session.id] ?: emptySet()
+                    session.id to setIds.flatMap { setId -> telemetryBySetId[setId] ?: emptyList() }
+                },
+                rejections = mergeRejections(collectedRejections),
+                rePushContext = RePushContext(
+                    deviceId = deviceId,
+                    platform = platform,
+                    lastSync = lastSync,
+                    profileId = payloadProfileId,
+                    profileName = payloadProfileName,
+                ),
+            ),
+        )
         // No updateServerIds() -- portal uses client-provided UUIDs
     }
 
@@ -1651,6 +1855,171 @@ class SyncManager(
                 ?: currentTimeMillis()
             trainingCycleRepository?.saveRejectedCycleDraft(rejectedComponent, rejectedAt)
         }
+    }
+
+    /**
+     * Re-send, once, the sessions the portal's LWW gate rejected.
+     *
+     * Why a rejection is not self-healing: the portal's `sessions_updated_at` trigger
+     * stamps `updated_at = now()` on every accepted update, and the gate then takes the
+     * next push only if that server time is `<= EXCLUDED.updated_at`. A routine set
+     * whose local timestamp is the moment the set STARTED can sit behind the server
+     * clock indefinitely — short rests, a slow network, or a device clock that lags.
+     * Re-sending the same payload would be rejected again forever, and the workout's
+     * last sets would never reach the portal.
+     *
+     * So this re-push uses the server's own number: `serverUpdatedAt + 1 ms`, straight
+     * off the rejection. It cannot steamroll a concurrent web edit, because that edit's
+     * trigger time is already past `serverUpdatedAt + 1 ms` and the gate rejects us
+     * again. It also re-reads SessionNotes after the pull, so the note the portal holds
+     * goes back untouched.
+     *
+     * Bounded on purpose: one attempt per sync, and anything still rejected stays
+     * unstamped for the next one.
+     */
+    private suspend fun rePushRejectedSessions(
+        outcome: PushOutcome,
+        sessionRejections: List<SyncRejectionDto>,
+    ) {
+        val retryable = sessionRejections.mapNotNull { rejection ->
+            val dto = outcome.sentSessionsById[rejection.id] ?: return@mapNotNull null
+            val serverMillis = rejection.serverUpdatedAt
+                ?.let { iso -> runCatching { kotlin.time.Instant.parse(iso).toEpochMilliseconds() }.getOrNull() }
+                ?: return@mapNotNull null
+            dto to serverMillis
+        }
+        if (retryable.isEmpty()) {
+            Logger.w("SyncManager") {
+                "Push LWW: ${sessionRejections.size} rejected session(s) cannot be re-pushed this sync " +
+                    "(no server timestamp, or not part of this payload); they stay unstamped for the next sync."
+            }
+            return
+        }
+
+        val freshNotes = syncRepository.getSessionNotesForIds(retryable.map { it.first.id })
+        val retrySessions = retryable.map { (dto, serverMillis) ->
+            dto.copy(
+                updatedAt = kotlin.time.Instant.fromEpochMilliseconds(serverMillis + 1).toString(),
+                notes = freshNotes[dto.id],
+            )
+        }
+        val retryTelemetry = retrySessions.flatMap { outcome.telemetryByPortalSessionId[it.id].orEmpty() }
+
+        Logger.i("SyncManager") {
+            "Re-pushing ${retrySessions.size} LWW-rejected session(s) with serverUpdatedAt+1ms after the pull"
+        }
+
+        val retryTelemetryCounts = retrySessions.associate {
+            it.id to outcome.telemetryByPortalSessionId[it.id].orEmpty().size
+        }
+        val stillRejected = mutableSetOf<String>()
+        var anyFailure = false
+        for (batch in planSessionBatches(retrySessions, retryTelemetryCounts)) {
+            if (batch.isEmpty()) continue
+            val batchIds = batch.mapTo(mutableSetOf()) { it.id }
+            val payload = PortalSyncPayload(
+                deviceId = outcome.rePushContext.deviceId,
+                platform = outcome.rePushContext.platform,
+                lastSync = outcome.rePushContext.lastSync,
+                sessions = batch,
+                telemetry = retryTelemetry.filter { point ->
+                    batch.any { session ->
+                        session.exercises.any { ex -> ex.sets.any { set -> set.id == point.setId } }
+                    }
+                },
+                profileId = outcome.rePushContext.profileId,
+                profileName = outcome.rePushContext.profileName,
+            )
+            val result = pushPayloadWithRateLimit(payload)
+            if (result.isFailure) {
+                anyFailure = true
+                Logger.w("SyncManager") {
+                    "LWW re-push failed for ${batch.size} session(s): ${result.exceptionOrNull()?.message}. " +
+                        "Their rows stay unstamped for the next sync."
+                }
+                stillRejected += batchIds
+                continue
+            }
+            stillRejected += result.getOrThrow().rejections.sessions.map { it.id }
+        }
+
+        val acceptedRowIds = retrySessions
+            .map { it.id }
+            .filter { it !in stillRejected }
+            .flatMap { outcome.localRowIdsByPortalSessionId[it].orEmpty() }
+        if (acceptedRowIds.isNotEmpty()) {
+            val stamped = syncRepository.updateSessionTimestamps(
+                sessionIds = acceptedRowIds,
+                timestamp = outcome.gatherStartedAt,
+                gatherStartedAt = outcome.gatherStartedAt,
+            )
+            Logger.i("SyncManager") {
+                "LWW re-push accepted ${acceptedRowIds.size} session row(s); stamped $stamped"
+            }
+        }
+        if (stillRejected.isNotEmpty() && !anyFailure) {
+            Logger.w("SyncManager") {
+                "LWW re-push still rejected ${stillRejected.size} session(s); they stay unstamped for the next sync."
+            }
+        }
+    }
+
+    private fun mergeRejections(batches: List<SyncRejectionsDto>): SyncRejectionsDto {
+        if (batches.size <= 1) return batches.firstOrNull() ?: SyncRejectionsDto()
+        fun merge(select: (SyncRejectionsDto) -> List<SyncRejectionDto>) = batches.flatMap(select).distinctBy { it.id }
+        return SyncRejectionsDto(
+            sessions = merge { it.sessions },
+            routines = merge { it.routines },
+            cycles = merge { it.cycles },
+            externalActivities = merge { it.externalActivities },
+            rpgAttributes = merge { it.rpgAttributes },
+            gamificationStats = merge { it.gamificationStats },
+        )
+    }
+
+    /**
+     * One-time repair for routine workouts the pre-fix per-set push truncated on the
+     * portal. A group qualifies when it has at least two live rows and at least one
+     * already-stamped row: the portal saw it, but only ever one set at a time. Sending
+     * the group complete rebuilds it, and is idempotent because the portal replaces a
+     * workout's children with exactly what the payload carries.
+     *
+     * Capped per sync and walked newest-first behind a stored cursor, so a long history
+     * is rebuilt over several syncs instead of one enormous push. Held groups (a pulled
+     * sibling with no local data) are skipped by the same guard as the ordinary push.
+     *
+     * @return routineSessionId → newest member timestamp for this sync's batch.
+     */
+    private suspend fun routineGroupRepairCandidates(
+        profileId: String,
+        exclude: Set<String>,
+    ): Map<String, Long> {
+        val cursor = tokenStorage.getRoutineGroupRepairCursor(profileId)
+        if (cursor <= 0L) return emptyMap()
+        val candidates = syncRepository
+            .getRoutineGroupRepairCandidates(cursor, ROUTINE_GROUP_REPAIR_BATCH, profileId)
+            .filter { (groupId, _) -> groupId !in exclude }
+            .toMap()
+        if (candidates.isNotEmpty()) {
+            Logger.i("SyncManager") {
+                "Routine group repair: re-sending ${candidates.size} complete routine workout(s) " +
+                    "older than $cursor to rebuild portal history lost to the per-set push"
+            }
+        }
+        return candidates
+    }
+
+    private fun advanceRoutineGroupRepairCursor(profileId: String, processed: Map<String, Long>) {
+        val cursor = tokenStorage.getRoutineGroupRepairCursor(profileId)
+        if (cursor <= 0L) return
+        if (processed.size < ROUTINE_GROUP_REPAIR_BATCH) {
+            // The query returned less than a full batch, so nothing older is left.
+            tokenStorage.setRoutineGroupRepairCursor(profileId, 0L)
+            Logger.i("SyncManager") { "Routine group repair: complete for profile $profileId" }
+            return
+        }
+        val oldest = processed.values.min()
+        tokenStorage.setRoutineGroupRepairCursor(profileId, oldest)
     }
 
     private suspend fun logicalSetCompletedSetsBySessionId(
@@ -2324,9 +2693,14 @@ class SyncManager(
         // session id). Sessions without notes are skipped. Prefer
         // session.updatedAt for LWW; fall back to startedAt, then now, when
         // older Edge Function versions omit updatedAt.
+        //
+        // Blank notes are carried too, not filtered out: the portal writes NULL when a
+        // note is cleared on the website, and the push now re-sends whatever
+        // SessionNotes holds. Dropping the clear here would make the phone hand the
+        // portal back the text the user just deleted. mergeSessionNotes applies it as a
+        // timestamp-ordered deletion and ignores a blank note for an id it never had.
         val sessionNotesMap: Map<String, com.devil.phoenixproject.data.repository.SessionNotesEntry> =
             pullResponse.sessions
-                .filter { !it.notes.isNullOrBlank() }
                 .associate { ps ->
                     ps.id to com.devil.phoenixproject.data.repository.SessionNotesEntry(
                         notes = ps.notes,
@@ -2591,12 +2965,15 @@ class SyncManager(
 
     private fun rejectDuplicatePushPayloadKeys(
         payload: PortalSyncPayload,
-    ): Result<PortalSyncPushResponse>? {
+    ): PortalApiException? {
         val duplicate = findPushPayloadDuplicateKeys(payload).firstOrNull() ?: return null
         val message = duplicate.toExceptionMessage()
         Logger.e("SyncManager") { message }
-        return Result.failure(PortalApiException(message, null, 400))
+        return PortalApiException(message, null, 400)
     }
+
+    /** The failure a failed push Result carries. */
+    private fun Result<PortalSyncPushResponse>.pushError(): Throwable = exceptionOrNull() ?: PortalApiException("Push failed")
 }
 
 internal data class PushPayloadDuplicateKeys(

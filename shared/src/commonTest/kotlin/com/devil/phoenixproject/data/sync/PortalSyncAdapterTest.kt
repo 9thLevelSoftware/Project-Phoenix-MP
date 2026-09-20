@@ -1464,7 +1464,7 @@ class PortalSyncAdapterTest {
         val result = PortalSyncAdapter.toPortalWorkoutSessions(
             sessions,
             "user-1",
-            velocityEstimatesByExerciseId = mapOf("ex1" to 92f),
+            velocityEstimatesByExerciseId = velocityPoints("ex1", 92f),
         )
 
         val exercise = result[0].exercises[0]
@@ -1492,7 +1492,7 @@ class PortalSyncAdapterTest {
         val result = PortalSyncAdapter.toPortalWorkoutSessions(
             sessions,
             "user-1",
-            velocityEstimatesByExerciseId = mapOf("ex1" to 92f),
+            velocityEstimatesByExerciseId = velocityPoints("ex1", 92f),
         )
 
         val exercise = result[0].exercises[0]
@@ -1521,7 +1521,7 @@ class PortalSyncAdapterTest {
         val result = PortalSyncAdapter.toPortalWorkoutSessions(
             sessions,
             "user-1",
-            velocityEstimatesByExerciseId = mapOf("other-ex" to 80f),
+            velocityEstimatesByExerciseId = velocityPoints("other-ex", 80f),
         )
 
         val exercise = result[0].exercises[0]
@@ -1538,7 +1538,7 @@ class PortalSyncAdapterTest {
         val result = PortalSyncAdapter.toPortalWorkoutSessions(
             sessions,
             "user-1",
-            velocityEstimatesByExerciseId = mapOf("ex1" to 92f),
+            velocityEstimatesByExerciseId = velocityPoints("ex1", 92f),
         )
 
         assertNull(result[0].exercises[0].velocityEstimatedOneRepMaxKg)
@@ -1556,6 +1556,17 @@ class PortalSyncAdapterTest {
     }
 
     // ========== Factory Helpers ==========
+
+    /**
+     * One passing VBT estimate, computed before any fixture session (fixture
+     * timestamps start at 1700000000000L), so the as-of-session lookup finds it.
+     */
+    private fun velocityPoints(
+        exerciseId: String,
+        estimatePerCableKg: Float,
+        computedAt: Long = 1_600_000_000_000L,
+    ): Map<String, List<PortalSyncAdapter.VelocityOneRepMaxPoint>> =
+        mapOf(exerciseId to listOf(PortalSyncAdapter.VelocityOneRepMaxPoint(computedAt, estimatePerCableKg)))
 
     private fun makeSessionWithReps(
         sessionId: String = "session-${idCounter++}",

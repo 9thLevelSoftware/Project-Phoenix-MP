@@ -3527,6 +3527,59 @@ WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
 AND profile_id = :profileId
 ORDER BY timestamp DESC;
 
+-- Group-complete push gather. The portal's replace_session_children DELETEs every
+-- exercise of a workout before re-inserting the payload, so a portal workout must
+-- only ever be pushed with EVERY live row of its routine group. Whenever one row of
+-- a group is in the delta above, the push re-gathers the whole group through this
+-- query.
+--
+-- Deliberately NOT selectSessionsByRoutineSessionId: that one also filters
+-- (workingReps > 0 OR totalReps > 0), which the delta does not, so the two sets of
+-- rows would disagree and the push would still drop a sibling.
+selectSessionsByRoutineSessionIds:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+AND routineSessionId IN :ids
+AND deletedAt IS NULL
+ORDER BY timestamp ASC;
+
+-- Rows that make their whole routine group unpushable: a sibling this device only
+-- ever pulled and holds no measurements for. Sending the group without it would
+-- delete its exercise and sets on the portal (replace_session_children), and sending
+-- it as an empty exercise would overwrite real portal data with nothing. The push
+-- holds the whole group instead and leaves it unstamped.
+--
+-- Same three-table "this device has local data" predicate as
+-- selectSessionsModifiedSince, updatePulledSessionTag and the migration 48 backfill
+-- (MetricSample / RepMetric / CompletedSet) — keep the four in step.
+selectBlockedRoutineGroupSiblings:
+SELECT id, routineSessionId FROM WorkoutSession
+WHERE profile_id = :profileId
+AND routineSessionId IN :ids
+AND deletedAt IS NULL
+AND EXISTS (SELECT 1 FROM PulledWorkoutSession WHERE PulledWorkoutSession.id = WorkoutSession.id)
+AND NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = WorkoutSession.id)
+AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
+AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id);
+
+-- One-time routine-group repair: routine workouts whose portal copy was truncated
+-- to the last-synced set by the pre-fix per-set push. A group qualifies when it has
+-- at least two live rows and at least one already-stamped row (so it did reach the
+-- portal at least once). Newest first, walked with a `< :beforeTimestamp` cursor so
+-- a device works backwards through its history a capped batch per sync.
+selectRoutineGroupRepairCandidates:
+SELECT routineSessionId AS routineSessionId, MAX(timestamp) AS newestTimestamp
+FROM WorkoutSession
+WHERE profile_id = :profileId
+AND routineSessionId IS NOT NULL
+AND deletedAt IS NULL
+GROUP BY routineSessionId
+HAVING COUNT(*) >= 2
+AND SUM(CASE WHEN updatedAt IS NOT NULL THEN 1 ELSE 0 END) >= 1
+AND MAX(timestamp) < :beforeTimestamp
+ORDER BY MAX(timestamp) DESC
+LIMIT :limit;
+
 -- Get soft-deleted sessions (for push)
 selectDeletedSessionsSince:
 SELECT id, serverId, deletedAt FROM WorkoutSession
@@ -3686,6 +3739,18 @@ SELECT * FROM Routine WHERE serverId = ?;
 -- Mark session updatedAt on save
 updateSessionTimestamp:
 UPDATE WorkoutSession SET updatedAt = ? WHERE id = ?;
+
+-- Post-push stamping, for exactly the ids the portal accepted.
+--
+-- `:gatherStartedAt` is device time taken just before the push gathered its rows. A
+-- row edited (or inserted) while the push was in flight has a newer `updatedAt` and
+-- is skipped here, so it stays in the next sync's delta instead of being marked
+-- synced with data the portal never saw. An unstamped row (updatedAt IS NULL) was
+-- never sent before and is always stamped.
+updateSessionTimestampsByIds:
+UPDATE WorkoutSession SET updatedAt = :timestamp
+WHERE id IN :ids
+AND (updatedAt IS NULL OR updatedAt <= :gatherStartedAt);
 
 -- ==================== SMART SUGGESTIONS QUERIES ====================
 

@@ -90,7 +90,8 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> =
         workoutSessionsToReturn.filter { session ->
-            updatedSessionTimestamps[session.id]?.let { it > timestamp } ?: true
+            session.id !in pulledSessionIdsWithoutLocalData &&
+                (updatedSessionTimestamps[session.id]?.let { it > timestamp } ?: true)
         }
 
     override suspend fun getDirtyWorkoutSnapshot(profileId: String): WorkoutSyncSnapshot = WorkoutSyncSnapshot(
@@ -112,6 +113,64 @@ class FakeSyncRepository : SyncRepository {
         acceptedPortalSessionIds: Set<String>,
     ) {
         acknowledgedWorkoutParentIdCalls += acceptedPortalSessionIds
+    }
+
+    /**
+     * Live rows of a routine group that are NOT in [workoutSessionsToReturn] — i.e.
+     * siblings already stamped out of the delta window. Approximates
+     * selectSessionsByRoutineSessionIds together with [workoutSessionsToReturn].
+     */
+    var routineGroupSiblings: List<WorkoutSession> = emptyList()
+
+    /** Ids that carry the PulledWorkoutSession marker and have no local children. */
+    var pulledSessionIdsWithoutLocalData: Set<String> = emptySet()
+
+    var getWorkoutSessionsByRoutineSessionIdsCalls: MutableList<List<String>> = mutableListOf()
+
+    override suspend fun getWorkoutSessionsByRoutineSessionIds(
+        routineSessionIds: Collection<String>,
+        profileId: String,
+    ): List<WorkoutSession> {
+        getWorkoutSessionsByRoutineSessionIdsCalls += routineSessionIds.toList()
+        val ids = routineSessionIds.toSet()
+        return (workoutSessionsToReturn + routineGroupSiblings)
+            .filter { it.routineSessionId in ids }
+            .distinctBy { it.id }
+    }
+
+    override suspend fun getBlockedRoutineGroupSiblings(
+        routineSessionIds: Collection<String>,
+        profileId: String,
+    ): Map<String, List<String>> {
+        val ids = routineSessionIds.toSet()
+        return (workoutSessionsToReturn + routineGroupSiblings)
+            .filter { it.routineSessionId in ids && it.id in pulledSessionIdsWithoutLocalData }
+            .distinctBy { it.id }
+            .groupBy({ it.routineSessionId!! }, { it.id })
+    }
+
+    /** routineSessionId → newest member timestamp, newest first. */
+    var routineGroupRepairCandidates: List<Pair<String, Long>> = emptyList()
+    var routineGroupRepairCalls: MutableList<Pair<Long, Int>> = mutableListOf()
+
+    override suspend fun getRoutineGroupRepairCandidates(
+        beforeTimestamp: Long,
+        limit: Int,
+        profileId: String,
+    ): List<Pair<String, Long>> {
+        routineGroupRepairCalls += beforeTimestamp to limit
+        return routineGroupRepairCandidates
+            .filter { it.second < beforeTimestamp }
+            .sortedByDescending { it.second }
+            .take(limit)
+    }
+
+    /** Portal session id → locally stored note. */
+    var sessionNotesByPortalId: MutableMap<String, String?> = mutableMapOf()
+
+    override suspend fun getSessionNotesForIds(portalSessionIds: Collection<String>): Map<String, String?> {
+        val ids = portalSessionIds.toSet()
+        return sessionNotesByPortalId.filterKeys { it in ids }
     }
 
     override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> = routinesToReturn
@@ -167,6 +226,29 @@ class FakeSyncRepository : SyncRepository {
     override suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long) {
         updateSessionTimestampCalls += sessionId
         updatedSessionTimestamps[sessionId] = timestamp
+    }
+
+    /**
+     * Rows edited (or inserted) after the push gathered its payload, keyed by id with
+     * the edit time. Mirrors updateSessionTimestampsByIds' guard: such a row keeps its
+     * newer updatedAt and is not stamped.
+     */
+    var sessionEditedAtById: MutableMap<String, Long> = mutableMapOf()
+
+    override suspend fun updateSessionTimestamps(
+        sessionIds: Collection<String>,
+        timestamp: Long,
+        gatherStartedAt: Long,
+    ): Int {
+        var stamped = 0
+        sessionIds.distinct().forEach { id ->
+            val existing = sessionEditedAtById[id] ?: updatedSessionTimestamps[id]
+            if (existing != null && existing > gatherStartedAt) return@forEach
+            updateSessionTimestampCalls += id
+            updatedSessionTimestamps[id] = timestamp
+            stamped++
+        }
+        return stamped
     }
 
     // Issue #528: capture PR stamp calls so SyncManagerTest can assert that
