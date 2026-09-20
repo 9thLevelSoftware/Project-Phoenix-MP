@@ -3,6 +3,7 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.preferences.JustLiftDefaults
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.preferences.SingleExerciseDefaults
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.UserPreferences
 import com.devil.phoenixproject.domain.model.VulgarTier
@@ -55,6 +56,10 @@ class FakePreferencesManager : PreferencesManager {
 
     override suspend fun setExerciseCatalogSource(source: String) {
         exerciseCatalogSource = source
+    }
+
+    override suspend fun setLastConnectedModel(model: PhoenixModel) {
+        _preferencesFlow.value = _preferencesFlow.value.copy(lastConnectedModel = model)
     }
 
     suspend fun setBeepsEnabled(enabled: Boolean) {

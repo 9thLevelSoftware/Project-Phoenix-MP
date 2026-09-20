@@ -321,7 +321,7 @@ class DropSetRuntimeRecoveryTest {
             assertEquals(beforeParameters, harness.coordinator.workoutParameters.value)
             assertNull(harness.restTransitionPlan.value)
             assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty())
-            assertTrue(harness.fakeBleRepo.workoutParameters.isEmpty())
+            assertTrue(harness.fakeBleRepo.programCommands.isEmpty())
         } finally {
             harness.cleanup()
         }
@@ -1053,7 +1053,7 @@ class DropSetRuntimeRecoveryTest {
             assertNull(harness.restTransitionPlan.value)
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
             assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty())
-            assertTrue(harness.fakeBleRepo.workoutParameters.isEmpty())
+            assertTrue(harness.fakeBleRepo.programCommands.isEmpty())
 
             val resumed = harness.dwsm.resumeRoutine(handle)
             advanceUntilIdle()
@@ -1063,7 +1063,7 @@ class DropSetRuntimeRecoveryTest {
             assertEquals(document.restTransitionPlan, harness.restTransitionPlan.value)
             assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
             assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty())
-            assertTrue(harness.fakeBleRepo.workoutParameters.isEmpty())
+            assertTrue(harness.fakeBleRepo.programCommands.isEmpty())
         } finally {
             harness.cleanup()
         }
@@ -1144,7 +1144,7 @@ class DropSetRuntimeRecoveryTest {
             assertNull(harness.restTransitionPlan.value)
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
             assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty())
-            assertTrue(harness.fakeBleRepo.workoutParameters.isEmpty())
+            assertTrue(harness.fakeBleRepo.programCommands.isEmpty())
         } finally {
             harness.cleanup()
         }
@@ -1773,7 +1773,7 @@ class DropSetRuntimeRecoveryTest {
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
             assertNull(harness.restTransitionPlan.value)
             assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty())
-            assertTrue(harness.fakeBleRepo.workoutParameters.isEmpty())
+            assertTrue(harness.fakeBleRepo.programCommands.isEmpty())
 
             harness.fakeActiveWorkoutRuntimeRepository.afterLoadSnapshot = null
             harness.fakeActiveWorkoutRuntimeRepository.loadCalls = 0
@@ -1901,7 +1901,7 @@ class DropSetRuntimeRecoveryTest {
                 ),
             )
             assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty())
-            assertTrue(harness.fakeBleRepo.workoutParameters.isEmpty())
+            assertTrue(harness.fakeBleRepo.programCommands.isEmpty())
         } finally {
             harness.cleanup()
         }
@@ -1955,7 +1955,7 @@ class DropSetRuntimeRecoveryTest {
                 assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value, mutation.name)
                 assertNull(harness.restTransitionPlan.value, mutation.name)
                 assertTrue(harness.fakeBleRepo.commandsReceived.isEmpty(), mutation.name)
-                assertTrue(harness.fakeBleRepo.workoutParameters.isEmpty(), mutation.name)
+                assertTrue(harness.fakeBleRepo.programCommands.isEmpty(), mutation.name)
             } finally {
                 releaseFinalLoad.complete(Unit)
                 harness.cleanup()
@@ -1987,7 +1987,7 @@ class DropSetRuntimeRecoveryTest {
             val unresolved = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
             assertEquals(0, assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value).restSecondsRemaining)
             val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
-            val configurationsBefore = harness.fakeBleRepo.workoutParameters.size
+            val configurationsBefore = harness.fakeBleRepo.programCommands.size
 
             val reduction = harness.dwsm.applyRestTransitionAwait(
                 RestTransitionCommand.Accept(unresolved.actionIdentity(), DropPercentage.TWENTY),
@@ -2023,7 +2023,7 @@ class DropSetRuntimeRecoveryTest {
             runCurrent()
 
             assertEquals(replacementsBefore + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
-            assertEquals(configurationsBefore, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(configurationsBefore, harness.fakeBleRepo.programCommands.size)
             assertEquals(accepted, harness.restTransitionPlan.value)
             assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
         } finally {
@@ -2047,7 +2047,7 @@ class DropSetRuntimeRecoveryTest {
             runCurrent()
             val unresolved = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
             val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
-            val configurationsBefore = harness.fakeBleRepo.workoutParameters.size
+            val configurationsBefore = harness.fakeBleRepo.programCommands.size
 
             val reduction = harness.dwsm.applyRestTransitionAwait(
                 RestTransitionCommand.Decline(unresolved.actionIdentity()),
@@ -2070,7 +2070,7 @@ class DropSetRuntimeRecoveryTest {
             assertEquals(installed.document.exerciseLoadOverlays, persisted.exerciseLoadOverlays)
             assertEquals(0, harness.dwsm.restTransitionNavigationLookupsForTest)
             assertEquals(replacementsBefore + 1, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
-            assertEquals(configurationsBefore, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(configurationsBefore, harness.fakeBleRepo.programCommands.size)
             assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
 
             assertIs<RestTransitionReduction.NoOp>(
@@ -2106,7 +2106,7 @@ class DropSetRuntimeRecoveryTest {
                 runCurrent()
                 val plan = assertNotNull(harness.restTransitionPlan.value)
                 val replacementsBefore = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
-                val configurationsBefore = harness.fakeBleRepo.workoutParameters.size
+                val configurationsBefore = harness.fakeBleRepo.programCommands.size
                 var observedDurableClear = false
                 harness.dwsm.restTransitionNavigationLookupObserverForTest = {
                     observedDurableClear = harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
@@ -2141,7 +2141,7 @@ class DropSetRuntimeRecoveryTest {
                 assertEquals(0, setReady.exerciseIndex)
                 assertEquals(1, setReady.setIndex)
                 assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
-                assertEquals(configurationsBefore, harness.fakeBleRepo.workoutParameters.size)
+                assertEquals(configurationsBefore, harness.fakeBleRepo.programCommands.size)
             } finally {
                 harness.dwsm.restTransitionNavigationLookupObserverForTest = null
                 harness.cleanup()
@@ -2229,7 +2229,7 @@ class DropSetRuntimeRecoveryTest {
             assertIs<ActiveWorkoutRuntimeResumeResult.RestoredRest>(harness.dwsm.resumeRoutine(installed.handle))
             runCurrent()
             val plan = assertIs<RestTransitionPlan.NormalAdvance>(harness.restTransitionPlan.value)
-            val configurationsBefore = harness.fakeBleRepo.workoutParameters.size
+            val configurationsBefore = harness.fakeBleRepo.programCommands.size
             var observedDurableClear = false
             harness.dwsm.restTransitionNavigationLookupObserverForTest = {
                 observedDurableClear = harness.fakeActiveWorkoutRuntimeRepository.committedDocument(
@@ -2248,7 +2248,7 @@ class DropSetRuntimeRecoveryTest {
             assertEquals(1, harness.dwsm.restTransitionNavigationLookupsForTest)
             assertIs<RoutineFlowState.Complete>(harness.coordinator.routineFlowState.value)
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
-            assertEquals(configurationsBefore, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(configurationsBefore, harness.fakeBleRepo.programCommands.size)
             assertIs<ActiveWorkoutRuntimeLoadResult.Missing>(
                 harness.fakeActiveWorkoutRuntimeRepository.load(
                     installed.document.profileId,
@@ -2608,7 +2608,7 @@ class DropSetRuntimeRecoveryTest {
                     runtimeWritesBeforeSwitch = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
                     navigationBeforeSwitch = harness.dwsm.restTransitionNavigationLookupsForTest
                     configPacketsBeforeSwitch = harness.fakeBleRepo.commandsReceived.size
-                    startCallsBeforeSwitch = harness.fakeBleRepo.workoutParameters.size
+                    startCallsBeforeSwitch = harness.fakeBleRepo.programCommands.size
                     teardownCallsBeforeSwitch = harness.fakeBleRepo.stopWorkoutCallCount
                     workoutSavesBeforeSwitch = harness.fakeWorkoutRepo.saveSessionAttempts.size
                     completedSetSavesBeforeSwitch = harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size
@@ -2629,7 +2629,7 @@ class DropSetRuntimeRecoveryTest {
             assertEquals(runtimeWritesBeforeSwitch, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
             assertEquals(navigationBeforeSwitch, harness.dwsm.restTransitionNavigationLookupsForTest)
             assertEquals(configPacketsBeforeSwitch, harness.fakeBleRepo.commandsReceived.size)
-            assertEquals(startCallsBeforeSwitch, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(startCallsBeforeSwitch, harness.fakeBleRepo.programCommands.size)
             assertEquals(teardownCallsBeforeSwitch, harness.fakeBleRepo.stopWorkoutCallCount)
             assertEquals(workoutSavesBeforeSwitch, harness.fakeWorkoutRepo.saveSessionAttempts.size)
             assertEquals(completedSetSavesBeforeSwitch, harness.fakeCompletedSetRepo.saveCompletedSetAttempts.size)
@@ -2705,7 +2705,7 @@ class DropSetRuntimeRecoveryTest {
             val gamificationUpdates = harness.fakeGamificationRepo.updateStatsCallCount
             val badgeChecks = harness.fakeGamificationRepo.checkAndAwardBadgesCallCount
             val configPackets = harness.fakeBleRepo.commandsReceived.size
-            val startCalls = harness.fakeBleRepo.workoutParameters.size
+            val startCalls = harness.fakeBleRepo.programCommands.size
             val teardownCalls = harness.fakeBleRepo.stopWorkoutCallCount
             val stopPackets = harness.fakeBleRepo.stopPacketCallCount
             val navigation = harness.dwsm.restTransitionNavigationLookupsForTest
@@ -2735,7 +2735,7 @@ class DropSetRuntimeRecoveryTest {
             assertEquals(gamificationUpdates, harness.fakeGamificationRepo.updateStatsCallCount)
             assertEquals(badgeChecks, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount)
             assertEquals(configPackets, harness.fakeBleRepo.commandsReceived.size)
-            assertEquals(startCalls, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(startCalls, harness.fakeBleRepo.programCommands.size)
             assertEquals(teardownCalls, harness.fakeBleRepo.stopWorkoutCallCount)
             assertEquals(stopPackets, harness.fakeBleRepo.stopPacketCallCount)
             assertEquals(navigation, harness.dwsm.restTransitionNavigationLookupsForTest)
@@ -2779,7 +2779,7 @@ class DropSetRuntimeRecoveryTest {
             val gamificationUpdates = harness.fakeGamificationRepo.updateStatsCallCount
             val badgeChecks = harness.fakeGamificationRepo.checkAndAwardBadgesCallCount
             val configPackets = harness.fakeBleRepo.commandsReceived.size
-            val startCalls = harness.fakeBleRepo.workoutParameters.size
+            val startCalls = harness.fakeBleRepo.programCommands.size
             val teardownCalls = harness.fakeBleRepo.stopWorkoutCallCount
             val stopPackets = harness.fakeBleRepo.stopPacketCallCount
             val navigation = harness.dwsm.restTransitionNavigationLookupsForTest
@@ -2799,7 +2799,7 @@ class DropSetRuntimeRecoveryTest {
             assertEquals(gamificationUpdates, harness.fakeGamificationRepo.updateStatsCallCount)
             assertEquals(badgeChecks, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount)
             assertEquals(configPackets, harness.fakeBleRepo.commandsReceived.size)
-            assertEquals(startCalls, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(startCalls, harness.fakeBleRepo.programCommands.size)
             assertEquals(teardownCalls, harness.fakeBleRepo.stopWorkoutCallCount)
             assertEquals(stopPackets, harness.fakeBleRepo.stopPacketCallCount)
             assertEquals(navigation, harness.dwsm.restTransitionNavigationLookupsForTest)
@@ -2842,7 +2842,7 @@ class DropSetRuntimeRecoveryTest {
             val gamificationUpdates = harness.fakeGamificationRepo.updateStatsCallCount
             val badgeChecks = harness.fakeGamificationRepo.checkAndAwardBadgesCallCount
             val configPackets = harness.fakeBleRepo.commandsReceived.size
-            val startCalls = harness.fakeBleRepo.workoutParameters.size
+            val startCalls = harness.fakeBleRepo.programCommands.size
             val teardownCalls = harness.fakeBleRepo.stopWorkoutCallCount
             val navigation = harness.dwsm.restTransitionNavigationLookupsForTest
 
@@ -2861,7 +2861,7 @@ class DropSetRuntimeRecoveryTest {
             assertEquals(gamificationUpdates, harness.fakeGamificationRepo.updateStatsCallCount)
             assertEquals(badgeChecks, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount)
             assertEquals(configPackets, harness.fakeBleRepo.commandsReceived.size)
-            assertEquals(startCalls, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(startCalls, harness.fakeBleRepo.programCommands.size)
             assertEquals(teardownCalls, harness.fakeBleRepo.stopWorkoutCallCount)
             assertEquals(navigation, harness.dwsm.restTransitionNavigationLookupsForTest)
         } finally {

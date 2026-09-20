@@ -111,6 +111,7 @@ import com.devil.phoenixproject.presentation.util.WindowWidthSizeClass
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import com.devil.phoenixproject.util.CommandLimits
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
@@ -679,6 +680,10 @@ fun WorkoutTab(
                         formatWeight = { weight -> formatWeight(weight, weightUnit) },
                         formatWeightWithUnit = formatWeight,
                         weightStepKg = weightStepKg, // Issue #266/#410
+                        // KD-9: rest-screen weight slider is bounded by the connected trainer.
+                        maxWeightPerCableKg = CommandLimits.maxWeightPerCableKg(
+                            (connectionState as? ConnectionState.Connected)?.hardwareModel,
+                        ),
                         isSupersetTransition = workoutState.isSupersetTransition,
                         supersetLabel = workoutState.supersetLabel,
                         isRestPaused = isRestPaused,

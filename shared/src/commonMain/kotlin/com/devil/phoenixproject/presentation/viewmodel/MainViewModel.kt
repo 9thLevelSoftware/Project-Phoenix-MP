@@ -37,6 +37,7 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
@@ -1257,6 +1258,17 @@ class MainViewModel(
 
     init {
         viewModelScope.launch { machineSafetyCoordinator.restoreOnStartup() }
+        // KD-9: remember the model we connect to, so the offline planning/editor sliders
+        // can use that trainer's per-cable ceiling. Unknown is never stored: it would
+        // narrow a known Trainer+ owner's planning range on a bad name read.
+        viewModelScope.launch {
+            bleRepository.connectionState.collect { state ->
+                val model = (state as? ConnectionState.Connected)?.hardwareModel
+                if (model != null && model != PhoenixModel.Unknown) {
+                    preferencesManager.setLastConnectedModel(model)
+                }
+            }
+        }
         viewModelScope.launch {
             bleRepository.reconnectionRequested.collect { request ->
                 machineSafetyCoordinator.recordConnectionLost(

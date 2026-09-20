@@ -86,10 +86,18 @@ class RestTimerProgressionWiringTest {
                 src.contains("progressionRegressionKg = setProgressionKg"),
             "Single-exercise rest advance must preserve WorkoutParameters.progressionRegressionKg when the user edits Rest Timer config.",
         )
+        // KD-9: the per-rep progression bound is no longer a copy in each builder. There is
+        // one clamp, at command-resolution time, which also covers set 1, recovery replay and
+        // values that arrived from a portal pull, a backup or a CSV import.
+        assertFalse(
+            src.contains("clampUpcomingProgressionKg"),
+            "The duplicated progression clamp must be gone; CommandLimits owns the bound.",
+        )
         assertTrue(
-            src.contains("clampUpcomingProgressionKg(nextExercise.progressionKg)") &&
-                src.contains("clampUpcomingProgressionKg(exerciseForNextSet.progressionKg)"),
-            "Rest Timer defaults must be clamped to the signed-off control range before display/advance.",
+            src.contains("CommandLimits.resolve(") &&
+                src.contains("progressionKg = bleParams.progressionRegressionKg") &&
+                src.contains("emitCommandLimitNotice(limits)"),
+            "Every machine command must be bounded by CommandLimits, with a user-visible notice.",
         )
     }
 

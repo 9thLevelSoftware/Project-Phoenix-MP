@@ -98,8 +98,18 @@ object BlePacketFactory {
      * Creates a simplified workout command for backward compatibility.
      * For full protocol support, use createProgramParams() instead.
      */
-    fun createWorkoutCommand(programMode: ProgramMode, weightPerCableKg: Float, targetReps: Int): ByteArray {
-        WorkoutCommandValidator.validateLegacyWorkoutCommand(programMode, weightPerCableKg, targetReps).getOrThrow()
+    fun createWorkoutCommand(
+        programMode: ProgramMode,
+        weightPerCableKg: Float,
+        targetReps: Int,
+        maxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
+    ): ByteArray {
+        WorkoutCommandValidator.validateLegacyWorkoutCommand(
+            programMode,
+            weightPerCableKg,
+            targetReps,
+            maxWeightPerCableKg,
+        ).getOrThrow()
 
         val buffer = ByteArray(25)
         buffer[0] = BleConstants.Commands.REGULAR_COMMAND
@@ -127,8 +137,15 @@ object BlePacketFactory {
      * [ForceConfigVariant.OVERLAP] is retained only to reproduce the legacy Phoenix
      * behavior that overwrote 0x48/0x4C after copying the profile.
      */
-    fun createProgramParams(params: WorkoutParameters, variant: ForceConfigVariant = defaultForceConfigVariant): ByteArray {
-        WorkoutCommandValidator.validateProgramParams(params).getOrThrow()
+    fun createProgramParams(
+        params: WorkoutParameters,
+        variant: ForceConfigVariant = defaultForceConfigVariant,
+        // Absolute hardware maximum, not a model ceiling. The engine passes the connected
+        // model's ceiling; a caller that cannot know the model gets the widest bound and
+        // relies on CommandLimits.resolve having already clamped (KD-9).
+        maxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
+    ): ByteArray {
+        WorkoutCommandValidator.validateProgramParams(params, maxWeightPerCableKg).getOrThrow()
 
         // Resolve the profile up front so the variant decision can key off it.
         val profileMode = if (params.isEchoMode) {
@@ -329,8 +346,8 @@ object BlePacketFactory {
     /**
      * Build Echo mode control frame (32 bytes) with full parameters.
      *
-     * @param eccentricPct Eccentric load percentage (0-150%). Values outside this range
-     *                     are clamped for safety - machine hardware limit is 150%.
+     * @param eccentricPct Eccentric load percentage (0-150%). The machine hardware limit
+     *                     is 150%; values outside this range are REJECTED, not clamped.
      */
     fun createEchoControl(
         level: EchoLevel,
@@ -340,23 +357,17 @@ object BlePacketFactory {
         isAMRAP: Boolean = false,
         eccentricPct: Int = 100,
     ): ByteArray {
+        // F-010: validate the value the CALLER asked for. Clamping first made the
+        // eccentricPct bound unreachable, so an out-of-range request was silently
+        // rewritten instead of being rejected.
         WorkoutCommandValidator.validateEchoControl(
             level = level,
             warmupReps = warmupReps,
             targetReps = targetReps,
             isJustLift = isJustLift,
             isAMRAP = isAMRAP,
-            eccentricPct = eccentricPct.coerceIn(0, 150),
+            eccentricPct = eccentricPct,
         ).getOrThrow()
-
-        // Defensive clamping: Machine hardware limit is 150% eccentric load
-        // Values > 150% can cause machine faults (yellow light)
-        val safeEccentricPct = eccentricPct.coerceIn(0, 150)
-        if (eccentricPct != safeEccentricPct) {
-            Logger.w("BlePacket") {
-                "Eccentric load $eccentricPct% CLAMPED to $safeEccentricPct% (hardware limit 150%)"
-            }
-        }
 
         val frame = ByteArray(32)
 
@@ -370,10 +381,10 @@ object BlePacketFactory {
 
         putShortLE(frame, 0x06, 0)
 
-        val echoParams = getEchoParams(level, safeEccentricPct)
+        val echoParams = getEchoParams(level, eccentricPct)
 
         Logger.d("BlePacketFactory") {
-            "=== ECHO: ${level.displayName}, eccentric: $safeEccentricPct% ==="
+            "=== ECHO: ${level.displayName}, eccentric: $eccentricPct% ==="
         }
 
         putShortLE(frame, 0x08, echoParams.eccentricOverload)

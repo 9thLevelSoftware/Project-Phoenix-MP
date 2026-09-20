@@ -304,7 +304,7 @@ class RestoredRuntimeTimerTest {
                 val replacementsBeforeExpiry = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
                 val navigationLookupsBeforeExpiry = harness.dwsm.restTransitionNavigationLookupsForTest
                 val commandsBeforeExpiry = harness.fakeBleRepo.commandsReceived.size
-                val configurationsBeforeExpiry = harness.fakeBleRepo.workoutParameters.size
+                val configurationsBeforeExpiry = harness.fakeBleRepo.programCommands.size
 
                 assertTrue(timerJob.isActive, planCase.name)
                 assertTrue(timerDeadline > 0L, planCase.name)
@@ -358,7 +358,7 @@ class RestoredRuntimeTimerTest {
                 )
                 assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull(), planCase.name)
                 assertEquals(commandsBeforeExpiry, harness.fakeBleRepo.commandsReceived.size, planCase.name)
-                assertEquals(configurationsBeforeExpiry, harness.fakeBleRepo.workoutParameters.size, planCase.name)
+                assertEquals(configurationsBeforeExpiry, harness.fakeBleRepo.programCommands.size, planCase.name)
             } finally {
                 harness.cleanup()
                 runCurrent()

@@ -174,7 +174,7 @@ class Task8FinalRecoveryInvariantTest {
             )
             val planBeforeResume = assertNotNull(harness.restTransitionPlan.value)
             val commandsBeforeResume = harness.fakeBleRepo.commandsReceived.size
-            val configurationsBeforeResume = harness.fakeBleRepo.workoutParameters.size
+            val configurationsBeforeResume = harness.fakeBleRepo.programCommands.size
             val stopsBeforeResume = harness.fakeBleRepo.stopWorkoutCallCount
             val runtimeWritesBeforeResume = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
             val preparationsBeforeResume = harness.activeSessionEngine.recoveryPreparationCallsForTest
@@ -198,7 +198,7 @@ class Task8FinalRecoveryInvariantTest {
             assertEquals(planBeforeResume, harness.restTransitionPlan.value)
             assertEquals(liveDocument, harness.activeSessionEngine.activeRuntimeDocumentForTest())
             assertEquals(commandsBeforeResume, harness.fakeBleRepo.commandsReceived.size)
-            assertEquals(configurationsBeforeResume, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(configurationsBeforeResume, harness.fakeBleRepo.programCommands.size)
             assertEquals(stopsBeforeResume, harness.fakeBleRepo.stopWorkoutCallCount)
             assertEquals(runtimeWritesBeforeResume, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
             assertEquals(preparationsBeforeResume, harness.activeSessionEngine.recoveryPreparationCallsForTest)

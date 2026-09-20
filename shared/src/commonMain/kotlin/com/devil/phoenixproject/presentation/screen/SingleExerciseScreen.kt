@@ -48,6 +48,7 @@ import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManage
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.util.CommandLimits
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.getString
@@ -359,6 +360,9 @@ fun SingleExerciseScreen(
                         rackItems = rackItems,
                         buttonText = startButtonText,
                         weightStepOverride = userPreferences.effectiveWeightIncrementKg, // Issue #266/#410
+                        planningMaxWeightPerCableKg = CommandLimits.planningMaxWeightPerCableKg(
+                            userPreferences.lastConnectedModel,
+                        ),
                         primaryActionEnabled = startGate.startEnabled,
                         primaryActionSupportingContent = {
                             WorkoutStartGateNotice(

@@ -98,6 +98,7 @@ import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
+import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
@@ -3627,7 +3628,11 @@ class ActiveSessionEngine(
             eccentricPct = params.eccentricLoad.percentage,
         )
     } else {
-        WorkoutCommandValidator.validateProgramParams(params)
+        // Feasibility gate for a drop-set retry candidate, not the send itself. It uses the
+        // ABSOLUTE hardware maximum so an over-ceiling stored routine is not fail-closed out
+        // of a retry it is otherwise allowed to start; the send site applies the connected
+        // model's ceiling after CommandLimits.resolve has clamped.
+        WorkoutCommandValidator.validateProgramParams(params, Constants.MAX_WEIGHT_PER_CABLE_KG)
     }
 
     private suspend fun failAcceptedRetryClosed(
@@ -6552,52 +6557,25 @@ class ActiveSessionEngine(
 
     // ===== Weight Adjustment =====
 
-    /**
-     * Send weight update command to the machine.
-     */
-    private suspend fun sendWeightUpdateToMachine(weightKg: Float) {
-        try {
-            val params = coordinator._workoutParameters.value
-
-            val command = if (!params.isEchoMode) {
-                WorkoutCommandValidator.validateLegacyWorkoutCommand(
-                    params.programMode,
-                    weightKg,
-                    params.reps,
-                ).getOrThrow()
-                BlePacketFactory.createWorkoutCommand(
-                    params.programMode,
-                    weightKg,
-                    params.reps,
-                )
-            } else {
-                return
-            }
-
-            bleRepository.sendWorkoutCommand(command).getOrThrow()
-            Logger.d("Weight update sent to machine: $weightKg kg")
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            val errorPrefix = if (e is IllegalArgumentException) "Invalid BLE weight update" else "BLE weight update failed"
-            coordinator._bleErrorEvents.tryEmit("$errorPrefix: ${e.message}")
-            Logger.e(e) { "Failed to send weight update: ${e.message}" }
-        }
-    }
+    // F-059: sendWeightUpdateToMachine was deleted. It had no callers, and its own comment
+    // said the REGULAR_COMMAND frame it built would fault the machine mid-set. It was also
+    // an unvalidated command builder sitting beside the validated start path.
 
     /**
      * Adjust the weight during an active workout or rest period.
      *
-     * If called during an active set, the BLE command is deferred until the next
-     * set boundary. sendWeightUpdateToMachine() sends a full REGULAR_COMMAND packet
-     * which resets the exercise on the machine (BLE exercise packet lifecycle constraint:
-     * machine can't receive new exercise packet until active one fully ends).
+     * If called during an active set, the BLE command is deferred until the next set
+     * boundary: a full REGULAR_COMMAND packet mid-set resets the exercise on the machine
+     * (BLE exercise packet lifecycle constraint - the machine can't receive a new
+     * exercise packet until the active one fully ends).
      */
     fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) {
-        // Upper bound is 110kg per cable to support both hardware variants:
-        //   V-Form (VIT-200): 100kg max per cable
-        //   Trainer+:         110kg max per cable
-        // Do NOT replace with Constants.MAX_WEIGHT_KG (100f) — that would regress Trainer+ users.
-        val clampedWeight = newWeightKg.coerceIn(0f, 110f)
+        // KD-9: bound by the CONNECTED model's per-cable ceiling (V-Form 100, Trainer+ 110,
+        // unknown or not connected fails closed to 100) instead of a model-agnostic 110.
+        val clampedWeight = newWeightKg.coerceIn(
+            0f,
+            CommandLimits.maxWeightPerCableKg(bleRepository.connectedModel),
+        )
 
         Logger.d("ActiveSessionEngine: Adjusting weight to $clampedWeight kg (sendToMachine=$sendToMachine)")
 
@@ -7234,7 +7212,30 @@ class ActiveSessionEngine(
         Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Reset to 0 (disabled)" }
     }
 
-    private fun clampUpcomingProgressionKg(valueKg: Float): Float = valueKg.coerceIn(-3f, 3f)
+    /**
+     * Tell the user what [CommandLimits.resolve] capped, once per resolved command
+     * (so at most once per set). Stored routine values are deliberately left as they are,
+     * so without this the set would just quietly run lighter than the plan says.
+     */
+    private fun emitCommandLimitNotice(limits: CommandLimits.Resolution) {
+        if (!limits.cappedAnything) return
+        val notice = buildString {
+            if (limits.weightCapped) {
+                append("Weight capped to ${formatLimitKg(limits.maxWeightPerCableKg)} kg/cable for this trainer")
+            }
+            if (limits.progressionCapped) {
+                if (isNotEmpty()) append(". ")
+                append("Progression capped to ${formatLimitKg(CommandLimits.MAX_PROGRESSION_KG)} kg/rep")
+            }
+        }
+        Logger.w { "CommandLimits: $notice" }
+        coordinator._userFeedbackEvents.tryEmit(notice)
+    }
+
+    private fun formatLimitKg(valueKg: Float): String {
+        val rounded = kotlin.math.round(valueKg)
+        return if (kotlin.math.abs(valueKg - rounded) < 0.01f) rounded.toInt().toString() else valueKg.toString()
+    }
 
     fun updateWorkoutParameters(params: WorkoutParameters) {
         supersedeConfigurationInputIntent()
@@ -8451,17 +8452,36 @@ class ActiveSessionEngine(
                     }
                 }
 
-                val commandValidation = if (bleParams.isEchoMode) {
+                // KD-9: the one command-resolution clamp. Every start path — set 1, later
+                // sets, recovery replay, DWSM's next-exercise advance and Just Lift —
+                // reaches the machine through this block, so bounding here also covers
+                // values that arrived from a portal pull, a backup or a CSV import without
+                // rewriting what the user has stored. bleParams itself is left alone: the
+                // accepted-retry matcher below compares it against the captured request.
+                val connectedModel = bleRepository.connectedModel
+                val commandCeilingKg = CommandLimits.maxWeightPerCableKg(connectedModel)
+                val limits = CommandLimits.resolve(
+                    weightKg = bleParams.weightPerCableKg,
+                    progressionKg = bleParams.progressionRegressionKg,
+                    model = connectedModel,
+                )
+                val commandParams = bleParams.copy(
+                    weightPerCableKg = limits.weightPerCableKg,
+                    progressionRegressionKg = limits.progressionKg,
+                )
+                emitCommandLimitNotice(limits)
+
+                val commandValidation = if (commandParams.isEchoMode) {
                     WorkoutCommandValidator.validateEchoControl(
-                        level = bleParams.echoLevel,
-                        warmupReps = bleParams.warmupReps,
-                        targetReps = bleParams.reps,
-                        isJustLift = isJustLiftMode || bleParams.isJustLift,
-                        isAMRAP = bleParams.isAMRAP,
-                        eccentricPct = bleParams.eccentricLoad.percentage,
+                        level = commandParams.echoLevel,
+                        warmupReps = commandParams.warmupReps,
+                        targetReps = commandParams.reps,
+                        isJustLift = isJustLiftMode || commandParams.isJustLift,
+                        isAMRAP = commandParams.isAMRAP,
+                        eccentricPct = commandParams.eccentricLoad.percentage,
                     )
                 } else {
-                    WorkoutCommandValidator.validateProgramParams(bleParams)
+                    WorkoutCommandValidator.validateProgramParams(commandParams, commandCeilingKg)
                 }
                 commandValidation.onFailure { error ->
                     Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
@@ -8474,19 +8494,22 @@ class ActiveSessionEngine(
                     return@launch
                 }
 
-                val command = if (bleParams.isEchoMode) {
+                val command = if (commandParams.isEchoMode) {
                     BlePacketFactory.createEchoControl(
-                        level = bleParams.echoLevel,
-                        warmupReps = bleParams.warmupReps,
-                        targetReps = bleParams.reps,
-                        isJustLift = isJustLiftMode || bleParams.isJustLift,
-                        isAMRAP = bleParams.isAMRAP,
-                        eccentricPct = bleParams.eccentricLoad.percentage,
+                        level = commandParams.echoLevel,
+                        warmupReps = commandParams.warmupReps,
+                        targetReps = commandParams.reps,
+                        isJustLift = isJustLiftMode || commandParams.isJustLift,
+                        isAMRAP = commandParams.isAMRAP,
+                        eccentricPct = commandParams.eccentricLoad.percentage,
                     )
                 } else {
-                    BlePacketFactory.createProgramParams(bleParams)
+                    BlePacketFactory.createProgramParams(
+                        params = commandParams,
+                        maxWeightPerCableKg = commandCeilingKg,
+                    )
                 }
-                Logger.d { "Built ${command.size}-byte workout command for ${bleParams.programMode}" }
+                Logger.d { "Built ${command.size}-byte workout command for ${commandParams.programMode}" }
 
                 coordinator._repCount.value = RepCount()
                 coordinator.warmupCompleteTimeMs = 0
@@ -11843,7 +11866,7 @@ class ActiveSessionEngine(
                         programMode = exerciseForNextSet.programMode,
                         echoLevel = exerciseForNextSet.getEchoLevelForSet(nextSetIdx),
                         eccentricLoad = exerciseForNextSet.eccentricLoad,
-                        progressionRegressionKg = clampUpcomingProgressionKg(exerciseForNextSet.progressionKg),
+                        progressionRegressionKg = exerciseForNextSet.progressionKg,
                         selectedExerciseId = exerciseForNextSet.exercise.id,
                         isAMRAP = nextIsAMRAP,
                         stallDetectionEnabled = exerciseForNextSet.stallDetectionEnabled,
@@ -12271,7 +12294,7 @@ class ActiveSessionEngine(
                 programMode = nextExercise.programMode,
                 echoLevel = nextExercise.getEchoLevelForSet(nextSetIndex),
                 eccentricLoad = nextExercise.eccentricLoad,
-                progressionRegressionKg = clampUpcomingProgressionKg(nextExercise.progressionKg),
+                progressionRegressionKg = nextExercise.progressionKg,
                 selectedExerciseId = nextExercise.exercise.id,
                 isAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet),
                 stallDetectionEnabled = nextExercise.stallDetectionEnabled,
@@ -12614,7 +12637,7 @@ class ActiveSessionEngine(
             val setProgressionKg = if (coordinator._userAdjustedWeightDuringRest) {
                 currentParams.progressionRegressionKg
             } else {
-                clampUpcomingProgressionKg(currentExercise.progressionKg)
+                currentExercise.progressionKg
             }
             coordinator._userAdjustedWeightDuringRest = false
 
@@ -12764,7 +12787,7 @@ class ActiveSessionEngine(
             val nextProgressionKg = if (preserveRestEdits) {
                 currentParams.progressionRegressionKg
             } else {
-                clampUpcomingProgressionKg(nextExercise.progressionKg)
+                nextExercise.progressionKg
             }
 
             val nextIsBodyweight = isBodyweightExercise(nextExercise)

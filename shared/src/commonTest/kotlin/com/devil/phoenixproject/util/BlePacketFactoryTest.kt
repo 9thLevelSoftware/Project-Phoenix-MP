@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.toWorkoutMode
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertTrue
 
 /**
@@ -789,11 +790,17 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `Echo eccentric load clamped at 150 percent`() {
-        val packet = BlePacketFactory.createEchoControl(EchoLevel.HARD, eccentricPct = 200)
+    fun `Echo eccentric load above 150 percent is rejected, not clamped`() {
+        // F-010: createEchoControl used to clamp BEFORE validating, which made the
+        // eccentricPct bound unreachable and silently rewrote the caller's request.
+        val error = assertFailsWith<IllegalArgumentException> {
+            BlePacketFactory.createEchoControl(EchoLevel.HARD, eccentricPct = 200)
+        }
+        assertTrue(error.message!!.contains("eccentricPct"), error.message!!)
 
-        // Hardware safety: should clamp to 150%
-        assertEquals(150, readUShortLE(packet, 0x08), "eccentricOverload clamped to 150%")
+        // The top of the supported range still builds.
+        val packet = BlePacketFactory.createEchoControl(EchoLevel.HARD, eccentricPct = 150)
+        assertEquals(150, readUShortLE(packet, 0x08), "eccentricOverload at the 150% limit")
     }
 
     @Test
@@ -1556,7 +1563,9 @@ class BlePacketFactoryTest {
     fun `issue390 calf raise OldSchool weight lands at correct offsets`() {
         // User scenario from Issue #390 no-warm-up logs.
         val weightPerCableKg = 80.0f
-        val progressionKg = 4.535929f
+        // 5 lb per rep. The former 10 lb (4.535929f) value is now rejected by the
+        // validator: KD-9 bounds per-rep progression at 3 kg.
+        val progressionKg = 2.2679645f
 
         val params = WorkoutParameters(
             programMode = ProgramMode.OldSchool,
@@ -1601,6 +1610,63 @@ class BlePacketFactoryTest {
             "Issue #390: targetWeight must not be near-zero. " +
                 "Expected 80kg for first set of calf raise.",
         )
+    }
+
+    @Test
+    fun `program frame rejects a per-rep progression beyond the command limit`() {
+        // F-020/F-044: an unbounded progressionKg (editor slider, CSV, backup or portal
+        // pull) used to reach OFFSET_PROGRESSION unchecked.
+        for (progression in listOf(3.1f, -3.1f, 50f, -50f, 4.535929f)) {
+            val error = assertFailsWith<IllegalArgumentException> {
+                BlePacketFactory.createProgramParams(
+                    WorkoutParameters(
+                        programMode = ProgramMode.OldSchool,
+                        reps = 10,
+                        weightPerCableKg = 40f,
+                        progressionRegressionKg = progression,
+                    ),
+                )
+            }
+            assertTrue(
+                error.message!!.contains("progressionRegressionKg"),
+                "progression $progression: ${error.message}",
+            )
+        }
+
+        // The bound itself still builds, and lands at 0x5C.
+        val packet = BlePacketFactory.createProgramParams(
+            WorkoutParameters(
+                programMode = ProgramMode.OldSchool,
+                reps = 10,
+                weightPerCableKg = 40f,
+                progressionRegressionKg = -3f,
+            ),
+        )
+        assertEquals(-3f, readFloatLE(packet, 0x5C), "progression at 0x5C")
+    }
+
+    @Test
+    fun `program frame rejects a weight above the connected model ceiling`() {
+        // F-009: the ceiling is the connected model's, not a model-agnostic constant.
+        val params = WorkoutParameters(
+            programMode = ProgramMode.OldSchool,
+            reps = 10,
+            weightPerCableKg = 105f,
+        )
+        val error = assertFailsWith<IllegalArgumentException> {
+            BlePacketFactory.createProgramParams(
+                params = params,
+                maxWeightPerCableKg = CommandLimits.V_FORM_MAX_WEIGHT_PER_CABLE_KG,
+            )
+        }
+        assertTrue(error.message!!.contains("weightPerCableKg"), error.message!!)
+
+        // The same command is legal on a Trainer+.
+        val packet = BlePacketFactory.createProgramParams(
+            params = params,
+            maxWeightPerCableKg = CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG,
+        )
+        assertEquals(105f, readFloatLE(packet, 0x58), "targetWeight at 0x58")
     }
 
     @Test

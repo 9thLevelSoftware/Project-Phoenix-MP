@@ -202,42 +202,11 @@ class KableBleRepository : BleRepository {
     }
 
     // ===== High-level workout control =====
-    override suspend fun sendInitSequence(): Result<Unit> {
-        log.i { "Sending initialization sequence" }
-        return try {
-            val initCmd = byteArrayOf(0x01, 0x00, 0x00, 0x00)
-            sendWorkoutCommand(initCmd)
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.e { "Failed to send init sequence: ${e.message}" }
-            Result.failure(e)
-        }
-    }
-
-    override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
-        stopDiscoMode()
-
-        log.i { "Starting workout with params: type=${params.programMode}, weight=${params.weightPerCableKg}kg" }
-        return try {
-            val modeCode = params.programMode.modeValue.toByte()
-            val weightBytes = (params.weightPerCableKg * 100).toInt()
-            val weightLow = (weightBytes and 0xFF).toByte()
-            val weightHigh = ((weightBytes shr 8) and 0xFF).toByte()
-
-            val startCmd = byteArrayOf(0x02, modeCode, weightLow, weightHigh)
-            val result = sendWorkoutCommand(startCmd)
-
-            if (result.isSuccess) {
-                startActiveWorkoutPolling()
-            }
-
-            result
-        } catch (e: Exception) {
-            e.rethrowIfCancellation()
-            log.e { "Failed to start workout: ${e.message}" }
-            Result.failure(e)
-        }
-    }
+    // F-010/F-059: startWorkout(params) and sendInitSequence() were deleted here and from
+    // BleRepository. They hand-built command bytes without passing through
+    // WorkoutCommandValidator, had no production callers, and stood beside the validated
+    // path as a ready-made bypass. The only supported start path builds its frame through
+    // BlePacketFactory (which validates) and sends it with sendWorkoutCommand.
 
     override suspend fun stopWorkout(): Result<Unit> {
         log.i { "Stopping workout" }

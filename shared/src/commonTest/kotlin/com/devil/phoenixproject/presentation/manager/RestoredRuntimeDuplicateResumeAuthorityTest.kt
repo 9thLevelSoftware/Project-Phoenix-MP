@@ -115,7 +115,7 @@ class RestoredRuntimeDuplicateResumeAuthorityTest {
         )
 
         val commandsBefore = harness.fakeBleRepo.commandsReceived.size
-        val workoutParametersBefore = harness.fakeBleRepo.workoutParameters.size
+        val workoutParametersBefore = harness.fakeBleRepo.programCommands.size
         val stopWorkoutCallsBefore = harness.fakeBleRepo.stopWorkoutCallCount
         val stopPacketCallsBefore = harness.fakeBleRepo.stopPacketCallCount
 
@@ -131,7 +131,7 @@ class RestoredRuntimeDuplicateResumeAuthorityTest {
             harness.activeSessionEngine.currentRestoredRestTimerDeadlineElapsedRealtimeMsForTest(),
         )
         assertEquals(commandsBefore, harness.fakeBleRepo.commandsReceived.size)
-        assertEquals(workoutParametersBefore, harness.fakeBleRepo.workoutParameters.size)
+        assertEquals(workoutParametersBefore, harness.fakeBleRepo.programCommands.size)
         assertEquals(stopWorkoutCallsBefore, harness.fakeBleRepo.stopWorkoutCallCount)
         assertEquals(stopPacketCallsBefore, harness.fakeBleRepo.stopPacketCallCount)
         assertEquals(

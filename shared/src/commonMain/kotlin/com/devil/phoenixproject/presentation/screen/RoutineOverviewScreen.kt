@@ -96,6 +96,7 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
+import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -337,6 +338,9 @@ fun RoutineOverviewScreen(navController: NavController, viewModel: MainViewModel
                     eccentricLoadPercent = adjustments.eccentricLoadPercent,
                     sizing = overviewSizing,
                     weightStepKg = userPreferences.effectiveWeightIncrementKg, // Issue #266/#410
+                    maxWeightPerCableKg = CommandLimits.planningMaxWeightPerCableKg(
+                        userPreferences.lastConnectedModel,
+                    ),
                     onWeightChange = { newWeight ->
                         if (newWeight >= 0f) {
                             adjustmentState.value = adjustmentState.value.copy(weight = newWeight)
@@ -556,12 +560,15 @@ private fun ExerciseOverviewCard(
     eccentricLoadPercent: Int,
     sizing: RoutineOverviewSizing,
     weightStepKg: Float = 0.25f, // Issue #266/#410: Configurable weight step
+    // KD-9: planning ceiling. Unknown opens up to the widest hardware so a Trainer+ owner
+    // can plan before ever connecting; a known V-Form is held to its own ceiling.
+    maxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
     onWeightChange: (Float) -> Unit,
     onRepsChange: (Int) -> Unit,
     onEchoLevelChange: (EchoLevel) -> Unit,
     onEccentricLoadChange: (Int) -> Unit,
 ) {
-    val maxWeightKg = Constants.MAX_WEIGHT_PER_CABLE_KG
+    val maxWeightKg = maxWeightPerCableKg
 
     // #635: explicit stored flag with equipment-derivation fallback
     val isBodyweight = exercise.exercise.isBodyweight

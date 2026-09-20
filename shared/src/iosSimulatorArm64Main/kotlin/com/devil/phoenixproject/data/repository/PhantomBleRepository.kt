@@ -440,7 +440,10 @@ class PhantomBleRepository(
     private fun readFloat32LittleEndian(bytes: ByteArray, offset: Int): Float =
         Float.fromBits(readUInt32LittleEndian(bytes, offset))
 
-    override suspend fun sendInitSequence(): Result<Unit> {
+    // F-010: no longer BleRepository members. The unvalidated builders were deleted from
+    // the interface; these stay as simulator-local entry points used by the phantom's own
+    // tests, so nothing can reach them through BleRepository and bypass the validator.
+    suspend fun sendInitSequence(): Result<Unit> {
         return lifecycleLock.withLock {
             if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
@@ -454,7 +457,7 @@ class PhantomBleRepository(
         }
     }
 
-    override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
+    suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
         return lifecycleLock.withLock {
             if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
                 return@withLock Result.failure(
