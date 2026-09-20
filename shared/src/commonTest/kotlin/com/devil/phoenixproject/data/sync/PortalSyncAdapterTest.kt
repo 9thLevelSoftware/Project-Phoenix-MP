@@ -911,6 +911,42 @@ class PortalSyncAdapterTest {
     }
 
     @Test
+    fun `toPortalTrainingCycle sends the stored server version verbatim as baseUpdatedAt`() {
+        val serverVersion = "2026-09-19T10:11:12.123456+00:00"
+        val cycle = TrainingCycle.create(id = "cycle-base", name = "Base Cycle")
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(cycle = cycle, serverUpdatedAt = serverVersion),
+            userId = "user-1",
+        )
+
+        assertEquals(serverVersion, result.baseUpdatedAt)
+        val wire = PortalWireJson.encodeToString(
+            PortalSyncPayload.serializer(),
+            PortalSyncPayload(deviceId = "d", lastSync = 0, cycles = listOf(result)),
+        )
+        assertTrue(wire.contains("\"baseUpdatedAt\":\"$serverVersion\""), wire)
+    }
+
+    @Test
+    fun `toPortalTrainingCycle omits baseUpdatedAt for a local-only cycle`() {
+        val cycle = TrainingCycle.create(id = "cycle-local", name = "Local Cycle")
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(cycle = cycle),
+            userId = "user-1",
+        )
+
+        assertNull(result.baseUpdatedAt)
+        // explicitNulls = false: a null base is omitted, which the portal treats as the legacy path.
+        val wire = PortalWireJson.encodeToString(
+            PortalSyncPayload.serializer(),
+            PortalSyncPayload(deviceId = "d", lastSync = 0, cycles = listOf(result)),
+        )
+        assertTrue(!wire.contains("baseUpdatedAt"), wire)
+    }
+
+    @Test
     fun `toPortalTrainingCycle maps templateId and persisted currentWeek`() {
         val cycle = TrainingCycle.create(
             id = "cycle-531",

@@ -1106,7 +1106,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 
     // TrainingCycle -- migration 10, full current shape
     // Columns added by later migrations: profile_id (m21), deletedAt (m27),
-    // template_id/week_number (m41), updatedAt (m50)
+    // template_id/week_number (m41), updatedAt (m50), server_updated_at (m52)
     SchemaTableOperation(
         table = "TrainingCycle",
         createSql = """
@@ -1120,7 +1120,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 deletedAt INTEGER,
                 template_id TEXT,
                 week_number INTEGER NOT NULL DEFAULT 1,
-                updatedAt INTEGER NOT NULL DEFAULT 0
+                updatedAt INTEGER NOT NULL DEFAULT 0,
+                server_updated_at TEXT
             )
         """.trimIndent(),
     ),
@@ -1607,7 +1608,7 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("UserProfile", "subscription_expires_at", "ALTER TABLE UserProfile ADD COLUMN subscription_expires_at INTEGER"),
     SchemaHealOperation("UserProfile", "last_auth_at", "ALTER TABLE UserProfile ADD COLUMN last_auth_at INTEGER"),
 
-    // ── TrainingCycle (4 columns) ────────────────────────────────────────
+    // ── TrainingCycle (5 columns) ────────────────────────────────────────
 
     // Migration 21: multi-profile support
     SchemaHealOperation("TrainingCycle", "profile_id", "ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"),
@@ -1618,6 +1619,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("TrainingCycle", "week_number", "ALTER TABLE TrainingCycle ADD COLUMN week_number INTEGER NOT NULL DEFAULT 1"),
     // Migration 50: complete-cycle LWW clock. Migration backfills created_at.
     SchemaHealOperation("TrainingCycle", "updatedAt", "ALTER TABLE TrainingCycle ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0"),
+    // Migration 52: portal version of the cycle, sent back as baseUpdatedAt on push.
+    SchemaHealOperation("TrainingCycle", "server_updated_at", "ALTER TABLE TrainingCycle ADD COLUMN server_updated_at TEXT"),
 
     // ── AssessmentResult (1 column) ─────────────────────────────────────
 
