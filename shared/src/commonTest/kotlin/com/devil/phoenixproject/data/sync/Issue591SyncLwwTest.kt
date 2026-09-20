@@ -305,10 +305,13 @@ class Issue591SyncLwwTest {
     )
 
     @Test
-    fun `mergeSessionsLww stores pulled double cableCount over a local null`() = runTest {
+    fun `mergeSessionsLww stores pulled double cableCount over a portal-origin null`() = runTest {
         setUp()
         val sessionId = "pr29-cable-2-over-null"
-        insertLocalSession(localRowSession(sessionId, cableCount = null), updatedAt = now - 60_000L)
+        repository.mergeSessionsLww(
+            sessions = listOf(pulledSession(sessionId, cableCount = null)),
+            updatedAtBySessionId = mapOf(sessionId to now - 60_000L),
+        )
 
         repository.mergeSessionsLww(
             sessions = listOf(pulledSession(sessionId, cableCount = 2)),
@@ -318,6 +321,21 @@ class Issue591SyncLwwTest {
         val after = database.phoenixDatabaseQueries.selectSessionById(sessionId).executeAsOneOrNull()
         assertNotNull(after)
         assertEquals(2L, after.cableCount, "pulled cableCount=2 must be persisted by the LWW merge")
+    }
+
+    @Test
+    fun `mergeSessionsLww does not replace a locally captured unknown cableCount`() = runTest {
+        setUp()
+        val sessionId = "pr29-local-capture-unknown"
+        insertLocalSession(localRowSession(sessionId, cableCount = null), updatedAt = now - 60_000L)
+
+        repository.mergeSessionsLww(
+            sessions = listOf(pulledSession(sessionId, cableCount = 2)),
+            updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
+        )
+
+        val after = database.phoenixDatabaseQueries.selectSessionById(sessionId).executeAsOne()
+        assertNull(after.cableCount, "portal updates must preserve locally captured workout facts")
     }
 
     @Test
