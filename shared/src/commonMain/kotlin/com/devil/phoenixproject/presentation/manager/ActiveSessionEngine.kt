@@ -8527,14 +8527,12 @@ class ActiveSessionEngine(
                             // metadata. Apply only the command-resolution delta so that an
                             // ordinary rack adjustment retains that representation while a
                             // firmware-limit clamp records the equivalent load that ran.
-                            val executedWeight = params.weightPerCableKg +
+                            val executedWeight = warmupOverrideParams.weightPerCableKg +
                                 (commandParams.weightPerCableKg - bleParams.weightPerCableKg)
-                            val executedProgression = params.progressionRegressionKg +
-                                (commandParams.progressionRegressionKg - bleParams.progressionRegressionKg)
                             context.copy(
                                 completionFacts = context.completionFacts.copy(
                                     executedWeightPerCableKg = executedWeight,
-                                    executedProgressionKg = executedProgression,
+                                    executedProgressionKg = commandParams.progressionRegressionKg,
                                 ),
                             )
                         } else {

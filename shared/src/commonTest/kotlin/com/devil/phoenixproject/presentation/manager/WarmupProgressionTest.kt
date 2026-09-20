@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.manager
 
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WarmupSet
@@ -94,6 +95,38 @@ class WarmupProgressionTest {
             readFloatLE(warmupPacket, BleConstants.ActivationPacket.OFFSET_PROGRESSION),
             "Issue #481: warm-up set must send 0 per-rep progression",
         )
+
+        harness.cleanup()
+    }
+
+    @Test
+    fun `manual stop during variable warmup persists the executed warmup command`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val routine = warmupRoutine()
+        routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+        harness.fakeBleRepo.simulateConnect("Vee_Test")
+
+        harness.dwsm.loadRoutine(routine)
+        advanceUntilIdle()
+        harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        harness.coordinator._repCount.value = RepCount(
+            warmupReps = 0,
+            workingReps = 2,
+            totalReps = 2,
+            isWarmupComplete = true,
+        )
+        harness.dwsm.stopWorkout(exitingWorkout = false)
+        advanceUntilIdle()
+
+        val session = harness.fakeWorkoutRepo.saveSessionAttempts.single()
+        assertEquals(20f, session.weightPerCableKg)
+        assertEquals(0f, session.progressionKg)
+        assertEquals(20f * (session.cableCount ?: 1) * 2, session.totalVolumeKg)
+        val completed = harness.fakeCompletedSetRepo.getCompletedSets(session.id).single()
+        assertEquals(20f, completed.actualWeightKg)
+        assertEquals(2, completed.actualReps)
 
         harness.cleanup()
     }
