@@ -5313,6 +5313,21 @@ class ActiveSessionEngine(
     }
 
     /**
+     * A sample is concentric (lifting) only when a cable is moving outward faster than
+     * the velocity dead-band. The band keeps sensor noise and the near-stationary drift
+     * between reps out of the phase split, so a rep's mean concentric velocity describes
+     * the pull rather than the pauses around it.
+     */
+    private fun isConcentricSample(metric: WorkoutMetric): Boolean {
+        return metric.velocityA > VELOCITY_DEAD_BAND_MM_S || metric.velocityB > VELOCITY_DEAD_BAND_MM_S
+    }
+
+    /** Mirror of [isConcentricSample] for the lowering phase. */
+    private fun isEccentricSample(metric: WorkoutMetric): Boolean {
+        return metric.velocityA < -VELOCITY_DEAD_BAND_MM_S || metric.velocityB < -VELOCITY_DEAD_BAND_MM_S
+    }
+
+    /**
      * Calculate enhanced metrics for the set summary display.
      */
     internal fun calculateSetSummaryMetrics(
@@ -5422,12 +5437,24 @@ class ActiveSessionEngine(
         }
         val isSingleCable = cableCount == 1
 
+        // AF-1: a max-weight PR is the measured peak load over the WORKING reps only.
+        // A warmup rep can produce a heavier transient than the working load (a hard
+        // first pull against a light warmup weight), and that peak used to be recorded
+        // as the set's heaviest lift and turned into a PR.  Fall back to every sample
+        // when the set had no warmup reps, when the warmup mark was never recorded, or
+        // when no sample landed after it.
+        val workingMetrics = if (warmupRepsCount > 0 && warmupCompleteTimeMs > 0L) {
+            metrics.filter { it.timestamp >= warmupCompleteTimeMs }.ifEmpty { metrics }
+        } else {
+            metrics
+        }
+
         val heaviestLiftKgPerCable = if (isSingleCable) {
             // Single-cable: use the active cable's load (don't halve)
-            metrics.maxOf { maxOf(it.loadA, it.loadB) }
+            workingMetrics.maxOf { maxOf(it.loadA, it.loadB) }
         } else {
             // Double-cable: raw totalLoad / 2, no baseline subtraction (parent-aligned)
-            metrics.maxOf { it.totalLoad / 2f }
+            workingMetrics.maxOf { it.totalLoad / 2f }
         }
 
         val volumeWeightKgPerCable = if (isEchoMode) {
@@ -5438,8 +5465,8 @@ class ActiveSessionEngine(
         // Fixed-load modes should log the prescribed working load, while Echo uses measured force.
         val totalVolumeKg = volumeWeightKgPerCable * cableCount.toFloat() * repCount
 
-        val concentricMetrics = metrics.filter { it.velocityA > 10 || it.velocityB > 10 }
-        val eccentricMetrics = metrics.filter { it.velocityA < -10 || it.velocityB < -10 }
+        val concentricMetrics = metrics.filter { isConcentricSample(it) }
+        val eccentricMetrics = metrics.filter { isEccentricSample(it) }
 
         val peakConcentricA = concentricMetrics.maxOfOrNull { it.loadA } ?: 0f
         val peakConcentricB = concentricMetrics.maxOfOrNull { it.loadB } ?: 0f
@@ -6159,11 +6186,13 @@ class ActiveSessionEngine(
                     return@launch
                 }
 
-                // Split into concentric/eccentric using velocity direction
-                // Concentric = lifting (positive velocity), Eccentric = lowering (negative velocity)
+                // Split into concentric/eccentric using velocity direction.
+                // F-022: the same +-10 mm/s dead-band the set summary uses, so a rep's
+                // mean concentric velocity is not dragged down by near-zero noise
+                // samples that "any positive velocity" used to accept.
                 // Approximate: use first half as concentric if we can't determine from velocity
                 val concentricMetrics = repMetrics.filter {
-                    it.velocityA > 0 || it.velocityB > 0
+                    isConcentricSample(it)
                 }.takeIf { it.isNotEmpty() } ?: run {
                     // Fallback: first half is concentric
                     val midpoint = repMetrics.size / 2
@@ -6327,9 +6356,23 @@ class ActiveSessionEngine(
             coordinator._repCount.value = repCounter.getRepCount()
             coordinator._repRanges.value = repCounter.getRepRanges()
 
-            // Issue #252: Record the moment warmup completes (once per set)
+            // Issue #252: Record the moment warmup completes (once per set).
+            // The mark is compared against sample timestamps (set duration, the
+            // working-reps-only peak load, the rep-1 biomechanics window), so it is
+            // stamped from this sample's own clock rather than read separately.
+            // Both come from the same wall clock in production (MonitorDataProcessor
+            // stamps each sample as it is parsed).
             if (coordinator.warmupCompleteTimeMs == 0L && coordinator._repCount.value.isWarmupComplete) {
-                coordinator.warmupCompleteTimeMs = currentTimeMillis()
+                coordinator.warmupCompleteTimeMs = metric.timestamp
+                // F-022: start working rep 1's window at the end of warmup. Without a
+                // boundary here the window reaches back to set start, so rep 1's mean
+                // concentric velocity - the baseline for velocity-loss auto-end and for
+                // the VBT 1RM estimate - averaged in every warmup rep.
+                if (coordinator._repCount.value.warmupReps > 0) {
+                    coordinator.repBoundaryTimestamps.update { boundaries ->
+                        if (boundaries.isEmpty()) listOf(metric.timestamp) else boundaries
+                    }
+                }
             }
 
             if (shouldEnableAutoStop(params)) {
@@ -13670,6 +13713,10 @@ class ActiveSessionEngine(
 
     private companion object {
         const val TEMPLATE_531_ID = "template_531"
+
+        // F-022: the phase dead-band (mm/s) shared by the set summary and the per-rep
+        // biomechanics window, so both split concentric from eccentric the same way.
+        const val VELOCITY_DEAD_BAND_MM_S = 10.0
 
         // Issue #649: verbal cues are typically <30s; this ceiling covers the cue
         // plus a short post-cue transition window. Exceeding it releases the defer
