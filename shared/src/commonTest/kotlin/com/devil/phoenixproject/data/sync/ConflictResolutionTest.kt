@@ -812,6 +812,71 @@ class ConflictResolutionTest {
         assertEquals(150.0, inserted.weight, "PR should have portal weight")
     }
 
+    @Test
+    fun `server deletions are scoped to the authenticated owner and clean cycle sync state`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertProfile("profile-owner-a", "Owner A", 0L, now, 0L)
+        queries.insertProfile("profile-owner-b", "Owner B", 1L, now, 0L)
+        queries.linkProfileToSupabase("owner-a", now, "profile-owner-a")
+        queries.linkProfileToSupabase("owner-b", now, "profile-owner-b")
+
+        fun insertRoutine(id: String, profileId: String) {
+            queries.insertRoutine(
+                id = id,
+                name = id,
+                description = "",
+                createdAt = now,
+                lastUsed = null,
+                useCount = 0L,
+                profile_id = profileId,
+                groupId = null,
+                deletedAt = null,
+            )
+        }
+        fun insertCycle(id: String, profileId: String) {
+            queries.insertTrainingCycle(
+                id = id,
+                name = id,
+                description = null,
+                created_at = now,
+                is_active = 0L,
+                profile_id = profileId,
+                template_id = null,
+                week_number = 1L,
+                updatedAt = now,
+            )
+            queries.insertCycleSyncState(
+                cycleId = id,
+                profileId = profileId,
+                accountId = if (profileId == "profile-owner-a") "owner-a" else "owner-b",
+                dirtyGeneration = 1L,
+                acknowledgedGeneration = 0L,
+                pendingDeleteUpdatedAt = null,
+                pendingDeleteGeneration = null,
+            )
+        }
+        insertRoutine("routine-owner-a", "profile-owner-a")
+        insertRoutine("routine-owner-b", "profile-owner-b")
+        insertCycle("cycle-owner-a", "profile-owner-a")
+        insertCycle("cycle-owner-b", "profile-owner-b")
+
+        val result = repository.applyServerDeletions(
+            ownerUserId = "owner-a",
+            routineIds = listOf("routine-owner-a", "routine-owner-b"),
+            cycleIds = listOf("cycle-owner-a", "cycle-owner-b"),
+            lastSync = now - 1,
+        )
+
+        assertEquals(listOf("routine-owner-a"), result.deletedRoutineIds)
+        assertEquals(listOf("cycle-owner-a"), result.deletedCycleIds)
+        assertEquals(null, queries.selectRoutineById("routine-owner-a").executeAsOneOrNull())
+        assertNotNull(queries.selectRoutineById("routine-owner-b").executeAsOneOrNull())
+        assertEquals(null, queries.selectTrainingCycleById("cycle-owner-a").executeAsOneOrNull())
+        assertNotNull(queries.selectTrainingCycleById("cycle-owner-b").executeAsOneOrNull())
+        assertEquals(null, queries.selectCycleSyncState("cycle-owner-a").executeAsOneOrNull())
+        assertNotNull(queries.selectCycleSyncState("cycle-owner-b").executeAsOneOrNull())
+    }
+
     // ─── Helper Functions ─────────────────────────────────────────────
 
     private fun createLocalSession(
