@@ -77,6 +77,7 @@ open class FakePortalApiClient :
     var lastPullProfileId: String? = null
     var lastPullCursor: String? = null
     var lastPullPageSize: Int? = null
+    val pullCallLastSyncs: MutableList<Long> = mutableListOf()
     val pullCallCursors: MutableList<String?> = mutableListOf()
     val pullCallProfileIds: MutableList<String?> = mutableListOf()
     val pullCallTimestampsMs: MutableList<Long> = mutableListOf()
@@ -112,8 +113,10 @@ open class FakePortalApiClient :
         profileId: String?,
         cursor: String?,
         pageSize: Int?,
+        lastSync: Long,
     ): Result<PortalSyncPullResponse> {
         pullCallCount++
+        pullCallLastSyncs += lastSync
         lastPullKnownEntityIds = knownEntityIds
         pullKnownEntityIdsHistory += knownEntityIds
         lastPullDeviceId = deviceId

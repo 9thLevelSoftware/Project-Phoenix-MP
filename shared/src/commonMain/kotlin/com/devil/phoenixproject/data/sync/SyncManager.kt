@@ -36,8 +36,31 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+/**
+ * User-visible summary of a destructive server-reported delete (delete wins, KD-4).
+ */
+data class ServerDeletionNotice(
+    val discardedRoutineEditIds: List<String> = emptyList(),
+    val discardedCycleEditIds: List<String> = emptyList(),
+    val deletedActiveCycleIds: List<String> = emptyList(),
+) {
+    val message: String
+        get() = buildList {
+            if (deletedActiveCycleIds.isNotEmpty()) {
+                add("A training cycle in progress was deleted on the portal and removed from this device.")
+            }
+            if (discardedRoutineEditIds.isNotEmpty()) {
+                add("A routine deleted on the portal had unsynced changes on this device; those changes were discarded.")
+            }
+            if (discardedCycleEditIds.isNotEmpty()) {
+                add("A training cycle deleted on the portal had unsynced changes on this device; those changes were discarded.")
+            }
+        }.joinToString(" ")
+}
 
 sealed class SyncState {
     object Idle : SyncState()
@@ -403,12 +426,32 @@ class SyncManager(
      */
     private var lastFailedBatchHash: Int? = null
 
+    /**
+     * Routine ids whose push the server rejected under LWW (server copy is newer).
+     * The next completed pull applies the server version for these even though the
+     * local row was edited after lastSync; otherwise the "local wins" routine merge
+     * would keep the stale local copy and delta pulls would never re-send the server
+     * row. Entries are account/profile scoped and cleared only when that scope's
+     * pull completes. Guarded by [syncMutex].
+     */
+    private val pendingServerWinsRoutineIdsByScope = mutableMapOf<String, MutableSet<String>>()
+
     private val syncMutex = Mutex()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
     /** Account-scoped cursor published atomically with token identity transitions. */
     val lastSyncTime: StateFlow<Long> = tokenStorage.lastSyncTimestamp
+
+    private val _serverDeletionNotice = MutableStateFlow<ServerDeletionNotice?>(null)
+
+    /**
+     * Set when a server-reported delete removed something the user will notice
+     * (an unsynced routine/cycle edit, or the active / in-progress cycle). The UI can
+     * show [ServerDeletionNotice.message] and then call [clearServerDeletionNotice]
+     * with the notice it actually displayed.
+     */
+    val serverDeletionNotice: StateFlow<ServerDeletionNotice?> = _serverDeletionNotice.asStateFlow()
 
     val isAuthenticated: StateFlow<Boolean> = tokenStorage.isAuthenticated
     val currentUser: StateFlow<PortalUser?> = tokenStorage.currentUser
@@ -585,14 +628,24 @@ class SyncManager(
      * - Debugging sync issues where delta sync returns empty results
      *
      * This will cause the next sync to pull ALL data from the server, not just
-     * changes since the last sync. Note: push will still only send unsynced local data.
+     * changes since the last sync: the pull sends lastSync=0, so the server returns
+     * the whole profile. It still sends the device's known entity ids so the server
+     * also returns tombstones (e.g. deleted personal records) for rows this device
+     * holds. A [retryPull] after a failed forced resync behaves the same, because the
+     * stored lastSync stays 0 until a pull completes. Note: push will still only send
+     * unsynced local data.
      *
      * @return Result from the subsequent sync operation
      */
-    suspend fun forceFullResync(): Result<Long> {
-        Logger.i("SyncManager") { "Forcing full resync - resetting lastSyncTimestamp to 0" }
-        tokenStorage.setLastSyncTimestamp(0L)
-        return sync()
+    suspend fun forceFullResync(): Result<Long> = syncMutex.withLock {
+        withProfileMutationBarrier {
+            // Keep the reset and the following sync in one critical section. Otherwise an
+            // already-running sync can complete after this reset, restore a non-zero checkpoint,
+            // and make the queued "full" pull a delta pull.
+            Logger.i("SyncManager") { "Forcing full resync - resetting lastSyncTimestamp to 0" }
+            tokenStorage.setLastSyncTimestamp(0L)
+            syncLocked()
+        }
     }
 
     /**
@@ -645,6 +698,16 @@ class SyncManager(
         // surfaced (audit F025).
         val pushResponse = pushResult.getOrThrow()
         val rejections = pushResponse.rejections
+        val rejectedRoutineIds = rejections.routines.mapTo(mutableSetOf()) { it.id }
+        if (rejectedRoutineIds.isNotEmpty()) {
+            tokenStorage.currentUser.value?.id?.let { userId ->
+                val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+                val rejectionScopeKey = "$userId:$activeProfileId"
+                pendingServerWinsRoutineIdsByScope
+                    .getOrPut(rejectionScopeKey) { mutableSetOf() }
+                    .addAll(rejectedRoutineIds)
+            }
+        }
         val totalRejections = rejections.sessions.size + rejections.routines.size +
             rejections.cycles.size + rejections.externalActivities.size +
             rejections.rpgAttributes.size + rejections.gamificationStats.size
@@ -668,15 +731,16 @@ class SyncManager(
             currentTimeMillis()
         }
 
-        // Pull remote changes using parity-based sync (entity IDs, not timestamps).
+        // Pull remote changes using parity-based sync (entity IDs plus the stored lastSync).
         // Entity IDs are collected inside pullRemoteChangesWithResult to ensure we send
         // the current state of local storage after the push has completed.
         val pullResult = pullRemoteChangesWithResult()
 
         return if (pullResult.isSuccess) {
             // Full success: both push and pull succeeded
-            val finalSyncTime = pullResult.getOrThrow()
-            tokenStorage.setLastSyncTimestamp(finalSyncTime)
+            val completedPull = pullResult.getOrThrow()
+            val finalSyncTime = completedPull.syncTime
+            recordCompletedPull(completedPull)
             _syncState.value = SyncState.Success(finalSyncTime)
             Result.success(finalSyncTime)
         } else {
@@ -725,8 +789,9 @@ class SyncManager(
         val pullResult = pullRemoteChangesWithResult()
 
         return if (pullResult.isSuccess) {
-            val finalSyncTime = pullResult.getOrThrow()
-            tokenStorage.setLastSyncTimestamp(finalSyncTime)
+            val completedPull = pullResult.getOrThrow()
+            val finalSyncTime = completedPull.syncTime
+            recordCompletedPull(completedPull)
             _syncState.value = SyncState.Success(finalSyncTime)
             Logger.i("SyncManager") { "Pull retry succeeded, updated timestamp to $finalSyncTime" }
             Result.success(finalSyncTime)
@@ -746,6 +811,27 @@ class SyncManager(
     }
 
     // === Private Helpers ===
+
+    /** Result of a pull whose every page merged (loop ended with `hasMore=false`). */
+    private data class CompletedPull(
+        /** Earliest server `syncTime` across the pull's pages; the next pull's lastSync. */
+        val syncTime: Long,
+        /** Delta-pull marker to store with [syncTime], or null to force a full pull next time. */
+        val deltaPullKey: String?,
+        /** Account/profile scope whose pending LWW rejections this pull consumed. */
+        val serverWinsRoutineScopeKey: String?,
+    )
+
+    /**
+     * Persists lastSync and the delta-pull marker together (lastSync first), and clears
+     * only the account/profile-scoped LWW server-wins routine set this pull applied.
+     */
+    private fun recordCompletedPull(completedPull: CompletedPull) {
+        tokenStorage.recordCompletedPull(completedPull.syncTime, completedPull.deltaPullKey)
+        completedPull.serverWinsRoutineScopeKey?.let { scopeKey ->
+            pendingServerWinsRoutineIdsByScope.remove(scopeKey)
+        }
+    }
 
     private suspend fun <T> withProfileMutationBarrier(block: suspend () -> T): T =
         profileMutationBarrier?.withExclusive(block) ?: block()
@@ -1479,6 +1565,24 @@ class SyncManager(
             }
         }
 
+        // Routines/cycles the server skipped because they were deleted there
+        // (PR 16 `skippedDeleted`). Delete the local copy so they stop being pushed.
+        // Non-fatal: the next pull reports the same ids via deletedRoutineIds/deletedCycleIds.
+        finalResponse?.skippedDeleted?.let { skipped ->
+            try {
+                applyServerDeletions(
+                    ownerUserId = userId,
+                    routineIds = skipped.routines,
+                    cycleIds = skipped.cycles,
+                    lastSync = lastSync,
+                    source = "push skippedDeleted",
+                )
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Logger.w(e) { "Applying push skippedDeleted failed; next pull will retry the delete" }
+            }
+        }
+
         // Stamp pushed PRs (Issue #528) so getFullPRsModifiedSince doesn't keep
         // re-shipping the same rows on every push. Re-use the exact recentPRs
         // collected for this payload, deduped by id, and stamp only after the
@@ -1679,13 +1783,52 @@ class SyncManager(
      * a list of entity IDs we already have. The server returns entities
      * that exist server-side but not in our list.
      *
-     * @return Result with final syncTime on success, or failure with classified error
+     * Delta pulls: the request carries the stored server `syncTime` of the last completed
+     * pull as `lastSync`, captured once before the page loop so every page of this pull
+     * sends the same value. The server then skips known entities unchanged since then
+     * (minus a small overlap). The caller persists the new value only after the final
+     * page (`hasMore=false`). The new value is the EARLIEST page `syncTime` of this pull:
+     * a known row edited while later pages were being fetched is then re-sent by the
+     * next pull instead of being skipped for good.
+     *
+     * `lastSync=0` (full pull) is sent instead when the stored value is not known to
+     * belong to this user + profile (delta-pull marker absent or different):
+     *  - no pull has completed since upgrading from builds that always sent 0 (one-time
+     *    full pull, so server-side fixes made before the upgrade reach this device);
+     *  - the stored lastSync was produced by a pull of a different profile or account
+     *    (the stored timestamp is global, but known ids and server filtering are per
+     *    user and profile);
+     *  - the previous pull's external activities were truncated by the server cap.
+     * [forceFullResync] resets the stored value to 0 and so also sends 0.
+     *
+     * @return Result with the completed pull on success, or failure with classified error
      */
-    private suspend fun pullRemoteChangesWithResult(): Result<Long> {
+    private suspend fun pullRemoteChangesWithResult(): Result<CompletedPull> {
         val deviceId = tokenStorage.getDeviceId()
         val activeProfileId = userProfileRepository.activeProfile.value?.id
         val mergeProfileId = activeProfileId ?: "default"
         val lastSync = tokenStorage.getLastSyncTimestamp()
+        val deltaPullKey = tokenStorage.currentUser.value?.id?.let { userId -> "$userId:$mergeProfileId" }
+        val storedDeltaPullKey = tokenStorage.getDeltaPullKey()
+        val deltaMarkerMatches = deltaPullKey != null && storedDeltaPullKey == deltaPullKey
+        val requestLastSync = if (deltaMarkerMatches) lastSync else 0L
+        // An explicit key mismatch means [lastSync] belongs to another profile and cannot
+        // safely participate in this profile's routine LWW comparison. An absent marker is
+        // different: it represents upgrade/truncation recovery, where the stored boundary still
+        // protects local edits while the wire request deliberately performs a full pull.
+        val mergeLastSync = if (storedDeltaPullKey != null && storedDeltaPullKey != deltaPullKey) {
+            0L
+        } else {
+            lastSync
+        }
+        val serverWinsRoutineIds = deltaPullKey
+            ?.let { pendingServerWinsRoutineIdsByScope[it]?.toSet() }
+            .orEmpty()
+        Logger.i("SyncManager") {
+            "Pull mode: requestLastSync=$requestLastSync (stored=$lastSync, deltaMarkerMatches=$deltaMarkerMatches, " +
+                "mergeLastSync=$mergeLastSync, profile=$mergeProfileId, " +
+                "serverWinsRoutines=${serverWinsRoutineIds.size})"
+        }
 
         // Collect local entity IDs for parity comparison.
         //
@@ -1761,7 +1904,9 @@ class SyncManager(
         var pagesProcessed = 0
         var totalEntitiesFetched = 0
         var currentCursor: String? = null
-        var finalSyncTime: Long = 0
+        // Earliest server syncTime across pages: the snapshot boundary the whole pull is safe from.
+        var pullSyncTime: Long? = null
+        var externalActivitiesTruncated = false
         val seenCursors = mutableSetOf<String>() // cursor-repetition detection (issue #679)
 
         // Pagination loop: fetch pages until hasMore is false
@@ -1837,6 +1982,7 @@ class SyncManager(
                         profileId = mergeProfileId,
                         cursor = currentCursor,
                         pageSize = SyncConfig.DEFAULT_PAGE_SIZE,
+                        lastSync = requestLastSync,
                     )
 
                     if (pullResult.isSuccess) {
@@ -1884,17 +2030,22 @@ class SyncManager(
                 (pullResponse.profilePreferenceSections?.size ?: 0) +
                 (if (pullResponse.rpgAttributes != null) 1 else 0) +
                 (if (pullResponse.gamificationStats != null) 1 else 0) +
-                pullResponse.externalActivities.size
+                pullResponse.externalActivities.size +
+                pullResponse.workoutDeletions.size +
+                pullResponse.ownershipEvents.size +
+                pullResponse.deletedRoutineIds.size +
+                pullResponse.deletedCycleIds.size
             totalEntitiesFetched += pageEntityCount
 
-            // Empty page warning (shouldn't happen in normal operation)
+            // A page with no entities mobile decodes but hasMore=true is legitimate: e.g. a
+            // page holding only customExercises (paged last by the server, not decoded
+            // here). Keep following its cursor. The missing/blank/repeated-cursor guards
+            // and MAX_PAGES bound the loop; each fails the pull, so neither lastSync nor the
+            // delta-pull marker advances over pages that were never fetched.
             if (pageEntityCount == 0 && pullResponse.hasMore) {
-                Logger.w("SyncManager") {
-                    "Pull page $pagesProcessed returned empty but hasMore=true. Breaking to prevent infinite loop."
+                Logger.d("SyncManager") {
+                    "Pull page $pagesProcessed has no decoded entities but hasMore=true; following cursor"
                 }
-                // Treat as end of pagination
-                finalSyncTime = pullResponse.syncTime
-                break
             }
 
             Logger.d("SyncManager") {
@@ -1915,9 +2066,10 @@ class SyncManager(
             // Merge this page in preference-first repository order
             val mergeResult = mergePullPage(
                 pullResponse = pullResponse,
-                lastSync = lastSync,
+                lastSync = mergeLastSync,
                 mergeProfileId = mergeProfileId,
                 isFirstPage = pagesProcessed == 1,
+                serverWinsRoutineIds = serverWinsRoutineIds,
             )
             if (mergeResult.isFailure) {
                 // Map Result<Unit> to Result<Long> for consistent return type
@@ -1932,7 +2084,10 @@ class SyncManager(
             }
 
             // Update pagination state
-            finalSyncTime = pullResponse.syncTime
+            pullSyncTime = pullSyncTime?.let { minOf(it, pullResponse.syncTime) } ?: pullResponse.syncTime
+            if (pullResponse.externalActivitiesHasMore) {
+                externalActivitiesTruncated = true
+            }
 
             if (!pullResponse.hasMore) {
                 // All pages complete
@@ -1959,10 +2114,32 @@ class SyncManager(
 
         // The portal pull response is a delta: it returns entities that are new
         // to the client or updated since lastSync. Missing known IDs therefore
-        // do not prove deletion. Server-side routine/cycle deletes need an
-        // explicit tombstone channel before local hard-delete is safe.
+        // do not prove deletion. Server-side routine/cycle deletes arrive only
+        // through the explicit tombstone keys (pull deletedRoutineIds /
+        // deletedCycleIds, push skippedDeleted), applied by applyServerDeletions
+        // in mergePullPage and in the push skippedDeleted handling.
 
-        return Result.success(finalSyncTime)
+        // The server caps external activities at 500 per pull (oldest synced_at first)
+        // and has no cursor for the rest. A delta lastSync would skip the truncated tail
+        // for good, so drop the delta-pull marker: the next pull is a full lastSync=0
+        // pull (the pre-delta behaviour). Delivering the tail needs a server cursor.
+        val completedDeltaPullKey = if (externalActivitiesTruncated) {
+            Logger.w("SyncManager") {
+                "Pull: server truncated external activities (externalActivitiesHasMore=true); " +
+                    "next pull will be a full pull. Activities beyond the server cap are not delivered."
+            }
+            null
+        } else {
+            deltaPullKey
+        }
+
+        return Result.success(
+            CompletedPull(
+                syncTime = pullSyncTime ?: lastSync,
+                deltaPullKey = completedDeltaPullKey,
+                serverWinsRoutineScopeKey = deltaPullKey,
+            ),
+        )
     }
 
     private suspend fun applyPulledProfilePreferences(
@@ -2052,6 +2229,7 @@ class SyncManager(
         lastSync: Long,
         mergeProfileId: String,
         isFirstPage: Boolean,
+        serverWinsRoutineIds: Set<String>,
     ): Result<Unit> {
         val ownerUserId = tokenStorage.currentUser.value?.id
             ?: return Result.failure(PortalApiException("Not authenticated", null, 401))
@@ -2179,8 +2357,21 @@ class SyncManager(
                 personalRecords = prDtos,
                 lastSync = lastSync,
                 profileId = mergeProfileId,
+                serverWinsRoutineIds = serverWinsRoutineIds,
                 sessionNotes = sessionNotesMap,
                 sessionUpdatedAtById = sessionUpdatedAtById,
+            )
+
+            // Server-reported deletions (PR 16 keys; first page only, absent on older
+            // servers). Apply after the atomic ordinary merge so a page carrying the
+            // same routine or cycle cannot resurrect it. A failure fails the pull, which
+            // keeps the checkpoint unchanged and makes the next pull report the ids again.
+            applyServerDeletions(
+                ownerUserId = ownerUserId,
+                routineIds = pullResponse.deletedRoutineIds,
+                cycleIds = pullResponse.deletedCycleIds,
+                lastSync = lastSync,
+                source = "pull",
             )
 
             Logger.d("SyncManager") {
@@ -2197,73 +2388,144 @@ class SyncManager(
             return Result.failure(PortalApiException("Pull merge failed: ${e.message}"))
         }
 
-        // RPG attributes and external activities use separate repositories and conflict rules.
-        // Failures here do not roll back already committed ordinary or preference data.
-
+        // RPG attributes are checkpoint-critical because the server filters them by lastSync.
+        // A failure does not roll back earlier repository commits, but it must fail the page so
+        // the checkpoint stays unchanged and the idempotent retry receives the RPG row again.
         try {
             // RPG attributes — server wins (overwrite local)
             pullResponse.rpgAttributes?.let { rpg ->
-            val characterClass = try {
-                CharacterClass.valueOf(rpg.characterClass ?: "PHOENIX")
-            } catch (_: IllegalArgumentException) {
-                CharacterClass.PHOENIX
+                val characterClass = try {
+                    CharacterClass.valueOf(rpg.characterClass ?: "PHOENIX")
+                } catch (_: IllegalArgumentException) {
+                    CharacterClass.PHOENIX
+                }
+                val rpgProfile = RpgProfile(
+                    strength = rpg.strength,
+                    power = rpg.power,
+                    stamina = rpg.stamina,
+                    consistency = rpg.consistency,
+                    mastery = rpg.mastery,
+                    characterClass = characterClass,
+                    lastComputed = currentTimeMillis(),
+                )
+                gamificationRepository.saveRpgProfile(rpgProfile, mergeProfileId)
+                Logger.d("SyncManager") { "Merged portal RPG attributes: ${rpg.characterClass}" }
             }
-            val rpgProfile = RpgProfile(
-                strength = rpg.strength,
-                power = rpg.power,
-                stamina = rpg.stamina,
-                consistency = rpg.consistency,
-                mastery = rpg.mastery,
-                characterClass = characterClass,
-                lastComputed = currentTimeMillis(),
-            )
-            gamificationRepository.saveRpgProfile(rpgProfile, mergeProfileId)
-            Logger.d("SyncManager") { "Merged portal RPG attributes: ${rpg.characterClass}" }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Logger.e(e) { "RPG attribute pull merge failed; checkpoint will not advance." }
+            return Result.failure(PortalApiException("RPG attribute pull merge failed: ${e.message}"))
         }
 
-        // External activities — upsert from portal (needsSync = false since already on server)
+        // External activities are checkpoint-critical. If this write fails, fail the page so
+        // lastSync and the delta marker stay unchanged and the activity is fetched again.
         if (pullResponse.externalActivities.isNotEmpty()) {
-            val activities = pullResponse.externalActivities.map { dto ->
-                com.devil.phoenixproject.domain.model.ExternalActivity(
-                    id = dto.id,
-                    externalId = dto.externalId,
-                    provider = IntegrationProvider.fromKey(
-                        dto.provider,
-                    ) ?: IntegrationProvider.UNKNOWN,
-                    name = dto.name,
-                    activityType = dto.activityType,
-                    startedAt = try {
-                        kotlin.time.Instant.parse(dto.startedAt).toEpochMilliseconds()
-                    } catch (_: Exception) {
-                        currentTimeMillis()
-                    },
-                    durationSeconds = dto.durationSeconds,
-                    distanceMeters = dto.distanceMeters,
-                    calories = dto.calories,
-                    avgHeartRate = dto.avgHeartRate,
-                    maxHeartRate = dto.maxHeartRate,
-                    elevationGainMeters = dto.elevationGainMeters,
-                    rawData = dto.rawData,
-                    syncedAt = try {
-                        kotlin.time.Instant.parse(dto.syncedAt).toEpochMilliseconds()
-                    } catch (_: Exception) {
-                        currentTimeMillis()
-                    },
-                    profileId = mergeProfileId,
-                    needsSync = false,
-                )
-            }
-            externalActivityRepository.upsertActivities(activities)
-            Logger.d("SyncManager") { "Merged ${activities.size} portal external activities" }
-        }
-        } catch (e: Exception) {
-            Logger.w(e) {
-                "Separate post-merge repository work (RPG/external activities) failed; " +
-                    "non-fatal, core sync data is preserved."
+            try {
+                val activities = pullResponse.externalActivities.map { dto ->
+                    com.devil.phoenixproject.domain.model.ExternalActivity(
+                        id = dto.id,
+                        externalId = dto.externalId,
+                        provider = IntegrationProvider.fromKey(dto.provider) ?: IntegrationProvider.UNKNOWN,
+                        name = dto.name,
+                        activityType = dto.activityType,
+                        startedAt = try {
+                            kotlin.time.Instant.parse(dto.startedAt).toEpochMilliseconds()
+                        } catch (_: Exception) {
+                            currentTimeMillis()
+                        },
+                        durationSeconds = dto.durationSeconds,
+                        distanceMeters = dto.distanceMeters,
+                        calories = dto.calories,
+                        avgHeartRate = dto.avgHeartRate,
+                        maxHeartRate = dto.maxHeartRate,
+                        elevationGainMeters = dto.elevationGainMeters,
+                        rawData = dto.rawData,
+                        syncedAt = try {
+                            kotlin.time.Instant.parse(dto.syncedAt).toEpochMilliseconds()
+                        } catch (_: Exception) {
+                            currentTimeMillis()
+                        },
+                        profileId = mergeProfileId,
+                        needsSync = false,
+                    )
+                }
+                externalActivityRepository.upsertActivities(activities)
+                Logger.d("SyncManager") { "Merged ${activities.size} portal external activities" }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.e(e) { "External activity pull merge failed; checkpoint will not advance." }
+                return Result.failure(PortalApiException("External activity pull merge failed: ${e.message}"))
             }
         }
 
         return Result.success(Unit)
+    }
+
+    /**
+     * Hard-delete routines/cycles the server reports as deleted. No push tombstone
+     * is left behind (the server already knows). Delete wins over unsynced local
+     * edits (KD-4); discarded edits are logged.
+     */
+    private suspend fun applyServerDeletions(
+        ownerUserId: String,
+        routineIds: List<String>,
+        cycleIds: List<String>,
+        lastSync: Long,
+        source: String,
+    ) {
+        if (routineIds.isEmpty() && cycleIds.isEmpty()) return
+        val result = syncRepository.applyServerDeletions(
+            ownerUserId = ownerUserId,
+            routineIds = routineIds,
+            cycleIds = cycleIds,
+            lastSync = lastSync,
+        )
+        if (result.discardedRoutineEditIds.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                "Server deleted ${result.discardedRoutineEditIds.size} routine(s) with unsynced local edits " +
+                    "($source); local edits discarded (delete wins): ${result.discardedRoutineEditIds.joinToString()}"
+            }
+        }
+        if (result.deletedActiveCycleIds.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                "Server deleted ${result.deletedActiveCycleIds.size} active/in-progress cycle(s) ($source); " +
+                    "local cycle progress removed (delete wins): ${result.deletedActiveCycleIds.joinToString()}"
+            }
+        }
+        if (result.discardedCycleEditIds.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                "Server deleted ${result.discardedCycleEditIds.size} cycle(s) with unsynced local edits " +
+                    "($source); local edits discarded (delete wins): ${result.discardedCycleEditIds.joinToString()}"
+            }
+        }
+        if (
+            result.discardedRoutineEditIds.isNotEmpty() ||
+            result.discardedCycleEditIds.isNotEmpty() ||
+            result.deletedActiveCycleIds.isNotEmpty()
+        ) {
+            _serverDeletionNotice.update { existing ->
+                ServerDeletionNotice(
+                    discardedRoutineEditIds =
+                        (existing?.discardedRoutineEditIds.orEmpty() + result.discardedRoutineEditIds).distinct(),
+                    discardedCycleEditIds =
+                        (existing?.discardedCycleEditIds.orEmpty() + result.discardedCycleEditIds).distinct(),
+                    deletedActiveCycleIds =
+                        (existing?.deletedActiveCycleIds.orEmpty() + result.deletedActiveCycleIds).distinct(),
+                )
+            }
+        }
+        Logger.i("SyncManager") {
+            "Applied server deletions ($source): reported routines=${routineIds.size}, cycles=${cycleIds.size}; " +
+                "removed locally routines=${result.deletedRoutineIds.size}, cycles=${result.deletedCycleIds.size}, " +
+                "template routines=${result.deletedTemplateRoutineIds.size}"
+        }
+    }
+
+    /** Clears [notice] only if it is still the exact notice the UI displayed. */
+    fun clearServerDeletionNotice(notice: ServerDeletionNotice) {
+        _serverDeletionNotice.update { current -> if (current == notice) null else current }
     }
 
     private fun getPlatformName(): String {

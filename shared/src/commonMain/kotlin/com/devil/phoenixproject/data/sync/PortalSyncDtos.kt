@@ -667,11 +667,28 @@ data class PortalSyncPushResponse(
      */
     val rejections: SyncRejectionsDto = SyncRejectionsDto(),
     /**
+     * Routine/cycle ids the server refused to write because they were deleted
+     * on the server (portal delete or another device). The pushed row is not
+     * re-created; mobile deletes its local copy (delete wins). Absent on older
+     * servers, so it defaults to empty.
+     */
+    val skippedDeleted: SkippedDeletedDto = SkippedDeletedDto(),
+    /**
      * cycle id -> server `updated_at` (ISO) for cycles whose pushed structure was
      * applied. The device stores it as the cycle's next baseUpdatedAt. A cycle
      * missing here keeps its previous base. Absent on older portals.
      */
     val cycleVersions: Map<String, String> = emptyMap(),
+)
+
+/**
+ * `skippedDeleted` push response key: ids dropped from the push because the
+ * server holds a deletion tombstone for them. Both lists default to empty.
+ */
+@Serializable
+data class SkippedDeletedDto(
+    val routines: List<String> = emptyList(),
+    val cycles: List<String> = emptyList(),
 )
 
 /**
@@ -850,7 +867,10 @@ data class KnownEntityIds(
 @Serializable
 data class PortalSyncPullRequest(
     val deviceId: String,
-    /** @deprecated Use knownEntityIds for parity-based sync. Kept for backward compatibility. */
+    /**
+     * Server `syncTime` (epoch millis) of the last completed pull; 0 asks for everything.
+     * Combined with [knownEntityIds]: known entities unchanged since lastSync are skipped.
+     */
     val lastSync: Long = 0,
     val profileId: String? = null,
     val cursor: String? = null,
@@ -881,6 +901,8 @@ data class PortalSyncPullResponse(
     // Pagination metadata (Plan 03-05)
     val nextCursor: String? = null,
     val hasMore: Boolean = false,
+    /** True when the server hit its external-activities cap (500) and omitted the rest. */
+    val externalActivitiesHasMore: Boolean = false,
     // Entity data
     val sessions: List<PullWorkoutSessionDto> = emptyList(), // Merged via INSERT OR IGNORE (local wins)
     val routines: List<PullRoutineDto> = emptyList(),
@@ -896,6 +918,14 @@ data class PortalSyncPullResponse(
     val profilePreferenceSections: List<PortalProfilePreferenceSectionCanonicalDto>? = null,
     // External integration activities (paid users only)
     val externalActivities: List<ExternalActivitySyncDto> = emptyList(),
+    /**
+     * Routine/cycle ids deleted on the server (portal or another device).
+     * Sent on the first page only. May include ids this device never held,
+     * so mobile treats them as "delete if present" and hard-deletes locally
+     * without pushing a tombstone back. Absent on older servers → empty.
+     */
+    val deletedRoutineIds: List<String> = emptyList(),
+    val deletedCycleIds: List<String> = emptyList(),
 )
 
 /** Permanent account-level deletion pulled from the portal. */

@@ -79,6 +79,9 @@ class SqlDelightSyncRepository(
      */
     private companion object {
         const val BATCH_LOOKUP_CHUNK_SIZE = 500
+
+        /** Local-only routines generated for template cycles (never synced). */
+        const val CYCLE_TEMPLATE_ROUTINE_PREFIX = "cycle_routine_"
     }
 
     /**
@@ -1912,6 +1915,7 @@ class SqlDelightSyncRepository(
         personalRecords: List<PersonalRecordSyncDto>,
         lastSync: Long,
         profileId: String,
+        serverWinsRoutineIds: Set<String>,
         sessionNotes: Map<String, SessionNotesEntry>,
         sessionUpdatedAtById: Map<String, Long>,
     ) {
@@ -2031,7 +2035,12 @@ class SqlDelightSyncRepository(
                     if (claimedTargetProfileId != null) {
                         queries.adoptRoutineProfile(profileId = targetProfileId, id = portalRoutine.id)
                     }
-                    mergePortalRoutine(portalRoutine, lastSync, targetProfileId)
+                    mergePortalRoutine(
+                        portalRoutine = portalRoutine,
+                        lastSync = lastSync,
+                        profileId = targetProfileId,
+                        serverWins = portalRoutine.id in serverWinsRoutineIds,
+                    )
                 }
 
                 // 3. Cycles — SERVER WINS with single-active enforcement
@@ -2306,6 +2315,99 @@ class SqlDelightSyncRepository(
 
     override suspend fun getAllPersonalRecordIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
         queries.selectAllPersonalRecordUuidsByProfile(profileId).executeAsList()
+    }
+
+    /** See [SyncRepository.applyServerDeletions]. */
+    override suspend fun applyServerDeletions(
+        ownerUserId: String,
+        routineIds: List<String>,
+        cycleIds: List<String>,
+        lastSync: Long,
+    ): ServerDeletionResult = withContext(Dispatchers.IO) {
+        if (routineIds.isEmpty() && cycleIds.isEmpty()) return@withContext ServerDeletionResult()
+
+        val deletedRoutines = mutableListOf<String>()
+        val discardedRoutineEdits = mutableListOf<String>()
+        val deletedCycles = mutableListOf<String>()
+        val discardedCycleEdits = mutableListOf<String>()
+        val deletedActiveCycles = mutableListOf<String>()
+        val deletedTemplateRoutines = mutableListOf<String>()
+
+        db.transaction {
+            for (serverRoutineId in routineIds.distinct()) {
+                // Match the local id and, for legacy rows, the stored serverId.
+                val localRows = (
+                    listOfNotNull(queries.selectRoutineById(serverRoutineId).executeAsOneOrNull()) +
+                        queries.selectRoutineByServerId(serverRoutineId).executeAsList()
+                    ).distinctBy { it.id }
+                for (row in localRows) {
+                    if (!profileOwnerMatches(row.profile_id, ownerUserId)) continue
+                    // lastSync == 0 (first pull / forced resync) has no sync base, so an
+                    // edit cannot be classified as "unsynced"; skip the report then.
+                    if (lastSync > 0L && row.deletedAt == null && (row.updatedAt ?: 0L) > lastSync) {
+                        discardedRoutineEdits += row.id
+                    }
+                    hardDeleteRoutineWithChildren(row.id)
+                    deletedRoutines += row.id
+                }
+            }
+
+            for (cycleId in cycleIds.distinct()) {
+                val cycle = queries.selectTrainingCycleById(cycleId).executeAsOneOrNull() ?: continue
+                if (!profileOwnerMatches(cycle.profile_id, ownerUserId)) continue
+                val hadProgress = queries.selectCycleProgressByCycle(cycleId).executeAsOneOrNull() != null
+                if (lastSync > 0L && cycle.deletedAt == null && cycle.updatedAt > lastSync) {
+                    discardedCycleEdits += cycleId
+                }
+                if (cycle.deletedAt == null && (cycle.is_active == 1L || hadProgress)) {
+                    deletedActiveCycles += cycleId
+                }
+                // Local-only template routines ("cycle_routine_<uuid>") are hidden from the
+                // routines list and never pushed; once this cycle's days go they would be
+                // unreachable, so remove them too unless another cycle day still uses them.
+                val templateRoutineIds = queries.selectCycleDaysByCycle(cycleId).executeAsList()
+                    .mapNotNull { it.routine_id }
+                    .filter { it.startsWith(CYCLE_TEMPLATE_ROUTINE_PREFIX) }
+                    .distinct()
+                queries.deleteCycleDaysByCycle(cycleId)
+                queries.deleteCycleProgress(cycleId)
+                queries.deleteCycleProgression(cycleId)
+                queries.deleteCycleSyncState(cycleId)
+                queries.hardDeleteCyclesByIds(listOf(cycleId))
+                deletedCycles += cycleId
+                for (templateRoutineId in templateRoutineIds) {
+                    val templateRoutine = queries.selectRoutineById(templateRoutineId).executeAsOneOrNull()
+                    if (
+                        templateRoutine != null &&
+                        profileOwnerMatches(templateRoutine.profile_id, ownerUserId) &&
+                        queries.countCycleDaysReferencingRoutine(templateRoutineId).executeAsOne() == 0L
+                    ) {
+                        hardDeleteRoutineWithChildren(templateRoutineId)
+                        deletedTemplateRoutines += templateRoutineId
+                    }
+                }
+            }
+        }
+
+        ServerDeletionResult(
+            deletedRoutineIds = deletedRoutines,
+            deletedCycleIds = deletedCycles,
+            discardedRoutineEditIds = discardedRoutineEdits,
+            discardedCycleEditIds = discardedCycleEdits,
+            deletedActiveCycleIds = deletedActiveCycles,
+            deletedTemplateRoutineIds = deletedTemplateRoutines,
+        )
+    }
+
+    /** Must run inside a transaction. Children are deleted explicitly (foreign_keys may be off). */
+    private fun hardDeleteRoutineWithChildren(routineId: String) {
+        queries.selectExercisesByRoutine(routineId).executeAsList().forEach { exercise ->
+            queries.deletePlannedSetsByRoutineExercise(exercise.id)
+        }
+        queries.deleteRoutineExercises(routineId)
+        queries.deleteSupersetsByRoutine(routineId)
+        queries.clearCycleDayRoutineReferences(routineId)
+        queries.deleteRoutineById(routineId)
     }
 
     /**
@@ -2803,7 +2905,12 @@ class SqlDelightSyncRepository(
      * - SAFETY GUARD: an empty portal exercise list is treated as an incomplete payload and
      *   leaves the local exercises alone.
      */
-    private fun mergePortalRoutine(portalRoutine: PullRoutineDto, lastSync: Long, profileId: String) {
+    private fun mergePortalRoutine(
+        portalRoutine: PullRoutineDto,
+        lastSync: Long,
+        profileId: String,
+        serverWins: Boolean = false,
+    ) {
         val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
         if (existing != null) {
             if (existing.deletedAt != null) {
@@ -2811,7 +2918,7 @@ class SqlDelightSyncRepository(
                 return
             }
             val localUpdatedAt = existing.updatedAt ?: 0L
-            if (localUpdatedAt > lastSync) {
+            if (!serverWins && localUpdatedAt > lastSync) {
                 Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer ($localUpdatedAt > $lastSync)" }
                 return
             }
