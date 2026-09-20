@@ -137,8 +137,8 @@ object PortalPullAdapter {
                 cableCount = null, // Let effectiveTotalVolumeKg() use session-level cableCount if available
                 // Issue #591: best-effort hydration from per-set rep summaries.
                 // Any field that the portal does not supply stays null. These
-                // values only land on rows this device doesn't already have;
-                // the pull never rewrites an existing local session (KD-3).
+                // Merge policy preserves locally captured facts. These values populate
+                // imported/server-owned rows and may refresh server-owned projections.
                 peakForceConcentricA = metricHydration.peakForceConcentricA,
                 peakForceConcentricB = metricHydration.peakForceConcentricB,
                 peakForceEccentricA = metricHydration.peakForceEccentricA,
@@ -194,8 +194,8 @@ object PortalPullAdapter {
      * Eccentric peak/avg is harder to derive because the portal stores
      * `tutMs` and not a separate eccentric force aggregate, so this helper
      * conservatively keeps eccentric peak/avg as null unless a set DTO
-     * provides them directly. Existing local rows are never rewritten by the
-     * pull, so locally captured eccentric values are unaffected.
+     * provides them directly. The merge policy keeps locally captured eccentric
+     * values authoritative while allowing server-owned rows to be refreshed.
      */
     private fun aggregateSetMetrics(sets: List<PullSetDto>): HydratedMetrics {
         if (sets.isEmpty()) return HydratedMetrics.EMPTY
