@@ -14,6 +14,8 @@ import com.devil.phoenixproject.data.sync.PulledWorkoutDeletionDto
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
+import com.devil.phoenixproject.data.sync.RoutineSyncDto
+import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.database.AssessmentResult
 import com.devil.phoenixproject.database.PhaseStatistics
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -46,6 +48,9 @@ class FakeSyncRepository : SyncRepository {
     var routinesToReturn: List<Routine> = emptyList()
     var gamificationStatsToReturn: GamificationStatsSyncDto? = null
 
+    // Legacy push methods (not used by SyncManager portal flow)
+    var sessionsToReturn: List<WorkoutSessionSyncDto> = emptyList()
+    var legacyRoutinesToReturn: List<RoutineSyncDto> = emptyList()
     var customExercisesToReturn: List<CustomExerciseSyncDto> = emptyList()
     var badgesToReturn: List<EarnedBadgeSyncDto> = emptyList()
 
@@ -55,7 +60,9 @@ class FakeSyncRepository : SyncRepository {
     var mergedPortalRoutinesLastSync: Long? = null
     var mergedBadges: List<EarnedBadgeSyncDto> = emptyList()
     var mergedGamificationStats: GamificationStatsSyncDto? = null
+    var mergedSessions: List<WorkoutSessionSyncDto> = emptyList()
     var mergedPRs: List<PersonalRecordSyncDto> = emptyList()
+    var mergedCustomExercises: List<CustomExerciseSyncDto> = emptyList()
     var updatedIdMappings: IdMappings? = null
 
     // === Call counters ===
@@ -66,7 +73,11 @@ class FakeSyncRepository : SyncRepository {
 
     // === Push Operations ===
 
+    override suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSessionSyncDto> = sessionsToReturn
+
     override suspend fun getPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecordSyncDto> = prsToReturn
+
+    override suspend fun getRoutinesModifiedSince(timestamp: Long, profileId: String): List<RoutineSyncDto> = legacyRoutinesToReturn
 
     override suspend fun getCustomExercisesModifiedSince(timestamp: Long): List<CustomExerciseSyncDto> = customExercisesToReturn
 
@@ -76,9 +87,6 @@ class FakeSyncRepository : SyncRepository {
 
     // === Portal Push Operations ===
 
-    // Approximates selectSessionsModifiedSince for stamped rows only: a session stamped by
-    // updateSessionTimestamp is returned while its stamp is newer than the watermark.
-    // Unstamped rows are always returned; profile and deletedAt are not filtered.
     override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> =
         workoutSessionsToReturn.filter { session ->
             updatedSessionTimestamps[session.id]?.let { it > timestamp } ?: true
@@ -122,8 +130,16 @@ class FakeSyncRepository : SyncRepository {
 
     // === Pull Operations (merge) ===
 
+    override suspend fun mergeSessions(sessions: List<WorkoutSessionSyncDto>) {
+        mergedSessions = sessions
+    }
+
     override suspend fun mergePRs(records: List<PersonalRecordSyncDto>) {
         mergedPRs = records
+    }
+
+    override suspend fun mergeCustomExercises(exercises: List<CustomExerciseSyncDto>) {
+        mergedCustomExercises = exercises
     }
 
     override suspend fun mergeBadges(badges: List<EarnedBadgeSyncDto>, profileId: String) {
@@ -167,9 +183,6 @@ class FakeSyncRepository : SyncRepository {
     // === Parity Sync: Entity ID lists (simulate local database content) ===
 
     var sessionIds: List<String> = emptyList()
-
-    /** Portal ids of deleted workouts; sent as known ids so the portal stops re-offering them. */
-    var deletedSessionPortalIds: List<String> = emptyList()
     var routineIds: List<String> = emptyList()
     var cycleIds: List<String> = emptyList()
     var badgeIds: List<String> = emptyList()
@@ -177,7 +190,6 @@ class FakeSyncRepository : SyncRepository {
     var cyclesToReturn: List<CycleWithContext> = emptyList()
 
     override suspend fun getAllSessionIds(profileId: String): List<String> = sessionIds
-    override suspend fun getDeletedSessionPortalIds(): List<String> = deletedSessionPortalIds
     override suspend fun getAllRoutineIds(profileId: String): List<String> = routineIds
     override suspend fun getAllCycleIds(profileId: String): List<String> = cycleIds
     override suspend fun getAllBadgeIds(profileId: String): List<String> = badgeIds

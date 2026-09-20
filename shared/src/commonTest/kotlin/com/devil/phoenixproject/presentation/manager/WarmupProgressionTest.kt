@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.WarmupSet
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.util.BleConstants
@@ -109,6 +110,14 @@ class WarmupProgressionTest {
         harness.dwsm.loadRoutine(routine)
         advanceUntilIdle()
         harness.dwsm.startWorkout(skipCountdown = true)
+        advanceUntilIdle()
+
+        listOf(
+            WorkoutMetric(timestamp = 100L, loadA = 20f, loadB = 20f, positionA = 100f, positionB = 100f),
+            WorkoutMetric(timestamp = 200L, loadA = 20f, loadB = 20f, positionA = 200f, positionB = 200f),
+            WorkoutMetric(timestamp = 300L, loadA = 20f, loadB = 20f, positionA = 100f, positionB = 100f),
+            WorkoutMetric(timestamp = 400L, loadA = 20f, loadB = 20f, positionA = 200f, positionB = 200f),
+        ).forEach { harness.fakeBleRepo.emitMetric(it) }
         advanceUntilIdle()
 
         harness.coordinator._repCount.value = RepCount(

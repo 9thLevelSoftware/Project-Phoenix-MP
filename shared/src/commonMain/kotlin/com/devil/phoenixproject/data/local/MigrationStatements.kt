@@ -1194,11 +1194,7 @@ WHERE gs.rowid = (
     )
 
     // Migration 50: cycle LWW clocks, durable generations/deletions, and conflict drafts.
-    // The fallback first heals profile_id because that legacy column is reconciled
-    // outside numbered migrations; a direct old-version upgrade can otherwise fail
-    // the CycleSyncState seed before on-open reconciliation gets a chance to run.
     50 -> listOf(
-        "ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'",
         "ALTER TABLE TrainingCycle ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0",
         "UPDATE TrainingCycle SET updatedAt = created_at WHERE updatedAt = 0",
         """CREATE TABLE CycleSyncState (
