@@ -263,7 +263,7 @@ class DropSetCompletionCaptureTest {
                 orderIndex = 0,
                 setReps = listOf(10),
                 weightPerCableKg = 0f,
-                duration = 1,
+                duration = 10,
                 setRestSeconds = listOf(0),
             )
             prepareRoutine(harness, Routine("bodyweight-routine", "Bodyweight", exercises = listOf(bodyweight)))

@@ -67,7 +67,7 @@ class WorkoutMachineTeardownTest {
                 harness.activeSessionEngine.machineTeardownState.value,
             )
 
-            advanceTimeBy(1_100)
+            advanceTimeBy(10_100)
             runCurrent()
             val repEntry = assertIs<WorkoutState.BodyweightRepEntry>(
                 harness.coordinator.workoutState.value,
@@ -567,7 +567,7 @@ class WorkoutMachineTeardownTest {
                     orderIndex = 0,
                     setReps = listOf(10),
                     weightPerCableKg = 0f,
-                    duration = 1,
+                    duration = 10,
                     setRestSeconds = listOf(0),
                 ),
                 RoutineExercise(
