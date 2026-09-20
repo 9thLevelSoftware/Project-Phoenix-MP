@@ -224,6 +224,7 @@ sqldelight {
             packageName.set("com.devil.phoenixproject.database")
             // Schema version is derived from migrations (highest N.sqm + 1); this value is
             // not authoritative. Do not bump it when adding a migration (see CLAUDE.md).
+            // SchemaParityTest's EXPECTED_SCHEMA_VERSION is the value to keep in step.
             version = 47
         }
     }

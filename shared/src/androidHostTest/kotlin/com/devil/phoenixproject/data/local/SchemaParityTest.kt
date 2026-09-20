@@ -903,10 +903,60 @@ class SchemaParityTest {
         assertEquals(null, queryScalar(driver, "SELECT CAST(dropSetMinWeightKg AS TEXT) FROM RoutineExercise WHERE id = 're1'"))
     }
 
+    @Test
+    fun `migration 47 to 48 marks only stamped childless sessions as pulled origin`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 47)
+        // 1) Stamped and childless: the shape a portal pull leaves behind.
+        driver.execute(
+            null,
+            "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg,updatedAt) " +
+                "VALUES('pulled',1,'OldSchool',10,40.0,1000)",
+            0,
+        )
+        // 2) Stamped, with locally captured children: recorded on this device.
+        driver.execute(
+            null,
+            "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg,updatedAt) " +
+                "VALUES('captured',2,'OldSchool',10,40.0,1000)",
+            0,
+        )
+        driver.execute(null, "INSERT INTO MetricSample(sessionId,timestamp) VALUES('captured',5)", 0)
+        driver.execute(
+            null,
+            """
+            INSERT INTO CompletedSet (id, session_id, set_number, set_type, actual_reps, actual_weight_kg, is_pr, completed_at, set_end_reason)
+            VALUES ('captured-set', 'captured', 1, 'STANDARD', 8, 40.0, 0, 1000, 'TARGET_REPS_REACHED')
+            """.trimIndent(),
+            0,
+        )
+        // 3) Childless but never stamped: a split-transaction save that still owes an upload.
+        driver.execute(
+            null,
+            "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) " +
+                "VALUES('never-uploaded',3,'OldSchool',10,40.0)",
+            0,
+        )
+
+        PhoenixDatabase.Schema.migrate(driver, 47, EXPECTED_SCHEMA_VERSION)
+
+        assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PulledWorkoutSession"))
+        assertEquals("pulled", queryScalar(driver, "SELECT id FROM PulledWorkoutSession"))
+
+        // The never-uploaded row is still gathered for the next push; the marked one is not.
+        // Reconcile first, as production does, so the generated query sees every column.
+        reconcileFullSchema(driver)
+        val pushable = PhoenixDatabase(driver).phoenixDatabaseQueries
+            .selectSessionsModifiedSince(0L, profileId = "default")
+            .executeAsList()
+            .map { it.id }
+        assertEquals(listOf("captured", "never-uploaded"), pushable.sorted())
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 48L
+        private const val EXPECTED_SCHEMA_VERSION = 49L
         private val CREATE_ACTIVE_RUNTIME_SQL = """
             CREATE TABLE ActiveWorkoutRuntime (
                 profile_id TEXT NOT NULL,

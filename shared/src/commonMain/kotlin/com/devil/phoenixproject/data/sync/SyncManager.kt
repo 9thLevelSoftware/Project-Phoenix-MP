@@ -97,6 +97,15 @@ object SyncConfig {
      */
     const val MAX_PARITY_IDS = 10_000
 
+    /**
+     * Slice of [MAX_PARITY_IDS] reserved for session tombstones (PR 4). Deleted workouts
+     * would otherwise evict live session ids once a profile passes the cap, and the portal
+     * would then re-send those live sessions on every pull. Tombstones are sent newest
+     * first; beyond this many deletions the oldest stop being declared known and the
+     * portal re-offers them, which the id-only merge skip drops for free.
+     */
+    const val MAX_TOMBSTONE_PARITY_IDS = 500
+
     // ─── Phase 4.2: self-cap + self-throttle (audit item #9) ──────────────
     //
     // These constants mirror the server-side limits in
@@ -1471,6 +1480,12 @@ class SyncManager(
         // strictly better than the prior server behavior which silently
         // returned empty for over-cap lists.
         val rawSessionIds = syncRepository.getAllSessionIds(mergeProfileId)
+        // Known session ids also carry the portal ids of deleted workouts
+        // (DeletedWorkoutSession). Without them the portal keeps returning a deleted
+        // workout as "new" on every pull, and the merge would have to drop it every time.
+        // Not profile-scoped, matching the id-only merge skip, and capped separately below
+        // so deletions can never evict live session ids from the parity window.
+        val rawDeletedSessionPortalIds = syncRepository.getDeletedSessionPortalIds()
         val rawRoutineIds = syncRepository.getAllRoutineIds(mergeProfileId)
         val rawCycleIds = syncRepository.getAllCycleIds(mergeProfileId)
         val rawBadgeIds = syncRepository.getAllBadgeIds(mergeProfileId)
@@ -1497,15 +1512,19 @@ class SyncManager(
         val filteredCycleIds = filterUuids(rawCycleIds, "cycleIds")
         val filteredBadgeIds = filterUuids(rawBadgeIds, "badgeIds")
 
-        fun <T> capParity(list: List<T>, label: String): List<T> = if (list.size <= SyncConfig.MAX_PARITY_IDS) {
+        fun <T> capParity(
+            list: List<T>,
+            label: String,
+            budget: Int = SyncConfig.MAX_PARITY_IDS,
+        ): List<T> = if (list.size <= budget) {
             list
         } else {
             Logger.w("SyncManager") {
                 "Parity list '$label' has ${list.size} entries; truncating to last " +
-                    "${SyncConfig.MAX_PARITY_IDS} to stay within server cap. " +
+                    "$budget to stay within server cap. " +
                     "Local dedupe will handle the older tail."
             }
-            list.takeLast(SyncConfig.MAX_PARITY_IDS)
+            list.takeLast(budget)
         }
 
         val knownPersonalRecordIds = capParity(
@@ -1513,8 +1532,22 @@ class SyncManager(
             "personalRecordIds",
         ).toMutableList()
 
+        // Live ids and tombstone portal ids share one budget, but tombstones get a bounded
+        // slice of it (newest deletions first) instead of competing with live ids: past the
+        // cap an unbounded tombstone list would push live sessions out of the window and the
+        // portal would re-send them on every pull.
+        val liveSessionIdSet = filteredSessionIds.toSet()
+        val tombstoneSessionIds = filterUuids(rawDeletedSessionPortalIds, "deletedSessionIds")
+            .filterNot { it in liveSessionIdSet }
+            .take(SyncConfig.MAX_TOMBSTONE_PARITY_IDS)
+        val knownSessionIds = capParity(
+            filteredSessionIds,
+            "sessionIds",
+            budget = SyncConfig.MAX_PARITY_IDS - tombstoneSessionIds.size,
+        ) + tombstoneSessionIds
+
         fun currentKnownEntityIds(): KnownEntityIds = KnownEntityIds(
-            sessionIds = capParity(filteredSessionIds, "sessionIds"),
+            sessionIds = knownSessionIds,
             routineIds = capParity(filteredRoutineIds, "routineIds"),
             cycleIds = capParity(filteredCycleIds, "cycleIds"),
             badgeIds = capParity(filteredBadgeIds, "badgeIds"),

@@ -1097,5 +1097,43 @@ WHERE gs.rowid = (
         "ALTER TABLE RoutineExercise ADD COLUMN dropSetMinWeightKg REAL",
     )
 
+    // Migration 47: durable trainer-keyed machine safety obligation (#769)
+    // Mirrors 47.sqm exactly, bare CREATE TABLE included: unlike entry 48 below, this
+    // statement is not idempotent on its own and a replay survives only because
+    // applyMigrationResilient classifies "already exists" as recoverable. New migrations
+    // should use IF NOT EXISTS / INSERT OR IGNORE rather than rely on that classification.
+    47 -> listOf(
+        """CREATE TABLE MachineSafetyHazard (
+        trainer_address TEXT NOT NULL PRIMARY KEY,
+        generation INTEGER NOT NULL,
+        document_version INTEGER NOT NULL,
+        hazard_json TEXT NOT NULL,
+        updated_at_epoch_ms INTEGER NOT NULL
+    )""",
+    )
+
+    // Migration 48: session tombstones and pulled-origin markers.
+    // Mirrors 48.sqm exactly. Every statement is replay-safe (IF NOT EXISTS /
+    // INSERT OR IGNORE) because this fallback re-runs after a partial migrate.
+    48 -> listOf(
+        """CREATE TABLE IF NOT EXISTS DeletedWorkoutSession (
+        id TEXT NOT NULL PRIMARY KEY,
+        portal_id TEXT NOT NULL,
+        profile_id TEXT NOT NULL,
+        deleted_at INTEGER NOT NULL
+    )""",
+        "CREATE INDEX IF NOT EXISTS idx_deleted_session_profile ON DeletedWorkoutSession(profile_id)",
+        "CREATE INDEX IF NOT EXISTS idx_deleted_session_portal ON DeletedWorkoutSession(portal_id)",
+        """CREATE TABLE IF NOT EXISTS PulledWorkoutSession (
+        id TEXT NOT NULL PRIMARY KEY
+    )""",
+        """INSERT OR IGNORE INTO PulledWorkoutSession(id)
+    SELECT id FROM WorkoutSession
+    WHERE updatedAt IS NOT NULL
+      AND NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = WorkoutSession.id)
+      AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
+      AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id)""",
+    )
+
     else -> emptyList()
 }

@@ -189,9 +189,17 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateSessionsFlow()
     }
 
-    override suspend fun deleteAllSessions() {
-        sessions.clear()
-        metrics.clear()
+    /** Same in-memory effect as [deleteSession]; the fake has no tombstone table. */
+    override suspend fun discardSession(sessionId: String) {
+        deleteSession(sessionId)
+    }
+
+    override suspend fun deleteAllSessionsForProfile(profileId: String) {
+        val doomed = sessions.filterValues { it.profileId == profileId }.keys.toList()
+        doomed.forEach { id ->
+            sessions.remove(id)
+            metrics.remove(id)
+        }
         updateSessionsFlow()
     }
 

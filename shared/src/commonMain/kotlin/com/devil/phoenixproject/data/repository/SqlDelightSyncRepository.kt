@@ -1467,6 +1467,10 @@ class SqlDelightSyncRepository(
         queries.selectAllSessionIdsByProfile(profileId).executeAsList()
     }
 
+    override suspend fun getDeletedSessionPortalIds(): List<String> = withContext(Dispatchers.IO) {
+        queries.selectDeletedSessionPortalIds().executeAsList()
+    }
+
     override suspend fun getAllRoutineIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
         queries.selectAllRoutineIdsByProfile(profileId).executeAsList()
     }
@@ -1503,9 +1507,13 @@ class SqlDelightSyncRepository(
      * PhaseStatistics and CompletedSet children.
      *
      * The one in-place change is the exercise tag: when the portal copy is newer, its
-     * exerciseId/exerciseName are applied to a pulled-origin row (no local RepMetric or
-     * CompletedSet children), so a Just Lift re-tag on another device still arrives. Nothing
-     * else on the row changes, and a null incoming exerciseId never clears a local tag.
+     * exerciseId/exerciseName are applied to a row this device pulled (marked in
+     * PulledWorkoutSession and without local RepMetric or CompletedSet children), so a Just
+     * Lift re-tag on another device still arrives. Nothing else on the row changes, and a
+     * null incoming exerciseId never clears a local tag.
+     *
+     * Ids the user deleted here are skipped outright: a tombstone (DeletedWorkoutSession)
+     * outranks the portal copy, by id and never by profile.
      *
      * New rows are stamped with the portal `updatedAt` from [updatedAtBySessionId] (0 when
      * absent) so they are not picked up as local changes by the next push.
@@ -1518,9 +1526,11 @@ class SqlDelightSyncRepository(
         db.transaction {
             for (session in sessions) {
                 val incomingTs = updatedAtBySessionId[session.id]
-                insertSessionIfAbsent(session, updatedAt = incomingTs ?: 0L)
+                val inserted = insertSessionIfAbsent(session, updatedAt = incomingTs ?: 0L)
                 val exerciseId = session.exerciseId
-                if (incomingTs != null && exerciseId != null) {
+                // A fresh insert already carries the incoming tag; only a row this device
+                // pulled earlier can need the re-tag.
+                if (!inserted && incomingTs != null && exerciseId != null) {
                     queries.updatePulledSessionTag(
                         exerciseId = exerciseId,
                         exerciseName = session.exerciseName,
@@ -1533,14 +1543,22 @@ class SqlDelightSyncRepository(
     }
 
     /**
-     * INSERT OR IGNORE of the full session projection: an existing row with the same id is left
-     * untouched. Must be called inside a [db.transaction] block.
+     * Insert one pulled session if this device neither has it nor deleted it, and record its
+     * pulled origin. Must be called inside a [db.transaction] block.
+     *
+     * Every pull path goes through here, so all of them get the same three guarantees:
+     * an existing row is never rewritten, a tombstoned id is never resurrected (F-004), and
+     * an inserted row is marked in PulledWorkoutSession so the push gather skips it (R-10).
+     *
+     * @return true when the row was inserted.
      */
     private fun insertSessionIfAbsent(
         session: WorkoutSession,
         updatedAt: Long,
         profileId: String = session.profileId,
-    ) {
+    ): Boolean {
+        val knownOrDeleted = queries.selectSessionKnownOrTombstoned(session.id).executeAsOneOrNull() != null
+        if (knownOrDeleted) return false
 
         queries.insertSessionIgnore(
             id = session.id,
@@ -1596,6 +1614,8 @@ class SqlDelightSyncRepository(
             counterweightKg = session.counterweightKg.toDouble(),
             rackItemsJson = session.rackItemsJson,
         )
+        queries.markSessionPulled(session.id)
+        return true
     }
 
     /**

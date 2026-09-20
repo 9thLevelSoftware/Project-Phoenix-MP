@@ -190,17 +190,84 @@ class SqlDelightWorkoutRepositoryTest {
     }
 
     @Test
-    fun `deleteAllSessions removes all sessions`() = runTest {
-        repository.saveSession(createTestSession(id = "session-1"))
-        repository.saveSession(createTestSession(id = "session-2"))
+    fun `deleteAllSessionsForProfile removes only that profile's sessions and children`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        repository.saveSession(workoutSession("a-1", "profile-a", "test-exercise", 1_000L, 10))
+        repository.saveSession(workoutSession("a-2", "profile-a", "test-exercise", 2_000L, 10))
+        repository.saveSession(workoutSession("b-1", "profile-b", "test-exercise", 3_000L, 10))
+        repository.saveMetrics(
+            "b-1",
+            listOf(
+                WorkoutMetric(
+                    timestamp = 3_010L,
+                    loadA = 20f,
+                    loadB = 21f,
+                    positionA = 100f,
+                    positionB = 101f,
+                    velocityA = 1.0,
+                    velocityB = 1.1,
+                ),
+            ),
+        )
+        queries.insertCompletedSet(
+            "b-1-set-1", "b-1", null, null, 1L, "STANDARD", 1L, 8L, 20.0, null, 0L, 3_020L, "UNKNOWN",
+        )
 
-        repository.deleteAllSessions()
+        repository.deleteAllSessionsForProfile("profile-a")
 
-        repository.getAllSessions("default").test {
-            val sessions = awaitItem()
-            assertTrue(sessions.isEmpty())
-            cancelAndIgnoreRemainingEvents()
-        }
+        assertEquals(emptyList(), queries.selectAllSessionIdsByProfile("profile-a").executeAsList())
+        assertEquals(listOf("b-1"), queries.selectAllSessionIdsByProfile("profile-b").executeAsList())
+        assertEquals(1, queries.selectMetricsBySession("b-1").executeAsList().size)
+        assertEquals(1, queries.selectCompletedSetsBySession("b-1").executeAsList().size)
+        // Only profile A's workouts are tombstoned, so profile B's can still arrive
+        // from the portal.
+        assertEquals(
+            listOf("a-1", "a-2"),
+            queries.selectDeletedSessionPortalIds().executeAsList().sorted(),
+        )
+    }
+
+    @Test
+    fun `discardSession drops the row without tombstoning the id`() = runTest {
+        repository.saveSession(workoutSession("internal-row", "default", "test-exercise", 1_000L, 10))
+
+        // Internal cleanup (a compensating rollback, QA fixtures) must not blackball the id.
+        repository.discardSession("internal-row")
+
+        val queries = database.phoenixDatabaseQueries
+        assertNull(queries.selectSessionById("internal-row").executeAsOneOrNull())
+        assertEquals(emptyList(), queries.selectDeletedSessionPortalIds().executeAsList())
+    }
+
+    @Test
+    fun `deleting workouts tombstones them under the id the portal knows`() = runTest {
+        val routineSessionId = "9f1b0b4e-0d54-4b0b-9a1e-2f3c4d5e6f70"
+        repository.saveSession(
+            workoutSession("grouped-1", "default", "test-exercise", 1_000L, 10)
+                .copy(routineSessionId = routineSessionId),
+        )
+        repository.saveSession(
+            workoutSession("grouped-2", "default", "test-exercise", 1_100L, 10)
+                .copy(routineSessionId = routineSessionId),
+        )
+        repository.saveSession(workoutSession("standalone", "default", "test-exercise", 2_000L, 10))
+        val queries = database.phoenixDatabaseQueries
+
+        // One exercise row of the group goes: the portal must keep returning the workout,
+        // because the surviving row's siblings may still gain exercises elsewhere.
+        repository.deleteSession("grouped-1")
+        assertEquals(emptyList(), queries.selectDeletedSessionPortalIds().executeAsList())
+
+        repository.deleteSessionsByRoutineSessionId(routineSessionId)
+        repository.deleteSession("standalone")
+
+        assertEquals(emptyList(), queries.selectAllSessionIdsByProfile("default").executeAsList())
+        // The portal knows a grouped workout by its routineSessionId and a standalone
+        // workout by the session id, so that is what the tombstone has to carry.
+        assertEquals(
+            listOf(routineSessionId, "standalone"),
+            queries.selectDeletedSessionPortalIds().executeAsList().sorted(),
+        )
     }
 
     @Test

@@ -2045,6 +2045,12 @@ abstract class BaseDataBackupManager(
                 Logger.w { "Streaming import completed with $entitiesWithErrors skipped entity row(s) — see preceding warnings for per-entity diagnostics" }
             }
 
+            // NOTE for PR 22: a backup carries no PulledWorkoutSession markers (migration
+            // 48) and restore does not preserve a session's updatedAt, so re-running the
+            // origin backfill here would mark nothing — every restored session looks like
+            // a local row that was never uploaded. Carrying both tables through the backup
+            // (or preserving the stamp) is the fix; until then the first post-restore push
+            // re-uploads the restored sessions.
             onProgress(BackupProgress(BackupPhase.FINALIZING, 0, 0))
 
             return Result.success(

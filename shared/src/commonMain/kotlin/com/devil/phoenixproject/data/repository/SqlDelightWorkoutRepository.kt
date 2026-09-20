@@ -632,7 +632,24 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         }
     }
 
+    /**
+     * Tombstone first, then hard-delete, in one transaction: the tombstone is
+     * read off the rows that are about to go, so it has to be written while
+     * they still exist. A partial write would either resurrect the workout on
+     * the next pull or tombstone a session that is still here.
+     */
     override suspend fun deleteSession(sessionId: String) {
+        withContext(Dispatchers.IO) {
+            val deletedAt = currentTimeMillis()
+            db.transaction {
+                queries.insertSessionTombstone(deletedAt = deletedAt, id = sessionId)
+                queries.deleteSession(sessionId)
+            }
+        }
+    }
+
+    /** Internal cleanup: the same hard delete, deliberately without a tombstone. */
+    override suspend fun discardSession(sessionId: String) {
         withContext(Dispatchers.IO) {
             queries.deleteSession(sessionId)
         }
@@ -640,13 +657,24 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
     override suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String) {
         withContext(Dispatchers.IO) {
-            queries.deleteSessionsByRoutineSessionId(routineSessionId)
+            val deletedAt = currentTimeMillis()
+            db.transaction {
+                queries.insertSessionTombstonesForRoutineSession(
+                    deletedAt = deletedAt,
+                    routineSessionId = routineSessionId,
+                )
+                queries.deleteSessionsByRoutineSessionId(routineSessionId)
+            }
         }
     }
 
-    override suspend fun deleteAllSessions() {
+    override suspend fun deleteAllSessionsForProfile(profileId: String) {
         withContext(Dispatchers.IO) {
-            queries.deleteAllSessions()
+            val deletedAt = currentTimeMillis()
+            db.transaction {
+                queries.insertSessionTombstonesForProfile(deletedAt = deletedAt, profileId = profileId)
+                queries.deleteAllSessionsForProfile(profileId)
+            }
         }
     }
 

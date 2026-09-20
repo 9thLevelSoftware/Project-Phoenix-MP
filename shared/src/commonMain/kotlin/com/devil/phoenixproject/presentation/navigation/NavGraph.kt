@@ -459,6 +459,9 @@ fun NavGraph(
                 val globalSettings by viewModel.globalSettings.collectAsState()
                 val connectionError by viewModel.connectionError.collectAsState()
                 val backupStats by viewModel.backupStats.collectAsState()
+                // Named in the "Delete All Workouts" dialog: that wipe is scoped to the
+                // profile the user is training as.
+                val activeProfileName by viewModel.activeProfileName.collectAsState()
                 // Refresh backup stats when Settings screen is displayed
                 LaunchedEffect(Unit) { viewModel.refreshBackupStats() }
                 SettingsTab(
@@ -469,6 +472,7 @@ fun NavGraph(
                     onEnableVideoPlaybackChange = viewModel::setEnableVideoPlayback,
                     onThemeModeChange = onThemeModeChange,
                     onDynamicColorEnabledChange = onDynamicColorEnabledChange,
+                    activeProfileName = activeProfileName,
                     onDeleteAllWorkouts = viewModel::deleteAllWorkouts,
                     onNavigateToConnectionLogs = {
                         navController.navigate(NavigationRoutes.ConnectionLogs.route)

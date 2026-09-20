@@ -746,8 +746,9 @@
     <string name="delete_all_sets">Delete All Sets</string>
     <string name="delete_routine_session_title">Delete Routine Session?</string>
     <string name="delete_routine_session_message">This will delete all %1$d sets from this routine. This action cannot be undone.</string>
-    <string name="delete_all_workouts_title">Delete All Workouts?</string>
-    <string name="delete_all_workouts_message">This will permanently delete all workout history. This action cannot be undone.</string>
+    <!-- PR 4: "Delete All Workouts" only deletes the active profile's history, so the dialog names it. -->
+    <string name="delete_all_workouts_title">Delete all workouts for %1$s?</string>
+    <string name="delete_all_workouts_message">This will permanently delete %1$s\'s workout history. Other profiles keep theirs. This action cannot be undone.</string>
 
     <!-- ==================== Dialog slot/hierarchy fixes (task-3.8) ==================== -->
     <string name="bulk_weight_adjust_select_hint">Select a percentage or enter a value to enable Apply</string>

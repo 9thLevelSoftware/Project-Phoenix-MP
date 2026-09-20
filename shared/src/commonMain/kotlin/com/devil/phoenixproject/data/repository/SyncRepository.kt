@@ -137,6 +137,17 @@ interface SyncRepository {
     suspend fun getAllSessionIds(profileId: String = "default"): List<String>
 
     /**
+     * Portal ids of the workouts deleted locally (`routineSessionId` for a grouped routine
+     * workout, otherwise the session id), newest deletion first. They are sent as known ids
+     * so the portal stops offering a deleted workout as new.
+     *
+     * Deliberately NOT profile-scoped, matching the id-only merge skip: a profile merge or
+     * a portal re-scope must not make a tombstone stop suppressing its workout. A grouped
+     * workout contributes its id only once no live row of that group is left.
+     */
+    suspend fun getDeletedSessionPortalIds(): List<String>
+
+    /**
      * Get all routine IDs for the given profile.
      */
     suspend fun getAllRoutineIds(profileId: String = "default"): List<String>

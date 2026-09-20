@@ -29,8 +29,29 @@ interface WorkoutRepository {
     fun getAllSessions(profileId: String): Flow<List<WorkoutSession>>
     suspend fun saveSession(session: WorkoutSession)
     suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String)
+
+    /**
+     * Delete one session **as a user deletion**. The row is hard-deleted (the
+     * cascade frees its samples and rep data) and a `DeletedWorkoutSession`
+     * tombstone is written in the same transaction, so the next portal pull
+     * cannot resurrect it. For internal cleanup use [discardSession].
+     */
     suspend fun deleteSession(sessionId: String)
-    suspend fun deleteAllSessions()
+
+    /**
+     * Drop a session this device wrote and never meant to keep: a compensating
+     * rollback for a failed multi-step save, or QA fixture cleanup. No
+     * tombstone — the workout was never the user's to delete, and a tombstone
+     * would blackball the id for good and ride along in every pull's known ids.
+     */
+    suspend fun discardSession(sessionId: String)
+
+    /**
+     * Delete every workout of ONE profile ("Delete All Workouts"), tombstones
+     * included. There is no unscoped variant: the user action must never touch
+     * another profile's history.
+     */
+    suspend fun deleteAllSessionsForProfile(profileId: String)
 
     /**
      * Issue #591 follow-up (chatgpt-codex-connector P2): delete every
@@ -38,8 +59,7 @@ interface WorkoutRepository {
      * Used by the History "Delete All Sets" affordance so zero-rep /
      * ghost rows hidden by `getHistoryVisibleSessions` do not survive
      * the user-level deletion. This mirrors `deleteSession`'s local
-     * hard-delete semantics; workout-session tombstone sync is not
-     * currently implemented.
+     * hard-delete-plus-tombstone semantics.
      */
     suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String)
 

@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.repository
 
+import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalPullAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter
@@ -12,6 +13,7 @@ import com.devil.phoenixproject.data.sync.PullWorkoutSessionDto
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.testutil.FakePreferencesManager
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
@@ -217,6 +219,185 @@ class SqlDelightSyncRepositoryTest {
 
         assertNull(database.phoenixDatabaseQueries.selectSessionById(id).executeAsOne().exerciseId)
     }
+
+    @Test
+    fun `newer pull does not re-tag a childless row this device captured`() = runTest {
+        // No RepMetric/CompletedSet rows and no stamp, so only the PulledWorkoutSession
+        // marker (absent here) separates this row from one the pull created.
+        val id = "locally-captured-childless"
+        insertHistoricalSession(
+            id = id,
+            timestamp = 1_700_000_000_000,
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            workingReps = 8,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+        )
+
+        pullRetag(id)
+
+        val session = database.phoenixDatabaseQueries.selectSessionById(id).executeAsOne()
+        assertEquals("bench", session.exerciseId)
+        assertEquals("Bench Press", session.exerciseName)
+        assertNull(session.updatedAt)
+    }
+
+    @Test
+    fun `a workout deleted on this device is not resurrected by a later pull`() = runTest {
+        val id = "deleted-workout"
+        insertHistoricalSession(
+            id = id,
+            timestamp = 1_700_000_000_000,
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            workingReps = 8,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+        )
+        workoutRepository().deleteSession(id)
+
+        // The portal still has the workout and sends it back, with a newer stamp and
+        // (after a profile deletion re-scope) possibly under another profile.
+        repository.mergeSessionsLww(
+            listOf(pulledSession(id, profileId = "active-profile")),
+            mapOf(id to 1_700_000_900_000),
+        )
+        repository.mergeSessionsLww(
+            listOf(pulledSession(id, profileId = "default")),
+            mapOf(id to 1_700_001_900_000),
+        )
+
+        assertNull(database.phoenixDatabaseQueries.selectSessionById(id).executeAsOneOrNull())
+    }
+
+    @Test
+    fun `a workout deleted on this device is not resurrected by the no-updatedAt pull path`() = runTest {
+        val id = "deleted-workout-full-merge"
+        insertHistoricalSession(
+            id = id,
+            timestamp = 1_700_000_000_000,
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            workingReps = 8,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+        )
+        workoutRepository().deleteSession(id)
+
+        // SyncManager takes this branch whenever the portal response carries no updatedAt.
+        repository.mergeAllPullData(
+            sessions = listOf(pulledSession(id)),
+            routines = emptyList(),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "active-profile",
+        )
+
+        val queries = database.phoenixDatabaseQueries
+        assertNull(queries.selectSessionById(id).executeAsOneOrNull())
+        assertEquals(emptyList(), queries.selectPulledSessionIds().executeAsList())
+    }
+
+    @Test
+    fun `the push gather skips pulled sessions by origin, not by stamp`() = runTest {
+        val pulledId = "pulled-row"
+        val pulledWithLocalSets = "pulled-row-with-local-sets"
+        val pulledWithLocalMetrics = "pulled-row-with-local-metrics"
+        val localId = "locally-captured-row"
+        repository.mergeSessionsLww(
+            listOf(pulledSession(pulledId), pulledSession(pulledWithLocalSets), pulledSession(pulledWithLocalMetrics)),
+            mapOf(
+                pulledId to 1_700_000_100_000,
+                pulledWithLocalSets to 1_700_000_100_000,
+                pulledWithLocalMetrics to 1_700_000_100_000,
+            ),
+        )
+        insertHistoricalSession(
+            id = localId,
+            timestamp = 1_700_000_000_000,
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            workingReps = 8,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+        )
+        // Measurements recorded here make a pulled id ours to push again — sets or raw
+        // samples, the same predicate the 48 backfill uses.
+        database.phoenixDatabaseQueries.insertCompletedSet(
+            "pulled-row-set-1", pulledWithLocalSets, null, null, 1L, "STANDARD", 1L, 8L, 20.0, null, 0L,
+            1_700_000_002_000, "UNKNOWN",
+        )
+        database.phoenixDatabaseQueries.insertMetric(
+            pulledWithLocalMetrics, 1_700_000_000_010, 0.5, 0.5, 0.1, 0.1, 20.0, 20.0, 40.0, 0L,
+        )
+        // A later local edit (or a portal stamp ahead of the clock) bumps updatedAt.
+        database.phoenixDatabaseQueries.updateSessionTimestamp(1_800_000_000_000, pulledId)
+
+        val pushed = repository.getWorkoutSessionsModifiedSince(0L, "active-profile").map { it.id }
+
+        assertEquals(listOf(localId, pulledWithLocalMetrics, pulledWithLocalSets), pushed.sorted())
+    }
+
+    @Test
+    fun `tombstone portal ids are fed to the pull across profiles and only for dead groups`() = runTest {
+        val routineSessionId = "9f1b0b4e-0d54-4b0b-9a1e-2f3c4d5e6f70"
+        val workouts = workoutRepository()
+        workouts.saveSession(pulledSession("grouped-1").copy(routineSessionId = routineSessionId))
+        workouts.saveSession(pulledSession("grouped-2").copy(routineSessionId = routineSessionId))
+        workouts.saveSession(pulledSession("other-profile-row", profileId = "other-profile"))
+
+        workouts.deleteSession("grouped-1")
+        workouts.deleteSession("other-profile-row")
+
+        // The group still has a live row, so the portal must keep returning the workout;
+        // the other profile's tombstone is sent all the same, because the merge skip is
+        // id-only and a merged or re-scoped profile must still suppress its deletions.
+        assertEquals(
+            listOf("other-profile-row"),
+            repository.getDeletedSessionPortalIds(),
+        )
+
+        workouts.deleteSession("grouped-2")
+
+        assertEquals(
+            listOf(routineSessionId, "other-profile-row"),
+            repository.getDeletedSessionPortalIds().sorted(),
+        )
+    }
+
+    private fun workoutRepository(): SqlDelightWorkoutRepository = SqlDelightWorkoutRepository(
+        database,
+        SqlDelightExerciseRepository(database, ExerciseImporter(database), FakePreferencesManager()),
+    )
+
+    private fun pulledSession(
+        id: String,
+        profileId: String = "active-profile",
+    ) = com.devil.phoenixproject.domain.model.WorkoutSession(
+        id = id,
+        timestamp = 1_700_000_000_000,
+        exerciseId = "bench",
+        exerciseName = "Bench Press",
+        totalReps = 8,
+        workingReps = 8,
+        profileId = profileId,
+    )
 
     private suspend fun seedUntaggedPulledRow(id: String): String {
         repository.mergeSessionsLww(

@@ -248,10 +248,12 @@ class SqlDelightAssessmentRepositoryTest {
         val deleteSessionReached = CompletableDeferred<Unit>()
         val releaseDeleteSession = CompletableDeferred<Unit>()
         val pausingWorkoutRepository = object : WorkoutRepository by workoutRepository {
-            override suspend fun deleteSession(sessionId: String) {
+            // The rollback discards the session (no tombstone: it was never the user's to
+            // delete), so that is the call this test has to pause on.
+            override suspend fun discardSession(sessionId: String) {
                 deleteSessionReached.complete(Unit)
                 releaseDeleteSession.await()
-                workoutRepository.deleteSession(sessionId)
+                workoutRepository.discardSession(sessionId)
             }
         }
         val failingExerciseRepository = object : ExerciseRepository by exerciseRepository {

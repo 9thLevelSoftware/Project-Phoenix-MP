@@ -43,6 +43,14 @@ object ProfileDeletionMergePolicy {
     val directProfileOwnedTables: Set<String> = setOf(
         "ActiveWorkoutRuntime",
         "AssessmentResult",
+        // Session tombstones (migration 48). On a PERMANENT profile delete they must
+        // survive untouched: once the portal re-scopes the deleted profile's workouts to
+        // Default, the tombstones are what keeps them from reappearing. On a MERGE into
+        // another profile the sessions are reassigned, so the tombstones should follow
+        // (UPDATE ... SET profile_id = <target>) — PR 20 owns both paths. Neither is
+        // urgent for correctness: the pull merge skip is id-only and the known-id feed is
+        // not profile-scoped, so a stale profile_id here changes nothing today.
+        "DeletedWorkoutSession",
         "EarnedBadge",
         "ExerciseMvt",
         "ExternalActivity",
