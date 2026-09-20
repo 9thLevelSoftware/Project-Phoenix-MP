@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesValidator
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.data.sync.PortalSyncAdapter
 import com.devil.phoenixproject.database.CompletedSet
 import com.devil.phoenixproject.database.CycleDay
 import com.devil.phoenixproject.database.CycleProgress
@@ -1871,6 +1872,7 @@ abstract class BaseDataBackupManager(
                                                     week_number = cycle.weekNumber.toLong(),
                                                     updatedAt = cycle.updatedAt ?: cycle.createdAt,
                                                 )
+                                                restoreCycleServerVersion(cycle)
                                                 cycle.deletedAt?.let { deletedAt ->
                                                     queries.softDeleteTrainingCycle(
                                                         deletedAt = deletedAt,
@@ -3604,6 +3606,16 @@ abstract class BaseDataBackupManager(
         uuid = pr.uuid,
     )
 
+    /**
+     * Restore a cycle's portal sync base so its first push after restore keeps portal
+     * edits instead of taking the legacy overwrite path. Malformed values are dropped.
+     */
+    private fun restoreCycleServerVersion(cycle: TrainingCycleBackup) {
+        PortalSyncAdapter.validCycleServerVersion(cycle.serverUpdatedAt)?.let {
+            queries.updateTrainingCycleServerUpdatedAt(server_updated_at = it, id = cycle.id)
+        }
+    }
+
     private fun mapTrainingCycleToBackup(cycle: TrainingCycle): TrainingCycleBackup = TrainingCycleBackup(
         id = cycle.id,
         name = sanitizeEntityName(cycle.name, "Unnamed Cycle"),
@@ -3613,6 +3625,7 @@ abstract class BaseDataBackupManager(
         profileId = cycle.profile_id,
         templateId = cycle.template_id,
         weekNumber = cycle.week_number.toInt(),
+        serverUpdatedAt = cycle.server_updated_at,
         deletedAt = cycle.deletedAt,
         updatedAt = cycle.updatedAt,
     )

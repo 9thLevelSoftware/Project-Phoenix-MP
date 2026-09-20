@@ -478,7 +478,13 @@ class SqlDelightSyncRepositoryTest {
             workoutDeletions = emptyList(),
             sessions = emptyList(),
             routines = listOf(PullRoutineDto(id = "routine-later", name = "Later routine", updatedAt = 20L)),
-            cycles = listOf(PullTrainingCycleDto(id = "cycle-later", name = "Later cycle", updatedAt = 20L)),
+            cycles = listOf(
+                PullTrainingCycleDto(
+                    id = "cycle-later",
+                    name = "Later cycle",
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(20L).toString(),
+                ),
+            ),
             badges = emptyList(),
             gamificationStats = null,
             personalRecords = listOf(
@@ -2073,7 +2079,7 @@ class SqlDelightSyncRepositoryTest {
                 PullTrainingCycleDto(
                     id = cycleId,
                     name = "Server cycle",
-                    updatedAt = localUpdatedAt + 100L,
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(localUpdatedAt + 100L).toString(),
                     progressStatePresent = true,
                     progressState = PortalCycleProgressStateSyncDto(
                         currentDayNumber = 2,
@@ -2140,7 +2146,7 @@ class SqlDelightSyncRepositoryTest {
                 PullTrainingCycleDto(
                     id = cycleId,
                     name = "Legacy portal cycle",
-                    updatedAt = localUpdatedAt + 100L,
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(localUpdatedAt + 100L).toString(),
                 ),
             ),
             badges = emptyList(),
@@ -2164,7 +2170,7 @@ class SqlDelightSyncRepositoryTest {
                 PullTrainingCycleDto(
                     id = cycleId,
                     name = "Canonical portal cycle",
-                    updatedAt = localUpdatedAt + 200L,
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(localUpdatedAt + 200L).toString(),
                     progressionSettingsPresent = true,
                     progressionSettings = null,
                 ),
