@@ -25,11 +25,11 @@ sources:
     note: Shows that SwiftUI only hosts the shared Compose view controller.
   - id: android-safe-word
     type: file
-    path: shared/src/androidMain/kotlin/com/devil/phoenixproject/domain/voice/SafeWordListener.android.kt
+    path: shared/src/androidMain/kotlin/com/devil/phoenixproject/domain/voice/AndroidSafeWordListener.kt
     note: Shows Android safe-word recognition uses offline SpeechRecognizer, transient audio focus, and auto-restart behavior.
   - id: ios-safe-word
     type: file
-    path: shared/src/iosMain/kotlin/com/devil/phoenixproject/domain/voice/SafeWordListener.ios.kt
+    path: shared/src/iosMain/kotlin/com/devil/phoenixproject/domain/voice/IosSafeWordListener.kt
     note: Shows iOS safe-word recognition uses on-device SFSpeechRecognizer, microphone permission, and interruption recovery.
   - id: android-haptics
     type: file

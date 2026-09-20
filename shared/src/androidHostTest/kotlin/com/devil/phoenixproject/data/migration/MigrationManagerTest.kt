@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.data.migration
 
 import app.cash.sqldelight.db.SqlDriver
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.StartupSurface
 import com.devil.phoenixproject.startupSurface
 import com.devil.phoenixproject.data.preferences.SettingsLegacyProfilePreferencesReader
@@ -13,6 +12,8 @@ import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
+import com.devil.phoenixproject.testutil.seedExercise
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import com.russhwolf.settings.MapSettings
 import kotlinx.coroutines.test.runTest
@@ -38,6 +39,7 @@ class MigrationManagerTest {
         database: PhoenixDatabase,
         driver: SqlDriver? = null,
         settings: MapSettings = MapSettings(),
+        personalRecordHistoryRepair: PersonalRecordHistoryRepair? = null,
     ): MigrationManager {
         val preferences = SqlDelightProfilePreferencesRepository(database)
         val safety = SettingsProfileLocalSafetyStore(settings)
@@ -60,6 +62,7 @@ class MigrationManagerTest {
                 settings,
             ),
             driver = driver,
+            personalRecordHistoryRepair = personalRecordHistoryRepair,
         )
     }
 
@@ -419,8 +422,7 @@ class MigrationManagerTest {
 
     @Test
     fun `repairOrphanedPRRecords preserves target uuid when better orphan duplicate lacks one`() = runTest {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        PhoenixDatabase.Schema.create(driver)
+        val driver = createTestDriver()
         val localDatabase = PhoenixDatabase(driver)
         val localMigrationManager = createMigrationManager(localDatabase, driver)
         val queries = localDatabase.phoenixDatabaseQueries
@@ -617,13 +619,15 @@ class MigrationManagerTest {
         assertEquals(70.0, bench.weight)
         assertEquals("Target Bench", bench.exerciseName)
         assertEquals("target-fallback-uuid", bench.uuid)
-        assertEquals(2, settings.getInt("migration_repair_version", 0))
+        assertNotNull(
+            queries.selectAppliedDataRepair("workout-mode-keys-v1").executeAsOneOrNull(),
+        )
+        assertEquals(1, settings.getInt("migration_repair_version", 0))
     }
 
     @Test
     fun `orphan repair preserves target ids and deterministic PR badge sync metadata`() = runTest {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        PhoenixDatabase.Schema.create(driver)
+        val driver = createTestDriver()
         val localDatabase = PhoenixDatabase(driver)
         val localMigrationManager = createMigrationManager(localDatabase, driver)
         val queries = localDatabase.phoenixDatabaseQueries
@@ -754,6 +758,52 @@ class MigrationManagerTest {
     }
 
     @Test
+    fun `failed personal record history repair stays unledgered and succeeds on retry`() = runTest {
+        insertMinimalSession(
+            id = "repair-session",
+            routineSessionId = null,
+            routineName = null,
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            workingReps = 5,
+            heaviestLiftKg = 80.0,
+        )
+        var failRepair = true
+        var attempts = 0
+        val localManager = createMigrationManager(
+            database = database,
+            personalRecordHistoryRepair = PersonalRecordHistoryRepair { _, _ ->
+                attempts++
+                if (failRepair) error("injected PR repair failure")
+                1
+            },
+        )
+
+        localManager.runMigrationsNow()
+
+        assertEquals(
+            NonCriticalRepairState.Failed("PERSONAL_RECORD_HISTORY_REPAIR_FAILED"),
+            localManager.nonCriticalRepairState.value,
+        )
+        assertNull(
+            database.phoenixDatabaseQueries
+                .selectAppliedDataRepair("personal-record-history-v1")
+                .executeAsOneOrNull(),
+        )
+
+        failRepair = false
+        localManager.runMigrationsNow()
+
+        assertEquals(NonCriticalRepairState.Ready, localManager.nonCriticalRepairState.value)
+        assertNotNull(
+            database.phoenixDatabaseQueries
+                .selectAppliedDataRepair("personal-record-history-v1")
+                .executeAsOneOrNull(),
+        )
+        assertEquals(2, attempts)
+    }
+
+    @Test
     fun `repair personal records from workout history backfills achieved load and stays idempotent`() {
         val queries = database.phoenixDatabaseQueries
         insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
@@ -791,6 +841,8 @@ class MigrationManagerTest {
             profileId = "default",
         ).executeAsOneOrNull()
         val exercise = queries.selectExerciseById("deadlift").executeAsOneOrNull()
+        val baseline = queries.selectProfileExerciseBaseline("default", "deadlift")
+            .executeAsOneOrNull()
         val repairedRecords = queries.selectAllRecords(profileId = "default").executeAsList()
             .filter { it.exerciseId == "deadlift" }
 
@@ -804,8 +856,9 @@ class MigrationManagerTest {
         assertEquals(2, repairedRecords.size)
         assertEquals(
             OneRepMaxCalculator.estimate(60f, 10).toDouble(),
-            exercise?.one_rep_max_kg,
+            baseline?.one_rep_max_per_cable_kg,
         )
+        assertNull(exercise?.one_rep_max_kg)
     }
 
     @Test
@@ -938,6 +991,7 @@ class MigrationManagerTest {
     }
 
     private fun insertMinimalRoutineExercise(id: String, routineId: String, exerciseName: String, exerciseId: String) {
+        database.seedExercise(exerciseId, exerciseName)
         database.phoenixDatabaseQueries.insertRoutineExerciseIgnore(
             id = id,
             routineId = routineId,

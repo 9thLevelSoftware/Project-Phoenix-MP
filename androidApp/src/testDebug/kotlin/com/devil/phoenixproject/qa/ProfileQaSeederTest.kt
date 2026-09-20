@@ -60,12 +60,13 @@ class ProfileQaSeederTest {
     }
 
     @Test
-    fun `fixture PR writes restore the preexisting catalog one rep max`() = runTest {
+    fun `fixture PR writes seed independent profile baselines`() = runTest {
         val fixture = SeederFixture()
 
-        fixture.seeder().seed()
+        val result = fixture.seeder().seed()
 
-        assertEquals(42f, fixture.catalogOneRepMaxKg)
+        assertTrue(fixture.scopedBaselines.getValue(result.profileAId to "bench-press") > 0f)
+        assertTrue(fixture.scopedBaselines.getValue(result.profileBId to "bench-press") > 0f)
     }
 
     @Test
@@ -257,7 +258,7 @@ class ProfileQaSeederTest {
         val personalRecords = mutableListOf<PersonalRecord>()
         val assessments = mutableListOf<AssessmentResultEntity>()
         val velocity = mutableListOf<VelocityOneRepMaxEntity>()
-        var catalogOneRepMaxKg: Float? = 42f
+        val scopedBaselines = mutableMapOf<Pair<String, String>, Float>()
 
         private var nextProfile = 1
         private var nextPr = 1L
@@ -305,13 +306,8 @@ class ProfileQaSeederTest {
                     name = "Bench Press",
                     muscleGroup = "Chest",
                     equipment = "BAR",
-                    oneRepMaxKg = catalogOneRepMaxKg,
                 )
             }
-            coEvery { exercises.updateOneRepMax("bench-press", any()) } coAnswers {
-                catalogOneRepMaxKg = secondArg()
-            }
-
             coEvery { workouts.deleteSession(any()) } coAnswers { sessions.remove(firstArg()) }
             coEvery { workouts.saveSession(any()) } coAnswers {
                 val session = firstArg<WorkoutSession>()
@@ -370,8 +366,9 @@ class ProfileQaSeederTest {
                 replace(PRType.MAX_WEIGHT, weightForWeightPr, weightForWeightPr * reps)
                 replace(PRType.MAX_VOLUME, weightForVolumePr, weightForVolumePr * reps)
                 if (broken.isNotEmpty()) {
-                    catalogOneRepMaxKg = maxOf(
-                        catalogOneRepMaxKg ?: 0f,
+                    val key = profileId to exerciseId
+                    scopedBaselines[key] = maxOf(
+                        scopedBaselines[key] ?: 0f,
                         OneRepMaxCalculator.estimate(weightForWeightPr, reps),
                     )
                 }

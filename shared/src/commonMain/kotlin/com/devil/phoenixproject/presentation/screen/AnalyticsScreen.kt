@@ -562,7 +562,9 @@ fun AnalyticsScreen(
                         // Sets" group action through HistoryManager
                         // so zero-rep ghost rows hidden by the History
                         // filter are soft-deleted too.
-                        onDeleteRoutineGroup = { viewModel.deleteRoutineWorkouts(it) },
+                        onDeleteRoutineGroup = { profileId, routineSessionId ->
+                            viewModel.deleteRoutineWorkouts(profileId, routineSessionId)
+                        },
                         exerciseRepository = viewModel.exerciseRepository,
                         onTagJustLiftSessionExercise = { sessionId, exercise, isAmrap ->
                             viewModel.tagJustLiftSessionExercise(sessionId, exercise, isAmrap)
@@ -574,7 +576,7 @@ fun AnalyticsScreen(
             }
         }
 
-        // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
+        // Connection error dialog
         connectionError?.let { error ->
             com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
                 message = error,

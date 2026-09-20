@@ -4,11 +4,14 @@ import com.devil.phoenixproject.data.repository.PhasePRBackfillResult
 import com.devil.phoenixproject.data.repository.ServerDeletionResult
 import com.devil.phoenixproject.data.repository.SessionNotesEntry
 import com.devil.phoenixproject.data.repository.SyncRepository
+import com.devil.phoenixproject.data.repository.WorkoutComponentSnapshot
+import com.devil.phoenixproject.data.repository.WorkoutSyncSnapshot
 import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.data.sync.EarnedBadgeSyncDto
 import com.devil.phoenixproject.data.sync.GamificationStatsSyncDto
 import com.devil.phoenixproject.data.sync.IdMappings
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
+import com.devil.phoenixproject.data.sync.PulledWorkoutDeletionDto
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
@@ -17,6 +20,8 @@ import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.database.AssessmentResult
 import com.devil.phoenixproject.database.PhaseStatistics
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutSession
 
@@ -30,6 +35,11 @@ class FakeSyncRepository : SyncRepository {
 
     val callLog: MutableList<String> = mutableListOf()
     var workoutSessionsToReturn: List<WorkoutSession> = emptyList()
+    var workoutRepMetricsByComponentId: Map<String, List<RepMetricData>> = emptyMap()
+    var workoutCompletedSetsByComponentId: Map<String, List<CompletedSet>> = emptyMap()
+    var workoutPhaseStatisticsByComponentId: Map<String, List<PhaseStatistics>> = emptyMap()
+    var workoutSessionNotesByPortalId: Map<String, SessionNotesEntry> = emptyMap()
+    val acknowledgedWorkoutParentIdCalls: MutableList<Set<String>> = mutableListOf()
     var prsToReturn: List<PersonalRecordSyncDto> = emptyList()
     var fullPRsToReturn: List<PersonalRecord> = emptyList()
     var phaseBackfillResultToReturn: PhasePRBackfillResult = PhasePRBackfillResult(changedRows = 0)
@@ -53,7 +63,6 @@ class FakeSyncRepository : SyncRepository {
     var mergedGamificationStats: GamificationStatsSyncDto? = null
     var mergedSessions: List<WorkoutSessionSyncDto> = emptyList()
     var mergedPRs: List<PersonalRecordSyncDto> = emptyList()
-    var mergedRoutines: List<RoutineSyncDto> = emptyList()
     var mergedCustomExercises: List<CustomExerciseSyncDto> = emptyList()
     var updatedIdMappings: IdMappings? = null
 
@@ -81,6 +90,27 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSession> = workoutSessionsToReturn
 
+    override suspend fun getDirtyWorkoutSnapshot(profileId: String): WorkoutSyncSnapshot = WorkoutSyncSnapshot(
+        components = workoutSessionsToReturn.map { session ->
+            WorkoutComponentSnapshot(
+                session = session,
+                portalSessionId = session.routineSessionId?.takeIf { it.isNotBlank() } ?: session.id,
+                localSyncGeneration = 0L,
+            )
+        },
+        repMetricsByComponentId = workoutRepMetricsByComponentId,
+        completedSetsByComponentId = workoutCompletedSetsByComponentId,
+        phaseStatisticsByComponentId = workoutPhaseStatisticsByComponentId,
+        sessionNotesByPortalId = workoutSessionNotesByPortalId,
+    )
+
+    override suspend fun acknowledgeWorkoutSnapshot(
+        snapshot: WorkoutSyncSnapshot,
+        acceptedPortalSessionIds: Set<String>,
+    ) {
+        acknowledgedWorkoutParentIdCalls += acceptedPortalSessionIds
+    }
+
     override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> = routinesToReturn
 
     var deletedRoutineIdsToReturn: List<String> = emptyList()
@@ -104,10 +134,6 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun mergePRs(records: List<PersonalRecordSyncDto>) {
         mergedPRs = records
-    }
-
-    override suspend fun mergeRoutines(routines: List<RoutineSyncDto>) {
-        mergedRoutines = routines
     }
 
     override suspend fun mergeCustomExercises(exercises: List<CustomExerciseSyncDto>) {
@@ -275,16 +301,21 @@ class FakeSyncRepository : SyncRepository {
     var lastAtomicMergeBadges: List<EarnedBadgeSyncDto> = emptyList()
     var lastAtomicMergeGamificationStats: GamificationStatsSyncDto? = null
     var lastAtomicMergePersonalRecords: List<PersonalRecordSyncDto> = emptyList()
+    var lastAtomicMergeOwnerUserId: String = ""
+    var lastAtomicMergeWorkoutDeletions: List<PulledWorkoutDeletionDto> = emptyList()
     var lastAtomicMergeLastSync: Long = 0L
     var lastAtomicMergeProfileId: String = ""
     var mergeSessionNotesCallCount = 0
     var lastMergedSessionNotes: Map<String, SessionNotesEntry> = emptyMap()
+    var lastAtomicMergeSessionUpdatedAtById: Map<String, Long> = emptyMap()
 
     /** Set to throw an exception before the ordinary repository merge commits. */
     var atomicMergeShouldFail: Boolean = false
     var onMergeAllPullData: (() -> Unit)? = null
 
     override suspend fun mergeAllPullData(
+        ownerUserId: String,
+        workoutDeletions: List<PulledWorkoutDeletionDto>,
         sessions: List<WorkoutSession>,
         routines: List<PullRoutineDto>,
         cycles: List<PullTrainingCycleDto>,
@@ -293,6 +324,8 @@ class FakeSyncRepository : SyncRepository {
         personalRecords: List<PersonalRecordSyncDto>,
         lastSync: Long,
         profileId: String,
+        sessionNotes: Map<String, SessionNotesEntry>,
+        sessionUpdatedAtById: Map<String, Long>,
     ) {
         if (atomicMergeShouldFail) {
             throw RuntimeException("Simulated ordinary repository merge failure")
@@ -307,8 +340,12 @@ class FakeSyncRepository : SyncRepository {
         lastAtomicMergeBadges = badges
         lastAtomicMergeGamificationStats = gamificationStats
         lastAtomicMergePersonalRecords = personalRecords
+        lastAtomicMergeOwnerUserId = ownerUserId
+        lastAtomicMergeWorkoutDeletions = workoutDeletions
         lastAtomicMergeLastSync = lastSync
         lastAtomicMergeProfileId = profileId
+        lastMergedSessionNotes = sessionNotes
+        lastAtomicMergeSessionUpdatedAtById = sessionUpdatedAtById
 
         // Also update the individual merge trackers for backward compatibility with existing tests
         // that check the individual merge call counts and captured data.
@@ -338,6 +375,9 @@ class FakeSyncRepository : SyncRepository {
             mergePersonalRecordsCallCount++
             mergedPersonalRecords = personalRecords
         }
+        if (sessionNotes.isNotEmpty()) {
+            mergeSessionNotesCallCount++
+        }
     }
 
     override suspend fun mergeSessionNotes(notes: Map<String, SessionNotesEntry>) {
@@ -348,6 +388,7 @@ class FakeSyncRepository : SyncRepository {
     // === Server-reported deletions (PR 16 keys) ===
 
     data class ServerDeletionCall(
+        val ownerUserId: String,
         val routineIds: List<String>,
         val cycleIds: List<String>,
         val lastSync: Long,
@@ -363,6 +404,7 @@ class FakeSyncRepository : SyncRepository {
     var applyServerDeletionsShouldFail: Boolean = false
 
     override suspend fun applyServerDeletions(
+        ownerUserId: String,
         routineIds: List<String>,
         cycleIds: List<String>,
         lastSync: Long,
@@ -371,7 +413,7 @@ class FakeSyncRepository : SyncRepository {
             throw RuntimeException("Simulated server deletion failure")
         }
         callLog += "applyServerDeletions"
-        serverDeletionCalls += ServerDeletionCall(routineIds, cycleIds, lastSync)
+        serverDeletionCalls += ServerDeletionCall(ownerUserId, routineIds, cycleIds, lastSync)
         val removedRoutines = routinesToReturn.filter { it.id in routineIds }
         routinesToReturn = routinesToReturn - removedRoutines.toSet()
         val removedCycles = cycleIds.filter { localCycleIds.remove(it) }

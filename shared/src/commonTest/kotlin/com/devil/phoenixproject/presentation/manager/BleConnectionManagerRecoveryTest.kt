@@ -285,7 +285,5 @@ class BleConnectionManagerRecoveryTest {
     private data object InactiveWorkoutStateProvider : WorkoutStateProvider {
         override val isWorkoutActiveForConnectionAlert: Boolean = false
         override val isWorkoutMidSet: Boolean = false
-
-        override fun onWorkoutConnectionLost() = Unit
     }
 }

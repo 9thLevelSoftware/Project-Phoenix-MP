@@ -8,6 +8,9 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import org.junit.Test
 
+// Raw JdbcSqliteDriver with foreign keys OFF on purpose (unlike createTestDriver()): production
+// runs migrations/reconciliation before it turns FKs on (Android onUpgrade before onOpen, iOS
+// after reconcileFullSchema), so schema tests must model that FK-off window.
 class LegacySchemaReconciliationTest {
 
     @Test

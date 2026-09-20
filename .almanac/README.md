@@ -1,5 +1,9 @@
 # Wiki
 
+> **Historical, last verified 2026-06.** These pages are not maintained. Where they
+> disagree with `CLAUDE.md` or the code, the code and `CLAUDE.md` win (for example,
+> `pages/local-data-model.md` still gives an old schema version).
+
 This is the Almanac wiki for this repository. It captures the knowledge
 the code itself can't say — decisions, flows, invariants, gotchas, incidents.
 

@@ -231,11 +231,11 @@ class HistoryManager(
      * the zero-rep / ghost rows hidden by `getHistoryVisibleSessions`
      * do not survive the History "Delete All Sets" affordance.
      */
-    fun deleteRoutineWorkouts(routineSessionId: String) {
-        scope.launch { workoutRepository.deleteSessionsByRoutineSessionId(routineSessionId) }
+    fun deleteRoutineWorkouts(profileId: String, routineSessionId: String) {
+        scope.launch { workoutRepository.deleteSessionsByRoutineSessionId(profileId, routineSessionId) }
     }
 
-    fun deleteAllWorkouts() {
-        scope.launch { workoutRepository.deleteAllSessions() }
+    fun deleteAllWorkouts(profileId: String) {
+        scope.launch { workoutRepository.deleteAllSessions(profileId) }
     }
 }

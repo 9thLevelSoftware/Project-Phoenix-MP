@@ -24,11 +24,7 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
-import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.first
@@ -57,10 +53,7 @@ import kotlinx.coroutines.withTimeoutOrNull
  * @param onConnectionStateChanged Callback when connection state changes
  * @param onScannedDevicesChanged Callback when scanned device list changes
  * @param onReconnectionRequested Callback when auto-reconnect should be attempted
- * @param onCommandResponse Callback for command response opcode tracking
  * @param onRepEventFromCharacteristic Callback for rep events from REPS characteristic
- * @param onRepEventFromRx Callback for rep events from RX notifications (opcode 0x02)
- * @param onMetricFromRx Callback for metrics from RX notifications (opcode 0x01)
  * @param onDiagnosticData Callback for diagnostic snapshots from one-shot diagnostic reads
  */
 @OptIn(ExperimentalUuidApi::class)
@@ -75,11 +68,8 @@ class KableBleConnectionManager(
     private val onConnectionStateChanged: (ConnectionState) -> Unit,
     private val onScannedDevicesChanged: (List<ScannedDevice>) -> Unit,
     private val onReconnectionRequested: suspend (ReconnectionRequest) -> Unit,
-    private val onCommandResponse: (UByte) -> Unit,
     // Callbacks for notification data routing
     private val onRepEventFromCharacteristic: (ByteArray) -> Unit,
-    private val onRepEventFromRx: (ByteArray) -> Unit,
-    private val onMetricFromRx: (ByteArray) -> Unit,
     private val onDiagnosticData: (DiagnosticPacket) -> Unit = {},
 ) {
     private val log = Logger.withTag("KableBleConnectionManager")
@@ -99,9 +89,6 @@ class KableBleConnectionManager(
     // Characteristic references from BleConstants
     // -------------------------------------------------------------------------
     private val txCharacteristic = BleConstants.txCharacteristic
-
-    @Suppress("unused") // Phoenix doesn't use standard NUS RX (6e400003)
-    private val rxCharacteristic = BleConstants.rxCharacteristic
     private val monitorCharacteristic = BleConstants.monitorCharacteristic
     private val repsCharacteristic = BleConstants.repsCharacteristic
     private val diagnosticCharacteristic = BleConstants.diagnosticCharacteristic
@@ -206,16 +193,6 @@ class KableBleConnectionManager(
      * Used by stopScanning() to guard against resetting state when not scanning.
      */
     private var lastReportedState: ConnectionState = ConnectionState.Disconnected
-
-    // -------------------------------------------------------------------------
-    // Command response flow (self-contained for awaitResponse)
-    // -------------------------------------------------------------------------
-    private val _commandResponses = MutableSharedFlow<UByte>(
-        replay = 0,
-        extraBufferCapacity = 16,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST,
-    )
-    val commandResponses: Flow<UByte> = _commandResponses.asSharedFlow()
 
     internal enum class LifecycleJob { SCAN, STATE_OBSERVER }
 
@@ -1620,35 +1597,6 @@ class KableBleConnectionManager(
     }
 
     // -------------------------------------------------------------------------
-    // 13. processIncomingData()
-    // -------------------------------------------------------------------------
-
-    /**
-     * Route incoming RX data to appropriate callbacks based on opcode.
-     *
-     * Made internal for testability (consistent with MetricPollingEngine's
-     * internal test helpers pattern).
-     */
-    internal fun processIncomingData(data: ByteArray) {
-        if (data.isEmpty()) return
-
-        // Extract opcode (first byte) for command response tracking
-        val opcode = data[0].toUByte()
-        log.d { "RX notification: opcode=0x${opcode.toString(16).padStart(2, '0')}, size=${data.size}" }
-
-        // Emit to both internal flow (for awaitResponse) and external callback
-        _commandResponses.tryEmit(opcode)
-        onCommandResponse(opcode)
-
-        // Route to specific callbacks
-        when (opcode.toInt()) {
-            0x01 -> if (data.size >= 16) onMetricFromRx(data)
-            0x02 -> if (data.size >= 5) onRepEventFromRx(data)
-            // Other opcodes can be handled here as needed
-        }
-    }
-
-    // -------------------------------------------------------------------------
     // 14. parseDiagnosticData()
     // -------------------------------------------------------------------------
 
@@ -1670,41 +1618,6 @@ class KableBleConnectionManager(
         } catch (e: Exception) {
             log.e { "Failed to parse diagnostic data: ${e.message}" }
         }
-    }
-
-    // -------------------------------------------------------------------------
-    // 15. awaitResponse()
-    // -------------------------------------------------------------------------
-
-    /**
-     * Wait for a specific response opcode with timeout.
-     * Used for protocol handshakes that require acknowledgment.
-     *
-     * @param expectedOpcode The opcode to wait for
-     * @param timeoutMs Timeout in milliseconds (default 5000ms)
-     * @return true if the expected opcode was received, false on timeout
-     */
-    @Suppress("unused") // Reserved for future protocol handshake commands
-    suspend fun awaitResponse(expectedOpcode: UByte, timeoutMs: Long = 5000L): Boolean = try {
-        val opcodeHex = expectedOpcode.toString(16).uppercase().padStart(2, '0')
-        log.d { "Waiting for response opcode 0x$opcodeHex (timeout: ${timeoutMs}ms)" }
-
-        val result = withTimeoutOrNull(timeoutMs) {
-            commandResponses.filter { it == expectedOpcode }.first()
-        }
-
-        if (result != null) {
-            log.d { "Received expected response opcode 0x$opcodeHex" }
-            true
-        } else {
-            log.w { "Timeout waiting for response opcode 0x$opcodeHex" }
-            false
-        }
-    } catch (e: Exception) {
-        e.rethrowIfCancellation()
-        val opcodeHex = expectedOpcode.toString(16).uppercase().padStart(2, '0')
-        log.e { "Error waiting for response opcode 0x$opcodeHex: ${e.message}" }
-        false
     }
 
     // -------------------------------------------------------------------------
