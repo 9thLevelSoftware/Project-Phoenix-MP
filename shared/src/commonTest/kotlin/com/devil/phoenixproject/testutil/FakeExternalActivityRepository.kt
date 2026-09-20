@@ -16,6 +16,7 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
     val markedSyncedIds = mutableListOf<String>()
     val markedSyncedKeys = mutableListOf<ExternalActivitySyncKey>()
     var upsertCallCount = 0
+    var upsertFailure: Throwable? = null
 
     /** Captures every updateIntegrationStatus call for test assertions. */
     data class StatusUpdate(
@@ -41,6 +42,7 @@ class FakeExternalActivityRepository : ExternalActivityRepository {
 
     override suspend fun upsertActivities(activities: List<ExternalActivity>) {
         upsertCallCount++
+        upsertFailure?.let { throw it }
         // Deduplicate on (provider, externalId, profileId) to match real INSERT OR IGNORE + UPDATE behavior.
         // Existing rows are updated in-place (preserving id and needsSync); new rows are appended.
         for (activity in activities) {
