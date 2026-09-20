@@ -897,7 +897,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // WorkoutSession -- initial schema, full current shape
     // Columns added by later migrations: set summary metrics (m5), sync fields (m11),
     // biomechanics summary (m15), formScore (m16), safety tracking (no migration),
-    // cableCount (m13), profile_id (m21), display_multiplier (m29), rack context (m33)
+    // cableCount (m13), profile_id (m21), display_multiplier (m29), rack context (m33),
+    // portalOrigin (m48), local/synced_sync_generation (m49)
     SchemaTableOperation(
         table = "WorkoutSession",
         createSql = """
@@ -955,7 +956,11 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 display_multiplier INTEGER,
                 externalAddedLoadKg REAL NOT NULL DEFAULT 0,
                 counterweightKg REAL NOT NULL DEFAULT 0,
-                rackItemsJson TEXT NOT NULL DEFAULT '[]'
+                rackItemsJson TEXT NOT NULL DEFAULT '[]',
+                portalOrigin INTEGER NOT NULL DEFAULT 0 CHECK(portalOrigin IN (0, 1)),
+                local_sync_generation INTEGER NOT NULL DEFAULT 1 CHECK(local_sync_generation >= 0),
+                synced_sync_generation INTEGER NOT NULL DEFAULT 0
+                    CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation)
             )
         """.trimIndent(),
     ),
