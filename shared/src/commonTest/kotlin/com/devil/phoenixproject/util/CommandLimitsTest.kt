@@ -14,7 +14,7 @@ import kotlin.test.assertTrue
 class CommandLimitsTest {
 
     @Test
-    fun `per-cable ceiling is the connected model's and unknown fails closed`() {
+    fun `per-cable ceiling is the connected models and unknown fails closed`() {
         assertEquals(100f, CommandLimits.maxWeightPerCableKg(PhoenixModel.VFormTrainer))
         assertEquals(110f, CommandLimits.maxWeightPerCableKg(PhoenixModel.TrainerPlus))
         assertEquals(100f, CommandLimits.maxWeightPerCableKg(PhoenixModel.Unknown))
@@ -81,7 +81,7 @@ class CommandLimitsTest {
     }
 
     @Test
-    fun `non-finite values are left for the validator to reject not silently invented`() {
+    fun `non-finite values are left for the validator to reject - not silently invented`() {
         val nan = CommandLimits.resolve(Float.NaN, Float.NaN, PhoenixModel.TrainerPlus)
         assertTrue(nan.weightPerCableKg.isNaN())
         assertTrue(nan.progressionKg.isNaN())

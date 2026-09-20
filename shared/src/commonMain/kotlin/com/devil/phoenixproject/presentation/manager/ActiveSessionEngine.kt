@@ -5878,9 +5878,82 @@ class ActiveSessionEngine(
     }
 
     /**
-     * Auto-stop and stall detection are only active once warmup reps are complete.
+     * Issue #712 / F-070: maintain the warm-up auto-end fallback for this sample, and report
+     * whether it has just opened.
+     *
+     * Every auto-stop path of a set with no rep target is gated on warm-up completion
+     * ([isWarmupGateOpenForAutoStop]). When the machine never reports the warm-up reps that
+     * gate stays shut for the whole set: each sample resets the countdowns, nothing ever ends
+     * the set, and the only exit is Stop Set with the warm-up display stuck at 0 (#712).
+     *
+     * The fallback ends such a set once the handles have been continuously at rest for
+     * [WorkoutCoordinator.AMRAP_WARMUP_FALLBACK_MS] AFTER the set showed real movement. Both
+     * halves matter: the movement requirement means a set that never started cannot be ended
+     * by it, and the rest window is measured from the samples' own clock and restarted by any
+     * sample with the handles off the rack, so a set the user is still working is never cut
+     * short. It is not latched - the flag closes again the moment the handles move.
+     *
+     * Scope is AMRAP and Just Lift only ([WorkoutParameters.usesUnlimitedRepTarget]), minus
+     * timed-cable sets. A timed-cable set can carry `isAMRAP` (that flag is derived purely from
+     * a null entry in `setReps`, independently of the exercise's `duration`), but it is not
+     * stuck the way #712's set is: its own countdown ends it with `TIMER_EXPIRED` whatever the
+     * warm-up counter says. The fallback would only be able to cut such a set short of its
+     * timer, so it is excluded here exactly as the execution lease excludes it.
+     *
+     * @return true only on the sample where the fallback opens, so the caller ends the set
+     * (and logs) once rather than on every sample that follows.
      */
-    private fun isWarmupGateOpenForAutoStop(): Boolean = coordinator._repCount.value.isWarmupComplete
+    private fun updateWarmupFallbackState(params: WorkoutParameters, metric: WorkoutMetric): Boolean {
+        val maxPosition = maxOf(metric.positionA, metric.positionB)
+        if (maxPosition < WorkoutCoordinator.HANDLE_REST_THRESHOLD) {
+            if (coordinator.handlesAtRestSinceMs == 0L) {
+                coordinator.handlesAtRestSinceMs = metric.timestamp
+            }
+        } else {
+            coordinator.handlesAtRestSinceMs = 0L
+            // Movement is credited from THIS sample's own position, never from
+            // repCounter.hasMeaningfulRange(): that range survives resetCountsOnly(), which
+            // deliberately preserves it across a set boundary (RepCounterFromMachine:152-166)
+            // and is what Just Lift's set start uses, so a range built in set N would let set
+            // N+1 credit movement the user has not performed there. A handle past
+            // MIN_RANGE_THRESHOLD is a pull, not the 5 mm of a hand resting on the grip.
+            val repCount = coordinator._repCount.value
+            if (maxPosition >= WorkoutCoordinator.MIN_RANGE_THRESHOLD ||
+                repCount.totalReps > 0 ||
+                repCount.warmupReps > 0 ||
+                repCount.hasPendingRep
+            ) {
+                coordinator.observedSetMovement = true
+            }
+        }
+
+        val restSince = coordinator.handlesAtRestSinceMs
+        val wasOpen = coordinator.amrapWarmupFallbackOpen
+        val isOpen = params.usesUnlimitedRepTarget &&
+            !coordinator.isCurrentTimedCableExercise &&
+            !coordinator._repCount.value.isWarmupComplete &&
+            coordinator.observedSetMovement &&
+            restSince != 0L &&
+            metric.timestamp - restSince >= WorkoutCoordinator.AMRAP_WARMUP_FALLBACK_MS
+        coordinator.amrapWarmupFallbackOpen = isOpen
+        return isOpen && !wasOpen
+    }
+
+    /**
+     * Auto-stop and stall detection are only active once warmup reps are complete.
+     *
+     * Issue #712 / F-070: plus the bounded fallback for a set with no rep target whose
+     * warm-up the machine never reported - see [updateWarmupFallbackState], which owns the
+     * flag. A shut gate is what keeps the stall, deload and Just Lift handle-release paths
+     * from acting, so this disjunct only ever *enables* them; it is a backstop. The fallback
+     * normally ends the set itself on the sample that opens the flag, but if that
+     * `requestAutoStop` no-ops (null or stale lease) the ordinary position path still ends the
+     * set 2.5 s later through the current lease. While the flag is open the handles are at
+     * rest, so `maxPosition < 5 < STALL_MIN_POSITION` keeps the velocity-stall path disarmed
+     * and `autoStopStopRequested` blocks a second end.
+     */
+    private fun isWarmupGateOpenForAutoStop(): Boolean =
+        coordinator._repCount.value.isWarmupComplete || coordinator.amrapWarmupFallbackOpen
 
     /**
      * Whether 2.5s position-based auto-stop should run.
@@ -6457,6 +6530,22 @@ class ActiveSessionEngine(
                     coordinator.repBoundaryTimestamps.update { boundaries ->
                         if (boundaries.isEmpty()) listOf(metric.timestamp) else boundaries
                     }
+                }
+            }
+
+            // Issue #712 / F-070: the warm-up auto-end fallback runs BEFORE the gate, because
+            // the gate is exactly what is stuck shut in the set it rescues.
+            if (updateWarmupFallbackState(params, metric)) {
+                val lease = executionGuard.currentLease
+                if (lease != null) {
+                    Logger.w {
+                        "Issue712: warm-up never completed (" +
+                            "${coordinator._repCount.value.warmupReps}/${params.warmupReps}) - ending this " +
+                            "unlimited-rep set after ${WorkoutCoordinator.AMRAP_WARMUP_FALLBACK_MS}ms of " +
+                            "handles at rest (isAMRAP=${params.isAMRAP}, isJustLift=${params.isJustLift})"
+                    }
+                    requestAutoStop(lease, SetEndReason.CABLE_RELEASED)
+                    return
                 }
             }
 
@@ -7803,11 +7892,17 @@ class ActiveSessionEngine(
         } else {
             variableWarmupTarget ?: seedParams.reps
         }
+        // F-070: the "no rep target" half of this decision is
+        // WorkoutParameters.usesUnlimitedRepTarget - the same predicate the PROGRAM packet's
+        // 0xFF sentinel reads. isJustLiftMode is OR'd in here exactly as it is folded into
+        // the params the packet is built from (`isJustLift = isJustLiftMode || ...`), so the
+        // lease and the frame agree. The remaining conjuncts are lease-only: a bodyweight,
+        // timed-cable or variable-warm-up set sends no unlimited frame at all.
         val usesUnlimitedRepTarget = requiresMachine &&
             !isBodyweightAtStart &&
             !isTimedCableAtStart &&
             variableWarmupTarget == null &&
-            (isJustLiftMode || seedParams.isJustLift || seedParams.isAMRAP)
+            (isJustLiftMode || seedParams.usesUnlimitedRepTarget)
         val outgoingLease = executionGuard.currentLease
         val executionSeed = ExecutionSeed(
             sessionId = KmpUtils.randomUUID(),

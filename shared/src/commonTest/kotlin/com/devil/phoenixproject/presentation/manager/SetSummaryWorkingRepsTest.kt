@@ -67,7 +67,7 @@ class SetSummaryWorkingRepsTest {
     )
 
     @Test
-    fun `heaviest lift is the working peak not a heavier warmup transient`() = runTest {
+    fun `heaviest lift is the working peak - not a heavier warmup transient`() = runTest {
         val harness = DWSMTestHarness(this)
 
         val summary = harness.summary(warmupRepsCount = 3, warmupCompleteTimeMs = 1_500L)
