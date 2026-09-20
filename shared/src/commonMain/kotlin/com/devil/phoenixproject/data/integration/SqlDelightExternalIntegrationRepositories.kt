@@ -6,7 +6,6 @@ import app.cash.sqldelight.coroutines.mapToOneOrNull
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ExternalBodyMeasurement
 import com.devil.phoenixproject.domain.model.ExternalExerciseTemplate
-import com.devil.phoenixproject.domain.model.ExternalExerciseTemplateMapping
 import com.devil.phoenixproject.domain.model.ExternalProgram
 import com.devil.phoenixproject.domain.model.ExternalProgramStats
 import com.devil.phoenixproject.domain.model.ExternalRoutine
@@ -450,17 +449,6 @@ class SqlDelightExternalExerciseTemplateRepository(db: PhoenixDatabase) : Extern
         profileId = profileId,
     )
 
-    private fun com.devil.phoenixproject.database.ExternalExerciseTemplateMapping.toDomain(): ExternalExerciseTemplateMapping = ExternalExerciseTemplateMapping(
-        id = id,
-        provider = providerFromKey(provider),
-        externalTemplateId = externalTemplateId,
-        localExerciseId = localExerciseId,
-        profileId = profileId,
-        createdAt = createdAt,
-        updatedAt = updatedAt,
-        rawData = rawData,
-    )
-
     override fun observeTemplates(profileId: String, provider: IntegrationProvider?): Flow<List<ExternalExerciseTemplate>> {
         val query = if (provider == null) {
             queries.getExternalExerciseTemplates(profileId)
@@ -502,34 +490,6 @@ class SqlDelightExternalExerciseTemplateRepository(db: PhoenixDatabase) : Extern
                 }
             }
         }
-    }
-
-    override suspend fun findTemplate(provider: IntegrationProvider, externalId: String, profileId: String): ExternalExerciseTemplate? = withContext(Dispatchers.IO) {
-        queries.getExternalExerciseTemplateBySyncKey(provider.key, externalId, profileId).executeAsOneOrNull()?.toDomain()
-    }
-
-    override suspend fun upsertMapping(mapping: ExternalExerciseTemplateMapping) = withContext(Dispatchers.IO) {
-        queries.upsertExternalExerciseTemplateMapping(
-            id = mapping.id,
-            provider = mapping.provider.key,
-            externalTemplateId = mapping.externalTemplateId,
-            localExerciseId = mapping.localExerciseId,
-            profileId = mapping.profileId,
-            createdAt = mapping.createdAt,
-            updatedAt = mapping.updatedAt,
-            rawData = mapping.rawData,
-        )
-        Unit
-    }
-
-    override suspend fun findMapping(
-        provider: IntegrationProvider,
-        externalTemplateId: String,
-        profileId: String,
-    ): ExternalExerciseTemplateMapping? = withContext(Dispatchers.IO) {
-        queries.getExternalExerciseTemplateMapping(provider.key, externalTemplateId, profileId)
-            .executeAsOneOrNull()
-            ?.toDomain()
     }
 
     override suspend fun deleteProviderTemplates(provider: IntegrationProvider, profileId: String) = withContext(Dispatchers.IO) {

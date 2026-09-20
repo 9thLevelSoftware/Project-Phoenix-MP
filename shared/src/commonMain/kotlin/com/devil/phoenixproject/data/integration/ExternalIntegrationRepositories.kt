@@ -2,7 +2,6 @@ package com.devil.phoenixproject.data.integration
 
 import com.devil.phoenixproject.domain.model.ExternalBodyMeasurement
 import com.devil.phoenixproject.domain.model.ExternalExerciseTemplate
-import com.devil.phoenixproject.domain.model.ExternalExerciseTemplateMapping
 import com.devil.phoenixproject.domain.model.ExternalProgram
 import com.devil.phoenixproject.domain.model.ExternalProgramStats
 import com.devil.phoenixproject.domain.model.ExternalRoutine
@@ -49,9 +48,6 @@ interface ExternalExerciseTemplateRepository {
     fun observeTemplates(profileId: String, provider: IntegrationProvider? = null): Flow<List<ExternalExerciseTemplate>>
     fun observeTemplateCounts(profileId: String): Flow<Map<IntegrationProvider, Int>>
     suspend fun upsertTemplates(templates: List<ExternalExerciseTemplate>)
-    suspend fun findTemplate(provider: IntegrationProvider, externalId: String, profileId: String): ExternalExerciseTemplate?
-    suspend fun upsertMapping(mapping: ExternalExerciseTemplateMapping)
-    suspend fun findMapping(provider: IntegrationProvider, externalTemplateId: String, profileId: String): ExternalExerciseTemplateMapping?
     suspend fun deleteProviderTemplates(provider: IntegrationProvider, profileId: String)
 }
 
