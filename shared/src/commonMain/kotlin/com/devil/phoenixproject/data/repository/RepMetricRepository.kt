@@ -30,8 +30,9 @@ class SqlDelightRepMetricRepository(private val db: PhoenixDatabase) : RepMetric
 
     override suspend fun saveRepMetrics(sessionId: String, metrics: List<RepMetricData>) {
         withContext(Dispatchers.IO) {
-            metrics.forEach { metric ->
-                queries.insertRepMetric(
+            db.transaction {
+                metrics.forEach { metric ->
+                    queries.insertRepMetric(
                     sessionId = sessionId,
                     repNumber = metric.repNumber.toLong(),
                     isWarmup = if (metric.isWarmup) 1L else 0L,
@@ -64,7 +65,9 @@ class SqlDelightRepMetricRepository(private val db: PhoenixDatabase) : RepMetric
                     avgPowerWatts = metric.avgPowerWatts.toDouble(),
                     updatedAt = null,
                     serverId = null,
-                )
+                    )
+                }
+                queries.markWorkoutComponentDirty(sessionId)
             }
         }
     }
@@ -113,7 +116,10 @@ class SqlDelightRepMetricRepository(private val db: PhoenixDatabase) : RepMetric
 
     override suspend fun deleteRepMetrics(sessionId: String) {
         withContext(Dispatchers.IO) {
-            queries.deleteRepMetricsBySession(sessionId)
+            db.transaction {
+                queries.deleteRepMetricsBySession(sessionId)
+                queries.markWorkoutComponentDirty(sessionId)
+            }
         }
     }
 

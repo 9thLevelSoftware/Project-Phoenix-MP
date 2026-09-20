@@ -51,6 +51,19 @@ sealed class AuthEvent {
  */
 class PortalTokenStorage(private val settings: Settings) {
 
+    internal data class AuthStateSnapshot(
+        val generation: Long,
+        val accessToken: String?,
+        val refreshToken: String?,
+        val expiresAt: Long,
+        val userId: String?,
+        val userEmail: String?,
+        val userName: String?,
+        val isPremium: Boolean,
+        val subscriptionTier: String?,
+        val lastSync: Long,
+    )
+
     companion object {
         private const val KEY_TOKEN = "portal_auth_token"
         private const val KEY_USER_ID = "portal_user_id"
@@ -116,6 +129,9 @@ class PortalTokenStorage(private val settings: Settings) {
     private val _currentUser = MutableStateFlow(loadUser())
     val currentUser: StateFlow<PortalUser?> = _currentUser.asStateFlow()
 
+    private val _lastSyncTimestamp = MutableStateFlow(settings[KEY_LAST_SYNC, 0L])
+    val lastSyncTimestamp: StateFlow<Long> = _lastSyncTimestamp.asStateFlow()
+
     /**
      * Flow of authentication events for UI notification.
      * Collectors will receive events when session expires, refresh fails, or user logs out.
@@ -132,6 +148,41 @@ class PortalTokenStorage(private val settings: Settings) {
 
     /** Current auth generation; capture before a token refresh network call. */
     fun authGeneration(): Long = withPlatformLock(authLock) { authGeneration }
+
+    /** Captures account-scoped state so a multi-store identity commit can roll back exactly. */
+    internal fun snapshotAuthState(): AuthStateSnapshot = withPlatformLock(authLock) {
+        AuthStateSnapshot(
+            generation = authGeneration,
+            accessToken = settings.getStringOrNull(KEY_TOKEN),
+            refreshToken = settings.getStringOrNull(KEY_REFRESH_TOKEN),
+            expiresAt = settings.getLong(KEY_EXPIRES_AT, 0L),
+            userId = settings.getStringOrNull(KEY_USER_ID),
+            userEmail = settings.getStringOrNull(KEY_USER_EMAIL),
+            userName = settings.getStringOrNull(KEY_USER_NAME),
+            isPremium = settings[KEY_IS_PREMIUM, false],
+            subscriptionTier = settings.getStringOrNull(KEY_SUBSCRIPTION_TIER),
+            lastSync = settings[KEY_LAST_SYNC, 0L],
+        )
+    }
+
+    /** Restores a snapshot after a failed profile/token identity commit. */
+    internal fun restoreAuthState(snapshot: AuthStateSnapshot) = withPlatformLock(authLock) {
+        // Never move the fence backwards: refreshes captured before the failed
+        // transition must not become valid again when the prior account is restored.
+        authGeneration = maxOf(authGeneration, snapshot.generation) + 1L
+        restoreString(KEY_TOKEN, snapshot.accessToken)
+        restoreString(KEY_REFRESH_TOKEN, snapshot.refreshToken)
+        settings.putLong(KEY_EXPIRES_AT, snapshot.expiresAt)
+        restoreString(KEY_USER_ID, snapshot.userId)
+        restoreString(KEY_USER_EMAIL, snapshot.userEmail)
+        restoreString(KEY_USER_NAME, snapshot.userName)
+        settings[KEY_IS_PREMIUM] = snapshot.isPremium
+        restoreString(KEY_SUBSCRIPTION_TIER, snapshot.subscriptionTier)
+        settings.putLong(KEY_LAST_SYNC, snapshot.lastSync)
+        _lastSyncTimestamp.value = snapshot.lastSync
+        _isAuthenticated.value = snapshot.accessToken != null
+        _currentUser.value = loadUser()
+    }
 
     /**
      * The stored refresh token and the generation it belongs to, read under one
@@ -179,6 +230,12 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_USER_EMAIL] = response.user.email ?: ""
         settings[KEY_USER_NAME] = response.user.displayName ?: ""
         settings[KEY_IS_PREMIUM] = existingPremium
+        if (!sameUser) {
+            // Account-scoped sync and entitlement state must never cross an identity switch.
+            settings.putLong(KEY_LAST_SYNC, 0L)
+            _lastSyncTimestamp.value = 0L
+            settings.remove(KEY_SUBSCRIPTION_TIER)
+        }
         _isAuthenticated.value = true
         _currentUser.value = loadUser()
         true
@@ -207,10 +264,13 @@ class PortalTokenStorage(private val settings: Settings) {
         newId
     }
 
-    fun getLastSyncTimestamp(): Long = settings[KEY_LAST_SYNC, 0L]
+    fun getLastSyncTimestamp(): Long = _lastSyncTimestamp.value
 
     fun setLastSyncTimestamp(timestamp: Long) {
-        settings[KEY_LAST_SYNC] = timestamp
+        withPlatformLock(authLock) {
+            settings[KEY_LAST_SYNC] = timestamp
+            _lastSyncTimestamp.value = timestamp
+        }
     }
 
     fun getPhasePRBackfillCheckpoint(profileId: String): Long = settings[phasePRBackfillCheckpointKey(profileId), 0L]
@@ -298,6 +358,7 @@ class PortalTokenStorage(private val settings: Settings) {
         settings.remove(KEY_IS_PREMIUM)
         settings.remove(KEY_SUBSCRIPTION_TIER)
         settings.remove(KEY_LAST_SYNC) // Reset so re-link does a full pull
+        _lastSyncTimestamp.value = 0L
         // Keep device ID for stable identity
 
         _isAuthenticated.value = false
@@ -311,6 +372,10 @@ class PortalTokenStorage(private val settings: Settings) {
         val isPremium: Boolean = settings[KEY_IS_PREMIUM, false]
 
         return PortalUser(id, email, displayName, isPremium)
+    }
+
+    private fun restoreString(key: String, value: String?) {
+        if (value == null) settings.remove(key) else settings[key] = value
     }
 
     private fun generateDeviceId(): String {

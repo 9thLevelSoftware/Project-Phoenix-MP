@@ -15,6 +15,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.database.PhoenixDatabase
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
 /**
@@ -369,6 +370,7 @@ class AndroidDataBackupManager(
             file.delete()
             Result.success(destPath)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -430,50 +432,17 @@ class AndroidDataBackupManager(
                 File(filePath).inputStream()
             }
 
-            // Check file size to decide between proven legacy path and streaming
-            val fileSize = getFileSizeOrNull(filePath)
-            if (fileSize != null && fileSize < STREAMING_IMPORT_THRESHOLD) {
-                // Small file: use proven non-streaming path
-                val jsonString = inputStream.bufferedReader().use { it.readText() }
-                importFromJson(jsonString)
-            } else {
-                // Large file or unknown size: streaming import to avoid OOM
-                Logger.i { "Using streaming import for file (size=${fileSize ?: "unknown"} bytes)" }
-                val source = InputStreamBackupSource(inputStream)
-                try {
-                    source.open()
-                    importFromStream(source)
-                } finally {
-                    source.close()
-                }
+            val source = InputStreamBackupSource(inputStream)
+            try {
+                source.open()
+                importFromStream(source)
+            } finally {
+                source.close()
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
-    }
-
-    private fun getFileSizeOrNull(filePath: String): Long? = if (filePath.startsWith("content://")) {
-        try {
-            val uri = filePath.toUri()
-            context.contentResolver.query(
-                uri,
-                arrayOf(android.provider.OpenableColumns.SIZE),
-                null,
-                null,
-                null,
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                    if (sizeIndex >= 0) cursor.getLong(sizeIndex) else null
-                } else {
-                    null
-                }
-            }
-        } catch (_: Exception) {
-            null
-        }
-    } else {
-        File(filePath).let { if (it.exists()) it.length() else null }
     }
 
     /**

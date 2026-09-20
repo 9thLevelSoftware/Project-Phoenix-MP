@@ -3,7 +3,9 @@ package com.devil.phoenixproject
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import co.touchlab.kermit.Logger
@@ -26,38 +28,67 @@ private data class AndroidAppDependencies(
     val migrationManager: MigrationManager,
 )
 
+private data class AndroidStartupDependencies(
+    val migrationManager: MigrationManager,
+)
+
 @Composable
 fun AndroidAppHost() {
     var retryAttempt by rememberSaveable { mutableIntStateOf(0) }
-    val resolution = remember(retryAttempt) {
-        resolveStartupDependencies {
+    var resolution by remember(retryAttempt) {
+        mutableStateOf<StartupDependencyResolution<AndroidAppDependencies>?>(null)
+    }
+    LaunchedEffect(retryAttempt) {
+        resolution = prepareAndroidHostGraph(
+            resolveStartupOnly = {
             val koin = KoinPlatform.getKoin()
             koin.get<PersistedFileStartupPrerequisite>()
+                AndroidStartupDependencies(migrationManager = koin.get())
+            },
+            prepareRequired = { startup ->
+                startup.migrationManager.runRequiredMigrations()
+                startup.migrationManager.awaitRequiredMigrations()
+            },
+            resolveFeatures = { startup ->
+                val koin = KoinPlatform.getKoin()
             AndroidAppDependencies(
                 themeViewModel = koin.get(),
                 eulaViewModel = koin.get(),
                 exerciseRepository = koin.get(),
                 syncTriggerManager = koin.get(),
-                migrationManager = koin.get(),
+                    migrationManager = startup.migrationManager,
             )
-        }
+            },
+        )
     }
 
-    when (resolution) {
+    when (val current = resolution) {
+        null -> Unit
         is StartupDependencyResolution.Failed -> {
             Logger.e {
-                "Android app dependency resolution blocked: code=${resolution.diagnosticCode}, " +
-                    "support=${resolution.supportCode ?: "NONE"}, " +
-                    "presence=${resolution.presenceSnapshot?.safeSummary() ?: "UNAVAILABLE"}"
+                "Android app dependency resolution blocked: code=${current.diagnosticCode}, " +
+                    "support=${current.supportCode ?: "NONE"}, " +
+                    "presence=${current.presenceSnapshot?.safeSummary() ?: "UNAVAILABLE"}"
             }
-            PersistedFileStartupFailureScreen(resolution) { retryAttempt++ }
+            PersistedFileStartupFailureScreen(current) { retryAttempt++ }
         }
 
         is StartupDependencyResolution.Ready -> RequireBlePermissions {
-            AndroidAppContent(resolution.dependencies)
+            AndroidAppContent(current.dependencies)
         }
     }
 }
+
+/** Testable boundary used by the Android host before any feature graph is resolved. */
+internal suspend fun <S, T> prepareAndroidHostGraph(
+    resolveStartupOnly: () -> S,
+    prepareRequired: suspend (S) -> Unit,
+    resolveFeatures: (S) -> T,
+): StartupDependencyResolution<T> = prepareAppHostDependencies(
+    resolveStartupOnly = resolveStartupOnly,
+    prepareRequired = prepareRequired,
+    resolveFeatures = resolveFeatures,
+)
 
 @Composable
 private fun AndroidAppContent(dependencies: AndroidAppDependencies) {

@@ -39,6 +39,7 @@ class MigrationManagerTest {
         database: PhoenixDatabase,
         driver: SqlDriver? = null,
         settings: MapSettings = MapSettings(),
+        personalRecordHistoryRepair: PersonalRecordHistoryRepair? = null,
     ): MigrationManager {
         val preferences = SqlDelightProfilePreferencesRepository(database)
         val safety = SettingsProfileLocalSafetyStore(settings)
@@ -61,6 +62,7 @@ class MigrationManagerTest {
                 settings,
             ),
             driver = driver,
+            personalRecordHistoryRepair = personalRecordHistoryRepair,
         )
     }
 
@@ -617,7 +619,10 @@ class MigrationManagerTest {
         assertEquals(70.0, bench.weight)
         assertEquals("Target Bench", bench.exerciseName)
         assertEquals("target-fallback-uuid", bench.uuid)
-        assertEquals(2, settings.getInt("migration_repair_version", 0))
+        assertNotNull(
+            queries.selectAppliedDataRepair("workout-mode-keys-v1").executeAsOneOrNull(),
+        )
+        assertEquals(1, settings.getInt("migration_repair_version", 0))
     }
 
     @Test
@@ -753,6 +758,52 @@ class MigrationManagerTest {
     }
 
     @Test
+    fun `failed personal record history repair stays unledgered and succeeds on retry`() = runTest {
+        insertMinimalSession(
+            id = "repair-session",
+            routineSessionId = null,
+            routineName = null,
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            workingReps = 5,
+            heaviestLiftKg = 80.0,
+        )
+        var failRepair = true
+        var attempts = 0
+        val localManager = createMigrationManager(
+            database = database,
+            personalRecordHistoryRepair = PersonalRecordHistoryRepair { _, _ ->
+                attempts++
+                if (failRepair) error("injected PR repair failure")
+                1
+            },
+        )
+
+        localManager.runMigrationsNow()
+
+        assertEquals(
+            NonCriticalRepairState.Failed("PERSONAL_RECORD_HISTORY_REPAIR_FAILED"),
+            localManager.nonCriticalRepairState.value,
+        )
+        assertNull(
+            database.phoenixDatabaseQueries
+                .selectAppliedDataRepair("personal-record-history-v1")
+                .executeAsOneOrNull(),
+        )
+
+        failRepair = false
+        localManager.runMigrationsNow()
+
+        assertEquals(NonCriticalRepairState.Ready, localManager.nonCriticalRepairState.value)
+        assertNotNull(
+            database.phoenixDatabaseQueries
+                .selectAppliedDataRepair("personal-record-history-v1")
+                .executeAsOneOrNull(),
+        )
+        assertEquals(2, attempts)
+    }
+
+    @Test
     fun `repair personal records from workout history backfills achieved load and stays idempotent`() {
         val queries = database.phoenixDatabaseQueries
         insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
@@ -790,6 +841,8 @@ class MigrationManagerTest {
             profileId = "default",
         ).executeAsOneOrNull()
         val exercise = queries.selectExerciseById("deadlift").executeAsOneOrNull()
+        val baseline = queries.selectProfileExerciseBaseline("default", "deadlift")
+            .executeAsOneOrNull()
         val repairedRecords = queries.selectAllRecords(profileId = "default").executeAsList()
             .filter { it.exerciseId == "deadlift" }
 
@@ -803,8 +856,9 @@ class MigrationManagerTest {
         assertEquals(2, repairedRecords.size)
         assertEquals(
             OneRepMaxCalculator.estimate(60f, 10).toDouble(),
-            exercise?.one_rep_max_kg,
+            baseline?.one_rep_max_per_cable_kg,
         )
+        assertNull(exercise?.one_rep_max_kg)
     }
 
     @Test

@@ -238,14 +238,26 @@ jobs:
           echo "ipa_path=$NEW_NAME" >> $GITHUB_OUTPUT
           echo "Renamed IPA to: $NEW_NAME"
 
-      - name: Upload IPA to release
+      # This workflow may build a historical tag, whose checkout predates the helper.
+      # Fetch it from the immutable workflow revision rather than the build checkout.
+      - name: Fetch pinned release asset replacement helper
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ inputs.release_tag }}" \
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            "https://raw.githubusercontent.com/${{ github.repository }}/${{ github.workflow_sha }}/.github/scripts/replace_release_asset.py" \
+            --output "$RUNNER_TEMP/replace_release_asset.py"
+          python3 -m py_compile "$RUNNER_TEMP/replace_release_asset.py"
+
+      - name: Stage and promote IPA on release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 "$RUNNER_TEMP/replace_release_asset.py" \
+            "${{ inputs.release_tag }}" \
             "${{ steps.rename_ipa.outputs.ipa_path }}" \
-            --clobber
-          echo "Successfully uploaded IPA to release ${{ inputs.release_tag }}"
+            "ProjectPhoenix-${{ inputs.release_tag }}.ipa"
 
       - name: Clean up keychain
         if: always()

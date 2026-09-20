@@ -83,6 +83,34 @@ class ProfileContextRecoveryException(cause: Throwable) :
         cause,
     )
 
+class ProfileOwnershipMismatchException(
+    sourceOwnerUserId: String,
+    targetOwnerUserId: String,
+) : IllegalStateException(
+    "Cannot move profile data between different accounts: source=$sourceOwnerUserId target=$targetOwnerUserId",
+)
+
+class ProfileAccountBindingException(
+    profileId: String,
+    currentOwnerUserId: String,
+    requestedOwnerUserId: String,
+) : IllegalStateException(
+    "Profile $profileId is already linked to account $currentOwnerUserId and cannot be linked to " +
+        "$requestedOwnerUserId. Switch to or create an unlinked profile before signing in.",
+)
+
+data class ProfileAccountLinkReceipt(
+    val profileId: String,
+    val ownerUserId: String,
+    val linkedAt: Long,
+    val previousOwnerUserId: String?,
+    val previousLastAuthAt: Long?,
+)
+
+class ProfileAccountLinkRollbackException(profileId: String) : IllegalStateException(
+    "Profile $profileId changed after the account link and cannot be rolled back safely",
+)
+
 interface UserProfileRepository {
     val activeProfile: StateFlow<UserProfile?>
     val allProfiles: StateFlow<List<UserProfile>>
@@ -120,6 +148,20 @@ interface UserProfileRepository {
     suspend fun reconcileActiveProfileContext()
 
     suspend fun linkToSupabase(profileId: String, supabaseUserId: String)
+
+    /**
+     * Links a profile while the caller already owns [ProfileMutationBarrier].
+     *
+     * This path still serializes the repository profile context. Callers must not invoke it unless
+     * they hold the shared barrier for the complete auth/profile transition.
+     */
+    suspend fun linkToSupabaseUnderProfileMutationBarrier(
+        profileId: String,
+        supabaseUserId: String,
+    ): ProfileAccountLinkReceipt
+
+    /** Rolls back only the exact link represented by [receipt]; caller must hold the shared barrier. */
+    suspend fun rollbackSupabaseLinkUnderProfileMutationBarrier(receipt: ProfileAccountLinkReceipt)
     suspend fun updateSubscriptionStatus(
         profileId: String,
         status: SubscriptionStatus,
@@ -135,6 +177,7 @@ class SqlDelightUserProfileRepository(
     private val profileLocalSafetyStore: ProfileLocalSafetyStore,
     private val gamificationRepository: GamificationRepository,
     private val profileScopedDataMerger: ProfileScopedDataMerger = ProfileScopedDataMerger(database),
+    private val profileMutationBarrier: ProfileMutationBarrier = ProfileMutationBarrier(),
     private val beforeProfileDeletionCommit: () -> Unit = {},
 ) : UserProfileRepository {
     private val queries = database.phoenixDatabaseQueries
@@ -160,7 +203,7 @@ class SqlDelightUserProfileRepository(
 
     override fun observePreferences(profileId: String): Flow<UserProfilePreferences> = profilePreferencesRepository.observe(profileId)
 
-    override suspend fun createProfile(name: String, colorIndex: Int): UserProfile = profileContextMutex.withLock {
+    override suspend fun createProfile(name: String, colorIndex: Int): UserProfile = withProfileMutation {
         val trimmedName = name.trim()
         require(trimmedName.isNotEmpty()) { "Profile name must not be blank" }
         val id = generateUUID()
@@ -178,7 +221,7 @@ class SqlDelightUserProfileRepository(
     override suspend fun createAndActivateProfile(
         name: String,
         colorIndex: Int,
-    ): UserProfile = profileContextMutex.withLock {
+    ): UserProfile = withProfileMutation {
         val trimmedName = name.trim()
         require(trimmedName.isNotEmpty()) { "Profile name must not be blank" }
         val id = generateUUID()
@@ -199,7 +242,7 @@ class SqlDelightUserProfileRepository(
     }
 
     override suspend fun updateProfile(id: String, name: String, colorIndex: Int) {
-        profileContextMutex.withLock {
+        withProfileMutation {
             val trimmedName = name.trim()
             require(trimmedName.isNotEmpty()) { "Profile name must not be blank" }
             queries.updateProfile(trimmedName, colorIndex.toLong(), id)
@@ -212,11 +255,11 @@ class SqlDelightUserProfileRepository(
         }
     }
 
-    override suspend fun deleteProfile(id: String): Boolean = profileContextMutex.withLock {
+    override suspend fun deleteProfile(id: String): Boolean = withProfileMutation {
         deleteProfileLocked(id, requireActive = false)
     }
 
-    override suspend fun deleteActiveProfile(expectedProfileId: String): Boolean = profileContextMutex.withLock {
+    override suspend fun deleteActiveProfile(expectedProfileId: String): Boolean = withProfileMutation {
         val ready = _activeProfileContext.value as? ActiveProfileContext.Ready
             ?: throw ProfileContextUnavailableException()
         if (ready.profile.id != expectedProfileId) {
@@ -233,12 +276,19 @@ class SqlDelightUserProfileRepository(
         if (requireActive && previous.profile.id != id) {
             throw StaleProfileContextException(id, previous.profile.id)
         }
-        if (queries.getProfileById(id).executeAsOneOrNull() == null) return false
+        val sourceProfile = queries.getProfileById(id).executeAsOneOrNull() ?: return false
 
         val wasActive = previous.profile.id == id
         val targetProfileId = if (requireActive || wasActive) DEFAULT_PROFILE_ID else previous.profile.id
-        requireNotNull(queries.getProfileById(targetProfileId).executeAsOneOrNull()) {
+        val targetProfile = requireNotNull(queries.getProfileById(targetProfileId).executeAsOneOrNull()) {
             "Profile deletion target missing: $targetProfileId"
+        }
+        val ownerUserId = sourceProfile.supabase_user_id
+        if (ownerUserId != null &&
+            targetProfile.supabase_user_id != null &&
+            targetProfile.supabase_user_id != ownerUserId
+        ) {
+            throw ProfileOwnershipMismatchException(ownerUserId, targetProfile.supabase_user_id)
         }
         if (wasActive) {
             _activeProfileContext.value = ActiveProfileContext.Switching(targetProfileId)
@@ -247,6 +297,23 @@ class SqlDelightUserProfileRepository(
         try {
             Logger.i { "PROFILE_DELETE: Reassigning data from profile '$id' to '$targetProfileId'" }
             database.transaction {
+                val ownershipTransfer = ownerUserId?.let { owner ->
+                    OwnershipTransferMutation(
+                        mutationId = generateUUID(),
+                        ownerUserId = owner,
+                        sourceProfileId = id,
+                        targetProfileId = targetProfileId,
+                        workoutSessionIds = queries.selectPortalSessionIdsByProfile(id).executeAsList(),
+                        routineIds = queries.selectAllRoutineIdsByProfile(id).executeAsList(),
+                        cycleIds = queries.selectAllRetainedCycleIdsByProfile(id).executeAsList(),
+                        personalRecordIds = queries.selectAllPersonalRecordUuidsByProfile(id)
+                            .executeAsList()
+                            .filterNotNull(),
+                    )
+                }
+                if (ownerUserId != null && targetProfile.supabase_user_id == null) {
+                    queries.linkProfileToSupabase(ownerUserId, currentTimeMillis(), targetProfileId)
+                }
                 queries.enqueueProfileLocalCleanup(id, currentTimeMillis())
                 queries.deleteActiveWorkoutRuntimeByProfile(id)
                 profileScopedDataMerger.mergeForProfileDeletion(id, targetProfileId)
@@ -254,6 +321,7 @@ class SqlDelightUserProfileRepository(
                 queries.reassignRoutineProfile(targetProfileId, id)
                 queries.reassignSessionProfile(targetProfileId, id)
                 queries.reassignTrainingCycleProfile(targetProfileId, id)
+                queries.adoptCycleSyncStateProfile(targetProfileId, id)
                 queries.reassignStreakProfile(targetProfileId, id)
                 queries.deleteGamificationStatsByProfile(id)
                 queries.deleteGamificationStatsByProfile(targetProfileId)
@@ -264,6 +332,19 @@ class SqlDelightUserProfileRepository(
                 queries.reassignProgressionProfile(targetProfileId, id)
                 queries.deleteIntegrationStatusByProfile(id)
                 queries.deleteIntegrationSyncCursorByProfile(id)
+                ownershipTransfer?.takeIf { it.hasNamedEntities() }?.let { transfer ->
+                    queries.insertOwnershipTransferOutbox(
+                        mutationId = transfer.mutationId,
+                        ownerUserId = transfer.ownerUserId,
+                        sourceProfileId = transfer.sourceProfileId,
+                        targetProfileId = transfer.targetProfileId,
+                        workoutSessionIdsJson = encodeOwnershipIds(transfer.workoutSessionIds),
+                        routineIdsJson = encodeOwnershipIds(transfer.routineIds),
+                        cycleIdsJson = encodeOwnershipIds(transfer.cycleIds),
+                        personalRecordIdsJson = encodeOwnershipIds(transfer.personalRecordIds),
+                        createdAt = nextOwnershipTransferCreatedAt(transfer.ownerUserId),
+                    )
+                }
                 queries.deleteProfilePreferences(id)
                 queries.deleteProfile(id)
                 if (wasActive) queries.setActiveProfile(targetProfileId)
@@ -311,8 +392,23 @@ class SqlDelightUserProfileRepository(
         return true
     }
 
+    private fun OwnershipTransferMutation.hasNamedEntities(): Boolean =
+        workoutSessionIds.isNotEmpty() || routineIds.isNotEmpty() || cycleIds.isNotEmpty() ||
+            personalRecordIds.isNotEmpty()
+
+    /** Keeps chained X -> source -> target transfers in a stable account-local order. */
+    private fun nextOwnershipTransferCreatedAt(ownerUserId: String): Long {
+        val now = currentTimeMillis()
+        val latest = queries.selectAllOwnershipTransfers().executeAsList()
+            .asSequence()
+            .filter { it.owner_user_id == ownerUserId }
+            .maxOfOrNull { it.created_at }
+            ?: return now
+        return maxOf(now, latest + 1L)
+    }
+
     override suspend fun setActiveProfile(id: String) {
-        profileContextMutex.withLock {
+        withProfileMutation {
             require(allProfiles.value.any { it.id == id }) { "Unknown profile: $id" }
             withProfileContextTransition(id) { previous ->
                 database.transaction {
@@ -420,7 +516,7 @@ class SqlDelightUserProfileRepository(
     }
 
     override suspend fun recoverPendingProfileTransitionForStartup() {
-        profileContextMutex.withLock {
+        withProfileMutation {
             _activeProfileContext.value = ActiveProfileContext.Switching(null)
             try {
                 reconcileActiveProfileContextLocked(publishReady = false)
@@ -433,7 +529,7 @@ class SqlDelightUserProfileRepository(
     }
 
     override suspend fun reconcileActiveProfileContext() {
-        profileContextMutex.withLock {
+        withProfileMutation {
             _activeProfileContext.value = ActiveProfileContext.Switching(
                 queries.selectPendingProfileContextRecovery()
                     .executeAsOneOrNull()
@@ -450,15 +546,67 @@ class SqlDelightUserProfileRepository(
     }
 
     override suspend fun linkToSupabase(profileId: String, supabaseUserId: String) {
+        withProfileMutation {
+            linkToSupabaseLocked(profileId, supabaseUserId)
+        }
+    }
+
+    override suspend fun linkToSupabaseUnderProfileMutationBarrier(
+        profileId: String,
+        supabaseUserId: String,
+    ): ProfileAccountLinkReceipt = profileContextMutex.withLock {
+        linkToSupabaseLocked(profileId, supabaseUserId)
+    }
+
+    override suspend fun rollbackSupabaseLinkUnderProfileMutationBarrier(
+        receipt: ProfileAccountLinkReceipt,
+    ) {
         profileContextMutex.withLock {
+            val profile = queries.getProfileById(receipt.profileId).executeAsOneOrNull()
+                ?: throw ProfileAccountLinkRollbackException(receipt.profileId)
+            if (profile.supabase_user_id != receipt.ownerUserId || profile.last_auth_at != receipt.linkedAt) {
+                throw ProfileAccountLinkRollbackException(receipt.profileId)
+            }
             queries.linkProfileToSupabase(
-                supabase_user_id = supabaseUserId,
-                last_auth_at = currentTimeMillis(),
-                id = profileId,
+                supabase_user_id = receipt.previousOwnerUserId,
+                last_auth_at = receipt.previousLastAuthAt,
+                id = receipt.profileId,
             )
             refreshProfilesSync()
-            republishReadyIdentityIfActive(profileId)
+            republishReadyIdentityIfActive(receipt.profileId)
         }
+    }
+
+    private fun linkToSupabaseLocked(
+        profileId: String,
+        supabaseUserId: String,
+    ): ProfileAccountLinkReceipt {
+        val profile = queries.getProfileById(profileId).executeAsOneOrNull()
+            ?: error("Profile does not exist: $profileId")
+        profile.supabase_user_id?.let { currentOwnerUserId ->
+            if (currentOwnerUserId != supabaseUserId) {
+                throw ProfileAccountBindingException(
+                    profileId = profileId,
+                    currentOwnerUserId = currentOwnerUserId,
+                    requestedOwnerUserId = supabaseUserId,
+                )
+            }
+        }
+        val linkedAt = currentTimeMillis()
+        queries.linkProfileToSupabase(
+            supabase_user_id = supabaseUserId,
+            last_auth_at = linkedAt,
+            id = profileId,
+        )
+        refreshProfilesSync()
+        republishReadyIdentityIfActive(profileId)
+        return ProfileAccountLinkReceipt(
+            profileId = profileId,
+            ownerUserId = supabaseUserId,
+            linkedAt = linkedAt,
+            previousOwnerUserId = profile.supabase_user_id,
+            previousLastAuthAt = profile.last_auth_at,
+        )
     }
 
     override suspend fun updateSubscriptionStatus(
@@ -466,7 +614,7 @@ class SqlDelightUserProfileRepository(
         status: SubscriptionStatus,
         expiresAt: Long?,
     ) {
-        profileContextMutex.withLock {
+        withProfileMutation {
             queries.updateSubscriptionStatus(
                 subscription_status = status.toDbString(),
                 subscription_expires_at = expiresAt,
@@ -511,7 +659,7 @@ class SqlDelightUserProfileRepository(
         expectedProfileId: String,
         write: suspend (ActiveProfileContext.Ready) -> Unit,
     ) {
-        profileContextMutex.withLock {
+        withProfileMutation {
             val context = _activeProfileContext.value as? ActiveProfileContext.Ready
                 ?: throw ProfileContextUnavailableException()
             if (context.profile.id != expectedProfileId) {
@@ -521,6 +669,12 @@ class SqlDelightUserProfileRepository(
             publishReadyContext(expectedProfileId)
         }
     }
+
+    /** Lock order is shared barrier first, then the repository context mutex. */
+    private suspend fun <T> withProfileMutation(block: suspend () -> T): T =
+        profileMutationBarrier.withExclusive {
+            profileContextMutex.withLock { block() }
+        }
 
     private suspend fun reconcileActiveProfileContextLocked(publishReady: Boolean) {
         val pending = queries.selectPendingProfileContextRecovery().executeAsOneOrNull()
@@ -567,9 +721,12 @@ class SqlDelightUserProfileRepository(
         )
     }
 
-    private suspend fun republishReadyIdentityIfActive(profileId: String) {
+    private fun republishReadyIdentityIfActive(profileId: String) {
         val ready = _activeProfileContext.value as? ActiveProfileContext.Ready
-        if (ready?.profile?.id == profileId) publishReadyContext(profileId)
+        if (ready?.profile?.id != profileId) return
+        val refreshedProfile = allProfiles.value.firstOrNull { it.id == profileId }
+            ?: error("Active profile missing from identity flow: $profileId")
+        _activeProfileContext.value = ready.copy(profile = refreshedProfile)
     }
 
     private fun ensureDefaultProfileSync() {
