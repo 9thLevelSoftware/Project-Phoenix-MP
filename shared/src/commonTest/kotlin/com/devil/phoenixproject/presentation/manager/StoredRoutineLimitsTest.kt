@@ -138,6 +138,10 @@ class StoredRoutineLimitsTest {
                 programMode = ProgramMode.Echo,
             )
 
+            // Active-set edits apply to the next set. They must not replace the immutable
+            // metadata captured for the Echo set that already started.
+            harness.activeSessionEngine.adjustWeight(50f, sendToMachine = false)
+            assertEquals(50f, harness.coordinator.workoutParameters.value.weightPerCableKg)
             stopCurrentSet(harness)
             advanceUntilIdle()
 

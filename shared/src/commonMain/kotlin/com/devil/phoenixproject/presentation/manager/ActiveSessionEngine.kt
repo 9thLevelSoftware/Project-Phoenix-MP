@@ -8555,8 +8555,14 @@ class ActiveSessionEngine(
                                 // Echo configuration packets encode the Echo level rather
                                 // than target weight or per-rep progression. Command-limit
                                 // normalization therefore did not change either value on the
-                                // trainer, so keep the user's original history metadata.
-                                context
+                                // trainer. Freeze the original start metadata so an active-set
+                                // edit intended for the next set cannot rewrite this completion.
+                                context.copy(
+                                    completionFacts = context.completionFacts.copy(
+                                        executedWeightPerCableKg = warmupOverrideParams.weightPerCableKg,
+                                        executedProgressionKg = bleParams.progressionRegressionKg,
+                                    ),
+                                )
                             } else {
                                 // History stores the programmed cable weight together with rack
                                 // metadata. Apply only the command-resolution delta so that an
