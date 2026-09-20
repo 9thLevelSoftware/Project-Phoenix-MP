@@ -2302,7 +2302,7 @@ class SqlDelightSyncRepository(
                 queries.deleteCycleProgress(cycleId)
                 queries.deleteCycleProgression(cycleId)
                 queries.deleteCycleSyncState(cycleId)
-                queries.deleteTrainingCycle(cycleId)
+                queries.hardDeleteCyclesByIds(listOf(cycleId))
                 deletedCycles += cycleId
                 for (templateRoutineId in templateRoutineIds) {
                     val templateRoutine = queries.selectRoutineById(templateRoutineId).executeAsOneOrNull()
