@@ -112,11 +112,16 @@ class AmrapAutoEndTest {
             // The set really is over, not merely summarised.
             assertFalse(harness.coordinator.workoutState.value is WorkoutState.Active)
             // A set whose warm-up never registered has no counted working reps, so the engine
-            // persists no CompletedSet row for it - exactly as for any other zero-rep set.
+            // persists no CompletedSet row for it - exactly as for any other zero-rep set. It
+            // does still write the WorkoutSession, with every rep count at zero: the set leaves
+            // a trace in history, but no per-set record and nothing that can reach a PR.
             assertEquals(
                 emptyList(),
                 harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId),
             )
+            val session = harness.fakeWorkoutRepo.allSessions().single()
+            assertEquals(0, session.totalReps)
+            assertEquals(0, session.workingReps)
         } finally {
             harness.cleanup()
         }
@@ -132,6 +137,94 @@ class AmrapAutoEndTest {
 
             // The user never grabbed the handles: nothing but rest, for four times the window.
             listOf(1_000L, 10_000L, 20_000L, 30_000L, 41_000L).forEach { timestamp ->
+                harness.fakeBleRepo.emitMetric(metric(timestamp = timestamp, position = 0f))
+            }
+            advanceUntilIdle()
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(
+                emptyList(),
+                harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId),
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `a targeted rep set is never auto-ended by the fallback`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            // Same shape as the rescue case in every respect except the one that scopes the
+            // fallback: this set has a rep target, so params.usesUnlimitedRepTarget is false.
+            // Its warm-up is stuck at 0 too, so its ordinary auto-stop gate is shut as well and
+            // nothing else can end it either - which is what makes this a clean negative.
+            val lease = startSet(harness, cableParams())
+            emitMovement(harness)
+            assertFalse(harness.coordinator.repCount.value.isWarmupComplete)
+
+            listOf(5_000L, 15_000L, 25_000L, 41_000L).forEach { timestamp ->
+                harness.fakeBleRepo.emitMetric(metric(timestamp = timestamp, position = 0f))
+            }
+            advanceUntilIdle()
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(
+                emptyList(),
+                harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId),
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `a timed cable set without a rep target is never auto-ended by the fallback`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            // isAMRAP comes solely from a null entry in setReps and says nothing about the
+            // exercise's duration, so a duration-based cable set can carry it. Such a set is
+            // not stuck: its own countdown ends it with TIMER_EXPIRED whatever the warm-up
+            // counter reports, so the fallback could only cut it short of its timer.
+            val lease = startAmrapSet(harness)
+            harness.coordinator.isCurrentTimedCableExercise = true
+            emitMovement(harness)
+
+            listOf(5_000L, 15_000L, 25_000L, 41_000L).forEach { timestamp ->
+                harness.fakeBleRepo.emitMetric(metric(timestamp = timestamp, position = 0f))
+            }
+            advanceUntilIdle()
+
+            assertIs<WorkoutState.Active>(harness.coordinator.workoutState.value)
+            assertEquals(
+                emptyList(),
+                harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId),
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `a set cannot inherit movement credit from the previous set's ranges`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val lease = startAmrapSet(harness)
+
+            // repCounter.resetCountsOnly() - what Just Lift's set start uses - deliberately
+            // preserves min/max positions across a set boundary, so hasMeaningfulRange() can
+            // still be true on the first sample of a set in which the user has lifted nothing.
+            harness.repCounter.seedRomBoundaries(rangeTop = 800f, rangeBottom = 0f)
+            assertTrue(
+                harness.repCounter.hasMeaningfulRange(WorkoutCoordinator.MIN_RANGE_THRESHOLD),
+                "fixture must reproduce a carried-over range",
+            )
+
+            // The user only has a hand on the grip: off the rack, but nowhere near a pull.
+            listOf(1_000L, 1_100L, 1_200L).forEach { timestamp ->
+                harness.fakeBleRepo.emitMetric(metric(timestamp = timestamp, position = 20f))
+            }
+            listOf(5_000L, 15_000L, 25_000L, 41_000L).forEach { timestamp ->
                 harness.fakeBleRepo.emitMetric(metric(timestamp = timestamp, position = 0f))
             }
             advanceUntilIdle()
@@ -268,10 +361,13 @@ class AmrapAutoEndTest {
     )
 
     /** An AMRAP cable set with a three-rep warm-up target the machine has not reported yet. */
-    private suspend fun startAmrapSet(harness: DWSMTestHarness): ExecutionLease {
+    private suspend fun startAmrapSet(harness: DWSMTestHarness): ExecutionLease =
+        startSet(harness, cableParams(isAmrap = true))
+
+    private suspend fun startSet(harness: DWSMTestHarness, params: WorkoutParameters): ExecutionLease {
         harness.fakeExerciseRepo.addExercise(TestFixtures.benchPress)
         harness.fakeBleRepo.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
-        harness.dwsm.updateWorkoutParameters(cableParams(isAmrap = true))
+        harness.dwsm.updateWorkoutParameters(params)
         harness.dwsm.startWorkout(skipCountdown = true)
         harness.testScope.testScheduler.advanceUntilIdle()
         return harness.activeSessionEngine.currentExecutionLeaseForTest()
@@ -286,8 +382,8 @@ class AmrapAutoEndTest {
         }
         harness.testScope.testScheduler.advanceUntilIdle()
         assertTrue(
-            harness.repCounter.hasMeaningfulRange(WorkoutCoordinator.MIN_RANGE_THRESHOLD),
-            "fixture must produce a meaningful position range",
+            harness.coordinator.observedSetMovement,
+            "fixture must credit movement in this set",
         )
     }
 
