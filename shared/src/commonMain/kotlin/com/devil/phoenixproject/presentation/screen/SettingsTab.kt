@@ -132,6 +132,7 @@ import projectphoenix.shared.generated.resources.diagnostics_title
 import projectphoenix.shared.generated.resources.import_completed
 import projectphoenix.shared.generated.resources.import_records_imported
 import projectphoenix.shared.generated.resources.import_records_skipped
+import projectphoenix.shared.generated.resources.import_records_unreadable
 import projectphoenix.shared.generated.resources.label_please_wait
 import projectphoenix.shared.generated.resources.language_dutch
 import projectphoenix.shared.generated.resources.language_english
@@ -1509,6 +1510,12 @@ fun SettingsTab(
                                 Spacer(modifier = Modifier.height(Spacing.small))
                                 Text(stringResource(Res.string.import_records_imported, result.totalImported))
                                 Text(stringResource(Res.string.import_records_skipped, result.totalSkipped))
+                                if (result.entitiesWithErrors > 0) {
+                                    Text(
+                                        stringResource(Res.string.import_records_unreadable, result.entitiesWithErrors),
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
                             }
                         }
                     }

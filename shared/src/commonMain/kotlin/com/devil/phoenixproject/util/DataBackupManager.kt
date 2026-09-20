@@ -64,12 +64,6 @@ interface DataBackupManager {
     suspend fun exportToJson(): String
 
     /**
-     * Import data from a JSON string
-     * Uses "skip duplicates" strategy - existing records are not overwritten
-     */
-    suspend fun importFromJson(jsonString: String): Result<ImportResult>
-
-    /**
      * Save backup to platform-specific location (Downloads on Android, Documents on iOS)
      * Returns the file path on success
      */
@@ -184,7 +178,7 @@ abstract class BaseDataBackupManager(
          */
         const val MAX_ROUTINE_BACKUPS = 90
 
-        /** Batch size for metric sample transactions in streaming import. */
+        /** Metric samples processed per progress batch in streaming import. */
         const val IMPORT_BATCH_SIZE = 5_000
 
         /**
@@ -193,15 +187,23 @@ abstract class BaseDataBackupManager(
          * to the explicit isBodyweight flag.
          */
         const val LEGACY_BODYWEIGHT_SENTINEL = "Bodyweight"
-
-        /** Files at or above this size use streaming import to avoid OOM. */
-        const val STREAMING_IMPORT_THRESHOLD = 50L * 1024 * 1024 // 50 MB
     }
 
     private data class RoutineNameResolutionContext(
         val routineNameById: Map<String, String>,
         val uniqueRoutineNameByExerciseId: Map<String, String>,
         val uniqueRoutineNameByExerciseName: Map<String, String>,
+    )
+
+    /** The session fields routine-name resolution needs, kept until the stream has been read. */
+    private data class SessionRoutineNameRef(
+        val sessionId: String,
+        val insertedRoutineName: String?,
+        val routineName: String?,
+        val routineId: String?,
+        val exerciseId: String?,
+        val exerciseName: String?,
+        val isJustLift: Boolean,
     )
 
     private data class DeferredProfileRestore(
@@ -364,737 +366,25 @@ abstract class BaseDataBackupManager(
         json.encodeToString(exportAllData())
     }
 
-    override suspend fun importFromJson(jsonString: String): Result<ImportResult> = withContext(Dispatchers.IO) {
-        var preImportActiveProfileId: String? = null
-        val representedProfileIds = linkedSetOf<String>()
-        var databaseWorkCommitted = false
-        var activeIdentityNormalized = false
-        var reconciliationAttempted = false
-        try {
-            var legacyRackFieldPresent = false
-            var legacyRackElement: JsonElement? = null
-            val backup = try {
-                val rootElement = json.parseToJsonElement(jsonString)
-                val dataObject = rootElement.jsonObject["data"]?.jsonObject
-                    ?: throw IllegalArgumentException("Backup data object is missing or invalid")
-                legacyRackFieldPresent = dataObject.containsKey("equipmentRackItems")
-                legacyRackElement = dataObject["equipmentRackItems"]
-                json.decodeFromJsonElement<BackupData>(rootElement)
-            } catch (e: Exception) {
-                // Deserialization error — surface a specific message instead of a raw
-                // kotlinx.serialization stack trace. This is the most likely failure mode
-                // when a user's backup was produced by a newer schema than the client knows.
-                Logger.e(e) { "Backup JSON deserialization failed: ${e::class.simpleName}: ${e.message}" }
-                return@withContext Result.failure(
-                    IllegalArgumentException(
-                        "Backup file is malformed or produced by an incompatible app version " +
-                            "(${e::class.simpleName}: ${e.message?.take(200) ?: "unknown"})",
-                        e,
-                    ),
-                )
-            }
-
-            if (backup.version > CURRENT_BACKUP_VERSION) {
-                Logger.w {
-                    "Backup version ${backup.version} is newer than supported " +
-                        "(v$CURRENT_BACKUP_VERSION). Proceeding with forward compatibility — " +
-                        "fields added after v$CURRENT_BACKUP_VERSION will be dropped."
-                }
-            }
-
-            // Get existing IDs for duplicate detection (before transaction)
-            val existingSessionIds = queries.selectAllSessionIds().executeAsList().toSet()
-            val existingRoutineIds = queries.selectAllRoutineIds().executeAsList().toSet()
-            val existingSupersetIds = queries.selectAllSupersetIds().executeAsList().toSet()
-            // existingPRIds removed — upsertPR handles duplicates via business-key INSERT OR REPLACE
-            val existingCycleIds = queries.selectAllTrainingCyclesSync().executeAsList().map { it.id }.toSet()
-            val existingUserProfileIds = queries.selectAllUserProfileIds().executeAsList().toSet()
-            preImportActiveProfileId = queries.getAllProfiles()
-                .executeAsList()
-                .firstOrNull { it.isActive == 1L }
-                ?.id
-            backup.data.userProfiles
-                .map(UserProfileBackup::id)
-                .toCollection(representedProfileIds)
-            // Resolve the active profile for adoption of skipped records.
-            // Uses the DB active profile (not the backup's profileId) so legacy backups
-            // with null profileId don't accidentally reassign visible data to "default".
-            var activeProfileId = preImportActiveProfileId ?: "default"
-            val importRoutineNameResolutionContext = buildRoutineNameResolutionContextFromBackup(
-                backup.data.routines,
-                backup.data.routineExercises,
-            )
-
-            // Track import counts
-            var sessionsImported = 0
-            var sessionsSkipped = 0
-            var metricsImported = 0
-            var routinesImported = 0
-            var routinesSkipped = 0
-            var routineExercisesImported = 0
-            var supersetsImported = 0
-            var supersetsSkipped = 0
-            var personalRecordsImported = 0
-            var personalRecordsSkipped = 0
-            var trainingCyclesImported = 0
-            var trainingCyclesSkipped = 0
-            var cycleDaysImported = 0
-            var userProfilesImported = 0
-            var userProfilesSkipped = 0
-            var cycleProgressImported = 0
-            var cycleProgressionsImported = 0
-            var plannedSetsImported = 0
-            var completedSetsImported = 0
-            var progressionEventsImported = 0
-            var earnedBadgesImported = 0
-            var streakHistoryImported = 0
-            var gamificationStatsImported = false
-            var sessionNotesImported = 0
-            var sessionNotesSkipped = 0
-            var routineGroupsImported = 0
-            var routineGroupsSkipped = 0
-
-            // Track adopted (profile_id updated) records
-            var sessionsAdopted = 0
-            var routinesAdopted = 0
-
-            // Count of per-entity failures that were logged and skipped instead of
-            // aborting the whole import. Surfaced to the UI so users can see partial
-            // data loss rather than a silent pass.
-            var entitiesWithErrors = 0
-
-            // Helper: run a single-entity write inside the outer transaction. If it
-            // throws, log the cause + entity identifier and continue with the next
-            // entity. SQLDelight's transaction block tolerates caught exceptions —
-            // only an uncaught throwable rolls the outer transaction back.
-            fun <T> tryImport(label: String, entityId: String?, block: () -> T): T? = try {
-                block()
-            } catch (e: Exception) {
-                entitiesWithErrors++
-                Logger.w(e) {
-                    "Import skip $label" +
-                        (entityId?.let { " id=$it" } ?: "") +
-                        " — ${e::class.simpleName}: ${e.message}"
-                }
-                null
-            }
-
-            // Wrap all imports in a transaction for atomicity
-            database.transaction {
-                // Identities are the root of every profile-linked restore. Seed the
-                // preference aggregate in the same transaction and treat backup active
-                // flags as informational only.
-                backup.data.userProfiles.distinctBy(UserProfileBackup::id).forEach { profile ->
-                    if (profile.id !in existingUserProfileIds) {
-                        queries.insertUserProfileIgnore(
-                            id = profile.id,
-                            name = profile.name,
-                            colorIndex = profile.colorIndex.toLong(),
-                            createdAt = profile.createdAt,
-                            isActive = 0L,
-                        )
-                        userProfilesImported++
-                    } else {
-                        userProfilesSkipped++
-                    }
-                    // Do not catch this independently: identity + aggregate seeding is
-                    // an invariant of the enclosing transaction.
-                    queries.insertDefaultProfilePreferences(profile.id, 1L)
-                }
-                activeProfileId = normalizeImportedActiveIdentity(
-                    preImportActiveProfileId,
-                    representedProfileIds,
-                )
-                val availableProfileIds = existingUserProfileIds + representedProfileIds
-
-                // Import workout sessions
-                val importedSessionIds = mutableSetOf<String>()
-                backup.data.workoutSessions.forEach { session ->
-                    if (session.id !in existingSessionIds) {
-                        // Sanitize eccentric load to prevent machine faults (hardware limit 150%)
-                        val safeEccentricLoad = session.eccentricLoad.sanitizeEccentricLoad()
-                        if (session.eccentricLoad != safeEccentricLoad) {
-                            Logger.w { "Backup import: session ${session.id} eccentricLoad ${session.eccentricLoad}% clamped to $safeEccentricLoad% (hardware limit)" }
-                        }
-                        // Preserve original routineSessionId -- don't fabricate unique IDs.
-                        // Fabricating per-session IDs breaks history grouping.
-                        // Also filter out legacy_session_* IDs from earlier buggy exports.
-                        val resolvedRoutineSessionId = sanitizeRoutineSessionId(session.routineSessionId)
-                        val resolvedRoutineName = resolveImportedRoutineName(
-                            session = session,
-                            routineNameResolutionContext = importRoutineNameResolutionContext,
-                        )
-
-                        val inserted = tryImport("session", session.id) {
-                            queries.insertSession(
-                                id = session.id,
-                                timestamp = session.timestamp,
-                                mode = session.mode,
-                                targetReps = session.targetReps.toLong(),
-                                weightPerCableKg = session.weightPerCableKg.toDouble(),
-                                progressionKg = session.progressionKg.toDouble(),
-                                duration = session.duration,
-                                totalReps = session.totalReps.toLong(),
-                                warmupReps = session.warmupReps.toLong(),
-                                workingReps = session.workingReps.toLong(),
-                                isJustLift = if (session.isJustLift) 1L else 0L,
-                                stopAtTop = if (session.stopAtTop) 1L else 0L,
-                                eccentricLoad = safeEccentricLoad.toLong(),
-                                echoLevel = session.echoLevel.toLong(),
-                                exerciseId = session.exerciseId,
-                                exerciseName = session.exerciseName,
-                                routineSessionId = resolvedRoutineSessionId,
-                                routineName = resolvedRoutineName,
-                                routineId = session.routineId,
-                                safetyFlags = session.safetyFlags.toLong(),
-                                deloadWarningCount = session.deloadWarningCount.toLong(),
-                                romViolationCount = session.romViolationCount.toLong(),
-                                spotterActivations = session.spotterActivations.toLong(),
-                                peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
-                                peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
-                                peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
-                                peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
-                                avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
-                                avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
-                                avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
-                                avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
-                                heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
-                                totalVolumeKg = session.totalVolumeKg?.toDouble(),
-                                cableCount = session.cableCount?.toLong(),
-                                display_multiplier = session.displayMultiplier?.toLong(),
-                                externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
-                                counterweightKg = session.counterweightKg.toDouble(),
-                                rackItemsJson = session.rackItemsJson,
-                                estimatedCalories = session.estimatedCalories?.toDouble(),
-                                warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
-                                workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
-                                burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
-                                peakWeightKg = session.peakWeightKg?.toDouble(),
-                                rpe = session.rpe?.toLong(),
-                                avgMcvMmS = session.avgMcvMmS?.toDouble(),
-                                avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
-                                totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
-                                dominantSide = session.dominantSide,
-                                strengthProfile = session.strengthProfile,
-                                formScore = session.formScore,
-                                profile_id = resolveImportedProfileId(
-                                    requestedProfileId = session.profileId,
-                                    activeProfileId = activeProfileId,
-                                    availableProfileIds = availableProfileIds,
-                                ),
-                            )
-                        }
-                        if (inserted != null) {
-                            sessionsImported++
-                            importedSessionIds.add(session.id)
-                        }
-                    } else {
-                        // Adopt orphaned records into the active profile (fixes #324).
-                        // Preserve an explicit owner only when that profile exists locally
-                        // or is represented by an identity in this backup. Session/routine
-                        // exports omit identities, so deleted/source-only owners fall back
-                        // to the active profile instead of leaving invisible history behind.
-                        val resolvedProfileId = resolveImportedProfileId(
-                            requestedProfileId = session.profileId,
-                            activeProfileId = activeProfileId,
-                            availableProfileIds = availableProfileIds,
-                        )
-                        if (resolvedProfileId == activeProfileId) {
-                            queries.adoptSessionProfile(profileId = activeProfileId, id = session.id)
-                            sessionsAdopted++
-                        }
-                        sessionsSkipped++
-                    }
-                }
-
-                // Import metrics (only for sessions that were actually inserted above)
-                backup.data.metricSamples.forEach { metric ->
-                    if (metric.sessionId in importedSessionIds) {
-                        queries.insertMetric(
-                            sessionId = metric.sessionId,
-                            timestamp = metric.timestamp,
-                            position = metric.position?.toDouble(),
-                            positionB = metric.positionB?.toDouble(),
-                            velocity = metric.velocity?.toDouble(),
-                            velocityB = metric.velocityB?.toDouble(),
-                            load = metric.load?.toDouble(),
-                            loadB = metric.loadB?.toDouble(),
-                            power = metric.power?.toDouble(),
-                            status = metric.status.toLong(),
-                        )
-                        metricsImported++
-                    }
-                }
-
-                // Import routine groups (BEFORE routines — routines have FK to RoutineGroup)
-                backup.data.routineGroups.forEach { group ->
-                    val inserted = tryImport("routineGroup", group.id) {
-                        queries.insertRoutineGroupIgnore(
-                            id = group.id,
-                            name = group.name,
-                            orderIndex = group.orderIndex.toLong(),
-                            createdAt = group.createdAt,
-                            profile_id = group.profileId,
-                        )
-                    }
-                    if (inserted != null) routineGroupsImported++ else routineGroupsSkipped++
-                }
-
-                // Import routines
-                backup.data.routines.forEach { routine ->
-                    if (routine.id !in existingRoutineIds) {
-                        queries.insertRoutine(
-                            id = routine.id,
-                            name = routine.name,
-                            description = routine.description,
-                            createdAt = routine.createdAt,
-                            lastUsed = routine.lastUsed,
-                            useCount = routine.useCount.toLong(),
-                            profile_id = routine.profileId ?: activeProfileId,
-                            groupId = routine.groupId,
-                            deletedAt = routine.deletedAt,
-                        )
-                        routinesImported++
-                    } else {
-                        // Same adoption guard as sessions — only adopt when backup has
-                        // no explicit profile or targets the active profile.
-                        val backupProfileId = routine.profileId
-                        if (backupProfileId == null || backupProfileId == activeProfileId) {
-                            queries.adoptRoutineProfile(profileId = activeProfileId, id = routine.id)
-                            routinesAdopted++
-                        }
-                        routinesSkipped++
-                    }
-                }
-
-                // Import supersets (BEFORE routine exercises since exercises reference supersets)
-                val importedRoutineIds = backup.data.routines
-                    .filter { it.id !in existingRoutineIds }
-                    .map { it.id }
-                    .toSet()
-
-                backup.data.supersets.forEach { superset ->
-                    // Import superset if its routine is being imported or if superset doesn't exist
-                    if (superset.routineId in importedRoutineIds || superset.id !in existingSupersetIds) {
-                        if (superset.id !in existingSupersetIds) {
-                            queries.insertSupersetIgnore(
-                                id = superset.id,
-                                routineId = superset.routineId,
-                                name = superset.name,
-                                colorIndex = superset.colorIndex.toLong(),
-                                restBetweenSeconds = superset.restBetweenSeconds.toLong(),
-                                orderIndex = superset.orderIndex.toLong(),
-                            )
-                            supersetsImported++
-                        } else {
-                            supersetsSkipped++
-                        }
-                    }
-                }
-
-                // Import routine exercises (only for imported routines).
-                // Wrapped per-entity so a single malformed exercise row doesn't torpedo
-                // the whole restore — the remaining rows still land.
-                backup.data.routineExercises.forEach { exercise ->
-                    if (exercise.routineId in importedRoutineIds) {
-                        // Sanitize eccentric load to prevent machine faults (hardware limit 150%)
-                        val safeExerciseEccentricLoad = exercise.eccentricLoad.sanitizeEccentricLoad()
-                        if (exercise.eccentricLoad != safeExerciseEccentricLoad) {
-                            Logger.w { "Backup import: routine exercise ${exercise.exerciseName} eccentricLoad ${exercise.eccentricLoad}% clamped to $safeExerciseEccentricLoad% (hardware limit)" }
-                        }
-
-                        val inserted = tryImport("routineExercise", exercise.id) {
-                            queries.insertRoutineExerciseIgnore(
-                                id = exercise.id,
-                                routineId = exercise.routineId,
-                                exerciseName = exercise.exerciseName,
-                                exerciseMuscleGroup = exercise.exerciseMuscleGroup,
-                                exerciseEquipment = resolveBackupEquipment(exercise),
-                                exerciseDefaultCableConfig = exercise.exerciseDefaultCableConfig,
-                                exerciseId = exercise.exerciseId,
-                                cableConfig = exercise.cableConfig,
-                                orderIndex = exercise.orderIndex.toLong(),
-                                setReps = exercise.setReps,
-                                weightPerCableKg = exercise.weightPerCableKg.toDouble(),
-                                setWeights = exercise.setWeights,
-                                mode = exercise.mode,
-                                eccentricLoad = safeExerciseEccentricLoad.toLong(),
-                                echoLevel = exercise.echoLevel.toLong(),
-                                progressionKg = exercise.progressionKg.toDouble(),
-                                restSeconds = exercise.restSeconds.toLong(),
-                                duration = exercise.duration?.toLong(),
-                                setRestSeconds = exercise.setRestSeconds,
-                                perSetRestTime = if (exercise.perSetRestTime) 1L else 0L,
-                                isAMRAP = if (exercise.isAMRAP) 1L else 0L,
-                                supersetId = exercise.supersetId,
-                                orderInSuperset = exercise.orderInSuperset.toLong(),
-                                usePercentOfPR = if (exercise.usePercentOfPR) 1L else 0L,
-                                weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
-                                prTypeForScaling = exercise.prTypeForScaling,
-                                setWeightsPercentOfPR = exercise.setWeightsPercentOfPR,
-                                stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
-                                stopAtTop = if (exercise.stopAtTop) 1L else 0L,
-                                repCountTiming = exercise.repCountTiming,
-                                setEchoLevels = exercise.setEchoLevels,
-                                warmupSets = exercise.warmupSets,
-                                defaultRackItemIds = sanitizeRackItemIds(exercise.defaultRackItemIds),
-                                rackBehaviorOverrides = exercise.rackBehaviorOverrides,
-                                scalingBasis = exercise.scalingBasis?.let {
-                                    runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
-                                }?.name,
-                                isBodyweight = resolveBackupIsBodyweight(exercise),
-                                dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
-                                dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
-                            )
-                        }
-                        if (inserted != null) routineExercisesImported++
-                    }
-                }
-
-                // Import personal records
-                backup.data.personalRecords.forEach { pr ->
-                    try {
-                        // Use upsertPR which does INSERT OR REPLACE on the business key
-                        // (exerciseId, workoutMode, prType, phase, profile_id).
-                        // This handles both new records and records that match an existing
-                        // business key but have different autoincrement IDs.
-                        queries.upsertPR(
-                            exerciseId = pr.exerciseId,
-                            exerciseName = pr.exerciseName,
-                            weight = pr.weight.toDouble(),
-                            reps = pr.reps.toLong(),
-                            oneRepMax = pr.oneRepMax.toDouble(),
-                            achievedAt = pr.achievedAt,
-                            workoutMode = pr.workoutMode,
-                            prType = pr.prType,
-                            volume = pr.volume.toDouble(),
-                            phase = pr.phase ?: "COMBINED",
-                            profile_id = pr.profileId ?: "default",
-                            cable_count = pr.cableCount?.toLong(),
-                            uuid = pr.uuid ?: generateUUID(),
-                        )
-                        personalRecordsImported++
-                    } catch (e: Exception) {
-                        Logger.w("DataBackupManager") { "Failed to import PR: ${e.message}" }
-                        personalRecordsSkipped++
-                    }
-                }
-
-                // Import training cycles
-                backup.data.trainingCycles.forEach { cycle ->
-                    if (cycle.id !in existingCycleIds) {
-                        queries.insertTrainingCycle(
-                            id = cycle.id,
-                            name = cycle.name,
-                            description = cycle.description,
-                            created_at = cycle.createdAt,
-                            is_active = if (cycle.isActive) 1L else 0L,
-                            profile_id = cycle.profileId ?: "default",
-                            template_id = cycle.templateId,
-                            week_number = cycle.weekNumber.toLong(),
-                        )
-                        trainingCyclesImported++
-                    } else {
-                        trainingCyclesSkipped++
-                    }
-                }
-
-                // Import cycle days (only for imported cycles)
-                val importedCycleIds = backup.data.trainingCycles
-                    .filter { it.id !in existingCycleIds }
-                    .map { it.id }
-                    .toSet()
-
-                backup.data.cycleDays.forEach { day ->
-                    if (day.cycleId in importedCycleIds) {
-                        val inserted = tryImport("cycleDay", day.id) {
-                            queries.insertCycleDay(
-                                id = day.id,
-                                cycle_id = day.cycleId,
-                                day_number = day.dayNumber.toLong(),
-                                name = day.name,
-                                routine_id = day.routineId,
-                                is_rest_day = if (day.isRestDay) 1L else 0L,
-                                // v2 backup schema carries per-day progression overrides.
-                                // v1 backups default these to null — identical to the
-                                // previous hardcoded-null behaviour.
-                                echo_level = day.echoLevel,
-                                eccentric_load_percent = day.eccentricLoadPercent?.toLong(),
-                                weight_progression_percent = day.weightProgressionPercent?.toDouble(),
-                                rep_modifier = day.repModifier?.toLong(),
-                                rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong(),
-                            )
-                        }
-                        if (inserted != null) cycleDaysImported++
-                    }
-                }
-
-                // Import cycle progress (only for imported cycles)
-                backup.data.cycleProgress.forEach { progress ->
-                    if (progress.cycleId in importedCycleIds) {
-                        queries.insertCycleProgressIgnore(
-                            id = progress.id,
-                            cycle_id = progress.cycleId,
-                            current_day_number = progress.currentDayNumber.toLong(),
-                            last_completed_date = progress.lastCompletedDate,
-                            cycle_start_date = progress.cycleStartDate,
-                            last_advanced_at = progress.lastAdvancedAt,
-                            completed_days = progress.completedDays,
-                            missed_days = progress.missedDays,
-                            rotation_count = progress.rotationCount.toLong(),
-                        )
-                        cycleProgressImported++
-                    }
-                }
-
-                // Import cycle progressions (only for imported cycles)
-                backup.data.cycleProgressions.forEach { progression ->
-                    if (progression.cycleId in importedCycleIds) {
-                        queries.insertCycleProgressionIgnore(
-                            cycle_id = progression.cycleId,
-                            frequency_cycles = progression.frequencyCycles.toLong(),
-                            weight_increase_percent = progression.weightIncreasePercent?.toDouble(),
-                            echo_level_increase = progression.echoLevelIncrease.toLong(),
-                            eccentric_load_increase_percent = progression.eccentricLoadIncreasePercent?.toLong(),
-                        )
-                        cycleProgressionsImported++
-                    }
-                }
-
-                // Import planned sets (only for imported routine exercises)
-                val importedRoutineExerciseIds = backup.data.routineExercises
-                    .filter { it.routineId in importedRoutineIds }
-                    .map { it.id }
-                    .toSet()
-
-                backup.data.plannedSets.forEach { plannedSet ->
-                    if (plannedSet.routineExerciseId in importedRoutineExerciseIds) {
-                        queries.insertPlannedSetIgnore(
-                            id = plannedSet.id,
-                            routine_exercise_id = plannedSet.routineExerciseId,
-                            set_number = plannedSet.setNumber.toLong(),
-                            set_type = plannedSet.setType,
-                            target_reps = plannedSet.targetReps?.toLong(),
-                            target_weight_kg = plannedSet.targetWeightKg?.toDouble(),
-                            target_rpe = plannedSet.targetRpe?.toLong(),
-                            rest_seconds = plannedSet.restSeconds?.toLong(),
-                        )
-                        plannedSetsImported++
-                    }
-                }
-
-                // Import completed sets (only for imported sessions)
-                backup.data.completedSets.forEach { completedSet ->
-                    if (completedSet.sessionId in importedSessionIds) {
-                        queries.insertCompletedSetIgnore(
-                            id = completedSet.id,
-                            session_id = completedSet.sessionId,
-                            planned_set_id = completedSet.plannedSetId,
-                            routine_exercise_id = completedSet.routineExerciseId,
-                            set_number = completedSet.setNumber.toLong(),
-                            set_type = completedSet.setType,
-                            attempt_number = completedSet.attemptNumber.coerceAtLeast(1).toLong(),
-                            actual_reps = completedSet.actualReps.toLong(),
-                            actual_weight_kg = completedSet.actualWeightKg.toDouble(),
-                            logged_rpe = completedSet.loggedRpe?.toLong(),
-                            is_pr = if (completedSet.isPr) 1L else 0L,
-                            completed_at = completedSet.completedAt,
-                            set_end_reason = SetEndReason.fromPersisted(completedSet.setEndReason).name,
-                        )
-                        completedSetsImported++
-                    }
-                }
-
-                // Import progression events
-                backup.data.progressionEvents.forEach { event ->
-                    queries.insertProgressionEventIgnore(
-                        id = event.id,
-                        exercise_id = event.exerciseId,
-                        suggested_weight_kg = event.suggestedWeightKg.toDouble(),
-                        previous_weight_kg = event.previousWeightKg.toDouble(),
-                        reason = event.reason,
-                        user_response = event.userResponse,
-                        actual_weight_kg = event.actualWeightKg?.toDouble(),
-                        timestamp = event.timestamp,
-                        profile_id = event.profileId ?: "default",
-                    )
-                    progressionEventsImported++
-                }
-
-                // Import earned badges. v2 backups carry sync bookkeeping fields
-                // (updatedAt/serverId/deletedAt); v1 backups default these to null which
-                // matches the previous `insertEarnedBadgeIgnore` behaviour.
-                backup.data.earnedBadges.forEach { badge ->
-                    val inserted = tryImport("earnedBadge", badge.badgeId) {
-                        queries.insertEarnedBadgeFullIgnore(
-                            badgeId = badge.badgeId,
-                            earnedAt = badge.earnedAt,
-                            celebratedAt = badge.celebratedAt,
-                            updatedAt = badge.updatedAt,
-                            serverId = badge.serverId,
-                            deletedAt = badge.deletedAt,
-                            profile_id = badge.profileId,
-                        )
-                    }
-                    if (inserted != null) earnedBadgesImported++
-                }
-
-                // Import streak history
-                backup.data.streakHistory.forEach { streak ->
-                    queries.insertStreakHistoryIgnore(
-                        startDate = streak.startDate,
-                        endDate = streak.endDate,
-                        length = streak.length.toLong(),
-                        profile_id = streak.profileId,
-                    )
-                    streakHistoryImported++
-                }
-
-                // Import gamification stats (upsert - replaces existing).
-                // Uses the sync-preserving query so restored rows keep their original
-                // updatedAt/serverId and don't immediately re-push to the portal as new.
-                backup.data.gamificationStats?.let { stats ->
-                    val stableId = stats.profileId.hashCode().toLong()
-                    val inserted = tryImport("gamificationStats", stats.profileId) {
-                        queries.upsertGamificationStatsWithSync(
-                            id = stableId,
-                            totalWorkouts = stats.totalWorkouts.toLong(),
-                            totalReps = stats.totalReps.toLong(),
-                            totalVolumeKg = stats.totalVolumeKg.toLong(),
-                            longestStreak = stats.longestStreak.toLong(),
-                            currentStreak = stats.currentStreak.toLong(),
-                            uniqueExercisesUsed = stats.uniqueExercisesUsed.toLong(),
-                            prsAchieved = stats.prsAchieved.toLong(),
-                            lastWorkoutDate = stats.lastWorkoutDate,
-                            streakStartDate = stats.streakStartDate,
-                            lastUpdated = stats.lastUpdated,
-                            updatedAt = stats.updatedAt,
-                            serverId = stats.serverId,
-                            profileId = stats.profileId,
-                        )
-                    }
-                    if (inserted != null) gamificationStatsImported = true
-                }
-
-                // Import session notes (migration 26). v1 backups have no `sessionNotes`
-                // field — kotlinx.serialization fills it with the default empty list
-                // so this loop is a no-op for legacy imports.
-                backup.data.sessionNotes.forEach { note ->
-                    val inserted = tryImport("sessionNotes", note.routineSessionId) {
-                        queries.insertSessionNotesIgnore(
-                            routineSessionId = note.routineSessionId,
-                            notes = note.notes,
-                            updatedAt = note.updatedAt,
-                        )
-                    }
-                    if (inserted != null) sessionNotesImported++ else sessionNotesSkipped++
-                }
-            }
-            databaseWorkCommitted = true
-            activeIdentityNormalized = true
-
-            fun onInvalidProfileState(profileId: String, sectionName: String, failure: Throwable?) {
-                entitiesWithErrors++
-                Logger.w(failure) {
-                    "Import skip profilePreference profileId=$profileId section=$sectionName" +
-                        (failure?.let { " — ${it::class.simpleName}: ${it.message}" } ?: "")
-                }
-            }
-            reconciliationAttempted = true
-            restoreDeferredAndReconcile(
-                deferred = DeferredProfileRestore(
-                    backupVersion = backup.version,
-                    profilePreferences = backup.data.profilePreferences,
-                    legacyRackFieldPresent = legacyRackFieldPresent,
-                    legacyRackElement = legacyRackElement,
-                    representedProfileIds = representedProfileIds,
-                ),
-                now = KmpUtils.currentTimeMillis(),
-                onInvalid = ::onInvalidProfileState,
-            )
-
-            if (sessionsAdopted > 0 || routinesAdopted > 0) {
-                Logger.i { "Import adopted $sessionsAdopted session(s) and $routinesAdopted routine(s) into active profile" }
-            }
-            if (entitiesWithErrors > 0) {
-                Logger.w { "Import completed with $entitiesWithErrors skipped entity row(s) — see preceding warnings for per-entity diagnostics" }
-            }
-
-            Result.success(
-                ImportResult(
-                    sessionsImported = sessionsImported,
-                    sessionsSkipped = sessionsSkipped,
-                    metricsImported = metricsImported,
-                    routinesImported = routinesImported,
-                    routinesSkipped = routinesSkipped,
-                    routineExercisesImported = routineExercisesImported,
-                    supersetsImported = supersetsImported,
-                    supersetsSkipped = supersetsSkipped,
-                    personalRecordsImported = personalRecordsImported,
-                    personalRecordsSkipped = personalRecordsSkipped,
-                    trainingCyclesImported = trainingCyclesImported,
-                    trainingCyclesSkipped = trainingCyclesSkipped,
-                    cycleDaysImported = cycleDaysImported,
-                    cycleProgressImported = cycleProgressImported,
-                    cycleProgressionsImported = cycleProgressionsImported,
-                    plannedSetsImported = plannedSetsImported,
-                    completedSetsImported = completedSetsImported,
-                    progressionEventsImported = progressionEventsImported,
-                    earnedBadgesImported = earnedBadgesImported,
-                    streakHistoryImported = streakHistoryImported,
-                    gamificationStatsImported = gamificationStatsImported,
-                    userProfilesImported = userProfilesImported,
-                    userProfilesSkipped = userProfilesSkipped,
-                    sessionNotesImported = sessionNotesImported,
-                    sessionNotesSkipped = sessionNotesSkipped,
-                    routineGroupsImported = routineGroupsImported,
-                    routineGroupsSkipped = routineGroupsSkipped,
-                    entitiesWithErrors = entitiesWithErrors,
-                ),
-            )
-        } catch (e: Throwable) {
-            if (databaseWorkCommitted && !reconciliationAttempted) {
-                withContext(NonCancellable) {
-                    val normalizationFailure = if (activeIdentityNormalized) {
-                        null
-                    } else {
-                        runCatching {
-                            database.transaction {
-                                normalizeImportedActiveIdentity(
-                                    preImportActiveProfileId,
-                                    representedProfileIds,
-                                )
-                            }
-                            activeIdentityNormalized = true
-                        }.exceptionOrNull()
-                    }
-                    normalizationFailure?.let(e::addSuppressed)
-                    val reconcileFailure = runCatching {
-                        userProfileRepository.reconcileActiveProfileContext()
-                    }.exceptionOrNull()
-                    reconcileFailure?.let(e::addSuppressed)
-                }
-            }
-            // Log the full exception here — not just the bare message — so a user-shared
-            // logcat can identify the failure mode. The caller (SettingsTab) surfaces the
-            // message string; this log line carries the class + stack trace for devs.
-            Logger.e(e) { "Backup import aborted: ${e::class.simpleName}: ${e.message}" }
-            Result.failure(e)
-        }
-    }
-
     /**
-     * Streaming import: walks the backup JSON via [BackupJsonNavigator] and persists
-     * entities one-by-one, keeping peak memory at roughly one entity's size.
+     * The only backup importer (F-055): walks the backup JSON via [BackupJsonNavigator] and
+     * persists entities one-by-one, keeping peak memory at roughly one entity's size.
+     * Platform `importFromFile` implementations route every file here regardless of size.
      *
-     * Transaction strategy:
-     * - One transaction per entity type for most tables.
-     * - metricSamples are batched ([IMPORT_BATCH_SIZE] per transaction) because a single
-     *   session can have hundreds of thousands of rows.
+     * Transaction strategy: the whole restore runs in ONE database transaction, so a failure
+     * anywhere (truncated file, I/O error, unexpected insert failure) leaves the database as it
+     * was and a retry starts clean. Rows are still decoded and written one at a time, so memory
+     * stays flat; only SQLite's on-disk journal grows. A row that fails to decode or insert
+     * (e.g. an FK to an Exercise missing on this device) is skipped and counted in
+     * [ImportResult.entitiesWithErrors]. A file with no `data` object, or with a section none
+     * of whose rows decode, is rejected as malformed.
      *
-     * Routine name resolution is simplified vs [importFromJson]: the streaming path uses
-     * `session.routineName` directly because the full routine list may not yet have been
-     * parsed when sessions arrive (field order is not guaranteed).
+     * Exports write sessions before routines, routine exercises before supersets and
+     * routine groups last, so references that point forward in the file are fixed up
+     * after the whole stream has been read:
+     * - session routine names are resolved from the backup's routines/routine exercises,
+     * - Routine.groupId (FK to RoutineGroup) is set once the group row exists,
+     * - RoutineExercise.supersetId (FK to Superset) is set once the superset row exists.
      */
     protected suspend fun importFromStream(
         source: BackupStreamSource,
@@ -1106,16 +396,13 @@ abstract class BaseDataBackupManager(
         val legacyRoutineIdsForAdoption = mutableListOf<String>()
         val explicitSessionAdoptions = mutableListOf<Pair<String, String>>()
         val explicitRoutineAdoptions = mutableListOf<Pair<String, String>>()
-        var databaseWorkCommitted = false
-        var activeIdentityNormalized = false
-        var reconciliationAttempted = false
         try {
             val nav = BackupJsonNavigator(source)
             val deferredPreferenceEntries = mutableListOf<ProfilePreferencesBackup>()
             var legacyRackFieldPresent = false
             var legacyRackElement: JsonElement? = null
 
-            // -- Track import counts (mirrors importFromJson exactly) --
+            // -- Track import counts --
             var sessionsImported = 0
             var sessionsSkipped = 0
             var metricsImported = 0
@@ -1153,10 +440,20 @@ abstract class BaseDataBackupManager(
             val importedRoutineExerciseIds = mutableSetOf<String>()
             val importedCycleIds = mutableSetOf<String>()
 
+            // Forward references fixed up after the stream (see KDoc). Routines and routine
+            // exercises are small, so they are kept whole for routine-name resolution.
+            val backupRoutines = mutableListOf<RoutineBackup>()
+            val backupRoutineExercises = mutableListOf<RoutineExerciseBackup>()
+            val sessionsNeedingRoutineName = mutableListOf<SessionRoutineNameRef>()
+            val deferredRoutineGroupIds = mutableListOf<Pair<String, String>>()
+            val deferredSupersetRefs = mutableListOf<RoutineExerciseBackup>()
+
             // Pre-compute existing IDs for duplicate detection (before any inserts)
             val existingSessionIds = queries.selectAllSessionIds().executeAsList().toSet()
             val existingRoutineIds = queries.selectAllRoutineIds().executeAsList().toSet()
             val existingSupersetIds = queries.selectAllSupersetIds().executeAsList().toSet()
+            val knownSupersetIds = existingSupersetIds.toMutableSet()
+            val knownRoutineGroupIds = queries.selectAllRoutineGroupsSync().executeAsList().mapTo(mutableSetOf()) { it.id }
             val existingCycleIds = queries.selectAllTrainingCyclesSync().executeAsList().map { it.id }.toSet()
             val existingUserProfileIds = queries.selectAllUserProfileIds().executeAsList().toSet()
             preImportActiveProfileId = queries.getAllProfiles()
@@ -1165,12 +462,11 @@ abstract class BaseDataBackupManager(
                 ?.id
             val activeProfileId = preImportActiveProfileId ?: "default"
 
-            fun committedTransaction(block: () -> Unit) {
-                database.transaction { block() }
-                databaseWorkCommitted = true
-            }
+            // Rows per section that were seen / decoded, to reject sections nothing could be read from.
+            val rowsSeen = mutableMapOf<String, Int>()
+            val rowsDecoded = mutableMapOf<String, Int>()
 
-            // Error-resilient per-entity insert helper (same pattern as importFromJson)
+            // Error-resilient per-entity insert helper
             fun <T> tryImport(label: String, entityId: String?, block: () -> T): T? = try {
                 block()
             } catch (e: Exception) {
@@ -1183,203 +479,191 @@ abstract class BaseDataBackupManager(
                 null
             }
 
-            // -- Parse top-level JSON structure --
-            nav.beginObject()
+            // Per-row decode: a bad row is skipped and counted, not fatal (see rowsSeen check).
+            fun <T> decodeRow(section: String, block: () -> T): T? {
+                rowsSeen[section] = (rowsSeen[section] ?: 0) + 1
+                return tryImport("$section-parse", null, block)?.also {
+                    rowsDecoded[section] = (rowsDecoded[section] ?: 0) + 1
+                }
+            }
+
             var backupVersion = 1
-            while (nav.hasNextInObject()) {
-                when (nav.nextName()) {
-                    "version" -> {
-                        backupVersion = nav.nextInt()
-                        if (backupVersion > CURRENT_BACKUP_VERSION) {
-                            Logger.w {
-                                "Backup version $backupVersion is newer than supported " +
-                                    "(v$CURRENT_BACKUP_VERSION). Proceeding with forward compatibility — " +
-                                    "fields added after v$CURRENT_BACKUP_VERSION will be dropped."
+            var dataSectionSeen = false
+
+            // One outer transaction for the whole restore: any abort (truncated file, I/O error,
+            // unexpected insert failure) rolls back to the pre-import state, as the deleted
+            // buffered importer did, so a retry starts clean. Rows are still streamed one at a
+            // time; only SQLite's on-disk journal grows with the file.
+            database.transaction {
+                // -- Parse top-level JSON structure --
+                nav.beginObject()
+                while (nav.hasNextInObject()) {
+                    when (nav.nextName()) {
+                        "version" -> {
+                            backupVersion = nav.nextInt()
+                            if (backupVersion > CURRENT_BACKUP_VERSION) {
+                                Logger.w {
+                                    "Backup version $backupVersion is newer than supported " +
+                                        "(v$CURRENT_BACKUP_VERSION). Proceeding with forward compatibility — " +
+                                        "fields added after v$CURRENT_BACKUP_VERSION will be dropped."
+                                }
                             }
                         }
-                    }
 
-                    "exportedAt" -> nav.skipValue()
+                        "exportedAt" -> nav.skipValue()
 
-                    "appVersion" -> nav.skipValue()
+                        "appVersion" -> nav.skipValue()
 
-                    "privacy" -> nav.skipValue()
+                        "privacy" -> nav.skipValue()
 
-                    "data" -> {
-                        nav.beginObject()
-                        while (nav.hasNextInObject()) {
-                            val fieldName = nav.nextName()
-                            when (fieldName) {
-                                // --- equipmentRackItems ---
-                                "equipmentRackItems" -> {
-                                    legacyRackFieldPresent = true
-                                    legacyRackElement = json.parseToJsonElement(nav.nextValueAsString())
-                                }
-
-                                // --- profilePreferences (small, deferred to root end) ---
-                                "profilePreferences" -> {
-                                    nav.beginArray()
-                                    while (nav.hasNextInArray()) {
-                                        val rawJson = nav.nextValueAsString()
-                                        val entry = tryImport("profilePreference-parse", null) {
-                                            json.decodeFromString<ProfilePreferencesBackup>(rawJson)
-                                        } ?: continue
-                                        deferredPreferenceEntries += entry
+                        "data" -> {
+                            dataSectionSeen = true
+                            nav.beginObject()
+                            while (nav.hasNextInObject()) {
+                                val fieldName = nav.nextName()
+                                when (fieldName) {
+                                    // --- equipmentRackItems ---
+                                    "equipmentRackItems" -> {
+                                        legacyRackFieldPresent = true
+                                        legacyRackElement = json.parseToJsonElement(nav.nextValueAsString())
                                     }
-                                    nav.endArray()
-                                }
 
-                                // --- workoutSessions ---
-                                "workoutSessions" -> {
-                                    onProgress(BackupProgress(BackupPhase.SESSIONS, 0, 0))
-                                    committedTransaction {
+                                    // --- profilePreferences (small, deferred to root end) ---
+                                    "profilePreferences" -> {
                                         nav.beginArray()
                                         while (nav.hasNextInArray()) {
                                             val rawJson = nav.nextValueAsString()
-                                            val session = tryImport("session-parse", null) {
-                                                json.decodeFromString<WorkoutSessionBackup>(rawJson)
+                                            val entry = decodeRow("profilePreference") {
+                                                json.decodeFromString<ProfilePreferencesBackup>(rawJson)
                                             } ?: continue
-
-                                            if (session.id !in existingSessionIds) {
-                                                val safeEccentricLoad = session.eccentricLoad.sanitizeEccentricLoad()
-                                                if (session.eccentricLoad != safeEccentricLoad) {
-                                                    Logger.w { "Streaming import: session ${session.id} eccentricLoad ${session.eccentricLoad}% clamped to $safeEccentricLoad% (hardware limit)" }
-                                                }
-                                                val resolvedRoutineSessionId = sanitizeRoutineSessionId(session.routineSessionId)
-                                                // Streaming path: use session.routineName directly (no resolution context available)
-                                                val resolvedRoutineName = sanitizeRoutineName(session.routineName)
-
-                                                val inserted = tryImport("session", session.id) {
-                                                    queries.insertSession(
-                                                        id = session.id,
-                                                        timestamp = session.timestamp,
-                                                        mode = session.mode,
-                                                        targetReps = session.targetReps.toLong(),
-                                                        weightPerCableKg = session.weightPerCableKg.toDouble(),
-                                                        progressionKg = session.progressionKg.toDouble(),
-                                                        duration = session.duration,
-                                                        totalReps = session.totalReps.toLong(),
-                                                        warmupReps = session.warmupReps.toLong(),
-                                                        workingReps = session.workingReps.toLong(),
-                                                        isJustLift = if (session.isJustLift) 1L else 0L,
-                                                        stopAtTop = if (session.stopAtTop) 1L else 0L,
-                                                        eccentricLoad = safeEccentricLoad.toLong(),
-                                                        echoLevel = session.echoLevel.toLong(),
-                                                        exerciseId = session.exerciseId,
-                                                        exerciseName = session.exerciseName,
-                                                        routineSessionId = resolvedRoutineSessionId,
-                                                        routineName = resolvedRoutineName,
-                                                        routineId = session.routineId,
-                                                        safetyFlags = session.safetyFlags.toLong(),
-                                                        deloadWarningCount = session.deloadWarningCount.toLong(),
-                                                        romViolationCount = session.romViolationCount.toLong(),
-                                                        spotterActivations = session.spotterActivations.toLong(),
-                                                        peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
-                                                        peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
-                                                        peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
-                                                        peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
-                                                        avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
-                                                        avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
-                                                        avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
-                                                        avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
-                                                        heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
-                                                        totalVolumeKg = session.totalVolumeKg?.toDouble(),
-                                                        cableCount = session.cableCount?.toLong(),
-                                                        display_multiplier = session.displayMultiplier?.toLong(),
-                                                        externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
-                                                        counterweightKg = session.counterweightKg.toDouble(),
-                                                        rackItemsJson = session.rackItemsJson,
-                                                        estimatedCalories = session.estimatedCalories?.toDouble(),
-                                                        warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
-                                                        workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
-                                                        burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
-                                                        peakWeightKg = session.peakWeightKg?.toDouble(),
-                                                        rpe = session.rpe?.toLong(),
-                                                        avgMcvMmS = session.avgMcvMmS?.toDouble(),
-                                                        avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
-                                                        totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
-                                                        dominantSide = session.dominantSide,
-                                                        strengthProfile = session.strengthProfile,
-                                                        formScore = session.formScore,
-                                                        profile_id = session.profileId ?: activeProfileId,
-                                                    )
-                                                }
-                                                if (inserted != null) {
-                                                    sessionsImported++
-                                                    importedSessionIds.add(session.id)
-                                                    if (session.profileId == null) {
-                                                        legacySessionIdsForAdoption += session.id
-                                                    } else {
-                                                        explicitSessionAdoptions += session.id to session.profileId
-                                                    }
-                                                }
-                                            } else {
-                                                val backupProfileId = session.profileId
-                                                if (backupProfileId == null) {
-                                                    legacySessionIdsForAdoption += session.id
-                                                    sessionsAdopted++
-                                                } else {
-                                                    explicitSessionAdoptions += session.id to backupProfileId
-                                                }
-                                                sessionsSkipped++
-                                            }
+                                            deferredPreferenceEntries += entry
                                         }
                                         nav.endArray()
                                     }
-                                    onProgress(BackupProgress(BackupPhase.SESSIONS, sessionsImported.toLong(), sessionsImported.toLong()))
-                                }
 
-                                // --- metricSamples ---
-                                "metricSamples" -> {
-                                    if (importedSessionIds.isEmpty()) {
-                                        Logger.w { "Streaming import: metricSamples encountered but no sessions imported yet — metrics for pre-existing sessions will be skipped" }
-                                    }
-                                    onProgress(BackupProgress(BackupPhase.METRICS, 0, 0))
-                                    nav.beginArray()
-                                    var batchCount = 0
-                                    var totalMetricsSeen = 0L
-                                    committedTransaction {
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val metric = tryImport("metric-parse", null) {
-                                                json.decodeFromString<MetricSampleBackup>(rawJson)
-                                            }
-                                            if (metric != null && metric.sessionId in importedSessionIds) {
-                                                queries.insertMetric(
-                                                    sessionId = metric.sessionId,
-                                                    timestamp = metric.timestamp,
-                                                    position = metric.position?.toDouble(),
-                                                    positionB = metric.positionB?.toDouble(),
-                                                    velocity = metric.velocity?.toDouble(),
-                                                    velocityB = metric.velocityB?.toDouble(),
-                                                    load = metric.load?.toDouble(),
-                                                    loadB = metric.loadB?.toDouble(),
-                                                    power = metric.power?.toDouble(),
-                                                    status = metric.status.toLong(),
-                                                )
-                                                metricsImported++
-                                                batchCount++
-                                            }
-                                            totalMetricsSeen++
-                                            if (batchCount >= IMPORT_BATCH_SIZE) {
-                                                // Commit current transaction and start a new one
-                                                // (handled by ending this transaction block and
-                                                // starting a new one below after endArray or next batch)
-                                                break
-                                            }
-                                            if (totalMetricsSeen % 10_000 == 0L) {
-                                                onProgress(BackupProgress(BackupPhase.METRICS, metricsImported.toLong(), 0))
-                                            }
-                                        }
-                                    }
-                                    // Continue batching remaining metrics
-                                    while (nav.hasNextInArray()) {
-                                        batchCount = 0
-                                        committedTransaction {
-                                            // Process up to IMPORT_BATCH_SIZE metrics per transaction
-                                            do {
+                                    // --- workoutSessions ---
+                                    "workoutSessions" -> {
+                                        onProgress(BackupProgress(BackupPhase.SESSIONS, 0, 0))
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
                                                 val rawJson = nav.nextValueAsString()
-                                                val metric = tryImport("metric-parse", null) {
+                                                val session = decodeRow("session") {
+                                                    json.decodeFromString<WorkoutSessionBackup>(rawJson)
+                                                } ?: continue
+
+                                                if (session.id !in existingSessionIds) {
+                                                    val safeEccentricLoad = session.eccentricLoad.sanitizeEccentricLoad()
+                                                    if (session.eccentricLoad != safeEccentricLoad) {
+                                                        Logger.w { "Streaming import: session ${session.id} eccentricLoad ${session.eccentricLoad}% clamped to $safeEccentricLoad% (hardware limit)" }
+                                                    }
+                                                    val resolvedRoutineSessionId = sanitizeRoutineSessionId(session.routineSessionId)
+                                                    // Provisional name; resolved against the backup's
+                                                    // routines once the whole stream has been read.
+                                                    val resolvedRoutineName = sanitizeRoutineName(session.routineName)
+
+                                                    val inserted = tryImport("session", session.id) {
+                                                        queries.insertSession(
+                                                            id = session.id,
+                                                            timestamp = session.timestamp,
+                                                            mode = session.mode,
+                                                            targetReps = session.targetReps.toLong(),
+                                                            weightPerCableKg = session.weightPerCableKg.toDouble(),
+                                                            progressionKg = session.progressionKg.toDouble(),
+                                                            duration = session.duration,
+                                                            totalReps = session.totalReps.toLong(),
+                                                            warmupReps = session.warmupReps.toLong(),
+                                                            workingReps = session.workingReps.toLong(),
+                                                            isJustLift = if (session.isJustLift) 1L else 0L,
+                                                            stopAtTop = if (session.stopAtTop) 1L else 0L,
+                                                            eccentricLoad = safeEccentricLoad.toLong(),
+                                                            echoLevel = session.echoLevel.toLong(),
+                                                            exerciseId = session.exerciseId,
+                                                            exerciseName = session.exerciseName,
+                                                            routineSessionId = resolvedRoutineSessionId,
+                                                            routineName = resolvedRoutineName,
+                                                            routineId = session.routineId,
+                                                            safetyFlags = session.safetyFlags.toLong(),
+                                                            deloadWarningCount = session.deloadWarningCount.toLong(),
+                                                            romViolationCount = session.romViolationCount.toLong(),
+                                                            spotterActivations = session.spotterActivations.toLong(),
+                                                            peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+                                                            peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+                                                            peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+                                                            peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+                                                            avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+                                                            avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+                                                            avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+                                                            avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+                                                            heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+                                                            totalVolumeKg = session.totalVolumeKg?.toDouble(),
+                                                            cableCount = session.cableCount?.toLong(),
+                                                            display_multiplier = session.displayMultiplier?.toLong(),
+                                                            externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+                                                            counterweightKg = session.counterweightKg.toDouble(),
+                                                            rackItemsJson = session.rackItemsJson,
+                                                            estimatedCalories = session.estimatedCalories?.toDouble(),
+                                                            warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+                                                            workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+                                                            burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+                                                            peakWeightKg = session.peakWeightKg?.toDouble(),
+                                                            rpe = session.rpe?.toLong(),
+                                                            avgMcvMmS = session.avgMcvMmS?.toDouble(),
+                                                            avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
+                                                            totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
+                                                            dominantSide = session.dominantSide,
+                                                            strengthProfile = session.strengthProfile,
+                                                            formScore = session.formScore,
+                                                            profile_id = session.profileId ?: activeProfileId,
+                                                        )
+                                                    }
+                                                    if (inserted != null) {
+                                                        sessionsImported++
+                                                        importedSessionIds.add(session.id)
+                                                        sessionsNeedingRoutineName += SessionRoutineNameRef(
+                                                            sessionId = session.id,
+                                                            insertedRoutineName = resolvedRoutineName,
+                                                            routineName = session.routineName,
+                                                            routineId = session.routineId,
+                                                            exerciseId = session.exerciseId,
+                                                            exerciseName = session.exerciseName,
+                                                            isJustLift = session.isJustLift,
+                                                        )
+                                                        if (session.profileId == null) {
+                                                            legacySessionIdsForAdoption += session.id
+                                                        } else {
+                                                            explicitSessionAdoptions += session.id to session.profileId
+                                                        }
+                                                    }
+                                                } else {
+                                                    val backupProfileId = session.profileId
+                                                    if (backupProfileId == null) {
+                                                        legacySessionIdsForAdoption += session.id
+                                                        sessionsAdopted++
+                                                    } else {
+                                                        explicitSessionAdoptions += session.id to backupProfileId
+                                                    }
+                                                    sessionsSkipped++
+                                                }
+                                            }
+                                            nav.endArray()
+                                        }
+                                        onProgress(BackupProgress(BackupPhase.SESSIONS, sessionsImported.toLong(), sessionsImported.toLong()))
+                                    }
+
+                                    // --- metricSamples ---
+                                    "metricSamples" -> {
+                                        if (importedSessionIds.isEmpty()) {
+                                            Logger.w { "Streaming import: metricSamples encountered but no sessions imported yet — metrics for pre-existing sessions will be skipped" }
+                                        }
+                                        onProgress(BackupProgress(BackupPhase.METRICS, 0, 0))
+                                        nav.beginArray()
+                                        var batchCount = 0
+                                        var totalMetricsSeen = 0L
+                                        run {
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val metric = decodeRow("metric") {
                                                     json.decodeFromString<MetricSampleBackup>(rawJson)
                                                 }
                                                 if (metric != null && metric.sessionId in importedSessionIds) {
@@ -1399,624 +683,744 @@ abstract class BaseDataBackupManager(
                                                     batchCount++
                                                 }
                                                 totalMetricsSeen++
+                                                if (batchCount >= IMPORT_BATCH_SIZE) {
+                                                    // Commit current transaction and start a new one
+                                                    // (handled by ending this transaction block and
+                                                    // starting a new one below after endArray or next batch)
+                                                    break
+                                                }
                                                 if (totalMetricsSeen % 10_000 == 0L) {
                                                     onProgress(BackupProgress(BackupPhase.METRICS, metricsImported.toLong(), 0))
                                                 }
-                                            } while (batchCount < IMPORT_BATCH_SIZE && nav.hasNextInArray())
+                                            }
                                         }
-                                    }
-                                    nav.endArray()
-                                    onProgress(BackupProgress(BackupPhase.METRICS, metricsImported.toLong(), metricsImported.toLong()))
-                                }
-
-                                // --- routines ---
-                                "routines" -> {
-                                    onProgress(BackupProgress(BackupPhase.ROUTINES, 0, 0))
-                                    committedTransaction {
-                                        nav.beginArray()
+                                        // Continue batching remaining metrics
                                         while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val routine = tryImport("routine-parse", null) {
-                                                json.decodeFromString<RoutineBackup>(rawJson)
-                                            } ?: continue
+                                            batchCount = 0
+                                            run {
+                                                // Process up to IMPORT_BATCH_SIZE metrics per transaction
+                                                do {
+                                                    val rawJson = nav.nextValueAsString()
+                                                    val metric = decodeRow("metric") {
+                                                        json.decodeFromString<MetricSampleBackup>(rawJson)
+                                                    }
+                                                    if (metric != null && metric.sessionId in importedSessionIds) {
+                                                        queries.insertMetric(
+                                                            sessionId = metric.sessionId,
+                                                            timestamp = metric.timestamp,
+                                                            position = metric.position?.toDouble(),
+                                                            positionB = metric.positionB?.toDouble(),
+                                                            velocity = metric.velocity?.toDouble(),
+                                                            velocityB = metric.velocityB?.toDouble(),
+                                                            load = metric.load?.toDouble(),
+                                                            loadB = metric.loadB?.toDouble(),
+                                                            power = metric.power?.toDouble(),
+                                                            status = metric.status.toLong(),
+                                                        )
+                                                        metricsImported++
+                                                        batchCount++
+                                                    }
+                                                    totalMetricsSeen++
+                                                    if (totalMetricsSeen % 10_000 == 0L) {
+                                                        onProgress(BackupProgress(BackupPhase.METRICS, metricsImported.toLong(), 0))
+                                                    }
+                                                } while (batchCount < IMPORT_BATCH_SIZE && nav.hasNextInArray())
+                                            }
+                                        }
+                                        nav.endArray()
+                                        onProgress(BackupProgress(BackupPhase.METRICS, metricsImported.toLong(), metricsImported.toLong()))
+                                    }
 
-                                            if (routine.id !in existingRoutineIds) {
-                                                queries.insertRoutine(
-                                                    id = routine.id,
-                                                    name = routine.name,
-                                                    description = routine.description,
-                                                    createdAt = routine.createdAt,
-                                                    lastUsed = routine.lastUsed,
-                                                    useCount = routine.useCount.toLong(),
-                                                    profile_id = routine.profileId ?: activeProfileId,
-                                                    groupId = routine.groupId,
-                                                    deletedAt = routine.deletedAt,
-                                                )
-                                                routinesImported++
-                                                importedRoutineIds.add(routine.id)
-                                                if (routine.profileId == null) {
-                                                    legacyRoutineIdsForAdoption += routine.id
-                                                }
-                                            } else {
-                                                val backupProfileId = routine.profileId
-                                                if (backupProfileId == null) {
-                                                    legacyRoutineIdsForAdoption += routine.id
-                                                    routinesAdopted++
+                                    // --- routines ---
+                                    "routines" -> {
+                                        onProgress(BackupProgress(BackupPhase.ROUTINES, 0, 0))
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val routine = decodeRow("routine") {
+                                                    json.decodeFromString<RoutineBackup>(rawJson)
+                                                } ?: continue
+                                                backupRoutines += routine
+
+                                                if (routine.id !in existingRoutineIds) {
+                                                    // Groups are written after routines; link once the group exists.
+                                                    val groupIdNow = routine.groupId?.takeIf { it in knownRoutineGroupIds }
+                                                    val inserted = tryImport("routine", routine.id) {
+                                                        queries.insertRoutine(
+                                                            id = routine.id,
+                                                            name = routine.name,
+                                                            description = routine.description,
+                                                            createdAt = routine.createdAt,
+                                                            lastUsed = routine.lastUsed,
+                                                            useCount = routine.useCount.toLong(),
+                                                            profile_id = routine.profileId ?: activeProfileId,
+                                                            groupId = groupIdNow,
+                                                            deletedAt = routine.deletedAt,
+                                                        )
+                                                    }
+                                                    if (inserted != null) {
+                                                        routinesImported++
+                                                        importedRoutineIds.add(routine.id)
+                                                        if (routine.groupId != null && groupIdNow == null) {
+                                                            deferredRoutineGroupIds += routine.id to routine.groupId
+                                                        }
+                                                        if (routine.profileId == null) {
+                                                            legacyRoutineIdsForAdoption += routine.id
+                                                        }
+                                                    }
                                                 } else {
-                                                    explicitRoutineAdoptions += routine.id to backupProfileId
-                                                }
-                                                routinesSkipped++
-                                            }
-                                        }
-                                        nav.endArray()
-                                    }
-                                }
-
-                                // --- routineGroups (audit F068) ---
-                                // The streaming importer previously had no case for
-                                // routineGroups, so v4 backup group data was treated
-                                // as an unknown field and skipped, silently dropping
-                                // routine group organization on restore. Routine.groupId
-                                // has no FK constraint, so import order does not matter.
-                                "routineGroups" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val group = tryImport("routineGroup-parse", null) {
-                                                json.decodeFromString<RoutineGroupBackup>(rawJson)
-                                            } ?: continue
-                                            val inserted = tryImport("routineGroup", group.id) {
-                                                queries.insertRoutineGroupIgnore(
-                                                    id = group.id,
-                                                    name = group.name,
-                                                    orderIndex = group.orderIndex.toLong(),
-                                                    createdAt = group.createdAt,
-                                                    profile_id = group.profileId,
-                                                )
-                                            }
-                                            if (inserted != null) routineGroupsImported++ else routineGroupsSkipped++
-                                        }
-                                        nav.endArray()
-                                    }
-                                }
-
-                                // --- supersets ---
-                                "supersets" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val superset = tryImport("superset-parse", null) {
-                                                json.decodeFromString<SupersetBackup>(rawJson)
-                                            } ?: continue
-
-                                            if (superset.routineId in importedRoutineIds || superset.id !in existingSupersetIds) {
-                                                if (superset.id !in existingSupersetIds) {
-                                                    queries.insertSupersetIgnore(
-                                                        id = superset.id,
-                                                        routineId = superset.routineId,
-                                                        name = superset.name,
-                                                        colorIndex = superset.colorIndex.toLong(),
-                                                        restBetweenSeconds = superset.restBetweenSeconds.toLong(),
-                                                        orderIndex = superset.orderIndex.toLong(),
-                                                    )
-                                                    supersetsImported++
-                                                } else {
-                                                    supersetsSkipped++
+                                                    val backupProfileId = routine.profileId
+                                                    if (backupProfileId == null) {
+                                                        legacyRoutineIdsForAdoption += routine.id
+                                                        routinesAdopted++
+                                                    } else {
+                                                        explicitRoutineAdoptions += routine.id to backupProfileId
+                                                    }
+                                                    routinesSkipped++
                                                 }
                                             }
+                                            nav.endArray()
                                         }
-                                        nav.endArray()
                                     }
-                                }
 
-                                // --- routineExercises ---
-                                "routineExercises" -> {
-                                    if (importedRoutineIds.isEmpty()) {
-                                        Logger.w { "Streaming import: routineExercises encountered but no routines imported yet — exercises for pre-existing routines will be skipped" }
-                                    }
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val exercise = tryImport("routineExercise-parse", null) {
-                                                json.decodeFromString<RoutineExerciseBackup>(rawJson)
-                                            } ?: continue
-
-                                            if (exercise.routineId in importedRoutineIds) {
-                                                val safeExerciseEccentricLoad = exercise.eccentricLoad.sanitizeEccentricLoad()
-                                                if (exercise.eccentricLoad != safeExerciseEccentricLoad) {
-                                                    Logger.w { "Streaming import: routine exercise ${exercise.exerciseName} eccentricLoad ${exercise.eccentricLoad}% clamped to $safeExerciseEccentricLoad% (hardware limit)" }
-                                                }
-
-                                                val inserted = tryImport("routineExercise", exercise.id) {
-                                                    queries.insertRoutineExerciseIgnore(
-                                                        id = exercise.id,
-                                                        routineId = exercise.routineId,
-                                                        exerciseName = exercise.exerciseName,
-                                                        exerciseMuscleGroup = exercise.exerciseMuscleGroup,
-                                                        exerciseEquipment = resolveBackupEquipment(exercise),
-                                                        exerciseDefaultCableConfig = exercise.exerciseDefaultCableConfig,
-                                                        exerciseId = exercise.exerciseId,
-                                                        cableConfig = exercise.cableConfig,
-                                                        orderIndex = exercise.orderIndex.toLong(),
-                                                        setReps = exercise.setReps,
-                                                        weightPerCableKg = exercise.weightPerCableKg.toDouble(),
-                                                        setWeights = exercise.setWeights,
-                                                        mode = exercise.mode,
-                                                        eccentricLoad = safeExerciseEccentricLoad.toLong(),
-                                                        echoLevel = exercise.echoLevel.toLong(),
-                                                        progressionKg = exercise.progressionKg.toDouble(),
-                                                        restSeconds = exercise.restSeconds.toLong(),
-                                                        duration = exercise.duration?.toLong(),
-                                                        setRestSeconds = exercise.setRestSeconds,
-                                                        perSetRestTime = if (exercise.perSetRestTime) 1L else 0L,
-                                                        isAMRAP = if (exercise.isAMRAP) 1L else 0L,
-                                                        supersetId = exercise.supersetId,
-                                                        orderInSuperset = exercise.orderInSuperset.toLong(),
-                                                        usePercentOfPR = if (exercise.usePercentOfPR) 1L else 0L,
-                                                        weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
-                                                        prTypeForScaling = exercise.prTypeForScaling,
-                                                        setWeightsPercentOfPR = exercise.setWeightsPercentOfPR,
-                                                        stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
-                                                        stopAtTop = if (exercise.stopAtTop) 1L else 0L,
-                                                        repCountTiming = exercise.repCountTiming,
-                                                        setEchoLevels = exercise.setEchoLevels,
-                                                        warmupSets = exercise.warmupSets,
-                                                        defaultRackItemIds = sanitizeRackItemIds(exercise.defaultRackItemIds),
-                                                        rackBehaviorOverrides = exercise.rackBehaviorOverrides,
-                                                        scalingBasis = exercise.scalingBasis?.let {
-                                                            runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
-                                                        }?.name,
-                                                        isBodyweight = resolveBackupIsBodyweight(exercise),
-                                                        dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
-                                                        dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
+                                    // --- routineGroups (audit F068) ---
+                                    // Routine.groupId references RoutineGroup, and exports write
+                                    // this section last, so routines inserted earlier get their
+                                    // groupId after the stream (deferredRoutineGroupIds).
+                                    "routineGroups" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val group = decodeRow("routineGroup") {
+                                                    json.decodeFromString<RoutineGroupBackup>(rawJson)
+                                                } ?: continue
+                                                val inserted = tryImport("routineGroup", group.id) {
+                                                    queries.insertRoutineGroupIgnore(
+                                                        id = group.id,
+                                                        name = group.name,
+                                                        orderIndex = group.orderIndex.toLong(),
+                                                        createdAt = group.createdAt,
+                                                        profile_id = group.profileId,
                                                     )
                                                 }
                                                 if (inserted != null) {
-                                                    routineExercisesImported++
-                                                    importedRoutineExerciseIds.add(exercise.id)
+                                                    routineGroupsImported++
+                                                    knownRoutineGroupIds += group.id
+                                                } else {
+                                                    routineGroupsSkipped++
                                                 }
                                             }
+                                            nav.endArray()
                                         }
-                                        nav.endArray()
                                     }
-                                }
 
-                                // --- personalRecords ---
-                                "personalRecords" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val pr = tryImport("pr-parse", null) {
-                                                json.decodeFromString<PersonalRecordBackup>(rawJson)
-                                            } ?: continue
+                                    // --- supersets ---
+                                    "supersets" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val superset = decodeRow("superset") {
+                                                    json.decodeFromString<SupersetBackup>(rawJson)
+                                                } ?: continue
 
-                                            try {
-                                                queries.upsertPR(
-                                                    exerciseId = pr.exerciseId,
-                                                    exerciseName = pr.exerciseName,
-                                                    weight = pr.weight.toDouble(),
-                                                    reps = pr.reps.toLong(),
-                                                    oneRepMax = pr.oneRepMax.toDouble(),
-                                                    achievedAt = pr.achievedAt,
-                                                    workoutMode = pr.workoutMode,
-                                                    prType = pr.prType,
-                                                    volume = pr.volume.toDouble(),
-                                                    phase = pr.phase ?: "COMBINED",
-                                                    profile_id = pr.profileId ?: "default",
-                                                    // F304: preserve cable count on streaming restore (the
-                                                    // non-streaming path already passes pr.cableCount).
-                                                    cable_count = pr.cableCount?.toLong(),
-                                                    uuid = pr.uuid ?: generateUUID(),
-                                                )
-                                                personalRecordsImported++
-                                            } catch (e: Exception) {
-                                                Logger.w("DataBackupManager") { "Failed to import PR: ${e.message}" }
-                                                personalRecordsSkipped++
+                                                if (superset.routineId in importedRoutineIds || superset.id !in existingSupersetIds) {
+                                                    if (superset.id !in existingSupersetIds) {
+                                                        val inserted = tryImport("superset", superset.id) {
+                                                            queries.insertSupersetIgnore(
+                                                                id = superset.id,
+                                                                routineId = superset.routineId,
+                                                                name = superset.name,
+                                                                colorIndex = superset.colorIndex.toLong(),
+                                                                restBetweenSeconds = superset.restBetweenSeconds.toLong(),
+                                                                orderIndex = superset.orderIndex.toLong(),
+                                                            )
+                                                        }
+                                                        if (inserted != null) {
+                                                            supersetsImported++
+                                                            knownSupersetIds += superset.id
+                                                        }
+                                                    } else {
+                                                        supersetsSkipped++
+                                                    }
+                                                }
                                             }
+                                            nav.endArray()
                                         }
-                                        nav.endArray()
                                     }
-                                }
 
-                                // --- trainingCycles ---
-                                "trainingCycles" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val cycle = tryImport("cycle-parse", null) {
-                                                json.decodeFromString<TrainingCycleBackup>(rawJson)
-                                            } ?: continue
+                                    // --- routineExercises ---
+                                    "routineExercises" -> {
+                                        if (importedRoutineIds.isEmpty()) {
+                                            Logger.w { "Streaming import: routineExercises encountered but no routines imported yet — exercises for pre-existing routines will be skipped" }
+                                        }
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val exercise = decodeRow("routineExercise") {
+                                                    json.decodeFromString<RoutineExerciseBackup>(rawJson)
+                                                } ?: continue
+                                                backupRoutineExercises += exercise
 
-                                            if (cycle.id !in existingCycleIds) {
-                                                queries.insertTrainingCycle(
-                                                    id = cycle.id,
-                                                    name = cycle.name,
-                                                    description = cycle.description,
-                                                    created_at = cycle.createdAt,
-                                                    is_active = if (cycle.isActive) 1L else 0L,
-                                                    profile_id = cycle.profileId ?: "default",
-                                                    template_id = cycle.templateId,
-                                                    week_number = cycle.weekNumber.toLong(),
-                                                )
-                                                trainingCyclesImported++
-                                                importedCycleIds.add(cycle.id)
-                                            } else {
-                                                trainingCyclesSkipped++
+                                                if (exercise.routineId in importedRoutineIds) {
+                                                    // Supersets are written after routine exercises; link once the superset exists.
+                                                    val supersetIdNow = exercise.supersetId?.takeIf { it in knownSupersetIds }
+                                                    val safeExerciseEccentricLoad = exercise.eccentricLoad.sanitizeEccentricLoad()
+                                                    if (exercise.eccentricLoad != safeExerciseEccentricLoad) {
+                                                        Logger.w { "Streaming import: routine exercise ${exercise.exerciseName} eccentricLoad ${exercise.eccentricLoad}% clamped to $safeExerciseEccentricLoad% (hardware limit)" }
+                                                    }
+
+                                                    val inserted = tryImport("routineExercise", exercise.id) {
+                                                        queries.insertRoutineExerciseIgnore(
+                                                            id = exercise.id,
+                                                            routineId = exercise.routineId,
+                                                            exerciseName = exercise.exerciseName,
+                                                            exerciseMuscleGroup = exercise.exerciseMuscleGroup,
+                                                            exerciseEquipment = resolveBackupEquipment(exercise),
+                                                            exerciseDefaultCableConfig = exercise.exerciseDefaultCableConfig,
+                                                            exerciseId = exercise.exerciseId,
+                                                            cableConfig = exercise.cableConfig,
+                                                            orderIndex = exercise.orderIndex.toLong(),
+                                                            setReps = exercise.setReps,
+                                                            weightPerCableKg = exercise.weightPerCableKg.toDouble(),
+                                                            setWeights = exercise.setWeights,
+                                                            mode = exercise.mode,
+                                                            eccentricLoad = safeExerciseEccentricLoad.toLong(),
+                                                            echoLevel = exercise.echoLevel.toLong(),
+                                                            progressionKg = exercise.progressionKg.toDouble(),
+                                                            restSeconds = exercise.restSeconds.toLong(),
+                                                            duration = exercise.duration?.toLong(),
+                                                            setRestSeconds = exercise.setRestSeconds,
+                                                            perSetRestTime = if (exercise.perSetRestTime) 1L else 0L,
+                                                            isAMRAP = if (exercise.isAMRAP) 1L else 0L,
+                                                            supersetId = supersetIdNow,
+                                                            orderInSuperset = exercise.orderInSuperset.toLong(),
+                                                            usePercentOfPR = if (exercise.usePercentOfPR) 1L else 0L,
+                                                            weightPercentOfPR = exercise.weightPercentOfPR.toLong(),
+                                                            prTypeForScaling = exercise.prTypeForScaling,
+                                                            setWeightsPercentOfPR = exercise.setWeightsPercentOfPR,
+                                                            stallDetectionEnabled = if (exercise.stallDetectionEnabled) 1L else 0L,
+                                                            stopAtTop = if (exercise.stopAtTop) 1L else 0L,
+                                                            repCountTiming = exercise.repCountTiming,
+                                                            setEchoLevels = exercise.setEchoLevels,
+                                                            warmupSets = exercise.warmupSets,
+                                                            defaultRackItemIds = sanitizeRackItemIds(exercise.defaultRackItemIds),
+                                                            rackBehaviorOverrides = exercise.rackBehaviorOverrides,
+                                                            scalingBasis = exercise.scalingBasis?.let {
+                                                                runCatching { com.devil.phoenixproject.domain.model.ScalingBasis.valueOf(it) }.getOrNull()
+                                                            }?.name,
+                                                            isBodyweight = resolveBackupIsBodyweight(exercise),
+                                                            dropSetEnabled = if (exercise.dropSetEnabled) 1L else 0L,
+                                                            dropSetMinWeightKg = exercise.dropSetMinWeightKg?.toDouble(),
+                                                        )
+                                                    }
+                                                    if (inserted != null) {
+                                                        routineExercisesImported++
+                                                        importedRoutineExerciseIds.add(exercise.id)
+                                                        // Only link rows this import created (INSERT OR IGNORE reports 0 rows for an existing id).
+                                                        if (exercise.supersetId != null && supersetIdNow == null && inserted.value > 0L) {
+                                                            deferredSupersetRefs += exercise
+                                                        }
+                                                    }
+                                                }
                                             }
+                                            nav.endArray()
                                         }
-                                        nav.endArray()
                                     }
-                                }
 
-                                // --- cycleDays ---
-                                "cycleDays" -> {
-                                    if (importedCycleIds.isEmpty()) {
-                                        Logger.w { "Streaming import: cycleDays encountered but no cycles imported yet — days for pre-existing cycles will be skipped" }
+                                    // --- personalRecords ---
+                                    "personalRecords" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val pr = decodeRow("pr") {
+                                                    json.decodeFromString<PersonalRecordBackup>(rawJson)
+                                                } ?: continue
+
+                                                try {
+                                                    queries.upsertPR(
+                                                        exerciseId = pr.exerciseId,
+                                                        exerciseName = pr.exerciseName,
+                                                        weight = pr.weight.toDouble(),
+                                                        reps = pr.reps.toLong(),
+                                                        oneRepMax = pr.oneRepMax.toDouble(),
+                                                        achievedAt = pr.achievedAt,
+                                                        workoutMode = pr.workoutMode,
+                                                        prType = pr.prType,
+                                                        volume = pr.volume.toDouble(),
+                                                        phase = pr.phase ?: "COMBINED",
+                                                        profile_id = pr.profileId ?: "default",
+                                                        // F304: preserve cable count on restore.
+                                                        cable_count = pr.cableCount?.toLong(),
+                                                        uuid = pr.uuid ?: generateUUID(),
+                                                    )
+                                                    personalRecordsImported++
+                                                } catch (e: Exception) {
+                                                    Logger.w("DataBackupManager") { "Failed to import PR: ${e.message}" }
+                                                    personalRecordsSkipped++
+                                                }
+                                            }
+                                            nav.endArray()
+                                        }
                                     }
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val day = tryImport("cycleDay-parse", null) {
-                                                json.decodeFromString<CycleDayBackup>(rawJson)
-                                            } ?: continue
 
-                                            if (day.cycleId in importedCycleIds) {
-                                                val inserted = tryImport("cycleDay", day.id) {
-                                                    queries.insertCycleDay(
-                                                        id = day.id,
-                                                        cycle_id = day.cycleId,
-                                                        day_number = day.dayNumber.toLong(),
-                                                        name = day.name,
-                                                        routine_id = day.routineId,
-                                                        is_rest_day = if (day.isRestDay) 1L else 0L,
-                                                        echo_level = day.echoLevel,
-                                                        eccentric_load_percent = day.eccentricLoadPercent?.toLong(),
-                                                        weight_progression_percent = day.weightProgressionPercent?.toDouble(),
-                                                        rep_modifier = day.repModifier?.toLong(),
-                                                        rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong(),
+                                    // --- trainingCycles ---
+                                    "trainingCycles" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val cycle = decodeRow("cycle") {
+                                                    json.decodeFromString<TrainingCycleBackup>(rawJson)
+                                                } ?: continue
+
+                                                if (cycle.id !in existingCycleIds) {
+                                                    val inserted = tryImport("trainingCycle", cycle.id) {
+                                                        queries.insertTrainingCycle(
+                                                            id = cycle.id,
+                                                            name = cycle.name,
+                                                            description = cycle.description,
+                                                            created_at = cycle.createdAt,
+                                                            is_active = if (cycle.isActive) 1L else 0L,
+                                                            profile_id = cycle.profileId ?: "default",
+                                                            template_id = cycle.templateId,
+                                                            week_number = cycle.weekNumber.toLong(),
+                                                        )
+                                                    }
+                                                    if (inserted != null) {
+                                                        trainingCyclesImported++
+                                                        importedCycleIds.add(cycle.id)
+                                                    }
+                                                } else {
+                                                    trainingCyclesSkipped++
+                                                }
+                                            }
+                                            nav.endArray()
+                                        }
+                                    }
+
+                                    // --- cycleDays ---
+                                    "cycleDays" -> {
+                                        if (importedCycleIds.isEmpty()) {
+                                            Logger.w { "Streaming import: cycleDays encountered but no cycles imported yet — days for pre-existing cycles will be skipped" }
+                                        }
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val day = decodeRow("cycleDay") {
+                                                    json.decodeFromString<CycleDayBackup>(rawJson)
+                                                } ?: continue
+
+                                                if (day.cycleId in importedCycleIds) {
+                                                    val inserted = tryImport("cycleDay", day.id) {
+                                                        queries.insertCycleDay(
+                                                            id = day.id,
+                                                            cycle_id = day.cycleId,
+                                                            day_number = day.dayNumber.toLong(),
+                                                            name = day.name,
+                                                            routine_id = day.routineId,
+                                                            is_rest_day = if (day.isRestDay) 1L else 0L,
+                                                            echo_level = day.echoLevel,
+                                                            eccentric_load_percent = day.eccentricLoadPercent?.toLong(),
+                                                            weight_progression_percent = day.weightProgressionPercent?.toDouble(),
+                                                            rep_modifier = day.repModifier?.toLong(),
+                                                            rest_time_override_seconds = day.restTimeOverrideSeconds?.toLong(),
+                                                        )
+                                                    }
+                                                    if (inserted != null) cycleDaysImported++
+                                                }
+                                            }
+                                            nav.endArray()
+                                        }
+                                    }
+
+                                    // --- userProfiles ---
+                                    "userProfiles" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val profile = decodeRow("userProfile") {
+                                                    json.decodeFromString<UserProfileBackup>(rawJson)
+                                                } ?: continue
+
+                                                if (!representedProfileIds.add(profile.id)) continue
+
+                                                if (profile.id !in existingUserProfileIds) {
+                                                    queries.insertUserProfileIgnore(
+                                                        id = profile.id,
+                                                        name = profile.name,
+                                                        colorIndex = profile.colorIndex.toLong(),
+                                                        createdAt = profile.createdAt,
+                                                        isActive = 0L,
+                                                    )
+                                                    userProfilesImported++
+                                                } else {
+                                                    userProfilesSkipped++
+                                                }
+                                                queries.insertDefaultProfilePreferences(profile.id, 1L)
+                                            }
+                                            nav.endArray()
+                                        }
+                                    }
+
+                                    // --- cycleProgress ---
+                                    "cycleProgress" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val progress = decodeRow("cycleProgress") {
+                                                    json.decodeFromString<CycleProgressBackup>(rawJson)
+                                                } ?: continue
+
+                                                if (progress.cycleId in importedCycleIds) {
+                                                    val inserted = tryImport("cycleProgress", progress.id) {
+                                                        queries.insertCycleProgressIgnore(
+                                                            id = progress.id,
+                                                            cycle_id = progress.cycleId,
+                                                            current_day_number = progress.currentDayNumber.toLong(),
+                                                            last_completed_date = progress.lastCompletedDate,
+                                                            cycle_start_date = progress.cycleStartDate,
+                                                            last_advanced_at = progress.lastAdvancedAt,
+                                                            completed_days = progress.completedDays,
+                                                            missed_days = progress.missedDays,
+                                                            rotation_count = progress.rotationCount.toLong(),
+                                                        )
+                                                    }
+                                                    if (inserted != null) {
+                                                        cycleProgressImported++
+                                                    }
+                                                }
+                                            }
+                                            nav.endArray()
+                                        }
+                                    }
+
+                                    // --- cycleProgressions ---
+                                    "cycleProgressions" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val progression = decodeRow("cycleProgression") {
+                                                    json.decodeFromString<CycleProgressionBackup>(rawJson)
+                                                } ?: continue
+
+                                                if (progression.cycleId in importedCycleIds) {
+                                                    val inserted = tryImport("cycleProgression", progression.cycleId) {
+                                                        queries.insertCycleProgressionIgnore(
+                                                            cycle_id = progression.cycleId,
+                                                            frequency_cycles = progression.frequencyCycles.toLong(),
+                                                            weight_increase_percent = progression.weightIncreasePercent?.toDouble(),
+                                                            echo_level_increase = progression.echoLevelIncrease.toLong(),
+                                                            eccentric_load_increase_percent = progression.eccentricLoadIncreasePercent?.toLong(),
+                                                        )
+                                                    }
+                                                    if (inserted != null) {
+                                                        cycleProgressionsImported++
+                                                    }
+                                                }
+                                            }
+                                            nav.endArray()
+                                        }
+                                    }
+
+                                    // --- plannedSets ---
+                                    "plannedSets" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val plannedSet = decodeRow("plannedSet") {
+                                                    json.decodeFromString<PlannedSetBackup>(rawJson)
+                                                } ?: continue
+
+                                                if (plannedSet.routineExerciseId in importedRoutineExerciseIds) {
+                                                    val inserted = tryImport("plannedSet", plannedSet.id) {
+                                                        queries.insertPlannedSetIgnore(
+                                                            id = plannedSet.id,
+                                                            routine_exercise_id = plannedSet.routineExerciseId,
+                                                            set_number = plannedSet.setNumber.toLong(),
+                                                            set_type = plannedSet.setType,
+                                                            target_reps = plannedSet.targetReps?.toLong(),
+                                                            target_weight_kg = plannedSet.targetWeightKg?.toDouble(),
+                                                            target_rpe = plannedSet.targetRpe?.toLong(),
+                                                            rest_seconds = plannedSet.restSeconds?.toLong(),
+                                                        )
+                                                    }
+                                                    if (inserted != null) {
+                                                        plannedSetsImported++
+                                                    }
+                                                }
+                                            }
+                                            nav.endArray()
+                                        }
+                                    }
+
+                                    // --- completedSets ---
+                                    "completedSets" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val completedSet = decodeRow("completedSet") {
+                                                    json.decodeFromString<CompletedSetBackup>(rawJson)
+                                                } ?: continue
+
+                                                if (completedSet.sessionId in importedSessionIds) {
+                                                    val inserted = tryImport("completedSet", completedSet.id) {
+                                                        queries.insertCompletedSetIgnore(
+                                                            id = completedSet.id,
+                                                            session_id = completedSet.sessionId,
+                                                            planned_set_id = completedSet.plannedSetId,
+                                                            routine_exercise_id = completedSet.routineExerciseId,
+                                                            set_number = completedSet.setNumber.toLong(),
+                                                            set_type = completedSet.setType,
+                                                            attempt_number = completedSet.attemptNumber.coerceAtLeast(1).toLong(),
+                                                            actual_reps = completedSet.actualReps.toLong(),
+                                                            actual_weight_kg = completedSet.actualWeightKg.toDouble(),
+                                                            logged_rpe = completedSet.loggedRpe?.toLong(),
+                                                            is_pr = if (completedSet.isPr) 1L else 0L,
+                                                            completed_at = completedSet.completedAt,
+                                                            set_end_reason = SetEndReason.fromPersisted(completedSet.setEndReason).name,
+                                                        )
+                                                    }
+                                                    if (inserted != null) {
+                                                        completedSetsImported++
+                                                    }
+                                                }
+                                            }
+                                            nav.endArray()
+                                        }
+                                    }
+
+                                    // --- progressionEvents ---
+                                    "progressionEvents" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val event = decodeRow("progressionEvent") {
+                                                    json.decodeFromString<ProgressionEventBackup>(rawJson)
+                                                } ?: continue
+
+                                                val inserted = tryImport("progressionEvent", event.id) {
+                                                    queries.insertProgressionEventIgnore(
+                                                        id = event.id,
+                                                        exercise_id = event.exerciseId,
+                                                        suggested_weight_kg = event.suggestedWeightKg.toDouble(),
+                                                        previous_weight_kg = event.previousWeightKg.toDouble(),
+                                                        reason = event.reason,
+                                                        user_response = event.userResponse,
+                                                        actual_weight_kg = event.actualWeightKg?.toDouble(),
+                                                        timestamp = event.timestamp,
+                                                        profile_id = event.profileId ?: "default",
                                                     )
                                                 }
-                                                if (inserted != null) cycleDaysImported++
+                                                if (inserted != null) {
+                                                    progressionEventsImported++
+                                                }
                                             }
+                                            nav.endArray()
                                         }
-                                        nav.endArray()
                                     }
-                                }
 
-                                // --- userProfiles ---
-                                "userProfiles" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val profile = tryImport("userProfile-parse", null) {
-                                                json.decodeFromString<UserProfileBackup>(rawJson)
-                                            } ?: continue
+                                    // --- earnedBadges ---
+                                    "earnedBadges" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val badge = decodeRow("earnedBadge") {
+                                                    json.decodeFromString<EarnedBadgeBackup>(rawJson)
+                                                } ?: continue
 
-                                            if (!representedProfileIds.add(profile.id)) continue
-
-                                            if (profile.id !in existingUserProfileIds) {
-                                                queries.insertUserProfileIgnore(
-                                                    id = profile.id,
-                                                    name = profile.name,
-                                                    colorIndex = profile.colorIndex.toLong(),
-                                                    createdAt = profile.createdAt,
-                                                    isActive = 0L,
-                                                )
-                                                userProfilesImported++
-                                            } else {
-                                                userProfilesSkipped++
-                                            }
-                                            queries.insertDefaultProfilePreferences(profile.id, 1L)
-                                        }
-                                        nav.endArray()
-                                    }
-                                }
-
-                                // --- cycleProgress ---
-                                "cycleProgress" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val progress = tryImport("cycleProgress-parse", null) {
-                                                json.decodeFromString<CycleProgressBackup>(rawJson)
-                                            } ?: continue
-
-                                            if (progress.cycleId in importedCycleIds) {
-                                                queries.insertCycleProgressIgnore(
-                                                    id = progress.id,
-                                                    cycle_id = progress.cycleId,
-                                                    current_day_number = progress.currentDayNumber.toLong(),
-                                                    last_completed_date = progress.lastCompletedDate,
-                                                    cycle_start_date = progress.cycleStartDate,
-                                                    last_advanced_at = progress.lastAdvancedAt,
-                                                    completed_days = progress.completedDays,
-                                                    missed_days = progress.missedDays,
-                                                    rotation_count = progress.rotationCount.toLong(),
-                                                )
-                                                cycleProgressImported++
-                                            }
-                                        }
-                                        nav.endArray()
-                                    }
-                                }
-
-                                // --- cycleProgressions ---
-                                "cycleProgressions" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val progression = tryImport("cycleProgression-parse", null) {
-                                                json.decodeFromString<CycleProgressionBackup>(rawJson)
-                                            } ?: continue
-
-                                            if (progression.cycleId in importedCycleIds) {
-                                                queries.insertCycleProgressionIgnore(
-                                                    cycle_id = progression.cycleId,
-                                                    frequency_cycles = progression.frequencyCycles.toLong(),
-                                                    weight_increase_percent = progression.weightIncreasePercent?.toDouble(),
-                                                    echo_level_increase = progression.echoLevelIncrease.toLong(),
-                                                    eccentric_load_increase_percent = progression.eccentricLoadIncreasePercent?.toLong(),
-                                                )
-                                                cycleProgressionsImported++
-                                            }
-                                        }
-                                        nav.endArray()
-                                    }
-                                }
-
-                                // --- plannedSets ---
-                                "plannedSets" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val plannedSet = tryImport("plannedSet-parse", null) {
-                                                json.decodeFromString<PlannedSetBackup>(rawJson)
-                                            } ?: continue
-
-                                            if (plannedSet.routineExerciseId in importedRoutineExerciseIds) {
-                                                queries.insertPlannedSetIgnore(
-                                                    id = plannedSet.id,
-                                                    routine_exercise_id = plannedSet.routineExerciseId,
-                                                    set_number = plannedSet.setNumber.toLong(),
-                                                    set_type = plannedSet.setType,
-                                                    target_reps = plannedSet.targetReps?.toLong(),
-                                                    target_weight_kg = plannedSet.targetWeightKg?.toDouble(),
-                                                    target_rpe = plannedSet.targetRpe?.toLong(),
-                                                    rest_seconds = plannedSet.restSeconds?.toLong(),
-                                                )
-                                                plannedSetsImported++
-                                            }
-                                        }
-                                        nav.endArray()
-                                    }
-                                }
-
-                                // --- completedSets ---
-                                "completedSets" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val completedSet = tryImport("completedSet-parse", null) {
-                                                json.decodeFromString<CompletedSetBackup>(rawJson)
-                                            } ?: continue
-
-                                            if (completedSet.sessionId in importedSessionIds) {
-                                                queries.insertCompletedSetIgnore(
-                                                    id = completedSet.id,
-                                                    session_id = completedSet.sessionId,
-                                                    planned_set_id = completedSet.plannedSetId,
-                                                    routine_exercise_id = completedSet.routineExerciseId,
-                                                    set_number = completedSet.setNumber.toLong(),
-                                                    set_type = completedSet.setType,
-                                                    attempt_number = completedSet.attemptNumber.coerceAtLeast(1).toLong(),
-                                                    actual_reps = completedSet.actualReps.toLong(),
-                                                    actual_weight_kg = completedSet.actualWeightKg.toDouble(),
-                                                    logged_rpe = completedSet.loggedRpe?.toLong(),
-                                                    is_pr = if (completedSet.isPr) 1L else 0L,
-                                                    completed_at = completedSet.completedAt,
-                                                    set_end_reason = SetEndReason.fromPersisted(completedSet.setEndReason).name,
-                                                )
-                                                completedSetsImported++
-                                            }
-                                        }
-                                        nav.endArray()
-                                    }
-                                }
-
-                                // --- progressionEvents ---
-                                "progressionEvents" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val event = tryImport("progressionEvent-parse", null) {
-                                                json.decodeFromString<ProgressionEventBackup>(rawJson)
-                                            } ?: continue
-
-                                            queries.insertProgressionEventIgnore(
-                                                id = event.id,
-                                                exercise_id = event.exerciseId,
-                                                suggested_weight_kg = event.suggestedWeightKg.toDouble(),
-                                                previous_weight_kg = event.previousWeightKg.toDouble(),
-                                                reason = event.reason,
-                                                user_response = event.userResponse,
-                                                actual_weight_kg = event.actualWeightKg?.toDouble(),
-                                                timestamp = event.timestamp,
-                                                profile_id = event.profileId ?: "default",
-                                            )
-                                            progressionEventsImported++
-                                        }
-                                        nav.endArray()
-                                    }
-                                }
-
-                                // --- earnedBadges ---
-                                "earnedBadges" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val badge = tryImport("earnedBadge-parse", null) {
-                                                json.decodeFromString<EarnedBadgeBackup>(rawJson)
-                                            } ?: continue
-
-                                            val inserted = tryImport("earnedBadge", badge.badgeId) {
-                                                queries.insertEarnedBadgeFullIgnore(
-                                                    badgeId = badge.badgeId,
-                                                    earnedAt = badge.earnedAt,
-                                                    celebratedAt = badge.celebratedAt,
-                                                    updatedAt = badge.updatedAt,
-                                                    serverId = badge.serverId,
-                                                    deletedAt = badge.deletedAt,
-                                                    profile_id = badge.profileId,
-                                                )
-                                            }
-                                            if (inserted != null) earnedBadgesImported++
-                                        }
-                                        nav.endArray()
-                                    }
-                                }
-
-                                // --- streakHistory ---
-                                "streakHistory" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
-                                            val rawJson = nav.nextValueAsString()
-                                            val streak = tryImport("streakHistory-parse", null) {
-                                                json.decodeFromString<StreakHistoryBackup>(rawJson)
-                                            } ?: continue
-
-                                            queries.insertStreakHistoryIgnore(
-                                                startDate = streak.startDate,
-                                                endDate = streak.endDate,
-                                                length = streak.length.toLong(),
-                                                profile_id = streak.profileId,
-                                            )
-                                            streakHistoryImported++
-                                        }
-                                        nav.endArray()
-                                    }
-                                }
-
-                                // --- gamificationStats (SINGLE OBJECT, not array) ---
-                                "gamificationStats" -> {
-                                    if (nav.peekIsNull()) {
-                                        nav.skipNull()
-                                    } else {
-                                        val rawJson = nav.nextValueAsString()
-                                        val stats = tryImport("gamificationStats-parse", null) {
-                                            json.decodeFromString<GamificationStatsBackup>(rawJson)
-                                        }
-                                        if (stats != null) {
-                                            committedTransaction {
-                                                val stableId = stats.profileId.hashCode().toLong()
-                                                val inserted = tryImport("gamificationStats", stats.profileId) {
-                                                    queries.upsertGamificationStatsWithSync(
-                                                        id = stableId,
-                                                        totalWorkouts = stats.totalWorkouts.toLong(),
-                                                        totalReps = stats.totalReps.toLong(),
-                                                        totalVolumeKg = stats.totalVolumeKg.toLong(),
-                                                        longestStreak = stats.longestStreak.toLong(),
-                                                        currentStreak = stats.currentStreak.toLong(),
-                                                        uniqueExercisesUsed = stats.uniqueExercisesUsed.toLong(),
-                                                        prsAchieved = stats.prsAchieved.toLong(),
-                                                        lastWorkoutDate = stats.lastWorkoutDate,
-                                                        streakStartDate = stats.streakStartDate,
-                                                        lastUpdated = stats.lastUpdated,
-                                                        updatedAt = stats.updatedAt,
-                                                        serverId = stats.serverId,
-                                                        profileId = stats.profileId,
+                                                val inserted = tryImport("earnedBadge", badge.badgeId) {
+                                                    queries.insertEarnedBadgeFullIgnore(
+                                                        badgeId = badge.badgeId,
+                                                        earnedAt = badge.earnedAt,
+                                                        celebratedAt = badge.celebratedAt,
+                                                        updatedAt = badge.updatedAt,
+                                                        serverId = badge.serverId,
+                                                        deletedAt = badge.deletedAt,
+                                                        profile_id = badge.profileId,
                                                     )
                                                 }
-                                                if (inserted != null) gamificationStatsImported = true
+                                                if (inserted != null) earnedBadgesImported++
                                             }
+                                            nav.endArray()
                                         }
                                     }
-                                }
 
-                                // --- sessionNotes ---
-                                "sessionNotes" -> {
-                                    committedTransaction {
-                                        nav.beginArray()
-                                        while (nav.hasNextInArray()) {
+                                    // --- streakHistory ---
+                                    "streakHistory" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val streak = decodeRow("streakHistory") {
+                                                    json.decodeFromString<StreakHistoryBackup>(rawJson)
+                                                } ?: continue
+
+                                                val inserted = tryImport("streakHistory", streak.startDate.toString()) {
+                                                    queries.insertStreakHistoryIgnore(
+                                                        startDate = streak.startDate,
+                                                        endDate = streak.endDate,
+                                                        length = streak.length.toLong(),
+                                                        profile_id = streak.profileId,
+                                                    )
+                                                }
+                                                if (inserted != null) {
+                                                    streakHistoryImported++
+                                                }
+                                            }
+                                            nav.endArray()
+                                        }
+                                    }
+
+                                    // --- gamificationStats (SINGLE OBJECT, not array) ---
+                                    "gamificationStats" -> {
+                                        if (nav.peekIsNull()) {
+                                            nav.skipNull()
+                                        } else {
                                             val rawJson = nav.nextValueAsString()
-                                            val note = tryImport("sessionNotes-parse", null) {
-                                                json.decodeFromString<SessionNotesBackup>(rawJson)
-                                            } ?: continue
-
-                                            val inserted = tryImport("sessionNotes", note.routineSessionId) {
-                                                queries.insertSessionNotesIgnore(
-                                                    routineSessionId = note.routineSessionId,
-                                                    notes = note.notes,
-                                                    updatedAt = note.updatedAt,
-                                                )
+                                            val stats = decodeRow("gamificationStats") {
+                                                json.decodeFromString<GamificationStatsBackup>(rawJson)
                                             }
-                                            if (inserted != null) sessionNotesImported++ else sessionNotesSkipped++
+                                            if (stats != null) {
+                                                run {
+                                                    val stableId = stats.profileId.hashCode().toLong()
+                                                    val inserted = tryImport("gamificationStats", stats.profileId) {
+                                                        queries.upsertGamificationStatsWithSync(
+                                                            id = stableId,
+                                                            totalWorkouts = stats.totalWorkouts.toLong(),
+                                                            totalReps = stats.totalReps.toLong(),
+                                                            totalVolumeKg = stats.totalVolumeKg.toLong(),
+                                                            longestStreak = stats.longestStreak.toLong(),
+                                                            currentStreak = stats.currentStreak.toLong(),
+                                                            uniqueExercisesUsed = stats.uniqueExercisesUsed.toLong(),
+                                                            prsAchieved = stats.prsAchieved.toLong(),
+                                                            lastWorkoutDate = stats.lastWorkoutDate,
+                                                            streakStartDate = stats.streakStartDate,
+                                                            lastUpdated = stats.lastUpdated,
+                                                            updatedAt = stats.updatedAt,
+                                                            serverId = stats.serverId,
+                                                            profileId = stats.profileId,
+                                                        )
+                                                    }
+                                                    if (inserted != null) gamificationStatsImported = true
+                                                }
+                                            }
                                         }
-                                        nav.endArray()
                                     }
-                                }
 
-                                // --- unknown fields: skip for forward compatibility ---
-                                else -> {
-                                    Logger.d { "Streaming import: skipping unknown data field '$fieldName'" }
-                                    nav.skipValue()
+                                    // --- sessionNotes ---
+                                    "sessionNotes" -> {
+                                        run {
+                                            nav.beginArray()
+                                            while (nav.hasNextInArray()) {
+                                                val rawJson = nav.nextValueAsString()
+                                                val note = decodeRow("sessionNotes") {
+                                                    json.decodeFromString<SessionNotesBackup>(rawJson)
+                                                } ?: continue
+
+                                                val inserted = tryImport("sessionNotes", note.routineSessionId) {
+                                                    queries.insertSessionNotesIgnore(
+                                                        routineSessionId = note.routineSessionId,
+                                                        notes = note.notes,
+                                                        updatedAt = note.updatedAt,
+                                                    )
+                                                }
+                                                if (inserted != null) sessionNotesImported++ else sessionNotesSkipped++
+                                            }
+                                            nav.endArray()
+                                        }
+                                    }
+
+                                    // --- unknown fields: skip for forward compatibility ---
+                                    else -> {
+                                        Logger.d { "Streaming import: skipping unknown data field '$fieldName'" }
+                                        nav.skipValue()
+                                    }
                                 }
                             }
+                            nav.endObject() // end "data"
                         }
-                        nav.endObject() // end "data"
+
+                        else -> nav.skipValue()
                     }
+                }
+                nav.endObject() // end root
+                if (!dataSectionSeen) throw MalformedBackupException("Backup data object is missing or invalid")
+                // A section with rows of which none could be decoded is not a backup this app can read.
+                val unreadableSections = rowsSeen.filter { (section, seen) -> seen > 0 && (rowsDecoded[section] ?: 0) == 0 }.keys
+                if (unreadableSections.isNotEmpty()) {
+                    throw MalformedBackupException("No readable rows in section(s): ${unreadableSections.joinToString()}")
+                }
 
-                    else -> nav.skipValue()
+                run {
+                    // Ported from the deleted buffered importer: resolve routine names from the
+                    // backup's own routines ("Just Lift", routineId lookup, unique-exercise inference).
+                    if (sessionsNeedingRoutineName.isNotEmpty()) {
+                        val context = buildRoutineNameResolutionContextFromBackup(backupRoutines, backupRoutineExercises)
+                        sessionsNeedingRoutineName.forEach { ref ->
+                            val resolved = resolveImportedRoutineName(ref, context)
+                            if (resolved != ref.insertedRoutineName) {
+                                queries.updateSessionRoutineName(resolved, ref.sessionId)
+                            }
+                        }
+                    }
+                    // Ported ordering fix: the buffered importer inserted groups before routines and
+                    // supersets before routine exercises. References whose target never arrived stay null.
+                    deferredRoutineGroupIds.forEach { (routineId, groupId) ->
+                        if (groupId in knownRoutineGroupIds) queries.updateRoutineGroupId(groupId, routineId)
+                    }
+                    deferredSupersetRefs.forEach { exercise ->
+                        val supersetId = exercise.supersetId
+                        if (supersetId in knownSupersetIds) {
+                            queries.updateExerciseSupersetRef(supersetId, exercise.orderInSuperset.toLong(), exercise.id)
+                        }
+                    }
                 }
-            }
-            nav.endObject() // end root
 
-            database.transaction {
-                val normalizedActiveProfileId = normalizeImportedActiveIdentity(
-                    preImportActiveProfileId,
-                    representedProfileIds,
-                )
-                val availableProfileIds = queries.selectAllUserProfileIds().executeAsList().toSet()
-                legacySessionIdsForAdoption.forEach { sessionId ->
-                    queries.adoptSessionProfile(normalizedActiveProfileId, sessionId)
-                }
-                legacyRoutineIdsForAdoption.forEach { routineId ->
-                    queries.adoptRoutineProfile(normalizedActiveProfileId, routineId)
-                }
-                explicitSessionAdoptions.forEach { (sessionId, backupProfileId) ->
-                    if (
-                        resolveImportedProfileId(
-                            requestedProfileId = backupProfileId,
-                            activeProfileId = normalizedActiveProfileId,
-                            availableProfileIds = availableProfileIds,
-                        ) == normalizedActiveProfileId
-                    ) {
+                database.transaction {
+                    val normalizedActiveProfileId = normalizeImportedActiveIdentity(
+                        preImportActiveProfileId,
+                        representedProfileIds,
+                    )
+                    val availableProfileIds = queries.selectAllUserProfileIds().executeAsList().toSet()
+                    legacySessionIdsForAdoption.forEach { sessionId ->
                         queries.adoptSessionProfile(normalizedActiveProfileId, sessionId)
-                        sessionsAdopted++
                     }
-                }
-                explicitRoutineAdoptions.forEach { (routineId, backupProfileId) ->
-                    if (backupProfileId == normalizedActiveProfileId) {
+                    legacyRoutineIdsForAdoption.forEach { routineId ->
                         queries.adoptRoutineProfile(normalizedActiveProfileId, routineId)
-                        routinesAdopted++
+                    }
+                    explicitSessionAdoptions.forEach { (sessionId, backupProfileId) ->
+                        if (
+                            resolveImportedProfileId(
+                                requestedProfileId = backupProfileId,
+                                activeProfileId = normalizedActiveProfileId,
+                                availableProfileIds = availableProfileIds,
+                            ) == normalizedActiveProfileId
+                        ) {
+                            queries.adoptSessionProfile(normalizedActiveProfileId, sessionId)
+                            sessionsAdopted++
+                        }
+                    }
+                    explicitRoutineAdoptions.forEach { (routineId, backupProfileId) ->
+                        if (backupProfileId == normalizedActiveProfileId) {
+                            queries.adoptRoutineProfile(normalizedActiveProfileId, routineId)
+                            routinesAdopted++
+                        }
                     }
                 }
             }
-            databaseWorkCommitted = true
-            activeIdentityNormalized = true
 
             fun onInvalidProfileState(profileId: String, sectionName: String, failure: Throwable?) {
                 entitiesWithErrors++
@@ -2025,7 +1429,6 @@ abstract class BaseDataBackupManager(
                         (failure?.let { " — ${it::class.simpleName}: ${it.message}" } ?: "")
                 }
             }
-            reconciliationAttempted = true
             restoreDeferredAndReconcile(
                 deferred = DeferredProfileRestore(
                     backupVersion = backupVersion,
@@ -2080,56 +1483,24 @@ abstract class BaseDataBackupManager(
                     userProfilesSkipped = userProfilesSkipped,
                     sessionNotesImported = sessionNotesImported,
                     sessionNotesSkipped = sessionNotesSkipped,
+                    routineGroupsImported = routineGroupsImported,
+                    routineGroupsSkipped = routineGroupsSkipped,
                     entitiesWithErrors = entitiesWithErrors,
                 ),
             )
         } catch (e: Throwable) {
-            if (databaseWorkCommitted && !reconciliationAttempted) {
-                withContext(NonCancellable) {
-                    val normalizationFailure = if (activeIdentityNormalized) {
-                        null
-                    } else {
-                        runCatching {
-                            database.transaction {
-                                val normalizedActiveProfileId = normalizeImportedActiveIdentity(
-                                    preImportActiveProfileId,
-                                    representedProfileIds,
-                                )
-                                val availableProfileIds = queries.selectAllUserProfileIds().executeAsList().toSet()
-                                legacySessionIdsForAdoption.forEach { sessionId ->
-                                    queries.adoptSessionProfile(normalizedActiveProfileId, sessionId)
-                                }
-                                legacyRoutineIdsForAdoption.forEach { routineId ->
-                                    queries.adoptRoutineProfile(normalizedActiveProfileId, routineId)
-                                }
-                                explicitSessionAdoptions.forEach { (sessionId, backupProfileId) ->
-                                    if (
-                                        resolveImportedProfileId(
-                                            requestedProfileId = backupProfileId,
-                                            activeProfileId = normalizedActiveProfileId,
-                                            availableProfileIds = availableProfileIds,
-                                        ) == normalizedActiveProfileId
-                                    ) {
-                                        queries.adoptSessionProfile(normalizedActiveProfileId, sessionId)
-                                    }
-                                }
-                                explicitRoutineAdoptions.forEach { (routineId, backupProfileId) ->
-                                    if (backupProfileId == normalizedActiveProfileId) {
-                                        queries.adoptRoutineProfile(normalizedActiveProfileId, routineId)
-                                    }
-                                }
-                            }
-                            activeIdentityNormalized = true
-                        }.exceptionOrNull()
-                    }
-                    normalizationFailure?.let(e::addSuppressed)
-                    val reconcileFailure = runCatching {
-                        userProfileRepository.reconcileActiveProfileContext()
-                    }.exceptionOrNull()
-                    reconcileFailure?.let(e::addSuppressed)
-                }
-            }
             Logger.e(e) { "Streaming backup import aborted: ${e::class.simpleName}: ${e.message}" }
+            // Ported from the deleted buffered importer: a structurally broken file gets a
+            // readable message for the UI instead of a raw parser error.
+            if (e is MalformedBackupException || e is NumberFormatException) {
+                return Result.failure(
+                    IllegalArgumentException(
+                        "Backup file is malformed or produced by an incompatible app version " +
+                            "(${e::class.simpleName}: ${e.message?.take(200) ?: "unknown"})",
+                        e,
+                    ),
+                )
+            }
             return Result.failure(e)
         }
     }
@@ -2509,7 +1880,7 @@ abstract class BaseDataBackupManager(
     }
 
     private fun resolveImportedRoutineName(
-        session: WorkoutSessionBackup,
+        session: SessionRoutineNameRef,
         routineNameResolutionContext: RoutineNameResolutionContext,
     ): String? {
         val existingRoutineName = sanitizeRoutineName(session.routineName)

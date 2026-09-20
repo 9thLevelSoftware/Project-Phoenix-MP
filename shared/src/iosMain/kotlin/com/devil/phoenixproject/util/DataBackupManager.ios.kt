@@ -25,7 +25,6 @@ import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
 import platform.Foundation.dataUsingEncoding
-import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.setValue
 import platform.Foundation.timeIntervalSince1970
 import platform.Foundation.valueForKey
@@ -343,26 +342,13 @@ class IosDataBackupManager(
 
     override suspend fun importFromFile(filePath: String): Result<ImportResult> = withContext(Dispatchers.IO) {
         try {
-            val attrs = fileManager.attributesOfItemAtPath(filePath, error = null)
-            val fileSize = (attrs?.get(NSFileSize) as? NSNumber)?.longValue
-
-            if (fileSize != null && fileSize < STREAMING_IMPORT_THRESHOLD) {
-                // Small file: use proven non-streaming path
-                val data = NSData.dataWithContentsOfFile(filePath)
-                    ?: throw Exception("Cannot read file")
-                val jsonString = NSString.create(data, NSUTF8StringEncoding)?.toString()
-                    ?: throw Exception("Cannot decode file contents")
-                importFromJson(jsonString)
-            } else {
-                // Large file or unknown size: streaming import to avoid OOM
-                Logger.i { "Using streaming import for file (size=${fileSize ?: "unknown"} bytes)" }
-                val source = FileBackupStreamSource(filePath)
-                try {
-                    source.open()
-                    importFromStream(source)
-                } finally {
-                    source.close()
-                }
+            // Every file, whatever its size, goes through the single streaming importer (F-055).
+            val source = FileBackupStreamSource(filePath)
+            try {
+                source.open()
+                importFromStream(source)
+            } finally {
+                source.close()
             }
         } catch (e: Exception) {
             Result.failure(e)

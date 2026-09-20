@@ -864,4 +864,6 @@
     <string name="startup_export_database_files">Export database files</string>
     <string name="startup_export_failed">The database files could not be exported. Nothing was changed; you can try again.</string>
     <string name="startup_contact_support">Contact support (GitHub Issues)</string>
+    <!-- PR 21: restore result -->
+    <string name="import_records_unreadable">Records that could not be restored (skipped): %1$d</string>
 </resources>
