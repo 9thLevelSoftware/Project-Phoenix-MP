@@ -19,7 +19,8 @@ import kotlin.test.assertTrue
  *   PortalSetDto.weightKg = session.weightPerCableKg    (NO ×2, already per-cable)
  *
  * Push totalVolume aggregation (PortalSyncAdapter.buildPortalSession):
- *   - If session.totalVolumeKg != null (measured): divide by cableCount → per-cable.
+ *   - If session.totalVolumeKg != null (measured): divide by the valid 1/2
+ *     wire cableCount → per-cable; unknown counts fall back to one cable.
  *   - Else fallback: weightPerCableKg × totalReps (already per-cable).
  *
  * Pull path (PortalPullAdapter.toWorkoutSessions):
@@ -115,7 +116,7 @@ class PortalMappingsWeightTest {
 
     @Test
     fun pushNullCableCountDefaultsToSingleCable() {
-        // cableCount=null → coerceAtLeast(1) = 1 cable → no division.
+        // cableCount=null is unknown, so the single-cable fallback avoids guessing.
         val swr = sessionWithReps(
             weightPerCableKg = 25f,
             totalReps = 10,
@@ -132,7 +133,7 @@ class PortalMappingsWeightTest {
 
     @Test
     fun pushZeroCableCountIsCoercedToOneAndDoesNotCrash() {
-        // Defensive: cableCount=0 must not cause a /0 crash — production code uses coerceAtLeast(1).
+        // Defensive: cableCount=0 is unknown and falls back to one cable.
         val swr = sessionWithReps(
             weightPerCableKg = 25f,
             totalReps = 10,
@@ -143,8 +144,46 @@ class PortalMappingsWeightTest {
         assertEquals(
             100f,
             sessions[0].totalVolume,
-            "cableCount=0 must NOT divide by zero; coerceAtLeast(1) treats it as single cable",
+            "cableCount=0 must not divide by zero; unknown counts use the single-cable fallback",
         )
+    }
+
+    @Test
+    fun pushMeasuredVolumeUsesTheSameSanitizedCableCountAsTheWireField() {
+        data class Case(
+            val rawCableCount: Int?,
+            val expectedWireCount: Int?,
+            val expectedPerCableVolume: Float,
+        )
+
+        val cases = listOf(
+            Case(rawCableCount = 1, expectedWireCount = 1, expectedPerCableVolume = 600f),
+            Case(rawCableCount = 2, expectedWireCount = 2, expectedPerCableVolume = 300f),
+            Case(rawCableCount = null, expectedWireCount = null, expectedPerCableVolume = 600f),
+            Case(rawCableCount = 3, expectedWireCount = null, expectedPerCableVolume = 600f),
+        )
+
+        cases.forEach { case ->
+            val pushed = PortalSyncAdapter.toPortalWorkoutSessions(
+                listOf(
+                    sessionWithReps(
+                        weightPerCableKg = 50f,
+                        totalReps = 12,
+                        totalVolumeKg = 600f,
+                        cableCount = case.rawCableCount,
+                    ),
+                ),
+                "user-1",
+            )[0]
+
+            assertEquals(case.expectedPerCableVolume, pushed.totalVolume, "cableCount=${case.rawCableCount}")
+            assertEquals(
+                case.expectedWireCount,
+                pushed.exercises[0].cableCount,
+                "cableCount=${case.rawCableCount}",
+            )
+            assertEquals(50f, pushed.exercises[0].sets[0].weightKg, "weight must remain per-cable")
+        }
     }
 
     // ==================== Push Side: totalVolume fallback (null totalVolumeKg) ====================
