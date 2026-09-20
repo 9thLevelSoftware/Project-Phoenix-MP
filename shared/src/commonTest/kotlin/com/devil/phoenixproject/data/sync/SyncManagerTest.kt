@@ -2143,7 +2143,7 @@ class SyncManagerTest {
     }
 
     @Test
-    fun `pull omits legacy duration routines from parity so the portal refetches them`() = runTest {
+    fun `pull retains duration backfill routines in parity for deletion convergence`() = runTest {
         setupAuthenticated()
         val current = "88888888-8888-4888-a888-888888888888"
         val needsBackfill = "99999999-9999-4999-a999-999999999999"
@@ -2155,7 +2155,7 @@ class SyncManagerTest {
 
         createManager().sync()
 
-        assertEquals(listOf(current), fakeApi.lastPullKnownEntityIds?.routineIds)
+        assertEquals(listOf(current, needsBackfill), fakeApi.lastPullKnownEntityIds?.routineIds)
     }
 
     @Test

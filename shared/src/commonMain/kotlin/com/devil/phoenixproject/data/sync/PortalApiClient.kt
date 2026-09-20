@@ -576,7 +576,9 @@ open class PortalApiClient(
             setBody(
                 PortalSyncPullRequest(
                     deviceId = deviceId,
-                    lastSync = 0, // Deprecated, using knownEntityIds instead
+                    // A full pull is required while legacy duration backfill is pending.
+                    // Keep known IDs present so portal tombstones can still converge.
+                    lastSync = 0,
                     profileId = profileId,
                     cursor = cursor,
                     pageSize = pageSize,

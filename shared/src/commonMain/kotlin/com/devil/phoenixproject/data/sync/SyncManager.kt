@@ -1721,7 +1721,6 @@ class SyncManager(
         }
 
         val filteredRoutineIds = filterUuids(rawRoutineIds, "routineIds")
-            .filterNot { it in durationBackfillRoutineIds }
         val filteredSessionIds = filterUuids(rawSessionIds, "sessionIds")
         val filteredCycleIds = filterUuids(rawCycleIds, "cycleIds")
         val filteredBadgeIds = filterUuids(rawBadgeIds, "badgeIds")
@@ -1760,7 +1759,7 @@ class SyncManager(
             "Parity sync: sending ${entityIds.sessionIds.size} session IDs, " +
                 "${entityIds.routineIds.size} routine IDs, ${entityIds.cycleIds.size} cycle IDs, " +
                 "${entityIds.personalRecordIds.size} personal record IDs; " +
-                "refetching ${durationBackfillRoutineIds.size} routines for duration backfill"
+                "${durationBackfillRoutineIds.size} routines pending duration backfill"
         }
 
         var pagesProcessed = 0
