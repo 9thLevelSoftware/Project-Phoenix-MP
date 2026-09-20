@@ -160,7 +160,6 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
                             lastPerformed = null,
                             aliases = null,
                             defaultCableConfig = cableConfig,
-                            one_rep_max_kg = null,
                             mvtOverrideMs = null,
                             isBodyweight = isBodyweight,
                         )
@@ -280,7 +279,7 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
                             attribution,
                         ).joinToString("\n\n")
 
-                        queries.insertExercise(
+                        queries.insertExerciseIfAbsent(
                             id = id,
                             name = name,
                             displayName = name,
@@ -306,7 +305,6 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
                             lastPerformed = null,
                             aliases = null,
                             defaultCableConfig = cableConfig,
-                            one_rep_max_kg = null,
                             mvtOverrideMs = null,
                             isBodyweight = isBodyweight,
                         )
@@ -394,6 +392,12 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
                 queries.reassignExerciseSignatureExerciseId(newId = newId, oldId = oldId)
                 queries.reassignAssessmentResultExerciseId(newId = newId, oldId = oldId)
                 queries.reassignVelocityOneRepMaxExerciseId(newId = newId, oldId = oldId)
+                // Training maxes (migration 49) move with the exercise; on a collision the
+                // newer row wins and whatever is left on the archived id is dropped. Without
+                // this the archived row's per-profile maxes would be stranded and then
+                // CASCADE-deleted with it.
+                queries.promoteTrainingMaxToNewExerciseId(newId = newId, oldId = oldId)
+                queries.deleteTrainingMaxesForExercise(oldId)
                 mergeExerciseMvtCollisions(oldId = oldId, newId = newId)
                 queries.reassignExerciseMvtExerciseId(newId = newId, oldId = oldId)
                 queries.reassignProgressionEventExerciseId(newId = newId, oldId = oldId)

@@ -1091,15 +1091,10 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                 )
             }
 
-            // Sync 1RM to Exercise table for %-based training features
-            val currentExercise1RM = queries.selectExerciseById(exerciseId)
-                .executeAsOneOrNull()?.one_rep_max_kg?.toFloat() ?: 0f
-            if (oneRepMax > currentExercise1RM) {
-                queries.updateOneRepMax(
-                    one_rep_max_kg = oneRepMax.toDouble(),
-                    id = exerciseId,
-                )
-            }
+            // A PR save deliberately writes NOTHING to the training max: see the same note
+            // in SqlDelightPersonalRecordRepository.savePRIfBetter. The stored 1RM is a
+            // per-profile value the user owns (ExerciseTrainingMax, migration 49), and this
+            // write used to hand it to every profile at once.
         }
     }
 

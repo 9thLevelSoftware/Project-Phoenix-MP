@@ -70,10 +70,10 @@ class ApplyRoutineModifierUseCase(
 
         if (weightPrOneRepMax != null) return weightPrOneRepMax
 
+        // The training max is per profile (migration 49): never another member's value.
         val storedOneRepMax = exerciseId
-            ?.let { exerciseRepository.getExerciseById(it)?.oneRepMaxKg }
+            ?.let { exerciseRepository.getTrainingMax(it, profileId) }
             ?.takeIf { it > 0 }
-            ?: exercise.exercise.oneRepMaxKg?.takeIf { it > 0 }
 
         return storedOneRepMax ?: exercise.weightPerCableKg.takeIf { it > 0 } ?: MIN_WEIGHT_KG
     }

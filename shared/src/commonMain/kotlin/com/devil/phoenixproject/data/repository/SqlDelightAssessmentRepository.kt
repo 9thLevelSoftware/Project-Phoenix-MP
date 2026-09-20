@@ -139,8 +139,8 @@ class SqlDelightAssessmentRepository(
                 )
 
                 var insertedResultId: Long? = null
-                var previousOneRepMaxPerCableKg: Float? = null
-                var exerciseWriteAttempted = false
+                var previousTrainingMax: com.devil.phoenixproject.database.ExerciseTrainingMax? = null
+                var trainingMaxWriteAttempted = false
                 try {
                     workoutRepository.saveSession(session)
                     queries.insertAssessmentResult(
@@ -154,12 +154,18 @@ class SqlDelightAssessmentRepository(
                     )
                     insertedResultId = queries.lastInsertRowId().executeAsOne()
 
-                    previousOneRepMaxPerCableKg =
-                        exerciseRepository.getExerciseById(exerciseId)?.oneRepMaxKg
-                    exerciseWriteAttempted = true
-                    exerciseRepository.updateOneRepMax(
-                        exerciseId,
-                        attemptedOneRepMaxPerCableKg,
+                    // The assessment belongs to the profile that ran it, so its training
+                    // max is written for that profile only (migration 49).
+                    previousTrainingMax = queries.selectTrainingMaxRow(
+                        exerciseId = exerciseId,
+                        profileId = profileId,
+                    ).executeAsOneOrNull()
+                    trainingMaxWriteAttempted = true
+                    exerciseRepository.setTrainingMax(
+                        exerciseId = exerciseId,
+                        profileId = profileId,
+                        oneRepMaxKg = attemptedOneRepMaxPerCableKg,
+                        source = TrainingMaxSource.ASSESSMENT,
                     )
                     Logger.d {
                         "Assessment saved for $exerciseName: " +
@@ -167,15 +173,27 @@ class SqlDelightAssessmentRepository(
                     }
                 } catch (failure: Throwable) {
                     withContext(NonCancellable) {
-                        if (exerciseWriteAttempted) {
+                        if (trainingMaxWriteAttempted) {
                             runCatching {
-                                queries.restoreOneRepMaxIfCurrent(
-                                    previousOneRepMaxKg =
-                                        previousOneRepMaxPerCableKg?.toDouble(),
-                                    exerciseId = exerciseId,
-                                    attemptedOneRepMaxKg =
-                                        attemptedOneRepMaxPerCableKg.toDouble(),
-                                )
+                                val previous = previousTrainingMax
+                                if (previous == null) {
+                                    queries.deleteTrainingMaxIfCurrent(
+                                        exerciseId = exerciseId,
+                                        profileId = profileId,
+                                        attemptedOneRepMaxKg =
+                                            attemptedOneRepMaxPerCableKg.toDouble(),
+                                    )
+                                } else {
+                                    queries.restoreTrainingMaxIfCurrent(
+                                        previousOneRepMaxKg = previous.one_rep_max_kg,
+                                        previousSource = previous.source,
+                                        previousUpdatedAt = previous.updated_at,
+                                        exerciseId = exerciseId,
+                                        profileId = profileId,
+                                        attemptedOneRepMaxKg =
+                                            attemptedOneRepMaxPerCableKg.toDouble(),
+                                    )
+                                }
                             }
                         }
                         insertedResultId?.let { id ->
@@ -188,7 +206,7 @@ class SqlDelightAssessmentRepository(
                     }
                     if (failure is CancellationException) throw failure
                     Logger.w(failure) {
-                        "Assessment save failed; compensated session, result, and exercise 1RM"
+                        "Assessment save failed; compensated session, result, and training max"
                     }
                     throw failure
                 }

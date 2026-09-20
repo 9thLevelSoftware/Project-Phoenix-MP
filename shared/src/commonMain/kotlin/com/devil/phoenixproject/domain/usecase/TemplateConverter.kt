@@ -183,7 +183,11 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
                     // exercise's stored 1RM if present, else a conservative non-zero default.
                     // F381: use round(), not toInt() — toInt() truncates (70.9 → 70.5 not 71.0).
                     // Floor at 0.5kg (machine increment): a tiny 1RM must never round to 0kg.
-                    val oneRepMax = exercise.oneRepMaxKg ?: 0f
+                    // The training max belongs to the profile this cycle is being built
+                    // for (migration 49), not to the shared catalogue row.
+                    val oneRepMax = exercise.id
+                        ?.let { exerciseRepository.getTrainingMax(it, profileId) }
+                        ?: 0f
                     val fallbackWeight = if (isBodyweight || oneRepMax <= 0f) {
                         DEFAULT_FALLBACK_WEIGHT_KG
                     } else {

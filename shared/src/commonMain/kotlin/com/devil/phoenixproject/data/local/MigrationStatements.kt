@@ -1135,5 +1135,73 @@ WHERE gs.rowid = (
       AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id)""",
     )
 
+
+    // Migration 49: the per-profile stored 1RM / training max.
+    // Mirrors 49.sqm exactly. Every statement is replay-safe (IF NOT EXISTS /
+    // INSERT OR IGNORE) because this fallback re-runs after a partial migrate, and the
+    // copy is additionally backed by an idempotent post-open repair in MigrationManager
+    // (backfillExerciseTrainingMaxes) so a failed migrate cannot lose training maxes.
+    49 -> listOf(
+        """CREATE TABLE IF NOT EXISTS ExerciseTrainingMax (
+        exercise_id TEXT NOT NULL,
+        profile_id TEXT NOT NULL,
+        one_rep_max_kg REAL NOT NULL,
+        source TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (exercise_id, profile_id),
+        FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE,
+        FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE
+    )""",
+        "CREATE INDEX IF NOT EXISTS idx_training_max_profile ON ExerciseTrainingMax(profile_id)",
+        """INSERT OR IGNORE INTO ExerciseTrainingMax(exercise_id, profile_id, one_rep_max_kg, source, updated_at)
+    SELECT id, owner_profile_id, legacy_one_rep_max_kg, 'LEGACY_MIGRATION', CAST(strftime('%s', 'now') AS INTEGER) * 1000
+    FROM (
+        SELECT
+            e.id AS id,
+            e.one_rep_max_kg AS legacy_one_rep_max_kg,
+            COALESCE(
+                CASE WHEN (SELECT COUNT(*) FROM UserProfile) = 1
+                     THEN (SELECT p.id FROM UserProfile p) END,
+                CASE WHEN (SELECT COUNT(*) FROM UserProfile p WHERE EXISTS (
+                               SELECT 1 FROM PersonalRecord pr
+                               WHERE pr.exerciseId = e.id AND pr.profile_id = p.id
+                                 AND pr.phase = 'COMBINED' AND pr.deletedAt IS NULL
+                                 AND ABS(pr.oneRepMax - e.one_rep_max_kg) <= 0.01)) = 1
+                     THEN (SELECT MIN(p.id) FROM UserProfile p WHERE EXISTS (
+                               SELECT 1 FROM PersonalRecord pr
+                               WHERE pr.exerciseId = e.id AND pr.profile_id = p.id
+                                 AND pr.phase = 'COMBINED' AND pr.deletedAt IS NULL
+                                 AND ABS(pr.oneRepMax - e.one_rep_max_kg) <= 0.01)) END,
+                CASE WHEN (SELECT COUNT(*) FROM UserProfile p WHERE
+                               EXISTS (SELECT 1 FROM AssessmentResult ar
+                                       WHERE ar.exerciseId = e.id AND ar.profile_id = p.id)
+                               OR EXISTS (SELECT 1 FROM VelocityOneRepMaxEstimate v
+                                          WHERE v.exerciseId = e.id AND v.profile_id = p.id
+                                            AND v.deletedAt IS NULL)) = 1
+                     THEN (SELECT MIN(p.id) FROM UserProfile p WHERE
+                               EXISTS (SELECT 1 FROM AssessmentResult ar
+                                       WHERE ar.exerciseId = e.id AND ar.profile_id = p.id)
+                               OR EXISTS (SELECT 1 FROM VelocityOneRepMaxEstimate v
+                                          WHERE v.exerciseId = e.id AND v.profile_id = p.id
+                                            AND v.deletedAt IS NULL)) END,
+                CASE WHEN (SELECT COUNT(*) FROM UserProfile p WHERE EXISTS (
+                               SELECT 1 FROM TrainingCycle tc
+                               JOIN CycleDay cd ON cd.cycle_id = tc.id
+                               JOIN RoutineExercise re ON re.routineId = cd.routine_id
+                               WHERE tc.profile_id = p.id AND tc.deletedAt IS NULL
+                                 AND tc.template_id = 'template_531' AND re.exerciseId = e.id)) = 1
+                     THEN (SELECT MIN(p.id) FROM UserProfile p WHERE EXISTS (
+                               SELECT 1 FROM TrainingCycle tc
+                               JOIN CycleDay cd ON cd.cycle_id = tc.id
+                               JOIN RoutineExercise re ON re.routineId = cd.routine_id
+                               WHERE tc.profile_id = p.id AND tc.deletedAt IS NULL
+                                 AND tc.template_id = 'template_531' AND re.exerciseId = e.id)) END
+            ) AS owner_profile_id
+        FROM Exercise e
+        WHERE e.one_rep_max_kg IS NOT NULL AND e.one_rep_max_kg > 0
+    )
+    WHERE owner_profile_id IS NOT NULL""",
+    )
+
     else -> emptyList()
 }

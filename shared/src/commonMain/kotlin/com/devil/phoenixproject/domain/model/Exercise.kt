@@ -28,7 +28,11 @@ data class Exercise(
     val isFavorite: Boolean = false, // Whether exercise is marked as favorite
     val isCustom: Boolean = false, // Whether exercise was created by user
     val timesPerformed: Int = 0, // Number of times this exercise has been performed
-    val oneRepMaxKg: Float? = null, // User's 1RM for percentage-based programming
+    // NOTE: there is deliberately NO oneRepMaxKg here. The catalogue row is shared by
+    // every profile, so the stored 1RM / training max lives in ExerciseTrainingMax,
+    // keyed by (exercise, profile) (migration 49), and is read and written through
+    // ExerciseRepository.getTrainingMax / setTrainingMax. Adding a field back here
+    // would re-open the leak where one household member's PR moves another's load.
     val cableIntent: ExerciseCableIntent? = null, // Explicit single/dual cable metadata when known
     val displayName: String = name, // Disambiguated name from catalog; defaults to base name
     val mvtOverrideMs: Float? = null, // User-set Minimum Velocity Threshold override (m/s) for velocity-1RM

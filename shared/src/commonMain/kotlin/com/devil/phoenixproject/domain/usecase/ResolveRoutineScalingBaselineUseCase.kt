@@ -47,7 +47,7 @@ class ResolveRoutineScalingBaselineUseCase(
         crossModeWeightPR(exerciseId, mode, profileId)?.let { record ->
             return record.toBaseline(basis, RoutineScalingBaselineSource.CROSS_MODE_PR)
         }
-        return storedOneRepMaxBaseline(exerciseId, basis)
+        return trainingMaxBaseline(exerciseId, profileId, basis)
     }
 
     private suspend fun resolveMaxVolume(
@@ -62,7 +62,7 @@ class ResolveRoutineScalingBaselineUseCase(
         crossModeVolumePR(exerciseId, mode, profileId)?.let { record ->
             return record.toBaseline(basis, RoutineScalingBaselineSource.CROSS_MODE_PR)
         }
-        return storedOneRepMaxBaseline(exerciseId, basis)
+        return trainingMaxBaseline(exerciseId, profileId, basis)
     }
 
     private suspend fun resolveEstimatedOneRepMax(
@@ -88,7 +88,7 @@ class ResolveRoutineScalingBaselineUseCase(
                 )
             }
 
-        storedOneRepMaxBaseline(exerciseId, basis)?.let { return it }
+        trainingMaxBaseline(exerciseId, profileId, basis)?.let { return it }
 
         currentModeWeightPR(exerciseId, mode, profileId)?.let { record ->
             return record.toBaseline(basis, RoutineScalingBaselineSource.CURRENT_MODE_PR)
@@ -106,11 +106,18 @@ class ResolveRoutineScalingBaselineUseCase(
     ): PersonalRecord? = prRepository.getBestWeightPRForWorkoutMode(exerciseId, mode.displayName, profileId)
         ?.takeIf { it.weightPerCableKg > 0 }
 
-    private suspend fun storedOneRepMaxBaseline(
+    /**
+     * The PROFILE's own stored training max (ExerciseTrainingMax, migration 49). It used
+     * to be a single global Exercise.one_rep_max_kg shared by every profile, so a
+     * household member's PR save could raise another member's commanded load. An
+     * unattributed legacy value is never used here: it stays unassigned until a profile
+     * claims it.
+     */
+    private suspend fun trainingMaxBaseline(
         exerciseId: String,
+        profileId: String,
         basis: ScalingBasis,
-    ): RoutineScalingBaseline? = exerciseRepository.getExerciseById(exerciseId)
-        ?.oneRepMaxKg
+    ): RoutineScalingBaseline? = exerciseRepository.getTrainingMax(exerciseId, profileId)
         ?.takeIf { it > 0 }
         ?.let { storedOneRepMax ->
             RoutineScalingBaseline(

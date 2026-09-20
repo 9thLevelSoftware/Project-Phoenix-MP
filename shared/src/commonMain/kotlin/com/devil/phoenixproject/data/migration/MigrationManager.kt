@@ -75,6 +75,8 @@ class MigrationManager(
             "profile_preferences_legacy_migration_complete_v1"
         private const val KEY_PULLED_SESSION_BACKFILL_COMPLETE =
             "pulled_workout_session_backfill_complete_v1"
+        private const val KEY_TRAINING_MAX_BACKFILL_COMPLETE =
+            "exercise_training_max_backfill_complete_v1"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -146,6 +148,7 @@ class MigrationManager(
         try {
             migrateProfilePreferences()
             backfillPulledSessionMarkers()
+            backfillExerciseTrainingMaxes()
             _requiredMigrationState.value = RequiredMigrationState.Ready
         } catch (error: CancellationException) {
             throw error
@@ -223,6 +226,35 @@ class MigrationManager(
             .onSuccess { settings.putBoolean(KEY_PULLED_SESSION_BACKFILL_COMPLETE, true) }
             .onFailure { error ->
                 log.w(error) { "Pulled-session marker backfill failed; retrying on next startup" }
+            }
+    }
+
+    /**
+     * Post-open repair for migration 49's legacy training-max copy (R-15 / KD-5).
+     *
+     * `reconcileFullSchema` re-creates `ExerciseTrainingMax` on every open, but nothing
+     * replays the copy, so a database where migration 49 could not finish it would have
+     * the table and no rows — and every profile's "% of PR" load would silently fall back
+     * to its own PRs or to absolute weight. The legacy `Exercise.one_rep_max_kg` column is
+     * retained precisely so this can always re-derive the copy, with the same
+     * unambiguous-owner rule (a value it cannot attribute stays unassigned; it is never
+     * handed to `default`). The statement is `INSERT OR IGNORE`, so a value a profile has
+     * since claimed or edited is left alone and re-running is safe; a one-shot marker
+     * keeps it off the startup path afterwards, and a failure leaves the marker unset so
+     * the next open retries.
+     *
+     * It runs AFTER [migrateProfilePreferences], which calls `ensureDefaultProfile()`. On a
+     * database that had no `UserProfile` row at migrate time (so migration 49 wrote
+     * nothing) that default row is by then the SOLE profile, and rule 1 assigns the value
+     * to it. That is the sole-profile rule applied correctly, not the rejected
+     * "fall back to default" — with one profile there is no one else it could belong to.
+     */
+    private fun backfillExerciseTrainingMaxes() {
+        if (settings.getBoolean(KEY_TRAINING_MAX_BACKFILL_COMPLETE, false)) return
+        runCatching { queries.backfillExerciseTrainingMaxes() }
+            .onSuccess { settings.putBoolean(KEY_TRAINING_MAX_BACKFILL_COMPLETE, true) }
+            .onFailure { error ->
+                log.w(error) { "Training-max backfill failed; retrying on next startup" }
             }
     }
 

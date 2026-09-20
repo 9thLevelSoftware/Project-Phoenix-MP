@@ -2,6 +2,7 @@ package com.devil.phoenixproject.domain.usecase
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.TrainingMaxSource
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.CycleDay
@@ -93,9 +94,11 @@ class RegenerateFiveThreeOneRoutinesUseCase(
                     continue
                 }
 
-                val currentOneRepMax = exercise.oneRepMaxKg
+                // Per profile (migration 49): the bump moves the cycle owner's training
+                // max, never the one another household member set for the same lift.
+                val currentOneRepMax = exerciseRepository.getTrainingMax(exerciseId, cycle.profileId)
                 if (currentOneRepMax == null) {
-                    Logger.w { "5/3/1 TM bump skipped null oneRepMax: exerciseId=$exerciseId" }
+                    Logger.w { "5/3/1 TM bump skipped missing training max: exerciseId=$exerciseId" }
                     continue
                 }
 
@@ -104,7 +107,12 @@ class RegenerateFiveThreeOneRoutinesUseCase(
                 } else {
                     LOWER_ONE_REP_MAX_BUMP_KG
                 }
-                exerciseRepository.updateOneRepMax(exerciseId, currentOneRepMax + bump)
+                exerciseRepository.setTrainingMax(
+                    exerciseId = exerciseId,
+                    profileId = cycle.profileId,
+                    oneRepMaxKg = currentOneRepMax + bump,
+                    source = TrainingMaxSource.CYCLE_BUMP,
+                )
             }
         }
 

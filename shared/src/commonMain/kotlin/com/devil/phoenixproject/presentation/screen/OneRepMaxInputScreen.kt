@@ -29,6 +29,10 @@ import projectphoenix.shared.generated.resources.Res
  *
  * @param mainLiftNames List of exercise names that need 1RM input (e.g., ["Bench Press", "Squat", "Shoulder Press", "Deadlift"])
  * @param existingOneRepMaxValues Pre-fill values from stored data (exercise name to 1RM in kg)
+ * @param unclaimedLegacyValues Exercise name to a pre-migration-49 stored 1RM whose owner
+ *   could not be determined. It is NOT pre-filled and no load is resolved from it; the
+ *   field offers it once, and typing it in (or tapping "Use it") is what makes it this
+ *   profile's training max. Guessing an owner is the cross-profile leak migration 49 closes.
  * @param weightUnit User's preferred weight unit (KG or LB)
  * @param kgToDisplay Conversion function from kg to display unit
  * @param displayToKg Conversion function from display unit back to kg
@@ -40,6 +44,7 @@ import projectphoenix.shared.generated.resources.Res
 fun OneRepMaxInputScreen(
     mainLiftNames: List<String>,
     existingOneRepMaxValues: Map<String, Float> = emptyMap(),
+    unclaimedLegacyValues: Map<String, Float> = emptyMap(),
     weightUnit: WeightUnit = WeightUnit.KG,
     kgToDisplay: (Float, WeightUnit) -> Float = { kg, unit -> if (unit == WeightUnit.LB) kg * 2.205f else kg },
     displayToKg: (Float, WeightUnit) -> Float = { display, unit -> if (unit == WeightUnit.LB) display / 2.205f else display },
@@ -147,6 +152,13 @@ fun OneRepMaxInputScreen(
                             },
                             isError = validationErrors[exerciseName] == true,
                             unitLabel = unitLabel,
+                            unclaimedLegacyDisplayValue = unclaimedLegacyValues[exerciseName]
+                                ?.takeIf { it > 0f && inputValues[exerciseName].isNullOrBlank() }
+                                ?.let { kgToDisplay(it, weightUnit) },
+                            onClaimLegacyValue = { displayValue ->
+                                inputValues[exerciseName] = displayValue.toInt().toString()
+                                validationErrors[exerciseName] = false
+                            },
                         )
                     }
                 }
@@ -292,6 +304,8 @@ private fun OneRepMaxInputField(
     onValueChange: (String) -> Unit,
     isError: Boolean,
     unitLabel: String = "kg",
+    unclaimedLegacyDisplayValue: Float? = null,
+    onClaimLegacyValue: (Float) -> Unit = {},
 ) {
     Column(
         modifier = Modifier.fillMaxWidth(),
@@ -340,6 +354,29 @@ private fun OneRepMaxInputField(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(end = Spacing.small),
             )
+        }
+
+        // One-time claim offer for a legacy value with no determinable owner.
+        unclaimedLegacyDisplayValue?.let { legacyDisplayValue ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = stringResource(
+                        Res.string.training_max_claim_notice,
+                        "${legacyDisplayValue.toInt()} $unitLabel",
+                        exerciseName,
+                    ),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { onClaimLegacyValue(legacyDisplayValue) }) {
+                    Text(stringResource(Res.string.training_max_claim_action))
+                }
+            }
         }
     }
 }

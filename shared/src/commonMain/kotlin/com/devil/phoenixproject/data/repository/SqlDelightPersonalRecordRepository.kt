@@ -394,19 +394,13 @@ class SqlDelightPersonalRecordRepository(private val db: PhoenixDatabase) : Pers
                 brokenPRs.add(PRType.MAX_VOLUME)
             }
 
-            // Sync estimated 1RM to Exercise table for %-based training features.
-            // Only update from COMBINED phase PRs to keep the canonical 1RM stable.
-            if (phase == WorkoutPhase.COMBINED && brokenPRs.isNotEmpty()) {
-                val currentExercise1RM = queries.selectExerciseById(exerciseId)
-                    .executeAsOneOrNull()?.one_rep_max_kg?.toFloat() ?: 0f
-                if (estimatedOneRepMax > currentExercise1RM) {
-                    Logger.d { "PR_SAVE: Updating 1RM for exercise=$exerciseId from $currentExercise1RM to $estimatedOneRepMax" }
-                    queries.updateOneRepMax(
-                        one_rep_max_kg = estimatedOneRepMax.toDouble(),
-                        id = exerciseId,
-                    )
-                }
-            }
+            // A PR save deliberately writes NOTHING to the training max. It used to copy the
+            // estimated 1RM onto the global Exercise.one_rep_max_kg, which meant one
+            // profile's PR silently raised every other profile's "% of PR" load and
+            // overwrote a manually entered 5/3/1 training max. The training max is now a
+            // per-profile value the user owns (ExerciseTrainingMax, migration 49); a PR is a
+            // separate metric, and the baseline resolver already falls back to the profile's
+            // own PRs.
         }
 
         if (brokenPRs.isNotEmpty()) {

@@ -65,7 +65,6 @@ class SqlDelightExerciseRepository(
         isFavorite = isFavorite == 1L,
         isCustom = isCustom == 1L,
         timesPerformed = timesPerformed.toInt(),
-        oneRepMaxKg = one_rep_max_kg?.toFloat(),
         cableIntent = resolveCableIntent(
             sidedness = sidedness,
             defaultCableConfig = defaultCableConfig,
@@ -183,7 +182,7 @@ class SqlDelightExerciseRepository(
             // Generate a unique ID for custom exercises
             val customId = "custom_${currentTimeMillis()}"
 
-            queries.insertExercise(
+            queries.insertExerciseIfAbsent(
                 id = customId,
                 name = exercise.name,
                 displayName = null, // Custom exercises use name directly
@@ -206,7 +205,6 @@ class SqlDelightExerciseRepository(
                 lastPerformed = null,
                 aliases = null,
                 defaultCableConfig = "DOUBLE", // Legacy field - no longer used
-                one_rep_max_kg = exercise.oneRepMaxKg?.toDouble(),
                 mvtOverrideMs = exercise.mvtOverrideMs?.toDouble(),
                 // Custom exercises carry no explicit flag; classification derives from
                 // their equipment token (HANDLES/BODYWEIGHT set by CreateExerciseDialog).
@@ -258,7 +256,6 @@ class SqlDelightExerciseRepository(
                     minRepRange = null,
                     aliases = null,
                     defaultCableConfig = "DOUBLE", // Legacy field - no longer used
-                    one_rep_max_kg = exercise.oneRepMaxKg?.toDouble(),
                     id = exerciseId,
                 )
 
@@ -298,17 +295,40 @@ class SqlDelightExerciseRepository(
         }
     }
 
-    // ========== One Rep Max Management ==========
+    // ========== Training Max (stored 1RM) — per profile ==========
 
-    override suspend fun updateOneRepMax(exerciseId: String, oneRepMaxKg: Float?) {
+    override suspend fun getTrainingMax(exerciseId: String, profileId: String): Float? = withContext(Dispatchers.IO) {
+        queries.selectTrainingMax(exerciseId = exerciseId, profileId = profileId)
+            .executeAsOneOrNull()
+            ?.toFloat()
+    }
+
+    override suspend fun setTrainingMax(
+        exerciseId: String,
+        profileId: String,
+        oneRepMaxKg: Float?,
+        source: TrainingMaxSource,
+    ) {
         withContext(Dispatchers.IO) {
-            queries.updateOneRepMax(oneRepMaxKg?.toDouble(), exerciseId)
+            if (oneRepMaxKg == null || oneRepMaxKg <= 0f) {
+                queries.deleteTrainingMax(exerciseId = exerciseId, profileId = profileId)
+            } else {
+                queries.upsertTrainingMax(
+                    exerciseId = exerciseId,
+                    profileId = profileId,
+                    oneRepMaxKg = oneRepMaxKg.toDouble(),
+                    source = source.name,
+                    updatedAt = currentTimeMillis(),
+                )
+            }
         }
     }
 
-    override fun getExercisesWithOneRepMax(): Flow<List<Exercise>> = queries.getExercisesWithOneRepMax(::mapToExercise)
-        .asFlow()
-        .mapToList(Dispatchers.IO)
+    override suspend fun getUnassignedLegacyTrainingMax(exerciseId: String): Float? = withContext(Dispatchers.IO) {
+        queries.selectUnassignedLegacyTrainingMax(exerciseId)
+            .executeAsOneOrNull()
+            ?.toFloat()
+    }
 
     override suspend fun findByName(name: String): Exercise? = withContext(Dispatchers.IO) {
         queries.findExerciseByName(name, ::mapToExercise).executeAsOneOrNull()

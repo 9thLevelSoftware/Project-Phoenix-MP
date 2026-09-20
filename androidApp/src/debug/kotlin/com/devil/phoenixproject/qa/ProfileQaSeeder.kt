@@ -86,13 +86,11 @@ class ProfileQaSeeder(
             profileA,
             exerciseId,
             profileKey = "a",
-            originalCatalogOneRepMaxKg = exercise.oneRepMaxKg,
         )
         seedProfile(
             profileB,
             exerciseId,
             profileKey = "b",
-            originalCatalogOneRepMaxKg = exercise.oneRepMaxKg,
         )
         userProfileRepository.setActiveProfile(profileA.id)
 
@@ -113,7 +111,6 @@ class ProfileQaSeeder(
         profile: UserProfile,
         exerciseId: String,
         profileKey: String,
-        originalCatalogOneRepMaxKg: Float?,
     ) {
         val isProfileA = profileKey == "a"
         val rackItemId = rackItemId(profileKey)
@@ -135,7 +132,7 @@ class ProfileQaSeeder(
 
         cleanupFixtureRows(profile.id, exerciseId, profileKey)
         seedSessions(profile.id, exerciseId, profileKey, rackItemId, isProfileA)
-        seedPersonalRecords(profile.id, exerciseId, originalCatalogOneRepMaxKg)
+        seedPersonalRecords(profile.id, exerciseId)
         assessmentRepository.saveAssessment(
             exerciseId = exerciseId,
             estimatedOneRepMaxKg = ASSESSMENT_TOTAL_KG,
@@ -209,35 +206,33 @@ class ProfileQaSeeder(
         }
     }
 
+    // No try/finally restoring a catalogue 1RM any more: a PR save no longer writes a
+    // training max at all (migration 49 made it per profile), so seeding PRs leaves
+    // nothing to put back.
     private suspend fun seedPersonalRecords(
         profileId: String,
         exerciseId: String,
-        originalCatalogOneRepMaxKg: Float?,
     ) {
-        try {
-            personalRecordRepository.updatePRsIfBetter(
-                exerciseId = exerciseId,
-                weightPRWeightPerCableKg = 50f,
-                volumePRWeightPerCableKg = 50f,
-                reps = 3,
-                workoutMode = WORKOUT_MODE,
-                timestamp = SESSION_TIMESTAMPS.last(),
-                profileId = profileId,
-                cableCount = 2,
-            ).getOrThrow()
-            personalRecordRepository.updatePRsIfBetter(
-                exerciseId = exerciseId,
-                weightPRWeightPerCableKg = 40f,
-                volumePRWeightPerCableKg = 40f,
-                reps = 12,
-                workoutMode = WORKOUT_MODE,
-                timestamp = SESSION_TIMESTAMPS[2],
-                profileId = profileId,
-                cableCount = 2,
-            ).getOrThrow()
-        } finally {
-            exerciseRepository.updateOneRepMax(exerciseId, originalCatalogOneRepMaxKg)
-        }
+        personalRecordRepository.updatePRsIfBetter(
+            exerciseId = exerciseId,
+            weightPRWeightPerCableKg = 50f,
+            volumePRWeightPerCableKg = 50f,
+            reps = 3,
+            workoutMode = WORKOUT_MODE,
+            timestamp = SESSION_TIMESTAMPS.last(),
+            profileId = profileId,
+            cableCount = 2,
+        ).getOrThrow()
+        personalRecordRepository.updatePRsIfBetter(
+            exerciseId = exerciseId,
+            weightPRWeightPerCableKg = 40f,
+            volumePRWeightPerCableKg = 40f,
+            reps = 12,
+            workoutMode = WORKOUT_MODE,
+            timestamp = SESSION_TIMESTAMPS[2],
+            profileId = profileId,
+            cableCount = 2,
+        ).getOrThrow()
     }
 
     private fun workoutSession(

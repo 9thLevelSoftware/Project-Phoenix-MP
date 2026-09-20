@@ -79,6 +79,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
+import com.devil.phoenixproject.data.repository.TrainingMaxSource
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleTemplate
@@ -676,9 +677,11 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
             // blank and Continue disabled for returning users (#633 review, P2).
             var existingOneRepMaxValues by remember { mutableStateOf<Map<String, Float>?>(null) }
             var existingPrWeightValues by remember { mutableStateOf<Map<String, Float>>(emptyMap()) }
-            LaunchedEffect(mainLiftNames) {
+            var unclaimedLegacyValues by remember { mutableStateOf<Map<String, Float>>(emptyMap()) }
+            LaunchedEffect(mainLiftNames, profileId) {
                 val oneRepMaxValues = mutableMapOf<String, Float>()
                 val prWeights = mutableMapOf<String, Float>()
+                val unclaimedLegacy = mutableMapOf<String, Float>()
                 mainLiftNames.forEach { exerciseName ->
                     exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
                         val exerciseId = exercise.id ?: return@let
@@ -687,12 +690,19 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                         val pr = personalRecordRepository.getBestWeightPR(exerciseId, profileId)
                         val prOneRepMax = pr?.oneRepMax
 
-                        // Use PR's 1RM if available, else fall back to stored exercise 1RM
+                        // Use the profile's PR 1RM if available, else its own training max
+                        // (ExerciseTrainingMax, migration 49). Never another profile's value.
                         val valueToUse = prOneRepMax?.takeIf { it > 0f }
-                            ?: exercise.oneRepMaxKg?.takeIf { it > 0f }
+                            ?: exerciseRepository.getTrainingMax(exerciseId, profileId)?.takeIf { it > 0f }
 
-                        valueToUse?.let { oneRepMax ->
-                            oneRepMaxValues[exerciseName] = oneRepMax
+                        if (valueToUse != null) {
+                            oneRepMaxValues[exerciseName] = valueToUse
+                        } else {
+                            // Nothing for this profile: a legacy value nobody could be shown
+                            // to own is offered once rather than pre-filled (KD-5).
+                            exerciseRepository.getUnassignedLegacyTrainingMax(exerciseId)
+                                ?.takeIf { it > 0f }
+                                ?.let { unclaimedLegacy[exerciseName] = it }
                         }
 
                         // Store the actual PR weight for indicator display
@@ -702,6 +712,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     }
                 }
                 existingPrWeightValues = prWeights.toMap()
+                unclaimedLegacyValues = unclaimedLegacy.toMap()
                 existingOneRepMaxValues = oneRepMaxValues.toMap()
             }
 
@@ -721,6 +732,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                 OneRepMaxInputScreen(
                     mainLiftNames = mainLiftNames,
                     existingOneRepMaxValues = loadedOneRepMaxValues,
+                    unclaimedLegacyValues = unclaimedLegacyValues,
                     weightUnit = weightUnit,
                     kgToDisplay = viewModel::kgToDisplay,
                     displayToKg = viewModel::displayToKg,
@@ -730,7 +742,14 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                 if (oneRepMax > 0f) {
                                     // ID-first lookup: template IDs are stable, names are not.
                                     exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
-                                        exercise.id?.let { id -> exerciseRepository.updateOneRepMax(id, oneRepMax) }
+                                        exercise.id?.let { id ->
+                                            exerciseRepository.setTrainingMax(
+                                                exerciseId = id,
+                                                profileId = profileId,
+                                                oneRepMaxKg = oneRepMax,
+                                                source = TrainingMaxSource.MANUAL,
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -765,7 +784,14 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                             state.oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
                                 if (oneRepMax > 0f) {
                                     exerciseRepository.findByIdOrName(modeTemplateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
-                                        exercise.id?.let { id -> exerciseRepository.updateOneRepMax(id, oneRepMax) }
+                                        exercise.id?.let { id ->
+                                            exerciseRepository.setTrainingMax(
+                                                exerciseId = id,
+                                                profileId = profileId,
+                                                oneRepMaxKg = oneRepMax,
+                                                source = TrainingMaxSource.MANUAL,
+                                            )
+                                        }
                                     }
                                 }
                             }

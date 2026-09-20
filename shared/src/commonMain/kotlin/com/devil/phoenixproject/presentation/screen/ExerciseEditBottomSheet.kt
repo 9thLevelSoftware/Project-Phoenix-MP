@@ -110,6 +110,8 @@ import projectphoenix.shared.generated.resources.drop_set_title
 import projectphoenix.shared.generated.resources.label_duration
 import projectphoenix.shared.generated.resources.label_reps
 import projectphoenix.shared.generated.resources.percent_label
+import projectphoenix.shared.generated.resources.training_max_claim_action
+import projectphoenix.shared.generated.resources.training_max_claim_notice
 
 /**
  * Exercise configuration bottom sheet for SingleExerciseScreen
@@ -192,6 +194,7 @@ fun ExerciseEditBottomSheet(
     val currentMaxVolumePR by viewModel.currentMaxVolumePR.collectAsState()
     val velocityEstimateKg by viewModel.velocityEstimateKg.collectAsState()
     val storedOneRepMaxKg by viewModel.storedOneRepMaxKg.collectAsState()
+    val unclaimedLegacyTrainingMaxKg by viewModel.unclaimedLegacyTrainingMaxKg.collectAsState()
     val routineScalingBaseline by viewModel.routineScalingBaseline.collectAsState()
 
     // Resolved baseline weight for the currently-selected scaling basis, mirroring
@@ -543,6 +546,9 @@ fun ExerciseEditBottomSheet(
                         baselineWeightKg = baselineWeightKg,
                         hasAnyBaseline = hasAnyBaseline,
                         baselineSourceMessage = baselineSourceMessage,
+                        unclaimedLegacyTrainingMaxKg = unclaimedLegacyTrainingMaxKg,
+                        onClaimLegacyTrainingMax = viewModel::claimLegacyTrainingMax,
+                        exerciseDisplayName = exercise.exercise.displayName,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                         onUsePercentOfPRChange = viewModel::onUsePercentOfPRChange,
@@ -1380,6 +1386,14 @@ fun WeightConfigurationCard(
      */
     hasAnyBaseline: Boolean = baselineWeightKg != null,
     baselineSourceMessage: String? = null,
+    /**
+     * A pre-migration-49 stored 1RM with no determinable owner. It is deliberately NOT a
+     * baseline and resolves no weight; the card offers it to the active profile once, and
+     * claiming is what makes it that profile's training max (KD-5).
+     */
+    unclaimedLegacyTrainingMaxKg: Float? = null,
+    onClaimLegacyTrainingMax: () -> Unit = {},
+    exerciseDisplayName: String = "",
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     onUsePercentOfPRChange: (Boolean) -> Unit,
@@ -1561,6 +1575,30 @@ fun WeightConfigurationCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
+                }
+            }
+
+            // One-time claim offer for a legacy value migration 49 could not attribute.
+            unclaimedLegacyTrainingMaxKg?.takeIf { it > 0f }?.let { legacyKg ->
+                Spacer(modifier = Modifier.height(Spacing.small))
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = stringResource(
+                            Res.string.training_max_claim_notice,
+                            formatWeight(legacyKg, weightUnit),
+                            exerciseDisplayName,
+                        ),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    TextButton(onClick = onClaimLegacyTrainingMax) {
+                        Text(stringResource(Res.string.training_max_claim_action))
+                    }
                 }
             }
 

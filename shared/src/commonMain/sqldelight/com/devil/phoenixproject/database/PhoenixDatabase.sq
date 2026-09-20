@@ -586,23 +586,24 @@ SELECT * FROM Exercise WHERE id = ?;
 updateFavorite:
 UPDATE Exercise SET isFavorite = ? WHERE id = ?;
 
-insertExercise:
-INSERT OR REPLACE INTO Exercise (
-    id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
-    equipment, movement, sidedness, grip, gripWidth, minRepRange,
-    popularity, archived, isFavorite, isCustom, timesPerformed, lastPerformed,
-    aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs, isBodyweight
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-
+-- The only Exercise insert. It was INSERT OR REPLACE ("insertExercise") until
+-- migration 49 made ExerciseTrainingMax a CASCADE child of Exercise: REPLACE
+-- deletes the conflicting row before re-inserting it, which would have taken every
+-- profile's training max with it on a catalogue re-import. Neither caller ever
+-- wanted an overwrite (the importer skips ids it already has, custom ids are freshly
+-- minted), so there is no UPDATE counterpart.
+--
+-- one_rep_max_kg is deliberately absent: the legacy column is written by nothing
+-- any more, and naming it here would let a re-insert clear a value still waiting to
+-- be claimed.
 insertExerciseIfAbsent:
 INSERT OR IGNORE INTO Exercise (
     id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
     equipment, movement, sidedness, grip, gripWidth, minRepRange,
     popularity, archived, isFavorite, isCustom, timesPerformed, lastPerformed,
-    aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs, isBodyweight
+    aliases, defaultCableConfig, mvtOverrideMs, isBodyweight
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateCatalogExercise:
 UPDATE Exercise SET
@@ -700,7 +701,7 @@ updateCustomExercise:
 UPDATE Exercise
 SET name = ?, description = ?, muscleGroup = ?, muscleGroups = ?, muscles = ?,
     equipment = ?, movement = ?, sidedness = ?, grip = ?, gripWidth = ?,
-    minRepRange = ?, aliases = ?, defaultCableConfig = ?, one_rep_max_kg = ?
+    minRepRange = ?, aliases = ?, defaultCableConfig = ?
 WHERE id = ? AND isCustom = 1;
 
 deleteCustomExercise:
@@ -2101,18 +2102,9 @@ UPDATE ProgressionEvent SET user_response = ?, actual_weight_kg = ? WHERE id = ?
 deleteProgressionEvent:
 DELETE FROM ProgressionEvent WHERE id = ?;
 
--- Exercise 1RM Queries
-updateOneRepMax:
-UPDATE Exercise SET one_rep_max_kg = ? WHERE id = ?;
-
-restoreOneRepMaxIfCurrent:
-UPDATE Exercise
-SET one_rep_max_kg = :previousOneRepMaxKg
-WHERE id = :exerciseId
-  AND one_rep_max_kg = :attemptedOneRepMaxKg;
-
-getExercisesWithOneRepMax:
-SELECT * FROM Exercise WHERE one_rep_max_kg IS NOT NULL;
+-- The stored 1RM / training max is per profile from migration 49 on; see the
+-- ExerciseTrainingMax section at the end of this file. Nothing writes
+-- Exercise.one_rep_max_kg any more.
 
 findExerciseByName:
 SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) ORDER BY archived ASC LIMIT 1;
@@ -3768,3 +3760,145 @@ INSERT OR IGNORE INTO PulledWorkoutSession(id) VALUES (?);
 -- Origin markers, for tests and diagnostics: which sessions this device pulled.
 selectPulledSessionIds:
 SELECT id FROM PulledWorkoutSession;
+
+-- ==================== PER-PROFILE TRAINING MAX (migration 49) ====================
+--
+-- The stored 1RM / training max, keyed by (exercise, profile). Exercise.one_rep_max_kg
+-- was global: every profile's PR saves wrote it and every profile's "% of PR"
+-- resolution read it, so one household member's PR raised another member's commanded
+-- load and silently replaced a manually entered 5/3/1 training max. The legacy column
+-- is kept (no DROP COLUMN on API 26) and is read ONLY by migration 49 and its
+-- post-open repair below; `oneRepMaxKg` is gone from the Exercise domain model so the
+-- compiler enforces that.
+--
+-- CASCADE on both sides: an exercise row that goes takes its training maxes with it,
+-- and so does a permanently deleted profile.
+CREATE TABLE IF NOT EXISTS ExerciseTrainingMax (
+    exercise_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    one_rep_max_kg REAL NOT NULL,
+    source TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY (exercise_id, profile_id),
+    FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE,
+    FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_training_max_profile ON ExerciseTrainingMax(profile_id);
+
+selectTrainingMax:
+SELECT one_rep_max_kg FROM ExerciseTrainingMax
+WHERE exercise_id = :exerciseId AND profile_id = :profileId;
+
+selectTrainingMaxesForProfile:
+SELECT exercise_id, one_rep_max_kg FROM ExerciseTrainingMax WHERE profile_id = :profileId;
+
+upsertTrainingMax:
+INSERT OR REPLACE INTO ExerciseTrainingMax(exercise_id, profile_id, one_rep_max_kg, source, updated_at)
+VALUES (:exerciseId, :profileId, :oneRepMaxKg, :source, :updatedAt);
+
+deleteTrainingMax:
+DELETE FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId AND profile_id = :profileId;
+
+-- Compensating rollback for a failed assessment save (see SqlDelightAssessmentRepository):
+-- put the profile's previous training max back, but only while the value the failed save
+-- wrote is still the current one, so a concurrent edit is never clobbered.
+selectTrainingMaxRow:
+SELECT * FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId AND profile_id = :profileId;
+
+restoreTrainingMaxIfCurrent:
+UPDATE ExerciseTrainingMax
+SET one_rep_max_kg = :previousOneRepMaxKg, source = :previousSource, updated_at = :previousUpdatedAt
+WHERE exercise_id = :exerciseId AND profile_id = :profileId
+  AND one_rep_max_kg = :attemptedOneRepMaxKg;
+
+deleteTrainingMaxIfCurrent:
+DELETE FROM ExerciseTrainingMax
+WHERE exercise_id = :exerciseId AND profile_id = :profileId
+  AND one_rep_max_kg = :attemptedOneRepMaxKg;
+
+-- The claim prompt's source: a legacy value migration 49 could not attribute to any
+-- single profile. "Unassigned" means no profile holds a training max for the exercise
+-- at all; the first profile to claim it ends the prompt for everyone, because the row
+-- it writes makes this query return nothing.
+selectUnassignedLegacyTrainingMax:
+SELECT one_rep_max_kg FROM Exercise
+WHERE id = :exerciseId
+  AND one_rep_max_kg IS NOT NULL
+  AND one_rep_max_kg > 0
+  AND NOT EXISTS (SELECT 1 FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId);
+
+-- Legacy-id remap (ExerciseImporter): move a training max from an archived catalogue
+-- row onto its replacement, keeping the newer row on a (exercise, profile) collision.
+-- Run promote first, then drop whatever is left behind on the old id.
+promoteTrainingMaxToNewExerciseId:
+INSERT OR REPLACE INTO ExerciseTrainingMax(exercise_id, profile_id, one_rep_max_kg, source, updated_at)
+SELECT :newId, old.profile_id, old.one_rep_max_kg, old.source, old.updated_at
+FROM ExerciseTrainingMax AS old
+WHERE old.exercise_id = :oldId
+  AND NOT EXISTS (
+      SELECT 1 FROM ExerciseTrainingMax AS existing
+      WHERE existing.exercise_id = :newId
+        AND existing.profile_id = old.profile_id
+        AND existing.updated_at >= old.updated_at
+  );
+
+deleteTrainingMaxesForExercise:
+DELETE FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId;
+
+-- Post-open repair for the migration 49 copy: the same statement, verbatim, run once
+-- behind a one-shot marker in MigrationManager. A database whose migration could not
+-- finish the copy (a missing table is not a recoverable error for the resilient
+-- fallback) would otherwise have the table and no training maxes, and every profile's
+-- "% of PR" load would silently drop to its own PRs. The legacy column is retained, so
+-- this can always re-derive the copy. INSERT OR IGNORE: a value a profile has already
+-- claimed or edited is never overwritten.
+backfillExerciseTrainingMaxes:
+INSERT OR IGNORE INTO ExerciseTrainingMax(exercise_id, profile_id, one_rep_max_kg, source, updated_at)
+SELECT id, owner_profile_id, legacy_one_rep_max_kg, 'LEGACY_MIGRATION', CAST(strftime('%s', 'now') AS INTEGER) * 1000
+FROM (
+    SELECT
+        e.id AS id,
+        e.one_rep_max_kg AS legacy_one_rep_max_kg,
+        COALESCE(
+            CASE WHEN (SELECT COUNT(*) FROM UserProfile) = 1
+                 THEN (SELECT p.id FROM UserProfile p) END,
+            CASE WHEN (SELECT COUNT(*) FROM UserProfile p WHERE EXISTS (
+                           SELECT 1 FROM PersonalRecord pr
+                           WHERE pr.exerciseId = e.id AND pr.profile_id = p.id
+                             AND pr.phase = 'COMBINED' AND pr.deletedAt IS NULL
+                             AND ABS(pr.oneRepMax - e.one_rep_max_kg) <= 0.01)) = 1
+                 THEN (SELECT MIN(p.id) FROM UserProfile p WHERE EXISTS (
+                           SELECT 1 FROM PersonalRecord pr
+                           WHERE pr.exerciseId = e.id AND pr.profile_id = p.id
+                             AND pr.phase = 'COMBINED' AND pr.deletedAt IS NULL
+                             AND ABS(pr.oneRepMax - e.one_rep_max_kg) <= 0.01)) END,
+            CASE WHEN (SELECT COUNT(*) FROM UserProfile p WHERE
+                           EXISTS (SELECT 1 FROM AssessmentResult ar
+                                   WHERE ar.exerciseId = e.id AND ar.profile_id = p.id)
+                           OR EXISTS (SELECT 1 FROM VelocityOneRepMaxEstimate v
+                                      WHERE v.exerciseId = e.id AND v.profile_id = p.id
+                                        AND v.deletedAt IS NULL)) = 1
+                 THEN (SELECT MIN(p.id) FROM UserProfile p WHERE
+                           EXISTS (SELECT 1 FROM AssessmentResult ar
+                                   WHERE ar.exerciseId = e.id AND ar.profile_id = p.id)
+                           OR EXISTS (SELECT 1 FROM VelocityOneRepMaxEstimate v
+                                      WHERE v.exerciseId = e.id AND v.profile_id = p.id
+                                        AND v.deletedAt IS NULL)) END,
+            CASE WHEN (SELECT COUNT(*) FROM UserProfile p WHERE EXISTS (
+                           SELECT 1 FROM TrainingCycle tc
+                           JOIN CycleDay cd ON cd.cycle_id = tc.id
+                           JOIN RoutineExercise re ON re.routineId = cd.routine_id
+                           WHERE tc.profile_id = p.id AND tc.deletedAt IS NULL
+                             AND tc.template_id = 'template_531' AND re.exerciseId = e.id)) = 1
+                 THEN (SELECT MIN(p.id) FROM UserProfile p WHERE EXISTS (
+                           SELECT 1 FROM TrainingCycle tc
+                           JOIN CycleDay cd ON cd.cycle_id = tc.id
+                           JOIN RoutineExercise re ON re.routineId = cd.routine_id
+                           WHERE tc.profile_id = p.id AND tc.deletedAt IS NULL
+                             AND tc.template_id = 'template_531' AND re.exerciseId = e.id)) END
+        ) AS owner_profile_id
+    FROM Exercise e
+    WHERE e.one_rep_max_kg IS NOT NULL AND e.one_rep_max_kg > 0
+)
+WHERE owner_profile_id IS NOT NULL;

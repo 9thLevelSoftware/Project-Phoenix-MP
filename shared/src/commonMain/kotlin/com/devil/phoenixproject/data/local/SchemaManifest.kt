@@ -373,6 +373,25 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
+    // ExerciseTrainingMax -- migration 49, the per-profile stored 1RM / training max.
+    // CASCADE on both sides: a deleted exercise or a permanently deleted profile takes
+    // its training maxes with it.
+    SchemaTableOperation(
+        table = "ExerciseTrainingMax",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ExerciseTrainingMax (
+                exercise_id TEXT NOT NULL,
+                profile_id TEXT NOT NULL,
+                one_rep_max_kg REAL NOT NULL,
+                source TEXT NOT NULL,
+                updated_at INTEGER NOT NULL,
+                PRIMARY KEY (exercise_id, profile_id),
+                FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE,
+                FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
     // EarnedBadge -- originally bootstrapped by ensureGamificationTablesExist()
     // Full current shape: sync fields (m11), profile_id (m22)
     SchemaTableOperation(
@@ -1548,6 +1567,9 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── DeletedWorkoutSession (migration 48) ────────────────────────────
     SchemaIndexOperation("idx_deleted_session_profile", "CREATE INDEX IF NOT EXISTS idx_deleted_session_profile ON DeletedWorkoutSession(profile_id)"),
     SchemaIndexOperation("idx_deleted_session_portal", "CREATE INDEX IF NOT EXISTS idx_deleted_session_portal ON DeletedWorkoutSession(portal_id)"),
+
+    // ── ExerciseTrainingMax (migration 49) ──────────────────────────────
+    SchemaIndexOperation("idx_training_max_profile", "CREATE INDEX IF NOT EXISTS idx_training_max_profile ON ExerciseTrainingMax(profile_id)"),
 
     // ── MetricSample ────────────────────────────────────────────────────
     SchemaIndexOperation("idx_metric_sample_session", "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)"),

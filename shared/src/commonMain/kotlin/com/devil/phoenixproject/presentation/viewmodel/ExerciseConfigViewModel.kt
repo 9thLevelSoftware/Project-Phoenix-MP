@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.TrainingMaxSource
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.getBestVolumePRForWorkoutMode
 import com.devil.phoenixproject.data.repository.getBestWeightPRForWorkoutMode
@@ -88,9 +89,16 @@ class ExerciseConfigViewModel constructor(
     private val _velocityEstimateKg = MutableStateFlow<Float?>(null)
     val velocityEstimateKg: StateFlow<Float?> = _velocityEstimateKg.asStateFlow()
 
-    // Stored Exercise.oneRepMaxKg (manual/VBT input) — fallback within ESTIMATED_1RM basis
+    // The ACTIVE PROFILE's stored training max (ExerciseTrainingMax, migration 49) —
+    // fallback within the ESTIMATED_1RM basis. Never another profile's number.
     private val _storedOneRepMaxKg = MutableStateFlow<Float?>(null)
     val storedOneRepMaxKg: StateFlow<Float?> = _storedOneRepMaxKg.asStateFlow()
+
+    // A pre-migration-49 stored 1RM whose owner could not be determined and that nobody
+    // has claimed. It is NOT a baseline: no weight is resolved from it. The editor offers
+    // it to the active profile once, and claiming is what turns it into a training max.
+    private val _unclaimedLegacyTrainingMaxKg = MutableStateFlow<Float?>(null)
+    val unclaimedLegacyTrainingMaxKg: StateFlow<Float?> = _unclaimedLegacyTrainingMaxKg.asStateFlow()
 
     // Shared baseline resolver output, including same-profile cross-mode fallback metadata.
     private val _routineScalingBaseline = MutableStateFlow<RoutineScalingBaseline?>(null)
@@ -412,12 +420,19 @@ class ExerciseConfigViewModel constructor(
             }
             if (exerciseRepository != null) {
                 try {
-                    val ex = exerciseRepository.getExerciseById(exerciseId)
-                    _storedOneRepMaxKg.value = ex?.oneRepMaxKg?.takeIf { it > 0 }
-                    logDebug("Loaded stored 1RM for exercise=$exerciseId: ${_storedOneRepMaxKg.value ?: "none"}")
+                    _storedOneRepMaxKg.value = exerciseRepository
+                        .getTrainingMax(exerciseId, activeProfileId)
+                        ?.takeIf { it > 0 }
+                    _unclaimedLegacyTrainingMaxKg.value = if (_storedOneRepMaxKg.value == null) {
+                        exerciseRepository.getUnassignedLegacyTrainingMax(exerciseId)
+                    } else {
+                        null
+                    }
+                    logDebug("Loaded training max for exercise=$exerciseId: ${_storedOneRepMaxKg.value ?: "none"}")
                 } catch (e: Exception) {
-                    logWarning("Failed to load stored 1RM for exercise=$exerciseId: ${e.message}")
+                    logWarning("Failed to load training max for exercise=$exerciseId: ${e.message}")
                     _storedOneRepMaxKg.value = null
+                    _unclaimedLegacyTrainingMaxKg.value = null
                 }
                 // Re-sync after the stored-1RM fallback lands.
                 resyncSetWeightsIfBaselineReady()
@@ -467,6 +482,33 @@ class ExerciseConfigViewModel constructor(
 
     fun onWeightChange(change: Int) {
         _weightChange.value = change
+    }
+
+    /**
+     * Take an unattributed pre-migration-49 stored 1RM as THIS profile's training max.
+     * It is written for the active profile only, and the offer disappears for everyone
+     * because the value is no longer unassigned.
+     */
+    fun claimLegacyTrainingMax() {
+        val repository = exerciseRepository ?: return
+        val exerciseId = originalExercise.exercise.id ?: return
+        val value = _unclaimedLegacyTrainingMaxKg.value?.takeIf { it > 0 } ?: return
+        viewModelScope.launch {
+            try {
+                repository.setTrainingMax(
+                    exerciseId = exerciseId,
+                    profileId = activeProfileId,
+                    oneRepMaxKg = value,
+                    source = TrainingMaxSource.CLAIMED_LEGACY,
+                )
+                _storedOneRepMaxKg.value = value
+                _unclaimedLegacyTrainingMaxKg.value = null
+                loadRoutineScalingBaseline(exerciseId, _selectedMode.value)
+                resyncSetWeightsIfBaselineReady()
+            } catch (e: Exception) {
+                logWarning("Failed to claim legacy training max for exercise=$exerciseId: ${e.message}")
+            }
+        }
     }
 
     fun onRestChange(newRest: Int) {
@@ -903,7 +945,11 @@ class ExerciseConfigViewModel constructor(
             programMode = _selectedMode.value.toProgramMode(),
             eccentricLoad = _eccentricLoad.value,
             echoLevel = _echoLevel.value,
-            progressionKg = displayToKg(_weightChange.value.toFloat(), weightUnit),
+            // The machine's progression bound is +/-3 kg per rep and the command path clamps
+            // to it, so saving a larger number only produces a routine that silently runs
+            // capped. Coerce here so what is stored is what will be commanded (F-020).
+            progressionKg = displayToKg(_weightChange.value.toFloat(), weightUnit)
+                .coerceIn(-MAX_PROGRESSION_KG, MAX_PROGRESSION_KG),
             setRestSeconds = expandedRestTimes,
             setEchoLevels = expanded.echo,
             duration = if (_setMode.value == SetMode.DURATION) {
@@ -959,5 +1005,14 @@ class ExerciseConfigViewModel constructor(
 
     private fun logWarning(message: String) {
         log.w { message }
+    }
+
+    private companion object {
+        /**
+         * Per-rep progression bound, in kg. The command path already clamps to this value
+         * for every set, so storing a larger one only makes the editor lie about what the
+         * machine will do. PR 13 owns the shared clamp; this is the save-side coercion.
+         */
+        const val MAX_PROGRESSION_KG = 3f
     }
 }

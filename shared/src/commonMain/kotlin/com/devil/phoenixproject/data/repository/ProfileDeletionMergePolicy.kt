@@ -53,6 +53,12 @@ object ProfileDeletionMergePolicy {
         "DeletedWorkoutSession",
         "EarnedBadge",
         "ExerciseMvt",
+        // Per-profile training maxes (migration 49). The table CASCADEs off UserProfile,
+        // so a PERMANENT delete clears them with the profile row and nothing else is
+        // needed. On a MERGE into another profile, PR 20 should move the rows the target
+        // does not already hold (INSERT OR IGNORE by (exercise_id, target)) rather than a
+        // bare UPDATE, which would hit the composite primary key.
+        "ExerciseTrainingMax",
         "ExternalActivity",
         "ExternalBodyMeasurement",
         "ExternalExerciseTemplate",
