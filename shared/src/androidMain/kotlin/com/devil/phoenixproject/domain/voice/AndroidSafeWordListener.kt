@@ -28,7 +28,10 @@ import kotlinx.coroutines.flow.asStateFlow
  * - Coexists with music via [AudioManager.AUDIOFOCUS_GAIN_TRANSIENT]
  * - All SpeechRecognizer calls dispatched to main thread (API requirement)
  */
-actual class SafeWordListener(private val context: Context, private val safeWord: String) {
+class AndroidSafeWordListener(
+    private val context: Context,
+    private val safeWord: String,
+) : SafeWordListener {
     private companion object {
         const val TAG = "SafeWordListener"
         const val RESTART_DELAY_MS = 500L
@@ -40,11 +43,11 @@ actual class SafeWordListener(private val context: Context, private val safeWord
     private val mainHandler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
 
-    private val _isListening = MutableStateFlow(false)
-    actual val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
+    private val _state = MutableStateFlow<SafeWordState>(SafeWordState.Disabled)
+    override val state: StateFlow<SafeWordState> = _state.asStateFlow()
 
     private val _detectedWord = MutableSharedFlow<String>(extraBufferCapacity = 1)
-    actual val detectedWord: SharedFlow<String> = _detectedWord.asSharedFlow()
+    override val detectedWord: SharedFlow<String> = _detectedWord.asSharedFlow()
 
     /** Tracks whether we *want* to be listening (guards auto-restart). */
     private var shouldBeListening = false
@@ -55,24 +58,43 @@ actual class SafeWordListener(private val context: Context, private val safeWord
     /** Active audio focus request, held for abandoning on teardown. */
     private var audioFocusRequest: AudioFocusRequest? = null
 
-    actual fun startListening() {
+    override fun startListening() {
         if (shouldBeListening) return
 
         if (!SpeechRecognizer.isRecognitionAvailable(context)) {
+            // F-039: report instead of returning silently — the user believes
+            // the safe word will stop the machine.
             Log.w(TAG, "Speech recognition not available on this device")
+            _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.RECOGNIZER_UNAVAILABLE)
             return
         }
 
         shouldBeListening = true
+        _state.value = SafeWordState.Arming
         mainHandler.post { startRecognition() }
     }
 
-    actual fun stopListening() {
+    override fun stopListening() {
         shouldBeListening = false
-        mainHandler.post { tearDown() }
+        mainHandler.post {
+            tearDown()
+            _state.value = SafeWordState.Disabled
+        }
     }
 
     // ---- internal ----
+
+    /**
+     * F-039: stop for good and say why, so the workout HUD can warn the user
+     * that the voice emergency stop is no longer armed.
+     */
+    private fun failAndStop(reason: SafeWordUnavailableReason) {
+        shouldBeListening = false
+        mainHandler.post {
+            tearDown()
+            _state.value = SafeWordState.Unavailable(reason)
+        }
+    }
 
     private fun startRecognition() {
         // Ensure we're on the main thread (SpeechRecognizer requirement)
@@ -91,14 +113,14 @@ actual class SafeWordListener(private val context: Context, private val safeWord
 
             val intent = createRecognizerIntent()
             sr.startListening(intent)
-            _isListening.value = true
+            _state.value = SafeWordState.Armed
             // fix(audit): H — do not log the configured safe word. It is user-
             // chosen and may be PII or a sensitive phrase. Log only a length
             // hint for debugging startup issues.
             Log.d(TAG, "Speech recognition started (safe word len=${safeWord.length})")
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start speech recognition", e)
-            _isListening.value = false
+            _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.START_FAILED)
             scheduleRestart()
         }
     }
@@ -135,7 +157,9 @@ actual class SafeWordListener(private val context: Context, private val safeWord
                 )
                 .setOnAudioFocusChangeListener { focusChange ->
                     if (focusChange == AudioManager.AUDIOFOCUS_LOSS) {
-                        stopListening()
+                        // F-039: losing focus permanently stops recognition; say so
+                        // rather than looking indistinguishable from "switched off".
+                        failAndStop(SafeWordUnavailableReason.AUDIO_FOCUS_LOST)
                     }
                 }
                 .build()
@@ -157,7 +181,11 @@ actual class SafeWordListener(private val context: Context, private val safeWord
             Log.w(TAG, "Error tearing down recognizer", e)
         } finally {
             recognizer = null
-            _isListening.value = false
+            // Only downgrade from Armed: a terminal Unavailable(reason) recorded by
+            // the caller must survive the teardown it triggers (F-039).
+            if (_state.value is SafeWordState.Armed) {
+                _state.value = if (shouldBeListening) SafeWordState.Arming else SafeWordState.Disabled
+            }
             abandonAudioFocus()
         }
     }
@@ -263,8 +291,7 @@ actual class SafeWordListener(private val context: Context, private val safeWord
 
             // Non-recoverable: permission denied — don't restart
             if (error == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
-                shouldBeListening = false
-                tearDown()
+                failAndStop(SafeWordUnavailableReason.PERMISSION)
                 return
             }
 

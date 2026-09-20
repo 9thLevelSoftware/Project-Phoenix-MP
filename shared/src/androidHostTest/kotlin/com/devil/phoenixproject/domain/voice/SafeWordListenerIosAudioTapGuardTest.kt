@@ -16,7 +16,7 @@ class SafeWordListenerIosAudioTapGuardTest {
     private val safeWordListenerSource: File
         get() = File(
             projectRoot,
-            "shared/src/iosMain/kotlin/com/devil/phoenixproject/domain/voice/SafeWordListener.ios.kt",
+            "shared/src/iosMain/kotlin/com/devil/phoenixproject/domain/voice/IosSafeWordListener.kt",
         )
 
     @Test
@@ -187,7 +187,7 @@ class SafeWordListenerIosAudioTapGuardTest {
             "iOS safe-word listener must call NSNotificationCenter.removeObserver(observer) on cleanup.",
         )
 
-        val stopListeningIndex = source.indexOf("actual fun stopListening()")
+        val stopListeningIndex = source.indexOf("override fun stopListening()")
         val removeCallIndex = source.indexOf("removeLifecycleObservers()", stopListeningIndex)
         assertTrue(
             stopListeningIndex >= 0,

@@ -863,4 +863,14 @@
     <string name="startup_export_database_files">Export database files</string>
     <string name="startup_export_failed">The database files could not be exported. Nothing was changed; you can try again.</string>
     <string name="startup_contact_support">Contact support (GitHub Issues)</string>
+    <!-- PR 28: voice safe-word emergency stop availability -->
+    <string name="voice_stop_unavailable_chip">Voice stop unavailable: %1$s</string>
+    <string name="voice_stop_unavailable_snackbar">Voice stop unavailable: %1$s. Use the on-screen Stop button to end the set.</string>
+    <string name="voice_stop_reason_profile_switching">profile is still loading</string>
+    <string name="voice_stop_reason_not_configured">no safe word set</string>
+    <string name="voice_stop_reason_not_calibrated">safe word not calibrated</string>
+    <string name="voice_stop_reason_recognizer_unavailable">speech recognition unavailable on this device</string>
+    <string name="voice_stop_reason_permission">microphone permission denied</string>
+    <string name="voice_stop_reason_audio_focus_lost">another app took the microphone</string>
+    <string name="voice_stop_reason_start_failed">speech recognition could not start</string>
 </resources>
