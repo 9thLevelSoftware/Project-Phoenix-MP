@@ -490,8 +490,8 @@ class DropSetCompletionCaptureTest {
                 warmupReps = if (isBodyweight) 0 else Constants.DEFAULT_WARMUP_REPS,
                 selectedExerciseId = occurrence.exercise.id,
             ),
-            executedWeightPerCableKg = configuredStart.takeIf { isCable && !isEcho && !isBodyweight },
-            executedProgressionKg = progression.takeIf { isCable && !isEcho && !isBodyweight },
+            executedWeightPerCableKg = configuredStart.takeIf { isCable && !isBodyweight },
+            executedProgressionKg = progression.takeIf { isCable && !isBodyweight },
         )
     }
 
