@@ -96,6 +96,7 @@ import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.labelAllCaps
 import com.devil.phoenixproject.ui.theme.labelSmallAllCaps
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
@@ -187,7 +188,13 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     val resolvedBodyWeightKg = sessionBodyweightState.sessionBodyWeightKg ?: userPreferences.bodyWeightKg
     val bodyweightPromptPending = sessionBodyweightState.routineHasBodyweight &&
         !sessionBodyweightState.promptHandled
-    val maxWeightKg = Constants.MAX_WEIGHT_PER_CABLE_KG
+    // KD-9: the live weight slider offers only what this trainer can be commanded to do.
+    // While disconnected there is nothing to command, so fall back to the planning ceiling
+    // rather than narrowing a Trainer+ owner to 100 before they have connected.
+    val maxWeightKg = when (val link = connectionState) {
+        is ConnectionState.Connected -> CommandLimits.maxWeightPerCableKg(link.hardwareModel)
+        else -> CommandLimits.planningMaxWeightPerCableKg(userPreferences.lastConnectedModel)
+    }
     val weightStepKg = userPreferences.effectiveWeightIncrementKg
 
     // Navigation state - uses superset-aware helpers from ViewModel

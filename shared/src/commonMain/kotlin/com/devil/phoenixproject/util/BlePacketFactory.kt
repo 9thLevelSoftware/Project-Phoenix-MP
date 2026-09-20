@@ -95,11 +95,26 @@ object BlePacketFactory {
     // ========== Legacy Workout Command (backward compatibility) ==========
 
     /**
-     * Creates a simplified workout command for backward compatibility.
-     * For full protocol support, use createProgramParams() instead.
+     * The legacy 25-byte REGULAR_COMMAND frame.
+     *
+     * Retained as protocol documentation and for the byte-layout tests: it has had no
+     * production caller since ActiveSessionEngine.sendWeightUpdateToMachine was deleted
+     * (F-059). It is validated, so it is not one of the unvalidated builders KD-9 removes,
+     * but note that FakeBleRepository does not decode this shape — anything that revives it
+     * must teach the fake first. For full protocol support use createProgramParams().
      */
-    fun createWorkoutCommand(programMode: ProgramMode, weightPerCableKg: Float, targetReps: Int): ByteArray {
-        WorkoutCommandValidator.validateLegacyWorkoutCommand(programMode, weightPerCableKg, targetReps).getOrThrow()
+    fun createWorkoutCommand(
+        programMode: ProgramMode,
+        weightPerCableKg: Float,
+        targetReps: Int,
+        maxWeightPerCableKg: Float,
+    ): ByteArray {
+        WorkoutCommandValidator.validateLegacyWorkoutCommand(
+            programMode,
+            weightPerCableKg,
+            targetReps,
+            maxWeightPerCableKg,
+        ).getOrThrow()
 
         val buffer = ByteArray(25)
         buffer[0] = BleConstants.Commands.REGULAR_COMMAND
@@ -127,8 +142,14 @@ object BlePacketFactory {
      * [ForceConfigVariant.OVERLAP] is retained only to reproduce the legacy Phoenix
      * behavior that overwrote 0x48/0x4C after copying the profile.
      */
-    fun createProgramParams(params: WorkoutParameters, variant: ForceConfigVariant = defaultForceConfigVariant): ByteArray {
-        WorkoutCommandValidator.validateProgramParams(params).getOrThrow()
+    fun createProgramParams(
+        params: WorkoutParameters,
+        variant: ForceConfigVariant = defaultForceConfigVariant,
+        // Required, with no default: a builder that guesses the ceiling reopens exactly the
+        // bypass KD-9 closes. Callers pass the CONNECTED model's ceiling.
+        maxWeightPerCableKg: Float,
+    ): ByteArray {
+        WorkoutCommandValidator.validateProgramParams(params, maxWeightPerCableKg).getOrThrow()
 
         // Resolve the profile up front so the variant decision can key off it.
         val profileMode = if (params.isEchoMode) {
@@ -216,6 +237,11 @@ object BlePacketFactory {
         // from per-rep progression. The increment field controls progression;
         // targetWeight and forceMax stay anchored to the selected force.
         val targetWeightPerCable = params.weightPerCableKg
+        // forceMax (0x54) is the firmware's force-limit headroom, not a commanded load: it is
+        // deliberately targetWeight + 10 and therefore sits ABOVE the per-cable ceiling (110 on
+        // a V-Form clamped to 100). The machine never pulls it; A-001 records that firmware caps
+        // force. It is the one field the model ceiling does not bound, so FakeBleRepository
+        // records it without asserting on it.
         val effectiveKg = targetWeightPerCable + 10.0f
 
         // Normal force modes keep softMax tied to the selected force
@@ -329,8 +355,8 @@ object BlePacketFactory {
     /**
      * Build Echo mode control frame (32 bytes) with full parameters.
      *
-     * @param eccentricPct Eccentric load percentage (0-150%). Values outside this range
-     *                     are clamped for safety - machine hardware limit is 150%.
+     * @param eccentricPct Eccentric load percentage (0-150%). The machine hardware limit
+     *                     is 150%; values outside this range are REJECTED, not clamped.
      */
     fun createEchoControl(
         level: EchoLevel,
@@ -340,23 +366,17 @@ object BlePacketFactory {
         isAMRAP: Boolean = false,
         eccentricPct: Int = 100,
     ): ByteArray {
+        // F-010: validate the value the CALLER asked for. Clamping first made the
+        // eccentricPct bound unreachable, so an out-of-range request was silently
+        // rewritten instead of being rejected.
         WorkoutCommandValidator.validateEchoControl(
             level = level,
             warmupReps = warmupReps,
             targetReps = targetReps,
             isJustLift = isJustLift,
             isAMRAP = isAMRAP,
-            eccentricPct = eccentricPct.coerceIn(0, 150),
+            eccentricPct = eccentricPct,
         ).getOrThrow()
-
-        // Defensive clamping: Machine hardware limit is 150% eccentric load
-        // Values > 150% can cause machine faults (yellow light)
-        val safeEccentricPct = eccentricPct.coerceIn(0, 150)
-        if (eccentricPct != safeEccentricPct) {
-            Logger.w("BlePacket") {
-                "Eccentric load $eccentricPct% CLAMPED to $safeEccentricPct% (hardware limit 150%)"
-            }
-        }
 
         val frame = ByteArray(32)
 
@@ -370,10 +390,10 @@ object BlePacketFactory {
 
         putShortLE(frame, 0x06, 0)
 
-        val echoParams = getEchoParams(level, safeEccentricPct)
+        val echoParams = getEchoParams(level, eccentricPct)
 
         Logger.d("BlePacketFactory") {
-            "=== ECHO: ${level.displayName}, eccentric: $safeEccentricPct% ==="
+            "=== ECHO: ${level.displayName}, eccentric: $eccentricPct% ==="
         }
 
         putShortLE(frame, 0x08, echoParams.eccentricOverload)

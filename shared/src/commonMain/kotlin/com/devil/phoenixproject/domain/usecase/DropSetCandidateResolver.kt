@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.DropSetCandidate
 import com.devil.phoenixproject.domain.model.DropSetCandidateInvalidReason
 import com.devil.phoenixproject.domain.model.DropSetCandidateResolution
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.UnitConverter
 import com.devil.phoenixproject.util.WorkoutCommandValidator
 
@@ -38,7 +39,14 @@ class DropSetCandidateResolver {
             return DropSetCandidateResolution.Invalid(DropSetCandidateInvalidReason.BELOW_MINIMUM)
         }
         val candidateCommand = request.commandTemplate.copy(weightPerCableKg = candidateWeight)
-        if (WorkoutCommandValidator.validateProgramParams(candidateCommand).isFailure) {
+        // A drop-set candidate is always LOWER than the weight that just failed, so a model
+        // ceiling can never be the reason it is rejected here. Use the absolute hardware
+        // maximum; the send site applies the connected model's ceiling.
+        if (WorkoutCommandValidator.validateProgramParams(
+                candidateCommand,
+                Constants.MAX_WEIGHT_PER_CABLE_KG,
+            ).isFailure
+        ) {
             return DropSetCandidateResolution.Invalid(DropSetCandidateInvalidReason.INVALID_COMMAND)
         }
         if (candidateWeight >= start) {

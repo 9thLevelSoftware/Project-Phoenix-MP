@@ -120,7 +120,7 @@ class RuntimeCleanupLiveLeaseRaceTest {
             )
             val replacementsBeforeAction = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
             val commandsBeforeAction = harness.fakeBleRepo.commandsReceived.size
-            val startsBeforeAction = harness.fakeBleRepo.workoutParameters.size
+            val startsBeforeAction = harness.fakeBleRepo.programCommands.size
             val sessionAttemptsBeforeAction = harness.fakeWorkoutRepo.saveSessionAttempts.count {
                 it.id == lease.sessionId
             }
@@ -181,7 +181,7 @@ class RuntimeCleanupLiveLeaseRaceTest {
             assertIs<WorkoutState.Idle>(harness.coordinator.workoutState.value)
             assertIs<RoutineFlowState.NotInRoutine>(harness.coordinator.routineFlowState.value)
             assertEquals(commandsBeforeAction, harness.fakeBleRepo.commandsReceived.size)
-            assertEquals(startsBeforeAction, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(startsBeforeAction, harness.fakeBleRepo.programCommands.size)
             assertEquals(
                 sessionAttemptsBeforeAction,
                 harness.fakeWorkoutRepo.saveSessionAttempts.count { it.id == lease.sessionId },
@@ -220,7 +220,7 @@ class RuntimeCleanupLiveLeaseRaceTest {
             val unresolved = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
             val documentA = assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest())
             val commandsBeforeAction = harness.fakeBleRepo.commandsReceived.size
-            val startsBeforeAction = harness.fakeBleRepo.workoutParameters.size
+            val startsBeforeAction = harness.fakeBleRepo.programCommands.size
             val navigationBeforeAction = harness.dwsm.restTransitionNavigationLookupsForTest
             val sessionAttemptsBeforeAction = harness.fakeWorkoutRepo.saveSessionAttempts.count {
                 it.id == lease.sessionId
@@ -272,7 +272,7 @@ class RuntimeCleanupLiveLeaseRaceTest {
             assertNull(harness.restTransitionPlan.value)
             assertNull(harness.activeSessionEngine.pendingRuntimeCleanupReasonForTest())
             assertEquals(commandsBeforeAction, harness.fakeBleRepo.commandsReceived.size)
-            assertEquals(startsBeforeAction, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(startsBeforeAction, harness.fakeBleRepo.programCommands.size)
             assertEquals(navigationBeforeAction, harness.dwsm.restTransitionNavigationLookupsForTest)
             assertEquals(
                 sessionAttemptsBeforeAction,
@@ -318,7 +318,7 @@ class RuntimeCleanupLiveLeaseRaceTest {
                 ),
             )
             val commandsBeforeCleanup = harness.fakeBleRepo.commandsReceived.size
-            val startsBeforeCleanup = harness.fakeBleRepo.workoutParameters.size
+            val startsBeforeCleanup = harness.fakeBleRepo.programCommands.size
             val navigationBeforeCleanup = harness.dwsm.restTransitionNavigationLookupsForTest
 
             harness.activeSessionEngine.beginRoutineAbandonmentRuntimeCleanup()
@@ -334,7 +334,7 @@ class RuntimeCleanupLiveLeaseRaceTest {
             assertNull(harness.restTransitionPlan.value)
             assertNull(harness.activeSessionEngine.pendingRuntimeCleanupReasonForTest())
             assertEquals(commandsBeforeCleanup, harness.fakeBleRepo.commandsReceived.size)
-            assertEquals(startsBeforeCleanup, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(startsBeforeCleanup, harness.fakeBleRepo.programCommands.size)
             assertEquals(navigationBeforeCleanup, harness.dwsm.restTransitionNavigationLookupsForTest)
 
             val loadCallsAfterCleanup = harness.fakeActiveWorkoutRuntimeRepository.loadCalls

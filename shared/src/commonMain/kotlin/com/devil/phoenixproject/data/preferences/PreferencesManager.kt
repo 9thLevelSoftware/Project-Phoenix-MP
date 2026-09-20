@@ -4,6 +4,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.ble.BleCompatibilityMode
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.ScalingBasis
@@ -115,6 +116,13 @@ interface PreferencesManager {
     fun getExerciseCatalogSource(): String
     suspend fun setExerciseCatalogSource(source: String)
 
+    /**
+     * Remember the trainer model this install last connected to (KD-9).
+     * Planning/editor screens read it from [preferencesFlow] to pick a per-cable ceiling
+     * while offline. Machine commands always use the LIVE connected model instead.
+     */
+    suspend fun setLastConnectedModel(model: PhoenixModel)
+
     @Deprecated("Legacy migration read only")
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
 
@@ -185,6 +193,7 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
         private const val KEY_BLE_COMPATIBILITY_MODE = "ble_compatibility_mode"
 
         private const val KEY_EXERCISE_CATALOG_SOURCE = "exercise_catalog_source"
+        private const val KEY_LAST_CONNECTED_MODEL = "last_connected_model"
     }
 
     private val _preferencesFlow = MutableStateFlow(loadPreferences())
@@ -256,6 +265,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
                 // before any preference flow is collected, so sync it at load time.
                 BleCompatibilityMode.setting = it
             },
+            lastConnectedModel = settings.getStringOrNull(KEY_LAST_CONNECTED_MODEL)
+                ?.let { stored -> PhoenixModel.entries.find { model -> model.name == stored } }
+                ?: PhoenixModel.Unknown,
         )
     }
 
@@ -615,6 +627,12 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
     override suspend fun setExerciseCatalogSource(source: String) {
         settings.putString(KEY_EXERCISE_CATALOG_SOURCE, source)
+    }
+
+    override suspend fun setLastConnectedModel(model: PhoenixModel) {
+        if (_preferencesFlow.value.lastConnectedModel == model) return
+        settings.putString(KEY_LAST_CONNECTED_MODEL, model.name)
+        updateAndEmit { copy(lastConnectedModel = model) }
     }
 
     override suspend fun setBleCompatibilityMode(setting: BleCompatibilitySetting) {

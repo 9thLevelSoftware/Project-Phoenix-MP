@@ -92,7 +92,7 @@ class ActiveSessionEngineIntegrationTest {
             assertIs<com.devil.phoenixproject.domain.model.WorkoutState.Idle>(
                 harness.activeSessionEngine.coordinator.workoutState.value,
             )
-            assertEquals(0, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(0, harness.fakeBleRepo.programCommands.size)
         } finally {
             harness.cleanup()
         }

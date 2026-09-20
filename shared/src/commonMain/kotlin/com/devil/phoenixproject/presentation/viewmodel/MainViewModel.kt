@@ -37,6 +37,7 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
@@ -705,6 +706,15 @@ class MainViewModel(
     val autoStartCountdown: StateFlow<Int?> get() = workoutSessionManager.coordinator.autoStartCountdown
     val hapticEvents: SharedFlow<HapticEvent> get() = workoutSessionManager.coordinator.hapticEvents
     val userFeedbackEvents: SharedFlow<String> get() = workoutSessionManager.coordinator.userFeedbackEvents
+
+    /**
+     * KD-9: "the command was capped" notice, held as state so the screen that shows it can
+     * arrive after the command was sent (Just Lift skips the countdown). Drained by the
+     * screen that displays it.
+     */
+    val commandLimitNotice: StateFlow<String?> get() = workoutSessionManager.coordinator.commandLimitNotice
+
+    fun consumeCommandLimitNotice() = workoutSessionManager.coordinator.consumeCommandLimitNotice()
     val routines: StateFlow<List<Routine>> get() = workoutSessionManager.coordinator.routines
     val routineGroups: StateFlow<List<RoutineGroup>> get() = workoutSessionManager.coordinator.routineGroups
     val loadedRoutine: StateFlow<Routine?> get() = workoutSessionManager.coordinator.loadedRoutine
@@ -1264,6 +1274,17 @@ class MainViewModel(
 
     init {
         viewModelScope.launch { machineSafetyCoordinator.restoreOnStartup() }
+        // KD-9: remember the model we connect to, so the offline planning/editor sliders
+        // can use that trainer's per-cable ceiling. Unknown is never stored: it would
+        // narrow a known Trainer+ owner's planning range on a bad name read.
+        viewModelScope.launch {
+            bleRepository.connectionState.collect { state ->
+                val model = (state as? ConnectionState.Connected)?.hardwareModel
+                if (model != null && model != PhoenixModel.Unknown) {
+                    preferencesManager.setLastConnectedModel(model)
+                }
+            }
+        }
         viewModelScope.launch {
             bleRepository.reconnectionRequested.collect { request ->
                 machineSafetyCoordinator.recordConnectionLost(

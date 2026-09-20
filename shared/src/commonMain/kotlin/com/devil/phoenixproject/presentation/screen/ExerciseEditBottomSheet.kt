@@ -92,6 +92,8 @@ import com.devil.phoenixproject.presentation.viewmodel.ExerciseType
 import com.devil.phoenixproject.presentation.viewmodel.SetConfiguration
 import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.CommandLimits
+import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.parseLocalizedDecimal
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -130,6 +132,9 @@ fun ExerciseEditBottomSheet(
     onDismiss: () -> Unit,
     buttonText: String = "Save",
     weightStepOverride: Float = 0f, // Issue #266/#410: 0 = use default for unit
+    // KD-9: per-cable ceiling for the weight slider. This editor is used offline, so the
+    // caller supplies the LAST connected trainer's ceiling (widest hardware when unknown).
+    planningMaxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
     primaryActionEnabled: Boolean = true,
     primaryActionSupportingContent: (@Composable () -> Unit)? = null,
 ) {
@@ -233,14 +238,17 @@ fun ExerciseEditBottomSheet(
         sharedBaselineKg != null
 
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-    val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
+    val maxWeight = kgToDisplay(planningMaxWeightPerCableKg, weightUnit)
     // Issue #266/#410: Use configured increment if provided, otherwise default for unit
     val weightStep = if (weightStepOverride > 0f) {
         kgToDisplay(weightStepOverride, weightUnit)
     } else {
         if (weightUnit == WeightUnit.LB) 0.5f else 0.25f
     }
-    val maxWeightChange = 10
+    // KD-9 / F-020: the per-rep progression slider now offers only what may actually be
+    // commanded. Values are whole display units, so LB rounds DOWN (6 lb = 2.72 kg) rather
+    // than offering a step the command-resolution clamp would immediately cap.
+    val maxWeightChange = kgToDisplay(CommandLimits.MAX_PROGRESSION_KG, weightUnit).toInt()
     val showCableOnlyExerciseControls = shouldShowCableOnlyExerciseControls(exerciseType)
     val isTutMode = showCableOnlyExerciseControls &&
         (selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast)
