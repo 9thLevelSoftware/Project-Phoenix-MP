@@ -562,6 +562,8 @@ open class PortalApiClient(
      * @param profileId Optional profile UUID for profile-scoped filtering
      * @param cursor Optional pagination cursor from previous response's nextCursor
      * @param pageSize Optional page size; null uses server default (100)
+     * @param lastSync Server `syncTime` (epoch millis) of the last completed pull. The server
+     *   skips known entities unchanged since then (minus a small overlap). 0 = return everything.
      */
     open suspend fun pullPortalPayload(
         knownEntityIds: KnownEntityIds,
@@ -569,6 +571,7 @@ open class PortalApiClient(
         profileId: String? = null,
         cursor: String? = null,
         pageSize: Int? = null,
+        lastSync: Long = 0L,
     ): Result<PortalSyncPullResponse> = authenticatedRequest { token ->
         httpClient.post("${supabaseConfig.url}/functions/v1/mobile-sync-pull") {
             bearerAuth(token)
@@ -576,9 +579,7 @@ open class PortalApiClient(
             setBody(
                 PortalSyncPullRequest(
                     deviceId = deviceId,
-                    // A full pull is required while legacy duration backfill is pending.
-                    // Keep known IDs present so portal tombstones can still converge.
-                    lastSync = 0,
+                    lastSync = lastSync,
                     profileId = profileId,
                     cursor = cursor,
                     pageSize = pageSize,

@@ -1913,6 +1913,7 @@ class SqlDelightSyncRepository(
         personalRecords: List<PersonalRecordSyncDto>,
         lastSync: Long,
         profileId: String,
+        serverWinsRoutineIds: Set<String>,
         sessionNotes: Map<String, SessionNotesEntry>,
         sessionUpdatedAtById: Map<String, Long>,
     ) {
@@ -2032,7 +2033,12 @@ class SqlDelightSyncRepository(
                     if (claimedTargetProfileId != null) {
                         queries.adoptRoutineProfile(profileId = targetProfileId, id = portalRoutine.id)
                     }
-                    mergePortalRoutine(portalRoutine, lastSync, targetProfileId)
+                    mergePortalRoutine(
+                        portalRoutine = portalRoutine,
+                        lastSync = lastSync,
+                        profileId = targetProfileId,
+                        serverWins = portalRoutine.id in serverWinsRoutineIds,
+                    )
                 }
 
                 // 3. Cycles — SERVER WINS with single-active enforcement
@@ -2808,7 +2814,12 @@ class SqlDelightSyncRepository(
      * - SAFETY GUARD: an empty portal exercise list is treated as an incomplete payload and
      *   leaves the local exercises alone.
      */
-    private fun mergePortalRoutine(portalRoutine: PullRoutineDto, lastSync: Long, profileId: String) {
+    private fun mergePortalRoutine(
+        portalRoutine: PullRoutineDto,
+        lastSync: Long,
+        profileId: String,
+        serverWins: Boolean = false,
+    ) {
         val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
         if (existing != null) {
             if (existing.deletedAt != null) {
@@ -2816,7 +2827,7 @@ class SqlDelightSyncRepository(
                 return
             }
             val localUpdatedAt = existing.updatedAt ?: 0L
-            if (localUpdatedAt > lastSync) {
+            if (!serverWins && localUpdatedAt > lastSync) {
                 hydrateUnknownRoutineDurations(portalRoutine)
                 Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer ($localUpdatedAt > $lastSync)" }
                 return
@@ -2850,7 +2861,13 @@ class SqlDelightSyncRepository(
         }
 
         if (portalRoutine.exercises.isNotEmpty()) {
-            mergePortalExercisesForRoutine(portalRoutine.id, portalRoutine.exercises, localExercises, localSupersets)
+            mergePortalExercisesForRoutine(
+                portalRoutine.id,
+                portalRoutine.exercises,
+                localExercises,
+                localSupersets,
+                serverWins,
+            )
         } else {
             Logger.w("SyncRepository") {
                 "Skipping exercise merge for routine '${portalRoutine.name}' (${portalRoutine.id}): " +
@@ -2904,6 +2921,7 @@ class SqlDelightSyncRepository(
         portalExercises: List<PullRoutineExerciseDto>,
         localExercises: List<RoutineExerciseRow>,
         localSupersets: List<SupersetRow>,
+        serverWins: Boolean,
     ) {
         val localExercisesById = localExercises.associateBy { it.id }
         val localSupersetsById = localSupersets.associateBy { it.id }
@@ -3019,7 +3037,7 @@ class SqlDelightSyncRepository(
             } == true
             val acceptIncomingDuration = exercise.durationSecondsPresent &&
                 incomingDurationIsSupported &&
-                !(incomingDuration == null && localHasSupportedUnknownDuration)
+                !(incomingDuration == null && localHasSupportedUnknownDuration && !serverWins)
             val resolvedDuration = when {
                 acceptIncomingDuration -> incomingDuration?.toLong()
                 else -> local?.duration

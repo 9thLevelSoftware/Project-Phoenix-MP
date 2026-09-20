@@ -1518,6 +1518,57 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `LWW rejected duration backfill accepts the authoritative portal null`() = runTest {
+        val routineId = "routine-duration-server-wins"
+        val exerciseId = "duration-server-wins"
+        insertLocalRoutine(routineId)
+        database.phoenixDatabaseQueries.updateRoutineById(
+            name = "Local edit",
+            description = "",
+            updatedAt = 300L,
+            id = routineId,
+        )
+        insertLocalRoutineExercise(
+            id = exerciseId,
+            routineId = routineId,
+            duration = 45,
+            durationSyncKnown = 0,
+        )
+
+        repository.mergeAllPullData(
+            sessions = emptyList(),
+            routines = listOf(
+                PullRoutineDto(
+                    id = routineId,
+                    name = "Portal edit",
+                    updatedAt = 200L,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = exerciseId,
+                            name = "Deadlift",
+                            durationSeconds = null,
+                            durationSecondsPresent = true,
+                        ),
+                    ),
+                ),
+            ),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 100L,
+            profileId = "active-profile",
+            serverWinsRoutineIds = setOf(routineId),
+        )
+
+        val routine = database.phoenixDatabaseQueries.selectRoutineById(routineId).executeAsOne()
+        val exercise = database.phoenixDatabaseQueries.selectExercisesByRoutine(routineId).executeAsOne()
+        assertEquals("Portal edit", routine.name)
+        assertNull(exercise.duration, "a rejected push must converge to the portal's explicit null")
+        assertEquals(1L, exercise.durationSyncKnown)
+    }
+
+    @Test
     fun `out of range portal duration preserves a supported local duration`() = runTest {
         insertLocalRoutine("routine-duration-preserve")
         insertLocalRoutineExercise(
