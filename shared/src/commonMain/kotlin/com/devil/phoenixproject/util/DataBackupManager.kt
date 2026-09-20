@@ -1888,7 +1888,7 @@ abstract class BaseDataBackupManager(
                                                     profileId = requestedProfile,
                                                     updatedAt = cycle.updatedAt ?: cycle.createdAt,
                                                 )
-                                                if (mapTrainingCycleToBackup(existingCycle) != expected) {
+                                                if (!trainingCycleBackupMatches(existingCycle, expected)) {
                                                     entitiesWithErrors++
                                                     recordParent("cycle", cycle.id, BackupParentStatus.UNAVAILABLE)
                                                     Logger.w { "Backup restore conflict trainingCycle id=${cycle.id}; local row preserved" }
@@ -3613,6 +3613,23 @@ abstract class BaseDataBackupManager(
     private fun restoreCycleServerVersion(cycle: TrainingCycleBackup) {
         PortalSyncAdapter.validCycleServerVersion(cycle.serverUpdatedAt)?.let {
             queries.updateTrainingCycleServerUpdatedAt(server_updated_at = it, id = cycle.id)
+        }
+    }
+
+    /**
+     * Legacy backups predate serverUpdatedAt. A missing value is therefore unspecified,
+     * not evidence that an otherwise identical existing cycle conflicts. Explicit values
+     * still participate in the equality check so a real base mismatch blocks child import.
+     */
+    private fun trainingCycleBackupMatches(
+        existing: TrainingCycle,
+        expected: TrainingCycleBackup,
+    ): Boolean {
+        val actual = mapTrainingCycleToBackup(existing)
+        return if (expected.serverUpdatedAt == null) {
+            actual.copy(serverUpdatedAt = null) == expected
+        } else {
+            actual == expected
         }
     }
 

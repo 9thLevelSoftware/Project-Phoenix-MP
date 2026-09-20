@@ -854,10 +854,7 @@ class MigrationManagerTest {
         assertEquals(50.0, volumePr.weight)
         assertEquals(500.0, volumePr.volume)
         assertEquals(2, repairedRecords.size)
-        assertEquals(
-            OneRepMaxCalculator.estimate(60f, 10).toDouble(),
-            baseline?.one_rep_max_per_cable_kg,
-        )
+        assertNull(baseline, "repairing PR history must not overwrite the explicit profile baseline")
         assertNull(exercise?.one_rep_max_kg)
     }
 

@@ -309,6 +309,8 @@ class ProfileQaSeederTest {
                 )
             }
             coEvery { workouts.deleteSession(any()) } coAnswers { sessions.remove(firstArg()) }
+            // Fixture cleanup discards rows instead of tombstoning them.
+            coEvery { workouts.discardSessionInternal(any()) } coAnswers { sessions.remove(firstArg()) }
             coEvery { workouts.saveSession(any()) } coAnswers {
                 val session = firstArg<WorkoutSession>()
                 sessions[session.id] = session

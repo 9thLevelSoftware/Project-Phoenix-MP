@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
 import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
-import com.devil.phoenixproject.data.repository.SqlDelightProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
@@ -147,7 +146,7 @@ class ExerciseConfigViewModelTest {
         val database = createTestDatabase()
         database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         val queries = database.phoenixDatabaseQueries
-        val repository = SqlDelightPersonalRecordRepository(database, SqlDelightProfileExerciseBaselineRepository(database))
+        val repository = SqlDelightPersonalRecordRepository(database)
         val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = benchRoutineExercise(
             id = "rex-pr-sync",
@@ -191,7 +190,7 @@ class ExerciseConfigViewModelTest {
         val database = createTestDatabase()
         database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         val queries = database.phoenixDatabaseQueries
-        val repository = SqlDelightPersonalRecordRepository(database, SqlDelightProfileExerciseBaselineRepository(database))
+        val repository = SqlDelightPersonalRecordRepository(database)
         val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = benchRoutineExercise(
             id = "rex-pr-rounding",
@@ -371,7 +370,7 @@ class ExerciseConfigViewModelTest {
         val database = createTestDatabase()
         database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         val queries = database.phoenixDatabaseQueries
-        val repository = SqlDelightPersonalRecordRepository(database, SqlDelightProfileExerciseBaselineRepository(database))
+        val repository = SqlDelightPersonalRecordRepository(database)
         val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = RoutineExercise(
             id = "rex-3",
@@ -453,7 +452,7 @@ class ExerciseConfigViewModelTest {
         val database = createTestDatabase()
         database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         val queries = database.phoenixDatabaseQueries
-        val repository = SqlDelightPersonalRecordRepository(database, SqlDelightProfileExerciseBaselineRepository(database))
+        val repository = SqlDelightPersonalRecordRepository(database)
         val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = benchRoutineExercise(
             id = "rex-phase",
@@ -513,7 +512,7 @@ class ExerciseConfigViewModelTest {
         val database = createTestDatabase()
         database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         val queries = database.phoenixDatabaseQueries
-        val repository = SqlDelightPersonalRecordRepository(database, SqlDelightProfileExerciseBaselineRepository(database))
+        val repository = SqlDelightPersonalRecordRepository(database)
         val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = benchRoutineExercise(
             id = "rex-legacy-volume",

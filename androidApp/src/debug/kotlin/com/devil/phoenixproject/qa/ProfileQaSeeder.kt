@@ -158,7 +158,8 @@ class ProfileQaSeeder(
     private suspend fun cleanupFixtureRows(profileId: String, exerciseId: String, profileKey: String) {
         sessionIds(profileKey).forEach { sessionId ->
             repMetricRepository.deleteRepMetrics(sessionId)
-            workoutRepository.deleteSession(sessionId)
+            // Fixture cleanup, not a user deletion: no tombstone.
+            workoutRepository.discardSessionInternal(sessionId)
         }
         personalRecordRepository.getAllPRsForExercise(exerciseId, profileId)
             .filter { it.workoutMode == WORKOUT_MODE }

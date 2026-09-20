@@ -180,6 +180,8 @@ fun RestTimerCard(
     behaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
     onRackSelectionChange: (List<String>) -> Unit = {},
     onRackBehaviorOverrideChange: (Map<String, RackItemBehavior>) -> Unit = {},
+    // KD-9: per-cable ceiling of the CONNECTED trainer, supplied by the caller.
+    maxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
     dropSetOffer: DropSetOfferUiState? = null,
     onAcceptDropSet: (RestActionIdentity, DropPercentage) -> Unit = { _, _ -> },
     onDeclineDropSet: (RestActionIdentity) -> Unit = {},

@@ -384,10 +384,7 @@ class MigrationManager(
 
         if (sessions.isEmpty()) return
 
-        val personalRecordRepository = SqlDelightPersonalRecordRepository(
-            database,
-            com.devil.phoenixproject.data.repository.SqlDelightProfileExerciseBaselineRepository(database),
-        )
+        val personalRecordRepository = SqlDelightPersonalRecordRepository(database)
         var repairedSessions = 0
         var repairedRecords = 0
 

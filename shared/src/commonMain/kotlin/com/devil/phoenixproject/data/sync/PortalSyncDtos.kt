@@ -2,18 +2,21 @@ package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.data.repository.WorkoutDeletionScope
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonTransformingSerializer
 import kotlinx.serialization.json.longOrNull
 
 /**
@@ -288,6 +291,13 @@ data class PortalRoutineExerciseSyncDto(
     val rackBehaviorOverrides: String? = null, // JSON map of rackItemId -> behavior name
     val dropSetEnabled: Boolean = false,
     val dropSetMinWeightKg: Float? = null,
+    /**
+     * Timed-exercise duration, with three wire states. Kotlin `null` omits the
+     * key, [kotlinx.serialization.json.JsonNull] clears the server value, and a
+     * positive integer sends seconds. Build this through
+     * [PortalSyncAdapter.durationSecondsWire].
+     */
+    val durationSeconds: JsonPrimitive? = null,
 )
 
 // ─── Training Cycle Sync DTOs ─────────────────────────────────────
@@ -667,11 +677,28 @@ data class PortalSyncPushResponse(
      */
     val rejections: SyncRejectionsDto = SyncRejectionsDto(),
     /**
+     * Routine/cycle ids the server refused to write because they were deleted
+     * on the server (portal delete or another device). The pushed row is not
+     * re-created; mobile deletes its local copy (delete wins). Absent on older
+     * servers, so it defaults to empty.
+     */
+    val skippedDeleted: SkippedDeletedDto = SkippedDeletedDto(),
+    /**
      * cycle id -> server `updated_at` (ISO) for cycles whose pushed structure was
      * applied. The device stores it as the cycle's next baseUpdatedAt. A cycle
      * missing here keeps its previous base. Absent on older portals.
      */
     val cycleVersions: Map<String, String> = emptyMap(),
+)
+
+/**
+ * `skippedDeleted` push response key: ids dropped from the push because the
+ * server holds a deletion tombstone for them. Both lists default to empty.
+ */
+@Serializable
+data class SkippedDeletedDto(
+    val routines: List<String> = emptyList(),
+    val cycles: List<String> = emptyList(),
 )
 
 /**
@@ -850,7 +877,10 @@ data class KnownEntityIds(
 @Serializable
 data class PortalSyncPullRequest(
     val deviceId: String,
-    /** @deprecated Use knownEntityIds for parity-based sync. Kept for backward compatibility. */
+    /**
+     * Server `syncTime` (epoch millis) of the last completed pull; 0 asks for everything.
+     * Combined with [knownEntityIds]: known entities unchanged since lastSync are skipped.
+     */
     val lastSync: Long = 0,
     val profileId: String? = null,
     val cursor: String? = null,
@@ -881,6 +911,8 @@ data class PortalSyncPullResponse(
     // Pagination metadata (Plan 03-05)
     val nextCursor: String? = null,
     val hasMore: Boolean = false,
+    /** True when the server hit its external-activities cap (500) and omitted the rest. */
+    val externalActivitiesHasMore: Boolean = false,
     // Entity data
     val sessions: List<PullWorkoutSessionDto> = emptyList(), // Merged via INSERT OR IGNORE (local wins)
     val routines: List<PullRoutineDto> = emptyList(),
@@ -896,6 +928,14 @@ data class PortalSyncPullResponse(
     val profilePreferenceSections: List<PortalProfilePreferenceSectionCanonicalDto>? = null,
     // External integration activities (paid users only)
     val externalActivities: List<ExternalActivitySyncDto> = emptyList(),
+    /**
+     * Routine/cycle ids deleted on the server (portal or another device).
+     * Sent on the first page only. May include ids this device never held,
+     * so mobile treats them as "delete if present" and hard-deletes locally
+     * without pushing a tombstone back. Absent on older servers → empty.
+     */
+    val deletedRoutineIds: List<String> = emptyList(),
+    val deletedCycleIds: List<String> = emptyList(),
 )
 
 /** Permanent account-level deletion pulled from the portal. */
@@ -927,7 +967,7 @@ data class PortalOwnershipEventDto(
 
 /**
  * Pulled workout session -- merged into local DB via INSERT OR IGNORE.
- * Local data wins on conflict (existing sessions are not overwritten).
+ * Existing local sessions are never REPLACEd by a pull (KD-3).
  * Multi-device scenario: sessions from device A appear on device B after pull.
  */
 @Serializable
@@ -951,13 +991,18 @@ data class PullWorkoutSessionDto(
      */
     val notes: String? = null,
     /**
-     * Server-canonical last-write timestamp (ISO 8601). Mobile uses this as
-     * the LWW gate when merging the pull row into the local WorkoutSession
-     * table. Optional for backward compat with Edge Function responses
-     * that pre-date Phase 3.3 — when null, mobile falls back to the
-     * legacy INSERT OR IGNORE path. Resolves audit item #1 mobile half.
+     * Server-canonical last-write timestamp (ISO 8601). Stamped onto newly
+     * inserted pulled rows, gates the exercise-tag update on pulled-origin
+     * rows, and drives the SessionNotes LWW. It never causes an existing
+     * local session row to be rebuilt.
      */
     val updatedAt: String? = null,
+    // Session-level config, taken from the first exercise row at push time
+    // (PortalSyncAdapter.buildPortalSession). Null when the pushed value was 0.
+    val eccentricLoad: Int? = null,
+    val echoLevel: Int? = null,
+    val warmupReps: Int? = null,
+    val workingReps: Int? = null,
     val exercises: List<PullExerciseDto> = emptyList(),
 )
 
@@ -1021,7 +1066,8 @@ data class PullRoutineDto(
     val timesCompleted: Int = 0,
     val isFavorite: Boolean = false,
     val updatedAt: Long? = null,
-    val exercises: List<PullRoutineExerciseDto> = emptyList(),
+    val exercises: List<@Serializable(with = PullRoutineExerciseWireSerializer::class) PullRoutineExerciseDto> =
+        emptyList(),
 )
 
 @Serializable
@@ -1060,7 +1106,20 @@ data class PullRoutineExerciseDto(
     val rackBehaviorOverrides: String? = null, // JSON map of rackItemId -> behavior name
     val dropSetEnabled: Boolean? = null,
     val dropSetMinWeightKg: Float? = null,
+    // Timed-exercise duration in seconds; null for rep-based exercises.
+    val durationSeconds: Int? = null,
+    // True when the server sent durationSeconds (number or null). Older servers
+    // omit it, in which case the existing local value must be preserved.
+    val durationSecondsPresent: Boolean = durationSeconds != null,
 )
+
+internal object PullRoutineExerciseWireSerializer :
+    JsonTransformingSerializer<PullRoutineExerciseDto>(PullRoutineExerciseDto.serializer()) {
+    override fun transformDeserialize(element: JsonElement): JsonElement {
+        if (element !is JsonObject) return element
+        return JsonObject(element + ("durationSecondsPresent" to JsonPrimitive("durationSeconds" in element)))
+    }
+}
 
 /**
  * Pulled training cycle with nested days.

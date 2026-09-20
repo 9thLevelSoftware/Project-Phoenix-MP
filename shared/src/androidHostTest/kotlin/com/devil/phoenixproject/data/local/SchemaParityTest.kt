@@ -1182,10 +1182,40 @@ class SchemaParityTest {
         )
     }
 
+    @Test
+    fun `migration 53 and resilient fallback add duration sync knowledge conservatively`() {
+        listOf("generated" to false, "fallback" to true).forEach { (scenario, fallback) ->
+            val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+            buildSchemaAtVersion(driver, 53)
+            driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
+            driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
+            driver.execute(
+                null,
+                "INSERT INTO RoutineExercise(id,routineId,exerciseName,exerciseMuscleGroup,orderIndex,weightPerCableKg) VALUES('re1','r1','Plank','Core',0,0.0)",
+                0,
+            )
+
+            if (fallback) {
+                val results = applyMigrationResilient(driver, 53)
+                assertEquals(1, results.size, scenario)
+                assertEquals(true, results.single().success, scenario)
+            } else {
+                PhoenixDatabase.Schema.migrate(driver, 53, 54)
+            }
+
+            assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "durationSyncKnown"), scenario)
+            assertEquals(
+                "0",
+                queryScalar(driver, "SELECT CAST(durationSyncKnown AS TEXT) FROM RoutineExercise WHERE id = 're1'"),
+                scenario,
+            )
+        }
+    }
+
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 53L
+        private const val EXPECTED_SCHEMA_VERSION = 54L
 
         /** Pre-existing gaps (v5 predates MigrationStatements parity). Do not add to this list. */
         private val GRANDFATHERED_UNMIRRORED_SQM_COLUMNS = setOf(

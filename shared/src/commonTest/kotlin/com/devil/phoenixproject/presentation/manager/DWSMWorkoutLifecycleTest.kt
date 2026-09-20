@@ -6407,7 +6407,7 @@ class DWSMWorkoutLifecycleTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.setActiveBodyWeightKg(80f)
-        val routine = createBodyweightRoutine(sets = 3, repsPerSet = 10, durationSeconds = 1)
+        val routine = createBodyweightRoutine(sets = 3, repsPerSet = 10, durationSeconds = 10)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
         harness.dwsm.loadRoutine(routine)
@@ -6419,7 +6419,7 @@ class DWSMWorkoutLifecycleTest {
         runCurrent()
         assertIs<WorkoutState.Active>(harness.dwsm.coordinator.workoutState.value)
 
-        advanceTimeBy(1_100)
+        advanceTimeBy(10_100)
         runCurrent()
 
         val entry = assertIs<WorkoutState.BodyweightRepEntry>(
@@ -6482,7 +6482,7 @@ class DWSMWorkoutLifecycleTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.setActiveBodyWeightKg(80f)
-        val routine = createBodyweightRoutine(sets = 3, repsPerSet = 10, durationSeconds = 1)
+        val routine = createBodyweightRoutine(sets = 3, repsPerSet = 10, durationSeconds = 10)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
         harness.dwsm.loadRoutine(routine)
@@ -6490,7 +6490,7 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.enterSetReady(0, 0)
         advanceUntilIdle()
         harness.dwsm.startWorkout(skipCountdown = true)
-        advanceTimeBy(1_100)
+        advanceTimeBy(10_100)
         runCurrent()
 
         val entry = assertIs<WorkoutState.BodyweightRepEntry>(harness.dwsm.coordinator.workoutState.value)
@@ -6524,7 +6524,7 @@ class DWSMWorkoutLifecycleTest {
     @Test
     fun `Issue 427 - saved SetReady variant is used when bodyweight completion has no explicit override`() = runTest {
         val harness = DWSMTestHarness(this)
-        val routine = createBodyweightRoutine(sets = 1, repsPerSet = 10, durationSeconds = 1)
+        val routine = createBodyweightRoutine(sets = 1, repsPerSet = 10, durationSeconds = 10)
         val exercise = routine.exercises.single()
         val decline24 = BodyweightVariantOption("Decline 24\"", 0.75f)
 
@@ -6556,7 +6556,7 @@ class DWSMWorkoutLifecycleTest {
         val harness = DWSMTestHarness(this)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.setActiveBodyWeightKg(80f)
-        val routine = createBodyweightRoutine(sets = 3, repsPerSet = 10, durationSeconds = 1)
+        val routine = createBodyweightRoutine(sets = 3, repsPerSet = 10, durationSeconds = 10)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
         harness.dwsm.loadRoutine(routine)
@@ -6564,7 +6564,7 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.enterSetReady(0, 0)
         advanceUntilIdle()
         harness.dwsm.startWorkout(skipCountdown = true)
-        advanceTimeBy(1_100)
+        advanceTimeBy(10_100)
         runCurrent()
 
         val firstEntry = assertIs<WorkoutState.BodyweightRepEntry>(harness.dwsm.coordinator.workoutState.value)
@@ -6576,7 +6576,7 @@ class DWSMWorkoutLifecycleTest {
         harness.dwsm.enterSetReady(0, 1)
         runCurrent()
         harness.dwsm.startWorkout(skipCountdown = true)
-        advanceTimeBy(1_100)
+        advanceTimeBy(10_100)
         runCurrent()
 
         val secondEntry = assertIs<WorkoutState.BodyweightRepEntry>(

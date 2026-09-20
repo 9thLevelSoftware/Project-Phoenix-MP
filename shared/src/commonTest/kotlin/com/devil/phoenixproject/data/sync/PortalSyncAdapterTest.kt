@@ -19,10 +19,17 @@ import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlin.math.abs
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
 
 class PortalSyncAdapterTest {
 
@@ -476,6 +483,71 @@ class PortalSyncAdapterTest {
         assertFloatEquals(25f, ex.weight)
         assertEquals(0, ex.orderIndex)
         assertEquals("OLD_SCHOOL", ex.mode)
+    }
+
+    // ========== durationSeconds (PR 13) ==========
+
+    private fun encodedExercise(exercise: RoutineExercise): JsonObject {
+        val dto = PortalSyncAdapter.toPortalRoutine(makeRoutine(exercises = listOf(exercise)), "user-1")
+        val raw = PortalWireJson.encodeToString(PortalRoutineSyncDto.serializer(), dto)
+        return PortalWireJson.parseToJsonElement(raw).jsonObject
+            .getValue("exercises").jsonArray.single().jsonObject
+    }
+
+    @Test
+    fun `toPortalRoutine sends durationSeconds for a timed exercise on the wire`() {
+        val wire = encodedExercise(makeRoutineExercise().copy(duration = 45))
+
+        assertEquals(JsonPrimitive(45), wire["durationSeconds"])
+    }
+
+    @Test
+    fun `toPortalRoutine sends explicit null durationSeconds when a null duration is known`() {
+        // PortalWireJson has explicitNulls = false; the key must still be sent.
+        val wire = encodedExercise(makeRoutineExercise().copy(duration = null, durationSyncKnown = true))
+
+        assertTrue(wire.containsKey("durationSeconds"))
+        assertEquals(JsonNull, wire["durationSeconds"])
+    }
+
+    @Test
+    fun `toPortalRoutine omits durationSeconds when a null duration is not known`() {
+        val wire = encodedExercise(makeRoutineExercise().copy(duration = null, durationSyncKnown = false))
+
+        assertFalse(wire.containsKey("durationSeconds"))
+    }
+
+    @Test
+    fun `toPortalRoutine clears known durations outside the supported range`() {
+        val negative = encodedExercise(makeRoutineExercise().copy(duration = -5, durationSyncKnown = true))
+        val zero = encodedExercise(makeRoutineExercise().copy(duration = 0, durationSyncKnown = true))
+        val tooShort = encodedExercise(makeRoutineExercise().copy(duration = 9, durationSyncKnown = true))
+        val tooLong = encodedExercise(makeRoutineExercise().copy(duration = 301, durationSyncKnown = true))
+
+        assertEquals(JsonNull, negative["durationSeconds"])
+        assertEquals(JsonNull, zero["durationSeconds"])
+        assertEquals(JsonNull, tooShort["durationSeconds"])
+        assertEquals(JsonNull, tooLong["durationSeconds"])
+    }
+
+    @Test
+    fun `durationSecondsWire only sends durations supported by the app`() {
+        val inputs = listOf(null, Int.MIN_VALUE, -1, 0, 9, 10, 45, 300, 301, Int.MAX_VALUE)
+        for (seconds in inputs) {
+            for (known in listOf(true, false)) {
+                val wire = PortalSyncAdapter.durationSecondsWire(seconds, known)
+                val supported = seconds?.takeIf { it in 10..300 }
+                when {
+                    supported != null -> {
+                        assertNotNull(wire)
+                        assertFalse(wire.isString, "seconds=$seconds known=$known")
+                        assertEquals(supported, wire.intOrNull)
+                    }
+                    known -> assertEquals(JsonNull, wire, "seconds=$seconds known=$known")
+                    else -> assertNull(wire, "seconds=$seconds known=$known")
+                }
+            }
+        }
     }
 
     @Test

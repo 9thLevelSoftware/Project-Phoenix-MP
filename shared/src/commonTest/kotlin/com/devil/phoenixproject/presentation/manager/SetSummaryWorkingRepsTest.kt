@@ -111,6 +111,29 @@ class SetSummaryWorkingRepsTest {
     }
 
     @Test
+    fun `echo burnout ratio applies only to working reps after warmup filtering`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val workingLoads = listOf(10f, 15f, 20f, 20f, 20f, 20f, 20f, 20f, 10f, 10f, 10f, 10f)
+        val metrics = warmupMetrics + workingLoads.mapIndexed { index, load ->
+            metric(timestamp = 2_000L + index * 100L, load = load, velocity = 100.0)
+        }
+
+        val summary = harness.activeSessionEngine.calculateSetSummaryMetrics(
+            metrics = metrics,
+            repCount = 6,
+            fallbackWeightKg = 20f,
+            configuredWeightKgPerCable = 20f,
+            isEchoMode = true,
+            warmupRepsCount = 3,
+            workingRepsCount = 6,
+            warmupCompleteTimeMs = 1_500L,
+        )
+
+        assertEquals(2, summary.burnoutReps)
+        harness.cleanup()
+    }
+
+    @Test
     fun `heaviest lift uses every sample when the warmup mark was never recorded`() = runTest {
         val harness = DWSMTestHarness(this)
 
@@ -299,7 +322,7 @@ class SetSummaryWorkingRepsTest {
         )
         assertEquals(
             1,
-            harness.coordinator.setRepMetrics.size,
+            harness.coordinator.setRepMetrics.value.size,
             "Rep 1 must still write its quality row",
         )
         harness.cleanup()
@@ -319,7 +342,7 @@ class SetSummaryWorkingRepsTest {
         )
         assertEquals(
             1,
-            harness.coordinator.setRepMetrics.size,
+            harness.coordinator.setRepMetrics.value.size,
             "The quality row is still written - only the velocity baseline is withheld",
         )
 

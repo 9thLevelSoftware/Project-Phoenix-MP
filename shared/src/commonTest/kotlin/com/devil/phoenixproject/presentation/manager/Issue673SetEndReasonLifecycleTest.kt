@@ -376,7 +376,7 @@ class Issue673SetEndReasonLifecycleTest {
     fun `timed cable completion persists timer expired`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
-            val routine = timedCableRoutine(durationSeconds = 1)
+            val routine = timedCableRoutine(durationSeconds = 10)
             routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
             harness.dwsm.loadRoutine(routine)
             advanceUntilIdle()
@@ -393,7 +393,7 @@ class Issue673SetEndReasonLifecycleTest {
             )
 
             runCurrent()
-            advanceTimeBy(1_100L)
+            advanceTimeBy(10_100L)
             advanceUntilIdle()
 
             assertEquals(SetEndReason.TIMER_EXPIRED, persistedReason(harness, lease))
@@ -406,7 +406,7 @@ class Issue673SetEndReasonLifecycleTest {
     fun `timed bodyweight confirmation persists its originating timer reason`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
-            val routine = bodyweightRoutine(durationSeconds = 1)
+            val routine = bodyweightRoutine(durationSeconds = 10)
             routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
             harness.dwsm.loadRoutine(routine)
             advanceUntilIdle()
@@ -415,7 +415,7 @@ class Issue673SetEndReasonLifecycleTest {
             runCurrent()
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
 
-            advanceTimeBy(1_100L)
+            advanceTimeBy(10_100L)
             runCurrent()
             val entry = assertIs<WorkoutState.BodyweightRepEntry>(harness.coordinator.workoutState.value)
             harness.dwsm.confirmBodyweightSetResult(reps = 8, variant = entry.selectedVariant)

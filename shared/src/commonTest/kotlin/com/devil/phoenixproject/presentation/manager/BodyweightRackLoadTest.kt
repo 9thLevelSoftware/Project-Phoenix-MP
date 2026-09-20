@@ -87,7 +87,7 @@ class BodyweightRackLoadTest {
         harness.fakeEquipmentRackRepo.upsert(v)
         advanceUntilIdle()
 
-        val routine = createBodyweightPushUpRoutine(sets = 3, repsPerSet = 10, durationSeconds = 1)
+        val routine = createBodyweightPushUpRoutine(sets = 3, repsPerSet = 10, durationSeconds = 10)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
         harness.dwsm.loadRoutine(routine)
@@ -100,7 +100,7 @@ class BodyweightRackLoadTest {
         harness.dwsm.updateActiveRackSelection(listOf(v.id))
 
         harness.dwsm.startWorkout(skipCountdown = true)
-        advanceTimeBy(1_100)
+        advanceTimeBy(10_100)
         runCurrent()
 
         val entry = assertIs<WorkoutState.BodyweightRepEntry>(harness.dwsm.coordinator.workoutState.value)
@@ -147,7 +147,7 @@ class BodyweightRackLoadTest {
         harness.fakeEquipmentRackRepo.upsert(v)
         advanceUntilIdle()
 
-        val routine = createBodyweightPushUpRoutine(sets = 3, repsPerSet = 10, durationSeconds = 1)
+        val routine = createBodyweightPushUpRoutine(sets = 3, repsPerSet = 10, durationSeconds = 10)
         routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
 
         harness.dwsm.loadRoutine(routine)
@@ -159,7 +159,7 @@ class BodyweightRackLoadTest {
         // (Push Up) so the body-weight-specific recompute path in
         // ActiveSessionEngine.updateActiveRackSelection applies.
         harness.dwsm.startWorkout(skipCountdown = true)
-        advanceTimeBy(1_100)
+        advanceTimeBy(10_100)
         runCurrent()
 
         // Now toggle the vest on the live-set screen — this is the actual repro path.
@@ -234,7 +234,7 @@ class BodyweightRackLoadTest {
                     orderIndex = 0,
                     setReps = listOf(10, 10, 10),
                     weightPerCableKg = 0f,
-                    duration = 1,
+                    duration = 10,
                     setRestSeconds = listOf(0, 0, 0),
                     defaultRackItemIds = listOf(v.id),
                 ),

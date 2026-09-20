@@ -69,7 +69,7 @@ class PortalIdentityCommitTest {
         val settings = OneShotBooleanWriteFailureSettings()
         val storage = PortalTokenStorage(settings).apply {
             saveGoTrueAuth(authResponse("owner-a", "token-a"))
-            setLastSyncTimestamp(42L)
+            recordCompletedPull(42L, "owner-a:default")
         }
         settings.failNextBooleanWrite = true
 
@@ -87,6 +87,7 @@ class PortalIdentityCommitTest {
         assertEquals("owner-a", storage.currentUser.value?.id)
         assertEquals("token-a", storage.getToken())
         assertEquals(42L, storage.getLastSyncTimestamp())
+        assertEquals("owner-a:default", storage.getDeltaPullKey())
     }
 
     @Test

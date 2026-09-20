@@ -100,13 +100,22 @@ class ApplyRoutineModifierUseCaseTest {
     fun `heavy deload scales timed exercise duration`() = runTest {
         val routine = routineWith(
             routineExercise(duration = 45, reps = listOf(null)),
+            routineExercise(duration = 10, reps = listOf(null)),
             routineExercise(duration = 0, reps = listOf(10)),
+            routineExercise(duration = 301, reps = listOf(10)),
         )
 
         val adjusted = useCase(routine, AppliedRoutineModifier(RoutineModifierType.HEAVY_DELOAD, 50))
 
         assertEquals(23, adjusted.exercises[0].duration)
-        assertEquals(0, adjusted.exercises[1].duration)
+        assertEquals(23, adjusted.exercises[0].executionTimedDurationSeconds)
+        assertEquals(5, adjusted.exercises[1].duration)
+        assertEquals(5, adjusted.exercises[1].executionTimedDurationSeconds)
+        assertEquals(null, adjusted.exercises[1].supportedTimedDurationSeconds)
+        assertEquals(0, adjusted.exercises[2].duration)
+        assertEquals(null, adjusted.exercises[2].executionTimedDurationSeconds)
+        assertEquals(301, adjusted.exercises[3].duration)
+        assertEquals(null, adjusted.exercises[3].executionTimedDurationSeconds)
     }
 
     @Test
