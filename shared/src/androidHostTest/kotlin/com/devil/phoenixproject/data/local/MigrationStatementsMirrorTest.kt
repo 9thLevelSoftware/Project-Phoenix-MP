@@ -15,7 +15,8 @@ import kotlin.test.fail
  *
  * This test pairs every `N.sqm` with its mirror entry, so a new migration cannot ship
  * without one. Ten legacy migrations do not mirror their file exactly; each carries its
- * own recorded reason in [MIRROR_EXEMPTIONS], and no migration after 31 may be exempt.
+ * own recorded reason in [MIRROR_EXEMPTIONS]. Migration 50 has one narrowly checked
+ * pre-open repair before its otherwise exact mirror.
  */
 class MigrationStatementsMirrorTest {
 
@@ -62,13 +63,25 @@ class MigrationStatementsMirrorTest {
     }
 
     @Test
-    fun `no migration after 31 is exempt from the exact mirror assertion`() {
+    fun `migration 50 only prefixes the required pre-open profile heal`() {
+        val fromFile = statementsOf(migrationFiles().getValue(50))
+        val fromMirror = mirrorStatements(50)
+        assertEquals(
+            listOf(MIGRATION_50_PROFILE_HEAL) + fromFile,
+            fromMirror,
+            "Migration 50 may differ from 50.sqm only by the profile_id repair required " +
+                "before CycleSyncState is seeded.",
+        )
+    }
+
+    @Test
+    fun `no migration after 31 except the checked migration 50 repair is exempt`() {
         val late = MIRROR_EXEMPTIONS.keys.filter { it > LAST_EXEMPT_MIGRATION }
-        assertTrue(
-            late.isEmpty(),
-            "Migrations $late were added to MIRROR_EXEMPTIONS. A migration written after " +
-                "$LAST_EXEMPT_MIGRATION must mirror its .sqm statement for statement; fix the mirror " +
-                "entry instead of exempting it.",
+        assertEquals(
+            listOf(50),
+            late,
+            "Only migration 50's separately asserted pre-open profile repair may be exempt " +
+                "after migration $LAST_EXEMPT_MIGRATION.",
         )
     }
 
@@ -126,15 +139,16 @@ class MigrationStatementsMirrorTest {
         private val WHITESPACE = Regex("\\s+")
         private val LINE_COMMENT = Regex("--[^\\n]*")
         private val STRING_LITERAL = Regex("'([^']*)'")
+        private const val MIGRATION_50_PROFILE_HEAL =
+            "ALTER TABLE TrainingCycle ADD COLUMN profile_id TEXT NOT NULL DEFAULT 'default'"
 
         /** Nothing newer than this may be exempt — enforced by a test above. */
         private const val LAST_EXEMPT_MIGRATION = 31
 
         /**
-         * Legacy entries that deliberately do NOT mirror their file, each with its own
-         * reason. Do not add to this map: a migration written after
-         * [LAST_EXEMPT_MIGRATION] must mirror its `.sqm` exactly, which is what makes
-         * this test a guard for every new schema change.
+         * Entries that deliberately do NOT mirror their file, each with its own reason.
+         * Migration 50 is the sole post-[LAST_EXEMPT_MIGRATION] entry and has a separate
+         * exact-order assertion above. Do not add another late exemption.
          */
         private val MIRROR_EXEMPTIONS: Map<Int, MirrorExemption> = mapOf(
             3 to MirrorExemption(
@@ -183,6 +197,12 @@ class MigrationStatementsMirrorTest {
             31 to MirrorExemption(
                 "the mirror deletes duplicate ExternalActivity rows before creating 31.sqm's " +
                     "UNIQUE index, for the same reason as 19.",
+                mirrorIsSuperset = true,
+            ),
+            50 to MirrorExemption(
+                "the mirror first adds TrainingCycle.profile_id because that legacy column " +
+                    "is normally healed after migrations, while migration 50 needs it to seed " +
+                    "CycleSyncState before the on-open heal can run.",
                 mirrorIsSuperset = true,
             ),
         )
