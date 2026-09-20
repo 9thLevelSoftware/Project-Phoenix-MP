@@ -36,9 +36,30 @@ class DropSetCompletionCaptureTest {
             CompletionCase("automatic-target", SetEndReason.TARGET_REPS_REACHED, CompletionOrigin.AUTO_TARGET, targetReps = 3, actualReps = 3),
             CompletionCase("automatic-stall", SetEndReason.STALL_FAILURE, actualReps = 4),
             CompletionCase("vbt", SetEndReason.VBT_AUTO_END, targetReps = 10, actualReps = 4),
-            CompletionCase("manual-stop", SetEndReason.USER_STOPPED, CompletionOrigin.MANUAL_STOP, targetReps = 7, actualReps = 2),
-            CompletionCase("timed-cable", SetEndReason.TIMER_EXPIRED, timed = true, targetReps = 9, actualReps = 3),
-            CompletionCase("semantic-amrap", SetEndReason.STALL_FAILURE, amrap = true, targetReps = 8, actualReps = 5),
+            CompletionCase(
+                "manual-stop",
+                SetEndReason.USER_STOPPED,
+                CompletionOrigin.MANUAL_STOP,
+                targetReps = 7,
+                actualReps = 2,
+                expectedExecutedProgressionKg = 3f,
+            ),
+            CompletionCase(
+                "timed-cable",
+                SetEndReason.TIMER_EXPIRED,
+                timed = true,
+                targetReps = 9,
+                actualReps = 3,
+                expectedExecutedProgressionKg = 3f,
+            ),
+            CompletionCase(
+                "semantic-amrap",
+                SetEndReason.STALL_FAILURE,
+                amrap = true,
+                targetReps = 8,
+                actualReps = 5,
+                expectedExecutedProgressionKg = 3f,
+            ),
             CompletionCase(
                 "echo",
                 SetEndReason.STALL_FAILURE,
@@ -47,8 +68,22 @@ class DropSetCompletionCaptureTest {
                 targetReps = 6,
                 actualReps = 2,
             ),
-            CompletionCase("just-lift", SetEndReason.STALL_FAILURE, justLift = true, targetReps = 5, actualReps = 2),
-            CompletionCase("warmup", SetEndReason.STALL_FAILURE, warmup = true, targetReps = 4, actualReps = 1),
+            CompletionCase(
+                "just-lift",
+                SetEndReason.STALL_FAILURE,
+                justLift = true,
+                targetReps = 5,
+                actualReps = 2,
+                expectedExecutedProgressionKg = 3f,
+            ),
+            CompletionCase(
+                "warmup",
+                SetEndReason.STALL_FAILURE,
+                warmup = true,
+                targetReps = 4,
+                actualReps = 1,
+                expectedExecutedProgressionKg = 3f,
+            ),
         )
 
         cases.forEachIndexed { index, case ->
@@ -422,6 +457,7 @@ class DropSetCompletionCaptureTest {
                 isJustLift = case.justLift,
                 isTimed = case.timed,
                 isAmrap = case.amrap,
+                expectedExecutedProgressionKg = case.expectedExecutedProgressionKg,
             )
             return CaptureResult(expected, assertNotNull(claimedAtFirstClaim, case.name))
         } finally {
@@ -448,6 +484,7 @@ class DropSetCompletionCaptureTest {
         isTimed: Boolean = false,
         isAmrap: Boolean = false,
         isCable: Boolean = true,
+        expectedExecutedProgressionKg: Float? = null,
     ): SetExecutionCompletion {
         val occurrence = routine.exercises.single()
         val logicalSetKey = LogicalSetKey(routineSessionId, occurrence.id, 0, plannedSetType)
@@ -491,7 +528,8 @@ class DropSetCompletionCaptureTest {
                 selectedExerciseId = occurrence.exercise.id,
             ),
             executedWeightPerCableKg = configuredStart.takeIf { isCable && !isBodyweight },
-            executedProgressionKg = progression.takeIf { isCable && !isBodyweight },
+            executedProgressionKg = (expectedExecutedProgressionKg ?: progression)
+                .takeIf { isCable && !isBodyweight },
         )
     }
 
@@ -509,6 +547,7 @@ class DropSetCompletionCaptureTest {
         val echo: Boolean = false,
         val justLift: Boolean = false,
         val warmup: Boolean = false,
+        val expectedExecutedProgressionKg: Float? = null,
     )
 
     private data class CaptureResult(val expected: SetExecutionCompletion, val claimed: SetExecutionCompletion)
