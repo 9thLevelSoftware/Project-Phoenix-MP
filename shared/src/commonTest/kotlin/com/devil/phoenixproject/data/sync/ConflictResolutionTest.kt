@@ -317,7 +317,7 @@ class ConflictResolutionTest {
     @Test
     fun `mergeAllPullData - LWW-rejected routine takes the server version even if edited after lastSync`() = runTest {
         val lastSync = now
-        fun localRoutine(id: String) = database.phoenixDatabaseQueries.upsertRoutine(
+        fun localRoutine(id: String) = database.phoenixDatabaseQueries.insertRoutineIgnore(
             id = id,
             name = "Local edit",
             description = "",

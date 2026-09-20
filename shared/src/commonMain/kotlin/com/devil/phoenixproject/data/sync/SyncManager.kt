@@ -408,9 +408,10 @@ class SyncManager(
      * The next completed pull applies the server version for these even though the
      * local row was edited after lastSync; otherwise the "local wins" routine merge
      * would keep the stale local copy and delta pulls would never re-send the server
-     * row. Cleared once a pull completes. Guarded by [syncMutex].
+     * row. Entries are account/profile scoped and cleared only when that scope's
+     * pull completes. Guarded by [syncMutex].
      */
-    private val pendingServerWinsRoutineIds = mutableSetOf<String>()
+    private val pendingServerWinsRoutineIdsByScope = mutableMapOf<String, MutableSet<String>>()
 
     private val syncMutex = Mutex()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
@@ -664,7 +665,16 @@ class SyncManager(
         // surfaced (audit F025).
         val pushResponse = pushResult.getOrThrow()
         val rejections = pushResponse.rejections
-        pendingServerWinsRoutineIds += rejections.routines.map { it.id }
+        val rejectedRoutineIds = rejections.routines.mapTo(mutableSetOf()) { it.id }
+        if (rejectedRoutineIds.isNotEmpty()) {
+            tokenStorage.currentUser.value?.id?.let { userId ->
+                val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+                val rejectionScopeKey = "$userId:$activeProfileId"
+                pendingServerWinsRoutineIdsByScope
+                    .getOrPut(rejectionScopeKey) { mutableSetOf() }
+                    .addAll(rejectedRoutineIds)
+            }
+        }
         val totalRejections = rejections.sessions.size + rejections.routines.size +
             rejections.cycles.size + rejections.externalActivities.size +
             rejections.rpgAttributes.size + rejections.gamificationStats.size
@@ -775,15 +785,19 @@ class SyncManager(
         val syncTime: Long,
         /** Delta-pull marker to store with [syncTime], or null to force a full pull next time. */
         val deltaPullKey: String?,
+        /** Account/profile scope whose pending LWW rejections this pull consumed. */
+        val serverWinsRoutineScopeKey: String?,
     )
 
     /**
      * Persists lastSync and the delta-pull marker together (lastSync first), and clears
-     * the LWW server-wins routine set that this pull has now applied.
+     * only the account/profile-scoped LWW server-wins routine set this pull applied.
      */
     private fun recordCompletedPull(completedPull: CompletedPull) {
         tokenStorage.recordCompletedPull(completedPull.syncTime, completedPull.deltaPullKey)
-        pendingServerWinsRoutineIds.clear()
+        completedPull.serverWinsRoutineScopeKey?.let { scopeKey ->
+            pendingServerWinsRoutineIdsByScope.remove(scopeKey)
+        }
     }
 
     private suspend fun <T> withProfileMutationBarrier(block: suspend () -> T): T =
@@ -1740,7 +1754,9 @@ class SyncManager(
         } else {
             lastSync
         }
-        val serverWinsRoutineIds = pendingServerWinsRoutineIds.toSet()
+        val serverWinsRoutineIds = deltaPullKey
+            ?.let { pendingServerWinsRoutineIdsByScope[it]?.toSet() }
+            .orEmpty()
         Logger.i("SyncManager") {
             "Pull mode: requestLastSync=$requestLastSync (stored=$lastSync, deltaMarkerMatches=$deltaMarkerMatches, " +
                 "mergeLastSync=$mergeLastSync, profile=$mergeProfileId, " +
@@ -2048,6 +2064,7 @@ class SyncManager(
             CompletedPull(
                 syncTime = pullSyncTime ?: lastSync,
                 deltaPullKey = completedDeltaPullKey,
+                serverWinsRoutineScopeKey = deltaPullKey,
             ),
         )
     }

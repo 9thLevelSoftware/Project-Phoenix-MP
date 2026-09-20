@@ -1985,6 +1985,48 @@ class SyncManagerTest {
     }
 
     @Test
+    fun lwwRejectedRoutineRemainsPendingWhenAnotherProfileCompletesAPull() = runTest {
+        setupAuthenticated()
+        val profileA = "profile-a"
+        val profileB = "profile-b"
+        val routineId = "33333333-3333-4333-a333-333333333333"
+        fakeUserProfileRepo.setActiveProfileForTest(id = profileA)
+        tokenStorage.recordCompletedPull(1_000L, "user-123:$profileA")
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                rejections = SyncRejectionsDto(routines = listOf(SyncRejectionDto(id = routineId))),
+            ),
+        )
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.failure(PortalApiException("profile A pull failed", null, 500)),
+            Result.success(PortalSyncPullResponse(syncTime = 2_000L)),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = 3_000L,
+                    routines = listOf(PullRoutineDto(id = routineId, name = "Portal")),
+                ),
+            ),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        fakeUserProfileRepo.setActiveProfileForTest(id = profileB)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:01:00Z"))
+        assertTrue(manager.sync().isSuccess)
+
+        fakeUserProfileRepo.setActiveProfileForTest(id = profileA)
+        assertTrue(manager.retryPull().isSuccess)
+
+        assertEquals(
+            listOf(emptySet(), setOf(routineId)),
+            fakeSyncRepo.mergeServerWinsRoutineIdsHistory,
+            "profile B completion must not clear profile A's pending server-wins repair",
+        )
+    }
+
+    @Test
     fun externalActivityMergeFailureDoesNotAdvancePullCheckpoint() = runTest {
         setupAuthenticated()
         tokenStorage.recordCompletedPull(1_000L, "user-123:default")

@@ -62,6 +62,7 @@ class PortalTokenStorage(private val settings: Settings) {
         val isPremium: Boolean,
         val subscriptionTier: String?,
         val lastSync: Long,
+        val deltaPullKey: String?,
     )
 
     companion object {
@@ -170,6 +171,7 @@ class PortalTokenStorage(private val settings: Settings) {
             isPremium = settings[KEY_IS_PREMIUM, false],
             subscriptionTier = settings.getStringOrNull(KEY_SUBSCRIPTION_TIER),
             lastSync = settings[KEY_LAST_SYNC, 0L],
+            deltaPullKey = settings.getStringOrNull(KEY_DELTA_PULL_KEY),
         )
     }
 
@@ -187,6 +189,7 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_IS_PREMIUM] = snapshot.isPremium
         restoreString(KEY_SUBSCRIPTION_TIER, snapshot.subscriptionTier)
         settings.putLong(KEY_LAST_SYNC, snapshot.lastSync)
+        restoreString(KEY_DELTA_PULL_KEY, snapshot.deltaPullKey)
         _lastSyncTimestamp.value = snapshot.lastSync
         _isAuthenticated.value = snapshot.accessToken != null
         _currentUser.value = loadUser()
