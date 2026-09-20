@@ -41,8 +41,8 @@ CREATE TABLE IF NOT EXISTS PulledWorkoutSession (
 -- populates serverId. PR 10's watermark work owns any re-push path.
 --
 -- backfillPulledWorkoutSessions in PhoenixDatabase.sq repeats this statement as
--- an idempotent post-open repair, for databases where this migration could not
--- finish it and for rows written by a backup restore.
+-- an idempotent post-open repair (MigrationManager), for databases where this
+-- migration could not finish it.
 INSERT OR IGNORE INTO PulledWorkoutSession(id)
 SELECT id FROM WorkoutSession
 WHERE updatedAt IS NOT NULL

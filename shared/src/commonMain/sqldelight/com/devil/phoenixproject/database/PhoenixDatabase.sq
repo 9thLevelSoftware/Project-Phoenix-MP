@@ -3736,10 +3736,11 @@ WHERE NOT EXISTS (
 GROUP BY portal_id
 ORDER BY MAX(deleted_at) DESC;
 
--- Post-open repair for the migration 48 backfill: same statement, run once
--- behind a marker in MigrationManager and again after a backup restore, so a
--- database whose migration could not complete the backfill (or one restored
--- from a backup that predates the table) still gets its origin markers.
+-- Post-open repair for the migration 48 backfill: the same statement, run once
+-- behind a one-shot marker in MigrationManager, so a database whose migration
+-- could not complete the backfill (a missing child table is not a recoverable
+-- error for the resilient fallback) still gets its origin markers instead of
+-- re-pushing every pulled session.
 backfillPulledWorkoutSessions:
 INSERT OR IGNORE INTO PulledWorkoutSession(id)
 SELECT id FROM WorkoutSession
