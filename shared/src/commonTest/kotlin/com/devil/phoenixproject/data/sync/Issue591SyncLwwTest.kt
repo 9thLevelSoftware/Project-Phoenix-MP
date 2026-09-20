@@ -124,7 +124,7 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww preserves local true peaks but applies incoming average metrics`() = runTest {
+    fun `mergeSessionsLww preserves all locally captured force metrics`() = runTest {
         setUp()
 
         // GIVEN: A locally recorded session with true peak values and
@@ -149,11 +149,10 @@ class Issue591SyncLwwTest {
             updatedAt = now - 60_000L,
         )
 
-        // WHEN: A newer portal pull arrives. PortalPullAdapter can only
-        // reconstruct peakForceConcentricA/B from leftForceAvg/rightForceAvg,
-        // so those incoming peak fields are proxies and must not overwrite
-        // true local peaks. Average-force fields are real pull-side values and
-        // still follow normal incoming-wins LWW semantics.
+        // WHEN: A newer portal pull arrives. PortalPullAdapter reconstructs
+        // force summaries from a lossy rep projection. A local-origin row keeps
+        // every captured force fact; portal edits that have their own durable
+        // representation (such as notes) merge through that representation.
         val incoming = WorkoutSession(
             id = sessionId,
             timestamp = now,
@@ -174,16 +173,15 @@ class Issue591SyncLwwTest {
             updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
         )
 
-        // THEN: True local peaks are preserved, while incoming non-peak
-        // metrics still apply.
+        // THEN: all locally captured force metrics are preserved.
         val after = database.phoenixDatabaseQueries
             .selectSessionById(sessionId)
             .executeAsOneOrNull()
         assertNotNull(after)
         assertEquals(30f, after.peakForceConcentricA?.toFloat())
         assertEquals(32f, after.peakForceConcentricB?.toFloat())
-        assertEquals(31f, after.avgForceConcentricA?.toFloat())
-        assertEquals(33f, after.avgForceConcentricB?.toFloat())
+        assertEquals(20f, after.avgForceConcentricA?.toFloat())
+        assertEquals(21f, after.avgForceConcentricB?.toFloat())
     }
 
     @Test
@@ -351,6 +349,80 @@ class Issue591SyncLwwTest {
         val after = database.phoenixDatabaseQueries.selectSessionById(sessionId).executeAsOneOrNull()
         assertNotNull(after)
         assertEquals(2L, after.cableCount, "pulled null means unknown and must not overwrite a local 2")
+    }
+
+    @Test
+    fun `mergeSessionsLww updates portal origin without deleting metric children`() = runTest {
+        setUp()
+        val first = WorkoutSession(
+            id = "portal-lww-child",
+            timestamp = now,
+            duration = 10_000L,
+            totalReps = 5,
+            workingReps = 5,
+            exerciseName = "Press",
+            profileId = testProfileId,
+        )
+        repository.mergeSessionsLww(listOf(first), mapOf(first.id to now))
+        database.phoenixDatabaseQueries.insertMetric(
+            sessionId = first.id,
+            timestamp = now,
+            position = 1.0,
+            positionB = null,
+            velocity = null,
+            velocityB = null,
+            load = null,
+            loadB = null,
+            power = null,
+            status = 0L,
+        )
+
+        repository.mergeSessionsLww(
+            listOf(first.copy(duration = 20_000L)),
+            mapOf(first.id to now + 1_000L),
+        )
+
+        val after = database.phoenixDatabaseQueries.selectSessionById(first.id).executeAsOne()
+        assertEquals(20_000L, after.duration)
+        assertEquals(1, database.phoenixDatabaseQueries.selectMetricsBySession(first.id).executeAsList().size)
+    }
+
+    @Test
+    fun `mergeSessionsLww preserves local origin facts and tombstone`() = runTest {
+        setUp()
+        val local = WorkoutSession(
+            id = "local-lww-capture",
+            timestamp = now,
+            weightPerCableKg = 45f,
+            duration = 90_000L,
+            totalReps = 8,
+            workingReps = 8,
+            exerciseName = "Row",
+            peakForceConcentricA = 51f,
+            profileId = testProfileId,
+        )
+        insertLocalSession(local, updatedAt = now)
+        database.phoenixDatabaseQueries.softDeleteSession(now + 1_000L, now + 1_000L, local.id)
+
+        repository.mergeSessionsLww(
+            listOf(
+                local.copy(
+                    weightPerCableKg = 1f,
+                    duration = 1L,
+                    peakForceConcentricA = null,
+                    profileId = "other-profile",
+                ),
+            ),
+            mapOf(local.id to now + 2_000L),
+        )
+
+        val after = database.phoenixDatabaseQueries.selectSessionById(local.id).executeAsOne()
+        assertEquals(45.0, after.weightPerCableKg)
+        assertEquals(90_000L, after.duration)
+        assertEquals(51.0, after.peakForceConcentricA)
+        assertEquals(testProfileId, after.profile_id)
+        assertEquals(now + 1_000L, after.deletedAt)
+        assertEquals(now + 1_000L, after.updatedAt)
     }
 
     private fun insertLocalSession(session: WorkoutSession, updatedAt: Long) {

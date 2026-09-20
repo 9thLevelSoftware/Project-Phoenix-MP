@@ -1,0 +1,14 @@
+-- Migration 51: retained account ownership claims for transferred stable entities.
+CREATE TABLE LocalOwnershipClaim (
+    owner_user_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL CHECK(entity_type IN ('WORKOUT', 'ROUTINE', 'CYCLE', 'PERSONAL_RECORD')),
+    entity_id TEXT NOT NULL,
+    mutation_id TEXT NOT NULL,
+    source_profile_id TEXT,
+    target_profile_id TEXT NOT NULL,
+    transferred_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_user_id, entity_type, entity_id)
+);
+
+CREATE INDEX idx_local_ownership_claim_mutation
+ON LocalOwnershipClaim(owner_user_id, mutation_id);

@@ -16,6 +16,7 @@ import com.devil.phoenixproject.domain.model.UserProfilePreferences
 import com.devil.phoenixproject.domain.model.VbtPreferences
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
+import com.devil.phoenixproject.testutil.createTestSchema
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
 import java.util.concurrent.CountDownLatch
@@ -46,6 +47,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import org.junit.Before
 import org.junit.Test
 
@@ -131,6 +133,9 @@ class SqlDelightUserProfileRepositoryTest {
         assertTrue("RoutineGroup" in directProfileTables)
         assertTrue("VelocityOneRepMaxEstimate" in directProfileTables)
         assertTrue("PendingProfileLocalCleanup" in directProfileTables)
+        assertTrue("ProfileExerciseBaseline" in directProfileTables)
+        assertTrue("CycleSyncState" in directProfileTables)
+        assertTrue("WorkoutDeletion" in directProfileTables)
     }
 
     @Test
@@ -801,6 +806,142 @@ class SqlDelightUserProfileRepositoryTest {
     }
 
     @Test
+    fun callerHeldBarrierLinkDoesNotReenterBarrierAndRejectsAccountRebinding() = runTest {
+        val barrier = ProfileMutationBarrier()
+        repository = SqlDelightUserProfileRepository(
+            database = database,
+            profilePreferencesRepository = preferenceStore,
+            profileLocalSafetyStore = safetyStore,
+            gamificationRepository = SqlDelightGamificationRepository(database),
+            profileMutationBarrier = barrier,
+        )
+        ready()
+        val readyBeforeLink = assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value)
+        preferenceStore.failNextGet = true
+        safetyStore.failNextRead = true
+
+        lateinit var receipt: ProfileAccountLinkReceipt
+        withTimeout(1_000) {
+            barrier.withExclusive {
+                receipt = repository.linkToSupabaseUnderProfileMutationBarrier("default", "owner-a")
+            }
+        }
+        assertEquals("owner-a", repository.activeProfile.value?.supabaseUserId)
+        val readyAfterLink = assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value)
+        assertEquals("default", receipt.profileId)
+        assertEquals("owner-a", receipt.ownerUserId)
+        assertNull(receipt.previousOwnerUserId)
+        assertEquals(receipt.linkedAt, readyAfterLink.profile.lastAuthAt)
+        assertEquals("owner-a", readyAfterLink.profile.supabaseUserId)
+        assertSame(readyBeforeLink.preferences, readyAfterLink.preferences)
+        assertSame(readyBeforeLink.localSafety, readyAfterLink.localSafety)
+        assertTrue(preferenceStore.failNextGet)
+        assertTrue(safetyStore.failNextRead)
+
+        repository.updateSubscriptionStatus("default", SubscriptionStatus.ACTIVE, null)
+        val readyAfterSubscription = assertIs<ActiveProfileContext.Ready>(repository.activeProfileContext.value)
+        assertEquals(SubscriptionStatus.ACTIVE, readyAfterSubscription.profile.subscriptionStatus)
+        assertSame(readyBeforeLink.preferences, readyAfterSubscription.preferences)
+        assertSame(readyBeforeLink.localSafety, readyAfterSubscription.localSafety)
+        assertTrue(preferenceStore.failNextGet)
+        assertTrue(safetyStore.failNextRead)
+
+        assertFailsWith<ProfileAccountBindingException> {
+            withTimeout(1_000) {
+                barrier.withExclusive {
+                    repository.linkToSupabaseUnderProfileMutationBarrier("default", "owner-b")
+                }
+            }
+        }
+        assertEquals("owner-a", repository.activeProfile.value?.supabaseUserId)
+
+        withTimeout(1_000) {
+            barrier.withExclusive {
+                repository.rollbackSupabaseLinkUnderProfileMutationBarrier(receipt)
+            }
+        }
+        assertNull(repository.activeProfile.value?.supabaseUserId)
+        assertTrue(preferenceStore.failNextGet)
+        assertTrue(safetyStore.failNextRead)
+    }
+
+    @Test
+    fun accountOwnedDeletionBindsTargetAndQueuesExactOwnershipTransferBeforeDeletingSource() = runTest {
+        ready()
+        val source = repository.createProfile("Cloud source", 2)
+        repository.linkToSupabase(source.id, "owner-a")
+        insertWorkoutSession("local-component", 5, 20.0, source.id)
+        executeSql(
+            "UPDATE WorkoutSession SET routineSessionId = 'portal-parent' WHERE id = 'local-component'",
+        )
+
+        assertTrue(repository.deleteProfile(source.id))
+
+        assertEquals(
+            "owner-a",
+            database.phoenixDatabaseQueries.getProfileById("default")
+                .executeAsOne().supabase_user_id,
+        )
+        val transfer = database.phoenixDatabaseQueries.selectAllOwnershipTransfers()
+            .executeAsList()
+            .single()
+        assertEquals("owner-a", transfer.owner_user_id)
+        assertEquals(source.id, transfer.source_profile_id)
+        assertEquals("default", transfer.target_profile_id)
+        assertEquals(listOf("portal-parent"), decodeOwnershipIds(transfer.workout_session_ids_json))
+        assertNull(database.phoenixDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
+    }
+
+    @Test
+    fun accountOwnedDeletionRejectsTargetBelongingToAnotherAccount() = runTest {
+        ready()
+        val source = repository.createProfile("Cloud source", 2)
+        repository.linkToSupabase(source.id, "owner-a")
+        repository.linkToSupabase("default", "owner-b")
+        insertWorkoutSession("source-session", 5, 20.0, source.id)
+
+        assertFailsWith<ProfileOwnershipMismatchException> {
+            repository.deleteProfile(source.id)
+        }
+
+        assertNotNull(database.phoenixDatabaseQueries.getProfileById(source.id).executeAsOneOrNull())
+        assertEquals(
+            source.id,
+            database.phoenixDatabaseQueries.selectSessionById("source-session")
+                .executeAsOne().profile_id,
+        )
+        assertTrue(database.phoenixDatabaseQueries.selectAllOwnershipTransfers().executeAsList().isEmpty())
+    }
+
+    @Test
+    fun accountOwnedDeletionTransfersSoftDeletedCycleAndPreservesPendingDeleteClock() = runTest {
+        ready()
+        val source = repository.createProfile("Cloud source", 2)
+        repository.linkToSupabase(source.id, "owner-a")
+        executeSql(
+            "INSERT INTO TrainingCycle(id,name,created_at,profile_id,deletedAt,updatedAt) VALUES ('deleted-cycle','Cycle',1,?,20,20)",
+            source.id,
+        )
+        executeSql(
+            "INSERT INTO CycleSyncState(cycle_id,profile_id,account_id,dirty_generation,acknowledged_generation,pending_delete_updated_at,pending_delete_generation) VALUES ('deleted-cycle',?,'owner-a',3,2,20,3)",
+            source.id,
+        )
+
+        assertTrue(repository.deleteProfile(source.id))
+
+        val transfer = database.phoenixDatabaseQueries.selectAllOwnershipTransfers()
+            .executeAsList()
+            .single()
+        assertEquals(listOf("deleted-cycle"), decodeOwnershipIds(transfer.cycle_ids_json))
+        val syncState = database.phoenixDatabaseQueries.selectCycleSyncState("deleted-cycle")
+            .executeAsOne()
+        assertEquals("default", syncState.profile_id)
+        assertEquals("owner-a", syncState.account_id)
+        assertEquals(20L, syncState.pending_delete_updated_at)
+        assertEquals(3L, syncState.pending_delete_generation)
+    }
+
+    @Test
     fun beforeCommitFailureSeesJournalAndRollsBackSqlAndExactContext() = runTest {
         var sawJournalInsideTransaction = false
         repository = createRepository(
@@ -908,9 +1049,13 @@ class SqlDelightUserProfileRepositoryTest {
         val source = repository.createProfile("Source", 1)
         val sourceId = source.id
         insertWorkoutSession("owned-session", 5, 20.0, sourceId)
+        executeSql("INSERT INTO Exercise(id, name, muscleGroup, muscleGroups, equipment, defaultCableConfig) VALUES ('bench', 'Bench', 'Chest', 'Chest', 'BAR', 'DOUBLE')")
         executeSql("INSERT INTO RoutineGroup(id, name, createdAt, profile_id) VALUES ('owned-group', 'G', 1, ?)", sourceId)
         executeSql("INSERT INTO Routine(id, name, createdAt, profile_id, groupId) VALUES ('owned-routine', 'R', 1, ?, 'owned-group')", sourceId)
         executeSql("INSERT INTO TrainingCycle(id, name, created_at, profile_id) VALUES ('owned-cycle', 'C', 1, ?)", sourceId)
+        executeSql("INSERT INTO CycleSyncState(cycle_id, profile_id, dirty_generation, acknowledged_generation) VALUES ('owned-cycle', ?, 2, 1)", sourceId)
+        executeSql("INSERT INTO ProfileExerciseBaseline(profile_id, exercise_id, one_rep_max_per_cable_kg, updated_at, revision) VALUES (?, 'bench', 50, 1, 1)", sourceId)
+        executeSql("INSERT INTO WorkoutDeletion(mutation_id, owner_user_id, profile_id, scope, portal_session_id, component_session_id, deleted_at, acknowledged_at, source) VALUES ('retained-delete', NULL, ?, 'WORKOUT', 'owned-session', NULL, 1, NULL, 'LOCAL')", sourceId)
         executeSql("INSERT INTO AssessmentResult(exerciseId, estimatedOneRepMaxKg, loadVelocityData, createdAt, profile_id) VALUES ('bench', 100, '{}', 1, ?)", sourceId)
         executeSql("INSERT INTO VelocityOneRepMaxEstimate(exerciseId, estimatedPerCableKg, mvtUsedMs, r2, distinctLoads, computedAt, profile_id) VALUES ('bench', 50, 200, .9, 3, 1, ?)", sourceId)
         executeSql("INSERT INTO PersonalRecord(id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, uuid) VALUES (700, 'bench', 'Bench', 50, 5, 60, 1, 'OldSchool', 'MAX_WEIGHT', 250, 'COMBINED', ?, 'owned-pr')", sourceId)
@@ -927,6 +1072,8 @@ class SqlDelightUserProfileRepositoryTest {
 
         listOf(
             "WorkoutSession",
+            "CycleSyncState",
+            "ProfileExerciseBaseline",
             "RoutineGroup",
             "Routine",
             "TrainingCycle",
@@ -945,6 +1092,11 @@ class SqlDelightUserProfileRepositoryTest {
         assertEquals(0, countRows("IntegrationSyncCursor", "profileId", sourceId))
         assertEquals("target-state", textValue("SELECT errorMessage FROM IntegrationStatus WHERE profileId = 'default'"))
         assertEquals("target-cursor", textValue("SELECT cursorValue FROM IntegrationSyncCursor WHERE profileId = 'default'"))
+        val retainedDeletion = database.phoenixDatabaseQueries
+            .selectWorkoutDeletionByMutationId("retained-delete")
+            .executeAsOne()
+        assertEquals(sourceId, retainedDeletion.profile_id)
+        assertNull(retainedDeletion.acknowledged_at)
         assertNull(database.phoenixDatabaseQueries.selectProfilePreferences(sourceId).executeAsOneOrNull())
     }
 
@@ -952,6 +1104,7 @@ class SqlDelightUserProfileRepositoryTest {
     fun personalRecordBadgeAndMvtCollisionsRetainTargetIdentityAndMergeMetadata() = runTest {
         ready()
         val source = repository.createProfile("Source", 1)
+        executeSql("INSERT INTO Exercise(id, name, muscleGroup, muscleGroups, equipment, defaultCableConfig) VALUES ('bench', 'Bench', 'Chest', 'Chest', 'BAR', 'DOUBLE')")
         executeSql("INSERT INTO PersonalRecord(id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, updatedAt, serverId, profile_id, uuid) VALUES (800, 'bench', 'Target Bench', 50, 5, 60, 10, 'Old School', 'MAX_WEIGHT', 250, 'COMBINED', 10, 'target-server', 'default', 'target-uuid')")
         executeSql("INSERT INTO PersonalRecord(id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, updatedAt, serverId, profile_id, uuid) VALUES (801, 'bench', '', 70, 5, 80, 20, 'OldSchool', 'MAX_WEIGHT', 350, 'COMBINED', 20, 'source-server', ?, 'source-uuid')", source.id)
         executeSql("INSERT INTO EarnedBadge(id, badgeId, earnedAt, celebratedAt, updatedAt, serverId, profile_id) VALUES (810, 'shared', 200, 250, 20, 'target-badge', 'default')")
@@ -1202,7 +1355,7 @@ class SqlDelightUserProfileRepositoryTest {
         .toSet()
 
     private fun createDatabase(driver: SqlDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)): PhoenixDatabase {
-        PhoenixDatabase.Schema.create(driver)
+        createTestSchema(driver)
         return PhoenixDatabase(driver)
     }
 
@@ -1413,6 +1566,15 @@ class SqlDelightUserProfileRepositoryTest {
         private val delegate: ProfileLocalSafetyStore,
     ) : ProfileLocalSafetyStore by delegate {
         var failDeletes = false
+        var failNextRead = false
+
+        override fun read(profileId: String): ProfileLocalSafetyPreferences {
+            if (failNextRead) {
+                failNextRead = false
+                throw InjectedTransitionFailure()
+            }
+            return delegate.read(profileId)
+        }
 
         override fun delete(profileId: String) {
             if (failDeletes) throw InjectedTransitionFailure()

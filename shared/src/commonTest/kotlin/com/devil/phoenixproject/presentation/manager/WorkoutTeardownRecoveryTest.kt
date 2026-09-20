@@ -17,7 +17,9 @@ class WorkoutTeardownRecoveryTest {
 
     @Test
     fun `stale reset cannot discard a replacement teardown continuation`() = runTest {
-        val harness = DWSMTestHarness(this)
+        // Installs B while A's reset is mid-flight (no RESET teardown for A), which the #782
+        // barrier would refuse; this continuation-ownership test opts out of it.
+        val harness = DWSMTestHarness(this, machineSafetyBarrier = false)
         val resetB = CompletableDeferred<Result<Unit>>()
         var callbackB = 0
         var installReplacementDuringReset = false

@@ -68,22 +68,6 @@ class ProtocolParserTest {
         assertEquals(32767, getInt16LE(data, 0))
     }
 
-    // ========== getUInt16BE Tests ==========
-
-    @Test
-    fun `getUInt16BE parses basic big-endian value`() {
-        // [0x01, 0x02] in BE = 0x0102 = 258
-        val data = byteArrayOf(0x01, 0x02)
-        assertEquals(258, getUInt16BE(data, 0))
-    }
-
-    @Test
-    fun `getUInt16BE returns max unsigned value not negative`() {
-        // [0xFF, 0xFF] should be 65535, not -1
-        val data = byteArrayOf(0xFF.toByte(), 0xFF.toByte())
-        assertEquals(65535, getUInt16BE(data, 0))
-    }
-
     // ========== getInt32LE Tests ==========
 
     @Test

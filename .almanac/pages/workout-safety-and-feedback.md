@@ -45,11 +45,11 @@ sources:
     note: Defines the cross-platform safe-word listener contract and its on-device-only assumption.
   - id: android-safe-word
     type: file
-    path: shared/src/androidMain/kotlin/com/devil/phoenixproject/domain/voice/SafeWordListener.android.kt
+    path: shared/src/androidMain/kotlin/com/devil/phoenixproject/domain/voice/AndroidSafeWordListener.kt
     note: Defines Android speech recognition behavior, audio focus, and auto-restart rules.
   - id: ios-safe-word
     type: file
-    path: shared/src/iosMain/kotlin/com/devil/phoenixproject/domain/voice/SafeWordListener.ios.kt
+    path: shared/src/iosMain/kotlin/com/devil/phoenixproject/domain/voice/IosSafeWordListener.kt
     note: Defines iOS speech recognition behavior, microphone authorization, and interruption recovery.
   - id: android-haptics
     type: file
