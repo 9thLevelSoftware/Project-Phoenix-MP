@@ -24,6 +24,8 @@ import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
 import com.devil.phoenixproject.util.withPlatformLock
 import kotlin.concurrent.Volatile
+import kotlinx.atomicfu.locks.reentrantLock
+import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -33,6 +35,60 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+
+/**
+ * Append-only buffer for the samples collected during a single set.
+ *
+ * [append] is O(1). The live-set BLE path appends a sample on every monitor poll,
+ * so the copy-on-append `MutableStateFlow<List<T>>` this replaces made a set
+ * quadratic in its own sample count (a long Just Lift set allocates and copies
+ * the whole list thousands of times). Nothing ever observed those flows as
+ * flows — every reader took `.value` — so the flow machinery is gone with them.
+ *
+ * **Threading: the lock is required, not optional — do not remove it.** [append]
+ * and [clear] run on the engine's `scope` (the ViewModel's main dispatcher), but
+ * [snapshot] is also reached from `Dispatchers.Default` on a shipped path, while
+ * that main-thread collector is still appending:
+ *
+ * `ActiveSessionEngine.processBiomechanicsForRep` → `scope.launch(biomechanicsDispatcher)`
+ * → `evaluateLatestVbtResult` → (VBT auto-end on velocity loss)
+ * `handleSetCompletion(lease, VBT_AUTO_END)` → `captureExitSnapshot` →
+ * `buildExitSnapshot`, which snapshots **both** buffers with no dispatcher switch
+ * in between. (`processBiomechanicsForRep` snapshots before its own `launch`; the
+ * VBT continuation does not.)
+ *
+ * Without the lock that is a real data race on the live rep-scoring path: an
+ * unsynchronised `ArrayList` loses concurrent appends outright and hands the
+ * reader a torn or null-padded copy. `CollectedMetricsBufferConcurrencyTest`
+ * (androidHostTest) fails on both counts if `withLock` is deleted. Uncontended
+ * the lock still costs far less than the per-sample copy it replaces.
+ *
+ * [snapshot] returns a private copy, so a caller may hold and iterate it while
+ * the collector keeps appending.
+ *
+ * [size] and [isEmpty] exist for logging and test assertions; the live path only
+ * uses [append], [snapshot] and [clear].
+ */
+internal class CollectedMetricsBuffer<T> {
+    private val lock = reentrantLock()
+    private val items = ArrayList<T>() // guarded by lock
+
+    val size: Int get() = lock.withLock { items.size }
+
+    fun isEmpty(): Boolean = lock.withLock { items.isEmpty() }
+
+    fun append(item: T) {
+        lock.withLock { items.add(item) }
+    }
+
+    fun snapshot(): List<T> = lock.withLock {
+        if (items.isEmpty()) emptyList() else ArrayList(items)
+    }
+
+    fun clear() {
+        lock.withLock { items.clear() }
+    }
+}
 
 internal data class VbtRuntimeSettings(
     val enabled: Boolean = true,
@@ -399,11 +455,13 @@ class WorkoutCoordinator(
     internal var workoutStartTime: Long = 0
     internal var warmupCompleteTimeMs: Long = 0 // Issue #252: Exclude warmup time from duration
     internal var routineStartTime: Long = 0 // Issue #195: Track routine start separately from per-set start
-    internal val collectedMetrics = MutableStateFlow<List<WorkoutMetric>>(emptyList())
+    internal val collectedMetrics = CollectedMetricsBuffer<WorkoutMetric>()
 
-    // C3: Thread-safe via MutableStateFlow snapshot — prevents ConcurrentModificationException
-    // across coroutine dispatchers during rep processing and set completion
-    internal val setRepMetrics = MutableStateFlow<List<RepMetricData>>(emptyList())
+    // C3: rep processing and set completion iterate a private snapshot() copy while the
+    // collector keeps appending, and buildExitSnapshot reads BOTH buffers off the main
+    // dispatcher on the VBT auto-end path — CollectedMetricsBuffer's lock is what makes
+    // that safe. See its KDoc before touching it.
+    internal val setRepMetrics = CollectedMetricsBuffer<RepMetricData>()
 
     internal var currentRoutineSessionId: String? = null
     internal var currentRoutineName: String? = null

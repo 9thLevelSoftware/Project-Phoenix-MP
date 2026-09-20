@@ -4414,7 +4414,7 @@ class DWSMWorkoutLifecycleTest {
 
         harness.dwsm.coordinator.currentSessionId = "stale-session-id"
         harness.dwsm.coordinator.workoutStartTime = 1700000000000L
-        harness.dwsm.coordinator.collectedMetrics.value = listOf(
+        harness.dwsm.coordinator.collectedMetrics.seed(
             WorkoutMetric(
                 timestamp = harness.nowMs + 100L,
                 loadA = 25f,
@@ -4439,7 +4439,7 @@ class DWSMWorkoutLifecycleTest {
             "resetForNewWorkout should zero stale workout start time",
         )
         assertTrue(
-            harness.dwsm.coordinator.collectedMetrics.value.isEmpty(),
+            harness.dwsm.coordinator.collectedMetrics.isEmpty(),
             "resetForNewWorkout should clear collected metrics",
         )
         harness.cleanup()
@@ -6021,7 +6021,7 @@ class DWSMWorkoutLifecycleTest {
             totalReps = 8,
             isWarmupComplete = true,
         )
-        harness.dwsm.coordinator.collectedMetrics.value = listOf(
+        harness.dwsm.coordinator.collectedMetrics.seed(
             WorkoutMetric(
                 timestamp = 100L,
                 loadA = 22f,
@@ -6095,7 +6095,7 @@ class DWSMWorkoutLifecycleTest {
             totalReps = 10,
             isWarmupComplete = true,
         )
-        harness.dwsm.coordinator.collectedMetrics.value = listOf(
+        harness.dwsm.coordinator.collectedMetrics.seed(
             WorkoutMetric(
                 timestamp = 100L,
                 loadA = 30f,
@@ -6171,7 +6171,7 @@ class DWSMWorkoutLifecycleTest {
             totalReps = 10,
             isWarmupComplete = true,
         )
-        harness.dwsm.coordinator.collectedMetrics.value = listOf(
+        harness.dwsm.coordinator.collectedMetrics.seed(
             WorkoutMetric(
                 timestamp = 100L,
                 loadA = 60f,

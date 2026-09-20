@@ -61,10 +61,10 @@ class RepMetricPersistenceTest {
             createTestRepMetricData(2),
             createTestRepMetricData(3),
         )
-        repMetrics.forEach { metric -> coordinator.setRepMetrics.update { it + metric } }
+        repMetrics.forEach { metric -> coordinator.setRepMetrics.append(metric) }
         assertEquals(
             3,
-            coordinator.setRepMetrics.value.size,
+            coordinator.setRepMetrics.size,
             "Should have 3 accumulated rep metrics",
         )
 
@@ -82,7 +82,7 @@ class RepMetricPersistenceTest {
 
         // Verify setRepMetrics list is cleared after persistence
         assertTrue(
-            coordinator.setRepMetrics.value.isEmpty(),
+            coordinator.setRepMetrics.isEmpty(),
             "setRepMetrics should be cleared after persistence",
         )
 
@@ -97,7 +97,7 @@ class RepMetricPersistenceTest {
         assertNotNull(sessionId)
 
         // Do NOT add any rep metrics - list is empty
-        assertTrue(coordinator.setRepMetrics.value.isEmpty())
+        assertTrue(coordinator.setRepMetrics.isEmpty())
 
         // Trigger set completion
         harness.activeSessionEngine.handleSetCompletion(
@@ -124,12 +124,12 @@ class RepMetricPersistenceTest {
         assertNotNull(sessionId)
 
         // Add 5 rep metrics (1 warmup + 4 working)
-        coordinator.setRepMetrics.update { it + createTestRepMetricData(1, isWarmup = true) }
-        coordinator.setRepMetrics.update { it + createTestRepMetricData(2) }
-        coordinator.setRepMetrics.update { it + createTestRepMetricData(3) }
-        coordinator.setRepMetrics.update { it + createTestRepMetricData(4) }
-        coordinator.setRepMetrics.update { it + createTestRepMetricData(5) }
-        val expectedCount = coordinator.setRepMetrics.value.size
+        coordinator.setRepMetrics.append(createTestRepMetricData(1, isWarmup = true))
+        coordinator.setRepMetrics.append(createTestRepMetricData(2))
+        coordinator.setRepMetrics.append(createTestRepMetricData(3))
+        coordinator.setRepMetrics.append(createTestRepMetricData(4))
+        coordinator.setRepMetrics.append(createTestRepMetricData(5))
+        val expectedCount = coordinator.setRepMetrics.size
 
         // Trigger set completion
         harness.activeSessionEngine.handleSetCompletion(

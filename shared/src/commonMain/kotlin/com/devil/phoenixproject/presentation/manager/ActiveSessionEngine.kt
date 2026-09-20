@@ -1558,8 +1558,8 @@ class ActiveSessionEngine(
         coordinator.currentSessionId = null
         coordinator.workoutStartTime = 0L
         coordinator.warmupCompleteTimeMs = 0L
-        coordinator.collectedMetrics.value = emptyList()
-        coordinator.setRepMetrics.value = emptyList()
+        coordinator.collectedMetrics.clear()
+        coordinator.setRepMetrics.clear()
         coordinator._currentSetRpe.value = null
         coordinator._userAdjustedWeightDuringRest = false
         coordinator.pendingWeightChangeKg = null
@@ -5830,7 +5830,7 @@ class ActiveSessionEngine(
      * Collect metric for history recording.
      */
     private fun collectMetricForHistory(metric: WorkoutMetric) {
-        coordinator.collectedMetrics.update { it + metric }
+        coordinator.collectedMetrics.append(metric)
     }
 
     // ===== Auto-Stop Helpers =====
@@ -6135,7 +6135,7 @@ class ActiveSessionEngine(
      * then extracts force, velocity, and position arrays for each phase.
      */
     private fun scoreCurrentRep(repNumber: Int) {
-        val metrics = coordinator.collectedMetrics.value
+        val metrics = coordinator.collectedMetrics.snapshot()
         if (metrics.isEmpty()) return
 
         // Get all metrics for this rep (use rep boundary timestamps if available)
@@ -6265,7 +6265,7 @@ class ActiveSessionEngine(
         )
 
         // Accumulate rep metric data for persistence at set completion
-        coordinator.setRepMetrics.update { it + repData }
+        coordinator.setRepMetrics.append(repData)
 
         val score = coordinator.repQualityScorer.scoreRep(repData)
         coordinator._latestRepQuality.value = score
@@ -6288,7 +6288,7 @@ class ActiveSessionEngine(
     ) {
         if (!executionGuard.isCurrent(lease)) return
         val context = biomechanicsContextFor(lease) ?: return
-        val allMetrics = coordinator.collectedMetrics.value
+        val allMetrics = coordinator.collectedMetrics.snapshot()
         val boundaries = coordinator.repBoundaryTimestamps.value
         if (boundaries.isEmpty()) {
             Logger.d { "Biomechanics: no rep boundary for rep $repNumber" }
@@ -6491,9 +6491,7 @@ class ActiveSessionEngine(
         if (state is WorkoutState.Active) {
             collectMetricForHistory(metric)
 
-            Logger.d { "Issue221: handleMonitorMetric Active - isJustLift=${params.isJustLift}, isAMRAP=${params.isAMRAP}, isTimedCable=$coordinator.isCurrentTimedCableExercise, posA=${metric.positionA}, posB=${metric.positionB}" }
             if (params.isJustLift || params.isAMRAP || coordinator.isCurrentTimedCableExercise) {
-                Logger.d { "Issue221: Calling updatePositionRangesContinuously" }
                 repCounter.updatePositionRangesContinuously(metric.positionA, metric.positionB)
             }
 
@@ -6550,7 +6548,6 @@ class ActiveSessionEngine(
             }
 
             if (shouldEnableAutoStop(params)) {
-                Logger.d { "Issue203 DEBUG: checkAutoStop called - isJustLift=${params.isJustLift}, isAMRAP=${params.isAMRAP}, isTimedCable=$coordinator.isCurrentTimedCableExercise, setIndex=${coordinator._currentSetIndex.value}" }
                 executionGuard.currentLease?.let { lease -> checkAutoStop(lease, metric) }
             } else {
                 resetAutoStopTimer()
@@ -7393,7 +7390,7 @@ class ActiveSessionEngine(
         cancelJustLiftEggTimer()
         coordinator.currentSessionId = null
         coordinator.workoutStartTime = 0
-        coordinator.collectedMetrics.value = emptyList()
+        coordinator.collectedMetrics.clear()
         coordinator.restDeadlineElapsedRealtimeMs = null
         coordinator._restSecondsRemaining.value = 0
         coordinator._restOriginalDuration.value = 0
@@ -7402,7 +7399,7 @@ class ActiveSessionEngine(
         coordinator._weightAdjustmentRecommendation.value = null
         coordinator._repCount.value = RepCount()
         coordinator._repRanges.value = null
-        coordinator.setRepMetrics.value = emptyList()
+        coordinator.setRepMetrics.clear()
         coordinator.deferAutoStopDeadlineMs = 0L
         coordinator.repBoundaryTimestamps.value = emptyList()
         coordinator.warmupCompleteTimeMs = 0
@@ -8261,7 +8258,7 @@ class ActiveSessionEngine(
                     if (coordinator._loadedRoutine.value != null && coordinator.routineStartTime == 0L) {
                         coordinator.routineStartTime = coordinator.workoutStartTime
                     }
-                    coordinator.collectedMetrics.value = emptyList()
+                    coordinator.collectedMetrics.clear()
                     coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
                     if (!hasCurrentAuthority(activeLease, "bodyweight_start_after_haptic")) return@launch
 
@@ -8795,7 +8792,7 @@ class ActiveSessionEngine(
                 if (coordinator._loadedRoutine.value != null && coordinator.routineStartTime == 0L) {
                     coordinator.routineStartTime = coordinator.workoutStartTime
                 }
-                coordinator.collectedMetrics.value = emptyList()
+                coordinator.collectedMetrics.clear()
                 coordinator._hapticEvents.emit(HapticEvent.WORKOUT_START)
                 if (!hasCurrentAuthority(activeLease, "cable_start_after_haptic")) return@launch
 
@@ -9040,7 +9037,7 @@ class ActiveSessionEngine(
         val params = coordinator._workoutParameters.value
         val executedParams = params.withExecutedCommand(completion)
         val repCount = coordinator._repCount.value
-        val metrics = coordinator.collectedMetrics.value.toList()
+        val metrics = coordinator.collectedMetrics.snapshot()
         val exerciseIndex = coordinator._currentExerciseIndex.value
         val setIndex = coordinator._currentSetIndex.value
         val currentExercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(exerciseIndex)
@@ -9212,7 +9209,7 @@ class ActiveSessionEngine(
             session = session,
             completedSet = completedSet,
             metrics = metrics,
-            repMetrics = coordinator.setRepMetrics.value.map(RepMetricData::deepCopyForExitSnapshot),
+            repMetrics = coordinator.setRepMetrics.snapshot().map(RepMetricData::deepCopyForExitSnapshot),
             biomechanicsRepResults = biomechanicsSummary?.repResults.orEmpty()
                 .map { it.deepCopyForExitSnapshot() },
             singleExerciseDefaults = captureSingleExerciseDefaultsFromWorkout(),
@@ -9452,7 +9449,7 @@ class ActiveSessionEngine(
         cancelJustLiftEggTimer()
         stopMotionStartDetection()
         repFreshnessGate.invalidate(lease)
-        coordinator.setRepMetrics.value = emptyList()
+        coordinator.setRepMetrics.clear()
         resetBiomechanicsContext(lease)
         coordinator.repQualityScorer.reset()
         coordinator._latestRepQuality.value = null
@@ -10311,7 +10308,7 @@ class ActiveSessionEngine(
                     if (!hasCurrentAuthority(manualSnapshot.lease, "manual_stop_after_haptic")) {
                         return@launchPresentationContinuation
                     }
-                    coordinator.setRepMetrics.value = emptyList()
+                    coordinator.setRepMetrics.clear()
                     resetBiomechanicsContext(manualSnapshot.lease)
                     coordinator.repQualityScorer.reset()
                     coordinator._latestRepQuality.value = null
@@ -10373,7 +10370,7 @@ class ActiveSessionEngine(
                 val selectedExercise = resolveSelectedExercise(params)
                 val exerciseName = selectedExercise?.name
 
-                val metrics = coordinator.collectedMetrics.value
+                val metrics = coordinator.collectedMetrics.snapshot()
                 Logger.i { "WEIGHT_DEBUG[Session]: At set completion - params.weightPerCableKg=${params.weightPerCableKg} kg" }
                 val summary = calculateSetSummaryMetrics(
                     metrics = metrics,
@@ -10988,14 +10985,14 @@ class ActiveSessionEngine(
                 "exerciseId=${params.selectedExerciseId ?: "NULL"}, " +
                 "weight=${params.weightPerCableKg}kg, mode=${params.programMode.displayName}, " +
                 "isJustLift=${params.isJustLift}, isEcho=${params.isEchoMode}, " +
-                "metricsCount=${coordinator.collectedMetrics.value.size}"
+                "metricsCount=${coordinator.collectedMetrics.size}"
         }
 
         // Issue #252: Exclude warmup time from session duration
         val effectiveStart = if (coordinator.warmupCompleteTimeMs > 0L) coordinator.warmupCompleteTimeMs else coordinator.workoutStartTime
         val duration = currentTimeMillis() - effectiveStart
 
-        val metricsSnapshot = coordinator.collectedMetrics.value
+        val metricsSnapshot = coordinator.collectedMetrics.snapshot()
 
         val selectedExercise = resolveSelectedExercise(params)
         val exerciseName = selectedExercise?.name
@@ -11412,7 +11409,7 @@ class ActiveSessionEngine(
             if (!hasCurrentAuthority(lease, "completion_after_workout_end_haptic")) return@launchCompletionJob
             val snapshot = terminalSnapshot
                 ?: captureExitSnapshot(completion, TerminalPath.AUTO_COMPLETE)
-            coordinator.setRepMetrics.value = emptyList()
+            coordinator.setRepMetrics.clear()
             val biomechanicsSummary = snapshot.presentationSummary.biomechanicsSummary
             val qualitySummary = snapshot.presentationSummary.qualitySummary
 
