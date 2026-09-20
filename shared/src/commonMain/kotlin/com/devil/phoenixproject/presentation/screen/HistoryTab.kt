@@ -123,7 +123,7 @@ fun HistoryTab(
     formatWeight: (Float, WeightUnit) -> String,
     kgToDisplay: (Float, WeightUnit) -> Float,
     onDeleteWorkout: (String) -> Unit,
-    onDeleteRoutineGroup: (String) -> Unit,
+    onDeleteRoutineGroup: (String, String) -> Unit,
     exerciseRepository: ExerciseRepository,
     onTagJustLiftSessionExercise: suspend (String, Exercise, Boolean) -> Unit = { _, _, _ -> },
     onRefresh: () -> Unit = {},
@@ -770,7 +770,7 @@ fun GroupedRoutineCard(
     // Issue #591 follow-up: receives routineSessionId so the caller can
     // soft-delete every WorkoutSession row for the routine (including
     // zero-rep ghost rows hidden by `getHistoryVisibleSessions`).
-    onDeleteRoutineGroup: (String) -> Unit,
+    onDeleteRoutineGroup: (String, String) -> Unit,
 ) {
     val scope = rememberCoroutineScope()
     var showDeleteDialog by remember { mutableStateOf(false) }
@@ -1159,7 +1159,10 @@ fun GroupedRoutineCard(
                 // the History filter are cleaned up too. Looping
                 // over `groupedItem.sessions` would only delete
                 // the visible rows.
-                onDeleteRoutineGroup(groupedItem.routineSessionId)
+                val profileId = groupedItem.sessions.firstOrNull()?.profileId
+                if (profileId != null) {
+                    onDeleteRoutineGroup(profileId, groupedItem.routineSessionId)
+                }
                 showDeleteDialog = false
             },
             onDismiss = { showDeleteDialog = false },

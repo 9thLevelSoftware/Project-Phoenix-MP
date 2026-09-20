@@ -1102,9 +1102,6 @@ private class PreviewExerciseRepository : ExerciseRepository {
     override suspend fun updateCustomExercise(exercise: Exercise): Result<Exercise> = Result.success(exercise)
     override suspend fun deleteCustomExercise(exerciseId: String): Result<Unit> = Result.success(Unit)
 
-    // One Rep Max methods
-    override suspend fun updateOneRepMax(exerciseId: String, oneRepMaxKg: Float?) {}
-    override fun getExercisesWithOneRepMax(): Flow<List<Exercise>> = flowOf(emptyList())
     override suspend fun findByName(name: String): Exercise? = null
     override suspend fun findByIdOrName(id: String?, name: String): Exercise? = null
 }

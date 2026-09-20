@@ -13,6 +13,7 @@ import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.presentation.manager.RestTransitionPlan
+import com.devil.phoenixproject.testutil.createTestDriver
 import kotlin.test.assertEquals
 import kotlin.test.assertFails
 import kotlin.test.assertFailsWith
@@ -44,8 +45,7 @@ class ActiveWorkoutRuntimeCodecInvariantTest {
 
     @Before
     fun setup() {
-        driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        PhoenixDatabase.Schema.create(driver)
+        driver = createTestDriver()
         database = PhoenixDatabase(driver)
         repository = SqlDelightActiveWorkoutRuntimeRepository(database)
     }

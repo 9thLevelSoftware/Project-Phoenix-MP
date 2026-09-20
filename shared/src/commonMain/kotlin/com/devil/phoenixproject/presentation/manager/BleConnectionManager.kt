@@ -38,7 +38,6 @@ interface WorkoutStateProvider {
      */
     val isWorkoutMidSet: Boolean
 
-    fun onWorkoutConnectionLost()
 }
 
 /**
@@ -132,7 +131,6 @@ class BleConnectionManager(
                             // and users need to interact with it to save workout history
                             if (wasConnected && workoutStateProvider.isWorkoutActiveForConnectionAlert) {
                                 Logger.w { "Connection lost during active workout! Showing reconnection dialog." }
-                                workoutStateProvider.onWorkoutConnectionLost()
                                 _connectionLostDuringWorkout.value = true
                             }
                             wasConnected = false

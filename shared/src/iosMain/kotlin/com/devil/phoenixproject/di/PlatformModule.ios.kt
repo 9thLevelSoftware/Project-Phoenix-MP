@@ -1,13 +1,17 @@
 package com.devil.phoenixproject.di
 
 import co.touchlab.kermit.Logger
+import co.touchlab.sqliter.DatabaseFileContext
 import com.devil.phoenixproject.data.auth.OAuthLauncher
 import com.devil.phoenixproject.data.integration.HealthIntegration
 import com.devil.phoenixproject.data.integration.HealthWorkoutWriter
+import com.devil.phoenixproject.data.local.DatabaseFileNames
 import com.devil.phoenixproject.data.local.DriverFactory
+import com.devil.phoenixproject.data.local.legacyLibraryRootPath
 import com.devil.phoenixproject.data.repository.BleRepository
 import com.devil.phoenixproject.data.repository.KableBleRepository
 import com.devil.phoenixproject.data.sync.SupabaseConfig
+import com.devil.phoenixproject.data.sync.resetSecureStorageOnFreshInstall
 import com.devil.phoenixproject.domain.voice.IosSafeWordListenerFactory
 import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
 import com.devil.phoenixproject.presentation.manager.NoOpWorkoutServiceController
@@ -29,9 +33,13 @@ import com.russhwolf.settings.Settings
 import org.koin.core.module.Module
 import org.koin.dsl.module
 import platform.Foundation.NSBundle
+import platform.Foundation.NSFileManager
 import platform.Foundation.NSUserDefaults
 
 private const val KEYCHAIN_SERVICE_NAME = "com.devil.phoenixproject.auth"
+
+// NSUserDefaults key; its absence (with no local database) marks a fresh install.
+private const val INSTALL_MARKER_KEY = "phoenix_install_marker"
 
 private val log = Logger.withTag("PlatformModule")
 
@@ -52,6 +60,11 @@ private val PORTAL_KEYS = listOf(
 )
 
 actual val platformModule: Module = module {
+    // Runs when the module is built (inside startKoin), before any single can
+    // create the database; a lazily-resolved check would see the DB that this
+    // launch just created and mistake a fresh install for an upgrade.
+    clearKeychainOnFreshInstall()
+
     single {
         val bundle = NSBundle.mainBundle
         val url = bundle.objectForInfoDictionaryKey("SUPABASE_URL") as? String
@@ -76,7 +89,8 @@ actual val platformModule: Module = module {
         NSUserDefaultsSettings(defaults)
     }
     // Secure storage using iOS Keychain for auth tokens (JWT, refresh token, user identity).
-    // Keychain data persists across app reinstalls and is protected by iOS Data Protection.
+    // Keychain data persists across app reinstalls and is protected by iOS Data Protection;
+    // clearKeychainOnFreshInstall() above wipes it when the app itself was reinstalled.
     @OptIn(ExperimentalSettingsImplementation::class)
     single<Settings>(SecureSettingsQualifier) {
         val keychainSettings = KeychainSettings(service = KEYCHAIN_SERVICE_NAME)
@@ -101,6 +115,7 @@ actual val platformModule: Module = module {
             workoutRepository = get(),
             exerciseRepository = get(),
             personalRecordRepository = get(),
+            profileExerciseBaselineRepository = get(),
             repCounter = get(),
             preferencesManager = get(),
             gamificationRepository = get(),
@@ -128,8 +143,43 @@ actual val platformModule: Module = module {
             countVelocityOneRepMaxImprovementsUseCase = get(),
             backfillVelocityOneRepMaxUseCase = get(),
             machineSafetyCoordinator = get(),
+            profileRecoveryActivityTracker = get(),
         )
     }
+}
+
+/**
+ * Keychain items survive uninstall, NSUserDefaults and the database don't. On a
+ * fresh install (no marker, no database) wipe the auth Keychain service so a
+ * reinstall on a handed-down device isn't signed in as the previous owner. An
+ * upgrade from a build without the marker has a database and keeps its session.
+ */
+@OptIn(ExperimentalSettingsImplementation::class)
+private fun clearKeychainOnFreshInstall() {
+    val defaults = NSUserDefaults.standardUserDefaults
+    try {
+        val cleared = resetSecureStorageOnFreshInstall(
+            hasInstallMarker = { defaults.boolForKey(INSTALL_MARKER_KEY) },
+            localDatabaseExists = ::anyLocalDatabaseExists,
+            clearSecureStorage = { KeychainSettings(service = KEYCHAIN_SERVICE_NAME).clear() },
+            setInstallMarker = { defaults.setBool(true, forKey = INSTALL_MARKER_KEY) },
+        )
+        if (cleared) log.i { "Fresh install: cleared auth Keychain left by a previous install" }
+    } catch (e: Exception) {
+        // Never block start-up; worst case is the pre-existing behaviour.
+        log.e(e) { "Fresh-install Keychain check failed" }
+    }
+}
+
+private fun anyLocalDatabaseExists(): Boolean {
+    val fileManager = NSFileManager.defaultManager
+    val sqliterPaths = listOf(
+        DatabaseFileNames.TARGET,
+        DatabaseFileNames.LEGACY,
+        DatabaseFileNames.STAGING,
+        DatabaseFileNames.RECOVERY,
+    ).map { DatabaseFileContext.databasePath(it, null) }
+    return (sqliterPaths + legacyLibraryRootPath()).any { fileManager.fileExistsAtPath(it) }
 }
 
 /**

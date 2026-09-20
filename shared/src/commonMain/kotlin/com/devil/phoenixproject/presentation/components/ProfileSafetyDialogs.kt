@@ -67,6 +67,7 @@ import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import com.devil.phoenixproject.domain.voice.SafeWordListener
 import com.devil.phoenixproject.domain.voice.SafeWordListenerFactory
+import com.devil.phoenixproject.domain.voice.SafeWordState
 import com.devil.phoenixproject.presentation.util.LocalPlatformAccessibilitySettings
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.ForgeGreen
@@ -106,7 +107,8 @@ fun SafeWordCalibrationDialog(
 
     val currentListener = listener
     if (currentListener != null) {
-        val isListening by currentListener.isListening.collectAsState()
+        val listenerState by currentListener.state.collectAsState()
+        val isListening = listenerState is SafeWordState.Armed
 
         LaunchedEffect(currentListener) {
             currentListener.detectedWord.collect {
@@ -121,7 +123,7 @@ fun SafeWordCalibrationDialog(
         LaunchedEffect(isListening) {
             if (!isListening && detectionCount == 0) {
                 kotlinx.coroutines.delay(3000)
-                if (!currentListener.isListening.value && detectionCount == 0) micError = true
+                if (currentListener.state.value !is SafeWordState.Armed && detectionCount == 0) micError = true
             }
         }
     }

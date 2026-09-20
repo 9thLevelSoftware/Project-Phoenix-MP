@@ -276,12 +276,3 @@ fun getRpeColor(rpe: Int): Color {
         else -> MaterialTheme.colorScheme.primary
     }
 }
-
-/**
- * Format RPE for display.
- */
-fun formatRpe(rpe: Int?): String {
-    if (rpe == null) return "-"
-    val info = rpeScale.find { it.value == rpe }
-    return info?.let { "${it.emoji} $rpe" } ?: rpe.toString()
-}

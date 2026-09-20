@@ -53,12 +53,53 @@ class Issue725RecurrenceTest {
         val driver = DriverFactory().createDriver()
         try {
             assertEquals("Legacy", queryScalar(driver, "SELECT name FROM UserProfile WHERE id = 'legacy-profile'"))
+            assertEquals(1L, queryLong(driver, "PRAGMA foreign_keys"))
         } finally {
             driver.close()
         }
 
+        val reopened = DriverFactory().createDriver()
+        try {
+            assertEquals(1L, queryLong(reopened, "PRAGMA foreign_keys"))
+        } finally {
+            reopened.close()
+        }
+
         assertFalse(fileManager.fileExistsAtPath(legacyLibraryRootPath()))
         assertTrue(fileManager.fileExistsAtPath(DatabaseFileContext.databasePath(DatabaseFileNames.TARGET, null)))
+    }
+
+    @Test
+    fun migratedAndReopenedDriverEnforcesMetricSampleForeignKey() {
+        NativeSqliteDriver(
+            schema = PhoenixDatabase.Schema,
+            name = DatabaseFileNames.LEGACY,
+        ).close()
+
+        DriverFactory().createDriver().close()
+        val reopened = DriverFactory().createDriver()
+        try {
+            reopened.execute(
+                null,
+                "INSERT INTO WorkoutSession(id, timestamp, mode, targetReps, weightPerCableKg) VALUES ('valid-session', 1, 'OldSchool', 0, 0)",
+                0,
+            )
+            reopened.execute(
+                null,
+                "INSERT INTO MetricSample(sessionId, timestamp) VALUES ('valid-session', 2)",
+                0,
+            )
+            val failure = assertFailsWith<Throwable> {
+                reopened.execute(
+                    null,
+                    "INSERT INTO MetricSample(sessionId, timestamp) VALUES ('missing-session', 3)",
+                    0,
+                )
+            }
+            assertTrue(failure.message?.contains("FOREIGN KEY", ignoreCase = true) == true)
+        } finally {
+            reopened.close()
+        }
     }
 
     @Test
