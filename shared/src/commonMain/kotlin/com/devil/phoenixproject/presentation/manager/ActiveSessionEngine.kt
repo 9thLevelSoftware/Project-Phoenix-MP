@@ -5356,6 +5356,21 @@ class ActiveSessionEngine(
     }
 
     /**
+     * A sample is concentric (lifting) only when a cable is moving outward faster than
+     * the velocity dead-band. The band keeps sensor noise and the near-stationary drift
+     * between reps out of the phase split, so a rep's mean concentric velocity describes
+     * the pull rather than the pauses around it.
+     */
+    private fun isConcentricSample(metric: WorkoutMetric): Boolean {
+        return metric.velocityA > VELOCITY_DEAD_BAND_MM_S || metric.velocityB > VELOCITY_DEAD_BAND_MM_S
+    }
+
+    /** Mirror of [isConcentricSample] for the lowering phase. */
+    private fun isEccentricSample(metric: WorkoutMetric): Boolean {
+        return metric.velocityA < -VELOCITY_DEAD_BAND_MM_S || metric.velocityB < -VELOCITY_DEAD_BAND_MM_S
+    }
+
+    /**
      * Calculate enhanced metrics for the set summary display.
      */
     internal fun calculateSetSummaryMetrics(
@@ -5465,12 +5480,35 @@ class ActiveSessionEngine(
         }
         val isSingleCable = cableCount == 1
 
+        // AF-1: a max-weight PR is the measured peak load over the WORKING reps only.
+        // A warmup rep can produce a heavier transient than the working load (a hard
+        // first pull against a light warmup weight), and that peak used to be recorded
+        // as the set's heaviest lift and turned into a PR.  Fall back to every sample
+        // when the set had no warmup reps, when the warmup mark was never recorded, or
+        // when no sample landed after it.
+        //
+        // Every load and force statistic of the summary is taken over this window, so
+        // the set reports one consistent answer to "how heavy was this set": the
+        // heaviest lift, the phase peaks that become CONCENTRIC/ECCENTRIC PR rows, the
+        // averages beside them, and Echo's measured weight (R-2, R-7, R-8, R-15, R-19,
+        // R-20).  The cable-count heuristic stays whole-set (cable topology is a
+        // property of the set, not of a phase), and so does the calorie integral: the
+        // work done during the warmup is work the user really did.
+        //
+        // The mark's own sample counts as the first working sample (`>=`), which is the
+        // same convention the seeded rep-1 window uses for its lower bound (R-6).
+        val workingMetrics = if (warmupRepsCount > 0 && warmupCompleteTimeMs > 0L) {
+            metrics.filter { it.timestamp >= warmupCompleteTimeMs }.ifEmpty { metrics }
+        } else {
+            metrics
+        }
+
         val heaviestLiftKgPerCable = if (isSingleCable) {
             // Single-cable: use the active cable's load (don't halve)
-            metrics.maxOf { maxOf(it.loadA, it.loadB) }
+            workingMetrics.maxOf { maxOf(it.loadA, it.loadB) }
         } else {
             // Double-cable: raw totalLoad / 2, no baseline subtraction (parent-aligned)
-            metrics.maxOf { it.totalLoad / 2f }
+            workingMetrics.maxOf { it.totalLoad / 2f }
         }
 
         val volumeWeightKgPerCable = if (isEchoMode) {
@@ -5481,16 +5519,23 @@ class ActiveSessionEngine(
         // Fixed-load modes should log the prescribed working load, while Echo uses measured force.
         val totalVolumeKg = volumeWeightKgPerCable * cableCount.toFloat() * repCount
 
-        val concentricMetrics = metrics.filter { it.velocityA > 10 || it.velocityB > 10 }
-        val eccentricMetrics = metrics.filter { it.velocityA < -10 || it.velocityB < -10 }
+        // R-7/R-15: these peaks are not display-only. They travel as
+        // PostSaveWorkoutInput.peakConcentricForceKg / peakEccentricForceKg into
+        // updatePhaseSpecificPRs, which writes MAX_WEIGHT PersonalRecord rows with
+        // phase CONCENTRIC/ECCENTRIC - and the "% of PR" resolver prefers the
+        // CONCENTRIC row over COMBINED for every mode but Eccentric Only. Taking them
+        // over the warmup would have let the transient set a PR and scale a future
+        // commanded load through the back door.
+        val concentricMetrics = workingMetrics.filter { isConcentricSample(it) }
+        val eccentricMetrics = workingMetrics.filter { isEccentricSample(it) }
 
         val peakConcentricA = concentricMetrics.maxOfOrNull { it.loadA } ?: 0f
         val peakConcentricB = concentricMetrics.maxOfOrNull { it.loadB } ?: 0f
         val peakEccentricA = eccentricMetrics.maxOfOrNull { it.loadA } ?: 0f
         val peakEccentricB = eccentricMetrics.maxOfOrNull { it.loadB } ?: 0f
 
-        val peakLoadA = metrics.maxOf { it.loadA }
-        val peakLoadB = metrics.maxOf { it.loadB }
+        val peakLoadA = workingMetrics.maxOf { it.loadA }
+        val peakLoadB = workingMetrics.maxOf { it.loadB }
         val thresholdA = (peakLoadA * 0.1f).coerceAtLeast(1f)
         val thresholdB = (peakLoadB * 0.1f).coerceAtLeast(1f)
 
@@ -5573,10 +5618,12 @@ class ActiveSessionEngine(
         }
 
         val peakLoadKgPerCable = heaviestLiftKgPerCable
+        // R-2/R-8: the average is taken over the same window as the peak, so
+        // `avg <= peak` still holds by construction.
         val avgLoadKgPerCable = if (isSingleCable) {
-            metrics.map { maxOf(it.loadA, it.loadB) }.average().toFloat()
+            workingMetrics.map { maxOf(it.loadA, it.loadB) }.average().toFloat()
         } else {
-            metrics.map { it.totalLoad / 2f }.average().toFloat()
+            workingMetrics.map { it.totalLoad / 2f }.average().toFloat()
         }
 
         // Echo Mode Phase-Aware Metrics
@@ -5586,8 +5633,11 @@ class ActiveSessionEngine(
         var peakWeightKg = 0f
         var burnoutReps = 0
 
-        if (isEchoMode && metrics.size > 10) {
-            val weightSamples = metrics.map { maxOf(it.loadA, it.loadB) }
+        // R-8/R-20: Echo's measured weight comes from the same window, so a set's
+        // stored peakWeightKg and heaviestLiftKg describe the same samples. Echo's own
+        // ramp/working/burnout split then runs inside the working window.
+        if (isEchoMode && workingMetrics.size > 10) {
+            val weightSamples = workingMetrics.map { maxOf(it.loadA, it.loadB) }
             peakWeightKg = weightSamples.maxOrNull() ?: 0f
             val peakThreshold = peakWeightKg * 0.9f
 
@@ -6045,7 +6095,12 @@ class ActiveSessionEngine(
         val currentBoundary = if (boundaries.isNotEmpty()) boundaries.last() else KmpUtils.currentTimeMillis()
 
         val repMetrics = if (boundaries.size >= 2) {
+            // R-18: the exclusive lower bound belongs to the previous rep, but when the
+            // previous boundary is the warmup mark that sample IS this rep's first one.
+            // Only fall back to it when the window would otherwise be empty, so rep 1
+            // keeps producing a quality row instead of silently dropping out.
             metrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
+                .ifEmpty { metrics.filter { it.timestamp in prevBoundary..currentBoundary } }
         } else {
             metrics.takeLast(50) // Fallback for first rep
         }
@@ -6064,8 +6119,10 @@ class ActiveSessionEngine(
             val boundary = phaseBoundaries.first()
             Pair(boundary.concentricIndices, boundary.eccentricIndices)
         } else {
-            // Fallback: split by velocity direction
-            val velocitySplitIndex = repMetrics.indexOfFirst { it.velocityA < 0 || it.velocityB < 0 }
+            // Fallback: split by velocity direction. R-5/R-9/R-21: the same dead-band as
+            // the set summary and the biomechanics window, so the file holds one rule for
+            // "this sample is a lowering sample" rather than a third, sign-only variant.
+            val velocitySplitIndex = repMetrics.indexOfFirst { isEccentricSample(it) }
                 .takeIf { it > 0 } ?: (repMetrics.size / 2)
             Pair(0 until velocitySplitIndex, velocitySplitIndex until repMetrics.size)
         }
@@ -6196,17 +6253,42 @@ class ActiveSessionEngine(
                 val prevBoundary = if (boundaries.size >= 2) boundaries[boundaries.size - 2] else 0L
                 val currentBoundary = boundaries.last()
 
+                // R-4/R-13: the exclusive lower bound belongs to the previous rep, except
+                // when it is the warmup mark - that sample is this rep's first one. Fall
+                // back to it only when the window is otherwise empty, so a rep 1 whose
+                // notification arrives before any further sample still establishes
+                // firstRepMcv instead of leaving velocity-loss tracking baselined on rep 2.
+                //
+                // Round 2, R-4: the fallback sample only counts when it actually carries
+                // concentric movement. The first sample at/after warmup completion is
+                // routinely inside the dead-band, and a one-sample dead-band window would
+                // make firstRepMcv a couple of mm/s - which FINDING-57's `mcv == 0f` guard
+                // does not catch - so every later rep's velocity loss would coerce to 0 and
+                // auto-end plus the VBT alert would be silently off for the whole set, with
+                // that value averaged into session avgMcvMmS. Without a usable sample this
+                // returns early exactly as it did before the fallback existed and rep 2
+                // establishes the baseline, one rep late but genuine. The guard is scoped
+                // to the fallback branch on purpose: applying it to the whole expression
+                // would break the first-half fallback below for a normal rep whose window
+                // happens to hold no concentric sample.
                 val repMetrics = allMetrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
+                    .ifEmpty {
+                        allMetrics.filter { it.timestamp in prevBoundary..currentBoundary }
+                            .takeIf { fallback -> fallback.any { isConcentricSample(it) } }
+                            .orEmpty()
+                    }
                 if (repMetrics.isEmpty()) {
                     Logger.d { "Biomechanics: no metrics for rep $repNumber (boundary $prevBoundary..$currentBoundary)" }
                     return@launch
                 }
 
-                // Split into concentric/eccentric using velocity direction
-                // Concentric = lifting (positive velocity), Eccentric = lowering (negative velocity)
+                // Split into concentric/eccentric using velocity direction.
+                // F-022: the same +-10 mm/s dead-band the set summary uses, so a rep's
+                // mean concentric velocity is not dragged down by near-zero noise
+                // samples that "any positive velocity" used to accept.
                 // Approximate: use first half as concentric if we can't determine from velocity
                 val concentricMetrics = repMetrics.filter {
-                    it.velocityA > 0 || it.velocityB > 0
+                    isConcentricSample(it)
                 }.takeIf { it.isNotEmpty() } ?: run {
                     // Fallback: first half is concentric
                     val midpoint = repMetrics.size / 2
@@ -6370,9 +6452,36 @@ class ActiveSessionEngine(
             coordinator._repCount.value = repCounter.getRepCount()
             coordinator._repRanges.value = repCounter.getRepRanges()
 
-            // Issue #252: Record the moment warmup completes (once per set)
-            if (coordinator.warmupCompleteTimeMs == 0L && coordinator._repCount.value.isWarmupComplete) {
-                coordinator.warmupCompleteTimeMs = currentTimeMillis()
+            // Issue #252: Record the moment warmup completes (once per set).
+            // The mark is compared against sample timestamps (set duration, the
+            // working-reps-only peak load, the rep-1 biomechanics window), so it is
+            // stamped from this sample's own clock rather than read separately.
+            // Both come from the same wall clock in production (MonitorDataProcessor
+            // stamps each sample as it is parsed).
+            //
+            // R-1: the mark is only recorded while no working rep has been counted yet.
+            // RepCounterFromMachine force-completes the warmup when the machine first
+            // reports repsSetCount > workingReps, so warmup completion and working rep 1
+            // can arrive in the same notification; the first sample after that lands
+            // AFTER rep 1 - usually the heaviest rep - and using it as the warmup mark
+            // would subtract rep 1 from the max-weight PR. With this guard no mark is
+            // recorded on that path, every statistic falls back to the whole set, and
+            // the only loss is Issue #252's duration exclusion (which on that path used
+            // to subtract the warmup plus rep 1 anyway).
+            if (coordinator.warmupCompleteTimeMs == 0L &&
+                coordinator._repCount.value.isWarmupComplete &&
+                coordinator._repCount.value.workingReps == 0
+            ) {
+                coordinator.warmupCompleteTimeMs = metric.timestamp
+                // F-022: start working rep 1's window at the end of warmup. Without a
+                // boundary here the window reaches back to set start, so rep 1's mean
+                // concentric velocity - the baseline for velocity-loss auto-end and for
+                // the VBT 1RM estimate - averaged in every warmup rep.
+                if (coordinator._repCount.value.warmupReps > 0) {
+                    coordinator.repBoundaryTimestamps.update { boundaries ->
+                        if (boundaries.isEmpty()) listOf(metric.timestamp) else boundaries
+                    }
+                }
             }
 
             if (shouldEnableAutoStop(params)) {
@@ -13768,6 +13877,17 @@ class ActiveSessionEngine(
 
     private companion object {
         const val TEMPLATE_531_ID = "template_531"
+
+        // F-022: the phase dead-band (mm/s) shared by the set summary, the per-rep
+        // biomechanics window and the rep-quality split, so all three split concentric
+        // from eccentric the same way.
+        //
+        // R-16: changing this value recalibrates a load-commanding metric. MCV is a
+        // plain average over the samples the dead-band admits, so widening the band
+        // raises every rep's MCV, and MCV aggregates into session avgMcvMmS -> the
+        // velocity-1RM regression -> the ESTIMATED_1RM scaling baseline. Pre- and
+        // post-change rows mix inside that estimator's 28-day window.
+        const val VELOCITY_DEAD_BAND_MM_S = 10.0
 
         // Issue #649: verbal cues are typically <30s; this ceiling covers the cue
         // plus a short post-cue transition window. Exceeding it releases the defer
