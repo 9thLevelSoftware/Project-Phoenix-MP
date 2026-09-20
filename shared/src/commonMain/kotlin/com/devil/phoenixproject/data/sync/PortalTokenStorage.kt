@@ -51,6 +51,20 @@ sealed class AuthEvent {
  */
 class PortalTokenStorage(private val settings: Settings) {
 
+    internal data class AuthStateSnapshot(
+        val generation: Long,
+        val accessToken: String?,
+        val refreshToken: String?,
+        val expiresAt: Long,
+        val userId: String?,
+        val userEmail: String?,
+        val userName: String?,
+        val isPremium: Boolean,
+        val subscriptionTier: String?,
+        val lastSync: Long,
+        val deltaPullKey: String?,
+    )
+
     companion object {
         private const val KEY_TOKEN = "portal_auth_token"
         private const val KEY_USER_ID = "portal_user_id"
@@ -61,6 +75,14 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_REFRESH_TOKEN = "portal_refresh_token"
         private const val KEY_EXPIRES_AT = "portal_token_expires_at"
         private const val KEY_LAST_SYNC = "portal_last_sync_timestamp"
+
+        /**
+         * "userId:profileId" of the completed pull that produced the stored [KEY_LAST_SYNC].
+         * Absent on the first sync after upgrading from builds that always pulled with
+         * lastSync=0, so sync sends one full lastSync=0 pull before switching to delta pulls.
+         * A pull for another user or profile also sends lastSync=0.
+         */
+        private const val KEY_DELTA_PULL_KEY = "portal_delta_pull_key"
         private const val KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX = "portal_phase_pr_backfill_checkpoint_"
         private const val KEY_DEVICE_ID = "portal_device_id"
         private const val KEY_STORAGE_VERIFIED = "portal_storage_verified"
@@ -116,6 +138,9 @@ class PortalTokenStorage(private val settings: Settings) {
     private val _currentUser = MutableStateFlow(loadUser())
     val currentUser: StateFlow<PortalUser?> = _currentUser.asStateFlow()
 
+    private val _lastSyncTimestamp = MutableStateFlow(settings[KEY_LAST_SYNC, 0L])
+    val lastSyncTimestamp: StateFlow<Long> = _lastSyncTimestamp.asStateFlow()
+
     /**
      * Flow of authentication events for UI notification.
      * Collectors will receive events when session expires, refresh fails, or user logs out.
@@ -124,7 +149,74 @@ class PortalTokenStorage(private val settings: Settings) {
     private val _authEvents = MutableSharedFlow<AuthEvent>(replay = 0, extraBufferCapacity = 1)
     val authEvents: SharedFlow<AuthEvent> = _authEvents.asSharedFlow()
 
-    fun saveGoTrueAuth(response: GoTrueAuthResponse) = withPlatformLock(authLock) {
+    // Bumped (under authLock) by every clearAuth and every non-refresh save
+    // (sign-in/sign-up). A refresh captures it before its network call and passes
+    // it back to saveGoTrueAuth, so a refresh that was in flight across a sign-out
+    // or account switch drops its write instead of resurrecting the old session.
+    private var authGeneration = 0L
+
+    /** Current auth generation; capture before a token refresh network call. */
+    fun authGeneration(): Long = withPlatformLock(authLock) { authGeneration }
+
+    /** Captures account-scoped state so a multi-store identity commit can roll back exactly. */
+    internal fun snapshotAuthState(): AuthStateSnapshot = withPlatformLock(authLock) {
+        AuthStateSnapshot(
+            generation = authGeneration,
+            accessToken = settings.getStringOrNull(KEY_TOKEN),
+            refreshToken = settings.getStringOrNull(KEY_REFRESH_TOKEN),
+            expiresAt = settings.getLong(KEY_EXPIRES_AT, 0L),
+            userId = settings.getStringOrNull(KEY_USER_ID),
+            userEmail = settings.getStringOrNull(KEY_USER_EMAIL),
+            userName = settings.getStringOrNull(KEY_USER_NAME),
+            isPremium = settings[KEY_IS_PREMIUM, false],
+            subscriptionTier = settings.getStringOrNull(KEY_SUBSCRIPTION_TIER),
+            lastSync = settings[KEY_LAST_SYNC, 0L],
+            deltaPullKey = settings.getStringOrNull(KEY_DELTA_PULL_KEY),
+        )
+    }
+
+    /** Restores a snapshot after a failed profile/token identity commit. */
+    internal fun restoreAuthState(snapshot: AuthStateSnapshot) = withPlatformLock(authLock) {
+        // Never move the fence backwards: refreshes captured before the failed
+        // transition must not become valid again when the prior account is restored.
+        authGeneration = maxOf(authGeneration, snapshot.generation) + 1L
+        restoreString(KEY_TOKEN, snapshot.accessToken)
+        restoreString(KEY_REFRESH_TOKEN, snapshot.refreshToken)
+        settings.putLong(KEY_EXPIRES_AT, snapshot.expiresAt)
+        restoreString(KEY_USER_ID, snapshot.userId)
+        restoreString(KEY_USER_EMAIL, snapshot.userEmail)
+        restoreString(KEY_USER_NAME, snapshot.userName)
+        settings[KEY_IS_PREMIUM] = snapshot.isPremium
+        restoreString(KEY_SUBSCRIPTION_TIER, snapshot.subscriptionTier)
+        settings.putLong(KEY_LAST_SYNC, snapshot.lastSync)
+        restoreString(KEY_DELTA_PULL_KEY, snapshot.deltaPullKey)
+        _lastSyncTimestamp.value = snapshot.lastSync
+        _isAuthenticated.value = snapshot.accessToken != null
+        _currentUser.value = loadUser()
+    }
+
+    /**
+     * The stored refresh token and the generation it belongs to, read under one
+     * lock so a sign-out/sign-in can't land between the two reads.
+     */
+    fun refreshTokenWithGeneration(): Pair<String?, Long> = withPlatformLock(authLock) {
+        getRefreshToken() to authGeneration
+    }
+
+    /**
+     * Persists a GoTrue session.
+     *
+     * @param expectedGeneration pass the [authGeneration] captured before a refresh
+     *   request. If auth was cleared or replaced since, the write is dropped.
+     *   Null (sign-in/sign-up) always writes and starts a new generation.
+     * @return false if the write was dropped as stale.
+     */
+    fun saveGoTrueAuth(response: GoTrueAuthResponse, expectedGeneration: Long? = null): Boolean = withPlatformLock(authLock) {
+        if (expectedGeneration == null) {
+            authGeneration++
+        } else if (expectedGeneration != authGeneration) {
+            return@withPlatformLock false
+        }
         // Preserve existing premium status — GoTrue auth response does not include it,
         // and overwriting would reset paid users to non-premium on every sign-in.
         //
@@ -139,6 +231,12 @@ class PortalTokenStorage(private val settings: Settings) {
         val previousUserId: String? = settings.getStringOrNull(KEY_USER_ID)
         val sameUser = previousUserId != null && previousUserId == response.user.id
         val existingPremium: Boolean = if (sameUser) settings[KEY_IS_PREMIUM, false] else false
+        if (!sameUser) {
+            // A different account must not reuse the previous account's delta-pull state:
+            // clear the user-keyed marker here. KEY_LAST_SYNC is reset below with the
+            // rest of the account-scoped sync and entitlement state.
+            settings.remove(KEY_DELTA_PULL_KEY)
+        }
 
         settings[KEY_TOKEN] = response.accessToken
         settings[KEY_REFRESH_TOKEN] = response.refreshToken
@@ -149,8 +247,15 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_USER_EMAIL] = response.user.email ?: ""
         settings[KEY_USER_NAME] = response.user.displayName ?: ""
         settings[KEY_IS_PREMIUM] = existingPremium
+        if (!sameUser) {
+            // Account-scoped sync and entitlement state must never cross an identity switch.
+            settings.putLong(KEY_LAST_SYNC, 0L)
+            _lastSyncTimestamp.value = 0L
+            settings.remove(KEY_SUBSCRIPTION_TIER)
+        }
         _isAuthenticated.value = true
         _currentUser.value = loadUser()
+        true
     }
 
     fun getRefreshToken(): String? = settings.getStringOrNull(KEY_REFRESH_TOKEN)
@@ -176,10 +281,33 @@ class PortalTokenStorage(private val settings: Settings) {
         newId
     }
 
-    fun getLastSyncTimestamp(): Long = settings[KEY_LAST_SYNC, 0L]
+    fun getLastSyncTimestamp(): Long = _lastSyncTimestamp.value
 
     fun setLastSyncTimestamp(timestamp: Long) {
-        settings[KEY_LAST_SYNC] = timestamp
+        withPlatformLock(authLock) {
+            settings[KEY_LAST_SYNC] = timestamp
+            _lastSyncTimestamp.value = timestamp
+        }
+    }
+
+    /** "userId:profileId" of the pull that produced the stored lastSync, or null if unknown. */
+    fun getDeltaPullKey(): String? = settings.getStringOrNull(KEY_DELTA_PULL_KEY)
+
+    /**
+     * Records a completed pull: the new lastSync first, then the delta-pull marker, so an
+     * interruption between the two writes leaves an absent/stale marker (next pull is a
+     * safe full pull) rather than a marker vouching for an older lastSync. A null
+     * [deltaPullKey] removes the marker so the next pull is a full pull.
+     */
+    fun recordCompletedPull(syncTime: Long, deltaPullKey: String?) {
+        withPlatformLock(authLock) {
+            settings.remove(KEY_DELTA_PULL_KEY)
+            settings[KEY_LAST_SYNC] = syncTime
+            _lastSyncTimestamp.value = syncTime
+            if (deltaPullKey != null) {
+                settings[KEY_DELTA_PULL_KEY] = deltaPullKey
+            }
+        }
     }
 
     fun getPhasePRBackfillCheckpoint(profileId: String): Long = settings[phasePRBackfillCheckpointKey(profileId), 0L]
@@ -220,10 +348,23 @@ class PortalTokenStorage(private val settings: Settings) {
      * to allow the UI to show appropriate messaging to the user.
      *
      * @param event The authentication event describing why auth was cleared
+     * @param expectedGeneration when set (refresh failures), clear and emit only if
+     *   auth hasn't been cleared or replaced since that [authGeneration] was
+     *   captured, so a stale failure can't wipe a newer session or report
+     *   "session expired" after a deliberate sign-out.
+     * @return false if skipped because the generation moved.
      */
-    fun clearAuthWithEvent(event: AuthEvent) {
-        clearAuthInternal()
-        _authEvents.tryEmit(event)
+    fun clearAuthWithEvent(event: AuthEvent, expectedGeneration: Long? = null): Boolean {
+        val cleared = withPlatformLock(authLock) {
+            if (expectedGeneration != null && expectedGeneration != authGeneration) {
+                false
+            } else {
+                clearAuthInternal()
+                true
+            }
+        }
+        if (cleared) _authEvents.tryEmit(event)
+        return cleared
     }
 
     /**
@@ -244,6 +385,7 @@ class PortalTokenStorage(private val settings: Settings) {
     }
 
     private fun clearAuthInternal() = withPlatformLock(authLock) {
+        authGeneration++
         settings.remove(KEY_TOKEN)
         settings.remove(KEY_REFRESH_TOKEN)
         settings.remove(KEY_EXPIRES_AT)
@@ -253,6 +395,8 @@ class PortalTokenStorage(private val settings: Settings) {
         settings.remove(KEY_IS_PREMIUM)
         settings.remove(KEY_SUBSCRIPTION_TIER)
         settings.remove(KEY_LAST_SYNC) // Reset so re-link does a full pull
+        settings.remove(KEY_DELTA_PULL_KEY)
+        _lastSyncTimestamp.value = 0L
         // Keep device ID for stable identity
 
         _isAuthenticated.value = false
@@ -268,6 +412,10 @@ class PortalTokenStorage(private val settings: Settings) {
         return PortalUser(id, email, displayName, isPremium)
     }
 
+    private fun restoreString(key: String, value: String?) {
+        if (value == null) settings.remove(key) else settings[key] = value
+    }
+
     private fun generateDeviceId(): String {
         // Generate a stable device identifier using multiplatform UUID
         return generateUUID()
@@ -277,4 +425,29 @@ class PortalTokenStorage(private val settings: Settings) {
         val normalizedProfileId = profileId.trim().ifBlank { "default" }
         return "$KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX$normalizedProfileId"
     }
+}
+
+/**
+ * Wipes secure auth storage on a fresh install whose secure store outlives the
+ * app (the iOS Keychain survives uninstall; app preferences and the database
+ * don't). Without this, a reinstall on a handed-down device is still signed in
+ * as the previous owner.
+ *
+ * No install marker and no local database means a fresh install: clear. No
+ * marker but a database present is an upgrade from a build that predates the
+ * marker: keep the session. The marker is set in both cases.
+ *
+ * @return true if secure storage was cleared.
+ */
+internal fun resetSecureStorageOnFreshInstall(
+    hasInstallMarker: () -> Boolean,
+    localDatabaseExists: () -> Boolean,
+    clearSecureStorage: () -> Unit,
+    setInstallMarker: () -> Unit,
+): Boolean {
+    if (hasInstallMarker()) return false
+    val freshInstall = !localDatabaseExists()
+    if (freshInstall) clearSecureStorage()
+    setInstallMarker()
+    return freshInstall
 }

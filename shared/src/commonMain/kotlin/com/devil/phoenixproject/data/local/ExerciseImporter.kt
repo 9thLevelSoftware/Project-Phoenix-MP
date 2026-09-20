@@ -387,6 +387,9 @@ class ExerciseImporter(private val database: PhoenixDatabase) {
             for ((oldId, newId) in mappings) {
                 queries.mergeLegacyExerciseUserFields(oldId = oldId, newId = newId)
                 queries.consumeLegacyExerciseUserFields(oldId)
+                queries.copyProfileExerciseBaselinesForCatalogRemap(oldId, newId)
+                queries.mergeProfileExerciseBaselinesForCatalogRemap(oldId, newId)
+                queries.deleteProfileExerciseBaselinesByExercise(oldId)
                 queries.reassignWorkoutSessionExerciseId(newId = newId, oldId = oldId)
                 queries.reassignRoutineExerciseId(newId = newId, oldId = oldId)
                 resolvePersonalRecordCollisions(oldId = oldId, newId = newId)

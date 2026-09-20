@@ -39,6 +39,8 @@ class FakeGamificationRepository : GamificationRepository {
 
     // Captured RPG profile from saveRpgProfile calls
     var savedRpgProfile: RpgProfile? = null
+    var saveRpgProfileCallCount = 0
+    var saveRpgProfileFailure: Throwable? = null
 
     // Test control methods
     fun setStreakInfo(info: StreakInfo) {
@@ -71,6 +73,8 @@ class FakeGamificationRepository : GamificationRepository {
         badgeLookupProfileIds.clear()
         updateStatsProfileIds.clear()
         savedRpgProfile = null
+        saveRpgProfileCallCount = 0
+        saveRpgProfileFailure = null
         _earnedBadgesFlow.value = emptyList()
         _streakInfoFlow.value = StreakInfo.EMPTY
         _gamificationStatsFlow.value = GamificationStats()
@@ -140,6 +144,8 @@ class FakeGamificationRepository : GamificationRepository {
     )
 
     override suspend fun saveRpgProfile(profile: RpgProfile, profileId: String) {
+        saveRpgProfileCallCount++
+        saveRpgProfileFailure?.let { throw it }
         savedRpgProfile = profile
     }
 

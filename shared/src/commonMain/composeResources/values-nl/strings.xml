@@ -63,7 +63,6 @@
 
     <!-- Workout controls -->
     <string name="start_workout">Start training</string>
-    <string name="stop_workout">Stop training</string>
     <string name="start_exercise">START OEFENING</string>
     <string name="stop_set">Stop serie</string>
     <string name="end_workout">Beëindig training</string>
@@ -188,7 +187,6 @@
     <string name="duplicate_routines_message">Nieuwe kopieën worden aangemaakt met \'(Kopie)\' achtervoegsel.</string>
     <string name="move_to_profile">Verplaatsen naar profiel</string>
     <string name="copy_to_profile">Kopiëren naar profiel</string>
-    <string name="select_target_profile">Selecteer doelprofiel</string>
     <string name="move_routines_confirm">%1$d routines verplaatsen naar %2$s?</string>
     <string name="copy_routines_confirm">%1$d routines kopiëren naar %2$s?</string>
     <string name="no_other_profiles">Geen andere profielen beschikbaar. Maak eerst een nieuw profiel aan.</string>
@@ -432,7 +430,6 @@
     <string name="cd_stop">Stop</string>
     <string name="cd_previous">Vorige</string>
     <string name="cd_next">Volgende</string>
-    <string name="cd_select">Selecteren</string>
     <string name="cd_tip">Tip</string>
     <string name="cd_start_workout">Training starten</string>
     <string name="cd_start_new_workout">Nieuwe training starten</string>

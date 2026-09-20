@@ -293,6 +293,8 @@ class ConflictResolutionTest {
         )
 
         repository.mergeAllPullData(
+            ownerUserId = "",
+            workoutDeletions = emptyList(),
             sessions = emptyList(),
             routines = listOf(portalRoutine),
             cycles = emptyList(),
@@ -301,6 +303,7 @@ class ConflictResolutionTest {
             personalRecords = emptyList(),
             lastSync = 0L,
             profileId = testProfileId,
+            sessionUpdatedAtById = emptyMap(),
         )
 
         val exercise = database.phoenixDatabaseQueries
@@ -309,6 +312,45 @@ class ConflictResolutionTest {
 
         assertEquals("AMRAP,AMRAP,AMRAP", exercise.setReps)
         assertEquals(1L, exercise.isAMRAP)
+    }
+
+    @Test
+    fun `mergeAllPullData - LWW-rejected routine takes the server version even if edited after lastSync`() = runTest {
+        val lastSync = now
+        fun localRoutine(id: String) = database.phoenixDatabaseQueries.insertRoutineIgnore(
+            id = id,
+            name = "Local edit",
+            description = "",
+            createdAt = now - 10_000L,
+            lastUsed = null,
+            useCount = 0L,
+            updatedAt = lastSync + 1_000L, // edited after lastSync
+            profile_id = testProfileId,
+            groupId = null,
+        )
+        localRoutine("rejected-routine")
+        localRoutine("other-routine")
+
+        repository.mergeAllPullData(
+            sessions = emptyList(),
+            routines = listOf(
+                PullRoutineDto(id = "rejected-routine", name = "Portal edit", updatedAt = lastSync + 2_000L),
+                PullRoutineDto(id = "other-routine", name = "Portal edit", updatedAt = lastSync + 2_000L),
+            ),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = lastSync,
+            profileId = testProfileId,
+            serverWinsRoutineIds = setOf("rejected-routine"),
+        )
+
+        val rejected = database.phoenixDatabaseQueries.selectRoutineById("rejected-routine").executeAsOne()
+        assertEquals("Portal edit", rejected.name, "server version wins for a routine whose push was LWW-rejected")
+        assertEquals(lastSync + 2_000L, rejected.updatedAt)
+        val other = database.phoenixDatabaseQueries.selectRoutineById("other-routine").executeAsOne()
+        assertEquals("Local edit", other.name, "other locally edited routines still win")
     }
 
     // ─── Training Cycle Merge Tests (SINGLE-ACTIVE ENFORCEMENT) ─────────────────
@@ -339,6 +381,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = null,
             week_number = 1L,
+            updatedAt = now - 100_000,
         )
         database.phoenixDatabaseQueries.insertTrainingCycleIgnore(
             id = localInactiveId,
@@ -349,6 +392,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = null,
             week_number = 1L,
+            updatedAt = now - 50_000,
         )
 
         // WHEN: Portal sends cycles with a different active cycle
@@ -399,6 +443,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = null,
             week_number = 1L,
+            updatedAt = now,
         )
 
         // WHEN: Portal sends cycles but none are active
@@ -433,6 +478,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = null,
             week_number = 1L,
+            updatedAt = now,
         )
 
         // WHEN: Portal sends the SAME cycle ID with status != "active"
@@ -442,6 +488,7 @@ class ConflictResolutionTest {
                 id = cycleId,
                 name = "Updated Name From Portal",
                 status = "draft", // Not active — only single-active enforcement should change is_active
+                updatedAt = kotlin.time.Instant.fromEpochMilliseconds(now + 1L).toString(),
                 days = emptyList(),
             ),
         )
@@ -495,6 +542,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = "template_531",
             week_number = 3L,
+            updatedAt = now,
         )
 
         repository.mergePortalCycles(
@@ -505,6 +553,7 @@ class ConflictResolutionTest {
                     templateId = "template_531",
                     currentWeek = 1,
                     status = "active",
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(now + 1L).toString(),
                     days = emptyList(),
                 ),
             ),
@@ -532,6 +581,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = "template_531",
             week_number = 2L,
+            updatedAt = now,
         )
 
         repository.mergePortalCycles(
@@ -566,9 +616,12 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = "template_531",
             week_number = 2L,
+            updatedAt = now,
         )
 
         repository.mergeAllPullData(
+            ownerUserId = "",
+            workoutDeletions = emptyList(),
             sessions = emptyList(),
             routines = emptyList(),
             cycles = listOf(
@@ -584,6 +637,7 @@ class ConflictResolutionTest {
             personalRecords = emptyList(),
             lastSync = 0L,
             profileId = testProfileId,
+            sessionUpdatedAtById = emptyMap(),
         )
 
         val cycle = database.phoenixDatabaseQueries
@@ -756,6 +810,71 @@ class ConflictResolutionTest {
         ).executeAsOneOrNull()
         assertNotNull(inserted, "New PR should be inserted")
         assertEquals(150.0, inserted.weight, "PR should have portal weight")
+    }
+
+    @Test
+    fun `server deletions are scoped to the authenticated owner and clean cycle sync state`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertProfile("profile-owner-a", "Owner A", 0L, now, 0L)
+        queries.insertProfile("profile-owner-b", "Owner B", 1L, now, 0L)
+        queries.linkProfileToSupabase("owner-a", now, "profile-owner-a")
+        queries.linkProfileToSupabase("owner-b", now, "profile-owner-b")
+
+        fun insertRoutine(id: String, profileId: String) {
+            queries.insertRoutine(
+                id = id,
+                name = id,
+                description = "",
+                createdAt = now,
+                lastUsed = null,
+                useCount = 0L,
+                profile_id = profileId,
+                groupId = null,
+                deletedAt = null,
+            )
+        }
+        fun insertCycle(id: String, profileId: String) {
+            queries.insertTrainingCycle(
+                id = id,
+                name = id,
+                description = null,
+                created_at = now,
+                is_active = 0L,
+                profile_id = profileId,
+                template_id = null,
+                week_number = 1L,
+                updatedAt = now,
+            )
+            queries.insertCycleSyncState(
+                cycleId = id,
+                profileId = profileId,
+                accountId = if (profileId == "profile-owner-a") "owner-a" else "owner-b",
+                dirtyGeneration = 1L,
+                acknowledgedGeneration = 0L,
+                pendingDeleteUpdatedAt = null,
+                pendingDeleteGeneration = null,
+            )
+        }
+        insertRoutine("routine-owner-a", "profile-owner-a")
+        insertRoutine("routine-owner-b", "profile-owner-b")
+        insertCycle("cycle-owner-a", "profile-owner-a")
+        insertCycle("cycle-owner-b", "profile-owner-b")
+
+        val result = repository.applyServerDeletions(
+            ownerUserId = "owner-a",
+            routineIds = listOf("routine-owner-a", "routine-owner-b"),
+            cycleIds = listOf("cycle-owner-a", "cycle-owner-b"),
+            lastSync = now - 1,
+        )
+
+        assertEquals(listOf("routine-owner-a"), result.deletedRoutineIds)
+        assertEquals(listOf("cycle-owner-a"), result.deletedCycleIds)
+        assertEquals(null, queries.selectRoutineById("routine-owner-a").executeAsOneOrNull())
+        assertNotNull(queries.selectRoutineById("routine-owner-b").executeAsOneOrNull())
+        assertEquals(null, queries.selectTrainingCycleById("cycle-owner-a").executeAsOneOrNull())
+        assertNotNull(queries.selectTrainingCycleById("cycle-owner-b").executeAsOneOrNull())
+        assertEquals(null, queries.selectCycleSyncState("cycle-owner-a").executeAsOneOrNull())
+        assertNotNull(queries.selectCycleSyncState("cycle-owner-b").executeAsOneOrNull())
     }
 
     // ─── Helper Functions ─────────────────────────────────────────────

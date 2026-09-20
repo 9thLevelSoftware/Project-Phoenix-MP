@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.preferences.SettingsPreferencesManager
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalMvtRepository
+import com.devil.phoenixproject.data.repository.ProfileMutationBarrier
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
@@ -51,7 +52,7 @@ val domainModule = module {
     factory { ResolveRoutineWeightsUseCase(get(), get(), get(), get()) }
     factory { ApplyRoutineModifierUseCase(get(), get()) }
     factory { RoutineTimeEstimator(get()) }
-    single { TemplateConverter(get()) }
+    single { TemplateConverter(get(), get()) }
 
     // Assessment
     single { AssessmentEngine() }
@@ -107,6 +108,9 @@ val domainModule = module {
             legacyProfilePreferencesReader = get(),
             profileScopedDataMerger = get(),
             driver = get(),
+            legacyBaselineRepair = get(),
+            profileRecoveryDiscovery = get(),
+            profileMutationBarrier = get<ProfileMutationBarrier>(),
         )
     }
     single<RequiredMigrationGate> { get<MigrationManager>() }

@@ -77,7 +77,9 @@ import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.CycleConflictDraft
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.CycleProgress
@@ -176,6 +178,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     val workoutRepository: WorkoutRepository = koinInject()
     val templateConverter: TemplateConverter = koinInject()
     val personalRecordRepository: com.devil.phoenixproject.data.repository.PersonalRecordRepository = koinInject()
+    val baselineRepository: ProfileExerciseBaselineRepository = koinInject()
     val userProfileRepository: com.devil.phoenixproject.data.repository.UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val activeProfileContext by userProfileRepository.activeProfileContext.collectAsState()
@@ -218,6 +221,15 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     var creationState by remember { mutableStateOf<CycleCreationState>(CycleCreationState.Idle) }
     var showWarningDialog by remember { mutableStateOf<List<String>?>(null) }
     var showErrorDialog by remember { mutableStateOf<String?>(null) }
+    var conflictDrafts by remember { mutableStateOf<List<CycleConflictDraft>>(emptyList()) }
+
+    suspend fun refreshConflictDrafts() {
+        conflictDrafts = cycleRepository.getCycleConflictDrafts(profileId)
+    }
+
+    LaunchedEffect(profileId, cycles) {
+        refreshConflictDrafts()
+    }
 
     // Snackbar for feedback
     val snackbarHostState = remember { SnackbarHostState() }
@@ -676,7 +688,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
             // blank and Continue disabled for returning users (#633 review, P2).
             var existingOneRepMaxValues by remember { mutableStateOf<Map<String, Float>?>(null) }
             var existingPrWeightValues by remember { mutableStateOf<Map<String, Float>>(emptyMap()) }
-            LaunchedEffect(mainLiftNames) {
+            LaunchedEffect(mainLiftNames, profileId) {
                 val oneRepMaxValues = mutableMapOf<String, Float>()
                 val prWeights = mutableMapOf<String, Float>()
                 mainLiftNames.forEach { exerciseName ->
@@ -687,9 +699,11 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                         val pr = personalRecordRepository.getBestWeightPR(exerciseId, profileId)
                         val prOneRepMax = pr?.oneRepMax
 
-                        // Use PR's 1RM if available, else fall back to stored exercise 1RM
+                        // Preserve the cycle-input precedence within the active profile.
                         val valueToUse = prOneRepMax?.takeIf { it > 0f }
-                            ?: exercise.oneRepMaxKg?.takeIf { it > 0f }
+                            ?: baselineRepository.get(profileId, exerciseId)
+                                ?.oneRepMaxPerCableKg
+                                ?.takeIf { it > 0f }
 
                         valueToUse?.let { oneRepMax ->
                             oneRepMaxValues[exerciseName] = oneRepMax
@@ -730,7 +744,14 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                 if (oneRepMax > 0f) {
                                     // ID-first lookup: template IDs are stable, names are not.
                                     exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
-                                        exercise.id?.let { id -> exerciseRepository.updateOneRepMax(id, oneRepMax) }
+                                        exercise.id?.let { id ->
+                                            baselineRepository.set(
+                                                profileId = profileId,
+                                                exerciseId = id,
+                                                oneRepMaxPerCableKg = oneRepMax,
+                                                updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -760,17 +781,8 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     creationState = CycleCreationState.Creating(state.template)
                     scope.launch {
                         try {
-                            // 1. Update 1RM values in exercise repository if provided
-                            val modeTemplateExerciseIds = state.template.exerciseIdsByName()
-                            state.oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
-                                if (oneRepMax > 0f) {
-                                    exerciseRepository.findByIdOrName(modeTemplateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
-                                        exercise.id?.let { id -> exerciseRepository.updateOneRepMax(id, oneRepMax) }
-                                    }
-                                }
-                            }
-
-                            // 2. Convert template using TemplateConverter (with user's exercise configs)
+                            // 1. Convert template using TemplateConverter (with user's exercise configs).
+                            // Baselines were persisted once when the 1RM input step was confirmed.
                             // Issue #364 fix: Pass profileId so cycle and routines are owned by the active profile
                             val conversionResult = templateConverter.convert(
                                 template = state.template,
@@ -778,7 +790,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                 profileId = profileId,
                             )
 
-                            // 3. Save routines FIRST (CycleDay has FK to Routine)
+                            // 2. Save routines FIRST (CycleDay has FK to Routine)
                             // CRITICAL: Must await each save - workoutRepository.saveRoutine is suspend
                             // Using viewModel.saveRoutine() was fire-and-forget (launched coroutine without await)
                             conversionResult.routines.forEach { routine ->
@@ -786,16 +798,16 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                 workoutRepository.saveRoutine(routine.copy(profileId = profileId))
                             }
 
-                            // 4. Save cycle via TrainingCycleRepository (routines now guaranteed to exist)
+                            // 3. Save cycle via TrainingCycleRepository (routines now guaranteed to exist)
                             cycleRepository.saveCycle(conversionResult.cycle)
 
-                            // 5. Show warnings if any exercises weren't found
+                            // 4. Show warnings if any exercises weren't found
                             if (conversionResult.warnings.isNotEmpty()) {
                                 Logger.w { "Some exercises not found: ${conversionResult.warnings}" }
                                 showWarningDialog = conversionResult.warnings
                             }
 
-                            // 6. Navigate back or reset state
+                            // 5. Navigate back or reset state
                             creationState = CycleCreationState.Idle
                             Logger.d { "Successfully created cycle: ${state.template.name}" }
                         } catch (e: Exception) {
@@ -829,6 +841,50 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                 }
             },
             onDismiss = { showDeleteConfirmDialog = null },
+        )
+    }
+
+    conflictDrafts.firstOrNull()?.let { draft ->
+        AlertDialog(
+            onDismissRequest = {},
+            icon = {
+                Icon(
+                    Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.tertiary,
+                )
+            },
+            title = { Text("Cycle changed on another device") },
+            text = {
+                Text(
+                    "The server version of “${draft.cycle.name}” was newer. " +
+                        "Your local version is preserved and can be saved as a separate inactive cycle.",
+                )
+            },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            cycleRepository.saveCycleDraftAsCopy(draft.id)
+                            refreshConflictDrafts()
+                        }
+                    },
+                ) {
+                    Text("Save local copy")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        scope.launch {
+                            cycleRepository.keepServerCycle(draft.id)
+                            refreshConflictDrafts()
+                        }
+                    },
+                ) {
+                    Text("Keep server version")
+                }
+            },
         )
     }
 

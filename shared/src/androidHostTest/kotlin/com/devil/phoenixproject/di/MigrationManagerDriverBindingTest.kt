@@ -69,7 +69,7 @@ class MigrationManagerDriverBindingTest {
 
             assertEquals(mapOf("deleted-profile" to 1), manager.scanForOrphanedPRRecords())
 
-            manager.checkAndRepairOrphanedData()
+            manager.repairOrphanedPRRecords("active-profile")
 
             assertEquals(emptyMap(), manager.scanForOrphanedPRRecords())
             assertEquals(
