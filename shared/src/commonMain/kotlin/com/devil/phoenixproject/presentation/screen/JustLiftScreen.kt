@@ -111,6 +111,7 @@ import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import com.devil.phoenixproject.ui.theme.AccessibilityTheme
 import com.devil.phoenixproject.ui.theme.Spacing
 import com.devil.phoenixproject.ui.theme.ThemeMode
+import com.devil.phoenixproject.util.CommandLimits
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
@@ -502,7 +503,11 @@ fun JustLiftScreen(navController: NavController, viewModel: MainViewModel, theme
                         verticalArrangement = Arrangement.spacedBy(Spacing.small),
                     ) {
                         val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-                        val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f
+                        // KD-9: bound by the CONNECTED trainer, like every other live slider.
+                        val maxWeightKg = CommandLimits.maxWeightPerCableKg(
+                            (connectionState as? ConnectionState.Connected)?.hardwareModel,
+                        )
+                        val maxWeight = viewModel.kgToDisplay(maxWeightKg, weightUnit)
                         val weightStep = viewModel.kgToDisplay(userPreferences.effectiveWeightIncrementKg, weightUnit)
                         val displayWeight = viewModel.kgToDisplay(weightPerCable, weightUnit)
 

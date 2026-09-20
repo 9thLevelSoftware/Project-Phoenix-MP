@@ -94,29 +94,35 @@ class RestTimerProgressionWiringTest {
             "The duplicated progression clamp must be gone; CommandLimits owns the bound.",
         )
         assertTrue(
-            src.contains("CommandLimits.resolve(") &&
-                src.contains("progressionKg = bleParams.progressionRegressionKg") &&
-                src.contains("emitCommandLimitNotice(limits)"),
+            src.contains("CommandLimits.resolve(") && src.contains("emitCommandLimitNotice("),
             "Every machine command must be bounded by CommandLimits, with a user-visible notice.",
         )
     }
 
     @Test
-    fun weightChangeControlSyncsClampedDisplayValueBackToParent() {
+    fun weightChangeControlDisplaysTheClampWithoutWritingItBack() {
         val src = readWeightChangeControlSource()
 
         assertTrue(
             src.contains("val clampedDisplay = kgToDisplay(valueKg, weightUnit).coerceIn"),
             "WeightChangePerRepControl must clamp in display units.",
         )
-        assertTrue(
-            src.contains("val clampedValueKg = displayToKg(clampedDisplay, weightUnit)"),
-            "WeightChangePerRepControl must convert the displayed clamp back to kg.",
+        // KD-9: a programmatic coercion must never travel through the user-edit handler.
+        // It used to latch _userAdjustedWeightDuringRest (so the next set inherited the
+        // previous set's weight and reps) and pre-empt the capped notice by rewriting
+        // WorkoutParameters before the command resolved.
+        assertFalse(
+            src.contains("SideEffect"),
+            "WeightChangePerRepControl must not report its own display clamp as a user edit.",
         )
+        // R-4/R-25: one bound, not a third private copy.
         assertTrue(
-            src.contains("SideEffect") &&
-                src.contains("onValueChangeKg(clampedValueKg)"),
-            "WeightChangePerRepControl must sync out-of-range parent values back to the displayed kg value.",
+            src.contains("CommandLimits.MAX_PROGRESSION_KG"),
+            "WeightChangePerRepControl must derive its range from CommandLimits.MAX_PROGRESSION_KG.",
+        )
+        assertFalse(
+            src.contains("MAX_PROGRESS_KG_DISPLAY") || src.contains("MAX_PROGRESS_LB_DISPLAY"),
+            "WeightChangePerRepControl must not keep a private copy of the progression bound.",
         )
     }
 

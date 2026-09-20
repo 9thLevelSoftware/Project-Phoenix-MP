@@ -49,6 +49,7 @@ class WorkoutCommandValidatorTest {
                 programMode = ProgramMode.OldSchool,
                 weightPerCableKg = 0.5f,
                 targetReps = 8,
+                maxWeightPerCableKg = CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG,
             ).isSuccess,
         )
     }

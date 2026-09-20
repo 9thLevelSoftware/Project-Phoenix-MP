@@ -68,6 +68,8 @@ object CommandLimits {
         val maxWeightPerCableKg: Float,
         val weightCapped: Boolean,
         val progressionCapped: Boolean,
+        /** False when the ceiling came from the fail-closed default, not a recognised model. */
+        val modelKnown: Boolean,
     ) {
         val cappedAnything: Boolean get() = weightCapped || progressionCapped
     }
@@ -87,7 +89,11 @@ object CommandLimits {
             progressionKg = resolvedProgression,
             maxWeightPerCableKg = ceiling,
             weightCapped = weightKg.isFinite() && weightKg > ceiling + WEIGHT_TOLERANCE_KG,
-            progressionCapped = progressionKg.isFinite() && abs(progressionKg) > MAX_PROGRESSION_KG,
+            // Same tolerance as the weight: displayToKg divides by 2.20462f, so a legal
+            // display-unit progression can land a hair past 3.0 and must not be announced.
+            progressionCapped = progressionKg.isFinite() &&
+                abs(progressionKg) > MAX_PROGRESSION_KG + WEIGHT_TOLERANCE_KG,
+            modelKnown = model != null && model != PhoenixModel.Unknown,
         )
     }
 }

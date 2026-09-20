@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
 import com.devil.phoenixproject.util.BlePacketFactory
+import com.devil.phoenixproject.util.CommandLimits
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -64,7 +65,10 @@ class PhantomBleRepositoryTest {
         )
 
         try {
-            val command = BlePacketFactory.createProgramParams(params)
+            val command = BlePacketFactory.createProgramParams(
+                params,
+                maxWeightPerCableKg = CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG,
+            )
             assertEquals(96, command.size)
             assertTrue(repository.sendWorkoutCommand(command).isSuccess)
             assertEquals(
@@ -96,7 +100,10 @@ class PhantomBleRepositoryTest {
         )
 
         try {
-            val command = BlePacketFactory.createProgramParams(params).also { packet ->
+            val command = BlePacketFactory.createProgramParams(
+                params,
+                maxWeightPerCableKg = CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG,
+            ).also { packet ->
                 packet[1] = 0x01
             }
             assertEquals(96, command.size)
@@ -121,7 +128,10 @@ class PhantomBleRepositoryTest {
         )
 
         try {
-            val command = BlePacketFactory.createProgramParams(params)
+            val command = BlePacketFactory.createProgramParams(
+                params,
+                maxWeightPerCableKg = CommandLimits.TRAINER_PLUS_MAX_WEIGHT_PER_CABLE_KG,
+            )
             assertEquals(96, command.size)
             assertTrue(repository.sendWorkoutCommand(command).isSuccess)
             assertEquals(

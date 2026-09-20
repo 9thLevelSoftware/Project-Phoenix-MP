@@ -55,7 +55,9 @@ fun SliderWithButtons(
     val windowSizeClass = LocalWindowSizeClass.current
     val fontScale = LocalDensity.current.fontScale
     val shouldStackHeader = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Compact && fontScale >= 1.15f
-    val formattedValue = formatValue(value)
+    // KD-9: the range can be narrower than the incoming value (a stored 105 kg/cable set on a
+    // 100 kg V-Form). Label what the slider actually represents, not the out-of-range value.
+    val formattedValue = formatValue(value.coerceIn(valueRange))
 
     Column(
         modifier = modifier.fillMaxWidth(),

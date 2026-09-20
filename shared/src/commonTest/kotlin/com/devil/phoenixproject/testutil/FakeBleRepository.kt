@@ -13,6 +13,7 @@ import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.CommandLimits
+import com.devil.phoenixproject.util.HardwareDetection
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -33,9 +34,20 @@ import kotlin.math.abs
  */
 class FakeBleRepository : BleRepository {
 
+    private companion object {
+        const val MAX_ECHO_ECCENTRIC_PERCENT = 150
+    }
+
     /**
-     * Trainer this fake pretends to be. Defaults to the widest hardware so existing tests
-     * keep their headroom; tests that exercise the V-Form ceiling set it explicitly.
+     * Trainer this fake pretends to be, and the ceiling every decoded frame is checked
+     * against. [simulateConnect] resolves it from the device name exactly as production does
+     * (`Vee_*` is a 100 kg/cable V-Form), so a test that connects gets the ceiling the real
+     * app would apply; pass `hardwareModel` explicitly to override.
+     *
+     * The default matters only while NOT connected. Note that the engine reads its ceiling
+     * from `connectionState`, so a test that never connects runs the engine at the
+     * fail-closed 100 kg ceiling while this field still says Trainer+ — the fake is then the
+     * looser of the two and is not the binding constraint.
      */
     var model: PhoenixModel = PhoenixModel.TrainerPlus
 
@@ -92,8 +104,8 @@ class FakeBleRepository : BleRepository {
         val repsByte: Int,
     )
 
-    /** A decoded 32-byte Echo control frame. */
-    data class EchoCommand(val warmupRepsByte: Int, val targetRepsByte: Int)
+    /** A decoded 32-byte Echo control frame. Carries no weight and no progression. */
+    data class EchoCommand(val warmupRepsByte: Int, val targetRepsByte: Int, val eccentricOverload: Int)
 
     // Track commands received for verification in tests
     val commandsReceived = mutableListOf<ByteArray>()
@@ -138,7 +150,7 @@ class FakeBleRepository : BleRepository {
     fun simulateConnect(
         deviceName: String,
         deviceAddress: String = "AA:BB:CC:DD:EE:FF",
-        hardwareModel: PhoenixModel = model,
+        hardwareModel: PhoenixModel = HardwareDetection.detectModel(deviceName),
     ) {
         model = hardwareModel
         monitorPollingActive = true
@@ -359,15 +371,56 @@ class FakeBleRepository : BleRepository {
             }
 
             command.size == 32 && readIntLE(command, 0) == 0x4E -> {
-                echoCommands.add(
-                    EchoCommand(
-                        warmupRepsByte = command[0x04].toInt() and 0xFF,
-                        targetRepsByte = command[0x05].toInt() and 0xFF,
-                    ),
+                val decoded = EchoCommand(
+                    warmupRepsByte = command[0x04].toInt() and 0xFF,
+                    targetRepsByte = command[0x05].toInt() and 0xFF,
+                    eccentricOverload = readShortLE(command, 0x08),
                 )
+                // F-010: the eccentric overload is the Echo frame's load field. 150% is the
+                // machine limit; above it the firmware faults.
+                if (decoded.eccentricOverload !in 0..MAX_ECHO_ECCENTRIC_PERCENT) {
+                    throw AssertionError(
+                        "Echo frame commands ${decoded.eccentricOverload}% eccentric overload, " +
+                            "outside 0..$MAX_ECHO_ECCENTRIC_PERCENT",
+                    )
+                }
+                echoCommands.add(decoded)
             }
+
+            // R-23: deny by default. A load-carrying frame shape has to be taught to this
+            // decoder before the suite will accept it, so a new or revived builder cannot
+            // slip past the bound by simply not being recognised.
+            isKnownZeroLoadControlFrame(command) -> Unit
+
+            else -> throw AssertionError(
+                "Unrecognised ${command.size}-byte frame (opcode 0x${
+                    command.firstOrNull()?.toUByte()?.toString(16)?.uppercase() ?: "??"
+                }). FakeBleRepository must be taught to decode and bound it before it is sent.",
+            )
         }
     }
+
+    /**
+     * Frames that encode no load: init/reset (0x0A), legacy start (0x03), stop (0x05),
+     * soft-stop (0x50 0x00), the INIT preset coefficient table and the colour-scheme frame.
+     */
+    private fun isKnownZeroLoadControlFrame(command: ByteArray): Boolean {
+        val opcode = command.firstOrNull() ?: return false
+        return when (command.size) {
+            // Soft stop (0x50 0x00).
+            2 -> opcode == BleConstants.Commands.STOP_COMMAND && command[1] == 0x00.toByte()
+            // Reset/init (0x0A), legacy start (0x03) and stop (0x05).
+            4 -> opcode == BleConstants.Commands.RESET_COMMAND ||
+                opcode == 0x03.toByte() ||
+                opcode == 0x05.toByte()
+            // INIT preset coefficient table and the colour-scheme/disco frame (0x11).
+            34 -> opcode == 0x11.toByte()
+            else -> false
+        }
+    }
+
+    private fun readShortLE(buffer: ByteArray, offset: Int): Int =
+        (buffer[offset].toInt() and 0xFF) or ((buffer[offset + 1].toInt() and 0xFF) shl 8)
 
     private fun readIntLE(buffer: ByteArray, offset: Int): Int = (buffer[offset].toInt() and 0xFF) or
         ((buffer[offset + 1].toInt() and 0xFF) shl 8) or

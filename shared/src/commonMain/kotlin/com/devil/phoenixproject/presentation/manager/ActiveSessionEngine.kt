@@ -7213,15 +7213,27 @@ class ActiveSessionEngine(
     }
 
     /**
-     * Tell the user what [CommandLimits.resolve] capped, once per resolved command
-     * (so at most once per set). Stored routine values are deliberately left as they are,
-     * so without this the set would just quietly run lighter than the plan says.
+     * Tell the user what [CommandLimits.resolve] capped, once per command that actually
+     * reached the machine. Stored routine values are deliberately left as they are, so
+     * without this the set would just quietly run lighter than the plan says.
+     *
+     * Published as drainable state rather than an event: Just Lift skips the countdown and
+     * navigates to the screen that shows feedback only once the state turns Active, so an
+     * emission on the replay-0 feedback flow would be dropped with no subscriber.
+     *
+     * @param isEchoCommand true when the 32-byte Echo control frame was sent. That frame
+     *   encodes neither a target weight nor a per-rep progression, so a resolution that
+     *   trimmed either of them capped nothing that was going to be commanded.
      */
-    private fun emitCommandLimitNotice(limits: CommandLimits.Resolution) {
-        if (!limits.cappedAnything) return
+    private fun emitCommandLimitNotice(limits: CommandLimits.Resolution, isEchoCommand: Boolean) {
+        if (isEchoCommand || !limits.cappedAnything) {
+            coordinator._commandLimitNotice.value = null
+            return
+        }
         val notice = buildString {
             if (limits.weightCapped) {
-                append("Weight capped to ${formatLimitKg(limits.maxWeightPerCableKg)} kg/cable for this trainer")
+                append("Weight capped to ${formatLimitKg(limits.maxWeightPerCableKg)} kg/cable ")
+                append(if (limits.modelKnown) "for this trainer" else "(trainer model not recognised)")
             }
             if (limits.progressionCapped) {
                 if (isNotEmpty()) append(". ")
@@ -7229,7 +7241,7 @@ class ActiveSessionEngine(
             }
         }
         Logger.w { "CommandLimits: $notice" }
-        coordinator._userFeedbackEvents.tryEmit(notice)
+        coordinator._commandLimitNotice.value = notice
     }
 
     private fun formatLimitKg(valueKg: Float): String {
@@ -8646,7 +8658,7 @@ class ActiveSessionEngine(
                     }
                     configMayHaveReachedMachine = true
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
-                    emitCommandLimitNotice(limits)
+                    emitCommandLimitNotice(limits, isEchoCommand = commandParams.isEchoMode)
                     if (retryRequest != null) {
                         afterAcceptedRetryConfigSentForTest?.invoke()
                         currentCoroutineContext().ensureActive()

@@ -189,9 +189,12 @@ fun SetReadyScreen(navController: NavController, viewModel: MainViewModel, exerc
     val bodyweightPromptPending = sessionBodyweightState.routineHasBodyweight &&
         !sessionBodyweightState.promptHandled
     // KD-9: the live weight slider offers only what this trainer can be commanded to do.
-    val maxWeightKg = CommandLimits.maxWeightPerCableKg(
-        (connectionState as? ConnectionState.Connected)?.hardwareModel,
-    )
+    // While disconnected there is nothing to command, so fall back to the planning ceiling
+    // rather than narrowing a Trainer+ owner to 100 before they have connected.
+    val maxWeightKg = when (val link = connectionState) {
+        is ConnectionState.Connected -> CommandLimits.maxWeightPerCableKg(link.hardwareModel)
+        else -> CommandLimits.planningMaxWeightPerCableKg(userPreferences.lastConnectedModel)
+    }
     val weightStepKg = userPreferences.effectiveWeightIncrementKg
 
     // Navigation state - uses superset-aware helpers from ViewModel

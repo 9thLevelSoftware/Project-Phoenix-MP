@@ -12,6 +12,7 @@ import com.devil.phoenixproject.domain.model.HeuristicPhaseStatistics
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.util.HardwareDetection
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.PI
 import kotlin.math.sin
@@ -1215,7 +1216,14 @@ class PhantomBleRepository(
         }
         val handleStateControlGenerationBeforePublication = handleStateControlGeneration
         val handleDetectionControlGenerationBeforePublication = handleDetectionControlGeneration
-        _connectionState.value = ConnectionState.Connected(device.name, device.address)
+        // KD-9: publish the model like the real transport does (KableBleConnectionManager:676),
+        // otherwise the simulator reports Unknown and every phantom session is fail-closed to
+        // 100 kg/cable with a capped notice, so it stops reproducing Trainer+ behaviour.
+        _connectionState.value = ConnectionState.Connected(
+            deviceName = device.name,
+            deviceAddress = device.address,
+            hardwareModel = HardwareDetection.detectModel(device.name),
+        )
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }

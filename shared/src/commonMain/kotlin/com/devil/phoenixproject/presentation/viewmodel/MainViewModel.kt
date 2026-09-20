@@ -699,6 +699,15 @@ class MainViewModel(
     val autoStartCountdown: StateFlow<Int?> get() = workoutSessionManager.coordinator.autoStartCountdown
     val hapticEvents: SharedFlow<HapticEvent> get() = workoutSessionManager.coordinator.hapticEvents
     val userFeedbackEvents: SharedFlow<String> get() = workoutSessionManager.coordinator.userFeedbackEvents
+
+    /**
+     * KD-9: "the command was capped" notice, held as state so the screen that shows it can
+     * arrive after the command was sent (Just Lift skips the countdown). Drained by the
+     * screen that displays it.
+     */
+    val commandLimitNotice: StateFlow<String?> get() = workoutSessionManager.coordinator.commandLimitNotice
+
+    fun consumeCommandLimitNotice() = workoutSessionManager.coordinator.consumeCommandLimitNotice()
     val routines: StateFlow<List<Routine>> get() = workoutSessionManager.coordinator.routines
     val routineGroups: StateFlow<List<RoutineGroup>> get() = workoutSessionManager.coordinator.routineGroups
     val loadedRoutine: StateFlow<Routine?> get() = workoutSessionManager.coordinator.loadedRoutine

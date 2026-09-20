@@ -115,6 +115,18 @@ class WorkoutCoordinator(
     )
     val userFeedbackEvents: SharedFlow<String> = _userFeedbackEvents.asSharedFlow()
 
+    // KD-9: the "command was capped" notice. This is state, not an event, because the
+    // screen that shows it is often not composed yet when the command is sent: Just Lift
+    // skips the countdown and only navigates to ActiveWorkoutScreen once the state turns
+    // Active, so a replay-0 SharedFlow emission would be dropped. The arriving screen
+    // drains it with consumeCommandLimitNotice().
+    internal val _commandLimitNotice = MutableStateFlow<String?>(null)
+    val commandLimitNotice: StateFlow<String?> = _commandLimitNotice
+
+    fun consumeCommandLimitNotice() {
+        _commandLimitNotice.value = null
+    }
+
     // ===== Workout State =====
 
     internal val _workoutState = MutableStateFlow<WorkoutState>(WorkoutState.Idle)

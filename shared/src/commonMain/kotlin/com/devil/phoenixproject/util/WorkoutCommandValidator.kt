@@ -27,7 +27,7 @@ object WorkoutCommandValidator {
         programMode: ProgramMode,
         weightPerCableKg: Float,
         targetReps: Int,
-        maxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
+        maxWeightPerCableKg: Float,
     ): Result<Unit> {
         validateFiniteWeight(weightPerCableKg).onFailure { return Result.failure(it) }
         validateWeightRange(weightPerCableKg, allowZero = false, maxWeightPerCableKg)

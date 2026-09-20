@@ -95,14 +95,19 @@ object BlePacketFactory {
     // ========== Legacy Workout Command (backward compatibility) ==========
 
     /**
-     * Creates a simplified workout command for backward compatibility.
-     * For full protocol support, use createProgramParams() instead.
+     * The legacy 25-byte REGULAR_COMMAND frame.
+     *
+     * Retained as protocol documentation and for the byte-layout tests: it has had no
+     * production caller since ActiveSessionEngine.sendWeightUpdateToMachine was deleted
+     * (F-059). It is validated, so it is not one of the unvalidated builders KD-9 removes,
+     * but note that FakeBleRepository does not decode this shape — anything that revives it
+     * must teach the fake first. For full protocol support use createProgramParams().
      */
     fun createWorkoutCommand(
         programMode: ProgramMode,
         weightPerCableKg: Float,
         targetReps: Int,
-        maxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
+        maxWeightPerCableKg: Float,
     ): ByteArray {
         WorkoutCommandValidator.validateLegacyWorkoutCommand(
             programMode,
@@ -140,10 +145,9 @@ object BlePacketFactory {
     fun createProgramParams(
         params: WorkoutParameters,
         variant: ForceConfigVariant = defaultForceConfigVariant,
-        // Absolute hardware maximum, not a model ceiling. The engine passes the connected
-        // model's ceiling; a caller that cannot know the model gets the widest bound and
-        // relies on CommandLimits.resolve having already clamped (KD-9).
-        maxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
+        // Required, with no default: a builder that guesses the ceiling reopens exactly the
+        // bypass KD-9 closes. Callers pass the CONNECTED model's ceiling.
+        maxWeightPerCableKg: Float,
     ): ByteArray {
         WorkoutCommandValidator.validateProgramParams(params, maxWeightPerCableKg).getOrThrow()
 
@@ -233,6 +237,11 @@ object BlePacketFactory {
         // from per-rep progression. The increment field controls progression;
         // targetWeight and forceMax stay anchored to the selected force.
         val targetWeightPerCable = params.weightPerCableKg
+        // forceMax (0x54) is the firmware's force-limit headroom, not a commanded load: it is
+        // deliberately targetWeight + 10 and therefore sits ABOVE the per-cable ceiling (110 on
+        // a V-Form clamped to 100). The machine never pulls it; A-001 records that firmware caps
+        // force. It is the one field the model ceiling does not bound, so FakeBleRepository
+        // records it without asserting on it.
         val effectiveKg = targetWeightPerCable + 10.0f
 
         // Normal force modes keep softMax tied to the selected force
