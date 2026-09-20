@@ -1,8 +1,10 @@
 package com.devil.phoenixproject
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -26,37 +28,55 @@ private data class IosAppDependencies(
     val migrationManager: MigrationManager,
 )
 
+private data class IosStartupDependencies(
+    val migrationManager: MigrationManager,
+)
+
 @Composable
 fun IosAppHost() {
     var retryAttempt by rememberSaveable { mutableIntStateOf(0) }
-    val resolution = remember(retryAttempt) {
-        resolveStartupDependencies {
-            val koin = KoinPlatform.getKoin()
-            Logger.i { "iOS AppHost: Resolving app dependencies via Koin" }
-            koin.get<PersistedFileStartupPrerequisite>()
-            IosAppDependencies(
-                mainViewModel = koin.get(),
-                themeViewModel = koin.get(),
-                eulaViewModel = koin.get(),
-                exerciseRepository = koin.get(),
-                syncTriggerManager = koin.get(),
-                migrationManager = koin.get(),
-            )
-        }
+    var resolution by remember(retryAttempt) {
+        mutableStateOf<StartupDependencyResolution<IosAppDependencies>?>(null)
+    }
+    LaunchedEffect(retryAttempt) {
+        resolution = prepareAppHostDependencies(
+            resolveStartupOnly = {
+                val koin = KoinPlatform.getKoin()
+                Logger.i { "iOS AppHost: Resolving startup dependencies via Koin" }
+                koin.get<PersistedFileStartupPrerequisite>()
+                IosStartupDependencies(migrationManager = koin.get())
+            },
+            prepareRequired = { startup ->
+                startup.migrationManager.runRequiredMigrations()
+                startup.migrationManager.awaitRequiredMigrations()
+            },
+            resolveFeatures = { startup ->
+                val koin = KoinPlatform.getKoin()
+                IosAppDependencies(
+                    mainViewModel = koin.get(),
+                    themeViewModel = koin.get(),
+                    eulaViewModel = koin.get(),
+                    exerciseRepository = koin.get(),
+                    syncTriggerManager = koin.get(),
+                    migrationManager = startup.migrationManager,
+                )
+            },
+        )
     }
 
-    when (resolution) {
+    when (val current = resolution) {
+        null -> Unit
         is StartupDependencyResolution.Failed -> {
             Logger.e {
-                "iOS app dependency resolution blocked: code=${resolution.diagnosticCode}, " +
-                    "support=${resolution.supportCode ?: "NONE"}, " +
-                    "presence=${resolution.presenceSnapshot?.safeSummary() ?: "UNAVAILABLE"}"
+                "iOS app dependency resolution blocked: code=${current.diagnosticCode}, " +
+                    "support=${current.supportCode ?: "NONE"}, " +
+                    "presence=${current.presenceSnapshot?.safeSummary() ?: "UNAVAILABLE"}"
             }
-            PersistedFileStartupFailureScreen(resolution) { retryAttempt++ }
+            PersistedFileStartupFailureScreen(current) { retryAttempt++ }
         }
 
         is StartupDependencyResolution.Ready -> RequireBlePermissions {
-            IosAppContent(resolution.dependencies)
+            IosAppContent(current.dependencies)
         }
     }
 }

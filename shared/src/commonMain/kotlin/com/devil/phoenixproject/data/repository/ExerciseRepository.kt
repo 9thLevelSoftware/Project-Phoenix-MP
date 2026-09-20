@@ -123,21 +123,6 @@ interface ExerciseRepository {
      */
     suspend fun deleteCustomExercise(exerciseId: String): Result<Unit>
 
-    // ========== One Rep Max Management ==========
-
-    /**
-     * Update the one-rep max for an exercise
-     * @param exerciseId Exercise ID
-     * @param oneRepMaxKg One-rep max in kg, or null to clear
-     */
-    suspend fun updateOneRepMax(exerciseId: String, oneRepMaxKg: Float?)
-
-    /**
-     * Get all exercises that have a one-rep max set
-     * @return Flow emitting list of exercises with 1RM values
-     */
-    fun getExercisesWithOneRepMax(): Flow<List<Exercise>>
-
     /**
      * Find an exercise by its exact name
      * @param name Exercise name (case-sensitive)

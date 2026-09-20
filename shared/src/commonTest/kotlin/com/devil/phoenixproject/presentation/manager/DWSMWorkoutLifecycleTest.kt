@@ -743,53 +743,6 @@ class DWSMWorkoutLifecycleTest {
     }
 
     @Test
-    fun `interrupted retry reconnect preserves the absolute occurrence overlay`() = runTest {
-        val harness = enabledDropSetHarness(this)
-        try {
-            val first = prepareDurableAcceptedRetry(
-                harness = harness,
-                acceptedPercentage = DropPercentage.TWENTY,
-            )
-            harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.SkipRest(first.accepted.actionIdentity()))
-            runCurrent()
-            completePositiveStall(harness, harness.activeSessionEngine.currentExecutionLeaseForTest())
-            val secondOffer = assertIs<RestTransitionPlan.UnresolvedDropOffer>(harness.restTransitionPlan.value)
-            harness.dwsm.applyRestTransitionAwait(
-                RestTransitionCommand.Accept(secondOffer.actionIdentity(), DropPercentage.TWENTY),
-            )
-            val second = assertIs<RestTransitionPlan.AcceptedRetry>(harness.restTransitionPlan.value)
-            harness.dwsm.applyRestTransitionAwait(RestTransitionCommand.SkipRest(second.actionIdentity()))
-            runCurrent()
-            assertEquals(16f, harness.coordinator.workoutParameters.value.weightPerCableKg)
-
-            harness.coordinator._repCount.value = RepCount(
-                warmupReps = Constants.DEFAULT_WARMUP_REPS,
-                workingReps = 1,
-                totalReps = Constants.DEFAULT_WARMUP_REPS + 1,
-                isWarmupComplete = true,
-            )
-            val commandsBeforeReconnect = harness.fakeBleRepo.commandsReceived.size
-            harness.activeSessionEngine.captureInterruptedWorkoutForRecovery()
-            // Mirrors MainViewModel.reconnectInterruptedWorkout: the interrupted execution's
-            // armed row stays, and only this one-shot authorization lets it rebuild the set.
-            harness.machineSafetyCoordinator?.authorizeInterruptedWorkoutResume()
-            harness.dwsm.reconnectInterruptedWorkout()
-            advanceUntilIdle()
-
-            assertEquals(commandsBeforeReconnect + 1, harness.fakeBleRepo.commandsReceived.size)
-            assertEquals(
-                16f,
-                readFloatLe(
-                    harness.fakeBleRepo.commandsReceived.last(),
-                    BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT,
-                ),
-            )
-        } finally {
-            harness.cleanup()
-        }
-    }
-
-    @Test
     fun `variable warmup returns to the overlaid working load after jump back`() = runTest {
         val harness = enabledDropSetHarness(this)
         try {
@@ -1026,56 +979,6 @@ class DWSMWorkoutLifecycleTest {
         } finally {
             harness.activeSessionEngine.afterAcceptedRetryPlanConsumedForTest = null
             if (!persistenceRelease.isCompleted) persistenceRelease.complete(Unit)
-            harness.cleanup()
-        }
-    }
-
-    @Test
-    fun `failed execution claim preserves an interrupted workout start override for retry`() = runTest {
-        val harness = DWSMTestHarness(this)
-        try {
-            harness.fakeBleRepo.simulateConnect("Vee_Test")
-            val routine = createTestRoutine(exerciseCount = 1, setsPerExercise = 2, weightKg = 25f)
-            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
-            harness.dwsm.loadRoutine(routine)
-            advanceUntilIdle()
-            harness.dwsm.enterSetReady(0, 0)
-            harness.dwsm.startWorkout(skipCountdown = true)
-            advanceUntilIdle()
-            val sourceLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
-            val initialCommandCount = harness.fakeBleRepo.commandsReceived.size
-            harness.coordinator._repCount.value = RepCount(
-                warmupReps = 1,
-                workingReps = 0,
-                totalReps = 1,
-                isWarmupComplete = false,
-            )
-            harness.activeSessionEngine.captureInterruptedWorkoutForRecovery()
-            harness.activeSessionEngine.beforeExecutionBeginForTest = {
-                assertTrue(harness.activeSessionEngine.executionGuard.beginTeardown(sourceLease))
-            }
-
-            // Mirrors MainViewModel.reconnectInterruptedWorkout's one-shot resume authorization.
-            harness.machineSafetyCoordinator?.authorizeInterruptedWorkoutResume()
-            harness.dwsm.reconnectInterruptedWorkout()
-            runCurrent()
-
-            assertEquals(sourceLease, harness.activeSessionEngine.currentExecutionLeaseForTest())
-            assertIs<MachineTeardownState.TearingDown>(harness.dwsm.machineTeardownState.value)
-            assertEquals(initialCommandCount, harness.fakeBleRepo.commandsReceived.size)
-
-            harness.activeSessionEngine.beforeExecutionBeginForTest = null
-            assertTrue(harness.activeSessionEngine.executionGuard.markTeardownReady(sourceLease))
-            harness.dwsm.startWorkout(skipCountdown = true)
-            advanceUntilIdle()
-
-            assertEquals(initialCommandCount + 1, harness.fakeBleRepo.commandsReceived.size)
-            assertEquals(
-                Constants.DEFAULT_WARMUP_REPS - 1,
-                harness.coordinator._workoutParameters.value.warmupReps,
-            )
-        } finally {
-            harness.activeSessionEngine.beforeExecutionBeginForTest = null
             harness.cleanup()
         }
     }

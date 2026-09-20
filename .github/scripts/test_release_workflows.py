@@ -50,10 +50,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 )
 
     def test_store_jobs_are_not_blocked_by_the_other_platform(self) -> None:
-        for name, release_job in (
-            ("release-all.yml", "create-release"),
-            ("release-all-existing.yml", "prepare-release"),
-        ):
+        for name, release_job in (("release-all.yml", "create-release"),):
             with self.subTest(workflow=name):
                 text = workflow(name)
                 android = re.search(
@@ -73,6 +70,12 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 self.assertIn(f"needs: [{release_job}, ios-ipa]", ios_body)
                 self.assertNotIn("android-apk", ios_body)
 
+        existing = workflow("release-all-existing.yml")
+        self.assertIn("needs: [prepare-release, tests]\n    if: ${{ !inputs.skip_android_playstore }}", existing)
+        self.assertIn("needs: [prepare-release, tests]\n    if: ${{ !inputs.skip_ios_testflight }}", existing)
+        self.assertNotIn("needs: [prepare-release, tests, android-apk]", existing)
+        self.assertNotIn("needs: [prepare-release, tests, ios-ipa]", existing)
+
         self.assertNotIn(
             "APK and IPA builds complete before store publication begins.",
             workflow("release-all.yml"),
@@ -85,7 +88,6 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         )
         for name, first_job in (
             ("release-all.yml", "create-release"),
-            ("release-all-existing.yml", "prepare-release"),
             ("android-playstore.yml", "build-and-upload"),
             ("android-release-apk.yml", "build-and-attach"),
             ("ios-release-ipa.yml", "build-and-attach"),
@@ -105,10 +107,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         self.assertNotIn("|| true", gate)
         # Orchestrators test once up front, build exactly the tested commit, and tell the
         # platform workflows they call to skip the re-run.
-        for name, first_job in (
-            ("release-all.yml", "create-release"),
-            ("release-all-existing.yml", "prepare-release"),
-        ):
+        for name, first_job in (("release-all.yml", "create-release"),):
             with self.subTest(workflow=name):
                 text = workflow(name)
                 self.assertEqual(text.count("skip_tests: true"), 4)
@@ -124,6 +123,13 @@ class ReleaseWorkflowContracts(unittest.TestCase):
             ),
             4,
         )
+        existing = workflow("release-all-existing.yml")
+        self.assertIn("ref: ${{ needs.prepare-release.outputs.sha }}", existing)
+        self.assertIn('gh api "repos/${{ github.repository }}/git/ref/tags/$TAG" --jq .object', existing)
+        self.assertIn('gh api "repos/${{ github.repository }}/git/tags/$sha" --jq .object', existing)
+        self.assertIn('test "$object_type" = "commit"', existing)
+        self.assertNotIn("gh release delete-asset", existing)
+        self.assertIn("needs: [prepare-release, tests]", existing)
         # Direct dispatch of a platform workflow must run the tests: skip only via an input
         # that defaults to false, and test the ref that is built.
         for name in (
@@ -167,6 +173,16 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 for ref in refs:
                     if not ref.startswith("./"):
                         self.assertRegex(ref, r"@[0-9a-f]{40}$")
+
+    def test_release_asset_replacement_is_staged_and_uses_workflow_sha_helper(self) -> None:
+        for name in ("android-release-apk.yml", "ios-release-ipa.yml"):
+            with self.subTest(workflow=name):
+                text = workflow(name)
+                self.assertIn("replace_release_asset.py", text)
+                self.assertIn("${{ github.workflow_sha }}", text)
+                self.assertIn("Stage and promote", text)
+                self.assertNotIn("gh release upload", text)
+                self.assertNotIn("--clobber", text)
 
     def test_ci_ios_simulator_tests_are_non_blocking_and_skip_prs(self) -> None:
         text = workflow("ci-tests.yml")

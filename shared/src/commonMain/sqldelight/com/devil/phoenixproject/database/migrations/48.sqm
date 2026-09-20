@@ -1,0 +1,17 @@
+-- Migration 48: non-destructive session sync provenance and profile-scoped baselines.
+ALTER TABLE WorkoutSession
+ADD COLUMN portalOrigin INTEGER NOT NULL DEFAULT 0 CHECK(portalOrigin IN (0, 1));
+
+CREATE TABLE ProfileExerciseBaseline (
+    profile_id TEXT NOT NULL,
+    exercise_id TEXT NOT NULL,
+    one_rep_max_per_cable_kg REAL,
+    updated_at INTEGER NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+    PRIMARY KEY (profile_id, exercise_id),
+    FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE,
+    FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_profile_exercise_baseline_exercise
+ON ProfileExerciseBaseline(exercise_id);
