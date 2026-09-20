@@ -770,6 +770,9 @@ class DWSMWorkoutLifecycleTest {
             )
             val commandsBeforeReconnect = harness.fakeBleRepo.commandsReceived.size
             harness.activeSessionEngine.captureInterruptedWorkoutForRecovery()
+            // Mirrors MainViewModel.reconnectInterruptedWorkout: the interrupted execution's
+            // armed row stays, and only this one-shot authorization lets it rebuild the set.
+            harness.machineSafetyCoordinator?.authorizeInterruptedWorkoutResume()
             harness.dwsm.reconnectInterruptedWorkout()
             advanceUntilIdle()
 
@@ -1052,6 +1055,8 @@ class DWSMWorkoutLifecycleTest {
                 assertTrue(harness.activeSessionEngine.executionGuard.beginTeardown(sourceLease))
             }
 
+            // Mirrors MainViewModel.reconnectInterruptedWorkout's one-shot resume authorization.
+            harness.machineSafetyCoordinator?.authorizeInterruptedWorkoutResume()
             harness.dwsm.reconnectInterruptedWorkout()
             runCurrent()
 
@@ -3547,7 +3552,9 @@ class DWSMWorkoutLifecycleTest {
 
     @Test
     fun `Just Lift reset releases its claim when cleanup throws`() = runTest {
-        val harness = DWSMTestHarness(this)
+        // The injected reset failure never reaches a RESET teardown, so the #782 barrier would
+        // (correctly) refuse the next start; this guard-wedge test opts out of it.
+        val harness = DWSMTestHarness(this, machineSafetyBarrier = false)
         try {
             harness.setActiveSummaryCountdownSeconds(-1)
             harness.fakeBleRepo.simulateConnect("Vee_Test")

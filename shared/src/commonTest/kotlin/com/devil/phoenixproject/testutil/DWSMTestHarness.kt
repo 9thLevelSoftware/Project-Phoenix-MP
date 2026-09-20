@@ -9,6 +9,7 @@ import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeLookupKey
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRejection
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRepository
 import com.devil.phoenixproject.data.repository.ActiveWorkoutRuntimeRowRevision
+import com.devil.phoenixproject.data.repository.BleRepositoryMachineSafetyTransport
 import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.ProfileEquipmentRackRepository
 import com.devil.phoenixproject.data.repository.RepNotification
@@ -34,6 +35,7 @@ import com.devil.phoenixproject.presentation.manager.BiomechanicsRepProcessor
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.manager.GamificationManager
+import com.devil.phoenixproject.presentation.manager.MachineSafetyCoordinator
 import com.devil.phoenixproject.presentation.manager.SettingsManager
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceController
 import com.devil.phoenixproject.presentation.manager.WorkoutServiceSnapshot
@@ -280,6 +282,13 @@ internal class DWSMTestHarness(
         extraBufferCapacity = 32,
         onBufferOverflow = BufferOverflow.SUSPEND,
     ),
+    /**
+     * The #782 durable safety barrier is wired by default, exactly as production does, so
+     * every engine test runs with machine arming ON. Pass false only for a test that
+     * deliberately needs no barrier. Pass a shared [machineSafetyStore] to model a relaunch.
+     */
+    machineSafetyBarrier: Boolean = true,
+    val machineSafetyStore: InMemoryMachineSafetyHazardRepository = InMemoryMachineSafetyHazardRepository(),
     onPostSaveComputed: suspend (exerciseId: String, profileId: String, sessionMcvMmS: Float?) -> Unit = { _, _, _ -> },
 ) {
     companion object {
@@ -348,6 +357,19 @@ internal class DWSMTestHarness(
         onPostSaveComputed,
     )
 
+    /** Real coordinator bound to the fake BLE's connected trainer address (null when opted out). */
+    val machineSafetyCoordinator: MachineSafetyCoordinator? = if (machineSafetyBarrier) {
+        MachineSafetyCoordinator(
+            repository = machineSafetyStore,
+            transport = BleRepositoryMachineSafetyTransport(fakeBleRepo),
+            scope = dwsmScope,
+            nowEpochMs = { nowMs },
+            persistMachineArming = true,
+        )
+    } else {
+        null
+    }
+
     val dwsm = DefaultWorkoutSessionManager(
         bleRepository = fakeBleRepo,
         workoutRepository = workoutRepository,
@@ -387,6 +409,7 @@ internal class DWSMTestHarness(
         _hapticEvents = hapticEvents,
         elapsedRealtimeProvider = { testScope.testScheduler.currentTime },
         wallClockMillisProvider = wallClockMillisProvider ?: { nowMs },
+        machineSafetyCoordinator = machineSafetyCoordinator,
     )
 
     // BleConnectionManager receives errors via coordinator.bleErrorEvents (no circular dependency)

@@ -85,7 +85,7 @@ class MainViewModelTest {
     private lateinit var resolveWeightsUseCase: ResolveRoutineWeightsUseCase
     private lateinit var fakeUserProfileRepository: FakeUserProfileRepository
     private lateinit var profileEquipmentRackRepository: ProfileEquipmentRackRepository
-    private lateinit var safetyStore: com.devil.phoenixproject.testutil.FakeMachineSafetyStore
+    private lateinit var safetyStore: com.devil.phoenixproject.testutil.InMemoryMachineSafetyHazardRepository
 
     @Before
     fun setup() {
@@ -105,7 +105,7 @@ class MainViewModelTest {
             fakeUserProfileRepository,
             kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main),
         )
-        safetyStore = com.devil.phoenixproject.testutil.FakeMachineSafetyStore()
+        safetyStore = com.devil.phoenixproject.testutil.InMemoryMachineSafetyHazardRepository()
 
         viewModel = MainViewModel(
             bleRepository = fakeBleRepository,
