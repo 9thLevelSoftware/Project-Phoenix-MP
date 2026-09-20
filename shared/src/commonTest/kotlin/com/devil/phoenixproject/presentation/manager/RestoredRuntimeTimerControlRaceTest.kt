@@ -266,7 +266,7 @@ class RestoredRuntimeTimerControlRaceTest {
                 val before = captureTimerSnapshot(harness)
                 val navigationBefore = harness.dwsm.restTransitionNavigationLookupsForTest
                 val commandsBefore = harness.fakeBleRepo.commandsReceived.size
-                val configurationsBefore = harness.fakeBleRepo.workoutParameters.size
+                val configurationsBefore = harness.fakeBleRepo.programCommands.size
                 harness.activeSessionEngine.afterRestoredRestTimerControlCaptureForTest = {
                     controlJob = currentCoroutineContext()[Job]
                 }
@@ -300,7 +300,7 @@ class RestoredRuntimeTimerControlRaceTest {
                 assertFalse(harness.activeSessionEngine.executionGuard.isRestoredRuntimeCurrent(before.owner))
                 assertEquals(navigationBefore, harness.dwsm.restTransitionNavigationLookupsForTest)
                 assertEquals(commandsBefore, harness.fakeBleRepo.commandsReceived.size)
-                assertEquals(configurationsBefore, harness.fakeBleRepo.workoutParameters.size)
+                assertEquals(configurationsBefore, harness.fakeBleRepo.programCommands.size)
                 assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
             } finally {
                 harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = null
@@ -324,7 +324,7 @@ class RestoredRuntimeTimerControlRaceTest {
             val before = captureTimerSnapshot(harness)
             val navigationBefore = harness.dwsm.restTransitionNavigationLookupsForTest
             val commandsBefore = harness.fakeBleRepo.commandsReceived.size
-            val configurationsBefore = harness.fakeBleRepo.workoutParameters.size
+            val configurationsBefore = harness.fakeBleRepo.programCommands.size
             harness.activeSessionEngine.afterRestoredRestTimerControlCaptureForTest = {
                 controlJob = currentCoroutineContext()[Job]
             }
@@ -366,7 +366,7 @@ class RestoredRuntimeTimerControlRaceTest {
             assertFalse(harness.activeSessionEngine.executionGuard.isRestoredRuntimeCurrent(before.owner))
             assertEquals(navigationBefore, harness.dwsm.restTransitionNavigationLookupsForTest)
             assertEquals(commandsBefore, harness.fakeBleRepo.commandsReceived.size)
-            assertEquals(configurationsBefore, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(configurationsBefore, harness.fakeBleRepo.programCommands.size)
             assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull())
 
             val replacementsAfterDivergence = harness.fakeActiveWorkoutRuntimeRepository.replacements.size

@@ -1157,10 +1157,7 @@ class SqlDelightSyncRepositoryTest {
             peakEccentricB = 39.0,
             profileId = "active-profile",
         )
-        val prRepository = SqlDelightPersonalRecordRepository(
-            database,
-            SqlDelightProfileExerciseBaselineRepository(database),
-        )
+        val prRepository = SqlDelightPersonalRecordRepository(database)
         prRepository.updatePhaseSpecificPRs(
             exerciseId = "bicep-curl",
             workoutMode = "Old School",

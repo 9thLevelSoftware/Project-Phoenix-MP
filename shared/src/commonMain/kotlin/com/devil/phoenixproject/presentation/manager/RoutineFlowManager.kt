@@ -36,6 +36,7 @@ import com.devil.phoenixproject.domain.usecase.ApplyRoutineModifierUseCase
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.domain.usecase.RoutineSetWeightRequest
 import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
+import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -171,7 +172,6 @@ class RoutineFlowManager(
      */
     internal lateinit var lifecycleDelegate: WorkoutLifecycleDelegate
 
-    private fun clampUpcomingProgressionKg(valueKg: Float): Float = valueKg.coerceIn(-3f, 3f)
 
     private fun shouldPreserveRestEditedProgression(): Boolean = coordinator._userAdjustedWeightDuringRest &&
         (
@@ -1234,9 +1234,9 @@ class RoutineFlowManager(
         val setReps = rawSetReps ?: exercise.reps
         val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
         val progressionKg = if (preserveRestEditedProgression) {
-            clampUpcomingProgressionKg(coordinator._workoutParameters.value.progressionRegressionKg)
+            coordinator._workoutParameters.value.progressionRegressionKg
         } else {
-            clampUpcomingProgressionKg(exercise.progressionKg)
+            exercise.progressionKg
         }
         val readyState = RoutineFlowState.SetReady(
             exerciseIndex = exerciseIndex,
@@ -1309,9 +1309,9 @@ class RoutineFlowManager(
         val rackSelection = resolveDefaultRackSelection(exercise)
         val preserveRestEditedProgression = shouldPreserveRestEditedProgression()
         val progressionKg = if (preserveRestEditedProgression) {
-            clampUpcomingProgressionKg(coordinator._workoutParameters.value.progressionRegressionKg)
+            coordinator._workoutParameters.value.progressionRegressionKg
         } else {
-            clampUpcomingProgressionKg(exercise.progressionKg)
+            exercise.progressionKg
         }
         val readyState = RoutineFlowState.SetReady(
             exerciseIndex = exerciseIndex,
@@ -1403,7 +1403,7 @@ class RoutineFlowManager(
         supersedeConfigurationInputIntent()
         val state = coordinator._routineFlowState.value
         if (state is RoutineFlowState.SetReady) {
-            val clampedValue = clampUpcomingProgressionKg(valueKg)
+            val clampedValue = CommandLimits.clampProgressionKg(valueKg)
             lifecycleDelegate.mutateConfigurationInputs {
                 coordinator._routineFlowState.value = state.copy(adjustedProgressionKg = clampedValue)
                 coordinator._workoutParameters.value = coordinator._workoutParameters.value.copy(

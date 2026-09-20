@@ -8684,7 +8684,7 @@ class DWSMWorkoutLifecycleTest {
             val exerciseIndexB = harness.coordinator.currentExerciseIndex.value
             val setIndexB = harness.coordinator.currentSetIndex.value
             val navigationLookupsB = harness.dwsm.restTransitionNavigationLookupsForTest
-            val startsB = harness.fakeBleRepo.workoutParameters.size
+            val startsB = harness.fakeBleRepo.programCommands.size
             val keyB = harness.fakeActiveWorkoutRuntimeRepository.replacements.last()
             assertEquals(planB, documentB.restTransitionPlan)
 
@@ -8701,7 +8701,7 @@ class DWSMWorkoutLifecycleTest {
             assertEquals(exerciseIndexB, harness.coordinator.currentExerciseIndex.value)
             assertEquals(setIndexB, harness.coordinator.currentSetIndex.value)
             assertEquals(navigationLookupsB, harness.dwsm.restTransitionNavigationLookupsForTest)
-            assertEquals(startsB, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(startsB, harness.fakeBleRepo.programCommands.size)
         } finally {
             if (!releaseAction.isCompleted) releaseAction.complete(Unit)
             harness.activeSessionEngine.beforePersistedRestTimerActionForTest = null
@@ -8743,7 +8743,7 @@ class DWSMWorkoutLifecycleTest {
             val plan = prepareExpiringNormalTimer(harness)
             val activeDocument = assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest())
             val navigationLookups = harness.dwsm.restTransitionNavigationLookupsForTest
-            val starts = harness.fakeBleRepo.workoutParameters.size
+            val starts = harness.fakeBleRepo.programCommands.size
 
             harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = { committed ->
                 if (!cancellationFired && committed.restTransitionPlan == null) {
@@ -8773,7 +8773,7 @@ class DWSMWorkoutLifecycleTest {
             assertEquals(0, harness.coordinator.currentExerciseIndex.value)
             assertEquals(0, harness.coordinator.currentSetIndex.value)
             assertEquals(navigationLookups, harness.dwsm.restTransitionNavigationLookupsForTest)
-            assertEquals(starts, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(starts, harness.fakeBleRepo.programCommands.size)
         } finally {
             harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = null
             harness.cleanup()
@@ -8788,7 +8788,7 @@ class DWSMWorkoutLifecycleTest {
             prepareExpiringNormalTimer(harness)
             val activeDocument = assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest())
             val navigationLookups = harness.dwsm.restTransitionNavigationLookupsForTest
-            val starts = harness.fakeBleRepo.workoutParameters.size
+            val starts = harness.fakeBleRepo.programCommands.size
 
             harness.activeSessionEngine.afterDurableRestPlanClearForTest = {
                 cancellationFired = true
@@ -8816,7 +8816,7 @@ class DWSMWorkoutLifecycleTest {
             assertEquals(0, harness.coordinator.currentExerciseIndex.value)
             assertEquals(0, harness.coordinator.currentSetIndex.value)
             assertEquals(navigationLookups, harness.dwsm.restTransitionNavigationLookupsForTest)
-            assertEquals(starts, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(starts, harness.fakeBleRepo.programCommands.size)
         } finally {
             harness.activeSessionEngine.afterDurableRestPlanClearForTest = null
             harness.cleanup()
@@ -8857,7 +8857,7 @@ class DWSMWorkoutLifecycleTest {
             runCurrent()
             val activeDocument = assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest())
             val navigationLookups = harness.dwsm.restTransitionNavigationLookupsForTest
-            val starts = harness.fakeBleRepo.workoutParameters.size
+            val starts = harness.fakeBleRepo.programCommands.size
 
             harness.activeSessionEngine.startRestTimer(completion)
             runCurrent()
@@ -8875,7 +8875,7 @@ class DWSMWorkoutLifecycleTest {
             assertEquals(0, harness.coordinator.currentExerciseIndex.value)
             assertEquals(0, harness.coordinator.currentSetIndex.value)
             assertEquals(navigationLookups, harness.dwsm.restTransitionNavigationLookupsForTest)
-            assertEquals(starts, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(starts, harness.fakeBleRepo.programCommands.size)
 
             val replacementsBeforeSkip = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
             val outcome = harness.dwsm.applyRestTransitionAwait(
@@ -8954,7 +8954,7 @@ class DWSMWorkoutLifecycleTest {
             val document = assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest())
             val state = assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
             val navigationLookups = harness.dwsm.restTransitionNavigationLookupsForTest
-            val starts = harness.fakeBleRepo.workoutParameters.size
+            val starts = harness.fakeBleRepo.programCommands.size
             assertTrue(document.isRestPaused)
             assertTrue(state.restSecondsRemaining > 0)
 
@@ -8968,7 +8968,7 @@ class DWSMWorkoutLifecycleTest {
             assertTrue(harness.coordinator.restTimerJob?.isActive == true)
             assertEquals(0, harness.coordinator.currentSetIndex.value)
             assertEquals(navigationLookups, harness.dwsm.restTransitionNavigationLookupsForTest)
-            assertEquals(starts, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(starts, harness.fakeBleRepo.programCommands.size)
         } finally {
             if (!releaseConsume.isCompleted) releaseConsume.complete(Unit)
             harness.activeSessionEngine.beforeRestTransitionNavigationClaimForTest = null
@@ -9011,7 +9011,7 @@ class DWSMWorkoutLifecycleTest {
             val document = assertNotNull(harness.activeSessionEngine.activeRuntimeDocumentForTest())
             val state = assertIs<WorkoutState.Resting>(harness.coordinator.workoutState.value)
             val navigationLookups = harness.dwsm.restTransitionNavigationLookupsForTest
-            val starts = harness.fakeBleRepo.workoutParameters.size
+            val starts = harness.fakeBleRepo.programCommands.size
             assertTrue(document.isRestPaused)
             assertTrue(state.restSecondsRemaining > 0)
 
@@ -9025,7 +9025,7 @@ class DWSMWorkoutLifecycleTest {
             assertTrue(harness.coordinator.restTimerJob?.isActive == true)
             assertEquals(0, harness.coordinator.currentSetIndex.value)
             assertEquals(navigationLookups, harness.dwsm.restTransitionNavigationLookupsForTest)
-            assertEquals(starts, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(starts, harness.fakeBleRepo.programCommands.size)
 
             val replacementsBeforeResume = harness.fakeActiveWorkoutRuntimeRepository.replacements.size
             harness.dwsm.toggleRestPause()
@@ -9040,7 +9040,11 @@ class DWSMWorkoutLifecycleTest {
             assertEquals(null, harness.activeSessionEngine.activeRuntimeDocumentForTest()?.restTransitionPlan)
             assertEquals(1, harness.coordinator.currentSetIndex.value)
             assertEquals(navigationLookups, harness.dwsm.restTransitionNavigationLookupsForTest)
-            assertEquals(starts, harness.fakeBleRepo.workoutParameters.size)
+            // The resumed timer expired and autoplay legitimately started set 2 (currentSetIndex
+            // is 1 above), so exactly one further program frame reaches the machine. This used
+            // to read an always-empty list and could not observe a start at all.
+            assertEquals(starts + 1, harness.fakeBleRepo.programCommands.size)
+            assertEquals(WorkoutState.Active, harness.coordinator.workoutState.value)
             assertEquals(replacementsBeforeResume + 2, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)
             runCurrent()
             assertEquals(replacementsBeforeResume + 2, harness.fakeActiveWorkoutRuntimeRepository.replacements.size)

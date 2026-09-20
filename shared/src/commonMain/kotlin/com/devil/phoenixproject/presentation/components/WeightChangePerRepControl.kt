@@ -9,24 +9,33 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.UnitConverter
-import kotlin.math.abs
-
-private const val MAX_PROGRESS_KG_DISPLAY = 3f
-private const val MAX_PROGRESS_LB_DISPLAY = 6f
+import kotlin.math.floor
 
 /**
  * Display-unit-aware signed per-rep progression/regression control.
  *
  * The slider operates in the user's display unit for predictable touch/remote steps,
  * then reports the selected value back in kilograms for WorkoutParameters storage.
+ *
+ * The range is derived from [CommandLimits.MAX_PROGRESSION_KG] rather than being a third
+ * copy of the bound, and is floored to the slider's 0.1 step so the display unit can never
+ * round *up* past the kg bound (6.6 lb is 2.99 kg).
+ *
+ * The control is **display-only for out-of-range input**: an incoming value beyond the
+ * range is rendered clamped but is NOT written back to the caller. A programmatic
+ * coercion used to be reported through [onValueChangeKg], which is the user-edit handler:
+ * it latched "user adjusted during rest" (so the next set inherited the previous set's
+ * weight and reps) and pre-empted the capped notice by rewriting the parameters before
+ * the command resolved. [CommandLimits.resolve] is the only thing that changes what is
+ * commanded; [onValueChangeKg] now only ever reports a real user interaction.
  */
 @Composable
 fun WeightChangePerRepControl(
@@ -38,20 +47,9 @@ fun WeightChangePerRepControl(
     modifier: Modifier = Modifier,
     label: String = "Weight Change / Rep",
 ) {
-    val maxProgression = if (weightUnit == WeightUnit.LB) MAX_PROGRESS_LB_DISPLAY else MAX_PROGRESS_KG_DISPLAY
+    val maxProgression = floor(kgToDisplay(CommandLimits.MAX_PROGRESSION_KG, weightUnit) * 10f) / 10f
     val clampedDisplay = kgToDisplay(valueKg, weightUnit).coerceIn(-maxProgression, maxProgression)
-    val clampedValueKg = displayToKg(clampedDisplay, weightUnit)
     val valueText = formatProgressionPerRep(clampedDisplay, weightUnit)
-
-    // Notify the parent if the incoming valueKg was out of the clamp range.
-    // SideEffect runs after every successful composition — using it instead of
-    // LaunchedEffect avoids the extra coroutine launch and makes the semantics
-    // explicit: this is a synchronous side-effect, not async work.
-    SideEffect {
-        if (abs(valueKg - clampedValueKg) > 0.0001f) {
-            onValueChangeKg(clampedValueKg)
-        }
-    }
 
     val accentColor = when {
         clampedDisplay > 0f -> MaterialTheme.colorScheme.primary

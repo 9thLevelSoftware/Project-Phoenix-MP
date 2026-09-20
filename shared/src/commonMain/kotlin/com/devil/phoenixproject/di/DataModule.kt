@@ -51,7 +51,7 @@ val dataModule = module {
     single { ProfileRecoveryActivityTracker() }
     single<WorkoutRepository> { SqlDelightWorkoutRepository(get(), get()) }
     single<WorkoutDeletionRepository> { SqlDelightWorkoutDeletionRepository(get()) }
-    single<PersonalRecordRepository> { SqlDelightPersonalRecordRepository(get(), get()) }
+    single<PersonalRecordRepository> { SqlDelightPersonalRecordRepository(get()) }
     single<GamificationRepository> { SqlDelightGamificationRepository(get()) }
     single<ProfilePreferencesRepository> { SqlDelightProfilePreferencesRepository(get()) }
     single<ProfileLocalSafetyStore> { SettingsProfileLocalSafetyStore(get()) }

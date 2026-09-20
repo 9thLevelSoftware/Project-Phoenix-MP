@@ -1128,7 +1128,7 @@ class RestoredActionPersistenceRaceTest {
                     val causalMessage = "original-${commitCase.name.lowercase()}-cancellation-$probeIndex"
                     val navigationBefore = harness.dwsm.restTransitionNavigationLookupsForTest
                     val commandsBefore = harness.fakeBleRepo.commandsReceived.size
-                    val configurationsBefore = harness.fakeBleRepo.workoutParameters.size
+                    val configurationsBefore = harness.fakeBleRepo.programCommands.size
                     var committed = false
                     harness.fakeActiveWorkoutRuntimeRepository.afterReplaceCommit = { document ->
                         if (!committed && document == expectedDocument) {
@@ -1174,7 +1174,7 @@ class RestoredActionPersistenceRaceTest {
                     assertFalse(harness.activeSessionEngine.executionGuard.isRestoredRuntimeCurrent(owner), commitCase.name)
                     assertEquals(navigationBefore, harness.dwsm.restTransitionNavigationLookupsForTest, commitCase.name)
                     assertEquals(commandsBefore, harness.fakeBleRepo.commandsReceived.size, commitCase.name)
-                    assertEquals(configurationsBefore, harness.fakeBleRepo.workoutParameters.size, commitCase.name)
+                    assertEquals(configurationsBefore, harness.fakeBleRepo.programCommands.size, commitCase.name)
                     assertNull(harness.activeSessionEngine.currentExecutionLeaseOrNull(), commitCase.name)
                     assertTrue(
                         harness.activeSessionEngine.executionGuard.beginExecution(

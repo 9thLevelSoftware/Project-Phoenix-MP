@@ -86,29 +86,43 @@ class RestTimerProgressionWiringTest {
                 src.contains("progressionRegressionKg = setProgressionKg"),
             "Single-exercise rest advance must preserve WorkoutParameters.progressionRegressionKg when the user edits Rest Timer config.",
         )
+        // KD-9: the per-rep progression bound is no longer a copy in each builder. There is
+        // one clamp, at command-resolution time, which also covers set 1, recovery replay and
+        // values that arrived from a portal pull, a backup or a CSV import.
+        assertFalse(
+            src.contains("clampUpcomingProgressionKg"),
+            "The duplicated progression clamp must be gone; CommandLimits owns the bound.",
+        )
         assertTrue(
-            src.contains("clampUpcomingProgressionKg(nextExercise.progressionKg)") &&
-                src.contains("clampUpcomingProgressionKg(exerciseForNextSet.progressionKg)"),
-            "Rest Timer defaults must be clamped to the signed-off control range before display/advance.",
+            src.contains("CommandLimits.resolve(") && src.contains("emitCommandLimitNotice("),
+            "Every machine command must be bounded by CommandLimits, with a user-visible notice.",
         )
     }
 
     @Test
-    fun weightChangeControlSyncsClampedDisplayValueBackToParent() {
+    fun weightChangeControlDisplaysTheClampWithoutWritingItBack() {
         val src = readWeightChangeControlSource()
 
         assertTrue(
             src.contains("val clampedDisplay = kgToDisplay(valueKg, weightUnit).coerceIn"),
             "WeightChangePerRepControl must clamp in display units.",
         )
-        assertTrue(
-            src.contains("val clampedValueKg = displayToKg(clampedDisplay, weightUnit)"),
-            "WeightChangePerRepControl must convert the displayed clamp back to kg.",
+        // KD-9: a programmatic coercion must never travel through the user-edit handler.
+        // It used to latch _userAdjustedWeightDuringRest (so the next set inherited the
+        // previous set's weight and reps) and pre-empt the capped notice by rewriting
+        // WorkoutParameters before the command resolved.
+        assertFalse(
+            src.contains("SideEffect"),
+            "WeightChangePerRepControl must not report its own display clamp as a user edit.",
         )
+        // R-4/R-25: one bound, not a third private copy.
         assertTrue(
-            src.contains("SideEffect") &&
-                src.contains("onValueChangeKg(clampedValueKg)"),
-            "WeightChangePerRepControl must sync out-of-range parent values back to the displayed kg value.",
+            src.contains("CommandLimits.MAX_PROGRESSION_KG"),
+            "WeightChangePerRepControl must derive its range from CommandLimits.MAX_PROGRESSION_KG.",
+        )
+        assertFalse(
+            src.contains("MAX_PROGRESS_KG_DISPLAY") || src.contains("MAX_PROGRESS_LB_DISPLAY"),
+            "WeightChangePerRepControl must not keep a private copy of the progression bound.",
         )
     }
 

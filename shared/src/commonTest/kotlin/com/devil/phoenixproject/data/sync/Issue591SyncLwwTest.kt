@@ -305,6 +305,44 @@ class Issue591SyncLwwTest {
     )
 
     @Test
+    fun `standalone pull updates the historical component id without inserting a parent-id duplicate`() = runTest {
+        setUp()
+        val componentId = "standalone-component"
+        val portalParentId = "portal-$componentId"
+        val historicalProjection = WorkoutSession(
+            id = componentId,
+            timestamp = now,
+            mode = "OldSchool",
+            weightPerCableKg = 35f,
+            duration = 60_000L,
+            totalReps = 8,
+            workingReps = 8,
+            exerciseName = "Row",
+            routineSessionId = portalParentId,
+            profileId = testProfileId,
+        )
+        repository.mergeSessionsLww(
+            sessions = listOf(historicalProjection),
+            updatedAtBySessionId = mapOf(componentId to now - 60_000L),
+        )
+
+        val incoming = pulledSession(componentId, cableCount = 2)
+        assertEquals(componentId, incoming.id)
+        assertEquals(portalParentId, incoming.routineSessionId)
+        repository.mergeSessionsLww(
+            sessions = listOf(incoming),
+            updatedAtBySessionId = mapOf(componentId to now + 60_000L),
+        )
+
+        val rows = database.phoenixDatabaseQueries.selectAllSessions(testProfileId).executeAsList()
+        assertEquals(1, rows.size, "the parent identity must not create a second workout row")
+        assertEquals(componentId, rows.single().id)
+        assertEquals(portalParentId, rows.single().routineSessionId)
+        assertEquals(2L, rows.single().cableCount)
+        assertNull(database.phoenixDatabaseQueries.selectSessionById(portalParentId).executeAsOneOrNull())
+    }
+
+    @Test
     fun `mergeSessionsLww stores pulled double cableCount over a portal-origin null`() = runTest {
         setUp()
         val sessionId = "pr29-cable-2-over-null"

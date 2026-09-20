@@ -98,6 +98,7 @@ import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
+import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
@@ -3657,17 +3658,33 @@ class ActiveSessionEngine(
             expectedWeightPerCableKg < sourceConfiguredStartWeightPerCableKg
     }
 
-    private fun validateWorkoutCommand(params: WorkoutParameters): Result<Unit> = if (params.isEchoMode) {
+    private fun validateResolvedWorkoutCommand(
+        params: WorkoutParameters,
+        isJustLiftMode: Boolean,
+        maxWeightPerCableKg: Float,
+    ): Result<Unit> = if (params.isEchoMode) {
         WorkoutCommandValidator.validateEchoControl(
             level = params.echoLevel,
             warmupReps = params.warmupReps,
             targetReps = params.reps,
-            isJustLift = params.isJustLift,
+            isJustLift = isJustLiftMode || params.isJustLift,
             isAMRAP = params.isAMRAP,
             eccentricPct = params.eccentricLoad.percentage,
         )
     } else {
-        WorkoutCommandValidator.validateProgramParams(params)
+        WorkoutCommandValidator.validateProgramParams(params, maxWeightPerCableKg)
+    }
+
+    private fun validateWorkoutCommand(params: WorkoutParameters): Result<Unit> {
+        // Feasibility gate for a drop-set retry candidate, not the send itself. It uses the
+        // ABSOLUTE hardware maximum so an over-ceiling stored routine is not fail-closed out
+        // of a retry it is otherwise allowed to start; the send site applies the connected
+        // model's ceiling after CommandLimits.resolve has clamped.
+        return validateResolvedWorkoutCommand(
+            params = params,
+            isJustLiftMode = false,
+            maxWeightPerCableKg = Constants.MAX_WEIGHT_PER_CABLE_KG,
+        )
     }
 
     private suspend fun failAcceptedRetryClosed(
@@ -5314,6 +5331,21 @@ class ActiveSessionEngine(
     }
 
     /**
+     * A sample is concentric (lifting) only when a cable is moving outward faster than
+     * the velocity dead-band. The band keeps sensor noise and the near-stationary drift
+     * between reps out of the phase split, so a rep's mean concentric velocity describes
+     * the pull rather than the pauses around it.
+     */
+    private fun isConcentricSample(metric: WorkoutMetric): Boolean {
+        return metric.velocityA > VELOCITY_DEAD_BAND_MM_S || metric.velocityB > VELOCITY_DEAD_BAND_MM_S
+    }
+
+    /** Mirror of [isConcentricSample] for the lowering phase. */
+    private fun isEccentricSample(metric: WorkoutMetric): Boolean {
+        return metric.velocityA < -VELOCITY_DEAD_BAND_MM_S || metric.velocityB < -VELOCITY_DEAD_BAND_MM_S
+    }
+
+    /**
      * Calculate enhanced metrics for the set summary display.
      */
     internal fun calculateSetSummaryMetrics(
@@ -5423,12 +5455,35 @@ class ActiveSessionEngine(
         }
         val isSingleCable = cableCount == 1
 
+        // AF-1: a max-weight PR is the measured peak load over the WORKING reps only.
+        // A warmup rep can produce a heavier transient than the working load (a hard
+        // first pull against a light warmup weight), and that peak used to be recorded
+        // as the set's heaviest lift and turned into a PR.  Fall back to every sample
+        // when the set had no warmup reps, when the warmup mark was never recorded, or
+        // when no sample landed after it.
+        //
+        // Every load and force statistic of the summary is taken over this window, so
+        // the set reports one consistent answer to "how heavy was this set": the
+        // heaviest lift, the phase peaks that become CONCENTRIC/ECCENTRIC PR rows, the
+        // averages beside them, and Echo's measured weight (R-2, R-7, R-8, R-15, R-19,
+        // R-20).  The cable-count heuristic stays whole-set (cable topology is a
+        // property of the set, not of a phase), and so does the calorie integral: the
+        // work done during the warmup is work the user really did.
+        //
+        // The mark's own sample counts as the first working sample (`>=`), which is the
+        // same convention the seeded rep-1 window uses for its lower bound (R-6).
+        val workingMetrics = if (warmupRepsCount > 0 && warmupCompleteTimeMs > 0L) {
+            metrics.filter { it.timestamp >= warmupCompleteTimeMs }.ifEmpty { metrics }
+        } else {
+            metrics
+        }
+
         val heaviestLiftKgPerCable = if (isSingleCable) {
             // Single-cable: use the active cable's load (don't halve)
-            metrics.maxOf { maxOf(it.loadA, it.loadB) }
+            workingMetrics.maxOf { maxOf(it.loadA, it.loadB) }
         } else {
             // Double-cable: raw totalLoad / 2, no baseline subtraction (parent-aligned)
-            metrics.maxOf { it.totalLoad / 2f }
+            workingMetrics.maxOf { it.totalLoad / 2f }
         }
 
         val volumeWeightKgPerCable = if (isEchoMode) {
@@ -5439,16 +5494,23 @@ class ActiveSessionEngine(
         // Fixed-load modes should log the prescribed working load, while Echo uses measured force.
         val totalVolumeKg = volumeWeightKgPerCable * cableCount.toFloat() * repCount
 
-        val concentricMetrics = metrics.filter { it.velocityA > 10 || it.velocityB > 10 }
-        val eccentricMetrics = metrics.filter { it.velocityA < -10 || it.velocityB < -10 }
+        // R-7/R-15: these peaks are not display-only. They travel as
+        // PostSaveWorkoutInput.peakConcentricForceKg / peakEccentricForceKg into
+        // updatePhaseSpecificPRs, which writes MAX_WEIGHT PersonalRecord rows with
+        // phase CONCENTRIC/ECCENTRIC - and the "% of PR" resolver prefers the
+        // CONCENTRIC row over COMBINED for every mode but Eccentric Only. Taking them
+        // over the warmup would have let the transient set a PR and scale a future
+        // commanded load through the back door.
+        val concentricMetrics = workingMetrics.filter { isConcentricSample(it) }
+        val eccentricMetrics = workingMetrics.filter { isEccentricSample(it) }
 
         val peakConcentricA = concentricMetrics.maxOfOrNull { it.loadA } ?: 0f
         val peakConcentricB = concentricMetrics.maxOfOrNull { it.loadB } ?: 0f
         val peakEccentricA = eccentricMetrics.maxOfOrNull { it.loadA } ?: 0f
         val peakEccentricB = eccentricMetrics.maxOfOrNull { it.loadB } ?: 0f
 
-        val peakLoadA = metrics.maxOf { it.loadA }
-        val peakLoadB = metrics.maxOf { it.loadB }
+        val peakLoadA = workingMetrics.maxOf { it.loadA }
+        val peakLoadB = workingMetrics.maxOf { it.loadB }
         val thresholdA = (peakLoadA * 0.1f).coerceAtLeast(1f)
         val thresholdB = (peakLoadB * 0.1f).coerceAtLeast(1f)
 
@@ -5531,10 +5593,12 @@ class ActiveSessionEngine(
         }
 
         val peakLoadKgPerCable = heaviestLiftKgPerCable
+        // R-2/R-8: the average is taken over the same window as the peak, so
+        // `avg <= peak` still holds by construction.
         val avgLoadKgPerCable = if (isSingleCable) {
-            metrics.map { maxOf(it.loadA, it.loadB) }.average().toFloat()
+            workingMetrics.map { maxOf(it.loadA, it.loadB) }.average().toFloat()
         } else {
-            metrics.map { it.totalLoad / 2f }.average().toFloat()
+            workingMetrics.map { it.totalLoad / 2f }.average().toFloat()
         }
 
         // Echo Mode Phase-Aware Metrics
@@ -5544,8 +5608,11 @@ class ActiveSessionEngine(
         var peakWeightKg = 0f
         var burnoutReps = 0
 
-        if (isEchoMode && metrics.size > 10) {
-            val weightSamples = metrics.map { maxOf(it.loadA, it.loadB) }
+        // R-8/R-20: Echo's measured weight comes from the same window, so a set's
+        // stored peakWeightKg and heaviestLiftKg describe the same samples. Echo's own
+        // ramp/working/burnout split then runs inside the working window.
+        if (isEchoMode && workingMetrics.size > 10) {
+            val weightSamples = workingMetrics.map { maxOf(it.loadA, it.loadB) }
             peakWeightKg = weightSamples.maxOrNull() ?: 0f
             val peakThreshold = peakWeightKg * 0.9f
 
@@ -5580,10 +5647,11 @@ class ActiveSessionEngine(
                     0f
                 }
 
-                val totalReps = warmupRepsCount + workingRepsCount
-                if (burnoutSamples.isNotEmpty() && totalReps > 0) {
+                if (burnoutSamples.isNotEmpty() && workingRepsCount > 0) {
                     val burnoutRatio = burnoutSamples.size.toFloat() / weightSamples.size.toFloat()
-                    burnoutReps = (totalReps * burnoutRatio).toInt().coerceAtLeast(0)
+                    // weightSamples already excludes the warmup window, so its phase
+                    // ratio applies only to the reported working reps.
+                    burnoutReps = (workingRepsCount * burnoutRatio).toInt().coerceAtLeast(0)
                 }
             } else {
                 workingAvgWeightKg = weightSamples.average().toFloat()
@@ -6003,7 +6071,12 @@ class ActiveSessionEngine(
         val currentBoundary = if (boundaries.isNotEmpty()) boundaries.last() else KmpUtils.currentTimeMillis()
 
         val repMetrics = if (boundaries.size >= 2) {
+            // R-18: the exclusive lower bound belongs to the previous rep, but when the
+            // previous boundary is the warmup mark that sample IS this rep's first one.
+            // Only fall back to it when the window would otherwise be empty, so rep 1
+            // keeps producing a quality row instead of silently dropping out.
             metrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
+                .ifEmpty { metrics.filter { it.timestamp in prevBoundary..currentBoundary } }
         } else {
             metrics.takeLast(50) // Fallback for first rep
         }
@@ -6022,8 +6095,10 @@ class ActiveSessionEngine(
             val boundary = phaseBoundaries.first()
             Pair(boundary.concentricIndices, boundary.eccentricIndices)
         } else {
-            // Fallback: split by velocity direction
-            val velocitySplitIndex = repMetrics.indexOfFirst { it.velocityA < 0 || it.velocityB < 0 }
+            // Fallback: split by velocity direction. R-5/R-9/R-21: the same dead-band as
+            // the set summary and the biomechanics window, so the file holds one rule for
+            // "this sample is a lowering sample" rather than a third, sign-only variant.
+            val velocitySplitIndex = repMetrics.indexOfFirst { isEccentricSample(it) }
                 .takeIf { it > 0 } ?: (repMetrics.size / 2)
             Pair(0 until velocitySplitIndex, velocitySplitIndex until repMetrics.size)
         }
@@ -6154,17 +6229,42 @@ class ActiveSessionEngine(
                 val prevBoundary = if (boundaries.size >= 2) boundaries[boundaries.size - 2] else 0L
                 val currentBoundary = boundaries.last()
 
+                // R-4/R-13: the exclusive lower bound belongs to the previous rep, except
+                // when it is the warmup mark - that sample is this rep's first one. Fall
+                // back to it only when the window is otherwise empty, so a rep 1 whose
+                // notification arrives before any further sample still establishes
+                // firstRepMcv instead of leaving velocity-loss tracking baselined on rep 2.
+                //
+                // Round 2, R-4: the fallback sample only counts when it actually carries
+                // concentric movement. The first sample at/after warmup completion is
+                // routinely inside the dead-band, and a one-sample dead-band window would
+                // make firstRepMcv a couple of mm/s - which FINDING-57's `mcv == 0f` guard
+                // does not catch - so every later rep's velocity loss would coerce to 0 and
+                // auto-end plus the VBT alert would be silently off for the whole set, with
+                // that value averaged into session avgMcvMmS. Without a usable sample this
+                // returns early exactly as it did before the fallback existed and rep 2
+                // establishes the baseline, one rep late but genuine. The guard is scoped
+                // to the fallback branch on purpose: applying it to the whole expression
+                // would break the first-half fallback below for a normal rep whose window
+                // happens to hold no concentric sample.
                 val repMetrics = allMetrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
+                    .ifEmpty {
+                        allMetrics.filter { it.timestamp in prevBoundary..currentBoundary }
+                            .takeIf { fallback -> fallback.any { isConcentricSample(it) } }
+                            .orEmpty()
+                    }
                 if (repMetrics.isEmpty()) {
                     Logger.d { "Biomechanics: no metrics for rep $repNumber (boundary $prevBoundary..$currentBoundary)" }
                     return@launch
                 }
 
-                // Split into concentric/eccentric using velocity direction
-                // Concentric = lifting (positive velocity), Eccentric = lowering (negative velocity)
+                // Split into concentric/eccentric using velocity direction.
+                // F-022: the same +-10 mm/s dead-band the set summary uses, so a rep's
+                // mean concentric velocity is not dragged down by near-zero noise
+                // samples that "any positive velocity" used to accept.
                 // Approximate: use first half as concentric if we can't determine from velocity
                 val concentricMetrics = repMetrics.filter {
-                    it.velocityA > 0 || it.velocityB > 0
+                    isConcentricSample(it)
                 }.takeIf { it.isNotEmpty() } ?: run {
                     // Fallback: first half is concentric
                     val midpoint = repMetrics.size / 2
@@ -6328,9 +6428,36 @@ class ActiveSessionEngine(
             coordinator._repCount.value = repCounter.getRepCount()
             coordinator._repRanges.value = repCounter.getRepRanges()
 
-            // Issue #252: Record the moment warmup completes (once per set)
-            if (coordinator.warmupCompleteTimeMs == 0L && coordinator._repCount.value.isWarmupComplete) {
-                coordinator.warmupCompleteTimeMs = currentTimeMillis()
+            // Issue #252: Record the moment warmup completes (once per set).
+            // The mark is compared against sample timestamps (set duration, the
+            // working-reps-only peak load, the rep-1 biomechanics window), so it is
+            // stamped from this sample's own clock rather than read separately.
+            // Both come from the same wall clock in production (MonitorDataProcessor
+            // stamps each sample as it is parsed).
+            //
+            // R-1: the mark is only recorded while no working rep has been counted yet.
+            // RepCounterFromMachine force-completes the warmup when the machine first
+            // reports repsSetCount > workingReps, so warmup completion and working rep 1
+            // can arrive in the same notification; the first sample after that lands
+            // AFTER rep 1 - usually the heaviest rep - and using it as the warmup mark
+            // would subtract rep 1 from the max-weight PR. With this guard no mark is
+            // recorded on that path, every statistic falls back to the whole set, and
+            // the only loss is Issue #252's duration exclusion (which on that path used
+            // to subtract the warmup plus rep 1 anyway).
+            if (coordinator.warmupCompleteTimeMs == 0L &&
+                coordinator._repCount.value.isWarmupComplete &&
+                coordinator._repCount.value.workingReps == 0
+            ) {
+                coordinator.warmupCompleteTimeMs = metric.timestamp
+                // F-022: start working rep 1's window at the end of warmup. Without a
+                // boundary here the window reaches back to set start, so rep 1's mean
+                // concentric velocity - the baseline for velocity-loss auto-end and for
+                // the VBT 1RM estimate - averaged in every warmup rep.
+                if (coordinator._repCount.value.warmupReps > 0) {
+                    coordinator.repBoundaryTimestamps.update { boundaries ->
+                        if (boundaries.isEmpty()) listOf(metric.timestamp) else boundaries
+                    }
+                }
             }
 
             if (shouldEnableAutoStop(params)) {
@@ -6558,52 +6685,25 @@ class ActiveSessionEngine(
 
     // ===== Weight Adjustment =====
 
-    /**
-     * Send weight update command to the machine.
-     */
-    private suspend fun sendWeightUpdateToMachine(weightKg: Float) {
-        try {
-            val params = coordinator._workoutParameters.value
-
-            val command = if (!params.isEchoMode) {
-                WorkoutCommandValidator.validateLegacyWorkoutCommand(
-                    params.programMode,
-                    weightKg,
-                    params.reps,
-                ).getOrThrow()
-                BlePacketFactory.createWorkoutCommand(
-                    params.programMode,
-                    weightKg,
-                    params.reps,
-                )
-            } else {
-                return
-            }
-
-            bleRepository.sendWorkoutCommand(command).getOrThrow()
-            Logger.d("Weight update sent to machine: $weightKg kg")
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            val errorPrefix = if (e is IllegalArgumentException) "Invalid BLE weight update" else "BLE weight update failed"
-            coordinator._bleErrorEvents.tryEmit("$errorPrefix: ${e.message}")
-            Logger.e(e) { "Failed to send weight update: ${e.message}" }
-        }
-    }
+    // F-059: sendWeightUpdateToMachine was deleted. It had no callers, and its own comment
+    // said the REGULAR_COMMAND frame it built would fault the machine mid-set. It was also
+    // an unvalidated command builder sitting beside the validated start path.
 
     /**
      * Adjust the weight during an active workout or rest period.
      *
-     * If called during an active set, the BLE command is deferred until the next
-     * set boundary. sendWeightUpdateToMachine() sends a full REGULAR_COMMAND packet
-     * which resets the exercise on the machine (BLE exercise packet lifecycle constraint:
-     * machine can't receive new exercise packet until active one fully ends).
+     * If called during an active set, the BLE command is deferred until the next set
+     * boundary: a full REGULAR_COMMAND packet mid-set resets the exercise on the machine
+     * (BLE exercise packet lifecycle constraint - the machine can't receive a new
+     * exercise packet until the active one fully ends).
      */
     fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) {
-        // Upper bound is 110kg per cable to support both hardware variants:
-        //   V-Form (VIT-200): 100kg max per cable
-        //   Trainer+:         110kg max per cable
-        // Do NOT replace with Constants.MAX_WEIGHT_KG (100f) — that would regress Trainer+ users.
-        val clampedWeight = newWeightKg.coerceIn(0f, 110f)
+        // KD-9: bound by the CONNECTED model's per-cable ceiling (V-Form 100, Trainer+ 110,
+        // unknown or not connected fails closed to 100) instead of a model-agnostic 110.
+        val clampedWeight = newWeightKg.coerceIn(
+            0f,
+            CommandLimits.maxWeightPerCableKg(bleRepository.connectedModel),
+        )
 
         Logger.d("ActiveSessionEngine: Adjusting weight to $clampedWeight kg (sendToMachine=$sendToMachine)")
 
@@ -7239,7 +7339,42 @@ class ActiveSessionEngine(
         Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Reset to 0 (disabled)" }
     }
 
-    private fun clampUpcomingProgressionKg(valueKg: Float): Float = valueKg.coerceIn(-3f, 3f)
+    /**
+     * Tell the user what [CommandLimits.resolve] capped, once per command that actually
+     * reached the machine. Stored routine values are deliberately left as they are, so
+     * without this the set would just quietly run lighter than the plan says.
+     *
+     * Published as drainable state rather than an event: Just Lift skips the countdown and
+     * navigates to the screen that shows feedback only once the state turns Active, so an
+     * emission on the replay-0 feedback flow would be dropped with no subscriber.
+     *
+     * @param isEchoCommand true when the 32-byte Echo control frame was sent. That frame
+     *   encodes neither a target weight nor a per-rep progression, so a resolution that
+     *   trimmed either of them capped nothing that was going to be commanded.
+     */
+    private fun emitCommandLimitNotice(limits: CommandLimits.Resolution, isEchoCommand: Boolean) {
+        if (isEchoCommand || !limits.cappedAnything) {
+            coordinator._commandLimitNotice.value = null
+            return
+        }
+        val notice = buildString {
+            if (limits.weightCapped) {
+                append("Weight capped to ${formatLimitKg(limits.maxWeightPerCableKg)} kg/cable ")
+                append(if (limits.modelKnown) "for this trainer" else "(trainer model not recognised)")
+            }
+            if (limits.progressionCapped) {
+                if (isNotEmpty()) append(". ")
+                append("Progression capped to ${formatLimitKg(CommandLimits.MAX_PROGRESSION_KG)} kg/rep")
+            }
+        }
+        Logger.w { "CommandLimits: $notice" }
+        coordinator._commandLimitNotice.value = notice
+    }
+
+    private fun formatLimitKg(valueKg: Float): String {
+        val rounded = kotlin.math.round(valueKg)
+        return if (kotlin.math.abs(valueKg - rounded) < 0.01f) rounded.toInt().toString() else valueKg.toString()
+    }
 
     fun updateWorkoutParameters(params: WorkoutParameters) {
         supersedeConfigurationInputIntent()
@@ -7776,6 +7911,7 @@ class ActiveSessionEngine(
 
         coordinator.workoutJob = scope.launch {
             var configMayHaveReachedMachine = false
+            var commandValidationFailed = false
             var recoveryTeardownScheduled = false
             var configurationTeardownHandedOff = false
             var retryStartCommitted = false
@@ -8181,7 +8317,7 @@ class ActiveSessionEngine(
                     }
                 }
                 Logger.w("Issue390") {
-                    "BLE PARAMS FINAL: weightPerCableKg=${bleParams.weightPerCableKg}kg, " +
+                    "BLE PARAMS PRE-LIMIT: weightPerCableKg=${bleParams.weightPerCableKg}kg, " +
                         "progressionRegressionKg=${bleParams.progressionRegressionKg}kg, " +
                         "reps=${bleParams.reps}, isAMRAP=${bleParams.isAMRAP}, " +
                         "isJustLift=${bleParams.isJustLift}, mode=${bleParams.programMode}"
@@ -8201,19 +8337,26 @@ class ActiveSessionEngine(
                     }
                 }
 
-                val commandValidation = if (bleParams.isEchoMode) {
-                    WorkoutCommandValidator.validateEchoControl(
-                        level = bleParams.echoLevel,
-                        warmupReps = bleParams.warmupReps,
-                        targetReps = bleParams.reps,
-                        isJustLift = isJustLiftMode || bleParams.isJustLift,
-                        isAMRAP = bleParams.isAMRAP,
-                        eccentricPct = bleParams.eccentricLoad.percentage,
-                    )
-                } else {
-                    WorkoutCommandValidator.validateProgramParams(bleParams)
-                }
-                commandValidation.onFailure { error ->
+                // Reject model-independent malformed fields before the countdown and before
+                // persisting a machine-safety arm. Weight/progression are resolved first so
+                // valid imported values above a trainer limit remain clampable rather than
+                // being rejected. The connected model is resolved again at the write boundary.
+                val preflightModel = bleRepository.connectedModel
+                val preflightCeilingKg = CommandLimits.maxWeightPerCableKg(preflightModel)
+                val preflightLimits = CommandLimits.resolve(
+                    weightKg = bleParams.weightPerCableKg,
+                    progressionKg = bleParams.progressionRegressionKg,
+                    model = preflightModel,
+                )
+                val preflightParams = bleParams.copy(
+                    weightPerCableKg = preflightLimits.weightPerCableKg,
+                    progressionRegressionKg = preflightLimits.progressionKg,
+                )
+                validateResolvedWorkoutCommand(
+                    params = preflightParams,
+                    isJustLiftMode = isJustLiftMode,
+                    maxWeightPerCableKg = preflightCeilingKg,
+                ).onFailure { error ->
                     Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
                     coordinator._bleErrorEvents.tryEmit("Invalid BLE workout command: ${error.message}")
                     if (retryRequest != null) {
@@ -8223,20 +8366,6 @@ class ActiveSessionEngine(
                     }
                     return@launch
                 }
-
-                val command = if (bleParams.isEchoMode) {
-                    BlePacketFactory.createEchoControl(
-                        level = bleParams.echoLevel,
-                        warmupReps = bleParams.warmupReps,
-                        targetReps = bleParams.reps,
-                        isJustLift = isJustLiftMode || bleParams.isJustLift,
-                        isAMRAP = bleParams.isAMRAP,
-                        eccentricPct = bleParams.eccentricLoad.percentage,
-                    )
-                } else {
-                    BlePacketFactory.createProgramParams(bleParams)
-                }
-                Logger.d { "Built ${command.size}-byte workout command for ${bleParams.programMode}" }
 
                 coordinator._repCount.value = RepCount()
                 coordinator.warmupCompleteTimeMs = 0
@@ -8368,8 +8497,95 @@ class ActiveSessionEngine(
                     ) {
                         throw IllegalStateException("machine safety obligation could not be persisted")
                     }
+                    // Resolve limits from the model that is connected at the write boundary.
+                    // The user can reconnect to a different trainer during the countdown;
+                    // a frame prepared before that delay may exceed the replacement model.
+                    // bleParams remains the captured logical request for retry/rack checks.
+                    val connectedModel = bleRepository.connectedModel
+                    val commandCeilingKg = CommandLimits.maxWeightPerCableKg(connectedModel)
+                    val limits = CommandLimits.resolve(
+                        weightKg = bleParams.weightPerCableKg,
+                        progressionKg = bleParams.progressionRegressionKg,
+                        model = connectedModel,
+                    )
+                    val commandParams = bleParams.copy(
+                        weightPerCableKg = limits.weightPerCableKg,
+                        progressionRegressionKg = limits.progressionKg,
+                    )
+                    val commandValidation = validateResolvedWorkoutCommand(
+                        params = commandParams,
+                        isJustLiftMode = isJustLiftMode,
+                        maxWeightPerCableKg = commandCeilingKg,
+                    )
+                    commandValidation.onFailure { error ->
+                        commandValidationFailed = true
+                        Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
+                        coordinator._bleErrorEvents.tryEmit("Invalid BLE workout command: ${error.message}")
+                        // The safety row was armed just above, but no frame has reached the
+                        // trainer. Clear this execution's arm so a malformed command cannot
+                        // leave a hidden durable hazard that blocks the next valid start.
+                        machineSafetyCoordinator?.resolveArmedExecution(lease.executionId)
+                        throw error
+                    }
+                    val command = if (commandParams.isEchoMode) {
+                        BlePacketFactory.createEchoControl(
+                            level = commandParams.echoLevel,
+                            warmupReps = commandParams.warmupReps,
+                            targetReps = commandParams.reps,
+                            isJustLift = isJustLiftMode || commandParams.isJustLift,
+                            isAMRAP = commandParams.isAMRAP,
+                            eccentricPct = commandParams.eccentricLoad.percentage,
+                        )
+                    } else {
+                        BlePacketFactory.createProgramParams(
+                            params = commandParams,
+                            maxWeightPerCableKg = commandCeilingKg,
+                        )
+                    }
+                    Logger.d { "Built ${command.size}-byte workout command for ${commandParams.programMode}" }
                     configMayHaveReachedMachine = true
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
+                    // Freeze what the trainer actually received on this execution. The stored
+                    // routine and coordinator parameters remain the user's requested values;
+                    // completion/history must use the bounded command values instead.
+                    executionContext = executionContext?.let { context ->
+                        if (
+                            context.lease.executionId == lease.executionId &&
+                            context.lease.sessionId == lease.sessionId
+                        ) {
+                            if (commandParams.isEchoMode) {
+                                // Echo configuration packets encode the Echo level rather
+                                // than target weight or per-rep progression. Command-limit
+                                // normalization therefore did not change either value on the
+                                // trainer. Freeze the original start metadata so an active-set
+                                // edit intended for the next set cannot rewrite this completion.
+                                context.copy(
+                                    completionFacts = context.completionFacts.copy(
+                                        executedWeightPerCableKg = warmupOverrideParams.weightPerCableKg,
+                                        executedProgressionKg = bleParams.progressionRegressionKg,
+                                    ),
+                                )
+                            } else {
+                                // History stores the programmed cable weight together with rack
+                                // metadata. Apply only the command-resolution delta so that an
+                                // ordinary rack adjustment retains that representation while a
+                                // firmware-limit clamp records the equivalent load that ran.
+                                val executedWeight = warmupOverrideParams.weightPerCableKg +
+                                    (commandParams.weightPerCableKg - bleParams.weightPerCableKg)
+                                context.copy(
+                                    completionFacts = context.completionFacts.copy(
+                                        executedWeightPerCableKg = executedWeight,
+                                        executedProgressionKg = commandParams.progressionRegressionKg,
+                                    ),
+                                )
+                            }
+                        } else {
+                            // The send suspended and a successor execution won authority.
+                            // Never let this stale completion erase its context.
+                            context
+                        }
+                    }
+                    emitCommandLimitNotice(limits, isEchoCommand = commandParams.isEchoMode)
                     if (retryRequest != null) {
                         afterAcceptedRetryConfigSentForTest?.invoke()
                         currentCoroutineContext().ensureActive()
@@ -8457,8 +8673,10 @@ class ActiveSessionEngine(
                 }
                 if (configurationTeardownHandedOff) return@launch
                 if (configFailure != null) {
-                    Logger.e(configFailure) { "Failed to send config command" }
-                    coordinator._bleErrorEvents.tryEmit("Failed to send command: ${configFailure.message}")
+                    if (!commandValidationFailed) {
+                        Logger.e(configFailure) { "Failed to send config command" }
+                        coordinator._bleErrorEvents.tryEmit("Failed to send command: ${configFailure.message}")
+                    }
                     if (retryRequest != null) {
                         recoveryTeardownScheduled = recoverRetryStartAfterConfigAttempt(
                             retryRequest,
@@ -8663,6 +8881,13 @@ class ActiveSessionEngine(
         buildExitSnapshot(completion, terminalPath)
     }
 
+    private fun WorkoutParameters.withExecutedCommand(
+        completion: SetExecutionCompletion,
+    ): WorkoutParameters = copy(
+        weightPerCableKg = completion.executedWeightPerCableKg ?: weightPerCableKg,
+        progressionRegressionKg = completion.executedProgressionKg ?: progressionRegressionKg,
+    )
+
     private fun mergedWorkoutCompleteRepCount(
         published: RepCount,
         counter: RepCount,
@@ -8718,6 +8943,7 @@ class ActiveSessionEngine(
     ): WorkoutExitSnapshot {
         val lease = completion.lease
         val params = coordinator._workoutParameters.value
+        val executedParams = params.withExecutedCommand(completion)
         val repCount = coordinator._repCount.value
         val metrics = coordinator.collectedMetrics.value.toList()
         val exerciseIndex = coordinator._currentExerciseIndex.value
@@ -8761,8 +8987,8 @@ class ActiveSessionEngine(
         val summary = calculateSetSummaryMetrics(
             metrics = metrics,
             repCount = repCount.workingReps,
-            fallbackWeightKg = params.weightPerCableKg,
-            configuredWeightKgPerCable = params.weightPerCableKg,
+            fallbackWeightKg = executedParams.weightPerCableKg,
+            configuredWeightKgPerCable = executedParams.weightPerCableKg,
             isEchoMode = params.isEchoMode,
             warmupRepsCount = repCount.warmupReps,
             workingRepsCount = repCount.workingReps,
@@ -8793,15 +9019,15 @@ class ActiveSessionEngine(
         val savedWeightKg = if (lease.isBodyweight) {
             summary.heaviestLiftKgPerCable.takeIf { it > 0f } ?: params.weightPerCableKg
         } else {
-            params.weightPerCableKg
+            executedParams.weightPerCableKg
         }
         val session = WorkoutSession(
             id = lease.sessionId,
             timestamp = coordinator.workoutStartTime,
             mode = params.programMode.displayName,
             reps = params.reps,
-            weightPerCableKg = params.weightPerCableKg,
-            progressionKg = params.progressionRegressionKg,
+            weightPerCableKg = executedParams.weightPerCableKg,
+            progressionKg = executedParams.progressionRegressionKg,
             duration = (wallClockMillisProvider() - effectiveStart).coerceAtLeast(0L),
             totalReps = repCount.totalReps,
             warmupReps = repCount.warmupReps,
@@ -10656,6 +10882,7 @@ class ActiveSessionEngine(
             return
         }
         val params = coordinator._workoutParameters.value
+        val executedParams = params.withExecutedCommand(completion)
         val warmup = coordinator._repCount.value.warmupReps
         val working = coordinator._repCount.value.workingReps
 
@@ -10695,8 +10922,8 @@ class ActiveSessionEngine(
         val summary = calculateSetSummaryMetrics(
             metrics = metricsSnapshot,
             repCount = working,
-            fallbackWeightKg = params.weightPerCableKg,
-            configuredWeightKgPerCable = params.weightPerCableKg,
+            fallbackWeightKg = executedParams.weightPerCableKg,
+            configuredWeightKgPerCable = executedParams.weightPerCableKg,
             isEchoMode = params.isEchoMode,
             warmupRepsCount = warmup,
             workingRepsCount = working,
@@ -10711,7 +10938,7 @@ class ActiveSessionEngine(
         val savedWeightKg = if (isBodyweightExercise(currentExercise)) {
             summary.heaviestLiftKgPerCable.takeIf { it > 0f } ?: params.weightPerCableKg
         } else {
-            params.weightPerCableKg
+            executedParams.weightPerCableKg
         }
         val rackAdjustment = coordinator._currentRackLoadAdjustment.value
 
@@ -10725,8 +10952,8 @@ class ActiveSessionEngine(
             timestamp = coordinator.workoutStartTime,
             mode = params.programMode.displayName,
             reps = params.reps,
-            weightPerCableKg = params.weightPerCableKg,
-            progressionKg = params.progressionRegressionKg,
+            weightPerCableKg = executedParams.weightPerCableKg,
+            progressionKg = executedParams.progressionRegressionKg,
             duration = duration,
             totalReps = working,
             warmupReps = warmup,
@@ -11602,7 +11829,7 @@ class ActiveSessionEngine(
                         programMode = exerciseForNextSet.programMode,
                         echoLevel = exerciseForNextSet.getEchoLevelForSet(nextSetIdx),
                         eccentricLoad = exerciseForNextSet.eccentricLoad,
-                        progressionRegressionKg = clampUpcomingProgressionKg(exerciseForNextSet.progressionKg),
+                        progressionRegressionKg = exerciseForNextSet.progressionKg,
                         selectedExerciseId = exerciseForNextSet.exercise.id,
                         isAMRAP = nextIsAMRAP,
                         stallDetectionEnabled = exerciseForNextSet.stallDetectionEnabled,
@@ -12030,7 +12257,7 @@ class ActiveSessionEngine(
                 programMode = nextExercise.programMode,
                 echoLevel = nextExercise.getEchoLevelForSet(nextSetIndex),
                 eccentricLoad = nextExercise.eccentricLoad,
-                progressionRegressionKg = clampUpcomingProgressionKg(nextExercise.progressionKg),
+                progressionRegressionKg = nextExercise.progressionKg,
                 selectedExerciseId = nextExercise.exercise.id,
                 isAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet),
                 stallDetectionEnabled = nextExercise.stallDetectionEnabled,
@@ -12373,7 +12600,7 @@ class ActiveSessionEngine(
             val setProgressionKg = if (coordinator._userAdjustedWeightDuringRest) {
                 currentParams.progressionRegressionKg
             } else {
-                clampUpcomingProgressionKg(currentExercise.progressionKg)
+                currentExercise.progressionKg
             }
             coordinator._userAdjustedWeightDuringRest = false
 
@@ -12530,7 +12757,7 @@ class ActiveSessionEngine(
             val nextProgressionKg = if (preserveRestEdits) {
                 currentParams.progressionRegressionKg
             } else {
-                clampUpcomingProgressionKg(nextExercise.progressionKg)
+                nextExercise.progressionKg
             }
 
             val nextIsBodyweight = isBodyweightExercise(nextExercise)
@@ -13408,6 +13635,17 @@ class ActiveSessionEngine(
 
     private companion object {
         const val TEMPLATE_531_ID = "template_531"
+
+        // F-022: the phase dead-band (mm/s) shared by the set summary, the per-rep
+        // biomechanics window and the rep-quality split, so all three split concentric
+        // from eccentric the same way.
+        //
+        // R-16: changing this value recalibrates a load-commanding metric. MCV is a
+        // plain average over the samples the dead-band admits, so widening the band
+        // raises every rep's MCV, and MCV aggregates into session avgMcvMmS -> the
+        // velocity-1RM regression -> the ESTIMATED_1RM scaling baseline. Pre- and
+        // post-change rows mix inside that estimator's 28-day window.
+        const val VELOCITY_DEAD_BAND_MM_S = 10.0
 
         // Issue #649: verbal cues are typically <30s; this ceiling covers the cue
         // plus a short post-cue transition window. Exceeding it releases the defer

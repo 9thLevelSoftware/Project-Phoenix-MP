@@ -12,6 +12,7 @@ import com.devil.phoenixproject.domain.model.HeuristicPhaseStatistics
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.util.HardwareDetection
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.math.PI
 import kotlin.math.sin
@@ -440,7 +441,10 @@ class PhantomBleRepository(
     private fun readFloat32LittleEndian(bytes: ByteArray, offset: Int): Float =
         Float.fromBits(readUInt32LittleEndian(bytes, offset))
 
-    override suspend fun sendInitSequence(): Result<Unit> {
+    // F-010: no longer BleRepository members. The unvalidated builders were deleted from
+    // the interface; these stay as simulator-local entry points used by the phantom's own
+    // tests, so nothing can reach them through BleRepository and bypass the validator.
+    suspend fun sendInitSequence(): Result<Unit> {
         return lifecycleLock.withLock {
             if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
                 return@withLock Result.failure(IllegalStateException("Phantom repository is shut down"))
@@ -454,7 +458,7 @@ class PhantomBleRepository(
         }
     }
 
-    override suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
+    suspend fun startWorkout(params: WorkoutParameters): Result<Unit> {
         return lifecycleLock.withLock {
             if (terminal.value || lifecycleCleanupInProgress || connectionAttemptReservationActive) {
                 return@withLock Result.failure(
@@ -1212,7 +1216,14 @@ class PhantomBleRepository(
         }
         val handleStateControlGenerationBeforePublication = handleStateControlGeneration
         val handleDetectionControlGenerationBeforePublication = handleDetectionControlGeneration
-        _connectionState.value = ConnectionState.Connected(device.name, device.address)
+        // KD-9: publish the model like the real transport does (KableBleConnectionManager:676),
+        // otherwise the simulator reports Unknown and every phantom session is fail-closed to
+        // 100 kg/cable with a capped notice, so it stops reproducing Trainer+ behaviour.
+        _connectionState.value = ConnectionState.Connected(
+            deviceName = device.name,
+            deviceAddress = device.address,
+            hardwareModel = HardwareDetection.detectModel(device.name),
+        )
         if (terminal.value || connectionAttemptGeneration.value != attemptGeneration) {
             return@withLock false
         }

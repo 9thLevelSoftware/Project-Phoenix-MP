@@ -39,6 +39,7 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
@@ -91,6 +92,7 @@ import com.devil.phoenixproject.presentation.manager.currentProfileTestSoundEven
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupStats
+import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.DataBackupManager
 import kotlin.coroutines.resume
 import kotlinx.atomicfu.atomic
@@ -114,6 +116,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 
 // HistoryItem, SingleSessionHistoryItem, GroupedRoutineHistoryItem moved to
 // com.devil.phoenixproject.presentation.manager.HistoryManager
@@ -569,6 +572,13 @@ class MainViewModel(
             .map { it?.id ?: "default" }
             .stateIn(viewModelScope, SharingStarted.Eagerly, "default")
 
+    // Name of the same profile, so a profile-scoped destructive action can say whose data
+    // it deletes ("Delete all workouts for <profile>").
+    val activeProfileName: StateFlow<String> =
+        userProfileRepository.activeProfile
+            .map { it?.name?.takeIf(String::isNotBlank) ?: "Default" }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, "Default")
+
     /**
      * Picker-safe completed IDs.  The tag and loading sentinel prevent a picker from ever
      * using a prior profile's history during an active-profile transition.
@@ -705,6 +715,15 @@ class MainViewModel(
     val autoStartCountdown: StateFlow<Int?> get() = workoutSessionManager.coordinator.autoStartCountdown
     val hapticEvents: SharedFlow<HapticEvent> get() = workoutSessionManager.coordinator.hapticEvents
     val userFeedbackEvents: SharedFlow<String> get() = workoutSessionManager.coordinator.userFeedbackEvents
+
+    /**
+     * KD-9: "the command was capped" notice, held as state so the screen that shows it can
+     * arrive after the command was sent (Just Lift skips the countdown). Drained by the
+     * screen that displays it.
+     */
+    val commandLimitNotice: StateFlow<String?> get() = workoutSessionManager.coordinator.commandLimitNotice
+
+    fun consumeCommandLimitNotice() = workoutSessionManager.coordinator.consumeCommandLimitNotice()
     val routines: StateFlow<List<Routine>> get() = workoutSessionManager.coordinator.routines
     val routineGroups: StateFlow<List<RoutineGroup>> get() = workoutSessionManager.coordinator.routineGroups
     val loadedRoutine: StateFlow<Routine?> get() = workoutSessionManager.coordinator.loadedRoutine
@@ -1281,6 +1300,17 @@ class MainViewModel(
 
     init {
         viewModelScope.launch { machineSafetyCoordinator.restoreOnStartup() }
+        // KD-9: remember the model we connect to, so the offline planning/editor sliders
+        // can use that trainer's per-cable ceiling. Unknown is never stored: it would
+        // narrow a known Trainer+ owner's planning range on a bad name read.
+        viewModelScope.launch {
+            bleRepository.connectionState.collect { state ->
+                val model = (state as? ConnectionState.Connected)?.hardwareModel
+                if (model != null && model != PhoenixModel.Unknown) {
+                    preferencesManager.setLastConnectedModel(model)
+                }
+            }
+        }
         viewModelScope.launch {
             bleRepository.reconnectionRequested.collect { request ->
                 machineSafetyCoordinator.recordUnexpectedDisconnect(
@@ -1336,21 +1366,50 @@ class MainViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        workoutSessionManager.cleanup()
         bleConnectionManager.cancelConnectionJob()
+        // Read before cleanup(), which invalidates the lease. Mid-set or mid-teardown
+        // the trainer may still be resisting after the link drops, so try a RESET first.
+        // A RESET is attempted only while the link is up: off-link it can only fail, and
+        // skipping it keeps cleanup() (and the workout foreground service stop) immediate.
+        val holdsMachineLease = (
+            workoutState.value !is WorkoutState.Idle ||
+                workoutSessionManager.machineTeardownState.value !is MachineTeardownState.Ready
+            ) && bleRepository.connectionState.value is ConnectionState.Connected
 
         // Issue: BLE resource leak - Disconnect BLE when ViewModel is cleared
         // to prevent battery drain and orphaned connections.
-        // Use NonCancellable context since viewModelScope may be cancelled during onCleared
+        // Use NonCancellable context since viewModelScope may be cancelled during onCleared.
+        // Without a lease nothing here suspends before cleanup(), so on Main.immediate the
+        // no-lease path still runs cleanup() synchronously inside onCleared, as it always did.
+        // With a lease this body can outlive the ViewModel by up to the GATT timeout.
         viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
+            if (holdsMachineLease) {
+                // Raw BLE RESET only: the engine's teardown path would resolve the #782 arm
+                // row, and this unconfirmed exit must keep it so the relaunch warning fires.
+                try {
+                    val result = withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+                        bleRepository.stopWorkout()
+                    }
+                    if (result?.isSuccess == true) {
+                        Logger.i { "RESET before ViewModel teardown confirmed" }
+                    } else {
+                        // The machine may still be resisting: this is the line a field log is read for.
+                        Logger.w { "RESET before ViewModel teardown NOT confirmed: ${result ?: "timed out"}" }
+                    }
+                } catch (e: Exception) {
+                    // Cancellation is absorbed on purpose (no rethrowIfCancellation here): the body is
+                    // NonCancellable, and rethrowing would skip cleanup() and leave the radio connected.
+                    Logger.e(e) { "RESET before ViewModel teardown failed, machine may still be loaded" }
+                }
+            }
+            workoutSessionManager.cleanup()
             try {
                 bleRepository.disconnect()
                 Logger.i { "BLE disconnected during ViewModel cleanup" }
             } catch (e: Exception) {
                 Logger.e { "Failed to disconnect BLE during cleanup: ${e.message}" }
             }
+            Logger.i { "MainViewModel cleared, all jobs cancelled" }
         }
-
-        Logger.i { "MainViewModel cleared, all jobs cancelled" }
     }
 }
