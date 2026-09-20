@@ -18,7 +18,6 @@ import kotlinx.coroutines.withContext
 
 class SqlDelightPersonalRecordRepository(
     private val db: PhoenixDatabase,
-    private val baselineRepository: ProfileExerciseBaselineRepository,
 ) : PersonalRecordRepository {
     private val queries = db.phoenixDatabaseQueries
 
@@ -393,16 +392,6 @@ class SqlDelightPersonalRecordRepository(
                 brokenPRs.add(PRType.MAX_VOLUME)
             }
 
-            // Keep the profile-scoped training baseline monotonic. Phase-specific force
-            // records are not comparable with the COMBINED rep-based estimate.
-            if (phase == WorkoutPhase.COMBINED && brokenPRs.isNotEmpty()) {
-                baselineRepository.raiseIfGreater(
-                    profileId = effectiveProfileId,
-                    exerciseId = exerciseId,
-                    oneRepMaxPerCableKg = estimatedOneRepMax,
-                    updatedAt = timestamp,
-                )
-            }
         }
 
         if (brokenPRs.isNotEmpty()) {

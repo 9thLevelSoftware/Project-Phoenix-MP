@@ -2509,15 +2509,6 @@ WHERE profile_id = :profileId
   AND exercise_id = :exerciseId
   AND revision = :expectedRevision;
 
-raiseProfileExerciseBaselineIfGreater:
-UPDATE ProfileExerciseBaseline
-SET one_rep_max_per_cable_kg = :oneRepMaxPerCableKg,
-    updated_at = MAX(updated_at, :updatedAt),
-    revision = revision + 1
-WHERE profile_id = :profileId
-  AND exercise_id = :exerciseId
-  AND (one_rep_max_per_cable_kg IS NULL OR one_rep_max_per_cable_kg < :oneRepMaxPerCableKg);
-
 incrementProfileExerciseBaseline:
 UPDATE ProfileExerciseBaseline
 SET one_rep_max_per_cable_kg = one_rep_max_per_cable_kg + :incrementKg,

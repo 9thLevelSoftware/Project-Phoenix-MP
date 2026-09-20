@@ -1524,10 +1524,7 @@ class SqlDelightSyncRepository(
         profileId: String,
         fromSessionTimestamp: Long,
     ): PhasePRBackfillResult = withContext(Dispatchers.IO) {
-        val prRepository = SqlDelightPersonalRecordRepository(
-            db,
-            SqlDelightProfileExerciseBaselineRepository(db),
-        )
+        val prRepository = SqlDelightPersonalRecordRepository(db)
         val sessions = queries.selectSessionsForPhasePRBackfill(
             fromSessionTimestamp = fromSessionTimestamp,
             profileId = profileId,
