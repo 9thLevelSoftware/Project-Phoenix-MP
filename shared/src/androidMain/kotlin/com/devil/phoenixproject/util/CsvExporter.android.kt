@@ -50,7 +50,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                 val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
 
                 writer.appendLine(
-                    "${escapeCsv(exerciseName)},${pr.phase.name},$weight,${pr.reps},$date,${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)}",
+                    "${escapeCsv(exerciseName)},${escapeCsv(pr.phase.name)},${escapeCsv(weight)},${pr.reps},${escapeCsv(date)},${escapeCsv(pr.workoutMode)},${String.format(Locale.US, "%.1f", oneRM)}",
                 )
             }
         }
@@ -99,9 +99,9 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                 }
 
                 writer.appendLine(
-                    "$date,${escapeCsv(exerciseName)},${session.mode},${session.reps}," +
+                    "${escapeCsv(date)},${escapeCsv(exerciseName)},${escapeCsv(session.mode)},${session.reps}," +
                         "${session.warmupReps},${session.workingReps},${session.totalReps}," +
-                        "$weight,$progression,${session.duration},$justLift,${session.eccentricLoad}",
+                        "${escapeCsv(weight)},${escapeCsv(progression)},${session.duration},${escapeCsv(justLift)},${session.eccentricLoad}",
                 )
             }
         }
@@ -145,7 +145,7 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
                     writer.appendLine(
                         "${escapeCsv(
                             exerciseName,
-                        )},${pr.phase.name},$date,$weight,${pr.reps},${pr.workoutMode},${String.format(Locale.US, "%.1f", oneRM)},$progress",
+                        )},${escapeCsv(pr.phase.name)},${escapeCsv(date)},${escapeCsv(weight)},${pr.reps},${escapeCsv(pr.workoutMode)},${String.format(Locale.US, "%.1f", oneRM)},${escapeCsv(progress)}",
                     )
 
                     previousWeight = pr.weightPerCableKg
@@ -196,8 +196,8 @@ class AndroidCsvExporter(private val context: Context) : CsvExporter {
         return "${localDateTime.year}-${monthNum.toString().padStart(2, '0')}-${localDateTime.day.toString().padStart(2, '0')}"
     }
 
-    // Text cells only (exercise names): RFC 4180 quoting plus the formula-injection guard.
-    // Numeric cells (weight, 1RM, signed progress) are written raw.
+    // Textual cells (including caller-formatted weights/progress): RFC 4180 quoting plus
+    // the formula-injection guard. Raw numeric values remain unquoted.
     private fun escapeCsv(value: String): String = StrongCsvExporter.escapeCsvField(value)
 
     private fun calculateOneRM(weight: Float, reps: Int): Float = OneRepMaxCalculator.estimate(weight, reps)

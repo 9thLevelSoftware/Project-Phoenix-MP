@@ -7,11 +7,56 @@ import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import kotlinx.coroutines.flow.Flow
 
+/** Local sync bookkeeping for a cycle's structural graph. */
+data class CycleSyncState(
+    val cycleId: String,
+    val dirtyGeneration: Long,
+    val acknowledgedGeneration: Long,
+)
+
+/** A clocked local deletion that may only be acknowledged by its original account. */
+data class PendingCycleDeletion(
+    val id: String,
+    val updatedAt: Long,
+    val generation: Long,
+)
+
+/** Recoverable local cycle structure saved before a rejected push is overwritten. */
+data class CycleConflictDraft(
+    val id: String,
+    val cycleId: String,
+    val rejectedUpdatedAt: Long,
+    val cycle: TrainingCycle,
+)
+
 /**
  * Repository for Training Cycle operations.
  * Handles the rolling schedule system that replaces WeeklyProgram.
  */
 interface TrainingCycleRepository {
+
+    // Sync scaffolds: implementations become durable with migration 50.
+    suspend fun getCycleSyncState(cycleId: String): CycleSyncState? = null
+
+    suspend fun acknowledgeCycleGeneration(cycleId: String, sentGeneration: Long) = Unit
+
+    suspend fun getPendingCycleDeletions(ownerUserId: String, profileId: String): List<PendingCycleDeletion> = emptyList()
+
+    suspend fun acknowledgeCycleDeletions(
+        ownerUserId: String,
+        sentGenerationsById: Map<String, Long>,
+        acknowledgedIds: Set<String>,
+        at: Long,
+    ) = Unit
+
+    /** Persist the exact immutable component that was sent, rather than re-reading mutable state. */
+    suspend fun saveRejectedCycleDraft(snapshot: CycleComponentSnapshot, rejectedUpdatedAt: Long) = Unit
+
+    suspend fun getCycleConflictDrafts(profileId: String): List<CycleConflictDraft> = emptyList()
+
+    suspend fun keepServerCycle(draftId: String) = Unit
+
+    suspend fun saveCycleDraftAsCopy(draftId: String): String? = null
 
     // ==================== Training Cycles ====================
 

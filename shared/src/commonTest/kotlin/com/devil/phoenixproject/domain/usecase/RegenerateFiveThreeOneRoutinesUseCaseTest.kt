@@ -1,5 +1,7 @@
 package com.devil.phoenixproject.domain.usecase
 
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaseline
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.FiveThreeOneRoutineDetector
@@ -8,6 +10,7 @@ import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
+import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeWorkoutRepository
 import kotlin.test.BeforeTest
@@ -23,6 +26,7 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
     private lateinit var trainingCycleRepository: FakeTrainingCycleRepository
     private lateinit var workoutRepository: FakeWorkoutRepository
     private lateinit var exerciseRepository: FakeExerciseRepository
+    private lateinit var baselineRepository: FakeProfileExerciseBaselineRepository
     private lateinit var useCase: RegenerateFiveThreeOneRoutinesUseCase
 
     @BeforeTest
@@ -30,10 +34,11 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         trainingCycleRepository = FakeTrainingCycleRepository()
         workoutRepository = FakeWorkoutRepository()
         exerciseRepository = FakeExerciseRepository()
+        baselineRepository = FakeProfileExerciseBaselineRepository()
         useCase = RegenerateFiveThreeOneRoutinesUseCase(
             trainingCycleRepository = trainingCycleRepository,
             workoutRepository = workoutRepository,
-            exerciseRepository = exerciseRepository,
+            baselineRepository = baselineRepository,
         )
     }
 
@@ -68,12 +73,44 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         val benchMainLift = benchRoutine.exercises[1]
         assertEquals(listOf(59, 68, 77), benchMainLift.setWeightsPercentOfPR)
         assertEquals(listOf(5, 5, null), benchMainLift.setReps)
-        assertEquals(101.25f + (1.25f / 0.9f), exerciseRepository.getExerciseById(BENCH_ID)?.oneRepMaxKg)
+        assertEquals(101.25f + (1.25f / 0.9f), baselineRepository.get("default", BENCH_ID)?.oneRepMaxPerCableKg)
 
         val slotZeroAccessory = benchRoutine.exercises.first()
         assertEquals("Incline Bench Press", slotZeroAccessory.exercise.name)
         assertEquals(listOf(10, 10, 10), slotZeroAccessory.setReps)
         assertEquals(listOf(65, 65, 65), slotZeroAccessory.setWeightsPercentOfPR)
+    }
+
+    @Test
+    fun `training max bump increments an intervening newer baseline instead of overwriting it`() = runTest {
+        seedFiveThreeOneCycle()
+        var intervened = false
+        val racingRepository = object : ProfileExerciseBaselineRepository by baselineRepository {
+            override suspend fun increment(
+                profileId: String,
+                exerciseId: String,
+                incrementKg: Float,
+                updatedAt: Long,
+            ): ProfileExerciseBaseline? {
+                if (exerciseId == BENCH_ID && !intervened) {
+                    intervened = true
+                    baselineRepository.set(profileId, exerciseId, 200f, updatedAt)
+                }
+                return baselineRepository.increment(profileId, exerciseId, incrementKg, updatedAt)
+            }
+        }
+        useCase = RegenerateFiveThreeOneRoutinesUseCase(
+            trainingCycleRepository = trainingCycleRepository,
+            workoutRepository = workoutRepository,
+            baselineRepository = racingRepository,
+        )
+
+        assertTrue(useCase.execute("cycle-531", targetWeek = 1, bumpTrainingMax = true))
+
+        assertEquals(
+            200f + (1.25f / 0.9f),
+            baselineRepository.get("default", BENCH_ID)?.oneRepMaxPerCableKg,
+        )
     }
 
     @Test
@@ -171,10 +208,10 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
 
         useCase.execute(cycleId = "cycle-531", targetWeek = 1, bumpTrainingMax = true)
 
-        assertEquals(101.25f + (1.25f / 0.9f), exerciseRepository.getExerciseById(BENCH_ID)?.oneRepMaxKg)
-        assertEquals(88.5f + (1.25f / 0.9f), exerciseRepository.getExerciseById(SHOULDER_PRESS_ID)?.oneRepMaxKg)
-        assertEquals(140f + (2.5f / 0.9f), exerciseRepository.getExerciseById(SQUAT_ID)?.oneRepMaxKg)
-        assertEquals(160.75f + (2.5f / 0.9f), exerciseRepository.getExerciseById(DEADLIFT_ID)?.oneRepMaxKg)
+        assertEquals(101.25f + (1.25f / 0.9f), baselineRepository.get("default", BENCH_ID)?.oneRepMaxPerCableKg)
+        assertEquals(88.5f + (1.25f / 0.9f), baselineRepository.get("default", SHOULDER_PRESS_ID)?.oneRepMaxPerCableKg)
+        assertEquals(140f + (2.5f / 0.9f), baselineRepository.get("default", SQUAT_ID)?.oneRepMaxPerCableKg)
+        assertEquals(160.75f + (2.5f / 0.9f), baselineRepository.get("default", DEADLIFT_ID)?.oneRepMaxPerCableKg)
     }
 
     @Test
@@ -183,8 +220,8 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
 
         useCase.execute(cycleId = "cycle-531", targetWeek = 3, bumpTrainingMax = false)
 
-        assertEquals(101.25f, exerciseRepository.getExerciseById(BENCH_ID)?.oneRepMaxKg)
-        assertEquals(140f, exerciseRepository.getExerciseById(SQUAT_ID)?.oneRepMaxKg)
+        assertEquals(101.25f, baselineRepository.get("default", BENCH_ID)?.oneRepMaxPerCableKg)
+        assertEquals(140f, baselineRepository.get("default", SQUAT_ID)?.oneRepMaxPerCableKg)
     }
 
     @Test
@@ -193,8 +230,8 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
 
         useCase.execute(cycleId = "cycle-531", targetWeek = 1, bumpTrainingMax = true)
 
-        assertNull(exerciseRepository.getExerciseById(SHOULDER_PRESS_ID)?.oneRepMaxKg)
-        assertEquals(101.25f + (1.25f / 0.9f), exerciseRepository.getExerciseById(BENCH_ID)?.oneRepMaxKg)
+        assertNull(baselineRepository.get("default", SHOULDER_PRESS_ID)?.oneRepMaxPerCableKg)
+        assertEquals(101.25f + (1.25f / 0.9f), baselineRepository.get("default", BENCH_ID)?.oneRepMaxPerCableKg)
     }
 
     @Test
@@ -290,11 +327,11 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         assertEquals(2, trainingCycleRepository.getCycleById("cycle-531")?.weekNumber)
         assertEquals(
             101.25f + (1.25f / 0.9f),
-            exerciseRepository.getExerciseById(FiveThreeOneRoutineDetector.LEGACY_BENCH_ID)?.oneRepMaxKg,
+            baselineRepository.get("default", FiveThreeOneRoutineDetector.LEGACY_BENCH_ID)?.oneRepMaxPerCableKg,
         )
         assertEquals(
             140f + (2.5f / 0.9f),
-            exerciseRepository.getExerciseById(FiveThreeOneRoutineDetector.LEGACY_SQUAT_ID)?.oneRepMaxKg,
+            baselineRepository.get("default", FiveThreeOneRoutineDetector.LEGACY_SQUAT_ID)?.oneRepMaxPerCableKg,
         )
         assertNull(exerciseRepository.getExerciseById(BENCH_ID))
     }
@@ -311,26 +348,10 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         shoulderPressId: String = SHOULDER_PRESS_ID,
         deadliftId: String = DEADLIFT_ID,
     ): TrainingCycle {
-        val bench = mainLiftExercise(
-            id = benchId,
-            name = "Bench Press",
-            oneRepMaxKg = 101.25f,
-        )
-        val squat = mainLiftExercise(
-            id = squatId,
-            name = "Squat",
-            oneRepMaxKg = 140f,
-        )
-        val press = mainLiftExercise(
-            id = shoulderPressId,
-            name = "Shoulder Press",
-            oneRepMaxKg = if (includeNullShoulderPressOneRepMax) null else 88.5f,
-        )
-        val deadlift = mainLiftExercise(
-            id = deadliftId,
-            name = "Conventional Deadlift",
-            oneRepMaxKg = 160.75f,
-        )
+        val bench = mainLiftExercise(benchId, "Bench Press")
+        val squat = mainLiftExercise(squatId, "Squat")
+        val press = mainLiftExercise(shoulderPressId, "Shoulder Press")
+        val deadlift = mainLiftExercise(deadliftId, "Conventional Deadlift")
         val inclineBench = accessoryExercise(id = "incline", name = "Incline Bench Press")
         val row = accessoryExercise(id = "row", name = "Bent Over Row")
         val plank = Exercise(id = "plank", name = "Plank", muscleGroup = "Core", muscleGroups = "Core", equipment = "")
@@ -343,6 +364,14 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
 
         listOf(bench, squat, press, deadlift, inclineBench, row, plank, facePull, lunge, tricep, crunch, shrug, goodMorning)
             .forEach(exerciseRepository::addExercise)
+        baselineRepository.seed("default", benchId, 101.25f)
+        baselineRepository.seed("default", squatId, 140f)
+        baselineRepository.seed(
+            "default",
+            shoulderPressId,
+            if (includeNullShoulderPressOneRepMax) null else 88.5f,
+        )
+        baselineRepository.seed("default", deadliftId, 160.75f)
 
         val benchMainLift = if (replaceExpectedMainLiftsWithAccessories || replaceBenchMainLiftWithAccessory) {
             accessoryRoutineExercise(id = "re-bench-missing", exercise = inclineBench)
@@ -454,13 +483,12 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
     private fun orderedExercises(vararg exercises: RoutineExercise): List<RoutineExercise> =
         exercises.mapIndexed { index, exercise -> exercise.copy(orderIndex = index) }
 
-    private fun mainLiftExercise(id: String, name: String, oneRepMaxKg: Float?): Exercise = Exercise(
+    private fun mainLiftExercise(id: String, name: String): Exercise = Exercise(
         id = id,
         name = name,
         muscleGroup = "Strength",
         muscleGroups = "Strength",
         equipment = "BAR",
-        oneRepMaxKg = oneRepMaxKg,
     )
 
     private fun accessoryExercise(id: String, name: String): Exercise = Exercise(
@@ -469,7 +497,6 @@ class RegenerateFiveThreeOneRoutinesUseCaseTest {
         muscleGroup = "Accessory",
         muscleGroups = "Accessory",
         equipment = "BAR",
-        oneRepMaxKg = 50f,
     )
 
     private fun mainLiftRoutineExercise(

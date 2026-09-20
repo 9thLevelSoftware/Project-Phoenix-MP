@@ -171,7 +171,7 @@ class MachineSafetyArmingEngineTest {
             assertEquals(1, relaunched.machineSafetyStore.rows.size)
 
             // The user's explicit physical check clears the barrier; the next start goes live.
-            relaunched.machineSafetyCoordinator?.acknowledgeUnloaded(visible.document.generation)
+            relaunched.machineSafetyCoordinator?.acknowledgeUnloaded(visible.identity)
             advanceUntilIdle()
             assertTrue(relaunched.machineSafetyStore.rows.isEmpty())
             relaunched.startCableSet(targetReps = 5)

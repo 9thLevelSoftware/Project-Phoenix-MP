@@ -512,6 +512,111 @@ class DWSMEquipmentRackTest {
     }
 
     @Test
+    fun `manual same entry rest applies pending counterweight after set ready seeds defaults`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeEquipmentRackRepo.saveItems(
+                listOf(
+                    rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE),
+                    rackItem("assist", 6f, RackItemBehavior.COUNTERWEIGHT),
+                ),
+            )
+            harness.setActiveSummaryCountdownSeconds(0)
+            val routine = Routine(
+                id = "routine-manual-same-entry-rack",
+                name = "Manual Same Entry Rack",
+                exercises = listOf(
+                    routineExercise("rex-1", "Cable Row", listOf("assist")).copy(setReps = listOf(8, 8)),
+                ),
+            )
+
+            assertTrue(harness.dwsm.loadRoutineAsync(routine))
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+                restSecondsRemaining = 0,
+                nextExerciseName = routine.exercises.single().exercise.displayName,
+                isLastExercise = true,
+                currentSet = 1,
+                totalSets = 2,
+            )
+            harness.dwsm.updateActiveRackSelection(listOf("vest"))
+            harness.dwsm.updateActiveRackBehaviorOverrides(
+                mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
+            )
+
+            harness.dwsm.startNextSet()
+            advanceUntilIdle()
+
+            assertEquals(0, harness.dwsm.coordinator.currentExerciseIndex.value)
+            assertEquals(1, harness.dwsm.coordinator.currentSetIndex.value)
+            assertEquals(listOf("vest"), harness.dwsm.coordinator.activeRackItemIds.value)
+            assertEquals(
+                mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
+                harness.dwsm.coordinator.activeRackBehaviorOverrides.value,
+            )
+            assertEquals(0f, harness.dwsm.coordinator.currentRackLoadAdjustment.value.externalAddedLoadKg)
+            assertEquals(10f, harness.dwsm.coordinator.currentRackLoadAdjustment.value.counterweightKg)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `autoplay cross exercise applies pending counterweight before command snapshot`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.fakeEquipmentRackRepo.saveItems(
+                listOf(
+                    rackItem("vest", 10f, RackItemBehavior.ADDED_RESISTANCE),
+                    rackItem("assist", 6f, RackItemBehavior.COUNTERWEIGHT),
+                ),
+            )
+            harness.setActiveSummaryCountdownSeconds(10)
+            val routine = Routine(
+                id = "routine-autoplay-pending-counterweight",
+                name = "Autoplay Pending Counterweight",
+                exercises = listOf(
+                    routineExercise("rex-1", "Cable Row", emptyList()),
+                    routineExercise("rex-2", "Cable Curl", listOf("assist")),
+                ),
+            )
+
+            assertTrue(harness.dwsm.loadRoutineAsync(routine))
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.dwsm.coordinator._workoutState.value = WorkoutState.Resting(
+                restSecondsRemaining = 0,
+                nextExerciseName = routine.exercises[1].exercise.displayName,
+                isLastExercise = false,
+                currentSet = 1,
+                totalSets = 1,
+            )
+            harness.dwsm.updateActiveRackSelection(listOf("vest"))
+            harness.dwsm.updateActiveRackBehaviorOverrides(
+                mapOf("vest" to RackItemBehavior.COUNTERWEIGHT),
+            )
+
+            harness.dwsm.startNextSet()
+            advanceUntilIdle()
+
+            assertEquals(1, harness.dwsm.coordinator.currentExerciseIndex.value)
+            assertEquals(listOf("vest"), harness.dwsm.coordinator.activeRackItemIds.value)
+            assertEquals(10f, harness.dwsm.coordinator.workoutParameters.value.counterweightKg)
+            assertEquals(
+                30f,
+                readFloatLE(
+                    harness.fakeBleRepo.commandsReceived.last(),
+                    BleConstants.ActivationPacket.OFFSET_TARGET_WEIGHT,
+                ),
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `routine completion clears pending rest rack selection before a later autoplay advance`() = runTest {
         val harness = DWSMTestHarness(this)
         try {

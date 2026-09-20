@@ -16,6 +16,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -28,6 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
@@ -38,6 +42,8 @@ import com.devil.phoenixproject.domain.model.Badge
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.RoutineFlowState
 import com.devil.phoenixproject.domain.model.WorkoutState
+import com.devil.phoenixproject.domain.voice.SafeWordState
+import com.devil.phoenixproject.domain.voice.SafeWordUnavailableReason
 import com.devil.phoenixproject.presentation.components.BackHandler
 import com.devil.phoenixproject.presentation.components.BatchedBadgeCelebrationDialog
 import com.devil.phoenixproject.presentation.components.ConnectionErrorDialog
@@ -49,6 +55,8 @@ import com.devil.phoenixproject.presentation.util.WeightDisplayFormatter
 import com.devil.phoenixproject.presentation.viewmodel.MainViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import org.jetbrains.compose.resources.StringResource
+import org.jetbrains.compose.resources.getString
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
@@ -62,6 +70,15 @@ import projectphoenix.shared.generated.resources.skip_exercise
 import projectphoenix.shared.generated.resources.stop_current_set_message
 import projectphoenix.shared.generated.resources.stop_current_set_title
 import projectphoenix.shared.generated.resources.stop_set
+import projectphoenix.shared.generated.resources.voice_stop_reason_audio_focus_lost
+import projectphoenix.shared.generated.resources.voice_stop_reason_not_calibrated
+import projectphoenix.shared.generated.resources.voice_stop_reason_not_configured
+import projectphoenix.shared.generated.resources.voice_stop_reason_permission
+import projectphoenix.shared.generated.resources.voice_stop_reason_profile_switching
+import projectphoenix.shared.generated.resources.voice_stop_reason_recognizer_unavailable
+import projectphoenix.shared.generated.resources.voice_stop_reason_start_failed
+import projectphoenix.shared.generated.resources.voice_stop_unavailable_chip
+import projectphoenix.shared.generated.resources.voice_stop_unavailable_snackbar
 
 /**
  * Active Workout screen - displays workout controls and metrics during an active workout.
@@ -139,9 +156,24 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         }
     }
 
+    // Issue #172: Snackbar for user feedback messages (e.g., navigation blocked)
+    val snackbarHostState = remember { SnackbarHostState() }
+    val snackbarScope = rememberCoroutineScope()
+
     // Issue #141: Voice-activated emergency stop via safe word detection
     val safeWordManager: com.devil.phoenixproject.domain.voice.SafeWordDetectionManager =
         koinInject()
+    val safeWordState by safeWordManager.state.collectAsState()
+    // F-039: warn once at the start of the set when the safe word cannot stop the
+    // machine. Subscribed before startForWorkout() below so the emission is seen.
+    LaunchedEffect(Unit) {
+        safeWordManager.unavailableAtStart.collect { reason ->
+            val message = getString(Res.string.voice_stop_unavailable_snackbar, getString(reason.messageRes()))
+            snackbarScope.launch {
+                snackbarHostState.showSnackbar(message = message, duration = SnackbarDuration.Long)
+            }
+        }
+    }
     LaunchedEffect(Unit) {
         safeWordManager.startForWorkout()
         safeWordManager.detectedWord.collect {
@@ -155,9 +187,6 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         }
     }
 
-    // Issue #172: Snackbar for user feedback messages (e.g., navigation blocked)
-    val snackbarHostState = remember { SnackbarHostState() }
-    val snackbarScope = rememberCoroutineScope()
     LaunchedEffect(Unit) {
         viewModel.userFeedbackEvents.collect { message ->
             snackbarScope.launch {
@@ -490,12 +519,21 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { paddingValues ->
         Column(modifier = Modifier.padding(paddingValues)) {
+            // F-039: the safe word is a safety affordance — say so when it is not armed.
+            (safeWordState as? SafeWordState.Unavailable)?.let { unavailable ->
+                VoiceStopUnavailableChip(
+                    reason = unavailable.reason,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                )
+            }
             WorkoutTab(
                 state = workoutUiState,
                 actions = workoutActions,
                 exerciseRepository = exerciseRepository,
                 hapticEvents = hapticEvents,
-                modifier = Modifier,
+                modifier = Modifier.weight(1f),
             )
         }
     }
@@ -651,4 +689,38 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             onSoundTrigger = {}, // Sound handled by ViewModel - skipped if PR already played
         )
     }
+}
+
+/**
+ * F-039: persistent HUD chip telling the user the voice safe-word emergency
+ * stop is not armed, so they fall back to the on-screen Stop button.
+ */
+@Composable
+private fun VoiceStopUnavailableChip(reason: SafeWordUnavailableReason, modifier: Modifier = Modifier) {
+    Surface(
+        // The chip can appear mid-set (permission revoked, microphone taken), when
+        // the user's eyes are on the machine — announce it instead of waiting for
+        // focus to land on it.
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+        shape = MaterialTheme.shapes.small,
+        color = MaterialTheme.colorScheme.errorContainer,
+        contentColor = MaterialTheme.colorScheme.onErrorContainer,
+    ) {
+        Text(
+            text = stringResource(Res.string.voice_stop_unavailable_chip, stringResource(reason.messageRes())),
+            style = MaterialTheme.typography.labelLarge,
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+    }
+}
+
+/** Human-readable explanation for each way voice stop can be unavailable. */
+private fun SafeWordUnavailableReason.messageRes(): StringResource = when (this) {
+    SafeWordUnavailableReason.PROFILE_SWITCHING -> Res.string.voice_stop_reason_profile_switching
+    SafeWordUnavailableReason.NOT_CONFIGURED -> Res.string.voice_stop_reason_not_configured
+    SafeWordUnavailableReason.NOT_CALIBRATED -> Res.string.voice_stop_reason_not_calibrated
+    SafeWordUnavailableReason.RECOGNIZER_UNAVAILABLE -> Res.string.voice_stop_reason_recognizer_unavailable
+    SafeWordUnavailableReason.PERMISSION -> Res.string.voice_stop_reason_permission
+    SafeWordUnavailableReason.AUDIO_FOCUS_LOST -> Res.string.voice_stop_reason_audio_focus_lost
+    SafeWordUnavailableReason.START_FAILED -> Res.string.voice_stop_reason_start_failed
 }

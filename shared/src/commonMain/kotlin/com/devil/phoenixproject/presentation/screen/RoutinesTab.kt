@@ -129,7 +129,6 @@ import projectphoenix.shared.generated.resources.move_to_profile
 import projectphoenix.shared.generated.resources.no_other_profiles
 import projectphoenix.shared.generated.resources.routine_modifier_active_recovery
 import projectphoenix.shared.generated.resources.routine_modifier_heavy_deload
-import projectphoenix.shared.generated.resources.select_target_profile
 import projectphoenix.shared.generated.resources.start_workout
 
 /**

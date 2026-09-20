@@ -19,7 +19,7 @@ import kotlinx.coroutines.withContext
  * SQLDelight implementation of CompletedSetRepository.
  * Handles both planned sets (templates) and completed sets (actual performance).
  */
-class SqlDelightCompletedSetRepository(db: PhoenixDatabase) : CompletedSetRepository {
+class SqlDelightCompletedSetRepository(private val db: PhoenixDatabase) : CompletedSetRepository {
 
     private val queries = db.phoenixDatabaseQueries
 
@@ -192,7 +192,8 @@ class SqlDelightCompletedSetRepository(db: PhoenixDatabase) : CompletedSetReposi
 
     override suspend fun saveCompletedSet(set: CompletedSet) {
         withContext(Dispatchers.IO) {
-            queries.insertCompletedSet(
+            db.transaction {
+                queries.insertCompletedSet(
                 id = set.id,
                 session_id = set.sessionId,
                 planned_set_id = set.plannedSetId,
@@ -206,7 +207,9 @@ class SqlDelightCompletedSetRepository(db: PhoenixDatabase) : CompletedSetReposi
                 is_pr = if (set.isPr) 1L else 0L,
                 completed_at = set.completedAt,
                 set_end_reason = set.setEndReason.name,
-            )
+                )
+                queries.markWorkoutComponentDirty(set.sessionId)
+            }
         }
     }
 
@@ -228,6 +231,7 @@ class SqlDelightCompletedSetRepository(db: PhoenixDatabase) : CompletedSetReposi
                 completed_at = completedAt,
                 id = existing.id,
             )
+            queries.markWorkoutComponentDirty(session.id)
             return@withContext existing.copy(
                 setType = setType,
                 actualReps = actualReps,
@@ -265,13 +269,15 @@ class SqlDelightCompletedSetRepository(db: PhoenixDatabase) : CompletedSetReposi
             completed_at = completedSet.completedAt,
             set_end_reason = completedSet.setEndReason.name,
         )
+        queries.markWorkoutComponentDirty(session.id)
 
         completedSet
     }
 
     override suspend fun saveCompletedSets(sets: List<CompletedSet>) {
         withContext(Dispatchers.IO) {
-            sets.forEach { set ->
+            db.transaction {
+                sets.forEach { set ->
                 queries.insertCompletedSet(
                     id = set.id,
                     session_id = set.sessionId,
@@ -287,6 +293,8 @@ class SqlDelightCompletedSetRepository(db: PhoenixDatabase) : CompletedSetReposi
                     completed_at = set.completedAt,
                     set_end_reason = set.setEndReason.name,
                 )
+                }
+                sets.mapTo(linkedSetOf()) { it.sessionId }.forEach(queries::markWorkoutComponentDirty)
             }
         }
     }
@@ -318,28 +326,40 @@ class SqlDelightCompletedSetRepository(db: PhoenixDatabase) : CompletedSetReposi
 
     override suspend fun updateRpe(setId: String, rpe: Int) {
         withContext(Dispatchers.IO) {
-            queries.updateCompletedSetRpe(
-                logged_rpe = rpe.toLong(),
-                id = setId,
-            )
+            db.transaction {
+                val sessionId = queries.selectCompletedSetById(setId).executeAsOneOrNull()?.session_id
+                queries.updateCompletedSetRpe(logged_rpe = rpe.toLong(), id = setId)
+                sessionId?.let(queries::markWorkoutComponentDirty)
+            }
         }
     }
 
     override suspend fun markAsPr(setId: String) {
         withContext(Dispatchers.IO) {
-            queries.markCompletedSetAsPr(id = setId)
+            db.transaction {
+                val sessionId = queries.selectCompletedSetById(setId).executeAsOneOrNull()?.session_id
+                queries.markCompletedSetAsPr(id = setId)
+                sessionId?.let(queries::markWorkoutComponentDirty)
+            }
         }
     }
 
     override suspend fun deleteCompletedSet(setId: String) {
         withContext(Dispatchers.IO) {
-            queries.deleteCompletedSet(id = setId)
+            db.transaction {
+                val sessionId = queries.selectCompletedSetById(setId).executeAsOneOrNull()?.session_id
+                queries.deleteCompletedSet(id = setId)
+                sessionId?.let(queries::markWorkoutComponentDirty)
+            }
         }
     }
 
     override suspend fun deleteCompletedSetsForSession(sessionId: String) {
         withContext(Dispatchers.IO) {
-            queries.deleteCompletedSetsBySession(session_id = sessionId)
+            db.transaction {
+                queries.deleteCompletedSetsBySession(session_id = sessionId)
+                queries.markWorkoutComponentDirty(sessionId)
+            }
         }
     }
 }

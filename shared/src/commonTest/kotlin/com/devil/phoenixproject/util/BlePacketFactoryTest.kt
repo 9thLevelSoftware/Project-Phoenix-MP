@@ -807,7 +807,7 @@ class BlePacketFactoryTest {
     }
 
     @Test
-    fun `Echo eccentric load above 150 percent is rejected, not clamped`() {
+    fun `Echo eccentric load above 150 percent is rejected - not clamped`() {
         // F-010: createEchoControl used to clamp BEFORE validating, which made the
         // eccentricPct bound unreachable and silently rewrote the caller's request.
         val error = assertFailsWith<IllegalArgumentException> {

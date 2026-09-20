@@ -29,19 +29,22 @@ interface WorkoutRepository {
     fun getAllSessions(profileId: String): Flow<List<WorkoutSession>>
     suspend fun saveSession(session: WorkoutSession)
     suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String)
+    /** User-facing deletion. Records a durable tombstone before hard-deleting local data. */
     suspend fun deleteSession(sessionId: String)
-    suspend fun deleteAllSessions()
+    suspend fun deleteAllSessions(profileId: String)
+
+    /** Internal rollback/compensation path. Never creates a user deletion tombstone. */
+    suspend fun discardSessionInternal(sessionId: String)
 
     /**
      * Issue #591 follow-up (chatgpt-codex-connector P2): delete every
-     * WorkoutSession row that belongs to the given routine session id.
+     * WorkoutSession row that belongs to the given profile and routine session id.
      * Used by the History "Delete All Sets" affordance so zero-rep /
      * ghost rows hidden by `getHistoryVisibleSessions` do not survive
-     * the user-level deletion. This mirrors `deleteSession`'s local
-     * hard-delete semantics; workout-session tombstone sync is not
-     * currently implemented.
+     * the user-level deletion. The repository records one durable workout
+     * tombstone before hard-deleting the complete group.
      */
-    suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String)
+    suspend fun deleteSessionsByRoutineSessionId(profileId: String, routineSessionId: String)
 
     /**
      * Get recent workout sessions

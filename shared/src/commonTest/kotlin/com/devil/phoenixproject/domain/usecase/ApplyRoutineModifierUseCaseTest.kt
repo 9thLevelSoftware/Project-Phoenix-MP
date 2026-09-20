@@ -11,8 +11,8 @@ import com.devil.phoenixproject.domain.model.RoutineModifierType
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WarmupSet
 import com.devil.phoenixproject.domain.model.WorkoutPhase
-import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
+import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -21,7 +21,7 @@ import kotlinx.coroutines.test.runTest
 
 class ApplyRoutineModifierUseCaseTest {
     private lateinit var prRepository: FakePersonalRecordRepository
-    private lateinit var exerciseRepository: FakeExerciseRepository
+    private lateinit var baselineRepository: FakeProfileExerciseBaselineRepository
     private lateinit var useCase: ApplyRoutineModifierUseCase
 
     private val cableExercise = Exercise(
@@ -40,13 +40,13 @@ class ApplyRoutineModifierUseCaseTest {
     @BeforeTest
     fun setup() {
         prRepository = FakePersonalRecordRepository()
-        exerciseRepository = FakeExerciseRepository()
-        useCase = ApplyRoutineModifierUseCase(prRepository, exerciseRepository)
+        baselineRepository = FakeProfileExerciseBaselineRepository()
+        useCase = ApplyRoutineModifierUseCase(prRepository, baselineRepository)
     }
 
     @Test
     fun `active recovery scales weights from stored baseline and keeps working reps`() = runTest {
-        exerciseRepository.addExercise(cableExercise.copy(oneRepMaxKg = 100f))
+        baselineRepository.set("default", "bench", 100f, 1L)
         val routine = routineWith(
             routineExercise(
                 weight = 70f,
@@ -205,7 +205,7 @@ class ApplyRoutineModifierUseCaseTest {
 
     @Test
     fun `active recovery prefers profile PR over unscoped stored baseline`() = runTest {
-        exerciseRepository.addExercise(cableExercise.copy(oneRepMaxKg = 120f))
+        baselineRepository.set("default", "bench", 120f, 1L)
         prRepository.addRecord(
             PersonalRecord(
                 exerciseId = "bench",

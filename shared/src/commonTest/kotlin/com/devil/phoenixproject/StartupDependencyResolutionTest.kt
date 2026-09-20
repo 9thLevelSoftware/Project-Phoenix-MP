@@ -8,10 +8,76 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.test.runTest
 import org.koin.dsl.koinApplication
 import org.koin.dsl.module
 
 class StartupDependencyResolutionTest {
+    @Test
+    fun requiredStartupCompletesBeforeFeatureDependenciesAreResolved() = runTest {
+        val events = mutableListOf<String>()
+
+        val result = prepareStartupDependencies(
+            resolveStartupOnly = {
+                events += "startup-only"
+                "database"
+            },
+            prepareRequired = { dependency ->
+                assertEquals("database", dependency)
+                events += "required"
+            },
+            resolveFeatures = { dependency ->
+                assertEquals("database", dependency)
+                events += "features"
+                "ready"
+            },
+        )
+
+        assertEquals(listOf("startup-only", "required", "features"), events)
+        assertEquals("ready", assertIs<StartupDependencyResolution.Ready<String>>(result).dependencies)
+    }
+
+    @Test
+    fun requiredStartupFailureNeverConstructsFeatureDependenciesAndRemainsRetriable() = runTest {
+        var featureResolutions = 0
+
+        val result = prepareStartupDependencies(
+            resolveStartupOnly = { "database" },
+            prepareRequired = { throw RequiredStartupProbeFailure() },
+            resolveFeatures = {
+                featureResolutions++
+                "must-not-resolve"
+            },
+        )
+
+        val failure = assertIs<StartupDependencyResolution.Failed>(result)
+        assertEquals(0, featureResolutions)
+        assertEquals("REQUIRED_STARTUP_PROBE", failure.diagnosticCode)
+        assertTrue(failure.retryAllowed)
+    }
+
+    @Test
+    fun retryConstructsFeaturesExactlyOnceAfterRequiredStartupRecovers() = runTest {
+        var requiredAttempts = 0
+        var featureConstructions = 0
+        suspend fun attempt() = prepareAppHostDependencies(
+            resolveStartupOnly = { "startup" },
+            prepareRequired = {
+                requiredAttempts++
+                if (requiredAttempts == 1) throw RequiredStartupProbeFailure()
+            },
+            resolveFeatures = {
+                featureConstructions++
+                "features"
+            },
+        )
+
+        assertIs<StartupDependencyResolution.Failed>(attempt())
+        assertEquals(0, featureConstructions)
+        assertIs<StartupDependencyResolution.Ready<String>>(attempt())
+        assertEquals(1, featureConstructions)
+    }
+
     @Test
     fun dualDatabaseFailureOffersExportSupportAndRetryButNoAutomaticRecovery() {
         val result = resolveStartupDependencies {
@@ -123,5 +189,10 @@ class StartupDependencyResolutionTest {
 
     private sealed interface RetryProbe {
         data object Ready : RetryProbe
+    }
+
+    private class RequiredStartupProbeFailure : IllegalStateException(), StartupDiagnosticFailure {
+        override val startupDiagnosticCode: String = "REQUIRED_STARTUP_PROBE"
+        override val startupRetryAllowed: Boolean = true
     }
 }
