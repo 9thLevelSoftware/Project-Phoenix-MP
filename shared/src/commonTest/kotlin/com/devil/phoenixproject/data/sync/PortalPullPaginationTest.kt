@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.data.repository.WorkoutDeletionScope
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePortalApiClient
@@ -50,6 +51,7 @@ class PortalPullPaginationTest {
     private val fakeExternalActivityRepo = FakeExternalActivityRepository()
     private val fakeVelocityRepo = FakeVelocityOneRepMaxRepository()
     private val fakeProfilePreferenceSyncRepo = FakeProfilePreferenceSyncRepository()
+    private val appliedOwnershipMutationIds = mutableListOf<String>()
 
     private fun createManager(rateLimiter: ClientRateLimiter = ClientRateLimiter()) = SyncManager(
         apiClient = fakeApi,
@@ -63,6 +65,18 @@ class PortalPullPaginationTest {
         velocityOneRepMaxRepository = fakeVelocityRepo,
         rateLimiter = rateLimiter,
         isProfilePreferenceMigrationReady = { true },
+        ownershipEventApplier = object : com.devil.phoenixproject.data.repository.OwnershipEventApplier {
+            override suspend fun applyRemoteEvents(
+                ownerUserId: String,
+                events: List<com.devil.phoenixproject.data.repository.OwnershipEvent>,
+            ): com.devil.phoenixproject.data.repository.OwnershipEventApplySummary {
+                appliedOwnershipMutationIds += events.map { it.mutationId }
+                return com.devil.phoenixproject.data.repository.OwnershipEventApplySummary(
+                    appliedCount = events.size,
+                    alreadyAppliedCount = 0,
+                )
+            }
+        },
     )
 
     private fun authenticate(userId: String = "user-123") {
@@ -1046,6 +1060,59 @@ class PortalPullPaginationTest {
         assertEquals(listOf(null, "customExercises-c1", "customExercises-c2"), fakeApi.pullCallCursors)
         assertIs<SyncState.Success>(manager.syncState.value)
         assertEquals(page1SyncTime, tokenStorage.getLastSyncTimestamp(), "completed pull stores page 1's syncTime")
+        assertEquals(deltaKey, tokenStorage.getDeltaPullKey())
+    }
+
+    @Test
+    fun pagesWithOnlyDurableDeletionOrOwnershipEventAreFollowedToCompletion() = runTest {
+        authenticate()
+        val stored = 1_740_000_000_000L
+        tokenStorage.setLastSyncTimestamp(stored) // upgrade state: no marker
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        val firstPageSyncTime = stored + 10
+        fakeApi.pullResultsQueue = mutableListOf(
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = firstPageSyncTime,
+                    hasMore = true,
+                    nextCursor = "deletions-c1",
+                    workoutDeletions = listOf(
+                        PulledWorkoutDeletionDto(
+                            mutationId = "deletion-1",
+                            scope = WorkoutDeletionScope.WORKOUT,
+                            portalSessionId = "session-1",
+                            deletedAt = "2026-03-02T10:00:00Z",
+                        ),
+                    ),
+                ),
+            ),
+            Result.success(
+                PortalSyncPullResponse(
+                    syncTime = stored + 20,
+                    hasMore = true,
+                    nextCursor = "ownership-c2",
+                    ownershipEvents = listOf(
+                        PortalOwnershipEventDto(
+                            mutationId = "ownership-1",
+                            targetProfileId = "default",
+                            targetProfileName = "Default",
+                            targetProfileColorIndex = 0,
+                            transferredAt = "2026-03-02T11:00:00Z",
+                        ),
+                    ),
+                ),
+            ),
+            Result.success(PortalSyncPullResponse(syncTime = stored + 30)),
+        )
+
+        val manager = createManager()
+        manager.sync()
+
+        assertEquals(3, fakeApi.pullCallCount)
+        assertEquals(listOf(null, "deletions-c1", "ownership-c2"), fakeApi.pullCallCursors)
+        assertEquals(listOf("ownership-1"), appliedOwnershipMutationIds)
+        assertIs<SyncState.Success>(manager.syncState.value)
+        assertEquals(firstPageSyncTime, tokenStorage.getLastSyncTimestamp())
         assertEquals(deltaKey, tokenStorage.getDeltaPullKey())
     }
 

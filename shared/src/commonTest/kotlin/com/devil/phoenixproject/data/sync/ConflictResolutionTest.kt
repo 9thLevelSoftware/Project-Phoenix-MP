@@ -160,7 +160,7 @@ class ConflictResolutionTest {
         // Note: With NULL updatedAt and lastSync=0, the comparison "NULL > 0" is false,
         // so portal version is applied
         assertEquals("Portal Push Day", afterMerge.name, "Portal name should be applied when local has no updatedAt")
-        // UseCount is preserved because upsertRoutine preserves it from existing record
+        // UseCount is preserved because the pull updates the routine row in place
         assertEquals(5L, afterMerge.useCount, "Local useCount should be preserved")
     }
 
@@ -293,6 +293,8 @@ class ConflictResolutionTest {
         )
 
         repository.mergeAllPullData(
+            ownerUserId = "",
+            workoutDeletions = emptyList(),
             sessions = emptyList(),
             routines = listOf(portalRoutine),
             cycles = emptyList(),
@@ -301,6 +303,7 @@ class ConflictResolutionTest {
             personalRecords = emptyList(),
             lastSync = 0L,
             profileId = testProfileId,
+            sessionUpdatedAtById = emptyMap(),
         )
 
         val exercise = database.phoenixDatabaseQueries
@@ -378,6 +381,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = null,
             week_number = 1L,
+            updatedAt = now - 100_000,
         )
         database.phoenixDatabaseQueries.insertTrainingCycleIgnore(
             id = localInactiveId,
@@ -388,6 +392,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = null,
             week_number = 1L,
+            updatedAt = now - 50_000,
         )
 
         // WHEN: Portal sends cycles with a different active cycle
@@ -438,6 +443,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = null,
             week_number = 1L,
+            updatedAt = now,
         )
 
         // WHEN: Portal sends cycles but none are active
@@ -472,6 +478,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = null,
             week_number = 1L,
+            updatedAt = now,
         )
 
         // WHEN: Portal sends the SAME cycle ID with status != "active"
@@ -481,6 +488,7 @@ class ConflictResolutionTest {
                 id = cycleId,
                 name = "Updated Name From Portal",
                 status = "draft", // Not active — only single-active enforcement should change is_active
+                updatedAt = now + 1L,
                 days = emptyList(),
             ),
         )
@@ -534,6 +542,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = "template_531",
             week_number = 3L,
+            updatedAt = now,
         )
 
         repository.mergePortalCycles(
@@ -544,6 +553,7 @@ class ConflictResolutionTest {
                     templateId = "template_531",
                     currentWeek = 1,
                     status = "active",
+                    updatedAt = now + 1L,
                     days = emptyList(),
                 ),
             ),
@@ -571,6 +581,7 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = "template_531",
             week_number = 2L,
+            updatedAt = now,
         )
 
         repository.mergePortalCycles(
@@ -605,9 +616,12 @@ class ConflictResolutionTest {
             profile_id = testProfileId,
             template_id = "template_531",
             week_number = 2L,
+            updatedAt = now,
         )
 
         repository.mergeAllPullData(
+            ownerUserId = "",
+            workoutDeletions = emptyList(),
             sessions = emptyList(),
             routines = emptyList(),
             cycles = listOf(
@@ -623,6 +637,7 @@ class ConflictResolutionTest {
             personalRecords = emptyList(),
             lastSync = 0L,
             profileId = testProfileId,
+            sessionUpdatedAtById = emptyMap(),
         )
 
         val cycle = database.phoenixDatabaseQueries

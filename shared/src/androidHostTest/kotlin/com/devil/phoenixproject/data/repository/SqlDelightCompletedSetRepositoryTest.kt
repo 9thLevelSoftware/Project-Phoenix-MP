@@ -8,6 +8,7 @@ import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.SetType
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -487,6 +488,7 @@ class SqlDelightCompletedSetRepositoryTest {
     }
 
     private fun insertRoutineExercise(id: String, routineId: String, name: String) {
+        database.seedExercise("bench", "Bench Press")
         database.phoenixDatabaseQueries.insertRoutineExercise(
             id = id,
             routineId = routineId,

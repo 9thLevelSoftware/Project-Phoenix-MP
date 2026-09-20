@@ -1,30 +1,14 @@
-<!-- OPENSPEC:START -->
-# OpenSpec Instructions
+# CLAUDE.md
 
-These instructions are for AI assistants working in this project.
-
-Always open `@/openspec/AGENTS.md` when the request:
-- Mentions planning or proposals (words like proposal, spec, change, plan)
-- Introduces new capabilities, breaking changes, architecture shifts, or big performance/security work
-- Sounds ambiguous and you need the authoritative spec before coding
-
-Use `@/openspec/AGENTS.md` to learn:
-- How to create and apply change proposals
-- Spec format and conventions
-- Project structure and guidelines
-
-Keep this managed block so 'openspec update' can refresh the instructions.
-
-<!-- OPENSPEC:END -->
+This file provides guidance to Claude Code (claude.ai/code) and other coding agents (`AGENTS.md` points here) when working with code in this repository.
 
 ## Working Rules
 
-- BEFORE ANYTHING ELSE: check the monorepo parent (`../CLAUDE.md`) and the `phoenix-portal` sibling for how a feature was implemented on the working side before troubleshooting or changing it. Mobile and portal share a parity-critical contract (see Sync Architecture below).
-- Spawned agents must stay within this project's tools and skills (`.claude/skills/agent-browser`); don't pull in tooling from unrelated projects.
-
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+- BEFORE ANYTHING ELSE: check the portal sibling `../Phoenix-portal` (Edge Functions in `supabase/functions/`, schema in `supabase/migrations/`) for how a feature is implemented on the other side before troubleshooting or changing it. Mobile and portal share a parity-critical contract (see Sync Architecture below).
+- Spawned agents must stay within this project's tools and skills (`.agents/skills/`: `agent-browser`, `update-phoenix-version`); don't pull in tooling from unrelated projects.
+- All weight fields are **per cable** unless the name says *Total*. Never treat a machine total (200/220 kg) as a per-cable value.
+- Never use `INSERT OR REPLACE` on a table with FK children. REPLACE deletes the old row, and `ON DELETE CASCADE` children (e.g. of `WorkoutSession`, `Exercise`) go with it. Use `INSERT OR IGNORE` + `UPDATE` instead.
+- `.almanac/` is an older agent wiki (historical, last verified 2026-06). Use it as secondary background only; this file and the code win where they disagree.
 
 ## Project Overview
 
@@ -32,23 +16,25 @@ Kotlin Multiplatform app for controlling Phoenix Trainer workout machines via BL
 
 ## Build Commands
 
+Every Gradle invocation configures `androidApp`, which fails without Supabase credentials. For test-only or local builds pass `-Pskip.supabase.check=true`. For a build that can sync, set `supabase.url` and `supabase.anon.key` in `local.properties` (or env `SUPABASE_URL` / `SUPABASE_ANON_KEY`).
+
 ```bash
-# Android
-./gradlew :androidApp:assembleDebug
-./gradlew :androidApp:installDebug
+# Android debug APK
+./gradlew -Pskip.supabase.check=true :androidApp:assembleDebug
 
-# iOS framework (requires macOS)
-./gradlew :shared:assembleXCFramework
+# Tests (the test suites CI runs). The shared suite holds most tests; don't stop at androidApp.
+./gradlew -Pskip.supabase.check=true :shared:testAndroidHostTest :androidApp:testDebugUnitTest --continue
+./gradlew -Pskip.supabase.check=true :shared:testAndroidHostTest --tests '*SchemaParityTest*'   # one class
 
-# Full build
-./gradlew build
+# Schema manifest check (also runs automatically before SQLDelight codegen)
+./gradlew -Pskip.supabase.check=true :shared:validateSchemaManifest
 
-# Clean
-./gradlew clean
-
-# Run tests
-./gradlew :androidApp:testDebugUnitTest       # Android unit tests
+# iOS (macOS only; verified by the CI iOS workflows, not on Windows/Linux)
+./gradlew -Pskip.supabase.check=true :shared:linkReleaseFrameworkIosArm64 :shared:generateComposeResClass :shared:iosArm64ProcessResources
+./gradlew -Pskip.supabase.check=true :shared:assembleXCFramework
 ```
+
+There is no `:shared:testDebugUnitTest`. Gradle runs can modify `gradle.properties` or create `gradle/gradle-daemon-jvm.properties`; don't commit either.
 
 ## Architecture
 
@@ -61,55 +47,65 @@ Kotlin Multiplatform app for controlling Phoenix Trainer workout machines via BL
 ```
 shared/src/
 ├── commonMain/     # Cross-platform code (domain models, interfaces, database)
-├── androidMain/    # Android implementations (Nordic BLE, Android SQLite driver)
-└── iosMain/        # iOS implementations (Native SQLite driver)
+├── androidMain/    # Android implementations (Android SQLite driver, EncryptedSharedPreferences, Health Connect)
+└── iosMain/        # iOS implementations (Native SQLite driver, Keychain settings, HealthKit)
 ```
 
 ### Key Patterns
 - **expect/actual** for platform-specific implementations (see `Platform.kt`)
-- **Clean Architecture**: domain models in `domain/model/`, data interfaces in `data/ble/`
+- **Clean Architecture**: domain models in `domain/model/`; repository interfaces in `data/repository/` (e.g. `BleRepository.kt`); the BLE implementation in `data/ble/`
 - **Koin** for dependency injection
 - **SQLDelight** for type-safe multiplatform database
 - **Coroutines + Flow** for async operations and reactive streams
 
 ### BLE Architecture
-Nordic UART Service UUIDs in `BleInterfaces.kt`:
-- Service: `6e400001-b5a3-f393-e0a9-e50e24dcca9e`
-- TX: `6e400002-b5a3-f393-e0a9-e50e24dcca9e`
-- RX: `6e400003-b5a3-f393-e0a9-e50e24dcca9e`
-
-Device names start with `Vee_` (V-Form) or `VIT` (Trainer+).
+- Library: **Kable** (Kotlin Multiplatform), used from `commonMain` (`data/ble/KableBleConnectionManager.kt`). Android uses a vendored, patched Kable core in `third_party/kable-core-android-patched`.
+- UUIDs and timeouts live in `util/BleConstants.kt`:
+  - UART service `6e400001-b5a3-f393-e0a9-e50e24dcca9e`; the app **writes** commands to `6e400002-…` (`NUS_RX_CHAR_UUID_STRING`). No UART notify characteristic is used.
+  - Telemetry arrives on the trainer's own characteristics: sample/monitor `90e991a6-…` (polled), reps `8308f2a6-…` (notify), mode `67d0dae0-…`, plus version, cable left/right, diagnostic and others listed there.
+  - `CONNECTION_TIMEOUT_MS = 15000`, `SCAN_TIMEOUT_MS = 30000`, `GATT_OPERATION_TIMEOUT_MS = 5000`.
+- Device-name filters (case-insensitive, `KableBleConnectionManager.kt`): the main scan accepts `Vee_`, `VIT` or `Phoenix`; scan-and-connect and the scan dedupe checks accept only `Vee_`/`VIT`.
 
 ### Database Schema
-SQLDelight schema at `shared/src/commonMain/sqldelight/.../PhoenixDatabase.sq`:
-- **WorkoutSession** - Exercise sessions with mode, weight, reps
-- **MetricSample** - Real-time metrics (position, velocity, load, power)
-- **PersonalRecord** - PR tracking with 1RM calculations
-- **Routine/RoutineExercise** - Custom workout routines
+SQLDelight schema at `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/PhoenixDatabase.sq` (~48 tables) with migrations `migrations/1.sqm` … `N.sqm`. Core tables include `WorkoutSession`, `MetricSample`, `PersonalRecord`, `Exercise`, `Routine`/`RoutineExercise`. See "Schema changes" below before touching any of it.
 
 ### Domain Models
 Located in `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/model/`:
-- **Models.kt**: WorkoutMode (6 modes), ConnectionState, WorkoutMetrics, WorkoutSession
-- **Exercise.kt**, **Routine.kt**: Exercise, MuscleGroup, Routine
+- **Models.kt**: `WorkoutMode` (6 subtypes; Just Lift is the `isJustLift` flag, not a mode), `ConnectionState`, `WorkoutMetric`, `WorkoutSession`
+- **Exercise.kt**: `Exercise`, `ExerciseCategory`, `ExerciseCableIntent` (muscle groups are plain strings; there is no `MuscleGroup` type)
+- **Routine.kt**: `Routine`, `RoutineExercise`, `RoutineGroup`, `Superset`, `RoutineItem`, `WarmupSet`
 - **Gamification.kt**, **RpgModels.kt**, **BiomechanicsModels.kt**, **TrainingCycleModels.kt**: gamification, RPG scoring, velocity zones, cycles
 
 ### Constants
 `util/Constants.kt` contains:
-- Weight limits: 0-220kg (0.5kg increments)
-- BLE timeouts: 10s scan, 15s connection
-- One-rep max formulas (Brzycki, Epley)
+- Weight limits, **per cable**: `MIN_WEIGHT_KG = 0`, `MAX_WEIGHT_KG = 100` (safe default max), `MAX_WEIGHT_PER_CABLE_KG = 110` (Trainer+ hardware ceiling)
+- Weight increment options: `[0.5, 1, 2.5, 5]` kg (`WEIGHT_INCREMENT_OPTIONS_KG`, default 0.5) and `[0.1, 0.5, 1, 2.5, 5]` lb
+- `APP_VERSION` and one-rep max formulas (`OneRepMaxCalculator`: Brzycki, Epley, hybrid `estimate()`)
+
+BLE timeouts are in `util/BleConstants.kt` (see above), not here.
 
 ## Tech Stack Versions
-- Kotlin 2.3.0
-- Compose Multiplatform 1.10.1
-- AGP 9.0.1
-- SQLDelight 2.2.1
-- Koin 4.1.1
-- Coroutines 1.10.2
+See `gradle/libs.versions.toml` (single source of truth; don't copy versions into docs). Android min SDK 26; iOS deployment target 15.0.
 
 ## Hardware Support
-- **Phoenix V-Form Trainer** (VIT-200): 200kg max, device name `Vee_*`
-- **Phoenix Trainer+**: 220kg max
+- **Phoenix V-Form Trainer** (VIT-200): 200 kg total = 100 kg per cable
+- **Phoenix Trainer+**: 220 kg total = 110 kg per cable
+
+## Schema changes
+1. Add `shared/src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/N.sqm` (N = highest existing + 1). Keep it additive (API 26 SQLite 3.18: no `DROP COLUMN`, no `ON CONFLICT DO UPDATE`).
+2. Mirror the change in `PhoenixDatabase.sq` so a fresh install matches an upgraded one.
+3. Add the matching entries in `data/local/SchemaManifest.kt` (`manifestTables`, `manifestColumns` heal ops, `manifestIndexes`). iOS relies on this post-open heal.
+4. Add entry `N` to `getMigrationStatements` in `data/local/MigrationStatements.kt` (the resilient-migration fallback replays it when `Schema.migrate` throws). Keep entries contiguous with the `.sqm` files and backfill any missing N.
+5. Verify: `:shared:validateSchemaManifest` (runs automatically before codegen) and `:shared:testAndroidHostTest --tests '*SchemaParityTest*'`.
+
+The schema version is derived from the migration files (highest `N.sqm` + 1). Don't edit `version` in `shared/build.gradle.kts`; it isn't authoritative.
+
+## Releasing
+1. Bump the version with the `update-phoenix-version` skill (`.agents/skills/update-phoenix-version/`). It keeps Android `versionName`, `Constants.APP_VERSION` and both iOS `MARKETING_VERSION` values aligned.
+2. Merge to `main`, then dispatch `.github/workflows/release-all.yml` from `main`.
+3. Among its gates, `release-all` refuses to run if Android `versionName` and the iOS `MARKETING_VERSION`s differ or the tag `v<version>` already exists (read the workflow for the current full set). It does not check `Constants.APP_VERSION`, so rely on the skill for that.
+4. It creates the GitHub release `v<version>`, then calls `android-release-apk.yml`, `ios-release-ipa.yml`, `android-playstore.yml` and `ios-testflight.yml` (each can be skipped by an input).
+5. Required repo secrets, by group: release (`RELEASE_PAT`); Supabase (`SUPABASE_URL`, `SUPABASE_ANON_KEY`); Android signing (`ANDROID_KEYSTORE_BASE64`, `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`); Play (`GOOGLE_PLAY_SERVICE_ACCOUNT_JSON`); Apple signing (`BUILD_CERTIFICATE_BASE64`, `P12_PASSWORD`, `KEYCHAIN_PASSWORD`, `PROVISION_PROFILE_BASE64`, `PROVISIONING_PROFILE_NAME`, `TEAM_ID`); App Store Connect (`APPSTORE_API_KEY`, `APPSTORE_API_KEY_ID`, `APPSTORE_ISSUER_ID`, `APP_APPLE_ID`, `TESTFLIGHT_GROUP_NAME`).
 
 ## Sync Architecture
 
@@ -117,8 +113,12 @@ Located in `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/model/`
 - `data/sync/SyncManager.kt` — Orchestrates push/pull operations with batching and partial success handling
 - `data/sync/SyncTriggerManager.kt` — Debounces sync triggers, exponential backoff for transient errors
 - `data/sync/PortalApiClient.kt` — HTTP client with error classification and token refresh
-- `data/repository/SqlDelightSyncRepository.kt` — Merge strategies per entity type (INSERT OR IGNORE, upsert, LWW)
-- `data/sync/SyncModels.kt` — DTOs for wire format (camelCase for JSON, matches Edge Functions)
+- `data/repository/SqlDelightSyncRepository.kt` — Merge strategies per entity type (INSERT OR IGNORE, upsert, LWW). Several "upserts" are `INSERT OR REPLACE` queries in `PhoenixDatabase.sq`; see the FK rule in Working Rules
+- `data/sync/PortalSyncDtos.kt` — Wire-format DTOs (camelCase JSON, matches the Edge Functions), e.g. `PortalWorkoutSessionDto`, `PortalExerciseDto`
+- `data/sync/PortalSyncAdapter.kt` / `PortalPullAdapter.kt` — Map local rows to push DTOs and pulled DTOs back to local rows
+- `data/sync/ProfilePreferenceSyncCodec.kt`, `ProfilePreferenceSyncPlanner.kt`, `ProfilePreferenceSyncRepository.kt` — Per-profile preference sections sync
+- `data/sync/SyncModels.kt` — Internal (non-wire) sync models: repository/merge entity DTOs (`WorkoutSessionSyncDto`, `PersonalRecordSyncDto`, `RoutineSyncDto`, … used by `mergeSessions` etc.), profile-preference internals, `IdMappings`, auth DTOs
+- `data/sync/PortalTokenStorage.kt` — Auth token persistence
 
 ### Sync Trigger Patterns
 - **`onWorkoutCompleted()`**: Always syncs immediately (bypasses throttle) since workout data is critical
@@ -129,7 +129,7 @@ Located in `shared/src/commonMain/kotlin/com/devil/phoenixproject/domain/model/`
 ```kotlin
 enum class SyncErrorCategory {
     TRANSIENT,  // 5xx, timeout, 429 - retry with backoff
-    PERMANENT,  // 400, 404 - don't retry
+    PERMANENT,  // 400, 402, 403, 404, 413 - don't retry
     AUTH,       // 401 - trigger re-login
     NETWORK,    // UnknownHost, connection errors - wait for connectivity
 }
@@ -140,11 +140,9 @@ enum class SyncErrorCategory {
 - **MAX_FULL_BATCH_RETRIES = 3**: Consecutive failures before requiring manual intervention
 - Non-session data (routines, cycles, RPG, badges) included only in final batch
 
-### iOS Token Storage
-Uses multiplatform-settings with Keychain backend (`KeychainSettings`) for secure JWT storage:
-- Access token, refresh token, and expiry stored securely
-- Automatically migrates from legacy NSUserDefaults on first access
-- Requires iOS Keychain capability in entitlements
+### Token Storage
+- **iOS**: multiplatform-settings with Keychain backend (`KeychainSettings(service = "com.devil.phoenixproject.auth")`, `PlatformModule.ios.kt`) for access token, refresh token and expiry. Migrates from legacy NSUserDefaults on first access. No keychain-access-groups entitlement is needed (the entitlements file only has HealthKit keys).
+- **Android**: `EncryptedSharedPreferences` backed by the Android Keystore (`PlatformModule.android.kt`).
 
 ### 1RM Estimate Parity (PARITY-CRITICAL)
 - Two estimators, plus a third column — never relabel one as another:

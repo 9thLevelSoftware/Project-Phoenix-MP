@@ -84,9 +84,12 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.UserProfile
+import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.sync.SyncTriggerManager
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
+import com.devil.phoenixproject.presentation.components.ProfileRecoverySettingsSection
 import com.devil.phoenixproject.ui.theme.*
 import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupProgress
@@ -94,6 +97,9 @@ import com.devil.phoenixproject.util.BackupStats
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.DeviceInfo
 import com.devil.phoenixproject.util.ImportResult
+import com.devil.phoenixproject.util.autoBackupLocationNote
+import com.devil.phoenixproject.util.canOpenBackupFolder
+import com.devil.phoenixproject.util.defaultBackupLocationLabel
 import com.devil.phoenixproject.util.rememberBackupLocationPicker
 import com.devil.phoenixproject.util.rememberFilePicker
 import kotlinx.coroutines.launch
@@ -279,7 +285,7 @@ fun SettingsTab(
     onEnableVideoPlaybackChange: (Boolean) -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
     onDynamicColorEnabledChange: (Boolean) -> Unit,
-    onDeleteAllWorkouts: () -> Unit,
+    onDeleteAllWorkouts: (String) -> Unit,
     onNavigateToConnectionLogs: () -> Unit,
     onNavigateToDiagnostics: () -> Unit,
     onNavigateToLinkAccount: () -> Unit,
@@ -300,7 +306,7 @@ fun SettingsTab(
     onLanguageChange: (String) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var showDeleteAllDialog by remember { mutableStateOf(false) }
+    var deleteAllTarget by remember { mutableStateOf<UserProfile?>(null) }
     // Backup/Restore state
     var showBackupDialog by remember { mutableStateOf(false) }
     var showRestoreDialog by remember { mutableStateOf(false) }
@@ -316,6 +322,8 @@ fun SettingsTab(
     // Inject DataBackupManager for manual backup/restore operations
     val backupManager: DataBackupManager = koinInject()
     val exerciseRepository: ExerciseRepository = koinInject()
+    val userProfileRepository: UserProfileRepository = koinInject()
+    val activeProfile by userProfileRepository.activeProfile.collectAsState()
     var wgerRefreshInProgress by remember { mutableStateOf(false) }
     var wgerRefreshMessage by remember { mutableStateOf<String?>(null) }
     // Inject SyncTriggerManager for sync error indicator
@@ -336,6 +344,8 @@ fun SettingsTab(
         verticalArrangement = Arrangement.spacedBy(Spacing.medium),
     ) {
         // Header removed for global scaffold integration
+
+        ProfileRecoverySettingsSection()
 
         // Donation Card - Material 3 Expressive (top of settings for visibility)
         val uriHandler = LocalUriHandler.current
@@ -852,7 +862,8 @@ fun SettingsTab(
                         )
                         Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            "Automatically save single workouts and completed routines to local backup files",
+                            "Automatically save single workouts and completed routines to local backup files" +
+                                (autoBackupLocationNote?.let { ". $it" } ?: ""),
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -892,7 +903,7 @@ fun SettingsTab(
                         )
                         Text(
                             when (backupDestination) {
-                                is BackupDestination.Default -> "Default (Downloads/PhoenixBackups)"
+                                is BackupDestination.Default -> "Default ($defaultBackupLocationLabel)"
                                 is BackupDestination.Custom -> backupDestination.displayName
                             },
                             style = MaterialTheme.typography.bodySmall,
@@ -986,28 +997,30 @@ fun SettingsTab(
                             )
                         }
 
-                        Spacer(modifier = Modifier.height(Spacing.small))
+                        if (canOpenBackupFolder) {
+                            Spacer(modifier = Modifier.height(Spacing.small))
 
-                        // Open backup folder shortcut
-                        OutlinedButton(
-                            onClick = onOpenBackupFolder,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = MaterialTheme.shapes.small,
-                            colors = ButtonDefaults.outlinedButtonColors(
-                                contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
-                            ),
-                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
-                        ) {
-                            Icon(
-                                Icons.Default.FolderOpen,
-                                contentDescription = stringResource(Res.string.cd_open_backup_folder),
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Spacer(modifier = Modifier.width(Spacing.small))
-                            Text(
-                                "Open Backup Folder",
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
+                            // Open backup folder shortcut
+                            OutlinedButton(
+                                onClick = onOpenBackupFolder,
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = MaterialTheme.shapes.small,
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                                ),
+                                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f)),
+                            ) {
+                                Icon(
+                                    Icons.Default.FolderOpen,
+                                    contentDescription = stringResource(Res.string.cd_open_backup_folder),
+                                    modifier = Modifier.size(18.dp),
+                                )
+                                Spacer(modifier = Modifier.width(Spacing.small))
+                                Text(
+                                    "Open Backup Folder",
+                                    style = MaterialTheme.typography.bodyMedium,
+                                )
+                            }
                         }
                     }
                 }
@@ -1069,7 +1082,8 @@ fun SettingsTab(
                 Spacer(modifier = Modifier.height(Spacing.medium))
 
                 Button(
-                    onClick = { showDeleteAllDialog = true },
+                    onClick = { deleteAllTarget = activeProfile },
+                    enabled = activeProfile != null,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(56.dp), // Material 3 Expressive: Taller button
@@ -1096,16 +1110,16 @@ fun SettingsTab(
         }
 
         // Material 3 Expressive: Delete All dialog
-        if (showDeleteAllDialog) {
+        deleteAllTarget?.let { targetProfile ->
             DestructiveConfirmDialog(
                 title = stringResource(Res.string.delete_all_workouts_title),
-                message = stringResource(Res.string.delete_all_workouts_message),
+                message = stringResource(Res.string.delete_all_workouts_message, targetProfile.name),
                 confirmText = stringResource(Res.string.delete_all),
                 onConfirm = {
-                    onDeleteAllWorkouts()
-                    showDeleteAllDialog = false
+                    onDeleteAllWorkouts(targetProfile.id)
+                    deleteAllTarget = null
                 },
-                onDismiss = { showDeleteAllDialog = false },
+                onDismiss = { deleteAllTarget = null },
             )
         }
 
@@ -1356,7 +1370,7 @@ fun SettingsTab(
         }
     }
 
-    // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
+    // Connection error dialog
     connectionError?.let { error ->
         com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
             message = error,
@@ -1478,6 +1492,7 @@ fun SettingsTab(
                     when {
                         isError -> "Error"
                         backupResult != null -> "Backup Complete"
+                        restoreResult?.hasPartialFailure == true -> "Restore Partially Complete"
                         else -> "Restore Complete"
                     },
                     style = MaterialTheme.typography.headlineSmall,
@@ -1498,8 +1513,17 @@ fun SettingsTab(
                             Column {
                                 Text(stringResource(Res.string.import_completed))
                                 Spacer(modifier = Modifier.height(Spacing.small))
-                                Text(stringResource(Res.string.import_records_imported, result.totalImported))
-                                Text(stringResource(Res.string.import_records_skipped, result.totalSkipped))
+                                Text("Imported: ${result.totalImported}")
+                                Text("Already present: ${result.totalSkipped}")
+                                Text("Failed: ${result.entitiesFailed}")
+                                Text("Repaired references: ${result.repairedReferences}")
+                                if (result.hasPartialFailure) {
+                                    Spacer(modifier = Modifier.height(Spacing.small))
+                                    Text(
+                                        "Some records could not be restored. The counts above reflect the partial result.",
+                                        color = MaterialTheme.colorScheme.error,
+                                    )
+                                }
                             }
                         }
                     }

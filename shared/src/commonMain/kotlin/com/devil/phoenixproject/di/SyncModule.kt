@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.integration.IntegrationManager
 import com.devil.phoenixproject.data.migration.RequiredMigrationGate
 import com.devil.phoenixproject.data.repository.*
 import com.devil.phoenixproject.data.sync.PortalApiClient
+import com.devil.phoenixproject.data.sync.PortalProfileRecoverySourceVerifier
 import com.devil.phoenixproject.data.sync.ProfilePreferenceSyncCodec
 import com.devil.phoenixproject.data.sync.ProfilePreferenceSyncRepository
 import com.devil.phoenixproject.data.sync.SqlDelightProfilePreferenceSyncRepository
@@ -25,7 +26,8 @@ val syncModule = module {
             tokenStorage = get<PortalTokenStorage>(),
         )
     }
-    single<SyncRepository> { SqlDelightSyncRepository(get(), get()) }
+    single<ProfileRecoverySourceVerifier> { PortalProfileRecoverySourceVerifier(get()) }
+    single<SyncRepository> { SqlDelightSyncRepository(get(), get(), get()) }
     single { ProfilePreferenceSyncCodec() }
     single<ProfilePreferenceSyncRepository> {
         SqlDelightProfilePreferenceSyncRepository(database = get(), codec = get())
@@ -47,6 +49,11 @@ val syncModule = module {
                     com.devil.phoenixproject.data.migration.RequiredMigrationState.Ready
             },
             completedSetRepository = get<CompletedSetRepository>(),
+            workoutDeletionRepository = get<WorkoutDeletionRepository>(),
+            ownershipTransferRepository = get<OwnershipTransferRepository>(),
+            ownershipEventApplier = get<OwnershipEventApplier>(),
+            profileMutationBarrier = get<ProfileMutationBarrier>(),
+            trainingCycleRepository = get<TrainingCycleRepository>(),
         )
     }
     single<HealthBodyWeightReader> { HealthIntegrationBodyWeightReader(get()) }
@@ -63,5 +70,14 @@ val syncModule = module {
     single { IntegrationManager(get(), get(), get(), get(), get(), get(), get()) }
 
     // Auth (using Supabase GoTrue)
-    single<AuthRepository> { PortalAuthRepository(get(), get(), get(), get(), get()) }
+    single<AuthRepository> {
+        PortalAuthRepository(
+            apiClient = get(),
+            tokenStorage = get(),
+            userProfileRepository = get(),
+            supabaseConfig = get(),
+            oauthLauncher = get(),
+            profileMutationBarrier = get(),
+        )
+    }
 }

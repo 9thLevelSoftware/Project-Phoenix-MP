@@ -514,11 +514,19 @@ fun EnhancedMainScreen(
             if (connectionLostDuringWorkout || machineSafetyUiState is MachineSafetyUiState.Visible) {
                 ConnectionLostDialog(
                     onReconnect = {
-                        viewModel.requestMachineSafetyRecovery()
+                        viewModel.requestMachineSafetyRecovery(
+                            (machineSafetyUiState as? MachineSafetyUiState.Visible)?.identity,
+                        )
                     },
                     onDismiss = {
                         viewModel.dismissMachineSafetyWarning()
                         viewModel.dismissConnectionLostAlert()
+                    },
+                    onAcknowledgeUnloaded = (machineSafetyUiState as? MachineSafetyUiState.Visible)?.let { visible ->
+                        {
+                            viewModel.acknowledgeMachineSafetyUnloaded(visible.identity)
+                            viewModel.dismissConnectionLostAlert()
+                        }
                     },
                 )
             }

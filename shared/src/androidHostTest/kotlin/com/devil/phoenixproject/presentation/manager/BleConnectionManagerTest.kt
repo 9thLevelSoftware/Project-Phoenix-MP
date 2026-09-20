@@ -96,7 +96,6 @@ class BleConnectionManagerTest {
             advanceUntilIdle()
 
             assertTrue(manager.connectionLostDuringWorkout.value)
-            assertEquals(1, workoutStateProvider.connectionLostCallbacks)
 
             manager.dismissConnectionLostAlert()
             assertFalse(manager.connectionLostDuringWorkout.value)
@@ -233,16 +232,10 @@ class BleConnectionManagerTest {
         var midSet: Boolean = false,
         var allBodyweight: Boolean = false, // Issue #693
     ) : WorkoutStateProvider {
-        var connectionLostCallbacks = 0
-
         override val isWorkoutActiveForConnectionAlert: Boolean
             get() = active && !allBodyweight
         override val isWorkoutMidSet: Boolean
             get() = midSet
-
-        override fun onWorkoutConnectionLost() {
-            connectionLostCallbacks++
-        }
     }
 
     @Test
@@ -268,7 +261,6 @@ class BleConnectionManagerTest {
             advanceUntilIdle()
 
             assertFalse(manager.connectionLostDuringWorkout.value)
-            assertEquals(0, workoutStateProvider.connectionLostCallbacks)
         } finally {
             managerScope.cancel()
         }

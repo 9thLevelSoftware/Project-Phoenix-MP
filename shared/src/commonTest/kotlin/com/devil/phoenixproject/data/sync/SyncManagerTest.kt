@@ -1,7 +1,14 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.data.repository.PhasePRBackfillResult
+import com.devil.phoenixproject.data.repository.OwnershipTransferMutation
+import com.devil.phoenixproject.data.repository.OwnershipTransferRepository
+import com.devil.phoenixproject.data.repository.ProfileMutationBarrier
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
+import com.devil.phoenixproject.data.repository.WorkoutDeletionMutation
+import com.devil.phoenixproject.data.repository.WorkoutDeletionRepository
+import com.devil.phoenixproject.data.repository.WorkoutDeletionScope
+import com.devil.phoenixproject.data.repository.WorkoutDeletionSource
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExternalActivity
 import com.devil.phoenixproject.domain.model.IntegrationProvider
@@ -25,6 +32,12 @@ import com.devil.phoenixproject.testutil.FakeSyncRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.russhwolf.settings.MapSettings
+import io.ktor.client.engine.mock.MockEngine
+import io.ktor.client.engine.mock.respond
+import io.ktor.http.ContentType
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpStatusCode
+import io.ktor.http.headersOf
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -33,6 +46,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -70,6 +85,265 @@ class SyncManagerTest {
         isProfilePreferenceMigrationReady = { true },
         completedSetRepository = fakeCompletedSetRepo,
     )
+
+    @Test
+    fun `account switch waits for inflight account bound deletion acknowledgement`() = runTest {
+        setupAuthenticated(userId = "owner-a")
+        fakeUserProfileRepo.setActiveProfileForTest(id = "default", supabaseUserId = null)
+        val responseEntered = CompletableDeferred<Unit>()
+        val releaseResponse = CompletableDeferred<Unit>()
+        val accountB = createAuthResponse(userId = "owner-b")
+        val blockingApi = object : FakePortalApiClient() {
+            var calls = 0
+
+            override suspend fun signIn(email: String, password: String): Result<GoTrueAuthResponse> =
+                Result.success(accountB)
+
+            override suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> {
+                calls++
+                return if (calls == 1) {
+                    responseEntered.complete(Unit)
+                    releaseResponse.await()
+                    Result.success(
+                        PortalSyncPushResponse(
+                            syncTime = "2026-09-20T12:00:00Z",
+                            acknowledgedWorkoutDeletionIds = listOf("delete-a"),
+                        ),
+                    )
+                } else {
+                    Result.success(PortalSyncPushResponse(syncTime = "2026-09-20T12:00:01Z"))
+                }
+            }
+        }
+        var acknowledgedOwner: String? = null
+        val deletionRepository = object : WorkoutDeletionRepository {
+            override suspend fun pendingForOwner(ownerUserId: String): List<WorkoutDeletionMutation> = listOf(
+                WorkoutDeletionMutation(
+                    mutationId = "delete-a",
+                    ownerUserId = ownerUserId,
+                    profileId = "default",
+                    scope = WorkoutDeletionScope.WORKOUT,
+                    portalSessionId = "00000000-0000-4000-8000-000000000001",
+                    componentSessionId = null,
+                    deletedAt = 1L,
+                    acknowledgedAt = null,
+                    source = WorkoutDeletionSource.LOCAL,
+                ),
+            )
+
+            override suspend fun acknowledge(
+                ownerUserId: String,
+                mutationIds: Set<String>,
+                acknowledgedAt: Long,
+            ) {
+                assertEquals(setOf("delete-a"), mutationIds)
+                acknowledgedOwner = ownerUserId
+            }
+        }
+        val manager = SyncManager(
+            apiClient = blockingApi,
+            tokenStorage = tokenStorage,
+            syncRepository = fakeSyncRepo,
+            gamificationRepository = fakeGamificationRepo,
+            repMetricRepository = fakeRepMetricRepo,
+            userProfileRepository = fakeUserProfileRepo,
+            profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
+            externalActivityRepository = fakeExternalActivityRepo,
+            velocityOneRepMaxRepository = fakeVelocityRepo,
+            isProfilePreferenceMigrationReady = { true },
+            workoutDeletionRepository = deletionRepository,
+            profileMutationBarrier = ProfileMutationBarrier(),
+        )
+
+        val sync = async(start = CoroutineStart.UNDISPATCHED) { manager.sync() }
+        responseEntered.await()
+        val login = async(start = CoroutineStart.UNDISPATCHED) {
+            manager.login("owner-b@example.com", "password")
+        }
+
+        assertEquals("owner-a", tokenStorage.currentUser.value?.id)
+        assertTrue(login.isActive)
+        releaseResponse.complete(Unit)
+        assertTrue(sync.await().isSuccess)
+        assertTrue(login.await().isSuccess)
+
+        assertEquals("owner-a", acknowledgedOwner)
+        assertEquals("owner-b", tokenStorage.currentUser.value?.id)
+    }
+
+    @Test
+    fun `zero ownership acknowledgements block deletion and ordinary uploads`() = runTest {
+        assertMissingOwnershipAcknowledgementsBlockSync(emptySet())
+    }
+
+    @Test
+    fun `partial ownership acknowledgements block deletion and ordinary uploads`() = runTest {
+        assertMissingOwnershipAcknowledgementsBlockSync(setOf("transfer-a"))
+    }
+
+    @Test
+    fun `zero workout deletion acknowledgements block ordinary uploads`() = runTest {
+        assertMissingWorkoutDeletionAcknowledgementsBlockSync(emptySet())
+    }
+
+    @Test
+    fun `partial workout deletion acknowledgements block ordinary uploads`() = runTest {
+        assertMissingWorkoutDeletionAcknowledgementsBlockSync(setOf("delete-a"))
+    }
+
+    private suspend fun assertMissingOwnershipAcknowledgementsBlockSync(
+        acknowledgedIds: Set<String>,
+    ) {
+        setupAuthenticated(userId = "owner-a")
+        val api = FakePortalApiClient().apply {
+            pushResult = Result.success(
+                PortalSyncPushResponse(
+                    syncTime = "2026-09-20T12:00:00Z",
+                    acknowledgedOwnershipTransferIds = acknowledgedIds.toList() + "transfer-outside-batch",
+                ),
+            )
+        }
+        var locallyAcknowledged = emptySet<String>()
+        val transferRepository = object : OwnershipTransferRepository {
+            override suspend fun pendingForOwner(ownerUserId: String): List<OwnershipTransferMutation> =
+                listOf("transfer-a", "transfer-b").map { mutationId ->
+                    OwnershipTransferMutation(
+                        mutationId = mutationId,
+                        ownerUserId = ownerUserId,
+                        sourceProfileId = "profile-a",
+                        targetProfileId = "profile-b",
+                        workoutSessionIds = listOf("00000000-0000-4000-8000-000000000001"),
+                        routineIds = emptyList(),
+                        cycleIds = emptyList(),
+                        personalRecordIds = emptyList(),
+                    )
+                }
+
+            override suspend fun acknowledge(
+                ownerUserId: String,
+                mutationIds: Set<String>,
+                acknowledgedAt: Long,
+            ): Int {
+                locallyAcknowledged = mutationIds
+                return mutationIds.size
+            }
+        }
+        val deletionRepository = object : WorkoutDeletionRepository {
+            override suspend fun pendingForOwner(ownerUserId: String): List<WorkoutDeletionMutation> = listOf(
+                WorkoutDeletionMutation(
+                    mutationId = "delete-a",
+                    ownerUserId = ownerUserId,
+                    profileId = "profile-a",
+                    scope = WorkoutDeletionScope.WORKOUT,
+                    portalSessionId = "00000000-0000-4000-8000-000000000002",
+                    componentSessionId = null,
+                    deletedAt = 1L,
+                    acknowledgedAt = null,
+                    source = WorkoutDeletionSource.LOCAL,
+                ),
+            )
+
+            override suspend fun acknowledge(
+                ownerUserId: String,
+                mutationIds: Set<String>,
+                acknowledgedAt: Long,
+            ) = error("Deletion upload must be blocked by missing ownership acknowledgements")
+        }
+        val manager = SyncManager(
+            apiClient = api,
+            tokenStorage = tokenStorage,
+            syncRepository = fakeSyncRepo,
+            gamificationRepository = fakeGamificationRepo,
+            repMetricRepository = fakeRepMetricRepo,
+            userProfileRepository = fakeUserProfileRepo,
+            profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
+            externalActivityRepository = fakeExternalActivityRepo,
+            velocityOneRepMaxRepository = fakeVelocityRepo,
+            isProfilePreferenceMigrationReady = { true },
+            workoutDeletionRepository = deletionRepository,
+            ownershipTransferRepository = transferRepository,
+            profileMutationBarrier = ProfileMutationBarrier(),
+        )
+
+        val result = manager.sync()
+
+        assertTrue(result.isFailure)
+        assertEquals(acknowledgedIds, locallyAcknowledged)
+        assertEquals(1, api.pushPayloads.size)
+        assertEquals(
+            setOf("transfer-a", "transfer-b"),
+            api.pushPayloads.single().ownershipTransfers.mapTo(linkedSetOf()) { it.mutationId },
+        )
+        assertTrue(api.pushPayloads.single().workoutDeletions.isEmpty())
+        assertTrue(api.pushPayloads.single().sessions.isEmpty())
+    }
+
+    private suspend fun assertMissingWorkoutDeletionAcknowledgementsBlockSync(
+        acknowledgedIds: Set<String>,
+    ) {
+        setupAuthenticated(userId = "owner-a")
+        val api = FakePortalApiClient().apply {
+            pushResult = Result.success(
+                PortalSyncPushResponse(
+                    syncTime = "2026-09-20T12:00:00Z",
+                    acknowledgedWorkoutDeletionIds = acknowledgedIds.toList() + "delete-outside-batch",
+                ),
+            )
+        }
+        var locallyAcknowledged = emptySet<String>()
+        val deletionRepository = object : WorkoutDeletionRepository {
+            override suspend fun pendingForOwner(ownerUserId: String): List<WorkoutDeletionMutation> =
+                listOf(
+                    "delete-a" to "00000000-0000-4000-8000-000000000001",
+                    "delete-b" to "00000000-0000-4000-8000-000000000002",
+                ).map { (mutationId, portalSessionId) ->
+                    WorkoutDeletionMutation(
+                        mutationId = mutationId,
+                        ownerUserId = ownerUserId,
+                        profileId = "default",
+                        scope = WorkoutDeletionScope.WORKOUT,
+                        portalSessionId = portalSessionId,
+                        componentSessionId = null,
+                        deletedAt = 1L,
+                        acknowledgedAt = null,
+                        source = WorkoutDeletionSource.LOCAL,
+                    )
+                }
+
+            override suspend fun acknowledge(
+                ownerUserId: String,
+                mutationIds: Set<String>,
+                acknowledgedAt: Long,
+            ) {
+                locallyAcknowledged = mutationIds
+            }
+        }
+        val manager = SyncManager(
+            apiClient = api,
+            tokenStorage = tokenStorage,
+            syncRepository = fakeSyncRepo,
+            gamificationRepository = fakeGamificationRepo,
+            repMetricRepository = fakeRepMetricRepo,
+            userProfileRepository = fakeUserProfileRepo,
+            profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
+            externalActivityRepository = fakeExternalActivityRepo,
+            velocityOneRepMaxRepository = fakeVelocityRepo,
+            isProfilePreferenceMigrationReady = { true },
+            workoutDeletionRepository = deletionRepository,
+            profileMutationBarrier = ProfileMutationBarrier(),
+        )
+
+        val result = manager.sync()
+
+        assertTrue(result.isFailure)
+        assertEquals(acknowledgedIds, locallyAcknowledged)
+        assertEquals(1, api.pushPayloads.size)
+        assertEquals(
+            setOf("delete-a", "delete-b"),
+            api.pushPayloads.single().workoutDeletions.mapTo(linkedSetOf()) { it.mutationId },
+        )
+        assertTrue(api.pushPayloads.single().sessions.isEmpty())
+    }
 
     /**
      * Helper to simulate an authenticated user by saving GoTrue auth directly.
@@ -146,6 +420,7 @@ class SyncManagerTest {
     fun loginStoresAuthAndReturnsUser() = runTest {
         val authResponse = createAuthResponse(userId = "user-789", email = "login@test.com")
         fakeApi.signInResult = Result.success(authResponse)
+        fakeUserProfileRepo.setActiveProfileForTest(id = "default", supabaseUserId = null)
         val manager = createManager()
 
         val result = manager.login("login@test.com", "password123")
@@ -156,6 +431,106 @@ class SyncManagerTest {
         assertEquals("login@test.com", user.email)
         assertTrue(tokenStorage.isAuthenticated.value, "Should be authenticated after login")
         assertTrue(tokenStorage.hasToken(), "Token should be stored after login")
+    }
+
+    @Test
+    fun `email login to a new owner resets persisted and observable sync cursor`() = runTest {
+        setupAuthenticated(userId = "owner-a")
+        tokenStorage.setLastSyncTimestamp(42L)
+        fakeUserProfileRepo.setActiveProfileForTest(id = "default", supabaseUserId = null)
+        fakeApi.signInResult = Result.success(createAuthResponse(userId = "owner-b"))
+        val manager = createManager()
+
+        val result = manager.login("owner-b@example.com", "password")
+
+        assertTrue(result.isSuccess)
+        assertEquals("owner-b", fakeUserProfileRepo.activeProfile.value?.supabaseUserId)
+        assertEquals("owner-b", tokenStorage.currentUser.value?.id)
+        assertEquals(0L, tokenStorage.getLastSyncTimestamp())
+        assertEquals(0L, manager.lastSyncTime.value)
+    }
+
+    @Test
+    fun `email login rejects a different profile owner and preserves prior identity`() = runTest {
+        setupAuthenticated(userId = "owner-a")
+        tokenStorage.setLastSyncTimestamp(42L)
+        fakeUserProfileRepo.setActiveProfileForTest(id = "default", supabaseUserId = "owner-a")
+        fakeApi.signInResult = Result.success(createAuthResponse(userId = "owner-b"))
+        val manager = createManager()
+
+        val result = manager.login("owner-b@example.com", "password")
+
+        assertTrue(result.isFailure)
+        assertEquals("owner-a", fakeUserProfileRepo.activeProfile.value?.supabaseUserId)
+        assertEquals("owner-a", tokenStorage.currentUser.value?.id)
+        assertEquals(42L, tokenStorage.getLastSyncTimestamp())
+        assertEquals(42L, manager.lastSyncTime.value)
+    }
+
+    @Test
+    fun `delayed entitlement refresh cannot overwrite a newer email identity`() = runTest {
+        setupAuthenticated(userId = "owner-b")
+        fakeUserProfileRepo.setActiveProfileForTest(id = "default", supabaseUserId = null)
+        val entitlementEntered = CompletableDeferred<Unit>()
+        val releaseEntitlement = CompletableDeferred<Unit>()
+        val engine = MockEngine {
+            respond(
+                content = if (tokenStorage.currentUser.value?.id == "owner-b") {
+                    """[{"tier":"INFERNO","status":"active"}]"""
+                } else {
+                    "[]"
+                },
+                status = HttpStatusCode.OK,
+                headers = headersOf(HttpHeaders.ContentType, ContentType.Application.Json.toString()),
+            )
+        }
+        val api = object : PortalApiClient(
+            SupabaseConfig("https://fake.supabase.co", "anon"),
+            tokenStorage,
+            httpClientEngine = engine,
+        ) {
+            override suspend fun signIn(email: String, password: String): Result<GoTrueAuthResponse> =
+                Result.success(createAuthResponse(userId = "owner-c", email = email))
+
+            override suspend fun getActiveSubscriptionTier(): Result<String?> {
+                if (tokenStorage.currentUser.value?.id == "owner-b") {
+                    entitlementEntered.complete(Unit)
+                    releaseEntitlement.await()
+                    return Result.success("INFERNO")
+                }
+                return Result.success(null)
+            }
+        }
+        val manager = SyncManager(
+            apiClient = api,
+            tokenStorage = tokenStorage,
+            syncRepository = fakeSyncRepo,
+            gamificationRepository = fakeGamificationRepo,
+            repMetricRepository = fakeRepMetricRepo,
+            userProfileRepository = fakeUserProfileRepo,
+            profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
+            externalActivityRepository = fakeExternalActivityRepo,
+            velocityOneRepMaxRepository = fakeVelocityRepo,
+            isProfilePreferenceMigrationReady = { true },
+            profileMutationBarrier = ProfileMutationBarrier(),
+        )
+
+        val refresh = async(start = CoroutineStart.UNDISPATCHED) {
+            manager.refreshPremiumStatusFromServer()
+        }
+        entitlementEntered.await()
+        val login = async(start = CoroutineStart.UNDISPATCHED) {
+            manager.login("owner-c@example.com", "password")
+        }
+        assertTrue(login.isActive)
+
+        releaseEntitlement.complete(Unit)
+        refresh.await()
+        assertTrue(login.await().isSuccess)
+
+        assertEquals("owner-c", tokenStorage.currentUser.value?.id)
+        assertFalse(tokenStorage.currentUser.value?.isPremium ?: true)
+        assertNull(tokenStorage.getSubscriptionTier())
     }
 
     @Test
@@ -337,9 +712,8 @@ class SyncManagerTest {
             routineSessionId = routineSessionId,
         )
         fakeSyncRepo.workoutSessionsToReturn = listOf(firstAttempt, retryAttempt)
-        listOf(firstAttempt, retryAttempt).forEach { session ->
-            fakeCompletedSetRepo.setSessionRoutine(session.id, routineSessionId)
-            fakeCompletedSetRepo.saveCompletedSet(
+        fakeSyncRepo.workoutCompletedSetsByComponentId = listOf(firstAttempt, retryAttempt).associate { session ->
+            session.id to listOf(
                 CompletedSet(
                     id = "set-${session.id}",
                     sessionId = session.id,
@@ -358,7 +732,10 @@ class SyncManagerTest {
             )
         }
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                acknowledgedWorkoutSessionIds = listOf(routineSessionId),
+            ),
         )
         val manager = createManager()
 
@@ -391,7 +768,10 @@ class SyncManagerTest {
         )
         fakeSyncRepo.workoutSessionsToReturn = listOf(firstSession, duplicateSession)
         fakeApi.pushResult = Result.success(
-            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                acknowledgedWorkoutSessionIds = listOf(sessionId),
+            ),
         )
         val manager = createManager()
 
@@ -411,9 +791,9 @@ class SyncManagerTest {
             "The first repository row should win deterministically",
         )
         assertEquals(
-            listOf(sessionId),
-            fakeSyncRepo.updateSessionTimestampCalls,
-            "Post-push timestamp stamping should run once for the deduped session",
+            listOf(setOf(sessionId)),
+            fakeSyncRepo.acknowledgedWorkoutParentIdCalls,
+            "Exact parent acknowledgement should run once for the deduped session",
         )
     }
 
@@ -1269,6 +1649,7 @@ class SyncManagerTest {
     fun signupStoresAuthAndReturnsUser() = runTest {
         val authResponse = createAuthResponse(userId = "signup-user", email = "signup@test.com")
         fakeApi.signUpResult = Result.success(authResponse)
+        fakeUserProfileRepo.setActiveProfileForTest(id = "default", supabaseUserId = null)
         val manager = createManager()
 
         val result = manager.signup("signup@test.com", "password123", "Test User")
@@ -1509,6 +1890,40 @@ class SyncManagerTest {
             tokenStorage.getLastSyncTimestamp(),
             "lastSyncTimestamp should NOT be updated on partial pull failure",
         )
+    }
+
+    @Test
+    fun externalActivityMergeFailureDoesNotAdvancePullCheckpoint() = runTest {
+        setupAuthenticated()
+        tokenStorage.recordCompletedPull(1_000L, "user-123:default")
+        fakeExternalActivityRepo.upsertFailure = IllegalStateException("database unavailable")
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 2_000L,
+                externalActivities = listOf(
+                    ExternalActivitySyncDto(
+                        id = "activity-1",
+                        externalId = "provider-activity-1",
+                        provider = "STRAVA",
+                        name = "Morning Ride",
+                        startedAt = "2026-03-02T10:00:00Z",
+                        syncedAt = "2026-03-02T11:00:00Z",
+                    ),
+                ),
+            ),
+        )
+        val manager = createManager()
+
+        val result = manager.sync()
+
+        assertTrue(result.isSuccess, "push success remains reportable as partial sync")
+        assertIs<SyncState.PartialSuccess>(manager.syncState.value)
+        assertEquals(1_000L, tokenStorage.getLastSyncTimestamp())
+        assertEquals("user-123:default", tokenStorage.getDeltaPullKey())
+        assertEquals(1, fakeExternalActivityRepo.upsertCallCount)
     }
 
     @Test

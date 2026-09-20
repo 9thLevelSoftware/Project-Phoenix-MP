@@ -20,7 +20,6 @@ import kotlinx.coroutines.test.runTest
  *
  * Testing approach: Since Kable's Peripheral can't be mocked in KMP common tests,
  * we test what CAN be verified in isolation:
- * - processIncomingData() opcode dispatch to callbacks
  * - disconnect() state cleanup and callback firing
  * - parseDiagnosticData() safety (no crashes on valid/invalid data)
  * - Initial state (currentPeripheral is null)
@@ -55,10 +54,7 @@ class KableBleConnectionManagerTest {
             onConnectionStateChanged = { state -> tracker.connectionStates.add(state) },
             onScannedDevicesChanged = { devices -> tracker.scannedDevicesUpdates.add(devices) },
             onReconnectionRequested = { request -> tracker.reconnectionRequests.add(request) },
-            onCommandResponse = { opcode -> tracker.commandResponses.add(opcode) },
             onRepEventFromCharacteristic = { data -> tracker.repEventsFromChar.add(data) },
-            onRepEventFromRx = { data -> tracker.repEventsFromRx.add(data) },
-            onMetricFromRx = { data -> tracker.metricsFromRx.add(data) },
             onDiagnosticData = { packet -> tracker.diagnostics.add(packet) },
         )
         return manager to tracker
@@ -69,10 +65,7 @@ class KableBleConnectionManagerTest {
         val connectionStates = mutableListOf<ConnectionState>()
         val scannedDevicesUpdates = mutableListOf<List<ScannedDevice>>()
         val reconnectionRequests = mutableListOf<ReconnectionRequest>()
-        val commandResponses = mutableListOf<UByte>()
         val repEventsFromChar = mutableListOf<ByteArray>()
-        val repEventsFromRx = mutableListOf<ByteArray>()
-        val metricsFromRx = mutableListOf<ByteArray>()
         val diagnostics = mutableListOf<DiagnosticPacket>()
     }
 
@@ -84,113 +77,6 @@ class KableBleConnectionManagerTest {
     fun `currentPeripheral is null after construction`() = runTest {
         val (manager, _) = createTestManager()
         assertNull(manager.currentPeripheral, "currentPeripheral should be null after construction")
-    }
-
-    // =========================================================================
-    // processIncomingData - Callback Routing (5 tests)
-    // =========================================================================
-
-    @Test
-    fun `processIncomingData with opcode 0x01 and size ge 16 routes to onMetricFromRx`() = runTest {
-        val (manager, tracker) = createTestManager()
-
-        // Create a 16-byte packet with opcode 0x01
-        val data = ByteArray(16)
-        data[0] = 0x01
-
-        manager.processIncomingData(data)
-
-        assertEquals(1, tracker.metricsFromRx.size, "onMetricFromRx should be called once")
-        assertTrue(tracker.metricsFromRx[0].contentEquals(data), "Data should match")
-    }
-
-    @Test
-    fun `processIncomingData with opcode 0x02 and size ge 5 routes to onRepEventFromRx`() = runTest {
-        val (manager, tracker) = createTestManager()
-
-        // Create a 5-byte packet with opcode 0x02
-        val data = ByteArray(5)
-        data[0] = 0x02
-
-        manager.processIncomingData(data)
-
-        assertEquals(1, tracker.repEventsFromRx.size, "onRepEventFromRx should be called once")
-        assertTrue(tracker.repEventsFromRx[0].contentEquals(data), "Data should match")
-    }
-
-    @Test
-    fun `processIncomingData with opcode 0x01 but size lt 16 does NOT route to onMetricFromRx`() = runTest {
-        val (manager, tracker) = createTestManager()
-
-        // Create a 15-byte packet (too small) with opcode 0x01
-        val data = ByteArray(15)
-        data[0] = 0x01
-
-        manager.processIncomingData(data)
-
-        assertEquals(
-            0,
-            tracker.metricsFromRx.size,
-            "onMetricFromRx should NOT be called for short packet",
-        )
-        // But command response should still fire
-        assertEquals(1, tracker.commandResponses.size, "onCommandResponse should still fire")
-        assertEquals(0x01.toUByte(), tracker.commandResponses[0])
-    }
-
-    @Test
-    fun `processIncomingData with opcode 0x02 but size lt 5 does NOT route to onRepEventFromRx`() = runTest {
-        val (manager, tracker) = createTestManager()
-
-        // Create a 4-byte packet (too small) with opcode 0x02
-        val data = ByteArray(4)
-        data[0] = 0x02
-
-        manager.processIncomingData(data)
-
-        assertEquals(
-            0,
-            tracker.repEventsFromRx.size,
-            "onRepEventFromRx should NOT be called for short packet",
-        )
-        // But command response should still fire
-        assertEquals(1, tracker.commandResponses.size, "onCommandResponse should still fire")
-        assertEquals(0x02.toUByte(), tracker.commandResponses[0])
-    }
-
-    @Test
-    fun `processIncomingData always fires onCommandResponse with opcode byte`() = runTest {
-        val (manager, tracker) = createTestManager()
-
-        // Send various opcodes
-        val data1 = byteArrayOf(0x42, 0x00, 0x00)
-        val data2 = byteArrayOf(0xFF.toByte(), 0x01)
-
-        manager.processIncomingData(data1)
-        manager.processIncomingData(data2)
-
-        assertEquals(
-            2,
-            tracker.commandResponses.size,
-            "onCommandResponse should fire for each packet",
-        )
-        assertEquals(0x42.toUByte(), tracker.commandResponses[0])
-        assertEquals(0xFF.toUByte(), tracker.commandResponses[1])
-
-        // Neither should route to metric or rep callbacks (wrong opcodes / sizes)
-        assertEquals(0, tracker.metricsFromRx.size)
-        assertEquals(0, tracker.repEventsFromRx.size)
-    }
-
-    @Test
-    fun `processIncomingData ignores empty data`() = runTest {
-        val (manager, tracker) = createTestManager()
-
-        manager.processIncomingData(byteArrayOf())
-
-        assertEquals(0, tracker.commandResponses.size, "No callbacks should fire for empty data")
-        assertEquals(0, tracker.metricsFromRx.size)
-        assertEquals(0, tracker.repEventsFromRx.size)
     }
 
     // =========================================================================

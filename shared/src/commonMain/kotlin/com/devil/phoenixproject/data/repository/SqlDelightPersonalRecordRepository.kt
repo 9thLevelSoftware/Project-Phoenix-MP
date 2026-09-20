@@ -16,7 +16,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
-class SqlDelightPersonalRecordRepository(private val db: PhoenixDatabase) : PersonalRecordRepository {
+class SqlDelightPersonalRecordRepository(
+    private val db: PhoenixDatabase,
+    private val baselineRepository: ProfileExerciseBaselineRepository,
+) : PersonalRecordRepository {
     private val queries = db.phoenixDatabaseQueries
 
     // SQLDelight mapper - parameters must match query columns even if not all are used
@@ -278,13 +281,9 @@ class SqlDelightPersonalRecordRepository(private val db: PhoenixDatabase) : Pers
         profileId: String,
         cableCount: Int? = null,
     ): List<PRType> {
-        // Issue #319: Defensive validation for profileId
-        if (profileId.isBlank()) {
-            Logger.e(IllegalStateException("Blank profileId while updating PRs for exercise=$exerciseId")) {
-                "PR_SAVE: CRITICAL - profileId is blank for exercise=$exerciseId, using 'default' as fallback."
-            }
-        }
-        val effectiveProfileId = profileId.ifBlank { "default" }
+        require(profileId.isNotBlank()) { "PR profileId must not be blank" }
+        require(exerciseId.isNotBlank()) { "PR exerciseId must not be blank" }
+        val effectiveProfileId = profileId
 
         val brokenPRs = mutableListOf<PRType>()
         val canonicalWorkoutMode = normalizeWorkoutModeKey(workoutMode)
@@ -394,18 +393,15 @@ class SqlDelightPersonalRecordRepository(private val db: PhoenixDatabase) : Pers
                 brokenPRs.add(PRType.MAX_VOLUME)
             }
 
-            // Sync estimated 1RM to Exercise table for %-based training features.
-            // Only update from COMBINED phase PRs to keep the canonical 1RM stable.
+            // Keep the profile-scoped training baseline monotonic. Phase-specific force
+            // records are not comparable with the COMBINED rep-based estimate.
             if (phase == WorkoutPhase.COMBINED && brokenPRs.isNotEmpty()) {
-                val currentExercise1RM = queries.selectExerciseById(exerciseId)
-                    .executeAsOneOrNull()?.one_rep_max_kg?.toFloat() ?: 0f
-                if (estimatedOneRepMax > currentExercise1RM) {
-                    Logger.d { "PR_SAVE: Updating 1RM for exercise=$exerciseId from $currentExercise1RM to $estimatedOneRepMax" }
-                    queries.updateOneRepMax(
-                        one_rep_max_kg = estimatedOneRepMax.toDouble(),
-                        id = exerciseId,
-                    )
-                }
+                baselineRepository.raiseIfGreater(
+                    profileId = effectiveProfileId,
+                    exerciseId = exerciseId,
+                    oneRepMaxPerCableKg = estimatedOneRepMax,
+                    updatedAt = timestamp,
+                )
             }
         }
 

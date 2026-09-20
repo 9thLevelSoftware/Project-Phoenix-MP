@@ -10,11 +10,20 @@ This guide explains how to configure GitHub Actions to automatically build iOS .
 
 ## Overview
 
-The workflow (`.github/workflows/ios-build.yml`) does:
+All iOS build workflows are **manually triggered** (`workflow_dispatch`), or called
+by the release workflows (`workflow_call`). None runs on pull requests or on push:
 
-1. **On Pull Requests**: Builds debug version (no signing) to verify compilation
-2. **On Push to main**: Builds signed .ipa and uploads as artifact
-3. **Optionally**: Auto-uploads to TestFlight
+| Workflow | File | What it does |
+|----------|------|--------------|
+| iOS TestFlight | `.github/workflows/ios-testflight.yml` | Builds a signed .ipa, uploads it to App Store Connect, and adds it to the TestFlight group |
+| iOS TestFlight (Internal Only) | `.github/workflows/ios-testflight-internal.yml` | Builds and uploads for internal testers only |
+| iOS Release IPA | `.github/workflows/ios-release-ipa.yml` | Builds a signed .ipa and attaches it to a GitHub release |
+| Release All Platforms | `.github/workflows/release-all.yml` | Creates the `v<version>` tag and runs the Play Store, APK, IPA and TestFlight workflows |
+| Release All (Existing) | `.github/workflows/release-all-existing.yml` | Re-runs the Play Store, APK, IPA and TestFlight workflows for an existing release tag |
+
+**iOS is not built on pull requests.** On PRs, `ci-tests.yml` only compiles the
+shared Kotlin module for the iOS target on Linux (`ios-target-tests-compile`). It
+never runs `xcodebuild` or produces an .ipa, and it doesn't run the iOS tests.
 
 ## Required GitHub Secrets
 
@@ -48,13 +57,17 @@ GitHub secrets before the next release.
 | `TEAM_ID` | 10-character Apple Team ID | See Step 3 below |
 | `PROVISIONING_PROFILE_NAME` | Name of provisioning profile | e.g., "Phoenix Distribution" |
 
-### TestFlight Upload Secrets (Optional)
+### App Store Connect Secrets (TestFlight only)
+
+Both TestFlight workflows use the API key secrets and `APP_APPLE_ID`; `ios-testflight.yml` also needs `TESTFLIGHT_GROUP_NAME`. `ios-release-ipa.yml` needs only the signing and Supabase secrets.
 
 | Secret Name | Description | How to Get |
 |-------------|-------------|------------|
 | `APPSTORE_API_KEY_ID` | App Store Connect API Key ID | See Step 4 below |
 | `APPSTORE_ISSUER_ID` | App Store Connect Issuer ID | See Step 4 below |
 | `APPSTORE_API_KEY` | API Key .p8 file contents | See Step 4 below |
+| `APP_APPLE_ID` | The app's numeric Apple ID (App Store Connect → App Information) | Used by both TestFlight workflows |
+| `TESTFLIGHT_GROUP_NAME` | TestFlight beta group to add builds to | Used by `ios-testflight.yml` |
 
 ---
 
@@ -114,7 +127,7 @@ GitHub secrets before the next release.
    <string>YOUR_ACTUAL_TEAM_ID</string>
    ```
 
-### Step 4: Create App Store Connect API Key (Optional - for TestFlight)
+### Step 4: Create App Store Connect API Key (for the TestFlight workflows)
 
 1. Go to [App Store Connect → Users and Access → Keys](https://appstoreconnect.apple.com/access/api)
 2. Click **+** to generate a new key
@@ -164,26 +177,13 @@ If you haven't registered the App ID:
 
 ## Testing the Workflow
 
-### Test PR Build (No Signing Required)
-
-1. Create a branch and make a small change to `iosApp/` or `shared/`
-2. Open a PR
-3. The workflow runs and builds without signing
-4. Verify the build succeeds
-
-### Test Full Build (After Adding Secrets)
-
-1. Push to `main` branch
-2. Go to **Actions** tab in GitHub
-3. Watch the workflow run
-4. Download the .ipa artifact when complete
-
 ### Manual Trigger
 
-You can also trigger manually:
-1. Go to **Actions** → **iOS Build**
+After adding the secrets:
+1. Go to **Actions** → **iOS TestFlight** (or **iOS TestFlight (Internal Only)**)
 2. Click **Run workflow**
-3. Select branch and run
+3. Select the branch and run
+4. Watch the run and check that the build appears in TestFlight
 
 ---
 
@@ -203,13 +203,12 @@ You can also trigger manually:
 
 ### "Code signing is required"
 
-- This happens on PR builds intentionally (we skip signing for PRs)
-- For main branch, ensure all secrets are set
+- Ensure all signing secrets are set
 
 ### "No such module 'shared'"
 
-- The XCFramework build may have failed
-- Check the "Build shared XCFramework" step logs
+- The shared framework build may have failed
+- Check the "Build shared framework and resources" step logs
 - Ensure Gradle is set up correctly
 
 ### TestFlight upload fails
@@ -233,7 +232,10 @@ You can also trigger manually:
 
 | File | Purpose |
 |------|---------|
-| `.github/workflows/ios-build.yml` | CI/CD workflow |
+| `.github/workflows/ios-testflight.yml` | TestFlight build and upload |
+| `.github/workflows/ios-testflight-internal.yml` | Internal-only TestFlight build |
+| `.github/workflows/ios-release-ipa.yml` | Release .ipa for a GitHub release |
+| `.github/workflows/release-all.yml` | Full release across platforms |
 | `iosApp/ExportOptions.plist` | Archive export settings |
 | `iosApp/PhoenixApp/PhoenixApp.xcodeproj` | Xcode project |
 
@@ -249,8 +251,13 @@ KEYCHAIN_PASSWORD           = random string (e.g., openssl rand -base64 32)
 TEAM_ID                     = 10-char Apple Team ID
 PROVISIONING_PROFILE_NAME   = name of profile in Apple Developer
 
-# Optional (for TestFlight):
+SUPABASE_URL                = Supabase project URL
+SUPABASE_ANON_KEY           = Supabase anon key
+
+# App Store Connect (TestFlight workflows only):
 APPSTORE_API_KEY_ID         = App Store Connect API Key ID
 APPSTORE_ISSUER_ID          = App Store Connect Issuer ID
 APPSTORE_API_KEY            = contents of .p8 file
+APP_APPLE_ID                = numeric Apple ID of the app (TestFlight workflows)
+TESTFLIGHT_GROUP_NAME       = TestFlight beta group (ios-testflight.yml)
 ```

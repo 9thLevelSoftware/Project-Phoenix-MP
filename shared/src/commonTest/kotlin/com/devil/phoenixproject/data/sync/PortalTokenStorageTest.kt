@@ -383,5 +383,89 @@ class PortalTokenStorageTest {
         storage.recordCompletedPull(2000L, "u2:default")
         storage.clearAuth()
         assertNull(storage.getDeltaPullKey())
+    // ===== Auth generation (stale refresh writes) =====
+
+    @Test
+    fun refreshSaveWithStaleGenerationIsDroppedAfterClearAuth() {
+        val storage = createStorage()
+        saveAuthWithExpiry(storage, currentTimeMillis() / 1000 + 3600)
+        val generation = storage.authGeneration()
+
+        storage.clearAuth()
+        val written = storage.saveGoTrueAuth(refreshedResponse(), expectedGeneration = generation)
+
+        assertFalse(written, "refresh started before clearAuth must be dropped")
+        assertNull(storage.getToken())
+        assertFalse(storage.isAuthenticated.value)
+    }
+
+    @Test
+    fun refreshSaveWithCurrentGenerationIsWritten() {
+        val storage = createStorage()
+        saveAuthWithExpiry(storage, currentTimeMillis() / 1000 + 3600)
+
+        val written = storage.saveGoTrueAuth(refreshedResponse(), expectedGeneration = storage.authGeneration())
+
+        assertTrue(written)
+        assertEquals("refreshed-access", storage.getToken())
+    }
+
+    @Test
+    fun signInDuringInFlightRefreshIsNotOverwrittenByTheRefresh() {
+        val storage = createStorage()
+        saveAuthWithExpiry(storage, currentTimeMillis() / 1000 + 3600)
+        val generation = storage.authGeneration()
+
+        saveAuthWithExpiry(storage, currentTimeMillis() / 1000 + 7200) // new sign-in
+
+        assertFalse(storage.saveGoTrueAuth(refreshedResponse(), expectedGeneration = generation))
+        assertEquals("test-access-token", storage.getToken())
+    }
+
+    private fun refreshedResponse() = GoTrueAuthResponse(
+        accessToken = "refreshed-access",
+        tokenType = "bearer",
+        expiresIn = 3600,
+        refreshToken = "refreshed-refresh",
+        user = GoTrueUser(id = "user-123", email = "test@example.com"),
+    )
+
+    // ===== Fresh-install secure storage reset (iOS Keychain outlives uninstall) =====
+
+    private class InstallState(var marker: Boolean, val databaseExists: Boolean) {
+        var cleared = false
+
+        fun run() = resetSecureStorageOnFreshInstall(
+            hasInstallMarker = { marker },
+            localDatabaseExists = { databaseExists },
+            clearSecureStorage = { cleared = true },
+            setInstallMarker = { marker = true },
+        )
+    }
+
+    @Test
+    fun freshInstallClearsSecureStorageAndSetsMarker() {
+        val state = InstallState(marker = false, databaseExists = false)
+
+        assertTrue(state.run())
+        assertTrue(state.cleared, "no marker + no database = reinstall: wipe leftover tokens")
+        assertTrue(state.marker)
+    }
+
+    @Test
+    fun upgradeWithoutMarkerKeepsSessionAndSetsMarker() {
+        val state = InstallState(marker = false, databaseExists = true)
+
+        assertFalse(state.run())
+        assertFalse(state.cleared, "existing database = upgrade from a pre-marker build: stay signed in")
+        assertTrue(state.marker)
+    }
+
+    @Test
+    fun markerPresentNeverClears() {
+        val state = InstallState(marker = true, databaseExists = false)
+
+        assertFalse(state.run())
+        assertFalse(state.cleared)
     }
 }
