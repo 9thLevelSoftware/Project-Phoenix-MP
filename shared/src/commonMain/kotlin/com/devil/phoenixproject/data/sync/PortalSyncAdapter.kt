@@ -180,11 +180,12 @@ object PortalSyncAdapter {
         val totalDuration = sorted.sumOf { (it.session.duration / 1000).toInt() } // ms → s
         // Portal stores per-cable volume (KD-8); it does NOT double it. Display shows
         // per-cable first, with the total (× cable_count) only when the cable count is known.
-        // - Measured totalVolumeKg is TOTAL (both cables) → divide by cableCount
+        // - Measured totalVolumeKg is TOTAL (both cables) → divide by the same
+        //   valid 1/2 cable count sent on the wire; unknown counts fall back to 1
         // - Fallback weightPerCableKg × totalReps is already per-cable
         val totalVolume = sorted.sumOf { swr ->
             val session = swr.session
-            val cables = (session.cableCount ?: 1).coerceAtLeast(1)
+            val cables = PortalMappings.cableCountToWire(session.cableCount) ?: 1
             val perCableVolume = session.totalVolumeKg?.let { it / cables }
                 ?: (session.weightPerCableKg * session.totalReps)
             perCableVolume.toDouble()
