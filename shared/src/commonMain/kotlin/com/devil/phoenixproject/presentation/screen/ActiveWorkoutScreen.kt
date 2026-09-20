@@ -227,10 +227,13 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     val saveRetryUnavailable = stringResource(Res.string.workout_save_retry_failed)
     LaunchedEffect(saveFailureSessionId) {
         val failedSessionId = saveFailureSessionId ?: return@LaunchedEffect
+        // Indefinite: losing a set is not a message to miss. It stays until the
+        // user retries or dismisses it, and either answer drains the offer.
         val action = snackbarHostState.showSnackbar(
             message = saveFailedMessage,
             actionLabel = saveRetryLabel,
-            duration = SnackbarDuration.Long,
+            withDismissAction = true,
+            duration = SnackbarDuration.Indefinite,
         )
         if (action == SnackbarResult.ActionPerformed) {
             if (!viewModel.retryWorkoutSave(failedSessionId)) {
