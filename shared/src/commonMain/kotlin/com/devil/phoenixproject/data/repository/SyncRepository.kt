@@ -17,6 +17,23 @@ import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutSession
 
+/**
+ * Outcome of [SyncRepository.applyServerDeletions]. Ids are the LOCAL row ids
+ * that were removed; server ids the device never held are simply absent.
+ */
+data class ServerDeletionResult(
+    val deletedRoutineIds: List<String> = emptyList(),
+    val deletedCycleIds: List<String> = emptyList(),
+    /** Deleted routines that carried a local edit newer than lastSync (discarded: delete wins). */
+    val discardedRoutineEditIds: List<String> = emptyList(),
+    /** Deleted cycles whose complete-graph clock was newer than lastSync (discarded: delete wins). */
+    val discardedCycleEditIds: List<String> = emptyList(),
+    /** Deleted cycles that were active or had progress (user-visible loss of the current program). */
+    val deletedActiveCycleIds: List<String> = emptyList(),
+    /** Local-only `cycle_routine_*` template routines removed with their deleted cycle. */
+    val deletedTemplateRoutineIds: List<String> = emptyList(),
+)
+
 data class PhasePRBackfillResult(
     val changedRows: Int,
     val maxScannedSessionTimestamp: Long? = null,
@@ -415,6 +432,28 @@ interface SyncRepository {
     suspend fun getSessionNotesForPortalParents(
         portalSessionIds: List<String>,
     ): Map<String, SessionNotesEntry> = emptyMap()
+
+    /**
+     * Hard-delete routines and cycles the server reports as deleted
+     * (`deletedRoutineIds` / `deletedCycleIds` on pull, `skippedDeleted` on
+     * push), together with their children. "Delete if present": unknown ids
+     * are ignored. No local tombstone is left behind, so nothing is pushed
+     * back (the server already knows). Delete wins over unsynced local edits
+     * (`updatedAt > lastSync` for either entity); those are reported in the
+     * result so the caller can notify the user. Cycle days that referenced a deleted routine
+     * keep the day with `routine_id = NULL`, mirroring the server FK.
+     * Local-only `cycle_routine_*` template routines used only by a deleted
+     * cycle are removed with it. Discarded edits are not classified when
+     * `lastSync == 0` (no sync base).
+     *
+     * Default no-op so unrelated test fakes do not need to implement.
+     */
+    suspend fun applyServerDeletions(
+        ownerUserId: String,
+        routineIds: List<String>,
+        cycleIds: List<String>,
+        lastSync: Long,
+    ): ServerDeletionResult = ServerDeletionResult()
 
     /**
      * Phase 3.3 (audit item #1): LWW pull merge for WorkoutSession rows.

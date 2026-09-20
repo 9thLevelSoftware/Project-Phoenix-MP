@@ -3060,6 +3060,88 @@ class DataBackupManagerRoutineNameTest {
         assertNull(storedBase(streamingTarget, "cycle-local"))
     }
 
+    @Test
+    fun `legacy cycle without server version matches existing cycle and restores dependent graph`() = runTest {
+        val q = database.phoenixDatabaseQueries
+        q.insertTrainingCycle("cycle-existing", "Existing", null, 1L, 0L, "default", null, 1L, 1L)
+        q.updateTrainingCycleServerUpdatedAt(
+            server_updated_at = "2026-09-19T10:11:12.123456+00:00",
+            id = "cycle-existing",
+        )
+        q.insertCycleDay(
+            id = "day-dependent",
+            cycle_id = "cycle-existing",
+            day_number = 1L,
+            name = "Day 1",
+            routine_id = null,
+            is_rest_day = 0L,
+            echo_level = null,
+            eccentric_load_percent = null,
+            weight_progression_percent = null,
+            rep_modifier = null,
+            rest_time_override_seconds = null,
+        )
+        val legacyCompatible = backupManager.exportAllData().let { backup ->
+            backup.copy(
+                data = backup.data.copy(
+                    trainingCycles = backup.data.trainingCycles.map { it.copy(serverUpdatedAt = null) },
+                ),
+            )
+        }
+
+        val target = createTestDatabase()
+        val targetQueries = target.phoenixDatabaseQueries
+        targetQueries.insertTrainingCycle("cycle-existing", "Existing", null, 1L, 0L, "default", null, 1L, 1L)
+        targetQueries.updateTrainingCycleServerUpdatedAt(
+            server_updated_at = "2026-09-19T10:11:12.123456+00:00",
+            id = "cycle-existing",
+        )
+
+        val result = TestDataBackupManager(target).importFromJson(testJson.encodeToString(legacyCompatible))
+
+        assertTrue(result.isSuccess)
+        assertNotNull(targetQueries.selectCycleDayById("day-dependent").executeAsOneOrNull())
+        assertEquals(
+            "2026-09-19T10:11:12.123456+00:00",
+            targetQueries.selectTrainingCycleById("cycle-existing").executeAsOne().server_updated_at,
+        )
+    }
+
+    @Test
+    fun `explicit cycle server version mismatch still blocks dependent graph restore`() = runTest {
+        val q = database.phoenixDatabaseQueries
+        q.insertTrainingCycle("cycle-mismatch", "Existing", null, 1L, 0L, "default", null, 1L, 1L)
+        q.updateTrainingCycleServerUpdatedAt(server_updated_at = "2026-09-19T10:00:00Z", id = "cycle-mismatch")
+        q.insertCycleDay(
+            id = "day-blocked",
+            cycle_id = "cycle-mismatch",
+            day_number = 1L,
+            name = "Day 1",
+            routine_id = null,
+            is_rest_day = 0L,
+            echo_level = null,
+            eccentric_load_percent = null,
+            weight_progression_percent = null,
+            rep_modifier = null,
+            rest_time_override_seconds = null,
+        )
+        val backup = backupManager.exportAllData()
+
+        val target = createTestDatabase()
+        val targetQueries = target.phoenixDatabaseQueries
+        targetQueries.insertTrainingCycle("cycle-mismatch", "Existing", null, 1L, 0L, "default", null, 1L, 1L)
+        targetQueries.updateTrainingCycleServerUpdatedAt(server_updated_at = "2026-09-19T11:00:00Z", id = "cycle-mismatch")
+
+        val result = TestDataBackupManager(target).importFromJson(testJson.encodeToString(backup))
+
+        assertTrue(result.isSuccess)
+        assertNull(targetQueries.selectCycleDayById("day-blocked").executeAsOneOrNull())
+        assertEquals(
+            "2026-09-19T11:00:00Z",
+            targetQueries.selectTrainingCycleById("cycle-mismatch").executeAsOne().server_updated_at,
+        )
+    }
+
     private class TestDataBackupManager(
         database: com.devil.phoenixproject.database.PhoenixDatabase,
         val profilePreferencesRepository: ProfilePreferencesRepository = SqlDelightProfilePreferencesRepository(database),

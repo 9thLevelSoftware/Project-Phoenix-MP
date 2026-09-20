@@ -36,8 +36,31 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+/**
+ * User-visible summary of a destructive server-reported delete (delete wins, KD-4).
+ */
+data class ServerDeletionNotice(
+    val discardedRoutineEditIds: List<String> = emptyList(),
+    val discardedCycleEditIds: List<String> = emptyList(),
+    val deletedActiveCycleIds: List<String> = emptyList(),
+) {
+    val message: String
+        get() = buildList {
+            if (deletedActiveCycleIds.isNotEmpty()) {
+                add("A training cycle in progress was deleted on the portal and removed from this device.")
+            }
+            if (discardedRoutineEditIds.isNotEmpty()) {
+                add("A routine deleted on the portal had unsynced changes on this device; those changes were discarded.")
+            }
+            if (discardedCycleEditIds.isNotEmpty()) {
+                add("A training cycle deleted on the portal had unsynced changes on this device; those changes were discarded.")
+            }
+        }.joinToString(" ")
+}
 
 sealed class SyncState {
     object Idle : SyncState()
@@ -419,6 +442,16 @@ class SyncManager(
 
     /** Account-scoped cursor published atomically with token identity transitions. */
     val lastSyncTime: StateFlow<Long> = tokenStorage.lastSyncTimestamp
+
+    private val _serverDeletionNotice = MutableStateFlow<ServerDeletionNotice?>(null)
+
+    /**
+     * Set when a server-reported delete removed something the user will notice
+     * (an unsynced routine/cycle edit, or the active / in-progress cycle). The UI can
+     * show [ServerDeletionNotice.message] and then call [clearServerDeletionNotice]
+     * with the notice it actually displayed.
+     */
+    val serverDeletionNotice: StateFlow<ServerDeletionNotice?> = _serverDeletionNotice.asStateFlow()
 
     val isAuthenticated: StateFlow<Boolean> = tokenStorage.isAuthenticated
     val currentUser: StateFlow<PortalUser?> = tokenStorage.currentUser
@@ -1532,6 +1565,24 @@ class SyncManager(
             }
         }
 
+        // Routines/cycles the server skipped because they were deleted there
+        // (PR 16 `skippedDeleted`). Delete the local copy so they stop being pushed.
+        // Non-fatal: the next pull reports the same ids via deletedRoutineIds/deletedCycleIds.
+        finalResponse?.skippedDeleted?.let { skipped ->
+            try {
+                applyServerDeletions(
+                    ownerUserId = userId,
+                    routineIds = skipped.routines,
+                    cycleIds = skipped.cycles,
+                    lastSync = lastSync,
+                    source = "push skippedDeleted",
+                )
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
+                Logger.w(e) { "Applying push skippedDeleted failed; next pull will retry the delete" }
+            }
+        }
+
         // Stamp pushed PRs (Issue #528) so getFullPRsModifiedSince doesn't keep
         // re-shipping the same rows on every push. Re-use the exact recentPRs
         // collected for this payload, deduped by id, and stamp only after the
@@ -1995,7 +2046,11 @@ class SyncManager(
                 (pullResponse.profilePreferenceSections?.size ?: 0) +
                 (if (pullResponse.rpgAttributes != null) 1 else 0) +
                 (if (pullResponse.gamificationStats != null) 1 else 0) +
-                pullResponse.externalActivities.size
+                pullResponse.externalActivities.size +
+                pullResponse.workoutDeletions.size +
+                pullResponse.ownershipEvents.size +
+                pullResponse.deletedRoutineIds.size +
+                pullResponse.deletedCycleIds.size
             totalEntitiesFetched += pageEntityCount
 
             // A page with no entities mobile decodes but hasMore=true is legitimate: e.g. a
@@ -2075,8 +2130,10 @@ class SyncManager(
 
         // The portal pull response is a delta: it returns entities that are new
         // to the client or updated since lastSync. Missing known IDs therefore
-        // do not prove deletion. Server-side routine/cycle deletes need an
-        // explicit tombstone channel before local hard-delete is safe.
+        // do not prove deletion. Server-side routine/cycle deletes arrive only
+        // through the explicit tombstone keys (pull deletedRoutineIds /
+        // deletedCycleIds, push skippedDeleted), applied by applyServerDeletions
+        // in mergePullPage and in the push skippedDeleted handling.
 
         // The server caps external activities at 500 per pull (oldest synced_at first)
         // and has no cursor for the rest. A delta lastSync would skip the truncated tail
@@ -2321,6 +2378,18 @@ class SyncManager(
                 sessionUpdatedAtById = sessionUpdatedAtById,
             )
 
+            // Server-reported deletions (PR 16 keys; first page only, absent on older
+            // servers). Apply after the atomic ordinary merge so a page carrying the
+            // same routine or cycle cannot resurrect it. A failure fails the pull, which
+            // keeps the checkpoint unchanged and makes the next pull report the ids again.
+            applyServerDeletions(
+                ownerUserId = ownerUserId,
+                routineIds = pullResponse.deletedRoutineIds,
+                cycleIds = pullResponse.deletedCycleIds,
+                lastSync = lastSync,
+                source = "pull",
+            )
+
             Logger.d("SyncManager") {
                 "Ordinary pull merge complete: ${mobileSessions.size} sessions (${mobileSessions.count { it.exerciseId != null }} with exerciseId), " +
                     "${pullResponse.routines.size} routines, ${pullResponse.cycles.size} cycles, " +
@@ -2408,6 +2477,71 @@ class SyncManager(
         }
 
         return Result.success(Unit)
+    }
+
+    /**
+     * Hard-delete routines/cycles the server reports as deleted. No push tombstone
+     * is left behind (the server already knows). Delete wins over unsynced local
+     * edits (KD-4); discarded edits are logged.
+     */
+    private suspend fun applyServerDeletions(
+        ownerUserId: String,
+        routineIds: List<String>,
+        cycleIds: List<String>,
+        lastSync: Long,
+        source: String,
+    ) {
+        if (routineIds.isEmpty() && cycleIds.isEmpty()) return
+        val result = syncRepository.applyServerDeletions(
+            ownerUserId = ownerUserId,
+            routineIds = routineIds,
+            cycleIds = cycleIds,
+            lastSync = lastSync,
+        )
+        if (result.discardedRoutineEditIds.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                "Server deleted ${result.discardedRoutineEditIds.size} routine(s) with unsynced local edits " +
+                    "($source); local edits discarded (delete wins): ${result.discardedRoutineEditIds.joinToString()}"
+            }
+        }
+        if (result.deletedActiveCycleIds.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                "Server deleted ${result.deletedActiveCycleIds.size} active/in-progress cycle(s) ($source); " +
+                    "local cycle progress removed (delete wins): ${result.deletedActiveCycleIds.joinToString()}"
+            }
+        }
+        if (result.discardedCycleEditIds.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                "Server deleted ${result.discardedCycleEditIds.size} cycle(s) with unsynced local edits " +
+                    "($source); local edits discarded (delete wins): ${result.discardedCycleEditIds.joinToString()}"
+            }
+        }
+        if (
+            result.discardedRoutineEditIds.isNotEmpty() ||
+            result.discardedCycleEditIds.isNotEmpty() ||
+            result.deletedActiveCycleIds.isNotEmpty()
+        ) {
+            _serverDeletionNotice.update { existing ->
+                ServerDeletionNotice(
+                    discardedRoutineEditIds =
+                        (existing?.discardedRoutineEditIds.orEmpty() + result.discardedRoutineEditIds).distinct(),
+                    discardedCycleEditIds =
+                        (existing?.discardedCycleEditIds.orEmpty() + result.discardedCycleEditIds).distinct(),
+                    deletedActiveCycleIds =
+                        (existing?.deletedActiveCycleIds.orEmpty() + result.deletedActiveCycleIds).distinct(),
+                )
+            }
+        }
+        Logger.i("SyncManager") {
+            "Applied server deletions ($source): reported routines=${routineIds.size}, cycles=${cycleIds.size}; " +
+                "removed locally routines=${result.deletedRoutineIds.size}, cycles=${result.deletedCycleIds.size}, " +
+                "template routines=${result.deletedTemplateRoutineIds.size}"
+        }
+    }
+
+    /** Clears [notice] only if it is still the exact notice the UI displayed. */
+    fun clearServerDeletionNotice(notice: ServerDeletionNotice) {
+        _serverDeletionNotice.update { current -> if (current == notice) null else current }
     }
 
     private fun getPlatformName(): String {

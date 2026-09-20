@@ -2014,6 +2014,9 @@ SELECT * FROM CycleSyncState WHERE cycle_id = :cycleId;
 selectAllCycleSyncStates:
 SELECT * FROM CycleSyncState ORDER BY profile_id, cycle_id;
 
+deleteCycleSyncState:
+DELETE FROM CycleSyncState WHERE cycle_id = :cycleId;
+
 insertCycleSyncState:
 INSERT INTO CycleSyncState(
     cycle_id, profile_id, account_id, dirty_generation, acknowledged_generation,
@@ -2146,6 +2149,14 @@ DELETE FROM CycleDay WHERE id = ?;
 
 deleteCycleDaysByCycle:
 DELETE FROM CycleDay WHERE cycle_id = ?;
+
+-- Server-reported routine deletion: mirror the server FK (ON DELETE SET NULL)
+-- explicitly so it also holds when foreign_keys is off.
+clearCycleDayRoutineReferences:
+UPDATE CycleDay SET routine_id = NULL WHERE routine_id = ?;
+
+countCycleDaysReferencingRoutine:
+SELECT COUNT(*) FROM CycleDay WHERE routine_id = ?;
 
 -- CycleProgress Queries
 selectCycleProgressByCycle:
