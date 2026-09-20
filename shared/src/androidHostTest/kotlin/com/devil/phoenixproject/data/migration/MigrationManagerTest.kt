@@ -433,7 +433,7 @@ class MigrationManagerTest {
             createdAt = 1_700_000_000_000,
             isActive = 1L,
         )
-        queries.insertExercise(
+        queries.insertExerciseIfAbsent(
             id = "deadlift",
             name = "Conventional Deadlift",
             displayName = null,
@@ -456,7 +456,6 @@ class MigrationManagerTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
-            one_rep_max_kg = null,
             mvtOverrideMs = null,
             isBodyweight = null,
         )
@@ -801,10 +800,9 @@ class MigrationManagerTest {
         assertEquals(50.0, volumePr.weight)
         assertEquals(500.0, volumePr.volume)
         assertEquals(2, repairedRecords.size)
-        assertEquals(
-            OneRepMaxCalculator.estimate(60f, 10).toDouble(),
-            exercise?.one_rep_max_kg,
-        )
+        // The PR repair writes no training max: it is per profile now (migration 49) and
+        // a PR is a separate metric from the max the user set.
+        assertNull(exercise?.one_rep_max_kg)
     }
 
     @Test
@@ -907,7 +905,7 @@ class MigrationManagerTest {
     }
 
     private fun insertMinimalExercise(id: String, name: String, oneRepMaxKg: Double? = null) {
-        database.phoenixDatabaseQueries.insertExercise(
+        database.phoenixDatabaseQueries.insertExerciseIfAbsent(
             id = id,
             name = name,
             displayName = null,
@@ -930,7 +928,6 @@ class MigrationManagerTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
-            one_rep_max_kg = oneRepMaxKg,
             mvtOverrideMs = null,
             isBodyweight = null,
         )

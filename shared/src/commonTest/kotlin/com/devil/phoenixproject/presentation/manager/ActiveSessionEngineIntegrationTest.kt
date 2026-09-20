@@ -549,11 +549,11 @@ class ActiveSessionEngineIntegrationTest {
             assertEquals(1, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
             assertEquals(
                 100f + (1.25f / 0.9f),
-                harness.fakeExerciseRepo.getExerciseById(BENCH_ID)?.oneRepMaxKg,
+                harness.fakeExerciseRepo.getTrainingMax(BENCH_ID, CYCLE_PROFILE_ID),
             )
             assertEquals(
                 160f + (2.5f / 0.9f),
-                harness.fakeExerciseRepo.getExerciseById(DEADLIFT_ID)?.oneRepMaxKg,
+                harness.fakeExerciseRepo.getTrainingMax(DEADLIFT_ID, CYCLE_PROFILE_ID),
             )
         } finally {
             harness.cleanup()
@@ -569,10 +569,10 @@ class ActiveSessionEngineIntegrationTest {
         shoulderPressId: String = SHOULDER_PRESS_ID,
         deadliftId: String = DEADLIFT_ID,
     ): TrainingCycle {
-        val bench = seededMainLift(benchId, "Bench Press", 100f)
-        val squat = seededMainLift(squatId, "Squat", 140f)
-        val press = seededMainLift(shoulderPressId, "Shoulder Press", 90f)
-        val deadlift = seededMainLift(deadliftId, "Conventional Deadlift", 160f)
+        val bench = seededMainLift(benchId, "Bench Press")
+        val squat = seededMainLift(squatId, "Squat")
+        val press = seededMainLift(shoulderPressId, "Shoulder Press")
+        val deadlift = seededMainLift(deadliftId, "Conventional Deadlift")
         val inclineBench = accessoryExercise("incline", "Incline Bench Press")
         val row = accessoryExercise("row", "Bent Over Row")
         val plank = Exercise(id = "plank", name = "Plank", muscleGroup = "Core", muscleGroups = "Core", equipment = "")
@@ -585,6 +585,16 @@ class ActiveSessionEngineIntegrationTest {
 
         listOf(bench, squat, press, deadlift, inclineBench, row, plank, facePull, lunge, tricep, crunch, shrug, goodMorning)
             .forEach(harness.fakeExerciseRepo::addExercise)
+
+        // Training maxes are per profile (migration 49), so they are seeded against the
+        // cycle's profile rather than hung off the shared catalogue row.
+        mapOf(benchId to 100f, squatId to 140f, shoulderPressId to 90f, deadliftId to 160f)
+            .forEach { (id, trainingMax) ->
+                harness.fakeExerciseRepo.setTrainingMaxDirectly(id, CYCLE_PROFILE_ID, trainingMax)
+            }
+        listOf(inclineBench, row, facePull, lunge, tricep, shrug, goodMorning).forEach { accessory ->
+            harness.fakeExerciseRepo.setTrainingMaxDirectly(accessory.id!!, CYCLE_PROFILE_ID, 50f)
+        }
 
         val benchRoutine = Routine(
             id = "routine-bench",
@@ -708,13 +718,12 @@ class ActiveSessionEngineIntegrationTest {
         harness.testScope.advanceUntilIdle()
     }
 
-    private fun seededMainLift(id: String, name: String, oneRepMaxKg: Float): Exercise = Exercise(
+    private fun seededMainLift(id: String, name: String): Exercise = Exercise(
         id = id,
         name = name,
         muscleGroup = "Strength",
         muscleGroups = "Strength",
         equipment = "BAR",
-        oneRepMaxKg = oneRepMaxKg,
     )
 
     private fun createEngine(harness: DWSMTestHarness, bleRepository: BleRepository) = ActiveSessionEngine(
@@ -752,7 +761,6 @@ class ActiveSessionEngineIntegrationTest {
         muscleGroup = "Accessory",
         muscleGroups = "Accessory",
         equipment = "BAR",
-        oneRepMaxKg = 50f,
     )
 
     private fun mainLiftRoutineExercise(
@@ -792,6 +800,8 @@ class ActiveSessionEngineIntegrationTest {
     private fun orderedExercises(vararg exercises: RoutineExercise): List<RoutineExercise> = exercises.mapIndexed { index, exercise -> exercise.copy(orderIndex = index) }
 
     private companion object {
+        /** TrainingCycle.create defaults to this profile, and the TM bump follows the cycle. */
+        const val CYCLE_PROFILE_ID = "default"
         const val BENCH_ID = "Barbell_Bench_Press_-_Medium_Grip"
         const val SHOULDER_PRESS_ID = "Barbell_Shoulder_Press"
         const val SQUAT_ID = "Barbell_Squat"

@@ -60,15 +60,6 @@ class ProfileQaSeederTest {
     }
 
     @Test
-    fun `fixture PR writes restore the preexisting catalog one rep max`() = runTest {
-        val fixture = SeederFixture()
-
-        fixture.seeder().seed()
-
-        assertEquals(42f, fixture.catalogOneRepMaxKg)
-    }
-
-    @Test
     fun `two seed runs reuse exact profiles and leave five fixed completed sessions each`() = runTest {
         val fixture = SeederFixture()
         val seeder = fixture.seeder()
@@ -257,7 +248,6 @@ class ProfileQaSeederTest {
         val personalRecords = mutableListOf<PersonalRecord>()
         val assessments = mutableListOf<AssessmentResultEntity>()
         val velocity = mutableListOf<VelocityOneRepMaxEntity>()
-        var catalogOneRepMaxKg: Float? = 42f
 
         private var nextProfile = 1
         private var nextPr = 1L
@@ -305,13 +295,8 @@ class ProfileQaSeederTest {
                     name = "Bench Press",
                     muscleGroup = "Chest",
                     equipment = "BAR",
-                    oneRepMaxKg = catalogOneRepMaxKg,
                 )
-            }
-            coEvery { exercises.updateOneRepMax("bench-press", any()) } coAnswers {
-                catalogOneRepMaxKg = secondArg()
-            }
-
+            }
             coEvery { workouts.deleteSession(any()) } coAnswers { sessions.remove(firstArg()) }
             // Fixture cleanup discards rows instead of tombstoning them.
             coEvery { workouts.discardSession(any()) } coAnswers { sessions.remove(firstArg()) }
@@ -371,12 +356,8 @@ class ProfileQaSeederTest {
                 }
                 replace(PRType.MAX_WEIGHT, weightForWeightPr, weightForWeightPr * reps)
                 replace(PRType.MAX_VOLUME, weightForVolumePr, weightForVolumePr * reps)
-                if (broken.isNotEmpty()) {
-                    catalogOneRepMaxKg = maxOf(
-                        catalogOneRepMaxKg ?: 0f,
-                        OneRepMaxCalculator.estimate(weightForWeightPr, reps),
-                    )
-                }
+                // A PR save deliberately writes no training max (migration 49): the stored
+                // max is per profile and the user owns it.
                 Result.success(broken)
             }
 

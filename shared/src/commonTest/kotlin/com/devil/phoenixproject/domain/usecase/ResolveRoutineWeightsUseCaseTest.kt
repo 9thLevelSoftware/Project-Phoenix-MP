@@ -122,7 +122,8 @@ class ResolveRoutineWeightsUseCaseTest {
 
     @Test
     fun `resolves percentage using stored exercise 1RM when no PR exists`() = runTest {
-        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 100f))
+        exerciseRepository.addExercise(testExercise)
+        exerciseRepository.setTrainingMaxDirectly("bench-press", "default", 100f)
 
         val routineExercise = RoutineExercise(
             id = "routine-ex-1",
@@ -146,7 +147,8 @@ class ResolveRoutineWeightsUseCaseTest {
 
     @Test
     fun `prefers PR weight over stored exercise 1RM when both exist`() = runTest {
-        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 100f))
+        exerciseRepository.addExercise(testExercise)
+        exerciseRepository.setTrainingMaxDirectly("bench-press", "default", 100f)
         prRepository.addRecord(
             PersonalRecord(
                 id = 1,
@@ -632,7 +634,8 @@ class ResolveRoutineWeightsUseCaseTest {
     fun `ESTIMATED_1RM falls back to stored 1RM when no estimate exists`() = runTest {
         // Given: velocity repo returns null; exercise has oneRepMaxKg = 120f
         velocityRepository.latestPassing = null
-        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 120f))
+        exerciseRepository.addExercise(testExercise)
+        exerciseRepository.setTrainingMaxDirectly("bench-press", "default", 120f)
 
         val routineExercise = RoutineExercise(
             id = "routine-ex-1rm-fallback",
@@ -714,7 +717,8 @@ class ResolveRoutineWeightsUseCaseTest {
             computedAt = 1000L,
             profileId = "default",
         )
-        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 120f))
+        exerciseRepository.addExercise(testExercise)
+        exerciseRepository.setTrainingMaxDirectly("bench-press", "default", 120f)
 
         val routineExercise = RoutineExercise(
             id = "routine-ex-1rm-floor-stored",
@@ -801,7 +805,8 @@ class ResolveRoutineWeightsUseCaseTest {
             computedAt = 1000L,
             profileId = "default",
         )
-        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 120f))
+        exerciseRepository.addExercise(testExercise)
+        exerciseRepository.setTrainingMaxDirectly("bench-press", "default", 120f)
 
         val routineExercise = RoutineExercise(
             id = "routine-ex-1rm-sane",

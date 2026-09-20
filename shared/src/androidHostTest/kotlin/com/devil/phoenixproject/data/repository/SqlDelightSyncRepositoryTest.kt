@@ -808,12 +808,12 @@ class SqlDelightSyncRepositoryTest {
 
     @Test
     fun `getExerciseMuscleGroup resolves by id then name and is null for unknown`() = runTest {
-        // Seed one catalog exercise. Positional args follow the insertExercise
+        // Seed one catalog exercise. Positional args follow the insertExerciseIfAbsent
         // column order: id, name, displayName, description, created, muscleGroup,
         // muscleGroups, muscles, equipment, movement, sidedness, grip, gripWidth,
         // minRepRange, popularity, archived, isFavorite, isCustom, timesPerformed,
-        // lastPerformed, aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs.
-        database.phoenixDatabaseQueries.insertExercise(
+        // lastPerformed, aliases, defaultCableConfig, mvtOverrideMs.
+        database.phoenixDatabaseQueries.insertExerciseIfAbsent(
             "bench-press",
             "Bench Press",
             "Bench Press",
@@ -836,7 +836,6 @@ class SqlDelightSyncRepositoryTest {
             null,
             null,
             "DUAL",
-            null,
             null,
             isBodyweight = null,
         )
@@ -1546,7 +1545,7 @@ class SqlDelightSyncRepositoryTest {
         // into exerciseEquipment, which permanently poisoned classification because
         // snapshot Exercises re-derived isBodyweight from the equipment string.
         // Catalog cable lift with empty equipment and an explicit stored flag (Squat)
-        database.phoenixDatabaseQueries.insertExercise(
+        database.phoenixDatabaseQueries.insertExerciseIfAbsent(
             id = "legacy-squat",
             name = "Squat",
             displayName = "Squat",
@@ -1569,7 +1568,6 @@ class SqlDelightSyncRepositoryTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
-            one_rep_max_kg = null,
             mvtOverrideMs = null,
             isBodyweight = 0,
         )

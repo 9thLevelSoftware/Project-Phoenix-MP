@@ -131,6 +131,8 @@ class AssessmentViewModelProfileScopeTest {
         assessmentEngine = AssessmentEngine(),
     )
 
+    // oneRepMaxKg seeds a training max for BOTH profiles, which is the shape this test
+    // guards: the starting load must be 20 kg regardless of any stored max.
     private fun exerciseRepository(oneRepMaxKg: Float? = null) =
         FakeExerciseRepository().apply {
             addExercise(
@@ -139,9 +141,12 @@ class AssessmentViewModelProfileScopeTest {
                     name = "Bench Press",
                     muscleGroup = "Chest",
                     equipment = "BAR",
-                    oneRepMaxKg = oneRepMaxKg,
                 ),
             )
+            oneRepMaxKg?.let {
+                setTrainingMaxDirectly("bench", "athlete-a", it)
+                setTrainingMaxDirectly("bench", "default", it)
+            }
         }
 
     private suspend fun TestScope.reachResults(viewModel: AssessmentViewModel) {

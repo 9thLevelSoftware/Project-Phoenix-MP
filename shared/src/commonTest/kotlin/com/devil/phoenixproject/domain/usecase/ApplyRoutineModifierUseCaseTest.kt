@@ -46,7 +46,8 @@ class ApplyRoutineModifierUseCaseTest {
 
     @Test
     fun `active recovery scales weights from stored baseline and keeps working reps`() = runTest {
-        exerciseRepository.addExercise(cableExercise.copy(oneRepMaxKg = 100f))
+        exerciseRepository.addExercise(cableExercise)
+        exerciseRepository.setTrainingMaxDirectly("bench", "default", 100f)
         val routine = routineWith(
             routineExercise(
                 weight = 70f,
@@ -204,8 +205,9 @@ class ApplyRoutineModifierUseCaseTest {
     }
 
     @Test
-    fun `active recovery prefers profile PR over unscoped stored baseline`() = runTest {
-        exerciseRepository.addExercise(cableExercise.copy(oneRepMaxKg = 120f))
+    fun `active recovery prefers profile PR over that profile's training max`() = runTest {
+        exerciseRepository.addExercise(cableExercise)
+        exerciseRepository.setTrainingMaxDirectly("bench", "profile-b", 120f)
         prRepository.addRecord(
             PersonalRecord(
                 exerciseId = "bench",

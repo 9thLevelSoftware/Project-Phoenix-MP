@@ -140,7 +140,7 @@ class ExerciseConfigViewModelTest {
             setWeightsPerCableKg = listOf(5f, 5f, 5f),
         )
 
-        insertExercise(queries, id = "bench-1", name = "Bench Press")
+        insertExerciseIfAbsent(queries, id = "bench-1", name = "Bench Press")
         insertWeightPR(queries, weight = 50.0)
 
         viewModel.initialize(
@@ -185,7 +185,7 @@ class ExerciseConfigViewModelTest {
             weightPercentOfPR = 80,
         )
 
-        insertExercise(queries, id = "bench-1", name = "Bench Press")
+        insertExerciseIfAbsent(queries, id = "bench-1", name = "Bench Press")
         insertWeightPR(queries, weight = 47.0)
 
         viewModel.initialize(
@@ -372,7 +372,7 @@ class ExerciseConfigViewModelTest {
             echoLevel = EchoLevel.HARDER,
         )
 
-        insertExercise(queries, id = "bench-1", name = "Bench Press")
+        insertExerciseIfAbsent(queries, id = "bench-1", name = "Bench Press")
         queries.insertRecord(
             exerciseId = "bench-1",
             exerciseName = "Bench Press",
@@ -442,7 +442,7 @@ class ExerciseConfigViewModelTest {
             weightPerCableKg = 20f,
         )
 
-        insertExercise(queries, id = "bench-1", name = "Bench Press")
+        insertExerciseIfAbsent(queries, id = "bench-1", name = "Bench Press")
         insertWeightPR(queries, weight = 35.0, phase = WorkoutPhase.COMBINED)
         insertWeightPR(queries, weight = 45.0, phase = WorkoutPhase.CONCENTRIC)
         insertWeightPR(queries, weight = 90.0, phase = WorkoutPhase.ECCENTRIC)
@@ -507,7 +507,7 @@ class ExerciseConfigViewModelTest {
             prTypeForScaling = PRType.MAX_VOLUME,
         )
 
-        insertExercise(queries, id = "bench-1", name = "Bench Press")
+        insertExerciseIfAbsent(queries, id = "bench-1", name = "Bench Press")
         // Max-weight PR (heavier) and a distinct max-volume PR (lighter, more reps)
         queries.insertRecord(
             exerciseId = "bench-1",
@@ -807,8 +807,8 @@ class ExerciseConfigViewModelTest {
         volume = weight * 6,
     )
 
-    private fun insertExercise(queries: com.devil.phoenixproject.database.PhoenixDatabaseQueries, id: String, name: String) {
-        queries.insertExercise(
+    private fun insertExerciseIfAbsent(queries: com.devil.phoenixproject.database.PhoenixDatabaseQueries, id: String, name: String) {
+        queries.insertExerciseIfAbsent(
             id = id,
             name = name,
             displayName = null,
@@ -831,7 +831,6 @@ class ExerciseConfigViewModelTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
-            one_rep_max_kg = null,
             mvtOverrideMs = null,
             isBodyweight = null,
         )

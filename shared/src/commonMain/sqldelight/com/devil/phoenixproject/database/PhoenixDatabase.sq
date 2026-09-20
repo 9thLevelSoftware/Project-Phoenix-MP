@@ -3846,13 +3846,37 @@ WHERE old.exercise_id = :oldId
 deleteTrainingMaxesForExercise:
 DELETE FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId;
 
--- Post-open repair for the migration 49 copy: the same statement, verbatim, run once
--- behind a one-shot marker in MigrationManager. A database whose migration could not
--- finish the copy (a missing table is not a recoverable error for the resilient
--- fallback) would otherwise have the table and no training maxes, and every profile's
--- "% of PR" load would silently drop to its own PRs. The legacy column is retained, so
--- this can always re-derive the copy. INSERT OR IGNORE: a value a profile has already
+-- Test-only: assert that a code path wrote no training max anywhere.
+countTrainingMaxRowsForTest:
+SELECT COUNT(*) FROM ExerciseTrainingMax;
+
+-- The migration 49 legacy copy. It lives here and NOT in 49.sqm: attributing a value
+-- needs UserProfile, PersonalRecord, AssessmentResult, VelocityOneRepMaxEstimate,
+-- TrainingCycle, CycleDay and RoutineExercise, several of which (and their profile_id
+-- columns) are created by SchemaManifest heal operations rather than by a numbered
+-- migration, so inside the migration chain they may not exist yet -- and a missing
+-- column is a non-recoverable prepare-time error for the resilient fallback.
+-- MigrationManager runs this once behind a one-shot marker, after reconcileFullSchema
+-- has healed the schema and ensureDefaultProfile has run; a failure leaves the marker
+-- unset so the next open retries. INSERT OR IGNORE: a value a profile has already
 -- claimed or edited is never overwritten.
+--
+-- A value whose owner is ambiguous is left UNASSIGNED, never handed to 'default':
+-- that would raise Default's commanded load from another member's number, which is
+-- the exact leak this table closes. Owner rules, in order, each requiring EXACTLY ONE
+-- candidate profile that still exists in UserProfile:
+--   1. the sole UserProfile;
+--   2. the one profile with a COMBINED PersonalRecord whose oneRepMax equals the
+--      stored value (within 0.01 kg) -- the PR-save auto-write put most values there;
+--   3. the one profile owning an AssessmentResult or a velocity 1RM estimate for the
+--      exercise (the assessment wizard also wrote the column; nothing ever wrote a
+--      velocity estimate into it, so ownership -- not a value match -- is the signal);
+--   4. the one profile owning a 5/3/1 TrainingCycle that uses the exercise (a manually
+--      entered training max matches no PR and no assessment).
+--
+-- Every predicate is written as "profiles that ...", which keeps the count and the pick
+-- identical and avoids aggregate-without-GROUP-BY forms that older SQLite builds on
+-- API 26 devices reject.
 backfillExerciseTrainingMaxes:
 INSERT OR IGNORE INTO ExerciseTrainingMax(exercise_id, profile_id, one_rep_max_kg, source, updated_at)
 SELECT id, owner_profile_id, legacy_one_rep_max_kg, 'LEGACY_MIGRATION', CAST(strftime('%s', 'now') AS INTEGER) * 1000

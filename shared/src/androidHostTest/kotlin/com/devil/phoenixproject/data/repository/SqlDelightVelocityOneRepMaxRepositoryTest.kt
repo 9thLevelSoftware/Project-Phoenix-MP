@@ -15,7 +15,7 @@ class SqlDelightVelocityOneRepMaxRepositoryTest {
     private fun createInMemoryTestDatabase(): PhoenixDatabase = createTestDatabase()
 
     private fun seedExercise(db: PhoenixDatabase, id: String) {
-        db.phoenixDatabaseQueries.insertExercise(
+        db.phoenixDatabaseQueries.insertExerciseIfAbsent(
             id = id,
             name = id,
             displayName = null,
@@ -38,7 +38,6 @@ class SqlDelightVelocityOneRepMaxRepositoryTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
-            one_rep_max_kg = null,
             mvtOverrideMs = null,
             isBodyweight = null,
         )

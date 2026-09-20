@@ -54,9 +54,9 @@ class TemplateConverterTest {
                     muscleGroup = "Chest",
                     muscleGroups = "Chest",
                     equipment = "BAR",
-                    oneRepMaxKg = 120f,
                 ),
             )
+                setTrainingMaxDirectly("bench-001", "default", 120f)
         }
         val converter = TemplateConverter(repository)
 
@@ -98,9 +98,9 @@ class TemplateConverterTest {
                     muscleGroup = "Legs",
                     muscleGroups = "Legs",
                     equipment = "BAR",
-                    oneRepMaxKg = 140f,
                 ),
             )
+                setTrainingMaxDirectly("squat-001", "default", 140f)
         }
         val converter = TemplateConverter(repository)
 
@@ -168,9 +168,9 @@ class TemplateConverterTest {
                     muscleGroup = "Chest",
                     muscleGroups = "Chest",
                     equipment = "BAR",
-                    oneRepMaxKg = 100f,
                 ),
             )
+                setTrainingMaxDirectly("bench-001", "default", 100f)
         }
         val converter = TemplateConverter(repository)
 
@@ -359,7 +359,6 @@ class TemplateConverterTest {
                     muscleGroup = "Back",
                     muscleGroups = "Back",
                     equipment = "BAR",
-                    oneRepMaxKg = null,
                 ),
             )
         }
@@ -399,9 +398,9 @@ class TemplateConverterTest {
                     muscleGroup = "Biceps",
                     muscleGroups = "Biceps",
                     equipment = "SINGLE_HANDLE",
-                    oneRepMaxKg = 40f,
                 ),
             )
+                setTrainingMaxDirectly("curl-001", "default", 40f)
         }
         val converter = TemplateConverter(repository)
 
@@ -463,9 +462,10 @@ class TemplateConverterTest {
                     muscleGroup = "Back",
                     muscleGroups = "Back",
                     equipment = "SINGLE_HANDLE",
-                    oneRepMaxKg = 0.3f, // 0.3 × 70% = 0.21 → would round to 0kg without the floor
                 ),
             )
+            // 0.3 × 70% = 0.21 → would round to 0kg without the floor
+            setTrainingMaxDirectly("band-001", "default", 0.3f)
         }
         val converter = TemplateConverter(repository)
 
@@ -505,9 +505,10 @@ class TemplateConverterTest {
                     muscleGroup = "Core",
                     muscleGroups = "Core",
                     equipment = "",
-                    oneRepMaxKg = 100f, // even with (nonsense) 1RM data present
                 ),
             )
+            // even with (nonsense) 1RM data present
+            setTrainingMaxDirectly("plank-001", "default", 100f)
         }
         val converter = TemplateConverter(repository)
 

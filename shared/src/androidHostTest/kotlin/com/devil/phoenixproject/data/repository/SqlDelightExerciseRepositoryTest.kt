@@ -4,7 +4,8 @@ import app.cash.turbine.test
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
-import com.devil.phoenixproject.testutil.createTestDatabase
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
+import com.devil.phoenixproject.testutil.createTestDriver
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
@@ -15,13 +16,15 @@ import org.junit.Test
 
 class SqlDelightExerciseRepositoryTest {
 
+    private lateinit var driver: JdbcSqliteDriver
     private lateinit var database: PhoenixDatabase
     private lateinit var importer: ExerciseImporter
     private lateinit var repository: SqlDelightExerciseRepository
 
     @Before
     fun setup() {
-        database = createTestDatabase()
+        driver = createTestDriver()
+        database = PhoenixDatabase(driver)
         importer = ExerciseImporter(database)
         repository = SqlDelightExerciseRepository(
             database,
@@ -32,8 +35,8 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `searchExercises filters by name and muscle group`() = runTest {
-        insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
-        insertExercise(id = "ex-2", name = "Squat", muscleGroup = "Legs", equipment = "BAR")
+        insertExerciseIfAbsent(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
+        insertExerciseIfAbsent(id = "ex-2", name = "Squat", muscleGroup = "Legs", equipment = "BAR")
 
         repository.searchExercises("bench").test {
             val results = awaitItem()
@@ -52,7 +55,7 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `toggleFavorite flips favorite flag`() = runTest {
-        insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
+        insertExerciseIfAbsent(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
 
         repository.toggleFavorite("ex-1")
         val updated = repository.getExerciseById("ex-1")
@@ -84,22 +87,57 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
-    fun `updateOneRepMax is exposed by getExercisesWithOneRepMax`() = runTest {
-        insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
+    fun `a training max is stored per profile and never read by another profile`() = runTest {
+        insertExerciseIfAbsent(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
+        seedProfile("alice")
+        seedProfile("bob")
 
-        repository.updateOneRepMax("ex-1", 120f)
+        repository.setTrainingMax("ex-1", "alice", 120f, TrainingMaxSource.MANUAL)
 
-        repository.getExercisesWithOneRepMax().test {
-            val results = awaitItem()
-            assertEquals(1, results.size)
-            assertEquals(120f, results.first().oneRepMaxKg)
-            cancelAndIgnoreRemainingEvents()
-        }
+        assertEquals(120f, repository.getTrainingMax("ex-1", "alice"))
+        assertNull(repository.getTrainingMax("ex-1", "bob"))
+
+        // Clearing removes only that profile's row.
+        repository.setTrainingMax("ex-1", "bob", 90f, TrainingMaxSource.MANUAL)
+        repository.setTrainingMax("ex-1", "bob", null, TrainingMaxSource.MANUAL)
+        assertEquals(120f, repository.getTrainingMax("ex-1", "alice"))
+        assertNull(repository.getTrainingMax("ex-1", "bob"))
+    }
+
+    @Test
+    fun `an unassigned legacy value is offered until any profile claims it`() = runTest {
+        insertExerciseIfAbsent(
+            id = "ex-1",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            oneRepMaxKg = 110.0,
+        )
+        seedProfile("alice")
+        seedProfile("bob")
+
+        assertEquals(110f, repository.getUnassignedLegacyTrainingMax("ex-1"))
+
+        repository.setTrainingMax("ex-1", "alice", 110f, TrainingMaxSource.CLAIMED_LEGACY)
+
+        // Claimed by alice: it is hers, and it is no longer offered to anyone.
+        assertEquals(110f, repository.getTrainingMax("ex-1", "alice"))
+        assertNull(repository.getTrainingMax("ex-1", "bob"))
+        assertNull(repository.getUnassignedLegacyTrainingMax("ex-1"))
+    }
+
+    private fun seedProfile(id: String) {
+        driver.execute(
+            null,
+            "INSERT OR IGNORE INTO UserProfile(id, name, colorIndex, createdAt, isActive) " +
+                "VALUES ('$id', '$id', 0, 0, 0)",
+            0,
+        )
     }
 
     @Test
     fun `getImages returns exercise demonstration stills`() = runTest {
-        insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "barbell")
+        insertExerciseIfAbsent(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "barbell")
         database.phoenixDatabaseQueries.insertImage(
             exerciseId = "ex-1",
             url = "https://example.com/0.jpg",
@@ -151,14 +189,14 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `getExerciseById maps explicit cable intent conservatively`() = runTest {
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "dual-explicit",
             name = "Bench Press",
             muscleGroup = "Chest",
             equipment = "BAR",
             sidedness = "bilateral",
         )
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "legacy-placeholder",
             name = "Unknown Cable Exercise",
             muscleGroup = "Back",
@@ -228,7 +266,7 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `reimport preserves user-owned catalogue fields`() = runTest {
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "Plank",
             name = "Old Plank",
             muscleGroup = "Core",
@@ -261,7 +299,7 @@ class SqlDelightExerciseRepositoryTest {
         assertNotNull(plank)
         assertEquals("Plank", plank.name)
         assertEquals(true, plank.isFavorite)
-        assertEquals(42.5f, plank.oneRepMaxKg)
+        assertEquals(42.5, legacyOneRepMaxOf("Plank"))
         assertEquals(9, plank.timesPerformed)
         val row = database.phoenixDatabaseQueries.selectExerciseById("Plank").executeAsOne()
         assertEquals(1_700_000_000_000L, row.lastPerformed)
@@ -271,7 +309,7 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `import fails when every catalogue id is already a custom exercise`() = runTest {
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "Plank",
             name = "My Plank",
             muscleGroup = "Core",
@@ -305,14 +343,14 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `name fallbacks prefer active rows over archived legacy ids`() = runTest {
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "legacy-plank",
             name = "Plank",
             muscleGroup = "Core",
             equipment = "BODYWEIGHT",
             archived = 1L,
         )
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "Plank",
             name = "Plank",
             muscleGroup = "Core",
@@ -335,7 +373,7 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `remap moves history and PRs onto replacement catalogue ids`() = runTest {
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "ZZ92N8QsBdp6HCh3",
             name = "Bench Press",
             muscleGroup = "Chest",
@@ -442,7 +480,7 @@ class SqlDelightExerciseRepositoryTest {
         val exercise = repository.getExerciseById(replacement)
         assertNotNull(exercise)
         assertEquals(true, exercise.isFavorite)
-        assertEquals(100.0f, exercise.oneRepMaxKg)
+        assertEquals(100.0, legacyOneRepMaxOf(replacement))
         assertEquals(4, exercise.timesPerformed)
 
         importer.remapLegacyCatalogueIds()
@@ -450,12 +488,12 @@ class SqlDelightExerciseRepositoryTest {
         assertNotNull(afterSecondPass)
         assertEquals(4, afterSecondPass.timesPerformed)
         assertEquals(true, afterSecondPass.isFavorite)
-        assertEquals(100.0f, afterSecondPass.oneRepMaxKg)
+        assertEquals(100.0, legacyOneRepMaxOf(replacement))
     }
 
     @Test
     fun `remap maps duplicate bench press catalogue id`() = runTest {
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "b5d0f3d1-994b-4589-9d2b-b3f36f1412c7",
             name = "Bench Press ",
             muscleGroup = "Chest",
@@ -505,7 +543,7 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `remap keeps a live PR over a heavier tombstone`() = runTest {
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "ZZ92N8QsBdp6HCh3",
             name = "Bench Press",
             muscleGroup = "Chest",
@@ -522,7 +560,7 @@ class SqlDelightExerciseRepositoryTest {
             id = tombstone.id,
             profileId = "default",
         )
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "Barbell_Bench_Press_-_Medium_Grip",
             name = "Barbell Bench Press - Medium Grip",
             muscleGroup = "Chest",
@@ -552,7 +590,7 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `remap maps renamed rack pull onto rack pulls`() = runTest {
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "legacy-rack-pull",
             name = "Rack Pull",
             muscleGroup = "Back",
@@ -597,7 +635,7 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `remap keeps the heavier colliding PR`() = runTest {
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "ZZ92N8QsBdp6HCh3",
             name = "Bench Press",
             muscleGroup = "Chest",
@@ -605,7 +643,7 @@ class SqlDelightExerciseRepositoryTest {
             archived = 1L,
         )
         insertPr(exerciseId = "ZZ92N8QsBdp6HCh3", exerciseName = "Bench Press", weight = 80.0, oneRepMax = 90.0)
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "Barbell_Bench_Press_-_Medium_Grip",
             name = "Barbell Bench Press - Medium Grip",
             muscleGroup = "Chest",
@@ -634,7 +672,7 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `remap keeps the heavier colliding PR from the legacy row`() = runTest {
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "ZZ92N8QsBdp6HCh3",
             name = "Bench Press",
             muscleGroup = "Chest",
@@ -642,7 +680,7 @@ class SqlDelightExerciseRepositoryTest {
             archived = 1L,
         )
         insertPr(exerciseId = "ZZ92N8QsBdp6HCh3", exerciseName = "Bench Press", weight = 140.0, oneRepMax = 155.0)
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "Barbell_Bench_Press_-_Medium_Grip",
             name = "Barbell Bench Press - Medium Grip",
             muscleGroup = "Chest",
@@ -667,7 +705,7 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `remap keeps the larger colliding MAX_VOLUME PR`() = runTest {
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "ZZ92N8QsBdp6HCh3",
             name = "Bench Press",
             muscleGroup = "Chest",
@@ -681,7 +719,7 @@ class SqlDelightExerciseRepositoryTest {
             volume = 900.0,
             prType = "MAX_VOLUME",
         )
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "Barbell_Bench_Press_-_Medium_Grip",
             name = "Barbell Bench Press - Medium Grip",
             muscleGroup = "Chest",
@@ -707,14 +745,14 @@ class SqlDelightExerciseRepositoryTest {
 
     @Test
     fun `remap merges colliding personal MVT samples`() = runTest {
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "ZZ92N8QsBdp6HCh3",
             name = "Bench Press",
             muscleGroup = "Chest",
             equipment = "BAR",
             archived = 1L,
         )
-        insertExercise(
+        insertExerciseIfAbsent(
             id = "Barbell_Bench_Press_-_Medium_Grip",
             name = "Barbell Bench Press - Medium Grip",
             muscleGroup = "Chest",
@@ -786,7 +824,7 @@ class SqlDelightExerciseRepositoryTest {
         )
     }
 
-    private fun insertExercise(
+    private fun insertExerciseIfAbsent(
         id: String,
         name: String,
         muscleGroup: String,
@@ -800,7 +838,7 @@ class SqlDelightExerciseRepositoryTest {
         lastPerformed: Long? = null,
         archived: Long = 0L,
     ) {
-        database.phoenixDatabaseQueries.insertExercise(
+        database.phoenixDatabaseQueries.insertExerciseIfAbsent(
             id = id,
             name = name,
             displayName = null,
@@ -823,9 +861,14 @@ class SqlDelightExerciseRepositoryTest {
             lastPerformed = lastPerformed,
             aliases = null,
             defaultCableConfig = defaultCableConfig,
-            one_rep_max_kg = oneRepMaxKg,
             mvtOverrideMs = null,
             isBodyweight = null,
         )
+        // Nothing writes Exercise.one_rep_max_kg any more (migration 49 moved the value to
+        // ExerciseTrainingMax), so a legacy value has to be seeded with raw SQL.
+        oneRepMaxKg?.let { driver.execute(null, "UPDATE Exercise SET one_rep_max_kg = $it WHERE id = '$id'", 0) }
     }
+
+    private fun legacyOneRepMaxOf(id: String): Double? =
+        database.phoenixDatabaseQueries.selectExerciseById(id).executeAsOne().one_rep_max_kg
 }

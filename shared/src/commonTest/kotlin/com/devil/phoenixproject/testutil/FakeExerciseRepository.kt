@@ -2,6 +2,7 @@ package com.devil.phoenixproject.testutil
 
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ExerciseImageEntity
+import com.devil.phoenixproject.data.repository.TrainingMaxSource
 import com.devil.phoenixproject.domain.model.Exercise
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +36,8 @@ class FakeExerciseRepository : ExerciseRepository {
     fun reset() {
         exercises.clear()
         images.clear()
+        trainingMaxes.clear()
+        unassignedLegacyTrainingMaxes.clear()
         importResult = Result.success(Unit)
         updateFromWgerResult = Result.success(0)
         updateFlow()
@@ -111,14 +114,37 @@ class FakeExerciseRepository : ExerciseRepository {
         return Result.success(Unit)
     }
 
-    override suspend fun updateOneRepMax(exerciseId: String, oneRepMaxKg: Float?) {
-        exercises[exerciseId]?.let { exercise ->
-            exercises[exerciseId] = exercise.copy(oneRepMaxKg = oneRepMaxKg)
-            updateFlow()
+    // Per-profile training maxes (migration 49), keyed the same way the table is.
+    private val trainingMaxes = mutableMapOf<Pair<String, String>, Float>()
+
+    /** Seed a legacy, unattributed `Exercise.one_rep_max_kg` for claim-prompt tests. */
+    var unassignedLegacyTrainingMaxes: MutableMap<String, Float> = mutableMapOf()
+
+    fun setTrainingMaxDirectly(exerciseId: String, profileId: String, oneRepMaxKg: Float) {
+        trainingMaxes[exerciseId to profileId] = oneRepMaxKg
+    }
+
+    override suspend fun getTrainingMax(exerciseId: String, profileId: String): Float? =
+        trainingMaxes[exerciseId to profileId]
+
+    override suspend fun setTrainingMax(
+        exerciseId: String,
+        profileId: String,
+        oneRepMaxKg: Float?,
+        source: TrainingMaxSource,
+    ) {
+        if (oneRepMaxKg == null || oneRepMaxKg <= 0f) {
+            trainingMaxes.remove(exerciseId to profileId)
+        } else {
+            trainingMaxes[exerciseId to profileId] = oneRepMaxKg
+            // A claimed or written value stops being unassigned for everyone, exactly as
+            // selectUnassignedLegacyTrainingMax's NOT EXISTS clause does.
+            unassignedLegacyTrainingMaxes.remove(exerciseId)
         }
     }
 
-    override fun getExercisesWithOneRepMax(): Flow<List<Exercise>> = _exercisesFlow.map { list -> list.filter { it.oneRepMaxKg != null } }
+    override suspend fun getUnassignedLegacyTrainingMax(exerciseId: String): Float? =
+        unassignedLegacyTrainingMaxes[exerciseId]
 
     override suspend fun findByName(name: String): Exercise? = exercises.values.find { it.name == name }
 
