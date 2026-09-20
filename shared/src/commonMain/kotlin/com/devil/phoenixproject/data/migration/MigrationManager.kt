@@ -73,6 +73,8 @@ class MigrationManager(
         private const val KEY_REPAIR_VERSION = "migration_repair_version"
         private const val KEY_PROFILE_PREFERENCES_MIGRATION_COMPLETE =
             "profile_preferences_legacy_migration_complete_v1"
+        private const val KEY_PULLED_SESSION_BACKFILL_COMPLETE =
+            "pulled_workout_session_backfill_complete_v1"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -143,6 +145,7 @@ class MigrationManager(
         _requiredMigrationState.value = RequiredMigrationState.Applying
         try {
             migrateProfilePreferences()
+            backfillPulledSessionMarkers()
             _requiredMigrationState.value = RequiredMigrationState.Ready
         } catch (error: CancellationException) {
             throw error
@@ -201,6 +204,26 @@ class MigrationManager(
         }
         userProfileRepository.retryPendingLocalCleanup()
         userProfileRepository.reconcileActiveProfileContext()
+    }
+
+    /**
+     * Post-open repair for migration 48's `PulledWorkoutSession` backfill (R-15 / KD-4).
+     *
+     * `reconcileFullSchema` re-creates the marker table on every open, but nothing replays
+     * the backfill, so a database where migration 48 could not finish it (e.g. a child
+     * table was missing, which the resilient fallback does not classify as recoverable)
+     * would have the table and no markers — and every pre-existing pulled session would be
+     * gathered by the next push. The statement is `INSERT OR IGNORE`, so re-running it is
+     * safe; a one-shot marker keeps it off the startup path afterwards, and a failure
+     * leaves the marker unset so the next open retries.
+     */
+    private fun backfillPulledSessionMarkers() {
+        if (settings.getBoolean(KEY_PULLED_SESSION_BACKFILL_COMPLETE, false)) return
+        runCatching { queries.backfillPulledWorkoutSessions() }
+            .onSuccess { settings.putBoolean(KEY_PULLED_SESSION_BACKFILL_COMPLETE, true) }
+            .onFailure { error ->
+                log.w(error) { "Pulled-session marker backfill failed; retrying on next startup" }
+            }
     }
 
     private suspend fun runNonCriticalRepairsNow() {

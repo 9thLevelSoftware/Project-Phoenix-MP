@@ -31,11 +31,20 @@ interface WorkoutRepository {
     suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String)
 
     /**
-     * Delete one session. The row is hard-deleted (the cascade frees its
-     * samples and rep data) and a `DeletedWorkoutSession` tombstone is written
-     * in the same transaction, so the next portal pull cannot resurrect it.
+     * Delete one session **as a user deletion**. The row is hard-deleted (the
+     * cascade frees its samples and rep data) and a `DeletedWorkoutSession`
+     * tombstone is written in the same transaction, so the next portal pull
+     * cannot resurrect it. For internal cleanup use [discardSession].
      */
     suspend fun deleteSession(sessionId: String)
+
+    /**
+     * Drop a session this device wrote and never meant to keep: a compensating
+     * rollback for a failed multi-step save, or QA fixture cleanup. No
+     * tombstone — the workout was never the user's to delete, and a tombstone
+     * would blackball the id for good and ride along in every pull's known ids.
+     */
+    suspend fun discardSession(sessionId: String)
 
     /**
      * Delete every workout of ONE profile ("Delete All Workouts"), tombstones

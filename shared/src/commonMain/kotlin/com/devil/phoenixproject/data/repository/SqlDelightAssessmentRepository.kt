@@ -181,7 +181,10 @@ class SqlDelightAssessmentRepository(
                         insertedResultId?.let { id ->
                             runCatching { queries.deleteAssessmentResult(id) }
                         }
-                        runCatching { workoutRepository.deleteSession(sessionId) }
+                        // discardSession, not deleteSession: this row is being rolled back,
+                        // not deleted by the user, so it must not leave a tombstone that
+                        // blackballs the id and rides along in every pull's known ids.
+                        runCatching { workoutRepository.discardSession(sessionId) }
                     }
                     if (failure is CancellationException) throw failure
                     Logger.w(failure) {

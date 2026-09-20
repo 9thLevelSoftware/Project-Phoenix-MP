@@ -933,8 +933,9 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 -- device) onto a row this device pulled. Only the tag columns and the stamp change.
 -- Origin gate: the row must carry the explicit PulledWorkoutSession marker (migration
 -- 48), so a row captured on this device keeps its own tag even when it has no children.
--- Local-data gate: RepMetric/CompletedSet rows mean this device has measurements for the
--- id (e.g. a backup restore wrote children onto a pulled row), so the tag stays put.
+-- Local-data gate: MetricSample/RepMetric/CompletedSet rows mean this device has
+-- measurements for the id (e.g. a backup restore wrote children onto a pulled row), so
+-- the tag stays put. Same predicate as the 48 backfill and selectSessionsModifiedSince.
 -- A pull carrying the same exerciseId is a no-op (nothing to re-tag, stamp untouched).
 updatePulledSessionTag:
 UPDATE WorkoutSession
@@ -943,6 +944,7 @@ WHERE id = :id
   AND COALESCE(updatedAt, 0) < :updatedAt
   AND exerciseId IS NOT :exerciseId
   AND EXISTS (SELECT 1 FROM PulledWorkoutSession WHERE PulledWorkoutSession.id = :id)
+  AND NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = :id)
   AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = :id)
   AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = :id);
 
@@ -2753,15 +2755,18 @@ SELECT subscription_status FROM UserProfile WHERE isActive = 1;
 -- Push gather. A session this device only ever pulled is excluded by ORIGIN,
 -- not by timestamp (PulledWorkoutSession, migration 48): re-pushing it would
 -- create a duplicate portal workout for a standalone row and can never add
--- anything the portal does not already have. The escape hatch is local rep
--- data: if this device recorded RepMetric or CompletedSet rows against the id,
--- the row is ours to push.
+-- anything the portal does not already have. The escape hatch is local
+-- measurements: a MetricSample, RepMetric or CompletedSet row for the id means
+-- this device holds data the portal does not, so the row is ours to push.
+-- That is the same "this device has local data" predicate as the migration 48
+-- backfill and updatePulledSessionTag — keep the three in step.
 selectSessionsModifiedSince:
 SELECT * FROM WorkoutSession
 WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
 AND profile_id = :profileId
 AND (
     NOT EXISTS (SELECT 1 FROM PulledWorkoutSession WHERE PulledWorkoutSession.id = WorkoutSession.id)
+    OR EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = WorkoutSession.id)
     OR EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
     OR EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id)
 )
@@ -3708,15 +3713,48 @@ FROM WorkoutSession WHERE profile_id = :profileId;
 deleteAllSessionsForProfile:
 DELETE FROM WorkoutSession WHERE profile_id = :profileId;
 
--- Pull request: the portal knows a deleted workout under its portal_id.
+-- Pull request: the portal knows a deleted workout under its portal_id. Sending
+-- it as a known id stops the portal returning the workout on every pull.
+--
+-- Not profile-filtered, on purpose: the merge-side skip is id-only (see
+-- selectSessionKnownOrTombstoned), and anything that separates a tombstone from
+-- the profile that now owns the workout — a profile merge reassigning sessions
+-- to Default, the portal re-scoping a deleted profile's rows — would otherwise
+-- leave the portal re-sending it forever while the merge silently drops it.
+--
+-- A grouped routine workout's portal_id is only contributed once NO live row of
+-- that group is left: while any row survives, the portal must keep returning
+-- the workout so an exercise added to it on another device still arrives.
+--
+-- Newest first, so a capped parity list keeps the most recent deletions.
 selectDeletedSessionPortalIds:
-SELECT DISTINCT portal_id FROM DeletedWorkoutSession WHERE profile_id = :profileId;
+SELECT portal_id FROM DeletedWorkoutSession AS d
+WHERE NOT EXISTS (
+    SELECT 1 FROM WorkoutSession AS w
+    WHERE w.routineSessionId = d.portal_id OR w.id = d.portal_id
+)
+GROUP BY portal_id
+ORDER BY MAX(deleted_at) DESC;
+
+-- Post-open repair for the migration 48 backfill: same statement, run once
+-- behind a marker in MigrationManager and again after a backup restore, so a
+-- database whose migration could not complete the backfill (or one restored
+-- from a backup that predates the table) still gets its origin markers.
+backfillPulledWorkoutSessions:
+INSERT OR IGNORE INTO PulledWorkoutSession(id)
+SELECT id FROM WorkoutSession
+WHERE updatedAt IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = WorkoutSession.id)
+  AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
+  AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id);
 
 -- Pull merge guard, used by the shared session insert helper: an id this device
 -- already has, or deleted, is never inserted, and only a real insert is marked
 -- pulled-origin. The tombstone half is matched by id only and is never filtered
--- by profile, so it still holds after the portal re-scopes a deleted profile's
--- rows to Default.
+-- by profile: a deleted workout stays deleted even after the portal re-scopes a
+-- deleted profile's rows to Default. The trade-off is that a tombstoned id can
+-- never be recovered by pulling it into another local profile; the id-only skip
+-- is chosen over that recoverability on purpose.
 selectSessionKnownOrTombstoned:
 SELECT 1 FROM WorkoutSession WHERE id = :id
 UNION ALL
@@ -3725,3 +3763,7 @@ LIMIT 1;
 
 markSessionPulled:
 INSERT OR IGNORE INTO PulledWorkoutSession(id) VALUES (?);
+
+-- Origin markers, for tests and diagnostics: which sessions this device pulled.
+selectPulledSessionIds:
+SELECT id FROM PulledWorkoutSession;

@@ -1467,8 +1467,8 @@ class SqlDelightSyncRepository(
         queries.selectAllSessionIdsByProfile(profileId).executeAsList()
     }
 
-    override suspend fun getDeletedSessionPortalIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
-        queries.selectDeletedSessionPortalIds(profileId).executeAsList()
+    override suspend fun getDeletedSessionPortalIds(): List<String> = withContext(Dispatchers.IO) {
+        queries.selectDeletedSessionPortalIds().executeAsList()
     }
 
     override suspend fun getAllRoutineIds(profileId: String): List<String> = withContext(Dispatchers.IO) {

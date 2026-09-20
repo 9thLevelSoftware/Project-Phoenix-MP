@@ -241,13 +241,11 @@ class HistoryManager(
      * same way, so a wipe can never reach a profile the user isn't looking at.
      */
     fun deleteAllWorkouts() {
-        val profileId = userProfileRepository.activeProfile.value?.id
-        if (profileId == null) {
-            // A wipe never falls back to "default": during a profile transition that would
-            // delete a history the user is not even looking at.
-            co.touchlab.kermit.Logger.w { "Delete all workouts ignored: no active profile" }
-            return
-        }
+        // Same null fallback as every read path in this class and as
+        // MainViewModel.activeProfileName, which is the name the confirm dialog shows.
+        // Diverging would let the user confirm "Delete all workouts for Default?" over the
+        // default profile's history and then silently delete nothing.
+        val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
         scope.launch { workoutRepository.deleteAllSessionsForProfile(profileId) }
     }
 }

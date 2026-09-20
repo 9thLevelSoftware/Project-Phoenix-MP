@@ -278,13 +278,52 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `a workout deleted on this device is not resurrected by the no-updatedAt pull path`() = runTest {
+        val id = "deleted-workout-full-merge"
+        insertHistoricalSession(
+            id = id,
+            timestamp = 1_700_000_000_000,
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            workingReps = 8,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+        )
+        workoutRepository().deleteSession(id)
+
+        // SyncManager takes this branch whenever the portal response carries no updatedAt.
+        repository.mergeAllPullData(
+            sessions = listOf(pulledSession(id)),
+            routines = emptyList(),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "active-profile",
+        )
+
+        val queries = database.phoenixDatabaseQueries
+        assertNull(queries.selectSessionById(id).executeAsOneOrNull())
+        assertEquals(emptyList(), queries.selectPulledSessionIds().executeAsList())
+    }
+
+    @Test
     fun `the push gather skips pulled sessions by origin, not by stamp`() = runTest {
         val pulledId = "pulled-row"
         val pulledWithLocalSets = "pulled-row-with-local-sets"
+        val pulledWithLocalMetrics = "pulled-row-with-local-metrics"
         val localId = "locally-captured-row"
         repository.mergeSessionsLww(
-            listOf(pulledSession(pulledId), pulledSession(pulledWithLocalSets)),
-            mapOf(pulledId to 1_700_000_100_000, pulledWithLocalSets to 1_700_000_100_000),
+            listOf(pulledSession(pulledId), pulledSession(pulledWithLocalSets), pulledSession(pulledWithLocalMetrics)),
+            mapOf(
+                pulledId to 1_700_000_100_000,
+                pulledWithLocalSets to 1_700_000_100_000,
+                pulledWithLocalMetrics to 1_700_000_100_000,
+            ),
         )
         insertHistoricalSession(
             id = localId,
@@ -298,17 +337,48 @@ class SqlDelightSyncRepositoryTest {
             peakEccentricB = null,
             profileId = "active-profile",
         )
-        // Rep data recorded here makes a pulled id ours to push again.
+        // Measurements recorded here make a pulled id ours to push again — sets or raw
+        // samples, the same predicate the 48 backfill uses.
         database.phoenixDatabaseQueries.insertCompletedSet(
             "pulled-row-set-1", pulledWithLocalSets, null, null, 1L, "STANDARD", 1L, 8L, 20.0, null, 0L,
             1_700_000_002_000, "UNKNOWN",
+        )
+        database.phoenixDatabaseQueries.insertMetric(
+            pulledWithLocalMetrics, 1_700_000_000_010, 0.5, 0.5, 0.1, 0.1, 20.0, 20.0, 40.0, 0L,
         )
         // A later local edit (or a portal stamp ahead of the clock) bumps updatedAt.
         database.phoenixDatabaseQueries.updateSessionTimestamp(1_800_000_000_000, pulledId)
 
         val pushed = repository.getWorkoutSessionsModifiedSince(0L, "active-profile").map { it.id }
 
-        assertEquals(listOf(localId, pulledWithLocalSets), pushed.sorted())
+        assertEquals(listOf(localId, pulledWithLocalMetrics, pulledWithLocalSets), pushed.sorted())
+    }
+
+    @Test
+    fun `tombstone portal ids are fed to the pull across profiles and only for dead groups`() = runTest {
+        val routineSessionId = "9f1b0b4e-0d54-4b0b-9a1e-2f3c4d5e6f70"
+        val workouts = workoutRepository()
+        workouts.saveSession(pulledSession("grouped-1").copy(routineSessionId = routineSessionId))
+        workouts.saveSession(pulledSession("grouped-2").copy(routineSessionId = routineSessionId))
+        workouts.saveSession(pulledSession("other-profile-row", profileId = "other-profile"))
+
+        workouts.deleteSession("grouped-1")
+        workouts.deleteSession("other-profile-row")
+
+        // The group still has a live row, so the portal must keep returning the workout;
+        // the other profile's tombstone is sent all the same, because the merge skip is
+        // id-only and a merged or re-scoped profile must still suppress its deletions.
+        assertEquals(
+            listOf("other-profile-row"),
+            repository.getDeletedSessionPortalIds(),
+        )
+
+        workouts.deleteSession("grouped-2")
+
+        assertEquals(
+            listOf(routineSessionId, "other-profile-row"),
+            repository.getDeletedSessionPortalIds().sorted(),
+        )
     }
 
     private fun workoutRepository(): SqlDelightWorkoutRepository = SqlDelightWorkoutRepository(

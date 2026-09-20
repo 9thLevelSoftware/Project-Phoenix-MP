@@ -649,6 +649,13 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         }
     }
 
+    /** Internal cleanup: the same hard delete, deliberately without a tombstone. */
+    override suspend fun discardSession(sessionId: String) {
+        withContext(Dispatchers.IO) {
+            queries.deleteSession(sessionId)
+        }
+    }
+
     override suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String) {
         withContext(Dispatchers.IO) {
             val deletedAt = currentTimeMillis()

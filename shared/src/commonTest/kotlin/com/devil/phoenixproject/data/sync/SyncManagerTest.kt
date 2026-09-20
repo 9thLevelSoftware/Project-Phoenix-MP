@@ -1640,6 +1640,38 @@ class SyncManagerTest {
     }
 
     @Test
+    fun pullKeepsTombstoneIdsWithoutEvictingLiveSessionIdsAtTheParityCap() = runTest {
+        setupAuthenticated()
+        // Past the cap, an unbounded tombstone list would push live sessions out of the
+        // parity window and the portal would re-send them on every pull.
+        val liveIds = (0 until SyncConfig.MAX_PARITY_IDS + 5).map { uuidAt(it) }
+        val tombstoneId = "77777777-7777-4777-a777-777777777777"
+        fakeSyncRepo.sessionIds = liveIds
+        fakeSyncRepo.deletedSessionPortalIds = listOf(tombstoneId)
+
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        val sent = assertNotNull(fakeApi.lastPullKnownEntityIds).sessionIds
+        assertEquals(SyncConfig.MAX_PARITY_IDS, sent.size)
+        assertEquals(tombstoneId, sent.last(), "the tombstone must survive the cap")
+        assertEquals(
+            SyncConfig.MAX_PARITY_IDS - 1,
+            sent.count { it in liveIds.toSet() },
+            "only the oldest live ids are dropped, and only as many as the tombstones take",
+        )
+    }
+
+    private fun uuidAt(index: Int): String {
+        val tail = index.toString().padStart(12, '0')
+        return "11111111-1111-4111-a111-$tail"
+    }
+
+    @Test
     fun pullDropsNonUuidBadgeAndPersonalRecordIdsBeforeSend() = runTest {
         setupAuthenticated()
         val badgeId = "eeeeeeee-eeee-4eee-aeee-eeeeeeeeeeee"

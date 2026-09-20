@@ -30,6 +30,19 @@ CREATE TABLE IF NOT EXISTS PulledWorkoutSession (
 -- A never-stamped session (updatedAt IS NULL) is never marked even when it is
 -- childless: a split-transaction save can leave such a row behind, and marking
 -- it would stop it from ever being uploaded.
+--
+-- Known limitation: updatedAt is also set on a locally recorded session once it
+-- has been pushed, so a childless local row (aborted capture, zero-rep ghost
+-- row, legacy import) that was pushed at least once is marked too, and the
+-- push-origin exclusion is then permanent for it. Nothing is lost against the
+-- same portal account (its portal copy has no children from this phone either),
+-- but a re-login against another account or a forced full re-push will not
+-- re-upload those rows. There is no better discriminator: the portal path never
+-- populates serverId. PR 10's watermark work owns any re-push path.
+--
+-- backfillPulledWorkoutSessions in PhoenixDatabase.sq repeats this statement as
+-- an idempotent post-open repair, for databases where this migration could not
+-- finish it and for rows written by a backup restore.
 INSERT OR IGNORE INTO PulledWorkoutSession(id)
 SELECT id FROM WorkoutSession
 WHERE updatedAt IS NOT NULL

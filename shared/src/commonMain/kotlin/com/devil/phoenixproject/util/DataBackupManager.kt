@@ -2045,6 +2045,13 @@ abstract class BaseDataBackupManager(
                 Logger.w { "Streaming import completed with $entitiesWithErrors skipped entity row(s) — see preceding warnings for per-entity diagnostics" }
             }
 
+            // A backup carries no PulledWorkoutSession markers, so re-apply migration 48's
+            // origin heuristic over the restored rows: without it every restored, already
+            // stamped, childless session is gathered by the first push and re-uploaded.
+            // Runs last, once every session's children have been written.
+            runCatching { queries.backfillPulledWorkoutSessions() }
+                .onFailure { Logger.w(it) { "Post-restore pulled-session marker backfill failed" } }
+
             onProgress(BackupProgress(BackupPhase.FINALIZING, 0, 0))
 
             return Result.success(

@@ -222,8 +222,12 @@ sqldelight {
     databases {
         create("PhoenixDatabase") {
             packageName.set("com.devil.phoenixproject.database")
-            // Version 47 = initial schema (1) + 46 migrations (1.sqm through 46.sqm).
-            // 43 = catalogue, 44 = set_end_reason, 45 = attempt/runtime, 46 = drop-set config.
+            // NOTE: this literal does not drive the schema version. The generated
+            // PhoenixDatabase.Schema.version is derived from the migration files
+            // (initial schema 1 + one per N.sqm), so it is 49 with 48.sqm present and
+            // rises on its own with each new migration. Adding a migration needs no
+            // edit here; SchemaParityTest's EXPECTED_SCHEMA_VERSION is the value to
+            // keep in step.
             version = 47
         }
     }

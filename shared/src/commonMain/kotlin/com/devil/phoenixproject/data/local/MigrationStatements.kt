@@ -1098,7 +1098,10 @@ WHERE gs.rowid = (
     )
 
     // Migration 47: durable trainer-keyed machine safety obligation (#769)
-    // Mirrors 47.sqm exactly.
+    // Mirrors 47.sqm exactly, bare CREATE TABLE included: unlike entry 48 below, this
+    // statement is not idempotent on its own and a replay survives only because
+    // applyMigrationResilient classifies "already exists" as recoverable. New migrations
+    // should use IF NOT EXISTS / INSERT OR IGNORE rather than rely on that classification.
     47 -> listOf(
         """CREATE TABLE MachineSafetyHazard (
         trainer_address TEXT NOT NULL PRIMARY KEY,

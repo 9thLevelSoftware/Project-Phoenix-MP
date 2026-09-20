@@ -980,6 +980,34 @@ class MigrationManagerTest {
         )
     }
 
+    @Test
+    fun `startup backfills missing pulled-session markers exactly once`() = runTest {
+        // Migration 48 writes these markers, but a database whose migration could not
+        // finish the backfill (a missing child table is not a recoverable error for the
+        // resilient fallback) would have the table and no markers — and every pulled
+        // session would then be re-pushed. This post-open repair closes that.
+        val queries = database.phoenixDatabaseQueries
+        val settings = MapSettings()
+        val manager = createMigrationManager(database, settings = settings)
+        insertMinimalSession(id = "pulled-row", routineSessionId = null, routineName = null)
+        queries.updateSessionTimestamp(1_000L, "pulled-row")
+        insertMinimalSession(id = "captured-row", routineSessionId = null, routineName = null)
+        queries.updateSessionTimestamp(1_000L, "captured-row")
+        queries.insertMetric("captured-row", 1_010L, 0.5, 0.5, 0.1, 0.1, 20.0, 20.0, 40.0, 0L)
+        insertMinimalSession(id = "never-uploaded", routineSessionId = null, routineName = null)
+
+        manager.runRequiredMigrations()
+
+        assertEquals(listOf("pulled-row"), queries.selectPulledSessionIds().executeAsList())
+
+        // One-shot: the marker keeps the full-table scan off later startups.
+        insertMinimalSession(id = "later-row", routineSessionId = null, routineName = null)
+        queries.updateSessionTimestamp(2_000L, "later-row")
+        createMigrationManager(database, settings = settings).runRequiredMigrations()
+
+        assertEquals(listOf("pulled-row"), queries.selectPulledSessionIds().executeAsList())
+    }
+
     private fun insertMinimalSession(
         id: String,
         routineSessionId: String?,

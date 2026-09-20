@@ -146,7 +146,7 @@ class FakeSyncRepository : SyncRepository {
     var cyclesToReturn: List<CycleWithContext> = emptyList()
 
     override suspend fun getAllSessionIds(profileId: String): List<String> = sessionIds
-    override suspend fun getDeletedSessionPortalIds(profileId: String): List<String> = deletedSessionPortalIds
+    override suspend fun getDeletedSessionPortalIds(): List<String> = deletedSessionPortalIds
     override suspend fun getAllRoutineIds(profileId: String): List<String> = routineIds
     override suspend fun getAllCycleIds(profileId: String): List<String> = cycleIds
     override suspend fun getAllBadgeIds(profileId: String): List<String> = badgeIds
