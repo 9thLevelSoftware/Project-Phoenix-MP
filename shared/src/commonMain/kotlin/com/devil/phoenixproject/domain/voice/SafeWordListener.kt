@@ -54,6 +54,56 @@ sealed interface SafeWordState {
 }
 
 /**
+ * Bounds the "started but never got the microphone" loop (F-039).
+ *
+ * A recognizer accepting a start request does not mean it has the microphone:
+ * Android's `SpeechRecognizer.startListening()` returns as soon as the intent is
+ * accepted and only calls `onReadyForSpeech` once it is really recording. Until
+ * then the listener is [SafeWordState.Arming], never [SafeWordState.Armed] —
+ * claiming Armed there would tell the user the emergency stop is live while the
+ * recognizer fails and restarts forever (another app holding the microphone, the
+ * app in the background, a call in progress).
+ *
+ * Only start attempts are counted. Recognition *errors* deliberately are not:
+ * `ERROR_NO_MATCH` and `ERROR_SPEECH_TIMEOUT` fire during ordinary silence and
+ * would raise a false alarm.
+ */
+internal class SafeWordArmingTracker(
+    private val maxAttemptsWithoutReady: Int = DEFAULT_MAX_ATTEMPTS_WITHOUT_READY,
+) {
+    private var attemptsSinceReady = 0
+
+    /**
+     * Records a start attempt and returns the state to publish:
+     * [SafeWordState.Arming] while budget is left, or [SafeWordState.Unavailable]
+     * once that many starts in a row have never reached ready.
+     */
+    fun onStartAttempt(): SafeWordState {
+        attemptsSinceReady++
+        return if (attemptsSinceReady > maxAttemptsWithoutReady) {
+            SafeWordState.Unavailable(SafeWordUnavailableReason.START_FAILED)
+        } else {
+            SafeWordState.Arming
+        }
+    }
+
+    /** The recognizer reported it is actually recording; the budget resets. */
+    fun onRecognizerReady(): SafeWordState {
+        attemptsSinceReady = 0
+        return SafeWordState.Armed
+    }
+
+    companion object {
+        /**
+         * Restarts are ~500 ms apart, so the warning appears after roughly two
+         * seconds of a recognizer that never opens the microphone, while tolerating
+         * the normal restart after every recognition segment (those do reach ready).
+         */
+        const val DEFAULT_MAX_ATTEMPTS_WITHOUT_READY = 4
+    }
+}
+
+/**
  * Platform-specific continuous speech listener that detects a configured safe word.
  *
  * Both platforms use on-device-only recognition (no network dependency):

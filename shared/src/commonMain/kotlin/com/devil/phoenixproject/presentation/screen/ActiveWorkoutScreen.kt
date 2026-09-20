@@ -29,6 +29,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import co.touchlab.kermit.Logger
@@ -680,7 +683,10 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
 @Composable
 private fun VoiceStopUnavailableChip(reason: SafeWordUnavailableReason, modifier: Modifier = Modifier) {
     Surface(
-        modifier = modifier,
+        // The chip can appear mid-set (permission revoked, microphone taken), when
+        // the user's eyes are on the machine — announce it instead of waiting for
+        // focus to land on it.
+        modifier = modifier.semantics { liveRegion = LiveRegionMode.Assertive },
         shape = MaterialTheme.shapes.small,
         color = MaterialTheme.colorScheme.errorContainer,
         contentColor = MaterialTheme.colorScheme.onErrorContainer,

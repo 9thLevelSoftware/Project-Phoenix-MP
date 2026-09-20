@@ -89,6 +89,9 @@ class IosSafeWordListener(private val safeWord: String) : SafeWordListener {
     /** Guards against re-entrant tearDown calls from concurrent dispatch. */
     private var isTearingDown = false
 
+    /** Bounds a restart loop that never manages to open the microphone. */
+    private val armingTracker = SafeWordArmingTracker()
+
     /**
      * Identifies recognition callbacks so lifecycle recovery can suppress only
      * the stale task it intentionally cancelled, without muting callbacks from
@@ -215,6 +218,18 @@ class IosSafeWordListener(private val safeWord: String) : SafeWordListener {
     private fun startRecognition() {
         if (!shouldBeListening) return
 
+        // F-039: a start attempt only becomes Armed once the audio engine is
+        // actually running. Too many attempts in a row that never get there mean
+        // the microphone is not coming, so say so instead of restarting forever.
+        val attemptState = armingTracker.onStartAttempt()
+        if (attemptState is SafeWordState.Unavailable) {
+            NSLog("$TAG: Speech recognition kept restarting without ever opening the microphone")
+            shouldBeListening = false
+            _state.value = attemptState
+            tearDown()
+            return
+        }
+
         try {
             // Clear any existing task/engine before creating a fresh input tap.
             cancelExistingTask()
@@ -244,7 +259,7 @@ class IosSafeWordListener(private val safeWord: String) : SafeWordListener {
                     "$TAG: Invalid input format for speech recognition " +
                         "(sampleRate=${recordingFormat.sampleRate}, channels=${recordingFormat.channelCount})",
                 )
-                _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.START_FAILED)
+                _state.value = attemptState
                 scheduleRestart()
                 return
             }
@@ -270,7 +285,7 @@ class IosSafeWordListener(private val safeWord: String) : SafeWordListener {
                 started
             }
             if (!engineStarted) {
-                _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.START_FAILED)
+                _state.value = attemptState
                 scheduleRestart()
                 return
             }
@@ -283,14 +298,14 @@ class IosSafeWordListener(private val safeWord: String) : SafeWordListener {
                 handleRecognitionResult(callbackGeneration, result, error)
             }
 
-            _state.value = SafeWordState.Armed
+            _state.value = armingTracker.onRecognizerReady()
             // fix(audit): H — do not log the configured safe word. It is user-
             // chosen and may be PII or a sensitive phrase. Log only a length
             // hint for debugging startup issues.
             NSLog("$TAG: Speech recognition started (safe word len=${safeWord.length})")
         } catch (e: Exception) {
             NSLog("$TAG: Failed to start speech recognition: ${e.message}")
-            _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.START_FAILED)
+            _state.value = attemptState
             scheduleRestart()
         }
     }

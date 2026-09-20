@@ -58,6 +58,9 @@ class AndroidSafeWordListener(
     /** Active audio focus request, held for abandoning on teardown. */
     private var audioFocusRequest: AudioFocusRequest? = null
 
+    /** Bounds a restart loop that never reaches [RecognitionListener.onReadyForSpeech]. */
+    private val armingTracker = SafeWordArmingTracker()
+
     override fun startListening() {
         if (shouldBeListening) return
 
@@ -104,6 +107,15 @@ class AndroidSafeWordListener(
 
         if (!shouldBeListening) return
 
+        // F-039: a start request only becomes Armed in onReadyForSpeech. Too many
+        // starts in a row that never get there means the microphone is not coming.
+        val attemptState = armingTracker.onStartAttempt()
+        if (attemptState is SafeWordState.Unavailable) {
+            Log.w(TAG, "Speech recognition kept restarting without ever becoming ready")
+            failAndStop(attemptState.reason)
+            return
+        }
+
         try {
             requestTransientAudioFocus()
 
@@ -113,14 +125,15 @@ class AndroidSafeWordListener(
 
             val intent = createRecognizerIntent()
             sr.startListening(intent)
-            _state.value = SafeWordState.Armed
+            _state.value = attemptState
             // fix(audit): H — do not log the configured safe word. It is user-
             // chosen and may be PII or a sensitive phrase. Log only a length
             // hint for debugging startup issues.
-            Log.d(TAG, "Speech recognition started (safe word len=${safeWord.length})")
+            Log.d(TAG, "Speech recognition start requested (safe word len=${safeWord.length})")
         } catch (e: Exception) {
+            // Not reported yet: the retry below usually succeeds, and the arming
+            // budget turns a persistent failure into Unavailable(START_FAILED).
             Log.e(TAG, "Failed to start speech recognition", e)
-            _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.START_FAILED)
             scheduleRestart()
         }
     }
@@ -254,7 +267,10 @@ class AndroidSafeWordListener(
 
     private inner class SafeWordRecognitionListener : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) {
+            // F-039: only here does the recognizer actually hold the microphone,
+            // so only here may the HUD claim the safe word will stop the machine.
             Log.d(TAG, "Ready for speech")
+            _state.value = armingTracker.onRecognizerReady()
         }
 
         override fun onBeginningOfSpeech() {

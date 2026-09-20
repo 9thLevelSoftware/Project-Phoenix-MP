@@ -61,8 +61,13 @@ class SafeWordDetectionManager(
     private val _unavailableAtStart = MutableSharedFlow<SafeWordUnavailableReason>(extraBufferCapacity = 1)
 
     /**
-     * Emits once per [startForWorkout] call when voice stop is on but not armed,
-     * so the screen can show a one-time warning at the start of the set.
+     * Emits at most once per [startForWorkout] call when voice stop is on but not
+     * armed: synchronously for a precondition failure, otherwise when the listener
+     * first reports [SafeWordState.Unavailable]. That can be mid-set — microphone
+     * permission revoked, another app taking audio focus, the recognizer never
+     * getting the microphone — which is deliberate: it is the only way a failure
+     * after the set has started raises a warning at all. The screen shows it once
+     * rather than repeatedly; the chip driven by [state] is the durable signal.
      */
     val unavailableAtStart: SharedFlow<SafeWordUnavailableReason> = _unavailableAtStart.asSharedFlow()
 
