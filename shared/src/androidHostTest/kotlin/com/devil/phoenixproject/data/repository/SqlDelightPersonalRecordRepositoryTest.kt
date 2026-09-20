@@ -24,7 +24,7 @@ class SqlDelightPersonalRecordRepositoryTest {
         database = createTestDatabase()
         database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         baselineRepository = SqlDelightProfileExerciseBaselineRepository(database)
-        repository = SqlDelightPersonalRecordRepository(database, baselineRepository)
+        repository = SqlDelightPersonalRecordRepository(database)
         insertExercise(id = "bench", name = "Bench Press")
     }
 
@@ -54,6 +54,7 @@ class SqlDelightPersonalRecordRepositoryTest {
 
     @Test
     fun `updatePRsIfBetter uses achieved load for weight PR and conservative load for volume PR`() = runTest {
+        baselineRepository.set("default", "bench", 42.25f, updatedAt = 500L)
         repository.updatePRsIfBetter(
             exerciseId = "bench",
             weightPRWeightPerCableKg = 60f,
@@ -72,12 +73,8 @@ class SqlDelightPersonalRecordRepositoryTest {
         assertEquals(300f, weightPr?.volume)
         assertEquals(50f, volumePr?.weightPerCableKg)
         assertEquals(250f, volumePr?.volume)
-        assertEquals(
-            // Canonical hybrid: reps=5 ≤ 10 → Brzycki = 60 × 36/(37-5) = 67.5
-            // (was epley(60,5)=70.0; updated to reflect OneRepMaxCalculator.estimate)
-            OneRepMaxCalculator.estimate(60f, 5).toDouble(),
-            baseline?.oneRepMaxPerCableKg?.toDouble(),
-        )
+        assertEquals(42.25f, baseline?.oneRepMaxPerCableKg, "saving a PR must not overwrite the explicit baseline")
+        assertEquals(1L, baseline?.revision)
     }
 
     @Test
@@ -148,10 +145,9 @@ class SqlDelightPersonalRecordRepositoryTest {
     /**
      * Issue #319: Proves that db.transaction {} in updatePRsIfBetterInternal is atomic.
      *
-     * Strategy: Install a SQLite trigger that makes the 1RM-sync UPDATE fail AFTER
-     * the weight-PR and volume-PR upserts have already executed inside the same
-     * transaction. If the transaction is truly atomic, the PR upserts are rolled
-     * back and the database remains clean.
+     * Strategy: Install a SQLite trigger that makes the volume-PR insert fail after
+     * the weight-PR upsert has executed in the same transaction. If the transaction
+     * is truly atomic, the weight PR is rolled back and the database remains clean.
      */
     @Test
     fun `Issue 319 transaction rollback prevents partial PR writes when downstream write fails`() = runTest {
@@ -160,10 +156,7 @@ class SqlDelightPersonalRecordRepositoryTest {
         val testDb = PhoenixDatabase(driver)
         testDb.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         val testBaselineRepository = SqlDelightProfileExerciseBaselineRepository(testDb)
-        val testRepo = SqlDelightPersonalRecordRepository(
-            testDb,
-            testBaselineRepository,
-        )
+        val testRepo = SqlDelightPersonalRecordRepository(testDb)
 
         testDb.phoenixDatabaseQueries.insertExercise(
             id = "squat", name = "Squat", displayName = null, description = null,
@@ -177,17 +170,17 @@ class SqlDelightPersonalRecordRepositoryTest {
             isBodyweight = null,
         )
 
-        // Trigger fires on the 1RM sync (third write in the transaction),
-        // AFTER weight-PR and volume-PR upserts have already executed.
+        // Trigger fires on the second PR write, after the weight PR was inserted.
         driver.execute(
             null,
-            "CREATE TRIGGER fail_1rm_update BEFORE INSERT ON ProfileExerciseBaseline " +
-                "BEGIN SELECT RAISE(ABORT, 'Issue 319: simulated 1RM sync failure'); END",
+            "CREATE TRIGGER fail_volume_pr BEFORE INSERT ON PersonalRecord " +
+                "WHEN NEW.prType = 'MAX_VOLUME' " +
+                "BEGIN SELECT RAISE(ABORT, 'Issue 319: simulated volume PR failure'); END",
             0,
         )
 
         // This call beats both weight and volume PRs (first-ever for this exercise),
-        // so the transaction will: upsert weight PR → upsert volume PR → update 1RM (BOOM).
+        // so the transaction will: upsert weight PR → upsert volume PR (BOOM).
         val result = testRepo.updatePRsIfBetter(
             exerciseId = "squat",
             weightPRWeightPerCableKg = 80f,
@@ -217,7 +210,7 @@ class SqlDelightPersonalRecordRepositoryTest {
         )
 
         // Positive control: remove trigger, verify the exact same call now succeeds
-        driver.execute(null, "DROP TRIGGER fail_1rm_update", 0)
+        driver.execute(null, "DROP TRIGGER fail_volume_pr", 0)
 
         val successResult = testRepo.updatePRsIfBetter(
             exerciseId = "squat",
@@ -232,6 +225,10 @@ class SqlDelightPersonalRecordRepositoryTest {
         assertNotNull(
             testRepo.getWeightPR("squat", "Old School", profileId = "default"),
             "Weight PR should exist after successful write",
+        )
+        assertNull(
+            testBaselineRepository.get("default", "squat"),
+            "saving a PR must not create a training baseline",
         )
     }
 

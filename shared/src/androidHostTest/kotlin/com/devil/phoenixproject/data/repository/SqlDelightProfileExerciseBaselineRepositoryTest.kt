@@ -43,19 +43,6 @@ class SqlDelightProfileExerciseBaselineRepositoryTest {
         assertFailsWith<IllegalArgumentException> { repository.set("profile-a", "", 10f, 1L) }
         assertFailsWith<IllegalArgumentException> { repository.set("profile-a", "bench", 0f, 1L) }
         assertFailsWith<IllegalArgumentException> { repository.set("profile-a", "bench", Float.NaN, 1L) }
-        assertFailsWith<IllegalArgumentException> { repository.raiseIfGreater("profile-a", "bench", Float.POSITIVE_INFINITY, 1L) }
-    }
-
-    @Test
-    fun `raise if greater inserts and advances only for a greater value`() = runTest {
-        assertTrue(repository.raiseIfGreater("profile-a", "bench", 70f, 10L))
-        assertFalse(repository.raiseIfGreater("profile-a", "bench", 65f, 11L))
-        assertTrue(repository.raiseIfGreater("profile-a", "bench", 75f, 12L))
-
-        val baseline = repository.get("profile-a", "bench")
-        assertEquals(75f, baseline?.oneRepMaxPerCableKg)
-        assertEquals(2L, baseline?.revision)
-        assertEquals(12L, baseline?.updatedAt)
     }
 
     @Test
@@ -74,12 +61,12 @@ class SqlDelightProfileExerciseBaselineRepositoryTest {
     }
 
     @Test
-    fun `older timestamp raise remains newer authority during catalog remap`() = runTest {
+    fun `older timestamp write remains newer authority during catalog remap`() = runTest {
         insertExercise("bench-new")
         repository.set("profile-a", "bench", 70f, 100L)
         repository.set("profile-a", "bench-new", 75f, 75L)
 
-        assertTrue(repository.raiseIfGreater("profile-a", "bench", 80f, 50L))
+        repository.set("profile-a", "bench", 80f, 50L)
         assertEquals(100L, repository.get("profile-a", "bench")?.updatedAt)
 
         repository.remapExercise("bench", "bench-new")
@@ -123,7 +110,7 @@ class SqlDelightProfileExerciseBaselineRepositoryTest {
         assertEquals(2L, receipt.written.revision)
         assertEquals(50f, receipt.written.oneRepMaxPerCableKg)
 
-        repository.raiseIfGreater("profile-a", "bench", 60f, 3L)
+        repository.set("profile-a", "bench", 60f, 3L)
         assertFalse(
             repository.compensateAssessmentWrite(
                 profileId = "profile-a",
@@ -155,6 +142,22 @@ class SqlDelightProfileExerciseBaselineRepositoryTest {
         }
         assertNull(repository.get("profile-a", "legacy-bench"))
         assertEquals(90.0, database.phoenixDatabaseQueries.selectExerciseById("legacy-bench").executeAsOne().one_rep_max_kg)
+    }
+
+    @Test
+    fun `explicit legacy assignment preserves the fractional value and cannot reopen after clear`() = runTest {
+        val exactLegacyValue = 90.123456789
+        insertExercise("legacy-bench", exactLegacyValue)
+        val legacy = repository.getLegacyBaselines().single { it.exerciseId == "legacy-bench" }
+
+        val assigned = repository.assignAndConsumeLegacy("profile-a", legacy, updatedAt = 100L)
+
+        assertEquals(exactLegacyValue.toFloat(), assigned.oneRepMaxPerCableKg)
+        assertNull(database.phoenixDatabaseQueries.selectExerciseById("legacy-bench").executeAsOne().one_rep_max_kg)
+
+        repository.set("profile-a", "legacy-bench", null, updatedAt = 101L)
+        assertNull(repository.get("profile-a", "legacy-bench")?.oneRepMaxPerCableKg)
+        assertTrue(repository.getLegacyBaselines().none { it.exerciseId == "legacy-bench" })
     }
 
     @Test
