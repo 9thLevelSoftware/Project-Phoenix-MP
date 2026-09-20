@@ -706,6 +706,10 @@ WHERE id = ? AND isCustom = 1;
 deleteCustomExercise:
 DELETE FROM Exercise WHERE id = ? AND isCustom = 1;
 
+-- Every user-facing delete writes a DeletedWorkoutSession tombstone in the
+-- same transaction (see SqlDelightWorkoutRepository and the
+-- DeletedWorkoutSession section at the end of this file), so the next pull
+-- cannot resurrect the row.
 deleteSession:
 DELETE FROM WorkoutSession WHERE id = ?;
 
@@ -714,22 +718,18 @@ DELETE FROM WorkoutSession WHERE id = ?;
 -- History "Delete All Sets" affordance so ghost rows hidden by the
 -- `selectHistoryVisibleSessions` filter do not survive the user-level
 -- deletion (chatgpt-codex-connector P2). This mirrors deleteSession's
--- local deletion semantics; workout-session tombstone push is not
--- currently implemented.
+-- local deletion semantics, tombstones included.
 deleteSessionsByRoutineSessionId:
 DELETE FROM WorkoutSession WHERE routineSessionId = ?;
 
 -- Tombstone helper for code paths that intentionally keep deleted
--- workout rows locally. Do not use for user-facing History deletes
--- unless session tombstones are also pushed to the portal.
+-- workout rows locally. Do not use for user-facing History deletes:
+-- those hard-delete and write a DeletedWorkoutSession row instead.
 softDeleteSessionsByRoutineSessionId:
 UPDATE WorkoutSession
 SET deletedAt = ?, updatedAt = ?
 WHERE routineSessionId = ?
   AND deletedAt IS NULL;
-
-deleteAllSessions:
-DELETE FROM WorkoutSession;
 
 -- Exercise image queries
 selectImagesByExercise:
@@ -930,8 +930,11 @@ INSERT OR IGNORE INTO WorkoutSession (
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Sync pull: carry a newer exercise tag (e.g. a Just Lift session re-tagged on another
--- device) onto a row this device pulled. Only the tag columns and the stamp change. Rows
--- with local RepMetric/CompletedSet children were captured here and keep their own tag.
+-- device) onto a row this device pulled. Only the tag columns and the stamp change.
+-- Origin gate: the row must carry the explicit PulledWorkoutSession marker (migration
+-- 48), so a row captured on this device keeps its own tag even when it has no children.
+-- Local-data gate: RepMetric/CompletedSet rows mean this device has measurements for the
+-- id (e.g. a backup restore wrote children onto a pulled row), so the tag stays put.
 -- A pull carrying the same exerciseId is a no-op (nothing to re-tag, stamp untouched).
 updatePulledSessionTag:
 UPDATE WorkoutSession
@@ -939,6 +942,7 @@ SET exerciseId = :exerciseId, exerciseName = :exerciseName, updatedAt = :updated
 WHERE id = :id
   AND COALESCE(updatedAt, 0) < :updatedAt
   AND exerciseId IS NOT :exerciseId
+  AND EXISTS (SELECT 1 FROM PulledWorkoutSession WHERE PulledWorkoutSession.id = :id)
   AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = :id)
   AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = :id);
 
@@ -2746,10 +2750,21 @@ SELECT subscription_status FROM UserProfile WHERE isActive = 1;
 -- ==================== SYNC QUERIES ====================
 
 -- Get sessions modified since last sync (for push)
+-- Push gather. A session this device only ever pulled is excluded by ORIGIN,
+-- not by timestamp (PulledWorkoutSession, migration 48): re-pushing it would
+-- create a duplicate portal workout for a standalone row and can never add
+-- anything the portal does not already have. The escape hatch is local rep
+-- data: if this device recorded RepMetric or CompletedSet rows against the id,
+-- the row is ours to push.
 selectSessionsModifiedSince:
 SELECT * FROM WorkoutSession
 WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
 AND profile_id = :profileId
+AND (
+    NOT EXISTS (SELECT 1 FROM PulledWorkoutSession WHERE PulledWorkoutSession.id = WorkoutSession.id)
+    OR EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
+    OR EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id)
+)
 ORDER BY timestamp DESC;
 
 -- Get soft-deleted sessions (for push)
@@ -3634,3 +3649,82 @@ SELECT * FROM SessionNotes;
 insertSessionNotesIgnore:
 INSERT OR IGNORE INTO SessionNotes(routineSessionId, notes, updatedAt)
 VALUES (?, ?, ?);
+
+-- ────────────────────────────────────────────────────────────────────────────
+-- DeletedWorkoutSession / PulledWorkoutSession (migration 48.sqm)
+--
+-- Deletion and origin bookkeeping for workout sessions.
+--
+-- DeletedWorkoutSession: a workout the user deleted on this device. The pull
+-- merge skips these ids and the pull request sends their portal_id as a known
+-- id, so the portal stops offering the workout as new. `portal_id` is the id
+-- the portal knows: routineSessionId for a grouped routine workout, otherwise
+-- the session id. Neither table has a foreign key to UserProfile: a tombstone
+-- has to outlive a permanently deleted profile.
+--
+-- PulledWorkoutSession: the sessions this device got from a pull. They are
+-- excluded from the push gather (selectSessionsModifiedSince) so a pulled row
+-- is never sent back as local work.
+-- ────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS DeletedWorkoutSession (
+    id TEXT NOT NULL PRIMARY KEY,
+    portal_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    deleted_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_deleted_session_profile
+    ON DeletedWorkoutSession(profile_id);
+
+CREATE INDEX IF NOT EXISTS idx_deleted_session_portal
+    ON DeletedWorkoutSession(portal_id);
+
+CREATE TABLE IF NOT EXISTS PulledWorkoutSession (
+    id TEXT NOT NULL PRIMARY KEY
+);
+
+-- Tombstone writers. Each runs in the same transaction as its DELETE (see
+-- SqlDelightWorkoutRepository), reading portal_id and profile_id off the rows
+-- that are about to go. INSERT OR REPLACE refreshes deleted_at when a session
+-- is deleted, restored from a backup and deleted again.
+insertSessionTombstone:
+INSERT OR REPLACE INTO DeletedWorkoutSession(id, portal_id, profile_id, deleted_at)
+SELECT id, COALESCE(routineSessionId, id), profile_id, :deletedAt
+FROM WorkoutSession WHERE id = :id;
+
+insertSessionTombstonesForRoutineSession:
+INSERT OR REPLACE INTO DeletedWorkoutSession(id, portal_id, profile_id, deleted_at)
+SELECT id, COALESCE(routineSessionId, id), profile_id, :deletedAt
+FROM WorkoutSession WHERE routineSessionId = :routineSessionId;
+
+insertSessionTombstonesForProfile:
+INSERT OR REPLACE INTO DeletedWorkoutSession(id, portal_id, profile_id, deleted_at)
+SELECT id, COALESCE(routineSessionId, id), profile_id, :deletedAt
+FROM WorkoutSession WHERE profile_id = :profileId;
+
+-- "Delete All Workouts" is scoped to one profile. There is deliberately no
+-- unscoped variant: nothing else wipes the session table.
+deleteAllSessionsForProfile:
+DELETE FROM WorkoutSession WHERE profile_id = :profileId;
+
+-- Pull request: the portal knows a deleted workout under its portal_id.
+selectDeletedSessionPortalIds:
+SELECT DISTINCT portal_id FROM DeletedWorkoutSession WHERE profile_id = :profileId;
+
+-- Pull merge guard, used by the shared session insert helper: an id this device
+-- already has, or deleted, is never inserted, and only a real insert is marked
+-- pulled-origin. The tombstone half is matched by id only and is never filtered
+-- by profile, so it still holds after the portal re-scopes a deleted profile's
+-- rows to Default.
+selectSessionKnownOrTombstoned:
+SELECT 1 FROM WorkoutSession WHERE id = :id
+UNION ALL
+SELECT 1 FROM DeletedWorkoutSession WHERE id = :id
+LIMIT 1;
+
+markSessionPulled:
+INSERT OR IGNORE INTO PulledWorkoutSession(id) VALUES (?);
+
+selectPulledSessionIds:
+SELECT id FROM PulledWorkoutSession;

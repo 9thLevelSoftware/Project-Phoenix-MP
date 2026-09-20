@@ -1,0 +1,38 @@
+-- Migration 48: session tombstones and pulled-origin markers.
+--
+-- DeletedWorkoutSession keeps a deleted workout deleted: the pull merge skips
+-- tombstoned ids and the pull request sends portal_id as a known id so the
+-- portal does not return the workout as new. portal_id is the id the portal
+-- knows: routineSessionId for a grouped routine workout, otherwise the session
+-- id. There is deliberately NO foreign key to UserProfile -- a tombstone has to
+-- outlive a permanently deleted profile.
+CREATE TABLE IF NOT EXISTS DeletedWorkoutSession (
+    id TEXT NOT NULL PRIMARY KEY,
+    portal_id TEXT NOT NULL,
+    profile_id TEXT NOT NULL,
+    deleted_at INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_deleted_session_profile ON DeletedWorkoutSession(profile_id);
+CREATE INDEX IF NOT EXISTS idx_deleted_session_portal ON DeletedWorkoutSession(portal_id);
+
+-- PulledWorkoutSession marks the sessions this device got from a portal pull,
+-- so the push never sends them back. Also no foreign key: the marker is origin
+-- provenance, not session data.
+CREATE TABLE IF NOT EXISTS PulledWorkoutSession (
+    id TEXT NOT NULL PRIMARY KEY
+);
+
+-- Backfill for sessions that predate the marker: a row already stamped by a
+-- sync or pull (updatedAt IS NOT NULL) that has no locally captured children.
+-- A session recorded on this device writes MetricSample / RepMetric /
+-- CompletedSet rows; a session the pull created has none of them.
+-- A never-stamped session (updatedAt IS NULL) is never marked even when it is
+-- childless: a split-transaction save can leave such a row behind, and marking
+-- it would stop it from ever being uploaded.
+INSERT OR IGNORE INTO PulledWorkoutSession(id)
+SELECT id FROM WorkoutSession
+WHERE updatedAt IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = WorkoutSession.id)
+  AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
+  AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id);

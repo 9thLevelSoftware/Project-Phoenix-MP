@@ -189,9 +189,12 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateSessionsFlow()
     }
 
-    override suspend fun deleteAllSessions() {
-        sessions.clear()
-        metrics.clear()
+    override suspend fun deleteAllSessionsForProfile(profileId: String) {
+        val doomed = sessions.filterValues { it.profileId == profileId }.keys.toList()
+        doomed.forEach { id ->
+            sessions.remove(id)
+            metrics.remove(id)
+        }
         updateSessionsFlow()
     }
 

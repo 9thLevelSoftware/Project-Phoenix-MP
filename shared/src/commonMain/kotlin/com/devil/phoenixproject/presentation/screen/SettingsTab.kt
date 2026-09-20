@@ -279,6 +279,7 @@ fun SettingsTab(
     onEnableVideoPlaybackChange: (Boolean) -> Unit,
     onThemeModeChange: (ThemeMode) -> Unit,
     onDynamicColorEnabledChange: (Boolean) -> Unit,
+    activeProfileName: String,
     onDeleteAllWorkouts: () -> Unit,
     onNavigateToConnectionLogs: () -> Unit,
     onNavigateToDiagnostics: () -> Unit,
@@ -1095,11 +1096,13 @@ fun SettingsTab(
             }
         }
 
-        // Material 3 Expressive: Delete All dialog
+        // Material 3 Expressive: Delete All dialog.
+        // The wipe is scoped to the profile the user is training as, so the dialog says
+        // whose history goes (user decision A-009).
         if (showDeleteAllDialog) {
             DestructiveConfirmDialog(
-                title = stringResource(Res.string.delete_all_workouts_title),
-                message = stringResource(Res.string.delete_all_workouts_message),
+                title = stringResource(Res.string.delete_all_workouts_title, activeProfileName),
+                message = stringResource(Res.string.delete_all_workouts_message, activeProfileName),
                 confirmText = stringResource(Res.string.delete_all),
                 onConfirm = {
                     onDeleteAllWorkouts()

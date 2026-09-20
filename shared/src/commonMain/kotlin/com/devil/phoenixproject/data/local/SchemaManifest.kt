@@ -349,6 +349,30 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
         """.trimIndent(),
     ),
 
+    // DeletedWorkoutSession -- migration 48, session tombstones. No FK to
+    // UserProfile on purpose: a tombstone has to outlive a deleted profile.
+    SchemaTableOperation(
+        table = "DeletedWorkoutSession",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS DeletedWorkoutSession (
+                id TEXT NOT NULL PRIMARY KEY,
+                portal_id TEXT NOT NULL,
+                profile_id TEXT NOT NULL,
+                deleted_at INTEGER NOT NULL
+            )
+        """.trimIndent(),
+    ),
+
+    // PulledWorkoutSession -- migration 48, pulled-origin marker for sessions.
+    SchemaTableOperation(
+        table = "PulledWorkoutSession",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PulledWorkoutSession (
+                id TEXT NOT NULL PRIMARY KEY
+            )
+        """.trimIndent(),
+    ),
+
     // EarnedBadge -- originally bootstrapped by ensureGamificationTablesExist()
     // Full current shape: sync fields (m11), profile_id (m22)
     SchemaTableOperation(
@@ -1520,6 +1544,10 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     // ── WorkoutSession ──────────────────────────────────────────────────
     SchemaIndexOperation("idx_workout_session_timestamp", "CREATE INDEX IF NOT EXISTS idx_workout_session_timestamp ON WorkoutSession(timestamp)"),
     SchemaIndexOperation("idx_session_profile", "CREATE INDEX IF NOT EXISTS idx_session_profile ON WorkoutSession(profile_id)"),
+
+    // ── DeletedWorkoutSession (migration 48) ────────────────────────────
+    SchemaIndexOperation("idx_deleted_session_profile", "CREATE INDEX IF NOT EXISTS idx_deleted_session_profile ON DeletedWorkoutSession(profile_id)"),
+    SchemaIndexOperation("idx_deleted_session_portal", "CREATE INDEX IF NOT EXISTS idx_deleted_session_portal ON DeletedWorkoutSession(portal_id)"),
 
     // ── MetricSample ────────────────────────────────────────────────────
     SchemaIndexOperation("idx_metric_sample_session", "CREATE INDEX IF NOT EXISTS idx_metric_sample_session ON MetricSample(sessionId)"),

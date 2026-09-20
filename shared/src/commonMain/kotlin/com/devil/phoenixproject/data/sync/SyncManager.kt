@@ -1470,7 +1470,13 @@ class SyncManager(
         // the mobile-side dedupe against local DB to handle the tail. This is
         // strictly better than the prior server behavior which silently
         // returned empty for over-cap lists.
-        val rawSessionIds = syncRepository.getAllSessionIds(mergeProfileId)
+        // Known session ids include the portal ids of workouts deleted on this device
+        // (DeletedWorkoutSession). Without them the portal keeps returning a deleted
+        // workout as "new" on every pull, and the merge would have to drop it every time.
+        val rawSessionIds = (
+            syncRepository.getAllSessionIds(mergeProfileId) +
+                syncRepository.getDeletedSessionPortalIds(mergeProfileId)
+            ).distinct()
         val rawRoutineIds = syncRepository.getAllRoutineIds(mergeProfileId)
         val rawCycleIds = syncRepository.getAllCycleIds(mergeProfileId)
         val rawBadgeIds = syncRepository.getAllBadgeIds(mergeProfileId)

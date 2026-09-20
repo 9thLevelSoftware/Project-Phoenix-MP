@@ -136,6 +136,9 @@ class FakeSyncRepository : SyncRepository {
     // === Parity Sync: Entity ID lists (simulate local database content) ===
 
     var sessionIds: List<String> = emptyList()
+
+    /** Portal ids of deleted workouts; sent as known ids so the portal stops re-offering them. */
+    var deletedSessionPortalIds: List<String> = emptyList()
     var routineIds: List<String> = emptyList()
     var cycleIds: List<String> = emptyList()
     var badgeIds: List<String> = emptyList()
@@ -143,6 +146,7 @@ class FakeSyncRepository : SyncRepository {
     var cyclesToReturn: List<CycleWithContext> = emptyList()
 
     override suspend fun getAllSessionIds(profileId: String): List<String> = sessionIds
+    override suspend fun getDeletedSessionPortalIds(profileId: String): List<String> = deletedSessionPortalIds
     override suspend fun getAllRoutineIds(profileId: String): List<String> = routineIds
     override suspend fun getAllCycleIds(profileId: String): List<String> = cycleIds
     override suspend fun getAllBadgeIds(profileId: String): List<String> = badgeIds

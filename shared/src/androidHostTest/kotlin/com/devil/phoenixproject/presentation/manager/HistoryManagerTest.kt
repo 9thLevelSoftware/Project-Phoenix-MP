@@ -15,6 +15,7 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -309,6 +310,34 @@ class HistoryManagerTest {
             assertEquals(0, latestHistory.size)
 
             collectJob.cancel()
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `delete all workouts only deletes the active profile's history`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            fakeUserProfileRepository.setActiveProfileForTest(id = "profile-a")
+            val manager =
+                HistoryManager(
+                    fakeWorkoutRepository,
+                    fakePersonalRecordRepository,
+                    fakeUserProfileRepository,
+                    managerScope,
+                )
+            fakeWorkoutRepository.addSession(WorkoutSession(id = "a-1", profileId = "profile-a"))
+            fakeWorkoutRepository.addSession(WorkoutSession(id = "b-1", profileId = "profile-b"))
+            advanceUntilIdle()
+
+            manager.deleteAllWorkouts()
+            advanceUntilIdle()
+
+            assertEquals(
+                listOf("b-1"),
+                fakeWorkoutRepository.getAllSessions("profile-b").first().map { it.id },
+            )
         } finally {
             managerScope.cancel()
         }

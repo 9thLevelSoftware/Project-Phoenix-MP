@@ -161,6 +161,7 @@ class ProfileSettingsSeparationContractTest {
                 onEnableVideoPlaybackChange: (Boolean) -> Unit,
                 onThemeModeChange: (ThemeMode) -> Unit,
                 onDynamicColorEnabledChange: (Boolean) -> Unit,
+                activeProfileName: String,
                 onDeleteAllWorkouts: () -> Unit,
                 onNavigateToConnectionLogs: () -> Unit,
                 onNavigateToDiagnostics: () -> Unit,
@@ -334,10 +335,13 @@ class ProfileSettingsSeparationContractTest {
             "val backupStats by viewModel.backupStats.collectAsState()",
             "viewModel.refreshBackupStats()",
         ).forEach { contract -> assertContains(settingsDestination, contract) }
+        // globalSettings, connectionError, backupStats and activeProfileName. The last one
+        // is a read, not a profile-owned setting: "Delete All Workouts" deletes the active
+        // profile's history only, so the dialog has to name it.
         assertEquals(
-            3,
+            4,
             Regex("\\.collectAsState\\s*\\(").findAll(settingsDestination).count(),
-            "Settings must collect exactly three flows",
+            "Settings must collect exactly four flows",
         )
         assertNoCanonicalSymbols(settingsDestination, settingsForbiddenSymbols, "Settings destination")
 
@@ -353,6 +357,7 @@ class ProfileSettingsSeparationContractTest {
             "backupDestination = globalSettings.backupDestination",
             "selectedLanguage = globalSettings.language",
             "connectionError = connectionError",
+            "activeProfileName = activeProfileName",
         ).forEach { assignment ->
             assertTrue(
                 compactKotlin(call).contains(compactKotlin(assignment)),

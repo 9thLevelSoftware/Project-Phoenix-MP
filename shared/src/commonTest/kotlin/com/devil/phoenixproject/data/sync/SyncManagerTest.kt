@@ -1615,6 +1615,31 @@ class SyncManagerTest {
     }
 
     @Test
+    fun pullSendsTombstonePortalIdsAsKnownSessionIds() = runTest {
+        setupAuthenticated()
+        val keptSession = "66666666-6666-4666-a666-666666666666"
+        // A deleted grouped routine workout is known to the portal by its routineSessionId.
+        val deletedRoutineSession = "77777777-7777-4777-a777-777777777777"
+        fakeSyncRepo.sessionIds = listOf(keptSession)
+        fakeSyncRepo.deletedSessionPortalIds = listOf(deletedRoutineSession)
+
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        val knownIds = fakeApi.lastPullKnownEntityIds
+        assertNotNull(knownIds, "Pull should have been called with knownEntityIds")
+        assertEquals(
+            listOf(keptSession, deletedRoutineSession),
+            knownIds.sessionIds,
+            "A deleted workout must be known to the portal, or every pull offers it again",
+        )
+    }
+
+    @Test
     fun pullDropsNonUuidBadgeAndPersonalRecordIdsBeforeSend() = runTest {
         setupAuthenticated()
         val badgeId = "eeeeeeee-eeee-4eee-aeee-eeeeeeeeeeee"
