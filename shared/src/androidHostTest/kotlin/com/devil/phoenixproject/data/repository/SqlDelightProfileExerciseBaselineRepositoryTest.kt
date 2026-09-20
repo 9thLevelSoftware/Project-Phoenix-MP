@@ -145,6 +145,22 @@ class SqlDelightProfileExerciseBaselineRepositoryTest {
     }
 
     @Test
+    fun `explicit legacy assignment preserves the fractional value and cannot reopen after clear`() = runTest {
+        val exactLegacyValue = 90.123456789
+        insertExercise("legacy-bench", exactLegacyValue)
+        val legacy = repository.getLegacyBaselines().single { it.exerciseId == "legacy-bench" }
+
+        val assigned = repository.assignAndConsumeLegacy("profile-a", legacy, updatedAt = 100L)
+
+        assertEquals(exactLegacyValue.toFloat(), assigned.oneRepMaxPerCableKg)
+        assertNull(database.phoenixDatabaseQueries.selectExerciseById("legacy-bench").executeAsOne().one_rep_max_kg)
+
+        repository.set("profile-a", "legacy-bench", null, updatedAt = 101L)
+        assertNull(repository.get("profile-a", "legacy-bench")?.oneRepMaxPerCableKg)
+        assertTrue(repository.getLegacyBaselines().none { it.exerciseId == "legacy-bench" })
+    }
+
+    @Test
     fun `profile deletion copy preserves target and fills target absence`() = runTest {
         repository.set("profile-a", "bench", 80f, 10L)
         repository.set("profile-a", "squat", 100f, 11L)
