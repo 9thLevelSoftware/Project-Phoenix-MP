@@ -6215,8 +6215,25 @@ class ActiveSessionEngine(
                 // back to it only when the window is otherwise empty, so a rep 1 whose
                 // notification arrives before any further sample still establishes
                 // firstRepMcv instead of leaving velocity-loss tracking baselined on rep 2.
+                //
+                // Round 2, R-4: the fallback sample only counts when it actually carries
+                // concentric movement. The first sample at/after warmup completion is
+                // routinely inside the dead-band, and a one-sample dead-band window would
+                // make firstRepMcv a couple of mm/s - which FINDING-57's `mcv == 0f` guard
+                // does not catch - so every later rep's velocity loss would coerce to 0 and
+                // auto-end plus the VBT alert would be silently off for the whole set, with
+                // that value averaged into session avgMcvMmS. Without a usable sample this
+                // returns early exactly as it did before the fallback existed and rep 2
+                // establishes the baseline, one rep late but genuine. The guard is scoped
+                // to the fallback branch on purpose: applying it to the whole expression
+                // would break the first-half fallback below for a normal rep whose window
+                // happens to hold no concentric sample.
                 val repMetrics = allMetrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
-                    .ifEmpty { allMetrics.filter { it.timestamp in prevBoundary..currentBoundary } }
+                    .ifEmpty {
+                        allMetrics.filter { it.timestamp in prevBoundary..currentBoundary }
+                            .takeIf { fallback -> fallback.any { isConcentricSample(it) } }
+                            .orEmpty()
+                    }
                 if (repMetrics.isEmpty()) {
                     Logger.d { "Biomechanics: no metrics for rep $repNumber (boundary $prevBoundary..$currentBoundary)" }
                     return@launch

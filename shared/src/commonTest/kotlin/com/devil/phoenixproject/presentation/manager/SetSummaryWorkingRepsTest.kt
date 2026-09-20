@@ -7,6 +7,7 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -279,13 +280,68 @@ class SetSummaryWorkingRepsTest {
     }
 
     @Test
-    fun `working rep 1 still produces a result when no sample follows the warmup mark`() = runTest {
+    fun `working rep 1 still produces a result when the warmup mark carries the rep`() = runTest {
         val harness = DWSMTestHarness(this, biomechanicsDispatcher = StandardTestDispatcher(testScheduler))
         startWarmupSet(harness)
-        completeWarmup(harness)
+        completeWarmup(harness, markVelocity = 300.0)
 
-        // Rep 1's notification arrives with no sample after the mark, so the seeded
-        // window (mark + 1 .. notification) is empty.
+        completeWorkingRep1WithoutFurtherSamples(harness)
+
+        val result = assertNotNull(
+            harness.coordinator.biomechanicsEngine.latestRepResult.value,
+            "Rep 1 must still establish the velocity-loss baseline instead of dropping out",
+        )
+        assertEquals(1, result.repNumber)
+        assertEquals(
+            300f,
+            result.velocity.meanConcentricVelocityMmS,
+            "The baseline must be the moving sample the window fell back to",
+        )
+        assertEquals(
+            1,
+            harness.coordinator.setRepMetrics.value.size,
+            "Rep 1 must still write its quality row",
+        )
+        harness.cleanup()
+    }
+
+    @Test
+    fun `a near-stationary warmup mark does not become rep 1's velocity baseline`() = runTest {
+        val harness = DWSMTestHarness(this, biomechanicsDispatcher = StandardTestDispatcher(testScheduler))
+        startWarmupSet(harness)
+        completeWarmup(harness) // the mark's own sample sits inside the dead-band
+
+        completeWorkingRep1WithoutFurtherSamples(harness)
+
+        assertNull(
+            harness.coordinator.biomechanicsEngine.latestRepResult.value,
+            "A dead-band sample must not be published as rep 1's biomechanics result",
+        )
+        assertEquals(
+            1,
+            harness.coordinator.setRepMetrics.value.size,
+            "The quality row is still written - only the velocity baseline is withheld",
+        )
+
+        // The baseline is therefore established by the next genuine rep, and velocity
+        // loss keeps working for the rest of the set. Baselined on a 2 mm/s rep 1, every
+        // later loss would coerce to 0 and auto-end would be silently off.
+        val engine = harness.coordinator.biomechanicsEngine
+        val fast = List(4) { metric(timestamp = 4_000L + it, load = 25f, velocity = 400.0) }
+        val slow = List(4) { metric(timestamp = 5_000L + it, load = 25f, velocity = 200.0) }
+        engine.processRep(repNumber = 2, concentricMetrics = fast, allRepMetrics = fast, timestamp = 4_000L)
+        val third = engine.processRep(repNumber = 3, concentricMetrics = slow, allRepMetrics = slow, timestamp = 5_000L)
+
+        assertEquals(
+            50f,
+            third.velocity.velocityLossPercent,
+            "Velocity loss must be measured against a genuine rep, not against the warm-up mark",
+        )
+        harness.cleanup()
+    }
+
+    /** Rep 1's notification with no sample after the mark, so the seeded window is empty. */
+    private suspend fun completeWorkingRep1WithoutFurtherSamples(harness: DWSMTestHarness) {
         harness.fakeBleRepo.emitRepNotification(
             harness.modernRepPacket(
                 repsSetCount = 1,
@@ -296,19 +352,7 @@ class SetSummaryWorkingRepsTest {
                 repsRomCount = 3,
             ),
         )
-        advanceUntilIdle()
-
-        val result = assertNotNull(
-            harness.coordinator.biomechanicsEngine.latestRepResult.value,
-            "Rep 1 must still establish the velocity-loss baseline instead of dropping out",
-        )
-        assertEquals(1, result.repNumber)
-        assertEquals(
-            1,
-            harness.coordinator.setRepMetrics.value.size,
-            "Rep 1 must still write its quality row",
-        )
-        harness.cleanup()
+        harness.testScope.testScheduler.advanceUntilIdle()
     }
 
     private suspend fun startWarmupSet(harness: DWSMTestHarness) {
@@ -329,7 +373,7 @@ class SetSummaryWorkingRepsTest {
      * Three slow warm-up reps, then the machine reports the warm-up as complete and one more
      * sample arrives - that sample stamps [warmupEndTimestamp] as the warm-up mark.
      */
-    private suspend fun completeWarmup(harness: DWSMTestHarness) {
+    private suspend fun completeWarmup(harness: DWSMTestHarness, markVelocity: Double = 2.0) {
         listOf(1_000L, 1_500L, 2_000L, 2_500L, 3_000L).forEach { timestamp ->
             harness.fakeBleRepo.emitMetric(metric(timestamp = timestamp, load = 12f, velocity = 30.0))
         }
@@ -348,7 +392,7 @@ class SetSummaryWorkingRepsTest {
         harness.testScope.testScheduler.advanceUntilIdle()
 
         harness.fakeBleRepo.emitMetric(
-            metric(timestamp = warmupEndTimestamp, load = 12f, velocity = 2.0),
+            metric(timestamp = warmupEndTimestamp, load = 12f, velocity = markVelocity),
         )
         harness.testScope.testScheduler.advanceUntilIdle()
     }
