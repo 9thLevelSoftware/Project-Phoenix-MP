@@ -4,21 +4,36 @@ iOS application for controlling compatible smart fitness machines via BLE.
 
 ## Prerequisites
 
-- macOS with Xcode 15 or later
-- iOS device with Bluetooth LE support (iOS 14+)
-- CocoaPods (optional, for dependency management)
+- macOS with Xcode 26.x (CI uses Xcode 26.2; Compose Multiplatform 1.11 links against the iOS 26 SDK)
+- JDK 17
+- iOS device with Bluetooth LE support (iOS 15.0+)
 
 ## Building the Shared Framework
 
-Before opening in Xcode, build the shared Kotlin Multiplatform framework:
+Before opening in Xcode, build the shared Kotlin Multiplatform framework and its
+Compose resources. These are the same three Gradle tasks the release workflows
+run (`.github/workflows/ios-testflight.yml`), using the debug framework that the
+Xcode project links:
 
 ```bash
 # From the project root directory
-./gradlew :shared:assembleXCFramework
+./gradlew :shared:linkDebugFrameworkIosArm64 \
+  :shared:generateComposeResClass \
+  :shared:iosArm64ProcessResources \
+  -Pskip.supabase.check=true
 ```
 
-The framework will be built at:
-`shared/build/XCFrameworks/release/shared.xcframework`
+The Xcode project picks up:
+- the framework from `shared/build/bin/iosArm64/debugFramework/shared.framework`
+- the Compose resources from `shared/build/processedResources/iosArm64/main/composeResources` (copied by a build phase)
+
+(CI runs `:shared:linkReleaseFrameworkIosArm64` instead of the debug task for release builds.)
+
+Then open the project:
+
+```bash
+open iosApp/PhoenixApp/PhoenixApp.xcodeproj
+```
 
 ## Xcode Project Setup
 
@@ -39,30 +54,9 @@ that ignored file from encrypted repository secrets during iOS build workflows, 
 real file must not be committed. If a real anon key was ever committed, rotate
 it in Supabase and update the GitHub secrets.
 
-### Option 1: Create New Xcode Project
+### Project Files
 
-1. Open Xcode and create a new iOS App project:
-   - Product Name: `PhoenixApp`
-   - Team: Your development team
-   - Organization Identifier: `com.devil.phoenixproject`
-   - Interface: SwiftUI
-   - Language: Swift
-
-2. Add the shared framework:
-   - In Xcode, select the project in the navigator
-   - Select the target → General → Frameworks, Libraries, and Embedded Content
-   - Click "+" and choose "Add Other" → "Add Files"
-   - Navigate to `shared/build/XCFrameworks/release/shared.xcframework`
-   - Ensure "Embed & Sign" is selected
-
-3. Copy Swift files:
-   - Copy `PhoenixApp/PhoenixApp/PhoenixApp.swift` to your project
-   - Copy `PhoenixApp/PhoenixApp/ContentView.swift` to your project
-   - Copy `PhoenixApp/PhoenixApp/Info.plist` to your project (or merge the keys)
-
-### Option 2: Use the Provided Project Files
-
-The `PhoenixApp/PhoenixApp/` directory contains the Swift source files:
+Use the checked-in `PhoenixApp/PhoenixApp.xcodeproj`. The `PhoenixApp/PhoenixApp/` directory contains the Swift source files:
 
 - `PhoenixApp.swift` - App entry point with Koin initialization
 - `ContentView.swift` - SwiftUI wrapper for Compose Multiplatform UI
@@ -76,41 +70,13 @@ The `Info.plist` includes required BLE permission strings:
 - `NSBluetoothAlwaysUsageDescription` - Required for BLE scanning/connection
 - `NSBluetoothPeripheralUsageDescription` - Legacy iOS 12 support
 
-### CoreBluetooth Integration
+### Bluetooth Integration
 
-The iOS BLE implementation (`IosBleRepository.kt`) uses CoreBluetooth to:
-- Scan for Phoenix devices (names starting with "Vee_" or "VIT")
-- Connect via Nordic UART Service (NUS)
-- Parse real-time workout metrics
-- Handle rep notifications
-
-## Architecture
-
-```
-iosApp/
-├── README.md                       # This file
-└── PhoenixApp/
-    ├── PhoenixApp/
-    │   ├── PhoenixApp.swift      # @main entry point
-    │   ├── ContentView.swift     # Compose UI wrapper
-    │   └── Info.plist            # App configuration
-
-shared/src/iosMain/
-├── kotlin/com/devil/phoenixproject/
-│   ├── MainViewController.kt      # Compose UI entry point
-│   ├── Platform.ios.kt           # Platform info
-│   ├── data/
-│   │   ├── local/DriverFactory.ios.kt    # SQLDelight driver
-│   │   └── repository/IosBleRepository.kt # CoreBluetooth BLE
-│   ├── di/PlatformModule.ios.kt  # Koin DI module
-│   ├── domain/model/
-│   │   ├── PlatformUtils.ios.kt  # Time utilities
-│   │   └── UUIDGeneration.ios.kt # UUID generation
-│   ├── presentation/components/
-│   │   ├── CompactNumberPicker.ios.kt   # Wheel picker
-│   │   ├── HapticFeedbackEffect.ios.kt  # Haptic feedback
-│   └── util/CsvExporter.ios.kt   # CSV export & sharing
-```
+BLE is shared code: `KableBleRepository.kt` in `shared/src/commonMain` uses the
+Kable multiplatform library, which runs on CoreBluetooth on iOS. It scans for
+Phoenix devices (names starting with "Vee_" or "VIT"), connects, parses real-time
+workout metrics and handles rep notifications. iOS-specific code lives in
+`shared/src/iosMain/`.
 
 ## Testing on Device
 
@@ -125,7 +91,7 @@ shared/src/iosMain/
 ### Framework Not Found
 
 If you get "No such module 'shared'" error:
-1. Rebuild the framework: `./gradlew :shared:assembleXCFramework`
+1. Rebuild the framework with the Gradle tasks in [Building the Shared Framework](#building-the-shared-framework)
 2. Clean Xcode build folder: Product → Clean Build Folder
 3. Verify framework path in Build Settings → Framework Search Paths
 
@@ -160,7 +126,7 @@ The app supports background BLE execution via `UIBackgroundModes` with `bluetoot
 
 ## Beta Preparation
 
-### Quick Setup (Recommended)
+### Quick Setup
 
 Run the automated setup script on macOS:
 
@@ -171,18 +137,21 @@ chmod +x prepare_ios_beta.sh
 ```
 
 This script will:
-1. Build the shared XCFramework
+1. Build the shared XCFramework (a release XCFramework; the Xcode project itself links the debug framework described above)
 2. Convert sound files from OGG to CAF (requires ffmpeg)
 3. Generate all app icon sizes
 4. Create launch screen assets
+
+The script does not build the framework or the Compose resources that the Xcode project uses, so run the Gradle tasks in [Building the Shared Framework](#building-the-shared-framework) as well.
 
 ### Manual Setup
 
 If you prefer manual setup, run each script individually:
 
 ```bash
-# 1. Build the framework (from project root)
-./gradlew :shared:assembleXCFramework
+# 1. Build the framework and resources (from project root)
+./gradlew :shared:linkDebugFrameworkIosArm64 :shared:generateComposeResClass \
+  :shared:iosArm64ProcessResources -Pskip.supabase.check=true
 
 # 2. Convert sounds (requires ffmpeg: brew install ffmpeg)
 cd iosApp
@@ -201,16 +170,13 @@ See [SETUP_ASSETS.md](SETUP_ASSETS.md) for detailed asset configuration instruct
 
 ### TestFlight Deployment
 
-1. Open the project in Xcode
-2. Select "Generic iOS Device" or a connected device
-3. Product → Archive
-4. In the Organizer, click "Distribute App"
-5. Choose "App Store Connect" → "Upload"
-6. Complete the upload to TestFlight
+TestFlight builds are produced by the manually triggered GitHub Actions
+workflows (`iOS TestFlight`, or `Release All Platforms` for a full release).
+See [GITHUB_ACTIONS_SETUP.md](GITHUB_ACTIONS_SETUP.md).
 
 ## Development Notes
 
-- The Compose Multiplatform UI is identical across Android, iOS, and Desktop
+- The Compose Multiplatform UI is shared between Android and iOS
 - Platform-specific code is in `shared/src/iosMain/`
 - All business logic is shared via the `shared` module
 - The SwiftUI wrapper is minimal - just hosts the Compose view
