@@ -226,7 +226,6 @@ object BleConstants {
     // Pre-built Kable characteristic references
     // -------------------------------------------------------------------------
     val txCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = NUS_TX_UUID)
-    val rxCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = NUS_RX_UUID)
     val monitorCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = MONITOR_UUID)
     val repsCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = REPS_UUID)
     val diagnosticCharacteristic = characteristicOf(service = NUS_SERVICE_UUID, characteristic = DIAGNOSTIC_UUID)

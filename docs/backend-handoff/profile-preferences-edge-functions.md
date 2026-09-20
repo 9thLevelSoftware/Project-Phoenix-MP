@@ -1,5 +1,7 @@
 # Profile Preference Edge Function Handoff
 
+> **Historical — implemented in portal migration `20260715234034`; portal is source of truth.** The live code is in `../Phoenix-portal/supabase/functions/` and `../Phoenix-portal/supabase/migrations/20260715234034_profile_preferences.sql`. This file is kept because `BackendHandoffContractTest` pins it; do not treat it as instructions.
+
 This is a local-only backend handoff. The mobile repository does not deploy an Edge Function, apply a remote migration, or mutate a Supabase project. The portal implementer must follow the current official [Edge authorization guidance](https://supabase.com/docs/guides/functions/auth), [row-level-security guidance](https://supabase.com/docs/guides/database/postgres/row-level-security), and [Data API exposure change](https://supabase.com/changelog/45329-breaking-change-tables-not-exposed-to-data-and-graphql-api-automatically).
 
 Create or update only these portal targets:

@@ -11,6 +11,23 @@ class ProfileScopedDataMerger(
     private val queries = database.phoenixDatabaseQueries
 
     fun mergeForProfileDeletion(sourceProfileId: String, targetProfileId: String) {
+        // Baseline collisions always retain the explicit target-profile value. Rows that
+        // exist only on the source are copied before the source profile is cascade-deleted.
+        queries.copyProfileExerciseBaselinesForProfileDelete(
+            sourceProfileId = sourceProfileId,
+            targetProfileId = targetProfileId,
+        )
+        mergePersonalRecords(sourceProfileId, targetProfileId)
+        mergeEarnedBadges(sourceProfileId, targetProfileId)
+        mergeExerciseMvt(sourceProfileId, targetProfileId)
+        resolveExternalConflicts(sourceProfileId, targetProfileId)
+    }
+
+    /** Merges collision-prone rows for a recovery while the source profile remains registered. */
+    fun mergeForProfileRecoveryInCurrentTransaction(
+        sourceProfileId: String,
+        targetProfileId: String,
+    ) {
         mergePersonalRecords(sourceProfileId, targetProfileId)
         mergeEarnedBadges(sourceProfileId, targetProfileId)
         mergeExerciseMvt(sourceProfileId, targetProfileId)
@@ -26,6 +43,32 @@ class ProfileScopedDataMerger(
             .filter { group -> group.any { it.profile_id == sourceProfileId } }
             .forEach { group -> mergePersonalRecordGroup(group, targetProfileId) }
         queries.reassignPRProfile(targetProfileId, sourceProfileId)
+    }
+
+    /**
+     * Applies an account ownership event without touching unrelated records from the
+     * source profile. UUIDs are the stable portal identity; logical-key collisions use
+     * the same deterministic target-aware merge policy as profile deletion.
+     */
+    fun mergePersonalRecordsByUuidForRecovery(
+        sourceProfileId: String,
+        targetProfileId: String,
+        personalRecordUuids: Set<String>,
+    ) {
+        if (personalRecordUuids.isEmpty()) return
+        require(personalRecordUuids.none(String::isBlank)) { "Personal-record UUIDs must not be blank" }
+        val sourceRecords = queries.selectAllRecords(sourceProfileId)
+            .executeAsList()
+            .filter { it.uuid in personalRecordUuids }
+        if (sourceRecords.isEmpty()) return
+        val targetByKey = queries.selectAllRecords(targetProfileId)
+            .executeAsList()
+            .groupBy { it.normalizedMergeKey() }
+        sourceRecords
+            .groupBy { it.normalizedMergeKey() }
+            .forEach { (key, sourceGroup) ->
+                mergePersonalRecordGroup(sourceGroup + targetByKey[key].orEmpty(), targetProfileId)
+            }
     }
 
     /** Normalizes raw workout-mode aliases without replacing the retained database row. */

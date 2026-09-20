@@ -6,6 +6,7 @@ import coil3.SingletonImageLoader
 import coil3.network.ktor3.KtorNetworkFetcherFactory
 import coil3.request.crossfade
 import coil3.util.DebugLogger
+import com.devil.phoenixproject.util.installIosDiagnostics
 import kotlin.native.Platform as NativePlatform
 import platform.Foundation.NSLog
 
@@ -14,6 +15,8 @@ import platform.Foundation.NSLog
  * This is called from Swift via: MainViewControllerKt.MainViewController()
  */
 fun MainViewController() = run {
+    // Crash hook + release log level; idempotent, also called first in doInitKoin().
+    installIosDiagnostics()
     NSLog("iOS UI: MainViewController() called - creating ComposeUIViewController...")
     ComposeUIViewController {
         NSLog("iOS UI: ComposeUIViewController content block executing...")

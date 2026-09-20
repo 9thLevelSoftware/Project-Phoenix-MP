@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutPhase
@@ -556,17 +557,13 @@ object PortalSyncAdapter {
 
     // ─── Routine Mapping ────────────────────────────────────────────
 
-    /**
-     * A usable timed-exercise duration in seconds, or null (rep-based). Zero and
-     * negative values are treated as "not timed", matching the workout engine's
-     * `takeIf { it > 0 }` and keeping the push inside the server's non-negative range.
-     */
-    fun sanitizeDurationSeconds(seconds: Int?): Int? = seconds?.takeIf { it > 0 }
+    /** A timed duration accepted by the app's editor and workout runtime. */
+    fun sanitizeDurationSeconds(seconds: Int?): Int? =
+        RoutineExercise.supportedTimedDurationSeconds(seconds)
 
     /**
      * The only producer of [PortalRoutineExerciseSyncDto.durationSeconds].
-     *  - positive duration -> the number (always safe: older builds never stored one
-     *    from a pull, so a non-null local value was set on the device);
+     *  - supported duration -> seconds;
      *  - no duration and [known] -> explicit JSON null, which clears the server value;
      *  - no duration and not [known] -> null, so the key is omitted and the server keeps
      *    its stored duration (a pre-upgrade row may hold a stale NULL).
@@ -738,6 +735,10 @@ object PortalSyncAdapter {
                 restOverride = day.restTimeOverrideSeconds,
                 restType = null,
                 notes = day.name,
+                echoLevelPresent = true,
+                echoLevel = day.echoLevel?.name,
+                eccentricLoadPercentPresent = true,
+                eccentricLoadPercent = day.eccentricLoadPercent,
             )
         }
 
@@ -757,8 +758,21 @@ object PortalSyncAdapter {
             // LWW gate: persist the domain last-edit. Cycles are pushed on every
             // sync, so encode-time NOW() would blindly overwrite portal edits.
             updatedAt = epochToIso8601(cycle.updatedAt ?: cycle.createdAt),
+            progressionSettingsPresent = true,
             progressionSettings = progressionJson,
             deloadSettings = null,
+            progressStatePresent = true,
+            progressState = progress?.let {
+                PortalCycleProgressStateSyncDto(
+                    currentDayNumber = it.currentDayNumber,
+                    lastCompletedDate = it.lastCompletedDate,
+                    cycleStartDate = it.cycleStartDate,
+                    lastAdvancedAt = it.lastAdvancedAt,
+                    completedDays = it.completedDays.sorted(),
+                    missedDays = it.missedDays.sorted(),
+                    rotationCount = it.rotationCount,
+                )
+            },
             days = days,
         )
     }

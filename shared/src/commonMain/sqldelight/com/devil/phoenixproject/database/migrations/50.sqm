@@ -1,0 +1,36 @@
+-- Migration 50: cycle LWW clocks, durable generations/deletions, and conflict drafts.
+ALTER TABLE TrainingCycle
+ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0;
+
+UPDATE TrainingCycle SET updatedAt = created_at WHERE updatedAt = 0;
+
+CREATE TABLE CycleSyncState (
+    cycle_id TEXT PRIMARY KEY NOT NULL,
+    profile_id TEXT NOT NULL,
+    account_id TEXT,
+    dirty_generation INTEGER NOT NULL DEFAULT 1,
+    acknowledged_generation INTEGER NOT NULL DEFAULT 0,
+    pending_delete_updated_at INTEGER,
+    pending_delete_generation INTEGER,
+    FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
+);
+
+INSERT INTO CycleSyncState(
+    cycle_id, profile_id, account_id, dirty_generation, acknowledged_generation,
+    pending_delete_updated_at, pending_delete_generation
+)
+SELECT id, profile_id, NULL, 1, 0, deletedAt, CASE WHEN deletedAt IS NULL THEN NULL ELSE 1 END
+FROM TrainingCycle;
+
+CREATE TABLE CycleConflictDraft (
+    id TEXT PRIMARY KEY NOT NULL,
+    cycle_id TEXT NOT NULL,
+    original_profile_id TEXT NOT NULL,
+    rejected_updated_at INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    resolution TEXT
+);
+
+CREATE INDEX idx_cycle_conflict_draft_profile_cycle
+ON CycleConflictDraft(original_profile_id, cycle_id);

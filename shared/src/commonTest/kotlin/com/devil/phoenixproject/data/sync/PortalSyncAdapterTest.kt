@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.domain.model.EccentricLoad
+import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.domain.model.CycleProgression
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -82,6 +85,7 @@ class PortalSyncAdapterTest {
         assertEquals("routine-run-1", result[0].id)
         assertEquals("routine-run-1", result[0].routineSessionId)
         assertEquals(3, result[0].exercises.size)
+        assertEquals(setOf("s1", "s2", "s3"), result[0].exercises.map { it.id }.toSet())
     }
 
     @Test
@@ -514,28 +518,30 @@ class PortalSyncAdapterTest {
     }
 
     @Test
-    fun `toPortalRoutine never sends a zero or negative durationSeconds`() {
+    fun `toPortalRoutine clears known durations outside the supported range`() {
         val negative = encodedExercise(makeRoutineExercise().copy(duration = -5, durationSyncKnown = true))
         val zero = encodedExercise(makeRoutineExercise().copy(duration = 0, durationSyncKnown = true))
-        val negativeUnknown = encodedExercise(makeRoutineExercise().copy(duration = -5))
+        val tooShort = encodedExercise(makeRoutineExercise().copy(duration = 9, durationSyncKnown = true))
+        val tooLong = encodedExercise(makeRoutineExercise().copy(duration = 301, durationSyncKnown = true))
 
         assertEquals(JsonNull, negative["durationSeconds"])
         assertEquals(JsonNull, zero["durationSeconds"])
-        assertFalse(negativeUnknown.containsKey("durationSeconds"))
+        assertEquals(JsonNull, tooShort["durationSeconds"])
+        assertEquals(JsonNull, tooLong["durationSeconds"])
     }
 
     @Test
-    fun `durationSecondsWire only produces absent, JsonNull or a positive integer`() {
-        val inputs = listOf(null, Int.MIN_VALUE, -5, -1, 0, 1, 45, Int.MAX_VALUE)
+    fun `durationSecondsWire only sends durations supported by the app`() {
+        val inputs = listOf(null, Int.MIN_VALUE, -1, 0, 9, 10, 45, 300, 301, Int.MAX_VALUE)
         for (seconds in inputs) {
             for (known in listOf(true, false)) {
                 val wire = PortalSyncAdapter.durationSecondsWire(seconds, known)
-                val positive = seconds?.takeIf { it > 0 }
+                val supported = seconds?.takeIf { it in 10..300 }
                 when {
-                    positive != null -> {
+                    supported != null -> {
                         assertNotNull(wire)
                         assertFalse(wire.isString, "seconds=$seconds known=$known")
-                        assertEquals(positive, wire.intOrNull)
+                        assertEquals(supported, wire.intOrNull)
                     }
                     known -> assertEquals(JsonNull, wire, "seconds=$seconds known=$known")
                     else -> assertNull(wire, "seconds=$seconds known=$known")
@@ -1027,6 +1033,113 @@ class PortalSyncAdapterTest {
         )
 
         assertEquals("2023-11-14T22:13:20Z", result.updatedAt)
+    }
+
+    @Test
+    fun `toPortalTrainingCycle maps complete progress and day state`() {
+        val cycle = TrainingCycle.create(
+            id = "cycle-complete",
+            name = "Complete Cycle",
+            days = listOf(
+                CycleDay(
+                    id = "day-1",
+                    cycleId = "cycle-complete",
+                    dayNumber = 1,
+                    name = "Heavy day",
+                    routineId = "routine-1",
+                    isRestDay = false,
+                    echoLevel = EchoLevel.HARDEST,
+                    eccentricLoadPercent = 130,
+                    weightProgressionPercent = 2.5f,
+                    repModifier = -1,
+                    restTimeOverrideSeconds = 150,
+                ),
+            ),
+        )
+        val progress = CycleProgress(
+            id = "progress-1",
+            cycleId = cycle.id,
+            currentDayNumber = 3,
+            lastCompletedDate = 1_700_000_000_000L,
+            cycleStartDate = 1_600_000_000_000L,
+            lastAdvancedAt = 1_650_000_000_000L,
+            completedDays = setOf(3, 1),
+            missedDays = setOf(4, 2),
+            rotationCount = 5,
+        )
+        val progression = CycleProgression(
+            cycleId = cycle.id,
+            frequencyCycles = 3,
+            weightIncreasePercent = 2.5f,
+            echoLevelIncrease = true,
+            eccentricLoadIncreasePercent = 10,
+        )
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(
+                cycle = cycle,
+                progress = progress,
+                progression = progression,
+            ),
+            userId = "user-1",
+        )
+
+        assertEquals(true, result.progressionSettingsPresent)
+        assertNotNull(result.progressionSettings)
+        assertTrue(result.progressionSettings!!.contains("\"frequencyCycles\":\"3\""))
+        assertTrue(result.progressionSettings!!.contains("\"weightIncreasePercent\":\"2.5\""))
+        assertTrue(result.progressionSettings!!.contains("\"echoLevelIncrease\":\"true\""))
+        assertTrue(result.progressionSettings!!.contains("\"eccentricLoadIncreasePercent\":\"10\""))
+        assertEquals(true, result.progressStatePresent)
+        assertEquals(
+            PortalCycleProgressStateSyncDto(
+                currentDayNumber = 3,
+                lastCompletedDate = 1_700_000_000_000L,
+                cycleStartDate = 1_600_000_000_000L,
+                lastAdvancedAt = 1_650_000_000_000L,
+                completedDays = listOf(1, 3),
+                missedDays = listOf(2, 4),
+                rotationCount = 5,
+            ),
+            result.progressState,
+        )
+        with(result.days.single()) {
+            assertEquals(true, echoLevelPresent)
+            assertEquals(EchoLevel.HARDEST.name, echoLevel)
+            assertEquals(true, eccentricLoadPercentPresent)
+            assertEquals(130, eccentricLoadPercent)
+        }
+    }
+
+    @Test
+    fun `toPortalTrainingCycle emits explicit clears for absent progress and day modifiers`() {
+        val cycle = TrainingCycle.create(
+            id = "cycle-clear",
+            name = "Clear Cycle",
+            days = listOf(
+                CycleDay.restDay(
+                    id = "day-clear",
+                    cycleId = "cycle-clear",
+                    dayNumber = 1,
+                ),
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(cycle = cycle, progress = null),
+            userId = "user-1",
+        )
+
+        assertEquals(true, result.progressionSettingsPresent)
+        assertNull(result.progressionSettings)
+        assertEquals(true, result.progressStatePresent)
+        assertNull(result.progressState)
+        with(result.days.single()) {
+            assertEquals(true, echoLevelPresent)
+            assertNull(echoLevel)
+            assertEquals(true, eccentricLoadPercentPresent)
+            assertNull(eccentricLoadPercent)
+        }
     }
 
     // ========== userId passthrough ==========

@@ -70,6 +70,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -135,7 +136,14 @@ fun ExerciseEditBottomSheet(
 ) {
     // Create local ViewModel instance with repositories for PR and velocity-1RM lookups
     val velocityOneRepMaxRepository: VelocityOneRepMaxRepository = koinInject()
-    val viewModel = remember { ExerciseConfigViewModel(personalRecordRepository, velocityOneRepMaxRepository, exerciseRepository) }
+    val baselineRepository: ProfileExerciseBaselineRepository = koinInject()
+    val viewModel = remember {
+        ExerciseConfigViewModel(
+            personalRecordRepository = personalRecordRepository,
+            velocityOneRepMaxRepository = velocityOneRepMaxRepository,
+            baselineRepository = baselineRepository,
+        )
+    }
     val userProfileRepository: UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val activeProfileId = activeProfile?.id ?: "default"
@@ -1070,7 +1078,7 @@ fun SetRow(
                         CompactNumberPicker(
                             value = setConfig.duration,
                             onValueChange = onDurationChange,
-                            range = 10..300,
+                            range = RoutineExercise.MIN_TIMED_DURATION_SECONDS..RoutineExercise.MAX_TIMED_DURATION_SECONDS,
                             label = if (setConfig.setNumber == 1) "Duration" else "",
                             suffix = "sec",
                             modifier = Modifier.fillMaxWidth(),

@@ -845,7 +845,7 @@ class RoutineFlowManager(
         } else {
             SetType.STANDARD
         }
-        val isTimedCable = !exercise.exercise.isBodyweight && exercise.duration?.takeIf { it > 0 } != null
+        val isTimedCable = !exercise.exercise.isBodyweight && exercise.supportedTimedDurationSeconds != null
         val targetReps = configuredReps.takeUnless {
             semanticSetType == SetType.AMRAP || isTimedCable || exercise.exercise.isBodyweight
         }

@@ -24,3 +24,42 @@ interface BackupStreamSource {
      */
     fun read(buffer: CharArray, offset: Int, length: Int): Int
 }
+
+/** Adds cooperative cancellation (or another caller-supplied guard) to blocking reads. */
+internal class GuardedBackupStreamSource(
+    private val delegate: BackupStreamSource,
+    private val beforeRead: () -> Unit,
+) : BackupStreamSource {
+    override fun open() = delegate.open()
+    override fun close() = delegate.close()
+
+    override fun read(): Int {
+        beforeRead()
+        return delegate.read()
+    }
+
+    override fun read(buffer: CharArray, offset: Int, length: Int): Int {
+        beforeRead()
+        return delegate.read(buffer, offset, length)
+    }
+}
+
+internal class StringBackupStreamSource(private val value: String) : BackupStreamSource {
+    private var index = 0
+
+    override fun open() {
+        index = 0
+    }
+
+    override fun close() = Unit
+
+    override fun read(): Int = if (index < value.length) value[index++].code else -1
+
+    override fun read(buffer: CharArray, offset: Int, length: Int): Int {
+        if (index >= value.length) return -1
+        val count = minOf(length, value.length - index)
+        value.toCharArray(index, index + count).copyInto(buffer, offset)
+        index += count
+        return count
+    }
+}

@@ -2,6 +2,7 @@ package com.devil.phoenixproject.domain.usecase
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.domain.model.CycleDay
 import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.EccentricLoad
@@ -67,7 +68,10 @@ data class ConversionResult(val cycle: TrainingCycle, val routines: List<Routine
  *
  * @param exerciseRepository Repository for looking up exercises by name
  */
-class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
+class TemplateConverter(
+    private val exerciseRepository: ExerciseRepository,
+    private val baselineRepository: ProfileExerciseBaselineRepository,
+) {
     companion object {
         /** Default percentage of 1RM used for starting weights (70%) */
         const val DEFAULT_STARTING_WEIGHT_PERCENT = 0.70f
@@ -180,10 +184,12 @@ class TemplateConverter(private val exerciseRepository: ExerciseRepository) {
                     val isBodyweight = templateExercise.suggestedMode == null
 
                     // Fallback weight when no PR/1RM data exists anywhere: snapshot from the
-                    // exercise's stored 1RM if present, else a conservative non-zero default.
+                    // supplied profile's scoped baseline, else a conservative non-zero default.
                     // F381: use round(), not toInt() — toInt() truncates (70.9 → 70.5 not 71.0).
                     // Floor at 0.5kg (machine increment): a tiny 1RM must never round to 0kg.
-                    val oneRepMax = exercise.oneRepMaxKg ?: 0f
+                    val oneRepMax = exercise.id
+                        ?.let { baselineRepository.get(profileId, it)?.oneRepMaxPerCableKg }
+                        ?: 0f
                     val fallbackWeight = if (isBodyweight || oneRepMax <= 0f) {
                         DEFAULT_FALLBACK_WEIGHT_KG
                     } else {

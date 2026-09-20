@@ -1,0 +1,4 @@
+-- Track whether a routine exercise's duration is authoritative for portal sync.
+-- Existing rows remain unknown because older clients discarded pulled durations.
+ALTER TABLE RoutineExercise
+ADD COLUMN durationSyncKnown INTEGER NOT NULL DEFAULT 0;

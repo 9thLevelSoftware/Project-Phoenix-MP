@@ -11,15 +11,6 @@ import androidx.compose.ui.unit.IntSize
  */
 object ExpressiveMotion {
     /**
-     * Standard expressive spring for most interactions (buttons, cards)
-     * Low stiffness (relaxed) + Low bounciness (playful but not chaotic)
-     */
-    val SpringDefault = spring<Float>(
-        dampingRatio = Spring.DampingRatioLowBouncy,
-        stiffness = Spring.StiffnessLow,
-    )
-
-    /**
      * Snappy spring for quick transitions (toggles, checkboxes)
      */
     val SpringSnappy = spring<Float>(
@@ -47,8 +38,6 @@ object ExpressiveMotion {
 
     /**
      * Standard spring typed for IntSize — use with expandVertically() / shrinkVertically().
-     * Same character as SpringDefault but carries the IntSize type parameter
-     * required by expand/shrink enter/exit transitions.
      */
     val SpringDefaultIntSize = spring<IntSize>(
         dampingRatio = Spring.DampingRatioLowBouncy,

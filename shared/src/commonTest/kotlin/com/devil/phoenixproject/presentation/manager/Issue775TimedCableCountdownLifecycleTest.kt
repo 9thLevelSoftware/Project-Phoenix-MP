@@ -22,6 +22,54 @@ import kotlinx.coroutines.test.runTest
 class Issue775TimedCableCountdownLifecycleTest {
 
     @Test
+    fun `duration above supported range cannot enable timed unlimited BLE mode`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = timedCableRoutine(durationSeconds = 301)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertFalse(lease.isTimedCable)
+            assertEquals(10, lease.workingRepTarget)
+            assertFalse(harness.coordinator.isCurrentTimedCableExercise)
+            assertTrue(
+                harness.fakeBleRepo.commandsReceived.last()[0x04].toInt() and 0xFF != 0xFF,
+                "An invalid duration must not turn a fixed-rep set into an unlimited BLE command",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
+    fun `invalid duration does not disable an explicitly configured AMRAP set`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = timedCableRoutine(durationSeconds = Int.MAX_VALUE, isAmrap = true)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertFalse(lease.isTimedCable)
+            assertTrue(lease.isAmrap)
+            assertEquals(0xFF, harness.fakeBleRepo.commandsReceived.last()[0x04].toInt() and 0xFF)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `timed cable target 252 warmup starts countdown and persists timer expired`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
@@ -118,7 +166,7 @@ class Issue775TimedCableCountdownLifecycleTest {
         )
     }
 
-    private fun timedCableRoutine(durationSeconds: Int) = Routine(
+    private fun timedCableRoutine(durationSeconds: Int, isAmrap: Boolean = false) = Routine(
         id = "issue-775-timed-cable",
         name = "Issue 775 Timed Cable",
         exercises = listOf(
@@ -126,9 +174,10 @@ class Issue775TimedCableCountdownLifecycleTest {
                 id = "issue-775-timed-bench",
                 exercise = TestFixtures.benchPress,
                 orderIndex = 0,
-                setReps = listOf(10),
+                setReps = listOf(if (isAmrap) null else 10),
                 weightPerCableKg = 25f,
                 duration = durationSeconds,
+                isAMRAP = isAmrap,
                 setRestSeconds = listOf(0),
             ),
         ),

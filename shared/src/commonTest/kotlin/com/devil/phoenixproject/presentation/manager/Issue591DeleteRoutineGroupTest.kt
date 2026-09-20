@@ -90,7 +90,7 @@ class Issue591DeleteRoutineGroupTest {
             assertEquals(8, workoutRepo.allSessions().size, "precondition: all 8 rows present")
 
             // WHEN: the user deletes the routine group.
-            manager.deleteRoutineWorkouts(routineSessionId)
+            manager.deleteRoutineWorkouts(testProfileId, routineSessionId)
 
             // THEN: every row tied to that routineSessionId is gone —
             // both the visible valid sets and the ghost rows. The

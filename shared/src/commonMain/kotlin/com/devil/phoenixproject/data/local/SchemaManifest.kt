@@ -897,7 +897,8 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
     // WorkoutSession -- initial schema, full current shape
     // Columns added by later migrations: set summary metrics (m5), sync fields (m11),
     // biomechanics summary (m15), formScore (m16), safety tracking (no migration),
-    // cableCount (m13), profile_id (m21), display_multiplier (m29), rack context (m33)
+    // cableCount (m13), profile_id (m21), display_multiplier (m29), rack context (m33),
+    // portalOrigin (m48), local/synced_sync_generation (m49)
     SchemaTableOperation(
         table = "WorkoutSession",
         createSql = """
@@ -955,7 +956,11 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 display_multiplier INTEGER,
                 externalAddedLoadKg REAL NOT NULL DEFAULT 0,
                 counterweightKg REAL NOT NULL DEFAULT 0,
-                rackItemsJson TEXT NOT NULL DEFAULT '[]'
+                rackItemsJson TEXT NOT NULL DEFAULT '[]',
+                portalOrigin INTEGER NOT NULL DEFAULT 0 CHECK(portalOrigin IN (0, 1)),
+                local_sync_generation INTEGER NOT NULL DEFAULT 1 CHECK(local_sync_generation >= 0),
+                synced_sync_generation INTEGER NOT NULL DEFAULT 0
+                    CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation)
             )
         """.trimIndent(),
     ),
@@ -1102,7 +1107,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 
     // TrainingCycle -- migration 10, full current shape
     // Columns added by later migrations: profile_id (m21), deletedAt (m27),
-    // template_id/week_number (m41)
+    // template_id/week_number (m41), updatedAt (m50)
     SchemaTableOperation(
         table = "TrainingCycle",
         createSql = """
@@ -1115,7 +1120,38 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 profile_id TEXT NOT NULL DEFAULT 'default',
                 deletedAt INTEGER,
                 template_id TEXT,
-                week_number INTEGER NOT NULL DEFAULT 1
+                week_number INTEGER NOT NULL DEFAULT 1,
+                updatedAt INTEGER NOT NULL DEFAULT 0
+            )
+        """.trimIndent(),
+    ),
+
+    SchemaTableOperation(
+        table = "CycleSyncState",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS CycleSyncState (
+                cycle_id TEXT PRIMARY KEY NOT NULL,
+                profile_id TEXT NOT NULL,
+                account_id TEXT,
+                dirty_generation INTEGER NOT NULL DEFAULT 1,
+                acknowledged_generation INTEGER NOT NULL DEFAULT 0,
+                pending_delete_updated_at INTEGER,
+                pending_delete_generation INTEGER,
+                FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "CycleConflictDraft",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS CycleConflictDraft (
+                id TEXT PRIMARY KEY NOT NULL,
+                cycle_id TEXT NOT NULL,
+                original_profile_id TEXT NOT NULL,
+                rejected_updated_at INTEGER NOT NULL,
+                payload_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                resolution TEXT
             )
         """.trimIndent(),
     ),
@@ -1269,7 +1305,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 
     // VelocityOneRepMaxEstimate -- introduced by migration 36.sqm (issue #517).
     // Auto-computed velocity 1RM time-series. Separate from AssessmentResult (wizard)
-    // and from Exercise.oneRepMaxKg (authoritative true 1RM).
+    // and the legacy-recovery-only Exercise.one_rep_max_kg.
     SchemaTableOperation(
         table = "VelocityOneRepMaxEstimate",
         createSql = """
@@ -1304,6 +1340,120 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
                 updatedAt INTEGER NOT NULL,
                 PRIMARY KEY (exerciseId, profile_id),
                 FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // ProfileExerciseBaseline -- migration 48, local profile-scoped training baseline.
+    SchemaTableOperation(
+        table = "ProfileExerciseBaseline",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS ProfileExerciseBaseline (
+                profile_id TEXT NOT NULL,
+                exercise_id TEXT NOT NULL,
+                one_rep_max_per_cable_kg REAL,
+                updated_at INTEGER NOT NULL,
+                revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+                PRIMARY KEY (profile_id, exercise_id),
+                FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE,
+                FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
+            )
+        """.trimIndent(),
+    ),
+
+    // Durable startup recovery and account ownership operations -- migration 49.
+    SchemaTableOperation(
+        table = "AppliedDataRepair",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS AppliedDataRepair (
+                repair_key TEXT PRIMARY KEY NOT NULL,
+                applied_at INTEGER NOT NULL
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "PendingProfileRecovery",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS PendingProfileRecovery (
+                recovery_id TEXT PRIMARY KEY NOT NULL,
+                kind TEXT NOT NULL CHECK(kind IN ('PROFILE_DATA', 'LEGACY_BASELINE')),
+                source_key TEXT NOT NULL UNIQUE,
+                source_profile_id TEXT,
+                source_profile_name TEXT NOT NULL,
+                owner_user_id TEXT,
+                counts_json TEXT NOT NULL,
+                discovered_at INTEGER NOT NULL,
+                resolved_at INTEGER
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "OwnershipTransferOutbox",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS OwnershipTransferOutbox (
+                mutation_id TEXT PRIMARY KEY NOT NULL,
+                owner_user_id TEXT NOT NULL,
+                source_profile_id TEXT,
+                target_profile_id TEXT NOT NULL,
+                workout_session_ids_json TEXT NOT NULL,
+                routine_ids_json TEXT NOT NULL,
+                cycle_ids_json TEXT NOT NULL,
+                personal_record_ids_json TEXT NOT NULL,
+                created_at INTEGER NOT NULL,
+                acknowledged_at INTEGER,
+                CHECK(
+                    workout_session_ids_json <> '[]' OR
+                    routine_ids_json <> '[]' OR
+                    cycle_ids_json <> '[]' OR
+                    personal_record_ids_json <> '[]'
+                )
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "AppliedOwnershipEvent",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS AppliedOwnershipEvent (
+                owner_user_id TEXT NOT NULL,
+                mutation_id TEXT NOT NULL,
+                canonical_body_hash TEXT NOT NULL,
+                applied_at INTEGER NOT NULL,
+                PRIMARY KEY (owner_user_id, mutation_id)
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "LocalOwnershipClaim",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS LocalOwnershipClaim (
+                owner_user_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL CHECK(entity_type IN ('WORKOUT', 'ROUTINE', 'CYCLE', 'PERSONAL_RECORD')),
+                entity_id TEXT NOT NULL,
+                mutation_id TEXT NOT NULL,
+                source_profile_id TEXT,
+                target_profile_id TEXT NOT NULL,
+                transferred_at INTEGER NOT NULL,
+                PRIMARY KEY (owner_user_id, entity_type, entity_id)
+            )
+        """.trimIndent(),
+    ),
+    SchemaTableOperation(
+        table = "WorkoutDeletion",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS WorkoutDeletion (
+                mutation_id TEXT NOT NULL PRIMARY KEY,
+                owner_user_id TEXT,
+                profile_id TEXT NOT NULL,
+                scope TEXT NOT NULL CHECK(scope IN ('COMPONENT', 'WORKOUT')),
+                portal_session_id TEXT NOT NULL,
+                component_session_id TEXT,
+                deleted_at INTEGER NOT NULL,
+                acknowledged_at INTEGER,
+                source TEXT NOT NULL CHECK(source IN ('LOCAL', 'REMOTE')),
+                CHECK(
+                    (scope = 'COMPONENT' AND component_session_id IS NOT NULL) OR
+                    (scope = 'WORKOUT' AND component_session_id IS NULL)
+                )
             )
         """.trimIndent(),
     ),
@@ -1380,6 +1530,23 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     SchemaHealOperation("WorkoutSession", "externalAddedLoadKg", "ALTER TABLE WorkoutSession ADD COLUMN externalAddedLoadKg REAL NOT NULL DEFAULT 0"),
     SchemaHealOperation("WorkoutSession", "counterweightKg", "ALTER TABLE WorkoutSession ADD COLUMN counterweightKg REAL NOT NULL DEFAULT 0"),
     SchemaHealOperation("WorkoutSession", "rackItemsJson", "ALTER TABLE WorkoutSession ADD COLUMN rackItemsJson TEXT NOT NULL DEFAULT '[]'"),
+    // Migration 48: conservative sync provenance; all preexisting rows are local-origin.
+    SchemaHealOperation(
+        "WorkoutSession",
+        "portalOrigin",
+        "ALTER TABLE WorkoutSession ADD COLUMN portalOrigin INTEGER NOT NULL DEFAULT 0 CHECK(portalOrigin IN (0, 1))",
+    ),
+    // Migration 49: local snapshot/ack generations. Legacy rows intentionally start dirty.
+    SchemaHealOperation(
+        "WorkoutSession",
+        "local_sync_generation",
+        "ALTER TABLE WorkoutSession ADD COLUMN local_sync_generation INTEGER NOT NULL DEFAULT 1 CHECK(local_sync_generation >= 0)",
+    ),
+    SchemaHealOperation(
+        "WorkoutSession",
+        "synced_sync_generation",
+        "ALTER TABLE WorkoutSession ADD COLUMN synced_sync_generation INTEGER NOT NULL DEFAULT 0 CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation)",
+    ),
 
     // ── PersonalRecord (7 columns) ──────────────────────────────────────
 
@@ -1451,6 +1618,8 @@ internal val manifestColumns: List<SchemaHealOperation> = listOf(
     // Migration 41: generated cycle template identity + persisted 5/3/1 week
     SchemaHealOperation("TrainingCycle", "template_id", "ALTER TABLE TrainingCycle ADD COLUMN template_id TEXT"),
     SchemaHealOperation("TrainingCycle", "week_number", "ALTER TABLE TrainingCycle ADD COLUMN week_number INTEGER NOT NULL DEFAULT 1"),
+    // Migration 50: complete-cycle LWW clock. Migration backfills created_at.
+    SchemaHealOperation("TrainingCycle", "updatedAt", "ALTER TABLE TrainingCycle ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0"),
 
     // ── AssessmentResult (1 column) ─────────────────────────────────────
 
@@ -1518,6 +1687,22 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
     SchemaIndexOperation("idx_exercise_popularity", "CREATE INDEX IF NOT EXISTS idx_exercise_popularity ON Exercise(popularity DESC, name ASC)"),
     SchemaIndexOperation("idx_exercise_last_performed", "CREATE INDEX IF NOT EXISTS idx_exercise_last_performed ON Exercise(lastPerformed DESC)"),
     SchemaIndexOperation("idx_exercise_image_exercise", "CREATE INDEX IF NOT EXISTS idx_exercise_image_exercise ON ExerciseImage(exerciseId)"),
+    SchemaIndexOperation(
+        "idx_profile_exercise_baseline_exercise",
+        "CREATE INDEX IF NOT EXISTS idx_profile_exercise_baseline_exercise ON ProfileExerciseBaseline(exercise_id)",
+    ),
+    SchemaIndexOperation(
+        "idx_workout_deletion_pending",
+        "CREATE INDEX IF NOT EXISTS idx_workout_deletion_pending ON WorkoutDeletion(owner_user_id, profile_id, source, acknowledged_at, deleted_at, mutation_id)",
+    ),
+    SchemaIndexOperation(
+        "idx_workout_deletion_target",
+        "CREATE INDEX IF NOT EXISTS idx_workout_deletion_target ON WorkoutDeletion(owner_user_id, portal_session_id, component_session_id, scope)",
+    ),
+    SchemaIndexOperation(
+        "idx_local_ownership_claim_mutation",
+        "CREATE INDEX IF NOT EXISTS idx_local_ownership_claim_mutation ON LocalOwnershipClaim(owner_user_id, mutation_id)",
+    ),
 
     // ── WorkoutSession ──────────────────────────────────────────────────
     SchemaIndexOperation("idx_workout_session_timestamp", "CREATE INDEX IF NOT EXISTS idx_workout_session_timestamp ON WorkoutSession(timestamp)"),
@@ -1654,6 +1839,10 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
 
     // ── TrainingCycle ───────────────────────────────────────────────────
     SchemaIndexOperation("idx_cycle_profile", "CREATE INDEX IF NOT EXISTS idx_cycle_profile ON TrainingCycle(profile_id)"),
+    SchemaIndexOperation(
+        "idx_cycle_conflict_draft_profile_cycle",
+        "CREATE INDEX IF NOT EXISTS idx_cycle_conflict_draft_profile_cycle ON CycleConflictDraft(original_profile_id, cycle_id)",
+    ),
 
     // ── CycleDay ────────────────────────────────────────────────────────
     SchemaIndexOperation("idx_cycle_day_cycle", "CREATE INDEX IF NOT EXISTS idx_cycle_day_cycle ON CycleDay(cycle_id)"),

@@ -8,7 +8,6 @@ import com.devil.phoenixproject.data.integration.IntegrationSyncCursor
 import com.devil.phoenixproject.data.integration.IntegrationSyncCursorRepository
 import com.devil.phoenixproject.domain.model.ExternalBodyMeasurement
 import com.devil.phoenixproject.domain.model.ExternalExerciseTemplate
-import com.devil.phoenixproject.domain.model.ExternalExerciseTemplateMapping
 import com.devil.phoenixproject.domain.model.ExternalProgram
 import com.devil.phoenixproject.domain.model.ExternalProgramStats
 import com.devil.phoenixproject.domain.model.ExternalRoutine
@@ -220,7 +219,6 @@ class FakeExternalMeasurementRepository : ExternalMeasurementRepository {
 
 class FakeExternalExerciseTemplateRepository : ExternalExerciseTemplateRepository {
     val templates = mutableListOf<ExternalExerciseTemplate>()
-    val mappings = mutableListOf<ExternalExerciseTemplateMapping>()
     private val templatesFlow = MutableStateFlow<List<ExternalExerciseTemplate>>(emptyList())
 
     private fun publishTemplates() {
@@ -247,30 +245,8 @@ class FakeExternalExerciseTemplateRepository : ExternalExerciseTemplateRepositor
         publishTemplates()
     }
 
-    override suspend fun findTemplate(provider: IntegrationProvider, externalId: String, profileId: String): ExternalExerciseTemplate? = templates.firstOrNull { it.provider == provider && it.externalId == externalId && it.profileId == profileId }
-
-    override suspend fun upsertMapping(mapping: ExternalExerciseTemplateMapping) {
-        mappings.removeAll {
-            it.provider == mapping.provider &&
-                it.externalTemplateId == mapping.externalTemplateId &&
-                it.profileId == mapping.profileId
-        }
-        mappings += mapping
-    }
-
-    override suspend fun findMapping(
-        provider: IntegrationProvider,
-        externalTemplateId: String,
-        profileId: String,
-    ): ExternalExerciseTemplateMapping? = mappings.firstOrNull {
-        it.provider == provider &&
-            it.externalTemplateId == externalTemplateId &&
-            it.profileId == profileId
-    }
-
     override suspend fun deleteProviderTemplates(provider: IntegrationProvider, profileId: String) {
         templates.removeAll { it.provider == provider && it.profileId == profileId }
-        mappings.removeAll { it.provider == provider && it.profileId == profileId }
         publishTemplates()
     }
 }

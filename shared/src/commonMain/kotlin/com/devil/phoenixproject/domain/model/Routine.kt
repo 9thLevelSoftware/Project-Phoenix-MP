@@ -134,8 +134,20 @@ data class RoutineExercise(
     // being sent as an explicit "clear".
     val durationSyncKnown: Boolean = false,
 ) {
+    companion object {
+        const val MIN_TIMED_DURATION_SECONDS = 10
+        const val MAX_TIMED_DURATION_SECONDS = 300
+
+        fun supportedTimedDurationSeconds(seconds: Int?): Int? =
+            seconds?.takeIf { it in MIN_TIMED_DURATION_SECONDS..MAX_TIMED_DURATION_SECONDS }
+    }
+
     /** Returns true if this exercise is part of a superset */
     val isInSuperset: Boolean get() = supersetId != null
+
+    /** Duration accepted by workout execution and BLE command preparation. */
+    val supportedTimedDurationSeconds: Int?
+        get() = supportedTimedDurationSeconds(duration)
 
     // Computed property for backwards compatibility
     val sets: Int get() = setReps.size

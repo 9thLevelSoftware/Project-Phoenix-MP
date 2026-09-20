@@ -15,7 +15,56 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.database.PhoenixDatabase
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
+
+/**
+ * Directory for per-session auto-backups written through the file API.
+ *
+ * - Android 10+ (Q): a cache staging dir; the real write goes to MediaStore Downloads.
+ * - Android 9 and older: the app-specific external Documents dir
+ *   (`Android/data/<package>/files/Documents/PhoenixBackups`): app-specific external
+ *   storage, so no storage permission is needed (the manifest declares none), it is
+ *   outside the public Downloads/MediaStore collection, and it is removed on uninstall.
+ *   Before scoped storage, apps holding READ_EXTERNAL_STORAGE can still read it.
+ *   Falls back to internal storage when external storage is unavailable.
+ */
+internal fun sessionBackupDirectory(
+    sdkInt: Int,
+    cacheDir: File,
+    filesDir: File,
+    externalDocumentsDir: () -> File?,
+): File = if (sdkInt >= Build.VERSION_CODES.Q) {
+    File(cacheDir, "PhoenixBackups")
+} else {
+    File(externalDocumentsDir() ?: filesDir, "PhoenixBackups")
+}
+
+/** Android 9 and older keep auto-backups in app storage; say so in the setting. */
+internal fun autoBackupLocationNoteFor(sdkInt: Int): String? = if (sdkInt < Build.VERSION_CODES.Q) {
+    "On Android 9 and older, auto-backups are saved in app storage " +
+        "(Android/data/.../files/Documents/PhoenixBackups) and are deleted if the app is uninstalled."
+} else {
+    null
+}
+
+/** Settings label for [BackupDestination.Default]; must match [sessionBackupDirectory]. */
+internal fun defaultBackupLocationLabelFor(sdkInt: Int): String = if (sdkInt < Build.VERSION_CODES.Q) {
+    "App storage (Android/data/.../files/Documents/PhoenixBackups)"
+} else {
+    "Downloads/PhoenixBackups"
+}
+
+/**
+ * The pre-Q app-specific dir can't be opened reliably in a file manager, so the
+ * "Open Backup Folder" shortcut only exists on Android 10+.
+ */
+internal fun canOpenBackupFolderFor(sdkInt: Int): Boolean = sdkInt >= Build.VERSION_CODES.Q
+
+// Getters (not stored vals) so host tests never touch Build.VERSION on class load.
+actual val autoBackupLocationNote: String? get() = autoBackupLocationNoteFor(Build.VERSION.SDK_INT)
+actual val defaultBackupLocationLabel: String get() = defaultBackupLocationLabelFor(Build.VERSION.SDK_INT)
+actual val canOpenBackupFolder: Boolean get() = canOpenBackupFolderFor(Build.VERSION.SDK_INT)
 
 /**
  * Android implementation of DataBackupManager.
@@ -42,27 +91,24 @@ class AndroidDataBackupManager(
             return dir
         }
 
+    private fun sessionBackupDir(): File = sessionBackupDirectory(
+        sdkInt = Build.VERSION.SDK_INT,
+        cacheDir = context.cacheDir,
+        filesDir = context.filesDir,
+        externalDocumentsDir = { context.getExternalFilesDir(Environment.DIRECTORY_DOCUMENTS) },
+    )
+
     override fun getSessionBackupDirectory(): String {
         // On Q+ we write via MediaStore, but need a staging path for base class path construction.
-        // On pre-Q we write directly to public Downloads (survives uninstall).
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val dir = File(context.cacheDir, "PhoenixBackups")
-            if (!dir.exists()) dir.mkdirs()
-            dir.absolutePath
-        } else {
-            @Suppress("DEPRECATION")
-            val dir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "PhoenixBackups",
-            )
-            if (!dir.exists()) dir.mkdirs()
-            dir.absolutePath
-        }
+        // On pre-Q we write directly to the app-specific Documents dir (see sessionBackupDirectory).
+        val dir = sessionBackupDir()
+        if (!dir.exists()) dir.mkdirs()
+        return dir.absolutePath
     }
 
     /**
      * On Android Q+, write session backups to MediaStore Downloads so they survive
-     * app uninstall. On pre-Q, the base class writes directly to public Downloads.
+     * app uninstall. On pre-Q, the base class writes to the app-specific Documents dir.
      *
      * When a custom backup destination is configured, writes there first.
      * Falls back to default location if the custom destination is inaccessible.
@@ -130,7 +176,7 @@ class AndroidDataBackupManager(
                 it.write(content.toByteArray(Charsets.UTF_8))
             }
         } else {
-            // Pre-Q: write directly to public Downloads path (already set by getSessionBackupDirectory)
+            // Pre-Q: write to the app-specific path already set by getSessionBackupDirectory
             super.writeSessionBackupFile(filePath, content)
         }
     }
@@ -152,12 +198,7 @@ class AndroidDataBackupManager(
         }
         sizes
     } else {
-        @Suppress("DEPRECATION")
-        val dir = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "PhoenixBackups",
-        )
-        dir.listFiles()
+        sessionBackupDir().listFiles()
             ?.filter { it.isFile && it.name.endsWith(".json") }
             ?.map { it.length() }
             ?: emptyList()
@@ -197,12 +238,7 @@ class AndroidDataBackupManager(
                 }
             }
         } else {
-            @Suppress("DEPRECATION")
-            val dir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "PhoenixBackups",
-            )
-            val files = dir.listFiles()
+            val files = sessionBackupDir().listFiles()
                 ?.filter { it.isFile && it.name.startsWith("phoenix-") && it.name.endsWith(".json") }
                 ?.sortedBy { it.lastModified() }
                 ?: return
@@ -242,6 +278,11 @@ class AndroidDataBackupManager(
     }
 
     override fun openBackupFolder() {
+        if (!canOpenBackupFolder) {
+            // Pre-Q auto-backups live in app-specific storage, not Downloads (button is hidden).
+            Logger.w { "Open backup folder is not supported below Android 10" }
+            return
+        }
         try {
             // Open Downloads/PhoenixBackups in system file manager
             val intent = Intent(Intent.ACTION_VIEW).apply {
@@ -329,6 +370,7 @@ class AndroidDataBackupManager(
             file.delete()
             Result.success(destPath)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -390,50 +432,17 @@ class AndroidDataBackupManager(
                 File(filePath).inputStream()
             }
 
-            // Check file size to decide between proven legacy path and streaming
-            val fileSize = getFileSizeOrNull(filePath)
-            if (fileSize != null && fileSize < STREAMING_IMPORT_THRESHOLD) {
-                // Small file: use proven non-streaming path
-                val jsonString = inputStream.bufferedReader().use { it.readText() }
-                importFromJson(jsonString)
-            } else {
-                // Large file or unknown size: streaming import to avoid OOM
-                Logger.i { "Using streaming import for file (size=${fileSize ?: "unknown"} bytes)" }
-                val source = InputStreamBackupSource(inputStream)
-                try {
-                    source.open()
-                    importFromStream(source)
-                } finally {
-                    source.close()
-                }
+            val source = InputStreamBackupSource(inputStream)
+            try {
+                source.open()
+                importFromStream(source)
+            } finally {
+                source.close()
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
-    }
-
-    private fun getFileSizeOrNull(filePath: String): Long? = if (filePath.startsWith("content://")) {
-        try {
-            val uri = filePath.toUri()
-            context.contentResolver.query(
-                uri,
-                arrayOf(android.provider.OpenableColumns.SIZE),
-                null,
-                null,
-                null,
-            )?.use { cursor ->
-                if (cursor.moveToFirst()) {
-                    val sizeIndex = cursor.getColumnIndex(android.provider.OpenableColumns.SIZE)
-                    if (sizeIndex >= 0) cursor.getLong(sizeIndex) else null
-                } else {
-                    null
-                }
-            }
-        } catch (_: Exception) {
-            null
-        }
-    } else {
-        File(filePath).let { if (it.exists()) it.length() else null }
     }
 
     /**
