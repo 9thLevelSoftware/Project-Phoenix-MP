@@ -173,8 +173,6 @@ fun RestTimerCard(
     isNextExerciseBodyweight: Boolean = false,
     // Issue #266/#410: Configurable weight step from user preferences
     weightStepKg: Float = 0.25f,
-    // KD-9: per-cable ceiling of the CONNECTED trainer, supplied by the caller.
-    maxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
     rackItems: List<RackItem> = emptyList(),
     activeRackItemIds: List<String> = emptyList(),
     behaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
