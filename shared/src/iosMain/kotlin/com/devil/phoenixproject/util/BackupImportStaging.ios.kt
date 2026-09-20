@@ -1,3 +1,5 @@
+@file:OptIn(kotlinx.cinterop.ExperimentalForeignApi::class)
+
 package com.devil.phoenixproject.util
 
 import platform.Foundation.NSFileManager

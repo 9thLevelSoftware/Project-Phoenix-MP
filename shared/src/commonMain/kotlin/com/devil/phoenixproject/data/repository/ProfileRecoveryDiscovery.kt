@@ -213,7 +213,11 @@ internal fun encodeProfileRecoveryCounts(counts: ProfileRecoveryCounts): String 
     put("cloudOriginRowCount", counts.cloudOriginRowCount)
     put(
         "tables",
-        JsonObject(counts.tableCounts.toSortedMap().mapValues { JsonPrimitive(it.value) }),
+        JsonObject(
+            counts.tableCounts.entries
+                .sortedBy { it.key }
+                .associate { it.key to JsonPrimitive(it.value) },
+        ),
     )
 }.toString()
 
