@@ -182,10 +182,11 @@ object BlePacketFactory {
         // sentinel; clamp a finite total to 254 so it can never serialize to the
         // sentinel and silently become an unlimited workout (audit F069). The
         // validator already rejects finite totals > 254; this is defense in depth.
+        // F-070: the sentinel decision reads WorkoutParameters.usesUnlimitedRepTarget,
+        // the same predicate the execution lease and the engine's warm-up auto-end
+        // fallback use, so the packet and the app can never disagree about a set.
         frame[0x04] =
-            if (params.isJustLift ||
-                params.isAMRAP
-            ) {
+            if (params.usesUnlimitedRepTarget) {
                 0xFF.toByte()
             } else {
                 (params.reps + params.warmupReps).coerceAtMost(0xFE).toByte()

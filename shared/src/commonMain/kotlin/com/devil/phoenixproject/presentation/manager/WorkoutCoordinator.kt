@@ -93,6 +93,18 @@ class WorkoutCoordinator(
          * when transitioning from a normal rep-based exercise to an AMRAP exercise.
          */
         const val AMRAP_STARTUP_GRACE_MS = 8000L
+
+        /**
+         * Issue #712 / F-070: bounded auto-end fallback for a set with no rep target
+         * (AMRAP / Just Lift) whose warm-up reps the machine never reported.
+         *
+         * Every auto-stop path is gated on warm-up completion, so such a set cannot end
+         * by itself at all — the user's only exit is Stop Set, with no cue explaining why.
+         * Once real movement has been seen and the handles have then been continuously at
+         * rest for this long, the set ends on its own. 10 s is the owner's decision: far
+         * longer than any pause inside a rep, so it can never end a set still being worked.
+         */
+        const val AMRAP_WARMUP_FALLBACK_MS = 10_000L
     }
 
     // ===== BLE Error Events =====
@@ -456,6 +468,34 @@ class WorkoutCoordinator(
     @Volatile
     internal var deferAutoStopDeadlineMs = 0L
 
+    // Issue #712 / F-070: state for the warm-up auto-end fallback of a set with no rep
+    // target. It is maintained on every Active metric sample INDEPENDENTLY of the warm-up
+    // gate, because the gated countdowns (autoStopStartTime, stallStartTime) are cleared
+    // on every sample while the gate is shut and so can never measure this window.
+
+    /**
+     * Sample-clock timestamp at which the handles last settled to rest; 0L = not at rest.
+     * On the metric clock (WorkoutMetric.timestamp), which is the same wall clock in
+     * production and the only one a test can drive.
+     */
+    @Volatile
+    internal var handlesAtRestSinceMs: Long = 0L
+
+    /**
+     * True once this set has shown real movement — a counted or pending rep, or a position
+     * range past MIN_RANGE_THRESHOLD, observed on a sample with the handles off the rack.
+     * Never cleared mid-set: the fallback must not end a set the user never started.
+     */
+    @Volatile
+    internal var observedSetMovement: Boolean = false
+
+    /**
+     * True while the warm-up fallback's conditions all hold. Recomputed on every sample and
+     * deliberately NOT latched: one sample with the handles off the rack closes it again.
+     */
+    @Volatile
+    internal var amrapWarmupFallbackOpen: Boolean = false
+
     /**
      * Fully reset auto-stop / stall / defer state for a new workout or set.
      *
@@ -472,6 +512,9 @@ class WorkoutCoordinator(
         isCurrentlyStalled = false
         stallArmedByDeload = false
         deferAutoStopDeadlineMs = 0L
+        handlesAtRestSinceMs = 0L
+        observedSetMovement = false
+        amrapWarmupFallbackOpen = false
         _autoStopState.value = AutoStopUiState()
     }
 

@@ -372,6 +372,18 @@ data class WorkoutParameters(
 ) {
     /** True if this is an Echo workout */
     val isEchoMode: Boolean get() = programMode == ProgramMode.Echo
+
+    /**
+     * Issue #712 / F-070: the single answer to "does this set run without a rep target?".
+     *
+     * The PROGRAM packet writes the firmware's 0xFF unlimited sentinel into its reps field
+     * for exactly these sets ([com.devil.phoenixproject.util.BlePacketFactory.createProgramParams]),
+     * the execution lease marks them so the rep-notification freshness gate accepts the
+     * machine's unlimited totals, and the engine's warm-up auto-end fallback applies only to
+     * them. Those were separate expressions of one rule that could drift apart; all three
+     * now read this one.
+     */
+    val usesUnlimitedRepTarget: Boolean get() = isJustLift || isAMRAP
 }
 
 /**
