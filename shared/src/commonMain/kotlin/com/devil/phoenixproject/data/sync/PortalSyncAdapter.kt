@@ -145,7 +145,15 @@ object PortalSyncAdapter {
         sessionsWithReps: List<SessionWithReps>,
         userId: String,
         velocityEstimatesByExerciseId: Map<String, List<VelocityOneRepMaxPoint>> = emptyMap(),
-    ): List<PortalWorkoutSessionDto> = toPortalWorkoutSessionsWithTelemetry(sessionsWithReps, userId, velocityEstimatesByExerciseId).sessions
+        notesByPortalSessionId: Map<String, String?> = emptyMap(),
+        groupPushFloorEpochMs: Long? = null,
+    ): List<PortalWorkoutSessionDto> = toPortalWorkoutSessionsWithTelemetry(
+        sessionsWithReps,
+        userId,
+        velocityEstimatesByExerciseId,
+        notesByPortalSessionId = notesByPortalSessionId,
+        groupPushFloorEpochMs = groupPushFloorEpochMs,
+    ).sessions
 
     /**
      * Build portal workout sessions AND correctly-keyed telemetry in one pass.

@@ -1555,7 +1555,124 @@ class PortalSyncAdapterTest {
         assertNull(result[0].exercises[0].velocityEstimatedOneRepMaxKg)
     }
 
+    // ========== Group push floor (AF-3 / R-2) ==========
+
+    @Test
+    fun `a routine group with an unsent row is stamped at the push floor`() {
+        val group = listOf(
+            makeSessionWithReps(sessionId = "s1", routineSessionId = "rs-1", timestamp = 1_000L, updatedAt = 2_000L),
+            makeSessionWithReps(sessionId = "s2", routineSessionId = "rs-1", timestamp = 3_000L)
+                .copy(isPendingUpload = true),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(group, "user-1", groupPushFloorEpochMs = 9_000L)
+
+        // Without the floor this would be 3_000 — older than the server time the
+        // portal's trigger stamped on the previous set's push, so the LWW gate would
+        // turn the whole group away and the workout's later sets would never land.
+        assertEquals(epochIso(9_000L), result.single().updatedAt)
+    }
+
+    @Test
+    fun `a routine group with nothing new keeps its domain last-edit`() {
+        val group = listOf(
+            makeSessionWithReps(sessionId = "s1", routineSessionId = "rs-1", timestamp = 1_000L, updatedAt = 2_000L),
+            makeSessionWithReps(sessionId = "s2", routineSessionId = "rs-1", timestamp = 3_000L, updatedAt = 4_000L),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(group, "user-1", groupPushFloorEpochMs = 9_000L)
+
+        assertEquals(epochIso(4_000L), result.single().updatedAt)
+    }
+
+    @Test
+    fun `a standalone session never takes the push floor`() {
+        // Its portal workout is its own, so the portal never deletes a sibling's sets
+        // for it — and the strict LWW gate is what protects a later web edit.
+        val session = makeSessionWithReps(sessionId = "s1", routineSessionId = null, timestamp = 1_000L)
+            .copy(isPendingUpload = true)
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(session), "user-1", groupPushFloorEpochMs = 9_000L)
+
+        assertEquals(epochIso(1_000L), result.single().updatedAt)
+    }
+
+    // ========== Notes round-trip (AF-4) ==========
+
+    @Test
+    fun `the session dto carries the locally known portal note`() {
+        val group = listOf(makeSessionWithReps(sessionId = "s1", routineSessionId = "rs-1"))
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(
+            group,
+            "user-1",
+            notesByPortalSessionId = mapOf("rs-1" to "left shoulder twinge"),
+        )
+
+        assertEquals("left shoulder twinge", result.single().notes)
+    }
+
+    @Test
+    fun `the session dto sends a null note when the phone knows none`() {
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(
+            listOf(makeSessionWithReps(sessionId = "s1", routineSessionId = "rs-1")),
+            "user-1",
+        )
+
+        assertNull(result.single().notes)
+    }
+
+    // ========== Telemetry gating ==========
+
+    @Test
+    fun `telemetry is not built at all when the tier cannot send it`() {
+        val sessions = listOf(
+            makeSessionWithReps(sessionId = "s1", repMetrics = listOf(makeRepMetricData(repNumber = 1))),
+        )
+
+        val gated = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(sessions, "user-1", includeTelemetry = false)
+        val allowed = PortalSyncAdapter.toPortalWorkoutSessionsWithTelemetry(sessions, "user-1")
+
+        assertTrue(gated.telemetry.isEmpty(), "force curves must never be constructed below the Inferno tier")
+        assertTrue(allowed.telemetry.isNotEmpty())
+        // Rep summaries ship on every tier, so the gate must not touch them.
+        assertEquals(
+            allowed.sessions.single().exercises.single().sets.single().repSummaries.size,
+            gated.sessions.single().exercises.single().sets.single().repSummaries.size,
+        )
+    }
+
+    // ========== Velocity 1RM as of the session (F-056) ==========
+
+    @Test
+    fun `a session gets the velocity estimate that existed when it was recorded`() {
+        val session = makeSessionWithReps(sessionId = "s1", exerciseId = "ex1", timestamp = 5_000L)
+        val estimates = mapOf(
+            "ex1" to listOf(
+                PortalSyncAdapter.VelocityOneRepMaxPoint(1_000L, 80f),
+                PortalSyncAdapter.VelocityOneRepMaxPoint(4_000L, 95f),
+                PortalSyncAdapter.VelocityOneRepMaxPoint(9_000L, 130f),
+            ),
+        )
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(session), "user-1", estimates)
+
+        assertFloatEquals(95f, result.single().exercises.single().velocityEstimatedOneRepMaxKg!!)
+    }
+
+    @Test
+    fun `a session older than every velocity estimate gets none`() {
+        val session = makeSessionWithReps(sessionId = "s1", exerciseId = "ex1", timestamp = 500L)
+        val estimates = mapOf("ex1" to listOf(PortalSyncAdapter.VelocityOneRepMaxPoint(1_000L, 80f)))
+
+        val result = PortalSyncAdapter.toPortalWorkoutSessions(listOf(session), "user-1", estimates)
+
+        assertNull(result.single().exercises.single().velocityEstimatedOneRepMaxKg)
+    }
+
     // ========== Factory Helpers ==========
+
+    private fun epochIso(epochMs: Long): String = kotlin.time.Instant.fromEpochMilliseconds(epochMs).toString()
 
     /**
      * One passing VBT estimate, computed before any fixture session (fixture

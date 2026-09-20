@@ -887,6 +887,27 @@ class PortalPushLimitsTest {
     }
 
     @Test
+    fun repSummariesStillShipWhenTelemetryIsGatedOff() = runTest {
+        // The gate must skip only the 50 Hz force curves. Rep summaries are part of
+        // every tier's history and analytics, which is why the push still loads rep
+        // metrics for an Ember/Flame user even though it builds no telemetry from them.
+        authenticate()
+        seedSessionWithTelemetry()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-04-21T12:00:00Z"),
+        )
+
+        createManager().sync()
+
+        val payload = assertNotNull(fakeApi.lastPushPayload)
+        assertTrue(payload.telemetry.isEmpty(), "Precondition: this user's tier cannot sync telemetry")
+        assertTrue(
+            payload.sessions.flatMap { it.exercises }.flatMap { it.sets }.any { it.repSummaries.isNotEmpty() },
+            "Rep summaries must reach the portal on every tier",
+        )
+    }
+
+    @Test
     fun telemetrySyncTierConstantIsInferno() {
         assertEquals(
             "INFERNO",
