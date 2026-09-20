@@ -119,7 +119,7 @@ class RoutinesChromeLuminanceContractTest {
     }
 
     @Test
-    fun workoutTab_repCounterAndNextExerciseUseStructuralHelpers() {
+    fun workoutTab_liveHudAndConnectionCardAvoidUnclampedPrimaryContainer() {
         var dir = File(System.getProperty("user.dir") ?: ".")
         while (!File(dir, "shared/src/commonMain").exists()) {
             dir = dir.parentFile ?: break
@@ -128,14 +128,31 @@ class RoutinesChromeLuminanceContractTest {
             dir,
             "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutTab.kt",
         ).readText()
-        val repBlock = workoutTab.substringAfter("fun RepCounterCard").substringBefore("fun LiveMetricsCard")
+        val workoutHud = File(
+            dir,
+            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/WorkoutHud.kt",
+        ).readText()
+        val connectionBlock = workoutTab.substringAfter("fun ConnectionCard").substringBefore("private fun formatReps")
         assertTrue(
-            repBlock.contains("phoenixStructuralContainerColor"),
-            "RepCounterCard must call phoenixStructuralContainerColor.",
+            connectionBlock.contains("surfaceContainerHighest"),
+            "ConnectionCard must fill from surfaceContainerHighest so the #640 clamp applies.",
         )
         assertFalse(
-            repBlock.contains("colorScheme.primaryContainer"),
-            "RepCounterCard must not fill from primaryContainer. That role is unclamped wallpaper chrome.",
+            connectionBlock.contains("colorScheme.primaryContainer"),
+            "ConnectionCard must not fill from primaryContainer. That role is unclamped wallpaper chrome.",
+        )
+        val hudStatsCards = workoutHud.substringAfter("// Load Section").substringBefore("// Position Section")
+        assertTrue(
+            hudStatsCards.contains("surfaceContainerHigh"),
+            "WorkoutHud live metric cards must fill from clamped surfaceContainerHigh.",
+        )
+        assertFalse(
+            hudStatsCards.contains("colorScheme.primaryContainer"),
+            "WorkoutHud live metric cards must not fill from primaryContainer. That role is unclamped wallpaper chrome.",
+        )
+        assertTrue(
+            workoutHud.contains("EnhancedCablePositionBar"),
+            "WorkoutHud must compose EnhancedCablePositionBar, the live replacement for VerticalCablePositionBar.",
         )
         val nextPreview = workoutTab.substringAfter("Show next exercise preview").substringBefore("hasMoreExercises && nextExercise == null")
         assertTrue(
