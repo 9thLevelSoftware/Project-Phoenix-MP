@@ -283,6 +283,8 @@ class HistoryManagerTest {
     fun `delete methods remove sessions from history`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
+            // Delete All is profile-scoped, so it needs an active profile to act on.
+            fakeUserProfileRepository.setActiveProfileForTest()
             val manager =
                 HistoryManager(
                     fakeWorkoutRepository,
@@ -338,6 +340,29 @@ class HistoryManagerTest {
                 listOf("b-1"),
                 fakeWorkoutRepository.getAllSessions("profile-b").first().map { it.id },
             )
+        } finally {
+            managerScope.cancel()
+        }
+    }
+
+    @Test
+    fun `delete all workouts does nothing while no profile is active`() = runTest {
+        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
+        try {
+            val manager =
+                HistoryManager(
+                    fakeWorkoutRepository,
+                    fakePersonalRecordRepository,
+                    fakeUserProfileRepository,
+                    managerScope,
+                )
+            fakeWorkoutRepository.addSession(WorkoutSession(id = "a-1", profileId = "profile-a"))
+            advanceUntilIdle()
+
+            manager.deleteAllWorkouts()
+            advanceUntilIdle()
+
+            assertEquals(listOf("a-1"), fakeWorkoutRepository.allSessions().map { it.id })
         } finally {
             managerScope.cancel()
         }

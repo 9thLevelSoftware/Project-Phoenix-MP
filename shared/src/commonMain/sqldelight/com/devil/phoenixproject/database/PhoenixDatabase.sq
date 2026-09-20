@@ -3725,6 +3725,3 @@ LIMIT 1;
 
 markSessionPulled:
 INSERT OR IGNORE INTO PulledWorkoutSession(id) VALUES (?);
-
-selectPulledSessionIds:
-SELECT id FROM PulledWorkoutSession;
