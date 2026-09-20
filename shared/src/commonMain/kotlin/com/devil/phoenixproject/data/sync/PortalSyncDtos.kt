@@ -867,7 +867,10 @@ data class KnownEntityIds(
 @Serializable
 data class PortalSyncPullRequest(
     val deviceId: String,
-    /** @deprecated Use knownEntityIds for parity-based sync. Kept for backward compatibility. */
+    /**
+     * Server `syncTime` (epoch millis) of the last completed pull; 0 asks for everything.
+     * Combined with [knownEntityIds]: known entities unchanged since lastSync are skipped.
+     */
     val lastSync: Long = 0,
     val profileId: String? = null,
     val cursor: String? = null,
@@ -898,6 +901,8 @@ data class PortalSyncPullResponse(
     // Pagination metadata (Plan 03-05)
     val nextCursor: String? = null,
     val hasMore: Boolean = false,
+    /** True when the server hit its external-activities cap (500) and omitted the rest. */
+    val externalActivitiesHasMore: Boolean = false,
     // Entity data
     val sessions: List<PullWorkoutSessionDto> = emptyList(), // Merged via INSERT OR IGNORE (local wins)
     val routines: List<PullRoutineDto> = emptyList(),

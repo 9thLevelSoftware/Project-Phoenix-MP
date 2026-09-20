@@ -1915,6 +1915,7 @@ class SqlDelightSyncRepository(
         personalRecords: List<PersonalRecordSyncDto>,
         lastSync: Long,
         profileId: String,
+        serverWinsRoutineIds: Set<String>,
         sessionNotes: Map<String, SessionNotesEntry>,
         sessionUpdatedAtById: Map<String, Long>,
     ) {
@@ -2034,7 +2035,12 @@ class SqlDelightSyncRepository(
                     if (claimedTargetProfileId != null) {
                         queries.adoptRoutineProfile(profileId = targetProfileId, id = portalRoutine.id)
                     }
-                    mergePortalRoutine(portalRoutine, lastSync, targetProfileId)
+                    mergePortalRoutine(
+                        portalRoutine = portalRoutine,
+                        lastSync = lastSync,
+                        profileId = targetProfileId,
+                        serverWins = portalRoutine.id in serverWinsRoutineIds,
+                    )
                 }
 
                 // 3. Cycles — SERVER WINS with single-active enforcement
@@ -2899,7 +2905,12 @@ class SqlDelightSyncRepository(
      * - SAFETY GUARD: an empty portal exercise list is treated as an incomplete payload and
      *   leaves the local exercises alone.
      */
-    private fun mergePortalRoutine(portalRoutine: PullRoutineDto, lastSync: Long, profileId: String) {
+    private fun mergePortalRoutine(
+        portalRoutine: PullRoutineDto,
+        lastSync: Long,
+        profileId: String,
+        serverWins: Boolean = false,
+    ) {
         val existing = queries.selectRoutineById(portalRoutine.id).executeAsOneOrNull()
         if (existing != null) {
             if (existing.deletedAt != null) {
@@ -2907,7 +2918,7 @@ class SqlDelightSyncRepository(
                 return
             }
             val localUpdatedAt = existing.updatedAt ?: 0L
-            if (localUpdatedAt > lastSync) {
+            if (!serverWins && localUpdatedAt > lastSync) {
                 Logger.d { "Routine '${portalRoutine.name}' skipped: local version newer ($localUpdatedAt > $lastSync)" }
                 return
             }
