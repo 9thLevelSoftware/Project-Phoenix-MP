@@ -123,10 +123,9 @@ class FakeProfileExerciseBaselineRepository : ProfileExerciseBaselineRepository 
 
     override suspend fun copyForProfileDeletion(sourceProfileId: String, targetProfileId: String) {
         rows.values.filter { it.profileId == sourceProfileId }.forEach { source ->
-            rows.putIfAbsent(
-                targetProfileId to source.exerciseId,
-                source.copy(profileId = targetProfileId),
-            )
+            rows.getOrPut(targetProfileId to source.exerciseId) {
+                source.copy(profileId = targetProfileId)
+            }
         }
     }
 
@@ -135,7 +134,7 @@ class FakeProfileExerciseBaselineRepository : ProfileExerciseBaselineRepository 
         targetProfileId: String,
     ) {
         rows.values.filter { it.profileId == sourceProfileId }.toList().forEach { source ->
-            rows.putIfAbsent(targetProfileId to source.exerciseId, source.copy(profileId = targetProfileId))
+            rows.getOrPut(targetProfileId to source.exerciseId) { source.copy(profileId = targetProfileId) }
             rows.remove(sourceProfileId to source.exerciseId)
         }
     }
