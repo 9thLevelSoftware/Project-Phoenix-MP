@@ -124,7 +124,37 @@ class PortalTokenStorage(private val settings: Settings) {
     private val _authEvents = MutableSharedFlow<AuthEvent>(replay = 0, extraBufferCapacity = 1)
     val authEvents: SharedFlow<AuthEvent> = _authEvents.asSharedFlow()
 
-    fun saveGoTrueAuth(response: GoTrueAuthResponse) = withPlatformLock(authLock) {
+    // Bumped (under authLock) by every clearAuth and every non-refresh save
+    // (sign-in/sign-up). A refresh captures it before its network call and passes
+    // it back to saveGoTrueAuth, so a refresh that was in flight across a sign-out
+    // or account switch drops its write instead of resurrecting the old session.
+    private var authGeneration = 0L
+
+    /** Current auth generation; capture before a token refresh network call. */
+    fun authGeneration(): Long = withPlatformLock(authLock) { authGeneration }
+
+    /**
+     * The stored refresh token and the generation it belongs to, read under one
+     * lock so a sign-out/sign-in can't land between the two reads.
+     */
+    fun refreshTokenWithGeneration(): Pair<String?, Long> = withPlatformLock(authLock) {
+        getRefreshToken() to authGeneration
+    }
+
+    /**
+     * Persists a GoTrue session.
+     *
+     * @param expectedGeneration pass the [authGeneration] captured before a refresh
+     *   request. If auth was cleared or replaced since, the write is dropped.
+     *   Null (sign-in/sign-up) always writes and starts a new generation.
+     * @return false if the write was dropped as stale.
+     */
+    fun saveGoTrueAuth(response: GoTrueAuthResponse, expectedGeneration: Long? = null): Boolean = withPlatformLock(authLock) {
+        if (expectedGeneration == null) {
+            authGeneration++
+        } else if (expectedGeneration != authGeneration) {
+            return@withPlatformLock false
+        }
         // Preserve existing premium status — GoTrue auth response does not include it,
         // and overwriting would reset paid users to non-premium on every sign-in.
         //
@@ -151,6 +181,7 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_IS_PREMIUM] = existingPremium
         _isAuthenticated.value = true
         _currentUser.value = loadUser()
+        true
     }
 
     fun getRefreshToken(): String? = settings.getStringOrNull(KEY_REFRESH_TOKEN)
@@ -220,10 +251,23 @@ class PortalTokenStorage(private val settings: Settings) {
      * to allow the UI to show appropriate messaging to the user.
      *
      * @param event The authentication event describing why auth was cleared
+     * @param expectedGeneration when set (refresh failures), clear and emit only if
+     *   auth hasn't been cleared or replaced since that [authGeneration] was
+     *   captured, so a stale failure can't wipe a newer session or report
+     *   "session expired" after a deliberate sign-out.
+     * @return false if skipped because the generation moved.
      */
-    fun clearAuthWithEvent(event: AuthEvent) {
-        clearAuthInternal()
-        _authEvents.tryEmit(event)
+    fun clearAuthWithEvent(event: AuthEvent, expectedGeneration: Long? = null): Boolean {
+        val cleared = withPlatformLock(authLock) {
+            if (expectedGeneration != null && expectedGeneration != authGeneration) {
+                false
+            } else {
+                clearAuthInternal()
+                true
+            }
+        }
+        if (cleared) _authEvents.tryEmit(event)
+        return cleared
     }
 
     /**
@@ -244,6 +288,7 @@ class PortalTokenStorage(private val settings: Settings) {
     }
 
     private fun clearAuthInternal() = withPlatformLock(authLock) {
+        authGeneration++
         settings.remove(KEY_TOKEN)
         settings.remove(KEY_REFRESH_TOKEN)
         settings.remove(KEY_EXPIRES_AT)
@@ -277,4 +322,29 @@ class PortalTokenStorage(private val settings: Settings) {
         val normalizedProfileId = profileId.trim().ifBlank { "default" }
         return "$KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX$normalizedProfileId"
     }
+}
+
+/**
+ * Wipes secure auth storage on a fresh install whose secure store outlives the
+ * app (the iOS Keychain survives uninstall; app preferences and the database
+ * don't). Without this, a reinstall on a handed-down device is still signed in
+ * as the previous owner.
+ *
+ * No install marker and no local database means a fresh install: clear. No
+ * marker but a database present is an upgrade from a build that predates the
+ * marker: keep the session. The marker is set in both cases.
+ *
+ * @return true if secure storage was cleared.
+ */
+internal fun resetSecureStorageOnFreshInstall(
+    hasInstallMarker: () -> Boolean,
+    localDatabaseExists: () -> Boolean,
+    clearSecureStorage: () -> Unit,
+    setInstallMarker: () -> Unit,
+): Boolean {
+    if (hasInstallMarker()) return false
+    val freshInstall = !localDatabaseExists()
+    if (freshInstall) clearSecureStorage()
+    setInstallMarker()
+    return freshInstall
 }
