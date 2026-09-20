@@ -2876,6 +2876,10 @@ class SyncManagerTest {
     @Test
     fun authenticatedNewProfileUsesItsCapturedIdForServerDeletion() = runTest {
         setupAuthenticated()
+        fakeUserProfileRepo.setActiveProfileForTest(
+            id = "default",
+            supabaseUserId = "user-123",
+        )
         val newProfile = fakeUserProfileRepo.createAndActivateProfile("New profile", 1)
         assertNull(newProfile.supabaseUserId)
         fakeSyncRepo.routinesToReturn = listOf(
