@@ -1286,6 +1286,12 @@ class MainViewModelTest {
     @Test
     fun `clearing the ViewModel mid Just Lift set sends RESET before disconnect and keeps the arm row`() = runTest(testCoroutineRule.dispatcher) {
         val armRow = startArmedSet(isJustLift = true)
+        // R-14: pin where cleanup() runs — after the RESET, so the workout foreground
+        // service is still keeping the process alive while the write lands.
+        var eventsAtCleanup = -1
+        viewModel.workoutSessionManager.activeSessionEngine.beforeCleanupGuardCloseForTest = {
+            eventsAtCleanup = fakeBleRepository.events.size
+        }
 
         clearViewModelLikeTheActivity()
         advanceUntilIdle()
@@ -1295,28 +1301,91 @@ class MainViewModelTest {
         val disconnected = fakeBleRepository.events.indexOf(FakeBleRepository.Event.Disconnected)
         assertTrue(stopEntered >= 0, "RESET must be attempted when the Activity scope dies mid-set")
         assertTrue(stopEntered < stopCompleted && stopCompleted < disconnected, "RESET must finish before disconnect: ${fakeBleRepository.events}")
+        assertTrue(
+            stopCompleted < eventsAtCleanup && eventsAtCleanup <= disconnected,
+            "cleanup() must run between the RESET and the disconnect, not before the RESET (marker=$eventsAtCleanup)",
+        )
         assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
         assertEquals(1, fakeBleRepository.disconnectCallCount)
         assertEquals(listOf(armRow), loadedSafetyRows(), "An unconfirmed teardown must keep the #782 arm row for the relaunch warning")
     }
 
     @Test
-    fun `clearing the ViewModel mid set still disconnects when RESET times out`() = runTest(testCoroutineRule.dispatcher) {
+    fun `clearing the ViewModel mid manual set still disconnects when RESET times out`() = runTest(testCoroutineRule.dispatcher) {
         val armRow = startArmedSet(isJustLift = false)
         fakeBleRepository.stopWorkoutBlock = { kotlinx.coroutines.awaitCancellation() }
         val clearedAt = testCoroutineRule.dispatcher.scheduler.currentTime
 
         clearViewModelLikeTheActivity()
+        runCurrent()
+
+        // R-12: disconnect must wait for the RESET attempt, not race it.
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount, "RESET must be attempted before disconnect")
+        assertEquals(0, fakeBleRepository.disconnectCallCount, "Disconnect must not run while the RESET attempt is still in flight")
+
         advanceUntilIdle()
 
-        assertEquals(1, fakeBleRepository.stopWorkoutCallCount, "RESET must be attempted before disconnect")
         assertFalse(FakeBleRepository.Event.StopWorkoutCompleted in fakeBleRepository.events)
         assertEquals(1, fakeBleRepository.disconnectCallCount, "A hung RESET must not block disconnect")
         assertTrue(
+            fakeBleRepository.events.indexOf(FakeBleRepository.Event.StopWorkoutEntered) <
+                fakeBleRepository.events.indexOf(FakeBleRepository.Event.Disconnected),
+            "Recorded order must be RESET attempt then disconnect: ${fakeBleRepository.events}",
+        )
+        assertTrue(
             testCoroutineRule.dispatcher.scheduler.currentTime - clearedAt >= com.devil.phoenixproject.util.BleConstants.GATT_OPERATION_TIMEOUT_MS,
-            "Disconnect waits for the bounded RESET attempt",
+            "Disconnect waits for the whole bounded RESET attempt",
         )
         assertEquals(listOf(armRow), loadedSafetyRows())
+    }
+
+    @Test
+    fun `clearing the ViewModel mid set disconnects and keeps the arm row when RESET throws`() = runTest(testCoroutineRule.dispatcher) {
+        val armRow = startArmedSet(isJustLift = false)
+        fakeBleRepository.stopWorkoutBlock = { throw IllegalStateException("gatt gone") }
+
+        clearViewModelLikeTheActivity()
+        advanceUntilIdle()
+
+        assertEquals(1, fakeBleRepository.stopWorkoutCallCount)
+        assertEquals(1, fakeBleRepository.disconnectCallCount, "A throwing RESET must not leak the BLE link")
+        assertEquals(listOf(armRow), loadedSafetyRows())
+    }
+
+    @Test
+    fun `clearing the ViewModel after the link dropped mid set skips the RESET`() = runTest(testCoroutineRule.dispatcher) {
+        val armRow = startArmedSet(isJustLift = false)
+        fakeBleRepository.simulateDisconnect()
+        advanceUntilIdle()
+        val stopsBeforeClear = fakeBleRepository.stopWorkoutCallCount
+        val clearedAt = testCoroutineRule.dispatcher.scheduler.currentTime
+
+        clearViewModelLikeTheActivity()
+        advanceUntilIdle()
+
+        // Off-link a RESET can only fail, and waiting for it would delay cleanup by the GATT timeout.
+        assertEquals(stopsBeforeClear, fakeBleRepository.stopWorkoutCallCount, "No RESET is written once the link is gone")
+        assertEquals(clearedAt, testCoroutineRule.dispatcher.scheduler.currentTime, "The off-link path must not wait for a RESET timeout")
+        assertEquals(listOf(armRow), loadedSafetyRows(), "The #782 arm row still warns on the next launch")
+    }
+
+    @Test
+    fun `clearing an idle ViewModel sends no RESET and disconnects immediately`() = runTest(testCoroutineRule.dispatcher) {
+        fakeBleRepository.simulateConnect("Vee_Test", "AA:BB:CC:DD:EE:FF")
+        advanceUntilIdle()
+        assertEquals(WorkoutState.Idle, viewModel.workoutState.value)
+        assertEquals(MachineTeardownState.Ready, viewModel.machineTeardownState.value)
+        val clearedAt = testCoroutineRule.dispatcher.scheduler.currentTime
+
+        clearViewModelLikeTheActivity()
+        runCurrent()
+
+        // No lease: nothing suspends before disconnect, so it is done without advancing time.
+        assertEquals(0, fakeBleRepository.stopWorkoutCallCount, "An idle, torn-down engine must not write RESET")
+        assertEquals(1, fakeBleRepository.disconnectCallCount)
+        assertEquals(clearedAt, testCoroutineRule.dispatcher.scheduler.currentTime, "The idle path must not wait for a RESET timeout")
+        advanceUntilIdle()
+        assertEquals(0, fakeBleRepository.stopWorkoutCallCount)
     }
 
     /** Starts one armed machine set and returns its single #782 arm row. */
