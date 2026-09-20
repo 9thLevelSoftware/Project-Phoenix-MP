@@ -105,6 +105,21 @@ class CsvParserTest {
     }
 
     @Test
+    fun parseWorkoutHistory_stripsExportFormulaGuard() {
+        // Exports write formula-like names as '=... (CSV injection guard); re-import restores them.
+        val csv = """
+            Date,Exercise,Mode,Target Reps,Warmup Reps,Working Reps,Total Reps,Weight,Progression,Duration (s),Just Lift,Eccentric Load
+            2026-03-10,'-Bar Row,OldSchool,10,0,10,10,80.0,-1.0,45,No,100
+        """.trimIndent()
+
+        val (sessions, errors) = CsvParser.parseWorkoutHistory(csv)
+
+        assertEquals(0, errors.size, "Expected no errors but got: $errors")
+        assertEquals("-Bar Row", sessions.single().exerciseName)
+        assertEquals(-1.0f, sessions.single().progressionKg)
+    }
+
+    @Test
     fun parseWorkoutHistory_quotedExerciseName() {
         val csv = """
             Date,Exercise,Mode,Target Reps,Warmup Reps,Working Reps,Total Reps,Weight,Progression,Duration (s),Just Lift,Eccentric Load

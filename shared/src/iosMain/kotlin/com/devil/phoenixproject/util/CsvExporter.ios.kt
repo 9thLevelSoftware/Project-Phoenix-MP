@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.util
 
+import com.devil.phoenixproject.data.integration.CsvExporter as StrongCsvExporter
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.WeightUnit
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -42,7 +43,7 @@ class IosCsvExporter : CsvExporter {
                 val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
                 val formattedOneRM = formatWeight(oneRM, weightUnit)
                 val date = KmpUtils.formatTimestamp(pr.timestamp, "yyyy-MM-dd")
-                appendLine("\"$exerciseName\",${pr.phase.name},$formattedWeight,${pr.reps},$formattedOneRM,$date")
+                appendLine("${StrongCsvExporter.escapeCsvField(exerciseName)},${pr.phase.name},$formattedWeight,${pr.reps},$formattedOneRM,$date")
             }
         }
 
@@ -79,7 +80,7 @@ class IosCsvExporter : CsvExporter {
                     else -> "0"
                 }
                 appendLine(
-                    "$date,$time,\"$exerciseName\",${session.mode},$formattedWeight,$progression,${session.reps},$durationSeconds",
+                    "$date,$time,${StrongCsvExporter.escapeCsvField(exerciseName)},${session.mode},$formattedWeight,$progression,${session.reps},$durationSeconds",
                 )
             }
         }
@@ -121,7 +122,7 @@ class IosCsvExporter : CsvExporter {
                     }
                     previousOneRM = oneRM
 
-                    appendLine("\"$exerciseName\",${pr.phase.name},$date,$formattedWeight,${pr.reps},$formattedOneRM,$improvement")
+                    appendLine("${StrongCsvExporter.escapeCsvField(exerciseName)},${pr.phase.name},$date,$formattedWeight,${pr.reps},$formattedOneRM,$improvement")
                 }
             }
         }

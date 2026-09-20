@@ -222,12 +222,8 @@ sqldelight {
     databases {
         create("PhoenixDatabase") {
             packageName.set("com.devil.phoenixproject.database")
-            // NOTE: this literal does not drive the schema version. The generated
-            // PhoenixDatabase.Schema.version is derived from the migration files
-            // (initial schema 1 + one per N.sqm, i.e. highest N + 1) and rises on its
-            // own with each new migration. Adding a migration needs no edit here
-            // (see CLAUDE.md); SchemaParityTest's EXPECTED_SCHEMA_VERSION is the value
-            // to keep in step.
+            // Schema version is derived from migrations (highest N.sqm + 1); this value is
+            // not authoritative. Do not bump it when adding a migration (see CLAUDE.md).
             version = 47
         }
     }

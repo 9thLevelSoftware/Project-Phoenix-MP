@@ -855,9 +855,18 @@
     <string name="profile_adult_enable_partial_failure">Age confirmation was saved, but Vulgar Mode could not be enabled. Try again.</string>
     <string name="label_previously_completed">Previously completed</string>
     <string name="cd_filter_previously_completed">Filter exercises previously completed</string>
+    <!-- PR 25: crash report prompt -->
+    <string name="crash_report_title">Crash report available</string>
+    <string name="crash_report_message">The app closed unexpectedly last time. Share the crash report? It contains technical details about the error; review it before posting publicly.</string>
+    <string name="crash_report_share">Share</string>
+    <string name="crash_report_dismiss">Not now</string>
+    <string name="startup_dual_databases_message">Phoenix found more than one copy of its local database and cannot safely choose between them, so nothing has been changed or deleted. Export the database files to keep a copy, then contact support with the diagnostic and support codes below. The files contain your workout history: send them privately to support@phoenix-portal.com rather than attaching them to a public issue. Retry checks again once support has helped you resolve the duplicate files.</string>
+    <string name="startup_export_database_files">Export database files</string>
+    <string name="startup_export_failed">The database files could not be exported. Nothing was changed; you can try again.</string>
+    <string name="startup_contact_support">Contact support (GitHub Issues)</string>
 
     <!-- PR 5: a pre-migration-49 stored 1RM whose owner could not be determined is offered
          to the active profile once, instead of being guessed onto a profile. -->
-    <string name="training_max_claim_notice">A stored max of %1$s was found for %2$s, from before maxes were kept per profile. Use it for this profile?</string>
+    <string name="training_max_claim_notice">A stored max of %1$s was found for %2$s, from before maxes were kept per profile. Use it for %3$s?</string>
     <string name="training_max_claim_action">Use it</string>
 </resources>

@@ -1066,42 +1066,6 @@ WHERE exerciseId = ? AND workoutMode = ?
 AND profile_id = :profileId AND deletedAt IS NULL
 ORDER BY prType;
 
--- Get the best active weight PR for an exercise across all modes
-selectBestWeightPR:
-SELECT * FROM PersonalRecord
-WHERE exerciseId = ? AND prType = 'MAX_WEIGHT'
-AND profile_id = :profileId AND deletedAt IS NULL
-ORDER BY weight DESC
-LIMIT 1;
-
--- Get the best active volume PR for an exercise across all modes
-selectBestVolumePR:
-SELECT * FROM PersonalRecord
-WHERE exerciseId = ? AND prType = 'MAX_VOLUME'
-AND profile_id = :profileId AND deletedAt IS NULL
-ORDER BY volume DESC
-LIMIT 1;
-
--- Get best active weight PR for exercise BY MODE
-selectBestWeightPRByMode:
-SELECT * FROM PersonalRecord
-WHERE exerciseId = :exerciseId
-AND prType = 'MAX_WEIGHT'
-AND workoutMode = :workoutMode
-AND profile_id = :profileId AND deletedAt IS NULL
-ORDER BY weight DESC
-LIMIT 1;
-
--- Get best active volume PR for exercise BY MODE
-selectBestVolumePRByMode:
-SELECT * FROM PersonalRecord
-WHERE exerciseId = :exerciseId
-AND prType = 'MAX_VOLUME'
-AND workoutMode = :workoutMode
-AND profile_id = :profileId AND deletedAt IS NULL
-ORDER BY volume DESC
-LIMIT 1;
-
 -- Get all active PRs for an exercise (all modes) for display
 selectAllPRsForExercise:
 SELECT * FROM PersonalRecord
@@ -1113,11 +1077,6 @@ ORDER BY workoutMode, prType, achievedAt DESC;
 insertRecord:
 INSERT INTO PersonalRecord (exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-
--- Upsert PR (insert or replace) - requires ID
-upsertRecord:
-INSERT OR REPLACE INTO PersonalRecord (id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, profile_id, cable_count, uuid)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 -- Upsert PR by unique key (exerciseId, workoutMode, prType, phase) - no ID required
 -- Uses INSERT OR REPLACE which replaces on unique index conflict (idx_pr_unique)
@@ -1178,10 +1137,6 @@ WHERE uuid = :uuid
     OR updatedAt < :updatedAt
     OR (updatedAt = :updatedAt AND :deletedAt IS NOT NULL AND deletedAt IS NULL)
   );
-
--- Get all PR IDs for duplicate checking during import
-selectAllPRIds:
-SELECT id FROM PersonalRecord;
 
 -- Get all PRs unfiltered (for backup export across all profiles)
 selectAllRecordsSync:
@@ -1435,30 +1390,6 @@ INSERT OR IGNORE INTO RepBiomechanics (
     asymmetryPercent, dominantSide, avgLoadA, avgLoadB, timestamp
 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- ==================== EXERCISE SIGNATURE QUERIES ====================
-
-insertExerciseSignature:
-INSERT INTO ExerciseSignature (exerciseId, romMm, durationMs, symmetryRatio, velocityProfile, cableConfig, sampleCount, confidence, createdAt, updatedAt)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
-
-selectSignaturesByExercise:
-SELECT * FROM ExerciseSignature WHERE exerciseId = ? ORDER BY confidence DESC;
-
-selectAllSignatures:
-SELECT * FROM ExerciseSignature ORDER BY updatedAt DESC;
-
-updateExerciseSignature:
-UPDATE ExerciseSignature
-SET romMm = ?, durationMs = ?, symmetryRatio = ?, velocityProfile = ?, cableConfig = ?,
-    sampleCount = ?, confidence = ?, updatedAt = ?
-WHERE id = ?;
-
-deleteExerciseSignature:
-DELETE FROM ExerciseSignature WHERE id = ?;
-
-deleteSignaturesByExercise:
-DELETE FROM ExerciseSignature WHERE exerciseId = ?;
-
 -- ==================== ASSESSMENT RESULT QUERIES ====================
 
 insertAssessmentResult:
@@ -1579,9 +1510,6 @@ UPDATE EarnedBadge SET celebratedAt = ? WHERE badgeId IN ? AND profile_id = :pro
 selectAllStreakHistory:
 SELECT * FROM StreakHistory WHERE profile_id = :profileId ORDER BY length DESC;
 
-selectLongestStreak:
-SELECT MAX(length) AS longestStreak FROM StreakHistory WHERE profile_id = :profileId;
-
 insertStreakHistory:
 INSERT INTO StreakHistory (startDate, endDate, length, profile_id) VALUES (?, ?, ?, :profileId);
 
@@ -1621,9 +1549,6 @@ WHERE sessionId IN (SELECT id FROM WorkoutSession WHERE deletedAt IS NULL);
 
 countAllWorkoutSessions:
 SELECT COUNT(*) FROM WorkoutSession;
-
-countAllMetricSamples:
-SELECT COUNT(*) FROM MetricSample;
 
 countAllRoutineExercises:
 SELECT COUNT(*) FROM RoutineExercise;
@@ -1714,11 +1639,6 @@ SELECT COUNT(DISTINCT routineSessionId) FROM WorkoutSession WHERE routineSession
 -- Count custom routines created (profile-scoped)
 countCreatedRoutines:
 SELECT COUNT(*) FROM Routine WHERE profile_id = :profileId AND deletedAt IS NULL;
-
--- Get days since last workout (for comeback badge, profile-scoped)
-selectDaysSinceLastWorkout:
-SELECT CAST((julianday('now') - julianday(MAX(timestamp) / 1000, 'unixepoch')) AS INTEGER) AS daysSince
-FROM WorkoutSession WHERE profile_id = :profileId AND workingReps > 0;
 
 -- Check if a streak was previously broken and rebuilt (profile-scoped)
 -- Returns the count of streak breaks (transitions from >0 streak to 0)
@@ -1875,9 +1795,6 @@ UPDATE TrainingCycle SET is_active = 0 WHERE profile_id = :profileId;
 countActiveCycles:
 SELECT COUNT(*) FROM TrainingCycle WHERE is_active = 1 AND profile_id = :profileId AND deletedAt IS NULL;
 
-deleteTrainingCycle:
-DELETE FROM TrainingCycle WHERE id = ?;
-
 -- Soft-delete training cycle (for sync — tombstone propagation to server)
 softDeleteTrainingCycle:
 UPDATE TrainingCycle SET deletedAt = ? WHERE id = ?;
@@ -1918,11 +1835,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 updateCycleProgress:
 UPDATE CycleProgress
 SET current_day_number = ?, last_completed_date = ?, cycle_start_date = ?, last_advanced_at = ?, completed_days = ?, missed_days = ?, rotation_count = ?
-WHERE cycle_id = ?;
-
-advanceCycleDay:
-UPDATE CycleProgress
-SET current_day_number = ?, last_completed_date = ?, rotation_count = ?
 WHERE cycle_id = ?;
 
 resetCycleProgress:
@@ -2082,26 +1994,6 @@ DELETE FROM CompletedSet WHERE id = ?;
 
 deleteCompletedSetsBySession:
 DELETE FROM CompletedSet WHERE session_id = ?;
-
--- ProgressionEvent Queries
-selectProgressionEventsByExercise:
-SELECT * FROM ProgressionEvent WHERE exercise_id = ? AND profile_id = :profileId ORDER BY timestamp DESC;
-
-selectRecentProgressionEvent:
-SELECT * FROM ProgressionEvent WHERE exercise_id = ? AND profile_id = :profileId ORDER BY timestamp DESC LIMIT 1;
-
-selectPendingProgressionEvents:
-SELECT * FROM ProgressionEvent WHERE user_response IS NULL AND profile_id = :profileId ORDER BY timestamp DESC;
-
-insertProgressionEvent:
-INSERT INTO ProgressionEvent (id, exercise_id, suggested_weight_kg, previous_weight_kg, reason, user_response, actual_weight_kg, timestamp, profile_id)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
-
-updateProgressionEventResponse:
-UPDATE ProgressionEvent SET user_response = ?, actual_weight_kg = ? WHERE id = ?;
-
-deleteProgressionEvent:
-DELETE FROM ProgressionEvent WHERE id = ?;
 
 -- The stored 1RM / training max is per profile from migration 49 on; see the
 -- ExerciseTrainingMax section at the end of this file. Nothing writes
@@ -3450,10 +3342,6 @@ SELECT * FROM ExternalExerciseTemplate
 WHERE profileId = ? AND provider = ?
 ORDER BY title COLLATE NOCASE;
 
-getExternalExerciseTemplateBySyncKey:
-SELECT * FROM ExternalExerciseTemplate
-WHERE provider = ? AND externalId = ? AND profileId = ?;
-
 upsertExternalExerciseTemplate:
 INSERT OR REPLACE INTO ExternalExerciseTemplate(
     id, externalId, provider, title, exerciseType, primaryMuscleGroups,
@@ -3483,15 +3371,6 @@ reassignExternalExerciseTemplateProfile:
 UPDATE ExternalExerciseTemplate SET profileId = :targetProfileId WHERE profileId = :sourceProfileId;
 
 -- ExternalExerciseTemplateMapping queries
-getExternalExerciseTemplateMapping:
-SELECT * FROM ExternalExerciseTemplateMapping
-WHERE provider = ? AND externalTemplateId = ? AND profileId = ?;
-
-upsertExternalExerciseTemplateMapping:
-INSERT OR REPLACE INTO ExternalExerciseTemplateMapping(
-    id, provider, externalTemplateId, localExerciseId, profileId, createdAt, updatedAt, rawData
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
-
 deleteExternalExerciseTemplateMappingsByProvider:
 DELETE FROM ExternalExerciseTemplateMapping WHERE provider = ? AND profileId = ?;
 
@@ -3549,10 +3428,6 @@ UPDATE ExternalBodyMeasurement SET profileId = :targetProfileId WHERE profileId 
 getIntegrationSyncCursor:
 SELECT * FROM IntegrationSyncCursor
 WHERE provider = ? AND profileId = ? AND cursorType = ?;
-
-getIntegrationSyncCursorsByProvider:
-SELECT * FROM IntegrationSyncCursor
-WHERE provider = ? AND profileId = ?;
 
 upsertIntegrationSyncCursor:
 INSERT OR REPLACE INTO IntegrationSyncCursor(provider, profileId, cursorType, cursorValue, updatedAt)
@@ -3857,7 +3732,7 @@ DELETE FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId;
 
 -- Test-only: assert that a code path wrote no training max anywhere.
 countTrainingMaxRowsForTest:
-SELECT COUNT(*) FROM ExerciseTrainingMax;
+SELECT COUNT(*) FROM ExerciseTrainingMax;
 -- Test-only: who ended up owning an exercise's training max, and with what value.
 selectTrainingMaxRowsForTest:
 SELECT profile_id, one_rep_max_kg FROM ExerciseTrainingMax

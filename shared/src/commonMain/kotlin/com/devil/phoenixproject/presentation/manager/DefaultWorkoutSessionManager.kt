@@ -447,6 +447,8 @@ class DefaultWorkoutSessionManager(
             override fun skipCurrentExerciseAndEnterNextStep(): Boolean = routineFlowManager.skipCurrentExerciseAndEnterNextStep()
             override fun showRoutineComplete() = routineFlowManager.showRoutineComplete()
             override fun getCurrentExercise(): RoutineExercise? = routineFlowManager.getCurrentExercise()
+            override fun getNextStepForRecovery(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>? =
+                routineFlowManager.getNextStep(routine, exerciseIndex, setIndex)
             override fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>? {
                 restTransitionNavigationLookupsForTest++
                 restTransitionNavigationLookupObserverForTest?.invoke()

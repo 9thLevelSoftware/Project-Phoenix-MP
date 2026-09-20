@@ -2,7 +2,7 @@
 
 [![Latest Release](https://img.shields.io/github/v/release/9thLevelSoftware/Project-Phoenix-MP)](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/latest)
 [![License](https://img.shields.io/badge/license-Proprietary-red.svg)](LICENSE)
-[![Kotlin](https://img.shields.io/badge/Kotlin-2.0+-blue.svg)](https://kotlinlang.org)
+[![Kotlin](https://img.shields.io/badge/Kotlin-2.4-blue.svg)](https://kotlinlang.org)
 [![Platform](https://img.shields.io/badge/platform-Android%20%7C%20iOS-green.svg)](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases)
 [![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/9thLevelSoftware/Project-Phoenix-MP)
 
@@ -22,7 +22,7 @@ Your support helps cover development, testing, and platform costs and keeps this
 
 | Platform | Install | Guide |
 |----------|---------|-------|
-| **Android** | [Play Store](https://play.google.com/store/apps/details?id=com.devil.phoenixproject) / [Join Beta](ANDROID_INSTALL.md#join-the-beta) | [Android Guide](ANDROID_INSTALL.md) |
+| **Android** | [Play Store](https://play.google.com/store/apps/details?id=com.devil.phoenixproject) / [APK](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/latest) | [Android Guide](ANDROID_INSTALL.md) |
 | **iOS** | [TestFlight](https://testflight.apple.com/join/TFw1m89R) | [iOS Guide](iOS_INSTALL.md) |
 
 ---
@@ -49,7 +49,7 @@ Your support helps cover development, testing, and platform costs and keeps this
 - Screen stays on during workouts
 
 ### Exercise Library & Routines
-- **200+ exercises** organized by muscle group
+- **870+ exercises** organized by muscle group
 - Build custom routines with **superset support**
 - Drag-and-drop exercise ordering
 - Visual tree connectors for supersets
@@ -64,8 +64,8 @@ Your support helps cover development, testing, and platform costs and keeps this
 
 ### Analytics & Progress
 - **Automatic personal record detection** with velocity-estimated 1RM, percent-of-1RM scaling, badges, and backfill
-- Complete workout history with expandable stats; exercise-history quick view *(merged after v0.9.6; release pending)*
-- Exercise picker filter for previously completed movements *(merged after v0.9.6; release pending)*
+- Complete workout history with expandable stats; exercise-history quick view
+- Exercise picker filter for previously completed movements
 - Muscle balance radar chart, workout consistency tracking, volume/intensity comparisons, and mode distribution
 
 ### Profiles & Personalized Training
@@ -77,13 +77,14 @@ Your support helps cover development, testing, and platform costs and keeps this
 - Equipment Rack support for external load, counterweight, and display-only accessories
 - Next-set recommendations, session body-weight prompts, and temporary Active Recovery / Heavy Deload routine starts
 - TUT and TUT Beast in Just Lift; set-type labels during workouts
-- Routine-set repetition *(merged after v0.9.6; release pending)*
+- Routine-set repetition
 
 ### Privacy Focused
-- All data stored locally on your device
+- All data stored locally on your device by default
 - No account required
 - Works completely offline
 - Backup & restore your data anytime
+- Optional Cloud Sync and integrations; see the [Privacy Policy](https://9thlevelsoftware.github.io/Project-Phoenix-MP/privacy-policy.html) for what they send
 
 ---
 
@@ -93,6 +94,8 @@ For the latest features, fixes, and upgrade notes see the
 [GitHub Releases page](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases).
 Recent highlights:
 
+- **[v1.0.2](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v1.0.2)** — Just Lift reliability fixes, iOS database and build fixes, Set Ready confirmation after mid-routine exercise jumps, and routine set-config layout fixes.
+- **[v1.0.0](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v1.0.0)** — New open exercise catalogue and Phoenix logo, Old School drop-set retries, routine-set repetition, exercise-history quick view, workout-isolation and teardown fixes, and dark-mode fixes.
 - **[v0.9.6](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.6)** — Profile tab, profile-scoped preferences, Exercise Insights, clearer set types, Health Connect mapping, and workout-flow reliability fixes.
 - **[v0.9.5](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.5)** — UI/BLE compatibility and training-cycle reliability.
 - **[v0.9.4](https://github.com/9thLevelSoftware/Project-Phoenix-MP/releases/tag/v0.9.4)** — Optional age-gated VBT verbal feedback.
@@ -105,21 +108,21 @@ Recent highlights:
 ## Building from Source
 
 ### Prerequisites
-- JDK 17+
-- Android Studio Hedgehog or newer
-- Xcode 15+ (for iOS, macOS only)
-- Kotlin 2.0+
+- JDK 17
+- An Android Studio version that supports Android Gradle Plugin 9.2
+- Xcode 26.x (for iOS, macOS only)
+- Toolchain versions (Kotlin, AGP, Compose Multiplatform, and libraries) are pinned in `gradle/libs.versions.toml`
 
 ### Android
 ```bash
-./gradlew :androidApp:assembleDebug
+# -Pskip.supabase.check=true builds without Supabase credentials (Cloud Sync won't work).
+# For a sync-capable build, set supabase.url / supabase.anon.key in local.properties
+# (or SUPABASE_URL / SUPABASE_ANON_KEY in the environment) and drop the flag.
+./gradlew -Pskip.supabase.check=true :androidApp:assembleDebug
 ```
 
 ### iOS
-```bash
-./gradlew :shared:assembleXCFramework
-open iosApp/PhoenixApp/PhoenixApp.xcodeproj
-```
+See [iosApp/README.md](iosApp/README.md).
 
 ---
 
@@ -127,11 +130,11 @@ open iosApp/PhoenixApp/PhoenixApp.xcodeproj
 
 | Category | Technology |
 |----------|------------|
-| **Language** | Kotlin 2.0+ |
+| **Language** | Kotlin 2.4 |
 | **UI** | Compose Multiplatform |
 | **Architecture** | MVVM + Clean Architecture |
 | **DI** | Koin (Multiplatform) |
-| **BLE** | Platform-specific (Nordic on Android, CoreBluetooth on iOS) |
+| **BLE** | Kable (Multiplatform; patched Android core vendored in `third_party/`) |
 | **Database** | SQLDelight (Multiplatform) |
 | **Async** | Coroutines + Flow |
 
