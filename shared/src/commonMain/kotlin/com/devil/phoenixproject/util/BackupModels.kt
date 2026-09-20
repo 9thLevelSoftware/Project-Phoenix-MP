@@ -230,6 +230,8 @@ data class TrainingCycleBackup(
     val profileId: String? = null, // null for backward compat with pre-profile backups
     val templateId: String? = null,
     val weekNumber: Int = 1,
+    /** Portal cycle version (verbatim ISO) so a restored cycle keeps its sync base. Null in older backups. */
+    val serverUpdatedAt: String? = null,
     val deletedAt: Long? = null,
     // Durable sync clocks added in backup v6. Null keeps v1-v5 readable.
     val updatedAt: Long? = null,

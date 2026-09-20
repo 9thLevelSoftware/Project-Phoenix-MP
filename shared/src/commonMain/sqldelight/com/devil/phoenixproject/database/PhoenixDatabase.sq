@@ -272,7 +272,7 @@ CREATE TABLE RoutineExercise (
     -- Drop set offer (added in migration 46, issue #673 PR 3)
     dropSetEnabled INTEGER NOT NULL DEFAULT 0,
     dropSetMinWeightKg REAL,
-    -- 1 when `duration` is known to be current for portal sync (added in migration 52)
+    -- 1 when `duration` is known to be current for portal sync (added in migration 53)
     durationSyncKnown INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
@@ -1465,6 +1465,11 @@ UPDATE RoutineExercise
 SET durationSyncKnown = ?
 WHERE id = ?;
 
+hydrateRoutineExerciseDurationFromSync:
+UPDATE RoutineExercise
+SET duration = :duration, durationSyncKnown = 1
+WHERE id = :id AND routineId = :routineId AND durationSyncKnown = 0;
+
 -- Heal legacy routine rows that are missing an exerciseId by resolving from exerciseName.
 updateRoutineExerciseId:
 UPDATE RoutineExercise
@@ -1830,7 +1835,9 @@ CREATE TABLE TrainingCycle (
     -- Persisted 5/3/1 current week (added in migration 41)
     week_number INTEGER NOT NULL DEFAULT 1,
     -- Canonical LWW clock for the complete cycle graph (migration 50).
-    updatedAt INTEGER NOT NULL DEFAULT 0
+    updatedAt INTEGER NOT NULL DEFAULT 0,
+    -- Portal updated_at (ISO string, verbatim) of the last pulled/pushed version (migration 52).
+    server_updated_at TEXT
 );
 
 CREATE INDEX idx_cycle_profile ON TrainingCycle(profile_id);
@@ -1982,6 +1989,10 @@ UPDATE TrainingCycle SET week_number = ?, updatedAt = ? WHERE id = ?;
 
 touchTrainingCycleUpdatedAt:
 UPDATE TrainingCycle SET updatedAt = :updatedAt WHERE id = :cycleId;
+
+-- Record the portal's version of a cycle (sent back as baseUpdatedAt on push).
+updateTrainingCycleServerUpdatedAt:
+UPDATE TrainingCycle SET server_updated_at = ? WHERE id = ?;
 
 setActiveTrainingCycle:
 UPDATE TrainingCycle SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE profile_id = :profileId;
@@ -3592,8 +3603,24 @@ UPDATE PersonalRecord SET updatedAt = ? WHERE id IN ?;
 -- Get routines modified since last sync
 selectRoutinesModifiedSince:
 SELECT * FROM Routine
-WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
+WHERE (
+    updatedAt > :timestamp OR updatedAt IS NULL OR EXISTS (
+        SELECT 1 FROM RoutineExercise
+        WHERE RoutineExercise.routineId = Routine.id
+          AND RoutineExercise.durationSyncKnown = 0
+    )
+)
+AND deletedAt IS NULL
 AND profile_id = :profileId;
+
+-- Existing exercises from before duration sync must be omitted from pull parity until
+-- the portal sends an authoritative duration (including an explicit null).
+selectRoutineIdsNeedingDurationBackfill:
+SELECT DISTINCT Routine.id FROM Routine
+JOIN RoutineExercise ON RoutineExercise.routineId = Routine.id
+WHERE RoutineExercise.durationSyncKnown = 0
+AND Routine.deletedAt IS NULL
+AND Routine.profile_id = :profileId;
 
 -- Get soft-deleted routines (for push — tombstones to propagate deletion to server)
 selectDeletedRoutinesSince:

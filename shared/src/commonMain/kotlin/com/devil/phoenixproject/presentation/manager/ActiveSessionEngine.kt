@@ -1300,7 +1300,7 @@ class ActiveSessionEngine(
             !source.isWarmup &&
             !source.isJustLift &&
             source.isEcho == (exercise.programMode == ProgramMode.Echo) &&
-            source.isTimed == (exercise.supportedTimedDurationSeconds != null) &&
+            source.isTimed == (exercise.executionTimedDurationSeconds != null) &&
             source.isBodyweight == exercise.exercise.isBodyweight &&
             source.isCableExercise == !exercise.exercise.isBodyweight &&
             source.physicalCableCount == exercise.exercise.preferredCableCount &&
@@ -3558,7 +3558,7 @@ class ActiveSessionEngine(
         val setKind = snapshot.plan.logicalSetKey.setKind
         val expectedReps = exercise.setReps.getOrNull(setIndex) ?: exercise.reps
         val expectedAmrap = semanticSetType(exercise, setIndex) == SetType.AMRAP
-        val isTimed = exercise.supportedTimedDurationSeconds != null
+        val isTimed = exercise.executionTimedDurationSeconds != null
         val isBodyweight = exercise.exercise.isBodyweight
         val isCableExercise = !isBodyweight
         if (template.programMode != exercise.programMode ||
@@ -4132,7 +4132,7 @@ class ActiveSessionEngine(
     ): Boolean {
         val expectedAmrap = semanticSetType(exercise, request.setIndex) == SetType.AMRAP
         val expectedReps = exercise.setReps.getOrNull(request.setIndex) ?: exercise.reps
-        val isTimed = exercise.supportedTimedDurationSeconds != null
+        val isTimed = exercise.executionTimedDurationSeconds != null
         val isBodyweight = exercise.exercise.isBodyweight
         return request.sourceIsTimed == isTimed &&
             request.sourceIsBodyweight == isBodyweight &&
@@ -7658,7 +7658,7 @@ class ActiveSessionEngine(
         val seedParams = retryRequest?.params
             ?: queuedStartCandidate?.workoutParameters
             ?: coordinator._workoutParameters.value
-        val durationSeconds = currentExercise?.supportedTimedDurationSeconds
+        val durationSeconds = currentExercise?.executionTimedDurationSeconds
         val isTimedCableAtStart = requiresMachine && durationSeconds != null
         val variableWarmupTarget = (queuedStartCandidate?.warmupSetIndex ?: coordinator._currentWarmupSetIndex.value)
             .takeIf { it >= 0 }
@@ -7794,9 +7794,9 @@ class ActiveSessionEngine(
                 }
 
                 val isBodyweight = isBodyweightExercise(currentExercise)
-                // Revalidate at execution start. Only editor-supported durations may
-                // convert a finite-rep cable set into the BLE unlimited-rep mode.
-                val exerciseDuration = currentExercise?.supportedTimedDurationSeconds
+                // Revalidate at execution start. Stored durations must satisfy the editor
+                // contract; launch modifiers may safely reduce a valid duration below it.
+                val exerciseDuration = currentExercise?.executionTimedDurationSeconds
                 val bodyweightDuration = if (isBodyweight) exerciseDuration else null
 
                 val plannedSetsAtStart = currentExercise?.let { exercise ->

@@ -4,6 +4,7 @@ import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.testutil.readProjectFile
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlin.test.fail
@@ -905,6 +906,71 @@ class SchemaParityTest {
     }
 
     @Test
+    fun `migration 52 to 53 adds nullable cycle server version`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 52)
+        driver.execute(null, "INSERT INTO TrainingCycle(id,name,created_at) VALUES('c1','C1',1)", 0)
+
+        PhoenixDatabase.Schema.migrate(driver, 52, 53)
+
+        assertEquals(true, columnExistsInDriver(driver, "TrainingCycle", "server_updated_at"))
+        assertEquals(null, queryScalar(driver, "SELECT server_updated_at FROM TrainingCycle WHERE id = 'c1'"))
+    }
+
+    @Test
+    fun `resilient migration 52 fallback adds the cycle server version`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, 52)
+
+        applyMigrationResilient(driver, 52)
+
+        assertEquals(true, columnExistsInDriver(driver, "TrainingCycle", "server_updated_at"))
+    }
+
+    @Test
+    fun `MigrationStatements has one branch per version and mirrors every sqm ADD COLUMN`() {
+        // Guard for parallel branches that add the same migration number: a merge that keeps
+        // two `N ->` branches still compiles (duplicate when labels only warn), and the second
+        // branch is silently unreachable on the resilient path.
+        val source = readProjectFile("src/commonMain/kotlin/com/devil/phoenixproject/data/local/MigrationStatements.kt")
+            ?: fail("MigrationStatements.kt not found")
+        val labels = Regex("""(?m)^    (\d+) -> """).findAll(source).map { it.groupValues[1].toInt() }.toList()
+        val duplicates = labels.groupingBy { it }.eachCount().filterValues { it > 1 }.keys
+        assertEquals(emptySet(), duplicates, "Duplicate MigrationStatements version branches")
+
+        val alter = Regex("""ALTER\s+TABLE\s+(\w+)\s+ADD\s+COLUMN\s+(\w+)""", RegexOption.IGNORE_CASE)
+        val missing = mutableListOf<String>()
+        for (version in 1 until EXPECTED_SCHEMA_VERSION.toInt()) {
+            val sqm = readProjectFile("src/commonMain/sqldelight/com/devil/phoenixproject/database/migrations/$version.sqm")
+                ?: continue
+            val sqlOnly = sqm.lines().filterNot { it.trimStart().startsWith("--") }.joinToString(" ")
+            val resilient = getMigrationStatements(version).flatMap { stmt ->
+                alter.findAll(stmt).map { "${it.groupValues[1]}.${it.groupValues[2]}".lowercase() }
+            }.toSet()
+            alter.findAll(sqlOnly).forEach { m ->
+                val key = "${m.groupValues[1]}.${m.groupValues[2]}".lowercase()
+                if (key !in resilient && "v$version: $key" !in GRANDFATHERED_UNMIRRORED_SQM_COLUMNS) {
+                    missing += "v$version: $key"
+                }
+            }
+        }
+        assertEquals(emptyList(), missing, "sqm ADD COLUMN not mirrored in MigrationStatements (resilient path)")
+    }
+
+    @Test
+    fun `every manifest column exists after migrating from v1 without the heal pass`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        buildSchemaAtVersion(driver, EXPECTED_SCHEMA_VERSION) // migrations only; no reconcileFullSchema
+
+        val missing = manifestColumns
+            .filterNot { columnExistsInDriver(driver, it.table, it.column) }
+            .map { "${it.table}.${it.column}" }
+            .filterNot { it in GRANDFATHERED_HEAL_ONLY_COLUMNS }
+
+        assertEquals(emptyList(), missing, "Manifest columns only a heal op would add")
+    }
+
+    @Test
     fun `migration 47 and resilient fallback create the exact machine safety table`() {
         listOf("generated" to false, "fallback" to true).forEach { (scenario, fallback) ->
             val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
@@ -1117,10 +1183,10 @@ class SchemaParityTest {
     }
 
     @Test
-    fun `migration 52 and resilient fallback add duration sync knowledge conservatively`() {
+    fun `migration 53 and resilient fallback add duration sync knowledge conservatively`() {
         listOf("generated" to false, "fallback" to true).forEach { (scenario, fallback) ->
             val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-            buildSchemaAtVersion(driver, 52)
+            buildSchemaAtVersion(driver, 53)
             driver.execute(null, "INSERT INTO UserProfile(id,name,colorIndex,createdAt,isActive) VALUES('u1','U1',0,1,1)", 0)
             driver.execute(null, "INSERT INTO Routine(id,name,createdAt) VALUES('r1','R1',1)", 0)
             driver.execute(
@@ -1130,11 +1196,11 @@ class SchemaParityTest {
             )
 
             if (fallback) {
-                val results = applyMigrationResilient(driver, 52)
+                val results = applyMigrationResilient(driver, 53)
                 assertEquals(1, results.size, scenario)
                 assertEquals(true, results.single().success, scenario)
             } else {
-                PhoenixDatabase.Schema.migrate(driver, 52, 53)
+                PhoenixDatabase.Schema.migrate(driver, 53, 54)
             }
 
             assertEquals(true, columnExistsInDriver(driver, "RoutineExercise", "durationSyncKnown"), scenario)
@@ -1149,7 +1215,29 @@ class SchemaParityTest {
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 53L
+        private const val EXPECTED_SCHEMA_VERSION = 54L
+
+        /** Pre-existing gaps (v5 predates MigrationStatements parity). Do not add to this list. */
+        private val GRANDFATHERED_UNMIRRORED_SQM_COLUMNS = setOf(
+            "v5: userprofile.supabase_user_id",
+            "v5: userprofile.subscription_status",
+            "v5: userprofile.subscription_expires_at",
+            "v5: userprofile.last_auth_at",
+        )
+
+        /**
+         * Pre-existing columns that the minimal v1 fixture only gains via the heal pass.
+         * Do not add to this list: a new column must come from a migration.
+         */
+        private val GRANDFATHERED_HEAL_ONLY_COLUMNS = setOf(
+            "WorkoutSession.safetyFlags", "WorkoutSession.deloadWarningCount",
+            "WorkoutSession.romViolationCount", "WorkoutSession.spotterActivations",
+            "WorkoutSession.cableCount", "WorkoutSession.profile_id", "PersonalRecord.profile_id",
+            "Routine.profile_id", "RoutineExercise.setEchoLevels", "RoutineExercise.warmupSets",
+            "RoutineExercise.stallDetectionEnabled", "RoutineExercise.stopAtTop",
+            "RoutineExercise.repCountTiming", "TrainingCycle.profile_id", "AssessmentResult.profile_id",
+            "ProgressionEvent.profile_id", "StreakHistory.profile_id", "RpgAttributes.profile_id",
+        )
         private val CREATE_ACTIVE_RUNTIME_SQL = """
             CREATE TABLE ActiveWorkoutRuntime (
                 profile_id TEXT NOT NULL,

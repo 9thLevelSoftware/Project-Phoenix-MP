@@ -48,6 +48,29 @@ class Issue775TimedCableCountdownLifecycleTest {
     }
 
     @Test
+    fun `launch adjusted duration below editor minimum keeps timed unlimited BLE mode`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val routine = timedCableRoutine(durationSeconds = 5, isLaunchAdjusted = true)
+            routine.exercises.forEach { harness.fakeExerciseRepo.addExercise(it.exercise) }
+            harness.dwsm.loadRoutine(routine)
+            advanceUntilIdle()
+            harness.dwsm.enterSetReady(0, 0)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.startWorkout(skipCountdown = true)
+            runCurrent()
+
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertTrue(lease.isTimedCable)
+            assertEquals(0, lease.workingRepTarget)
+            assertTrue(harness.coordinator.isCurrentTimedCableExercise)
+            assertEquals(0xFF, harness.fakeBleRepo.commandsReceived.last()[0x04].toInt() and 0xFF)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    @Test
     fun `invalid duration does not disable an explicitly configured AMRAP set`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
@@ -166,7 +189,11 @@ class Issue775TimedCableCountdownLifecycleTest {
         )
     }
 
-    private fun timedCableRoutine(durationSeconds: Int, isAmrap: Boolean = false) = Routine(
+    private fun timedCableRoutine(
+        durationSeconds: Int,
+        isAmrap: Boolean = false,
+        isLaunchAdjusted: Boolean = false,
+    ) = Routine(
         id = "issue-775-timed-cable",
         name = "Issue 775 Timed Cable",
         exercises = listOf(
@@ -177,6 +204,7 @@ class Issue775TimedCableCountdownLifecycleTest {
                 setReps = listOf(if (isAmrap) null else 10),
                 weightPerCableKg = 25f,
                 duration = durationSeconds,
+                isLaunchAdjustedDuration = isLaunchAdjusted,
                 isAMRAP = isAmrap,
                 setRestSeconds = listOf(0),
             ),

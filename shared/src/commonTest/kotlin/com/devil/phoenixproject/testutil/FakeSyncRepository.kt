@@ -181,6 +181,7 @@ class FakeSyncRepository : SyncRepository {
 
     var sessionIds: List<String> = emptyList()
     var routineIds: List<String> = emptyList()
+    var routineIdsNeedingDurationBackfill: List<String> = emptyList()
     var cycleIds: List<String> = emptyList()
     var badgeIds: List<String> = emptyList()
     var personalRecordIds: List<String> = emptyList()
@@ -188,6 +189,8 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun getAllSessionIds(profileId: String): List<String> = sessionIds
     override suspend fun getAllRoutineIds(profileId: String): List<String> = routineIds
+    override suspend fun getRoutineIdsNeedingDurationBackfill(profileId: String): List<String> =
+        routineIdsNeedingDurationBackfill
     override suspend fun getAllCycleIds(profileId: String): List<String> = cycleIds
     override suspend fun getAllBadgeIds(profileId: String): List<String> = badgeIds
     override suspend fun getAllPersonalRecordIds(profileId: String): List<String> = personalRecordIds
@@ -206,6 +209,13 @@ class FakeSyncRepository : SyncRepository {
     // === Stubs for new sync interface methods (added for cycle/PR/phase/assessment sync) ===
 
     override suspend fun getFullCyclesForSync(profileId: String): List<CycleWithContext> = cyclesToReturn
+
+    val cycleServerVersionUpdates = mutableListOf<Map<String, String>>()
+    var updateCycleServerVersionsError: Exception? = null
+    override suspend fun updateCycleServerVersions(versions: Map<String, String>) {
+        updateCycleServerVersionsError?.let { throw it }
+        cycleServerVersionUpdates += versions
+    }
 
     override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> {
         callLog += "getFullPRsModifiedSince"

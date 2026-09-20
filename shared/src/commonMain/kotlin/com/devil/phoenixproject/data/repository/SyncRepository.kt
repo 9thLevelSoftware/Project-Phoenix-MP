@@ -150,6 +150,12 @@ interface SyncRepository {
     ) = Unit
 
     /**
+     * Store the portal versions acknowledged by a successful push (`cycleVersions`)
+     * as each cycle's base for the next push. Cycles not in [versions] keep their base.
+     */
+    suspend fun updateCycleServerVersions(versions: Map<String, String>)
+
+    /**
      * Get full PersonalRecord domain objects modified since timestamp, scoped to profile.
      * Returns rich objects with prType, phase, and volume for PortalSyncAdapter PR metadata.
      */
@@ -212,6 +218,9 @@ interface SyncRepository {
      * Get all routine IDs for the given profile.
      */
     suspend fun getAllRoutineIds(profileId: String = "default"): List<String>
+
+    /** Routine IDs whose legacy exercises still need an authoritative portal duration. */
+    suspend fun getRoutineIdsNeedingDurationBackfill(profileId: String = "default"): List<String> = emptyList()
 
     /**
      * Get all training cycle IDs for the given profile.

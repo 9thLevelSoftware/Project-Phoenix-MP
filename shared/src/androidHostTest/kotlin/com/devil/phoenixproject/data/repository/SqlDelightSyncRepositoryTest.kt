@@ -478,7 +478,13 @@ class SqlDelightSyncRepositoryTest {
             workoutDeletions = emptyList(),
             sessions = emptyList(),
             routines = listOf(PullRoutineDto(id = "routine-later", name = "Later routine", updatedAt = 20L)),
-            cycles = listOf(PullTrainingCycleDto(id = "cycle-later", name = "Later cycle", updatedAt = 20L)),
+            cycles = listOf(
+                PullTrainingCycleDto(
+                    id = "cycle-later",
+                    name = "Later cycle",
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(20L).toString(),
+                ),
+            ),
             badges = emptyList(),
             gamificationStats = null,
             personalRecords = listOf(
@@ -1400,6 +1406,118 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `legacy unknown duration makes its unchanged parent eligible without dirtying it`() = runTest {
+        insertLocalRoutine("routine-duration-backfill")
+        database.phoenixDatabaseQueries.updateRoutineById(
+            name = "Local routine-duration-backfill",
+            description = "",
+            updatedAt = 100L,
+            id = "routine-duration-backfill",
+        )
+        insertLocalRoutineExercise(
+            id = "duration-backfill",
+            routineId = "routine-duration-backfill",
+            duration = 45,
+            durationSyncKnown = 0,
+        )
+
+        val outbound = repository.getFullRoutinesModifiedSince(1_000L, "active-profile").single()
+
+        assertEquals("routine-duration-backfill", outbound.id)
+        assertEquals(45, outbound.exercises.single().duration)
+        assertEquals(false, outbound.exercises.single().durationSyncKnown)
+        assertEquals(
+            "45",
+            PortalSyncAdapter.toPortalRoutine(outbound, "user").exercises.single().durationSeconds?.content,
+            "a supported legacy duration must be sent even while its backfill marker is unknown",
+        )
+        assertEquals(
+            listOf("routine-duration-backfill"),
+            repository.getRoutineIdsNeedingDurationBackfill("active-profile"),
+        )
+        assertEquals(
+            100L,
+            database.phoenixDatabaseQueries.selectRoutineById("routine-duration-backfill").executeAsOne().updatedAt,
+            "backfill eligibility must not dirty the parent routine",
+        )
+    }
+
+    @Test
+    fun `local wins merge still hydrates only unknown portal durations`() = runTest {
+        insertLocalRoutine("routine-duration-local-wins")
+        database.phoenixDatabaseQueries.updateRoutineById(
+            name = "Local name",
+            description = "local description",
+            updatedAt = 300L,
+            id = "routine-duration-local-wins",
+        )
+        insertLocalRoutineExercise(
+            id = "duration-value",
+            routineId = "routine-duration-local-wins",
+            duration = null,
+            durationSyncKnown = 0,
+        )
+        insertLocalRoutineExercise(
+            id = "duration-clear",
+            routineId = "routine-duration-local-wins",
+            duration = 30,
+            durationSyncKnown = 0,
+        )
+        insertLocalRoutineExercise(
+            id = "duration-null",
+            routineId = "routine-duration-local-wins",
+            duration = null,
+            durationSyncKnown = 0,
+        )
+
+        repository.mergePortalRoutines(
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-duration-local-wins",
+                    name = "Portal name",
+                    updatedAt = 200L,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "duration-value",
+                            durationSeconds = 45,
+                            durationSecondsPresent = true,
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "duration-clear",
+                            durationSeconds = null,
+                            durationSecondsPresent = true,
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "duration-null",
+                            durationSeconds = null,
+                            durationSecondsPresent = true,
+                        ),
+                    ),
+                ),
+            ),
+            lastSync = 100L,
+            profileId = "active-profile",
+        )
+
+        val routine = database.phoenixDatabaseQueries
+            .selectRoutineById("routine-duration-local-wins")
+            .executeAsOne()
+        val rows = database.phoenixDatabaseQueries
+            .selectExercisesByRoutine("routine-duration-local-wins")
+            .executeAsList()
+            .associateBy { it.id }
+        assertEquals("Local name", routine.name)
+        assertEquals("local description", routine.description)
+        assertEquals(300L, routine.updatedAt)
+        assertEquals(45L, rows.getValue("duration-value").duration)
+        assertEquals(1L, rows.getValue("duration-value").durationSyncKnown)
+        assertEquals(30L, rows.getValue("duration-clear").duration)
+        assertEquals(0L, rows.getValue("duration-clear").durationSyncKnown)
+        assertNull(rows.getValue("duration-null").duration)
+        assertEquals(1L, rows.getValue("duration-null").durationSyncKnown)
+    }
+
+    @Test
     fun `out of range portal duration preserves a supported local duration`() = runTest {
         insertLocalRoutine("routine-duration-preserve")
         insertLocalRoutineExercise(
@@ -2143,7 +2261,7 @@ class SqlDelightSyncRepositoryTest {
                 PullTrainingCycleDto(
                     id = cycleId,
                     name = "Server cycle",
-                    updatedAt = localUpdatedAt + 100L,
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(localUpdatedAt + 100L).toString(),
                     progressStatePresent = true,
                     progressState = PortalCycleProgressStateSyncDto(
                         currentDayNumber = 2,
@@ -2210,7 +2328,7 @@ class SqlDelightSyncRepositoryTest {
                 PullTrainingCycleDto(
                     id = cycleId,
                     name = "Legacy portal cycle",
-                    updatedAt = localUpdatedAt + 100L,
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(localUpdatedAt + 100L).toString(),
                 ),
             ),
             badges = emptyList(),
@@ -2234,7 +2352,7 @@ class SqlDelightSyncRepositoryTest {
                 PullTrainingCycleDto(
                     id = cycleId,
                     name = "Canonical portal cycle",
-                    updatedAt = localUpdatedAt + 200L,
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(localUpdatedAt + 200L).toString(),
                     progressionSettingsPresent = true,
                     progressionSettings = null,
                 ),
