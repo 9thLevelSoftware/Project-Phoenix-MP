@@ -67,7 +67,7 @@ class WorkoutMachineTeardownTest {
                 harness.activeSessionEngine.machineTeardownState.value,
             )
 
-            advanceTimeBy(5_100)
+            advanceTimeBy(1_100)
             runCurrent()
             val repEntry = assertIs<WorkoutState.BodyweightRepEntry>(
                 harness.coordinator.workoutState.value,
@@ -567,7 +567,9 @@ class WorkoutMachineTeardownTest {
                     orderIndex = 0,
                     setReps = listOf(10),
                     weightPerCableKg = 0f,
-                    duration = 5,
+                    // Simulates a runtime modifier result while staying below the independent
+                    // five-second machine-teardown timeout exercised by this concurrency test.
+                    duration = 1,
                     isLaunchAdjustedDuration = true,
                     setRestSeconds = listOf(0),
                 ),
