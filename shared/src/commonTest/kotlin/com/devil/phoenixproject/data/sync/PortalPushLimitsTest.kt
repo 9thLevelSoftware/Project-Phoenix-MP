@@ -454,6 +454,7 @@ class PortalPushLimitsTest {
             PortalSyncPushResponse(
                 syncTime = "2026-07-11T12:00:00Z",
                 profilePreferencesAccepted = true,
+                acknowledgedWorkoutSessionIds = listOf(ordinary.id),
             ),
         )
 
@@ -468,7 +469,7 @@ class PortalPushLimitsTest {
             fakeApi.pushPayloads.count { it.profilePreferenceSections != null },
         )
         assertTrue(fakeProfilePreferenceSyncRepo.appliedPushOutcomes.isEmpty())
-        assertEquals(listOf(ordinary.id), fakeSyncRepo.updateSessionTimestampCalls)
+        assertEquals(listOf(setOf(ordinary.id)), fakeSyncRepo.acknowledgedWorkoutParentIdCalls)
     }
 
     // ==================== Telemetry-Aware Batching (audit: 36_852 point rejection) ====================
@@ -727,10 +728,12 @@ class PortalPushLimitsTest {
     private fun seedSessionWithTelemetry() {
         val session = buildSessions(1).single()
         fakeSyncRepo.workoutSessionsToReturn = listOf(session)
-        fakeRepMetricRepo.savedMetrics[session.id] = listOf(
-            repWithTelemetry(1),
-            repWithTelemetry(2),
-            repWithTelemetry(3),
+        fakeSyncRepo.workoutRepMetricsByComponentId = mapOf(
+            session.id to listOf(
+                repWithTelemetry(1),
+                repWithTelemetry(2),
+                repWithTelemetry(3),
+            ),
         )
     }
 

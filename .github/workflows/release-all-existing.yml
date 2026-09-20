@@ -41,19 +41,10 @@ permissions:
   contents: write
 
 jobs:
-  # Off-main dispatches skip the test run; prepare-release then fails fast on its main-branch check.
-  tests:
-    if: github.ref == 'refs/heads/main'
-    uses: ./.github/workflows/release-tests.yml
-    with:
-      ref: main
-
   prepare-release:
-    needs: tests
-    if: ${{ !cancelled() && needs.tests.result != 'failure' }}
     runs-on: ubuntu-latest
     outputs:
-      sha: ${{ needs.tests.outputs.sha }}
+      sha: ${{ steps.release-sha.outputs.sha }}
     steps:
       - name: Verify workflow runs from main
         run: |
@@ -61,24 +52,34 @@ jobs:
             echo "Run Release All (Existing) from main and provide the release tag as input." >&2
             exit 1
           fi
-      - name: Verify release and remove prior assets
+      - name: Verify release and resolve its commit
+        id: release-sha
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PAT }}
           TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null
-          for asset in "ProjectPhoenix-$TAG.apk" "ProjectPhoenix-$TAG.ipa"; do
-            if gh release view "$TAG" --repo "${{ github.repository }}" --json assets --jq '.assets[].name' | grep -Fxq "$asset"; then
-              gh release delete-asset "$TAG" "$asset" --repo "${{ github.repository }}" --yes
-              echo "Deleted existing asset $asset"
-            else
-              echo "Asset $asset was not present; continuing with rebuild."
-            fi
+          object=$(gh api "repos/${{ github.repository }}/git/ref/tags/$TAG" --jq .object)
+          object_type=$(jq -r .type <<< "$object")
+          sha=$(jq -r .sha <<< "$object")
+          while [ "$object_type" = "tag" ]; do
+            object=$(gh api "repos/${{ github.repository }}/git/tags/$sha" --jq .object)
+            object_type=$(jq -r .type <<< "$object")
+            sha=$(jq -r .sha <<< "$object")
           done
+          test "$object_type" = "commit"
+          [[ "$sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  tests:
+    needs: prepare-release
+    uses: ./.github/workflows/release-tests.yml
+    with:
+      ref: ${{ needs.prepare-release.outputs.sha }}
 
   android-apk:
-    needs: prepare-release
+    needs: [prepare-release, tests]
     if: ${{ !inputs.skip_android_apk }}
     uses: ./.github/workflows/android-release-apk.yml
     with:
@@ -89,7 +90,7 @@ jobs:
     secrets: inherit
 
   ios-ipa:
-    needs: prepare-release
+    needs: [prepare-release, tests]
     if: ${{ !inputs.skip_ios_ipa }}
     uses: ./.github/workflows/ios-release-ipa.yml
     with:
@@ -99,7 +100,7 @@ jobs:
     secrets: inherit
 
   android-playstore:
-    needs: [prepare-release, android-apk]
+    needs: [prepare-release, tests]
     if: ${{ !inputs.skip_android_playstore }}
     uses: ./.github/workflows/android-playstore.yml
     with:
@@ -110,7 +111,7 @@ jobs:
     secrets: inherit
 
   ios-testflight:
-    needs: [prepare-release, ios-ipa]
+    needs: [prepare-release, tests]
     if: ${{ !inputs.skip_ios_testflight }}
     uses: ./.github/workflows/ios-testflight.yml
     with:
@@ -127,7 +128,7 @@ jobs:
         run: |
           echo "## Release All (Existing)" >> "$GITHUB_STEP_SUMMARY"
           echo "Release tag: ${{ inputs.release_tag }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Only the APK and IPA assets were replaced; store builds were sourced from main." >> "$GITHUB_STEP_SUMMARY"
+          echo "Selected builds and tests used the release tag's resolved commit." >> "$GITHUB_STEP_SUMMARY"
           echo "| Platform | Result |" >> "$GITHUB_STEP_SUMMARY"
           echo "|----------|--------|" >> "$GITHUB_STEP_SUMMARY"
           echo "| Unit tests | ${{ needs.tests.result }} |" >> "$GITHUB_STEP_SUMMARY"

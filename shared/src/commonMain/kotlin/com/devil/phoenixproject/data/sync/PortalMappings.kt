@@ -11,6 +11,18 @@ import com.devil.phoenixproject.domain.model.ProgramMode
  */
 object PortalMappings {
 
+    // -- Cable Count --
+
+    /**
+     * Map a mobile cable count to the portal wire value for `exercises.cableCount`.
+     *
+     * The portal accepts exactly 1 or 2 (or null/absent = unknown) and rejects the
+     * WHOLE push batch with 400 for any other value, so anything outside {1, 2}
+     * becomes null (unknown) rather than being clamped to a guess. Also used on
+     * pull so an out-of-range server value never reaches the local DB.
+     */
+    fun cableCountToWire(count: Int?): Int? = count?.takeIf { it == 1 || it == 2 }
+
     // -- Workout Mode --
 
     /**

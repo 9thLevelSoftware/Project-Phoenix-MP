@@ -674,7 +674,7 @@ class StreamingImportRoundTripTest {
     }
 
     @Test
-    fun `streaming active flags never switch target and post-identity failure normalizes then reconciles`() = runTest {
+    fun `streaming active flags never switch target and full validation failure performs no identity work`() = runTest {
         listOf(
             listOf(false, false),
             listOf(false, true),
@@ -697,7 +697,7 @@ class StreamingImportRoundTripTest {
 
         val failed = preferenceFixture()
         seedProfiles(failed)
-        val malformedAfterIdentityCommit = """
+        val malformedAfterIdentitySection = """
             {
               "data": {
                 "userProfiles": [
@@ -711,12 +711,12 @@ class StreamingImportRoundTripTest {
             }
         """.trimIndent()
 
-        val result = failed.manager.importFromStringStreaming(malformedAfterIdentityCommit)
+        val result = failed.manager.importFromStringStreaming(malformedAfterIdentitySection)
 
         assertTrue(result.isFailure)
         val profiles = failed.database.phoenixDatabaseQueries.getAllProfiles().executeAsList()
         assertEquals(PROFILE_A, profiles.single { it.isActive == 1L }.id)
-        assertEquals(1, failed.recordingUserProfiles.reconcileCalls)
+        assertEquals(0, failed.recordingUserProfiles.reconcileCalls)
     }
 
     @Test

@@ -43,7 +43,7 @@ class IosCsvExporter : CsvExporter {
                 val oneRM = calculateOneRM(pr.weightPerCableKg, pr.reps)
                 val formattedOneRM = formatWeight(oneRM, weightUnit)
                 val date = KmpUtils.formatTimestamp(pr.timestamp, "yyyy-MM-dd")
-                appendLine("${StrongCsvExporter.escapeCsvField(exerciseName)},${pr.phase.name},$formattedWeight,${pr.reps},$formattedOneRM,$date")
+                appendLine("${escapeCsv(exerciseName)},${escapeCsv(pr.phase.name)},${escapeCsv(formattedWeight)},${pr.reps},${escapeCsv(formattedOneRM)},${escapeCsv(date)}")
             }
         }
 
@@ -80,7 +80,7 @@ class IosCsvExporter : CsvExporter {
                     else -> "0"
                 }
                 appendLine(
-                    "$date,$time,${StrongCsvExporter.escapeCsvField(exerciseName)},${session.mode},$formattedWeight,$progression,${session.reps},$durationSeconds",
+                    "${escapeCsv(date)},${escapeCsv(time)},${escapeCsv(exerciseName)},${escapeCsv(session.mode)},${escapeCsv(formattedWeight)},${escapeCsv(progression)},${session.reps},$durationSeconds",
                 )
             }
         }
@@ -122,7 +122,7 @@ class IosCsvExporter : CsvExporter {
                     }
                     previousOneRM = oneRM
 
-                    appendLine("${StrongCsvExporter.escapeCsvField(exerciseName)},${pr.phase.name},$date,$formattedWeight,${pr.reps},$formattedOneRM,$improvement")
+                    appendLine("${escapeCsv(exerciseName)},${escapeCsv(pr.phase.name)},${escapeCsv(date)},${escapeCsv(formattedWeight)},${pr.reps},${escapeCsv(formattedOneRM)},${escapeCsv(improvement)}")
                 }
             }
         }
@@ -192,4 +192,6 @@ class IosCsvExporter : CsvExporter {
 
         return filePath
     }
+
+    private fun escapeCsv(value: String): String = StrongCsvExporter.escapeCsvField(value)
 }

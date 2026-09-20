@@ -549,11 +549,11 @@ class ActiveSessionEngineIntegrationTest {
             assertEquals(1, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
             assertEquals(
                 100f + (1.25f / 0.9f),
-                harness.fakeExerciseRepo.getExerciseById(BENCH_ID)?.oneRepMaxKg,
+                harness.fakeBaselineRepo.get("default", BENCH_ID)?.oneRepMaxPerCableKg,
             )
             assertEquals(
                 160f + (2.5f / 0.9f),
-                harness.fakeExerciseRepo.getExerciseById(DEADLIFT_ID)?.oneRepMaxKg,
+                harness.fakeBaselineRepo.get("default", DEADLIFT_ID)?.oneRepMaxPerCableKg,
             )
         } finally {
             harness.cleanup()
@@ -569,10 +569,10 @@ class ActiveSessionEngineIntegrationTest {
         shoulderPressId: String = SHOULDER_PRESS_ID,
         deadliftId: String = DEADLIFT_ID,
     ): TrainingCycle {
-        val bench = seededMainLift(benchId, "Bench Press", 100f)
-        val squat = seededMainLift(squatId, "Squat", 140f)
-        val press = seededMainLift(shoulderPressId, "Shoulder Press", 90f)
-        val deadlift = seededMainLift(deadliftId, "Conventional Deadlift", 160f)
+        val bench = seededMainLift(benchId, "Bench Press")
+        val squat = seededMainLift(squatId, "Squat")
+        val press = seededMainLift(shoulderPressId, "Shoulder Press")
+        val deadlift = seededMainLift(deadliftId, "Conventional Deadlift")
         val inclineBench = accessoryExercise("incline", "Incline Bench Press")
         val row = accessoryExercise("row", "Bent Over Row")
         val plank = Exercise(id = "plank", name = "Plank", muscleGroup = "Core", muscleGroups = "Core", equipment = "")
@@ -585,6 +585,10 @@ class ActiveSessionEngineIntegrationTest {
 
         listOf(bench, squat, press, deadlift, inclineBench, row, plank, facePull, lunge, tricep, crunch, shrug, goodMorning)
             .forEach(harness.fakeExerciseRepo::addExercise)
+        harness.fakeBaselineRepo.seed("default", benchId, 100f)
+        harness.fakeBaselineRepo.seed("default", squatId, 140f)
+        harness.fakeBaselineRepo.seed("default", shoulderPressId, 90f)
+        harness.fakeBaselineRepo.seed("default", deadliftId, 160f)
 
         val benchRoutine = Routine(
             id = "routine-bench",
@@ -678,10 +682,17 @@ class ActiveSessionEngineIntegrationTest {
         setIndex: Int,
         engine: ActiveSessionEngine,
     ) {
-        harness.dwsm.enterSetReady(exerciseIndex, setIndex)
-        harness.testScope.advanceUntilIdle()
-        engine.startWorkout(skipCountdown = true)
-        harness.testScope.advanceUntilIdle()
+        // Rest autoplay may already have started this set; starting it again over the armed
+        // execution would be a replacement start that the #782 barrier refuses.
+        if (harness.coordinator.workoutState.value !is com.devil.phoenixproject.domain.model.WorkoutState.Active) {
+            harness.dwsm.enterSetReady(exerciseIndex, setIndex)
+            harness.testScope.advanceUntilIdle()
+            engine.startWorkout(skipCountdown = true)
+            harness.testScope.advanceUntilIdle()
+        }
+        // Whichever path started it, the live set must be exactly the requested one.
+        assertEquals(exerciseIndex, harness.coordinator.currentExerciseIndex.value)
+        assertEquals(setIndex, harness.coordinator.currentSetIndex.value)
 
         harness.coordinator._repCount.value = RepCount(
             warmupReps = 0,
@@ -708,13 +719,12 @@ class ActiveSessionEngineIntegrationTest {
         harness.testScope.advanceUntilIdle()
     }
 
-    private fun seededMainLift(id: String, name: String, oneRepMaxKg: Float): Exercise = Exercise(
+    private fun seededMainLift(id: String, name: String): Exercise = Exercise(
         id = id,
         name = name,
         muscleGroup = "Strength",
         muscleGroups = "Strength",
         equipment = "BAR",
-        oneRepMaxKg = oneRepMaxKg,
     )
 
     private fun createEngine(harness: DWSMTestHarness, bleRepository: BleRepository) = ActiveSessionEngine(
@@ -752,7 +762,6 @@ class ActiveSessionEngineIntegrationTest {
         muscleGroup = "Accessory",
         muscleGroups = "Accessory",
         equipment = "BAR",
-        oneRepMaxKg = 50f,
     )
 
     private fun mainLiftRoutineExercise(

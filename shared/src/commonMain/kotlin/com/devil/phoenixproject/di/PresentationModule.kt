@@ -28,7 +28,7 @@ val presentationModule = module {
     factory { ExternalRoutinesViewModel(get(), get()) }
     factory { ExternalProgramsViewModel(get(), get(), get()) }
     factory { ExternalMeasurementsViewModel(get(), get()) }
-    factory { AssessmentViewModel(get(), get(), get()) }
+    factory { AssessmentViewModel(get(), get(), get(), get()) }
     factory {
         ProfileViewModel(
             profiles = get(),
