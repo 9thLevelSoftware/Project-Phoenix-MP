@@ -30,10 +30,11 @@ class QaBlockingPortalApiClient(
         profileId: String?,
         cursor: String?,
         pageSize: Int?,
+        lastSync: Long,
     ): Result<PortalSyncPullResponse> = if (fixtureGate.isEnabled()) {
         localOnlyFailure()
     } else {
-        super.pullPortalPayload(knownEntityIds, deviceId, profileId, cursor, pageSize)
+        super.pullPortalPayload(knownEntityIds, deviceId, profileId, cursor, pageSize, lastSync)
     }
 
     private fun <T> localOnlyFailure(): Result<T> =

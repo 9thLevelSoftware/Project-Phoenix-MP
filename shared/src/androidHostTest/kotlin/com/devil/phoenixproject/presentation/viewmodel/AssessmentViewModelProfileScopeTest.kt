@@ -99,9 +99,9 @@ class AssessmentViewModelProfileScopeTest {
     }
 
     @Test
-    fun startingLoad_isExactlyTwentyTotalKgForEveryProfileDespiteGlobalExerciseOneRm() =
+    fun startingLoad_isExactlyTwentyTotalKgForEveryProfile() =
         runTest {
-            val sharedExercises = exerciseRepository(oneRepMaxKg = 100f)
+            val sharedExercises = exerciseRepository()
             val profileA = readyViewModel(FakeAssessmentRepository(), sharedExercises)
             val profileB = readyViewModel(FakeAssessmentRepository(), sharedExercises)
             advanceUntilIdle()
@@ -131,7 +131,7 @@ class AssessmentViewModelProfileScopeTest {
         assessmentEngine = AssessmentEngine(),
     )
 
-    private fun exerciseRepository(oneRepMaxKg: Float? = null) =
+    private fun exerciseRepository() =
         FakeExerciseRepository().apply {
             addExercise(
                 Exercise(
@@ -139,7 +139,6 @@ class AssessmentViewModelProfileScopeTest {
                     name = "Bench Press",
                     muscleGroup = "Chest",
                     equipment = "BAR",
-                    oneRepMaxKg = oneRepMaxKg,
                 ),
             )
         }

@@ -356,7 +356,6 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Project Phoenix needs Bluetooth to connect to your smart fitness machine.";
-				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Project Phoenix needs Bluetooth to connect to your smart fitness machine.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Project Phoenix uses the microphone for safe word detection during workouts, enabling hands-free emergency stops.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Project Phoenix uses on-device speech recognition to listen for your safe word during workouts.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
@@ -401,7 +400,6 @@
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription = "Project Phoenix needs Bluetooth to connect to your smart fitness machine.";
-				INFOPLIST_KEY_NSBluetoothPeripheralUsageDescription = "Project Phoenix needs Bluetooth to connect to your smart fitness machine.";
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Project Phoenix uses the microphone for safe word detection during workouts, enabling hands-free emergency stops.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Project Phoenix uses on-device speech recognition to listen for your safe word during workouts.";
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;

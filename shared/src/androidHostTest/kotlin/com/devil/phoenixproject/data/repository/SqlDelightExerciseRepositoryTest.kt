@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import app.cash.turbine.test
 import com.devil.phoenixproject.data.local.ExerciseImporter
+import com.devil.phoenixproject.data.sync.CustomExerciseSyncDto
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.testutil.createTestDatabase
@@ -84,17 +85,50 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
-    fun `updateOneRepMax is exposed by getExercisesWithOneRepMax`() = runTest {
-        insertExercise(id = "ex-1", name = "Bench Press", muscleGroup = "Chest", equipment = "BAR")
+    fun `custom exercise sync preserves user metadata and image children`() = runTest {
+        insertExercise(
+            id = "custom-shared",
+            name = "Local Name",
+            muscleGroup = "Chest",
+            equipment = "HANDLES",
+            isCustom = 1L,
+            isFavorite = 1L,
+            oneRepMaxKg = 55.0,
+        )
+        database.phoenixDatabaseQueries.insertImage(
+            exerciseId = "custom-shared",
+            url = "https://example.com/custom.jpg",
+            sortOrder = 0L,
+        )
+        val syncRepository = SqlDelightSyncRepository(
+            database,
+            com.devil.phoenixproject.testutil.FakeUserProfileRepository(),
+        )
 
-        repository.updateOneRepMax("ex-1", 120f)
+        syncRepository.mergeCustomExercises(
+            listOf(
+                CustomExerciseSyncDto(
+                    clientId = "custom-shared",
+                    serverId = "server-custom-shared",
+                    name = "Portal Name",
+                    displayName = "Portal Display",
+                    muscleGroup = "Shoulders",
+                    equipment = "BAR",
+                    defaultCableConfig = "DOUBLE",
+                    createdAt = 10L,
+                    updatedAt = 20L,
+                ),
+            ),
+        )
 
-        repository.getExercisesWithOneRepMax().test {
-            val results = awaitItem()
-            assertEquals(1, results.size)
-            assertEquals(120f, results.first().oneRepMaxKg)
-            cancelAndIgnoreRemainingEvents()
-        }
+        val after = database.phoenixDatabaseQueries.selectExerciseById("custom-shared").executeAsOne()
+        assertEquals("Portal Name", after.name)
+        assertEquals(1L, after.isFavorite)
+        assertEquals(55.0, after.one_rep_max_kg)
+        assertEquals(
+            listOf("https://example.com/custom.jpg"),
+            database.phoenixDatabaseQueries.selectImagesByExercise("custom-shared").executeAsList().map { it.url },
+        )
     }
 
     @Test
@@ -261,9 +295,9 @@ class SqlDelightExerciseRepositoryTest {
         assertNotNull(plank)
         assertEquals("Plank", plank.name)
         assertEquals(true, plank.isFavorite)
-        assertEquals(42.5f, plank.oneRepMaxKg)
         assertEquals(9, plank.timesPerformed)
         val row = database.phoenixDatabaseQueries.selectExerciseById("Plank").executeAsOne()
+        assertEquals(42.5, row.one_rep_max_kg)
         assertEquals(1_700_000_000_000L, row.lastPerformed)
         assertEquals("Hold a straight line.", row.description)
         assertEquals("BODYWEIGHT", plank.equipment)
@@ -442,15 +476,21 @@ class SqlDelightExerciseRepositoryTest {
         val exercise = repository.getExerciseById(replacement)
         assertNotNull(exercise)
         assertEquals(true, exercise.isFavorite)
-        assertEquals(100.0f, exercise.oneRepMaxKg)
         assertEquals(4, exercise.timesPerformed)
+        assertEquals(
+            100.0,
+            database.phoenixDatabaseQueries.selectExerciseById(replacement).executeAsOne().one_rep_max_kg,
+        )
 
         importer.remapLegacyCatalogueIds()
         val afterSecondPass = repository.getExerciseById(replacement)
         assertNotNull(afterSecondPass)
         assertEquals(4, afterSecondPass.timesPerformed)
         assertEquals(true, afterSecondPass.isFavorite)
-        assertEquals(100.0f, afterSecondPass.oneRepMaxKg)
+        assertEquals(
+            100.0,
+            database.phoenixDatabaseQueries.selectExerciseById(replacement).executeAsOne().one_rep_max_kg,
+        )
     }
 
     @Test

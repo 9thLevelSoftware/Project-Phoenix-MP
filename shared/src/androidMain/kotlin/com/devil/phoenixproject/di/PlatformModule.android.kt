@@ -93,6 +93,7 @@ actual val platformModule: Module = module {
             workoutRepository = get(),
             exerciseRepository = get(),
             personalRecordRepository = get(),
+            profileExerciseBaselineRepository = get(),
             repCounter = get(),
             preferencesManager = get(),
             gamificationRepository = get(),
@@ -120,6 +121,7 @@ actual val platformModule: Module = module {
             countVelocityOneRepMaxImprovementsUseCase = get(),
             backfillVelocityOneRepMaxUseCase = get(),
             machineSafetyCoordinator = get(),
+            profileRecoveryActivityTracker = get(),
         )
     }
 }

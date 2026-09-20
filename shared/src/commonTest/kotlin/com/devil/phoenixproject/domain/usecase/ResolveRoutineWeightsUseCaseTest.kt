@@ -8,8 +8,8 @@ import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.WorkoutPhase
-import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
+import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import kotlin.test.BeforeTest
 import kotlin.test.Test
@@ -29,7 +29,7 @@ import kotlinx.coroutines.test.runTest
 class ResolveRoutineWeightsUseCaseTest {
 
     private lateinit var prRepository: FakePersonalRecordRepository
-    private lateinit var exerciseRepository: FakeExerciseRepository
+    private lateinit var baselineRepository: FakeProfileExerciseBaselineRepository
     private lateinit var velocityRepository: FakeVelocityOneRepMaxRepository
     private lateinit var useCase: ResolveRoutineWeightsUseCase
 
@@ -43,10 +43,9 @@ class ResolveRoutineWeightsUseCaseTest {
     fun setup() {
         prRepository = FakePersonalRecordRepository()
         prRepository.reset()
-        exerciseRepository = FakeExerciseRepository()
-        exerciseRepository.reset()
+        baselineRepository = FakeProfileExerciseBaselineRepository()
         velocityRepository = FakeVelocityOneRepMaxRepository()
-        useCase = ResolveRoutineWeightsUseCase(prRepository, exerciseRepository, velocityRepository)
+        useCase = ResolveRoutineWeightsUseCase(prRepository, baselineRepository, velocityRepository)
     }
 
     // ========== Test 1: Resolves percentage to absolute weight using PR ==========
@@ -122,7 +121,7 @@ class ResolveRoutineWeightsUseCaseTest {
 
     @Test
     fun `resolves percentage using stored exercise 1RM when no PR exists`() = runTest {
-        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 100f))
+        baselineRepository.set("default", "bench-press", 100f, 1L)
 
         val routineExercise = RoutineExercise(
             id = "routine-ex-1",
@@ -146,7 +145,7 @@ class ResolveRoutineWeightsUseCaseTest {
 
     @Test
     fun `prefers PR weight over stored exercise 1RM when both exist`() = runTest {
-        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 100f))
+        baselineRepository.set("default", "bench-press", 100f, 1L)
         prRepository.addRecord(
             PersonalRecord(
                 id = 1,
@@ -630,9 +629,9 @@ class ResolveRoutineWeightsUseCaseTest {
 
     @Test
     fun `ESTIMATED_1RM falls back to stored 1RM when no estimate exists`() = runTest {
-        // Given: velocity repo returns null; exercise has oneRepMaxKg = 120f
+        // Given: velocity repo returns null and the active profile has a scoped 120 kg baseline.
         velocityRepository.latestPassing = null
-        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 120f))
+        baselineRepository.set("default", "bench-press", 120f, 1L)
 
         val routineExercise = RoutineExercise(
             id = "routine-ex-1rm-fallback",
@@ -714,7 +713,7 @@ class ResolveRoutineWeightsUseCaseTest {
             computedAt = 1000L,
             profileId = "default",
         )
-        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 120f))
+        baselineRepository.set("default", "bench-press", 120f, 1L)
 
         val routineExercise = RoutineExercise(
             id = "routine-ex-1rm-floor-stored",
@@ -801,7 +800,7 @@ class ResolveRoutineWeightsUseCaseTest {
             computedAt = 1000L,
             profileId = "default",
         )
-        exerciseRepository.addExercise(testExercise.copy(oneRepMaxKg = 120f))
+        baselineRepository.set("default", "bench-press", 120f, 1L)
 
         val routineExercise = RoutineExercise(
             id = "routine-ex-1rm-sane",

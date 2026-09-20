@@ -29,8 +29,9 @@ class SqlDelightBiomechanicsRepository(private val db: PhoenixDatabase) : Biomec
 
     override suspend fun saveRepBiomechanics(sessionId: String, results: List<BiomechanicsRepResult>) {
         withContext(Dispatchers.IO) {
-            results.forEach { result ->
-                queries.insertRepBiomechanics(
+            db.transaction {
+                results.forEach { result ->
+                    queries.insertRepBiomechanics(
                     sessionId = sessionId,
                     repNumber = result.repNumber.toLong(),
                     // VBT metrics
@@ -52,7 +53,9 @@ class SqlDelightBiomechanicsRepository(private val db: PhoenixDatabase) : Biomec
                     avgLoadB = result.asymmetry.avgLoadB.toDouble(),
                     // Metadata
                     timestamp = result.timestamp,
-                )
+                    )
+                }
+                queries.markWorkoutComponentDirty(sessionId)
             }
         }
     }
@@ -103,7 +106,10 @@ class SqlDelightBiomechanicsRepository(private val db: PhoenixDatabase) : Biomec
 
     override suspend fun deleteRepBiomechanics(sessionId: String) {
         withContext(Dispatchers.IO) {
-            queries.deleteRepBiomechanicsBySession(sessionId)
+            db.transaction {
+                queries.deleteRepBiomechanicsBySession(sessionId)
+                queries.markWorkoutComponentDirty(sessionId)
+            }
         }
     }
 }

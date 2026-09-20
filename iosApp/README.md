@@ -66,9 +66,8 @@ Use the checked-in `PhoenixApp/PhoenixApp.xcodeproj`. The `PhoenixApp/PhoenixApp
 
 ### Bluetooth Permissions
 
-The `Info.plist` includes required BLE permission strings:
+The `Info.plist` includes the required BLE permission string:
 - `NSBluetoothAlwaysUsageDescription` - Required for BLE scanning/connection
-- `NSBluetoothPeripheralUsageDescription` - Legacy iOS 12 support
 
 ### Bluetooth Integration
 

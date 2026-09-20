@@ -189,13 +189,22 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateSessionsFlow()
     }
 
-    override suspend fun deleteAllSessions() {
-        sessions.clear()
-        metrics.clear()
+    override suspend fun discardSessionInternal(sessionId: String) {
+        sessions.remove(sessionId)
+        metrics.remove(sessionId)
         updateSessionsFlow()
     }
 
-    override suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String) {
+    override suspend fun deleteAllSessions(profileId: String) {
+        val matchingIds = sessions.values.filter { it.profileId == profileId }.map { it.id }
+        matchingIds.forEach { id ->
+            sessions.remove(id)
+            metrics.remove(id)
+        }
+        updateSessionsFlow()
+    }
+
+    override suspend fun deleteSessionsByRoutineSessionId(profileId: String, routineSessionId: String) {
         // Issue #591 follow-up: remove every session belonging to the
         // routine session id, including any zero-rep / ghost rows that
         // `getHistoryVisibleSessions` would have filtered out. Mirrors
@@ -203,7 +212,9 @@ class FakeWorkoutRepository : WorkoutRepository {
         // group level) without the SQL deletedAt bookkeeping the
         // production repository maintains.
         val matchingIds = sessions.entries
-            .filter { (_, session) -> session.routineSessionId == routineSessionId }
+            .filter { (_, session) ->
+                session.profileId == profileId && session.routineSessionId == routineSessionId
+            }
             .map { it.key }
         matchingIds.forEach { id ->
             sessions.remove(id)
@@ -270,24 +281,6 @@ class FakeWorkoutRepository : WorkoutRepository {
     override suspend fun getAverageSetDurationMs(exerciseId: String, profileId: String): Long? = null
 
     override fun getAllPersonalRecords(profileId: String): Flow<List<PersonalRecordEntity>> = _personalRecordsFlow
-
-    override suspend fun updatePRIfBetter(exerciseId: String, weightKg: Float, reps: Int, mode: String, profileId: String) {
-        val key = "$exerciseId-$mode"
-        val existing = personalRecords[key]
-        val newVolume = weightKg * reps
-
-        if (existing == null || newVolume > existing.weightPerCableKg * existing.reps) {
-            personalRecords[key] = PersonalRecordEntity(
-                id = existing?.id ?: personalRecords.size.toLong(),
-                exerciseId = exerciseId,
-                weightPerCableKg = weightKg,
-                reps = reps,
-                timestamp = currentTimeMillis(),
-                workoutMode = mode,
-            )
-            updatePersonalRecordsFlow()
-        }
-    }
 
     override suspend fun saveMetrics(sessionId: String, metrics: List<WorkoutMetric>) {
         saveMetricsAttempts += sessionId to metrics.toList()
