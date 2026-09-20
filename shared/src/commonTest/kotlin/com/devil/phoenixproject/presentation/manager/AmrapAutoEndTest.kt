@@ -47,11 +47,15 @@ class AmrapAutoEndTest {
             val states = recordWorkoutStates(harness)
             emitMovement(harness)
 
-            // The machine reports the three ROM warm-up reps plus two working reps.
+            // The machine reports the three ROM warm-up reps plus two working reps, on an
+            // unlimited packet (repsSetTotal 252, the 0xFF sentinel reported back). This is the
+            // shape #712 was about: the freshness gate only accepts it because the lease says
+            // the set uses an unlimited rep target, so this test fails end to end if that
+            // predicate breaks - the warm-up would stay at 0 and the set would never end.
             harness.fakeBleRepo.emitRepNotification(
                 harness.modernRepPacket(
                     repsSetCount = 2,
-                    repsSetTotal = 8,
+                    repsSetTotal = 252,
                     timestamp = harness.nowMs + 1L,
                     topCounter = 5,
                     completeCounter = 5,
@@ -150,7 +154,7 @@ class AmrapAutoEndTest {
             val states = recordWorkoutStates(harness)
             emitMovement(harness)
 
-            // Nine seconds of rest, then one sample with the handles off the rack.
+            // Just under nine seconds of rest, then one sample with the handles off the rack.
             harness.fakeBleRepo.emitMetric(metric(timestamp = 5_000L, position = 0f))
             harness.fakeBleRepo.emitMetric(metric(timestamp = 13_900L, position = 0f))
             harness.fakeBleRepo.emitMetric(metric(timestamp = 14_000L, position = 600f))
