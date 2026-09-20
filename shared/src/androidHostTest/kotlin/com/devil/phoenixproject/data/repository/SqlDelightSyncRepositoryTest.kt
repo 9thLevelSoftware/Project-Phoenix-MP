@@ -3,15 +3,26 @@ package com.devil.phoenixproject.data.repository
 import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter
 import com.devil.phoenixproject.data.sync.PortalSyncPayload
+import com.devil.phoenixproject.data.sync.PullCycleDayDto
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
+import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
+import com.devil.phoenixproject.data.sync.RoutineSyncDto
+import com.devil.phoenixproject.data.sync.PortalCycleProgressStateSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
+import com.devil.phoenixproject.data.sync.PulledWorkoutDeletionDto
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.CycleProgression
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutPhase
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -31,6 +42,522 @@ class SqlDelightSyncRepositoryTest {
         userProfileRepository = FakeUserProfileRepository()
         userProfileRepository.setActiveProfileForTest(id = "active-profile")
         repository = SqlDelightSyncRepository(database, userProfileRepository)
+    }
+
+    @Test
+    fun `dirty workout snapshot expands full parent and concurrent edit survives ack`() = runTest {
+        insertHistoricalSession(
+            id = "component-a",
+            timestamp = 100L,
+            exerciseId = "bench",
+            exerciseName = "Bench",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+            routineSessionId = "portal-parent",
+        )
+        insertHistoricalSession(
+            id = "component-b",
+            timestamp = 101L,
+            exerciseId = "row",
+            exerciseName = "Row",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+            routineSessionId = "portal-parent",
+        )
+
+        val initial = repository.getDirtyWorkoutSnapshot("active-profile")
+        repository.acknowledgeWorkoutSnapshot(initial, setOf("portal-parent"))
+        database.phoenixDatabaseQueries.markWorkoutComponentDirty("component-a")
+
+        val inFlight = repository.getDirtyWorkoutSnapshot("active-profile")
+        assertEquals(setOf("component-a", "component-b"), inFlight.sessions.mapTo(linkedSetOf()) { it.id })
+        database.phoenixDatabaseQueries.markWorkoutComponentDirty("component-a")
+        repository.acknowledgeWorkoutSnapshot(inFlight, setOf("portal-parent"))
+
+        val componentA = database.phoenixDatabaseQueries.selectSessionById("component-a").executeAsOne()
+        assertTrue(componentA.local_sync_generation > componentA.synced_sync_generation)
+        val retry = repository.getDirtyWorkoutSnapshot("active-profile")
+        assertEquals(setOf("component-a", "component-b"), retry.sessions.mapTo(linkedSetOf()) { it.id })
+    }
+
+    @Test
+    fun `notes only local edit dirties complete workout parent`() = runTest {
+        listOf("component-a" to "bench", "component-b" to "row").forEachIndexed { index, pair ->
+            insertHistoricalSession(
+                id = pair.first,
+                timestamp = 100L + index,
+                exerciseId = pair.second,
+                exerciseName = pair.second,
+                workingReps = 5L,
+                peakConcentricA = null,
+                peakConcentricB = null,
+                peakEccentricA = null,
+                peakEccentricB = null,
+                profileId = "active-profile",
+                routineSessionId = "portal-parent",
+            )
+        }
+        repository.saveLocalSessionNotes("portal-parent", "snapshot notes", 150L)
+        val inFlight = repository.getDirtyWorkoutSnapshot("active-profile")
+
+        repository.saveLocalSessionNotes("portal-parent", "concurrent notes", 200L)
+        repository.acknowledgeWorkoutSnapshot(inFlight, setOf("portal-parent"))
+
+        assertEquals("snapshot notes", inFlight.sessionNotesByPortalId.getValue("portal-parent").notes)
+        assertEquals(
+            "concurrent notes",
+            database.phoenixDatabaseQueries.getSessionNotes("portal-parent").executeAsOne().notes,
+        )
+        val retry = repository.getDirtyWorkoutSnapshot("active-profile")
+        assertEquals(setOf("component-a", "component-b"), retry.sessions.mapTo(linkedSetOf()) { it.id })
+    }
+
+    @Test
+    fun `pulled workout tombstone is replay safe and blocks live resurrection`() = runTest {
+        val deletion = PulledWorkoutDeletionDto(
+            mutationId = "delete-1",
+            profileId = "active-profile",
+            scope = WorkoutDeletionScope.WORKOUT,
+            portalSessionId = "portal-parent",
+            deletedAt = "2026-09-20T12:00:00Z",
+        )
+        val staleLiveComponent = WorkoutSession(
+            id = "component-a",
+            timestamp = 100L,
+            mode = "OldSchool",
+            reps = 5,
+            weightPerCableKg = 20f,
+            totalReps = 5,
+            workingReps = 5,
+            exerciseId = "bench",
+            exerciseName = "Bench",
+            routineSessionId = "portal-parent",
+            profileId = "active-profile",
+        )
+
+        repeat(2) {
+            repository.mergeAllPullData(
+                ownerUserId = "owner-1",
+                workoutDeletions = listOf(deletion),
+                sessions = listOf(staleLiveComponent),
+                routines = emptyList(),
+                cycles = emptyList(),
+                badges = emptyList(),
+                gamificationStats = null,
+                personalRecords = emptyList(),
+                lastSync = 0L,
+                profileId = "active-profile",
+            )
+        }
+
+        assertNull(database.phoenixDatabaseQueries.selectSessionById("component-a").executeAsOneOrNull())
+        val retained = database.phoenixDatabaseQueries
+            .selectWorkoutDeletionByMutationId("delete-1")
+            .executeAsOne()
+        assertEquals("owner-1", retained.owner_user_id)
+        assertEquals("REMOTE", retained.source)
+
+        assertFailsWith<IllegalStateException> {
+            repository.mergeAllPullData(
+                ownerUserId = "owner-1",
+                workoutDeletions = listOf(deletion.copy(portalSessionId = "different-parent")),
+                sessions = emptyList(),
+                routines = emptyList(),
+                cycles = emptyList(),
+                badges = emptyList(),
+                gamificationStats = null,
+                personalRecords = emptyList(),
+                lastSync = 0L,
+                profileId = "active-profile",
+            )
+        }
+    }
+
+    @Test
+    fun `account A workout tombstone retains ledger without deleting account B target`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-b", 1L, "default")
+        insertHistoricalSession(
+            id = "foreign-component",
+            timestamp = 100L,
+            exerciseId = "bench",
+            exerciseName = "Bench",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "default",
+            routineSessionId = "shared-parent",
+        )
+
+        repository.mergeAllPullData(
+            ownerUserId = "owner-a",
+            workoutDeletions = listOf(
+                PulledWorkoutDeletionDto(
+                    mutationId = "foreign-delete",
+                    profileId = "default",
+                    scope = WorkoutDeletionScope.WORKOUT,
+                    portalSessionId = "shared-parent",
+                    deletedAt = "2026-09-20T12:00:00Z",
+                ),
+            ),
+            sessions = emptyList(),
+            routines = emptyList(),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "default",
+        )
+
+        assertNotNull(database.phoenixDatabaseQueries.selectSessionById("foreign-component").executeAsOneOrNull())
+        assertEquals(
+            "owner-a",
+            database.phoenixDatabaseQueries
+                .selectWorkoutDeletionByMutationId("foreign-delete")
+                .executeAsOne()
+                .owner_user_id,
+        )
+    }
+
+    @Test
+    fun `component tombstone with mismatched portal parent does not delete target`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-a", 1L, "default")
+        insertHistoricalSession(
+            id = "component-a",
+            timestamp = 100L,
+            exerciseId = "bench",
+            exerciseName = "Bench",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "default",
+            routineSessionId = "actual-parent",
+        )
+
+        repository.mergeAllPullData(
+            ownerUserId = "owner-a",
+            workoutDeletions = listOf(
+                PulledWorkoutDeletionDto(
+                    mutationId = "wrong-parent-delete",
+                    profileId = "default",
+                    scope = WorkoutDeletionScope.COMPONENT,
+                    portalSessionId = "different-parent",
+                    componentSessionId = "component-a",
+                    deletedAt = "2026-09-20T12:00:00Z",
+                ),
+            ),
+            sessions = emptyList(),
+            routines = emptyList(),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "default",
+        )
+
+        assertNotNull(database.phoenixDatabaseQueries.selectSessionById("component-a").executeAsOneOrNull())
+        assertNotNull(
+            database.phoenixDatabaseQueries
+                .selectWorkoutDeletionByMutationId("wrong-parent-delete")
+                .executeAsOneOrNull(),
+        )
+    }
+
+    @Test
+    fun `workout tombstone deletes only matching owner when portal parent collides`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-a", 1L, "default")
+        database.phoenixDatabaseQueries.insertProfile("profile-b", "B", 2L, 1L, 0L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-b", 1L, "profile-b")
+        insertHistoricalSession(
+            id = "component-owner-a",
+            timestamp = 100L,
+            exerciseId = "bench",
+            exerciseName = "Bench",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "default",
+            routineSessionId = "shared-parent",
+        )
+        insertHistoricalSession(
+            id = "component-owner-b",
+            timestamp = 101L,
+            exerciseId = "row",
+            exerciseName = "Row",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "profile-b",
+            routineSessionId = "shared-parent",
+        )
+
+        repository.mergeAllPullData(
+            ownerUserId = "owner-a",
+            workoutDeletions = listOf(
+                PulledWorkoutDeletionDto(
+                    mutationId = "owner-a-workout-delete",
+                    profileId = "default",
+                    scope = WorkoutDeletionScope.WORKOUT,
+                    portalSessionId = "shared-parent",
+                    deletedAt = "2026-09-20T12:00:00Z",
+                ),
+            ),
+            sessions = emptyList(),
+            routines = emptyList(),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "default",
+        )
+
+        assertNull(database.phoenixDatabaseQueries.selectSessionById("component-owner-a").executeAsOneOrNull())
+        assertNotNull(database.phoenixDatabaseQueries.selectSessionById("component-owner-b").executeAsOneOrNull())
+    }
+
+    @Test
+    fun `component plus server derived workout tombstone removes final sibling and retains both ledgers`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-a", 1L, "default")
+        listOf("component-a" to "bench", "component-b" to "row").forEachIndexed { index, component ->
+            insertHistoricalSession(
+                id = component.first,
+                timestamp = 100L + index,
+                exerciseId = component.second,
+                exerciseName = component.second,
+                workingReps = 5L,
+                peakConcentricA = null,
+                peakConcentricB = null,
+                peakEccentricA = null,
+                peakEccentricB = null,
+                profileId = "default",
+                routineSessionId = "portal-parent",
+            )
+        }
+
+        repository.mergeAllPullData(
+            ownerUserId = "owner-a",
+            workoutDeletions = listOf(
+                PulledWorkoutDeletionDto(
+                    mutationId = "component-delete",
+                    profileId = "default",
+                    scope = WorkoutDeletionScope.COMPONENT,
+                    portalSessionId = "portal-parent",
+                    componentSessionId = "component-a",
+                    deletedAt = "2026-09-20T12:00:00Z",
+                ),
+                PulledWorkoutDeletionDto(
+                    mutationId = "derived-workout-delete",
+                    profileId = "default",
+                    scope = WorkoutDeletionScope.WORKOUT,
+                    portalSessionId = "portal-parent",
+                    deletedAt = "2026-09-20T12:00:00Z",
+                ),
+            ),
+            sessions = emptyList(),
+            routines = emptyList(),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "default",
+        )
+
+        assertNull(database.phoenixDatabaseQueries.selectSessionById("component-a").executeAsOneOrNull())
+        assertNull(database.phoenixDatabaseQueries.selectSessionById("component-b").executeAsOneOrNull())
+        assertNotNull(
+            database.phoenixDatabaseQueries
+                .selectWorkoutDeletionByMutationId("component-delete")
+                .executeAsOneOrNull(),
+        )
+        assertNotNull(
+            database.phoenixDatabaseQueries
+                .selectWorkoutDeletionByMutationId("derived-workout-delete")
+                .executeAsOneOrNull(),
+        )
+    }
+
+    @Test
+    fun `retained ownership claim routes a workout that arrives on a later pull`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("target-profile", "Recovered", 2L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-a", 1L, "target-profile")
+        database.phoenixDatabaseQueries.insertLocalOwnershipClaimIfAbsent(
+            ownerUserId = "owner-a",
+            entityType = OwnershipEntityType.WORKOUT.name,
+            entityId = "portal-parent",
+            mutationId = "event-before-row",
+            sourceProfileId = "source-profile",
+            targetProfileId = "target-profile",
+            transferredAt = 10L,
+        )
+        val incoming = WorkoutSession(
+            id = "component-later",
+            timestamp = 100L,
+            mode = "OldSchool",
+            reps = 5,
+            weightPerCableKg = 20f,
+            totalReps = 5,
+            workingReps = 5,
+            exerciseId = "bench",
+            exerciseName = "Bench",
+            routineSessionId = "portal-parent",
+            profileId = "source-profile",
+        )
+
+        repository.mergeAllPullData(
+            ownerUserId = "owner-a",
+            workoutDeletions = emptyList(),
+            sessions = listOf(incoming),
+            routines = emptyList(),
+            cycles = emptyList(),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "source-profile",
+        )
+
+        assertEquals(
+            "target-profile",
+            database.phoenixDatabaseQueries.selectSessionById("component-later").executeAsOne().profile_id,
+        )
+        assertEquals(
+            "target-profile",
+            database.phoenixDatabaseQueries.selectLocalOwnershipClaim(
+                "owner-a",
+                OwnershipEntityType.WORKOUT.name,
+                "portal-parent",
+            ).executeAsOne().target_profile_id,
+        )
+    }
+
+    @Test
+    fun `retained claims route later routine cycle state and personal record roots`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertProfile("claimed-target", "Claimed", 3L, 1L, 0L)
+        queries.linkProfileToSupabase("owner-a", 1L, "claimed-target")
+        listOf(
+            OwnershipEntityType.ROUTINE to "routine-later",
+            OwnershipEntityType.CYCLE to "cycle-later",
+            OwnershipEntityType.PERSONAL_RECORD to "pr-later",
+        ).forEach { (type, id) ->
+            queries.insertLocalOwnershipClaimIfAbsent(
+                ownerUserId = "owner-a",
+                entityType = type.name,
+                entityId = id,
+                mutationId = "claim-${type.name}",
+                sourceProfileId = "default",
+                targetProfileId = "claimed-target",
+                transferredAt = 10L,
+            )
+        }
+
+        repository.mergeAllPullData(
+            ownerUserId = "owner-a",
+            workoutDeletions = emptyList(),
+            sessions = emptyList(),
+            routines = listOf(PullRoutineDto(id = "routine-later", name = "Later routine", updatedAt = 20L)),
+            cycles = listOf(
+                PullTrainingCycleDto(
+                    id = "cycle-later",
+                    name = "Later cycle",
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(20L).toString(),
+                ),
+            ),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = listOf(
+                PersonalRecordSyncDto(
+                    clientId = "pr-later",
+                    exerciseId = "bench",
+                    exerciseName = "Bench",
+                    weight = 50f,
+                    reps = 5,
+                    oneRepMax = 56f,
+                    achievedAt = 15L,
+                    workoutMode = "OldSchool",
+                    createdAt = 15L,
+                    updatedAt = 20L,
+                ),
+            ),
+            lastSync = 0L,
+            profileId = "default",
+        )
+
+        assertEquals("claimed-target", queries.selectRoutineById("routine-later").executeAsOne().profile_id)
+        assertEquals("claimed-target", queries.selectTrainingCycleById("cycle-later").executeAsOne().profile_id)
+        assertEquals("claimed-target", queries.selectCycleSyncState("cycle-later").executeAsOne().profile_id)
+        assertEquals(
+            "claimed-target",
+            queries.selectAllRecords("claimed-target").executeAsList().single { it.uuid == "pr-later" }.profile_id,
+        )
+    }
+
+    @Test
+    fun `retained ownership claim rejects a target bound to another account`() = runTest {
+        database.phoenixDatabaseQueries.insertProfile("foreign-target", "Foreign", 2L, 1L, 1L)
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-b", 1L, "foreign-target")
+        database.phoenixDatabaseQueries.insertLocalOwnershipClaimIfAbsent(
+            ownerUserId = "owner-a",
+            entityType = OwnershipEntityType.WORKOUT.name,
+            entityId = "portal-parent",
+            mutationId = "foreign-target-event",
+            sourceProfileId = "source-profile",
+            targetProfileId = "foreign-target",
+            transferredAt = 10L,
+        )
+        val incoming = WorkoutSession(
+            id = "component-later",
+            timestamp = 100L,
+            mode = "OldSchool",
+            reps = 5,
+            weightPerCableKg = 20f,
+            totalReps = 5,
+            workingReps = 5,
+            exerciseId = "bench",
+            exerciseName = "Bench",
+            routineSessionId = "portal-parent",
+            profileId = "source-profile",
+        )
+
+        assertFailsWith<IllegalStateException> {
+            repository.mergeAllPullData(
+                ownerUserId = "owner-a",
+                workoutDeletions = emptyList(),
+                sessions = listOf(incoming),
+                routines = emptyList(),
+                cycles = emptyList(),
+                badges = emptyList(),
+                gamificationStats = null,
+                personalRecords = emptyList(),
+                lastSync = 0L,
+                profileId = "source-profile",
+            )
+        }
+
+        assertNull(database.phoenixDatabaseQueries.selectSessionById("component-later").executeAsOneOrNull())
     }
 
     @Test
@@ -109,6 +636,91 @@ class SqlDelightSyncRepositoryTest {
         assertEquals(3.0, session.counterweightKg)
         assertEquals(rackItemsJson, session.rackItemsJson)
         assertEquals(2L, session.display_multiplier)
+    }
+
+    @Test
+    fun `mergeSessions updates portal origin without deleting metric children`() = runTest {
+        repository.mergeSessions(listOf(syncSession("portal-child", updatedAt = 200L, duration = 20L)))
+        database.phoenixDatabaseQueries.insertMetric(
+            sessionId = "portal-child",
+            timestamp = 10L,
+            position = 1.0,
+            positionB = null,
+            velocity = null,
+            velocityB = null,
+            load = null,
+            loadB = null,
+            power = null,
+            status = 0L,
+        )
+
+        repository.mergeSessions(listOf(syncSession("portal-child", updatedAt = 300L, duration = 30L)))
+
+        val session = database.phoenixDatabaseQueries.selectSessionById("portal-child").executeAsOne()
+        assertEquals(30L, session.duration)
+        assertEquals(1, database.phoenixDatabaseQueries.selectMetricsBySession("portal-child").executeAsList().size)
+    }
+
+    @Test
+    fun `mergeSessions rejects stale portal replay`() = runTest {
+        repository.mergeSessions(listOf(syncSession("portal-stale", updatedAt = 300L, duration = 30L)))
+
+        repository.mergeSessions(listOf(syncSession("portal-stale", updatedAt = 200L, duration = 20L)))
+
+        val session = database.phoenixDatabaseQueries.selectSessionById("portal-stale").executeAsOne()
+        assertEquals(30L, session.duration)
+        assertEquals(300L, session.updatedAt)
+    }
+
+    @Test
+    fun `mergeSessions preserves local origin capture and ownership`() = runTest {
+        insertHistoricalSession(
+            id = "local-capture",
+            timestamp = 100L,
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            workingReps = 8,
+            peakConcentricA = 42.0,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+        )
+        database.phoenixDatabaseQueries.updateSessionTimestamp(250L, "local-capture")
+
+        repository.mergeSessions(
+            listOf(
+                syncSession(
+                    id = "local-capture",
+                    updatedAt = 300L,
+                    duration = 1L,
+                    weightPerCableKg = 1f,
+                ),
+            ),
+        )
+
+        val session = database.phoenixDatabaseQueries.selectSessionById("local-capture").executeAsOne()
+        assertEquals(60_000L, session.duration)
+        assertEquals(20.0, session.weightPerCableKg)
+        assertEquals(42.0, session.peakForceConcentricA)
+        assertEquals("active-profile", session.profile_id)
+        assertEquals(250L, session.updatedAt)
+    }
+
+    @Test
+    fun `mergeSessions never resurrects a retained tombstone`() = runTest {
+        repository.mergeSessions(
+            listOf(syncSession("portal-deleted", updatedAt = 200L, duration = 20L, deletedAt = 190L)),
+        )
+
+        repository.mergeSessions(
+            listOf(syncSession("portal-deleted", updatedAt = 300L, duration = 30L, deletedAt = null)),
+        )
+
+        val session = database.phoenixDatabaseQueries.selectSessionById("portal-deleted").executeAsOne()
+        assertEquals(190L, session.deletedAt)
+        assertEquals(20L, session.duration)
+        assertEquals(200L, session.updatedAt)
     }
 
     @Test
@@ -545,7 +1157,10 @@ class SqlDelightSyncRepositoryTest {
             peakEccentricB = 39.0,
             profileId = "active-profile",
         )
-        val prRepository = SqlDelightPersonalRecordRepository(database)
+        val prRepository = SqlDelightPersonalRecordRepository(
+            database,
+            SqlDelightProfileExerciseBaselineRepository(database),
+        )
         prRepository.updatePhaseSpecificPRs(
             exerciseId = "bicep-curl",
             workoutMode = "Old School",
@@ -1162,7 +1777,17 @@ class SqlDelightSyncRepositoryTest {
 
     private fun insertCycleDayFor(routineId: String) {
         val queries = database.phoenixDatabaseQueries
-        queries.insertTrainingCycle("cycle-link", "Cycle", null, 1_700_000_000_000, 1, "active-profile", null, 1)
+        queries.insertTrainingCycle(
+            "cycle-link",
+            "Cycle",
+            null,
+            1_700_000_000_000,
+            1,
+            "active-profile",
+            null,
+            1,
+            1_700_000_000_000,
+        )
         queries.insertCycleDay("cycle-day-link", "cycle-link", 1, "Day 1", routineId, 0, null, null, null, null, null)
     }
 
@@ -1404,6 +2029,185 @@ class SqlDelightSyncRepositoryTest {
         assertEquals(localUpdatedAt, after.updatedAt)
     }
 
+    @Test
+    fun `newer canonical cycle snapshots exact dirty aggregate before full overwrite`() = runTest {
+        val cycleId = "cycle-atomic-draft"
+        val cycleRepository = SqlDelightTrainingCycleRepository(database)
+        cycleRepository.saveCycle(
+            TrainingCycle.create(
+                id = cycleId,
+                name = "Local cycle",
+                days = listOf(
+                    CycleDay.create(
+                        id = "local-day",
+                        cycleId = cycleId,
+                        dayNumber = 1,
+                        name = "Local day",
+                        echoLevel = EchoLevel.EPIC,
+                        eccentricLoadPercent = 125,
+                    ),
+                ),
+            ),
+        )
+        val initialProgress = cycleRepository.initializeProgress(cycleId)
+        cycleRepository.updateCycleProgress(
+            initialProgress.copy(
+                currentDayNumber = 4,
+                lastCompletedDate = 40L,
+                lastAdvancedAt = 41L,
+                completedDays = setOf(1, 3),
+                missedDays = setOf(2),
+                rotationCount = 2,
+            ),
+        )
+        cycleRepository.saveCycleProgression(
+            CycleProgression(
+                cycleId = cycleId,
+                frequencyCycles = 3,
+                weightIncreasePercent = 2.5f,
+                echoLevelIncrease = true,
+                eccentricLoadIncreasePercent = 5,
+            ),
+        )
+        val localUpdatedAt = assertNotNull(cycleRepository.getCycleById(cycleId)?.updatedAt)
+
+        repository.mergeAllPullData(
+            ownerUserId = "owner-a",
+            workoutDeletions = emptyList(),
+            sessions = emptyList(),
+            routines = emptyList(),
+            cycles = listOf(
+                PullTrainingCycleDto(
+                    id = cycleId,
+                    name = "Server cycle",
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(localUpdatedAt + 100L).toString(),
+                    progressStatePresent = true,
+                    progressState = PortalCycleProgressStateSyncDto(
+                        currentDayNumber = 2,
+                        cycleStartDate = 200L,
+                        completedDays = listOf(1),
+                        missedDays = emptyList(),
+                        rotationCount = 7,
+                    ),
+                    days = listOf(
+                        PullCycleDayDto(
+                            id = "remote-day",
+                            cycleId = cycleId,
+                            dayNumber = 1,
+                            notes = "Remote day",
+                            echoLevelPresent = true,
+                            echoLevel = EchoLevel.HARD.name,
+                            eccentricLoadPercentPresent = true,
+                            eccentricLoadPercent = 50,
+                        ),
+                    ),
+                ),
+            ),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "default",
+        )
+
+        val freshRepository = SqlDelightTrainingCycleRepository(database)
+        val draft = freshRepository.getCycleConflictDrafts("default").single()
+        assertEquals(EchoLevel.EPIC, draft.cycle.days.single().echoLevel)
+        assertEquals(125, draft.cycle.days.single().eccentricLoadPercent)
+        val recoveredId = assertNotNull(freshRepository.saveCycleDraftAsCopy(draft.id))
+        assertEquals(setOf(1, 3), assertNotNull(freshRepository.getCycleProgress(recoveredId)).completedDays)
+        assertEquals(3, assertNotNull(freshRepository.getCycleProgression(recoveredId)).frequencyCycles)
+
+        assertEquals(EchoLevel.HARD, freshRepository.getCycleById(cycleId)?.days?.single()?.echoLevel)
+        assertEquals(7, freshRepository.getCycleProgress(cycleId)?.rotationCount)
+    }
+
+    @Test
+    fun `authoritative null progression clears while legacy omission preserves`() = runTest {
+        val cycleId = "cycle-progression-clear"
+        val cycleRepository = SqlDelightTrainingCycleRepository(database)
+        cycleRepository.saveCycle(TrainingCycle.create(id = cycleId, name = "Local cycle"))
+        cycleRepository.saveCycleProgression(
+            CycleProgression(
+                cycleId = cycleId,
+                frequencyCycles = 3,
+                weightIncreasePercent = 2.5f,
+                echoLevelIncrease = true,
+                eccentricLoadIncreasePercent = 5,
+            ),
+        )
+        val localUpdatedAt = assertNotNull(cycleRepository.getCycleById(cycleId)?.updatedAt)
+
+        repository.mergeAllPullData(
+            ownerUserId = "owner-a",
+            workoutDeletions = emptyList(),
+            sessions = emptyList(),
+            routines = emptyList(),
+            cycles = listOf(
+                PullTrainingCycleDto(
+                    id = cycleId,
+                    name = "Legacy portal cycle",
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(localUpdatedAt + 100L).toString(),
+                ),
+            ),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "default",
+        )
+
+        assertNotNull(
+            cycleRepository.getCycleProgression(cycleId),
+            "A legacy pull without presence metadata must preserve local progression",
+        )
+
+        repository.mergeAllPullData(
+            ownerUserId = "owner-a",
+            workoutDeletions = emptyList(),
+            sessions = emptyList(),
+            routines = emptyList(),
+            cycles = listOf(
+                PullTrainingCycleDto(
+                    id = cycleId,
+                    name = "Canonical portal cycle",
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(localUpdatedAt + 200L).toString(),
+                    progressionSettingsPresent = true,
+                    progressionSettings = null,
+                ),
+            ),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 0L,
+            profileId = "default",
+        )
+
+        assertNull(cycleRepository.getCycleProgression(cycleId))
+    }
+
+    private fun syncSession(
+        id: String,
+        updatedAt: Long,
+        duration: Long,
+        weightPerCableKg: Float = 25f,
+        deletedAt: Long? = null,
+    ) = WorkoutSessionSyncDto(
+        clientId = id,
+        serverId = "server-$id",
+        timestamp = 100L,
+        mode = "OldSchool",
+        targetReps = 8,
+        weightPerCableKg = weightPerCableKg,
+        duration = duration,
+        totalReps = 8,
+        exerciseId = "bench",
+        exerciseName = "Bench Press",
+        deletedAt = deletedAt,
+        createdAt = 100L,
+        updatedAt = updatedAt,
+    )
+
     private fun insertHistoricalSession(
         id: String,
         timestamp: Long,
@@ -1418,6 +2222,7 @@ class SqlDelightSyncRepositoryTest {
         externalAddedLoadKg: Double = 0.0,
         counterweightKg: Double = 0.0,
         rackItemsJson: String = "[]",
+        routineSessionId: String? = null,
     ) {
         database.phoenixDatabaseQueries.insertSession(
             id = id,
@@ -1436,7 +2241,7 @@ class SqlDelightSyncRepositoryTest {
             echoLevel = 1L,
             exerciseId = exerciseId,
             exerciseName = exerciseName,
-            routineSessionId = null,
+            routineSessionId = routineSessionId,
             routineName = null,
             safetyFlags = 0L,
             deloadWarningCount = 0L,
@@ -1472,5 +2277,342 @@ class SqlDelightSyncRepositoryTest {
             counterweightKg = counterweightKg,
             rackItemsJson = rackItemsJson,
         )
+    }
+
+    // ===== Server-reported deletions (PR 16 deletedRoutineIds / deletedCycleIds) =====
+
+    private suspend fun seedRoutineAndCycles() {
+        database.phoenixDatabaseQueries.insertProfile(
+            id = "active-profile",
+            name = "Active",
+            colorIndex = 0L,
+            createdAt = 1_700_000_000_000,
+            isActive = 1L,
+        )
+        database.phoenixDatabaseQueries.linkProfileToSupabase(
+            supabase_user_id = "owner-user",
+            last_auth_at = 1_700_000_000_000,
+            id = "active-profile",
+        )
+        val queries = database.phoenixDatabaseQueries
+        // CycleDay.routine_id has an enforced FK. Seed the local-only template
+        // routines before the pulled cycle graph that references them.
+        for (templateId in listOf("cycle_routine_only-y", "cycle_routine_shared")) {
+            queries.insertRoutine(
+                id = templateId,
+                name = "Template $templateId",
+                description = "",
+                createdAt = 1_700_000_000_000,
+                lastUsed = null,
+                useCount = 0,
+                profile_id = "active-profile",
+                groupId = null,
+                deletedAt = null,
+            )
+        }
+        repository.mergeAllPullData(
+            sessions = emptyList(),
+            routines = listOf(
+                PullRoutineDto(
+                    id = "routine-x",
+                    userId = "user",
+                    name = "Deleted on portal",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-x-1",
+                            routineId = "routine-x",
+                            name = "Bench Press",
+                            muscleGroup = "Chest",
+                            orderIndex = 0,
+                            reps = 8,
+                            weight = 20f,
+                        ),
+                        PullRoutineExerciseDto(
+                            id = "rex-x-2",
+                            routineId = "routine-x",
+                            name = "Row",
+                            muscleGroup = "Back",
+                            orderIndex = 1,
+                            reps = 10,
+                            weight = 15f,
+                        ),
+                    ),
+                ),
+                PullRoutineDto(
+                    id = "local-legacy",
+                    userId = "user",
+                    name = "Legacy local id",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-legacy-1",
+                            routineId = "local-legacy",
+                            name = "Curl",
+                            muscleGroup = "Arms",
+                            orderIndex = 0,
+                            reps = 12,
+                            weight = 10f,
+                        ),
+                    ),
+                ),
+                PullRoutineDto(
+                    id = "routine-keep",
+                    userId = "user",
+                    name = "Kept",
+                    updatedAt = 1_700_000_000_200,
+                    exercises = listOf(
+                        PullRoutineExerciseDto(
+                            id = "rex-keep-1",
+                            routineId = "routine-keep",
+                            name = "Squat",
+                            muscleGroup = "Legs",
+                            orderIndex = 0,
+                            reps = 5,
+                            weight = 40f,
+                        ),
+                    ),
+                ),
+            ),
+            cycles = listOf(
+                PullTrainingCycleDto(
+                    id = "cycle-keep",
+                    name = "Uses deleted routine",
+                    days = listOf(
+                        PullCycleDayDto(id = "day-keep-1", cycleId = "cycle-keep", dayNumber = 1, routineId = "routine-x"),
+                        PullCycleDayDto(id = "day-keep-2", cycleId = "cycle-keep", dayNumber = 2, routineId = "routine-keep"),
+                        PullCycleDayDto(id = "day-keep-3", cycleId = "cycle-keep", dayNumber = 3, routineId = "cycle_routine_shared"),
+                    ),
+                ),
+                PullTrainingCycleDto(
+                    id = "cycle-y",
+                    name = "Deleted on portal",
+                    progressionSettings = """{"frequencyCycles":"2"}""",
+                    days = listOf(
+                        PullCycleDayDto(id = "day-y-1", cycleId = "cycle-y", dayNumber = 1, routineId = "routine-keep"),
+                        PullCycleDayDto(id = "day-y-2", cycleId = "cycle-y", dayNumber = 2, routineId = "cycle_routine_only-y"),
+                        PullCycleDayDto(id = "day-y-3", cycleId = "cycle-y", dayNumber = 3, routineId = "cycle_routine_shared"),
+                    ),
+                ),
+            ),
+            badges = emptyList(),
+            gamificationStats = null,
+            personalRecords = emptyList(),
+            lastSync = 1_700_000_000_100,
+            profileId = "active-profile",
+        )
+        // Legacy row: local id differs from the id the server knows (serverId column).
+        queries.updateRoutineServerId("routine-srv", "local-legacy")
+        // Children that FK cascades would remove, but the test driver runs with foreign_keys off.
+        queries.insertPlannedSet(
+            id = "planned-x-1",
+            routine_exercise_id = "rex-x-1",
+            set_number = 1,
+            set_type = "STANDARD",
+            target_reps = 8,
+            target_weight_kg = 20.0,
+            target_rpe = null,
+            rest_seconds = 60,
+        )
+        queries.insertSuperset(
+            id = "superset-x",
+            routineId = "routine-x",
+            name = "Pair",
+            colorIndex = 0,
+            restBetweenSeconds = 10,
+            orderIndex = 0,
+        )
+        database.phoenixDatabaseQueries.insertCycleProgress(
+            id = "progress-y",
+            cycle_id = "cycle-y",
+            current_day_number = 1,
+            last_completed_date = null,
+            cycle_start_date = 1_700_000_000_000,
+            last_advanced_at = null,
+            completed_days = null,
+            missed_days = null,
+            rotation_count = 0,
+        )
+    }
+
+    @Test
+    fun `applyServerDeletions removes routine with exercises and cycle with children`() = runTest {
+        seedRoutineAndCycles()
+        val queries = database.phoenixDatabaseQueries
+        assertEquals(2, queries.selectExercisesByRoutine("routine-x").executeAsList().size)
+        assertEquals(1, queries.selectPlannedSetsByRoutineExercise("rex-x-1").executeAsList().size)
+        assertEquals(1, queries.selectSupersetsByRoutine("routine-x").executeAsList().size)
+        assertNotNull(queries.selectCycleProgressByCycle("cycle-y").executeAsOneOrNull())
+        assertNotNull(queries.selectCycleProgression("cycle-y").executeAsOneOrNull())
+
+        val result = repository.applyServerDeletions(
+            ownerUserId = "owner-user",
+            routineIds = listOf("routine-x", "never-held-routine"),
+            cycleIds = listOf("cycle-y", "never-held-cycle"),
+            lastSync = 1_700_000_000_300,
+        )
+
+        assertEquals(listOf("routine-x"), result.deletedRoutineIds)
+        assertEquals(listOf("cycle-y"), result.deletedCycleIds)
+        assertTrue(result.discardedRoutineEditIds.isEmpty())
+        // cycle-y had a CycleProgress row -> reported as an in-progress cycle loss.
+        assertEquals(listOf("cycle-y"), result.deletedActiveCycleIds)
+
+        // Routine X and its exercises, planned sets and supersets are gone, with no
+        // soft-delete tombstone left to push.
+        assertNull(queries.selectRoutineById("routine-x").executeAsOneOrNull())
+        assertTrue(queries.selectExercisesByRoutine("routine-x").executeAsList().isEmpty())
+        assertTrue(queries.selectPlannedSetsByRoutineExercise("rex-x-1").executeAsList().isEmpty())
+        assertTrue(queries.selectSupersetsByRoutine("routine-x").executeAsList().isEmpty())
+        assertTrue(repository.getDeletedRoutineIdsSince(0L, "active-profile").isEmpty())
+
+        // Cycle Y and its days/progress/progression are gone, no tombstone to push.
+        assertNull(queries.selectTrainingCycleById("cycle-y").executeAsOneOrNull())
+        assertTrue(queries.selectCycleDaysByCycle("cycle-y").executeAsList().isEmpty())
+        assertNull(queries.selectCycleProgressByCycle("cycle-y").executeAsOneOrNull())
+        assertNull(queries.selectCycleProgression("cycle-y").executeAsOneOrNull())
+        assertTrue(repository.getDeletedCycleIdsSince(0L, "active-profile").isEmpty())
+
+        // Unrelated routine untouched; the surviving cycle keeps its day with the reference nulled.
+        assertEquals(1, queries.selectExercisesByRoutine("routine-keep").executeAsList().size)
+        val keptDays = queries.selectCycleDaysByCycle("cycle-keep").executeAsList()
+        assertEquals(3, keptDays.size)
+        assertNull(keptDays.single { it.day_number == 1L }.routine_id)
+        assertEquals("routine-keep", keptDays.single { it.day_number == 2L }.routine_id)
+
+        // Template routine used only by the deleted cycle is removed; the one another
+        // cycle still references stays.
+        assertEquals(listOf("cycle_routine_only-y"), result.deletedTemplateRoutineIds)
+        assertNull(queries.selectRoutineById("cycle_routine_only-y").executeAsOneOrNull())
+        assertNotNull(queries.selectRoutineById("cycle_routine_shared").executeAsOneOrNull())
+        assertEquals("cycle_routine_shared", keptDays.single { it.day_number == 3L }.routine_id)
+    }
+
+    @Test
+    fun `applyServerDeletions matches legacy routine by serverId`() = runTest {
+        seedRoutineAndCycles()
+        val queries = database.phoenixDatabaseQueries
+
+        val result = repository.applyServerDeletions(
+            ownerUserId = "owner-user",
+            routineIds = listOf("routine-srv"),
+            cycleIds = emptyList(),
+            lastSync = 1_700_000_000_300,
+        )
+
+        assertEquals(listOf("local-legacy"), result.deletedRoutineIds)
+        assertNull(queries.selectRoutineById("local-legacy").executeAsOneOrNull())
+        assertTrue(queries.selectExercisesByRoutine("local-legacy").executeAsList().isEmpty())
+        assertNotNull(queries.selectRoutineById("routine-x").executeAsOneOrNull())
+    }
+
+    @Test
+    fun `applyServerDeletions keeps workout history that names the deleted routine`() = runTest {
+        seedRoutineAndCycles()
+        insertHistoricalSession(
+            id = "session-uses-routine-x",
+            timestamp = 1_700_000_000_000,
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            workingReps = 8,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+        )
+        database.phoenixDatabaseQueries.updateSessionRoutineId("routine-x", "session-uses-routine-x")
+
+        repository.applyServerDeletions(
+            ownerUserId = "owner-user",
+            routineIds = listOf("routine-x"),
+            cycleIds = emptyList(),
+            lastSync = 1_700_000_000_300,
+        )
+
+        val session = database.phoenixDatabaseQueries.selectSessionById("session-uses-routine-x").executeAsOneOrNull()
+        assertNotNull(session, "Deleting a routine must never remove workout history")
+    }
+
+    @Test
+    fun `applyServerDeletions does not classify discarded edits when lastSync is zero`() = runTest {
+        seedRoutineAndCycles()
+
+        val result = repository.applyServerDeletions(
+            ownerUserId = "owner-user",
+            routineIds = listOf("routine-x"),
+            cycleIds = emptyList(),
+            lastSync = 0L,
+        )
+
+        assertEquals(listOf("routine-x"), result.deletedRoutineIds)
+        assertTrue(result.discardedRoutineEditIds.isEmpty())
+    }
+
+    @Test
+    fun `applyServerDeletions reports inactive cycle edited after last sync without progress`() = runTest {
+        seedRoutineAndCycles()
+        val queries = database.phoenixDatabaseQueries
+        queries.touchTrainingCycleUpdatedAt(
+            updatedAt = 1_700_000_000_900,
+            cycleId = "cycle-keep",
+        )
+        assertEquals(0L, queries.selectTrainingCycleById("cycle-keep").executeAsOne().is_active)
+        assertNull(queries.selectCycleProgressByCycle("cycle-keep").executeAsOneOrNull())
+
+        val result = repository.applyServerDeletions(
+            ownerUserId = "owner-user",
+            routineIds = emptyList(),
+            cycleIds = listOf("cycle-keep"),
+            lastSync = 1_700_000_000_500,
+        )
+
+        assertEquals(listOf("cycle-keep"), result.discardedCycleEditIds)
+        assertTrue(result.deletedActiveCycleIds.isEmpty())
+        assertNull(queries.selectTrainingCycleById("cycle-keep").executeAsOneOrNull())
+    }
+
+    @Test
+    fun `applyServerDeletions with no ids changes nothing`() = runTest {
+        seedRoutineAndCycles()
+        val queries = database.phoenixDatabaseQueries
+
+        val result = repository.applyServerDeletions(
+            ownerUserId = "owner-user",
+            routineIds = emptyList(),
+            cycleIds = emptyList(),
+            lastSync = 1_700_000_000_300,
+        )
+
+        assertTrue(result.deletedRoutineIds.isEmpty() && result.deletedCycleIds.isEmpty())
+        assertNotNull(queries.selectRoutineById("routine-x").executeAsOneOrNull())
+        assertEquals(2, queries.selectExercisesByRoutine("routine-x").executeAsList().size)
+        assertNotNull(queries.selectTrainingCycleById("cycle-y").executeAsOneOrNull())
+        assertEquals(
+            "routine-x",
+            queries.selectCycleDaysByCycle("cycle-keep").executeAsList().single { it.day_number == 1L }.routine_id,
+        )
+    }
+
+    @Test
+    fun `applyServerDeletions deletes routine with unsynced local edit and reports it`() = runTest {
+        // updatedAt after lastSync = a local edit not yet pushed; delete still wins.
+        seedRoutineAndCycles()
+        database.phoenixDatabaseQueries.updateRoutineById(
+            name = "Edited locally",
+            description = "",
+            updatedAt = 1_700_000_000_900,
+            id = "routine-x",
+        )
+
+        val result = repository.applyServerDeletions(
+            ownerUserId = "owner-user",
+            routineIds = listOf("routine-x"),
+            cycleIds = emptyList(),
+            lastSync = 1_700_000_000_500,
+        )
+
+        assertEquals(listOf("routine-x"), result.discardedRoutineEditIds)
+        assertNull(database.phoenixDatabaseQueries.selectRoutineById("routine-x").executeAsOneOrNull())
     }
 }

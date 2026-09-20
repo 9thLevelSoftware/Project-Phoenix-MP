@@ -20,6 +20,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertFailsWith
 import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.CompletableDeferred
@@ -91,7 +92,9 @@ class ProfilePreferencesMigrationTest {
         assertEquals(1, fixture.preferenceRepository.get("a").legacyMigrationVersion)
         assertEquals(1, fixture.preferenceRepository.get("b").legacyMigrationVersion)
         assertEquals(RequiredMigrationState.Ready, fixture.migration.requiredMigrationState.value)
-        assertEquals(2, fixture.settings.getInt("migration_repair_version", 0))
+        assertNotNull(
+            fixture.queries.selectAppliedDataRepair("workout-mode-keys-v1").executeAsOneOrNull(),
+        )
     }
 
     @Test

@@ -1,6 +1,20 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.data.repository.WorkoutDeletionScope
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.builtins.nullable
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 /**
  * DTOs matching the portal's 3-tier database structure:
@@ -13,6 +27,26 @@ import kotlinx.serialization.Serializable
  * TypeScript interfaces. The Edge Function handles camelCase→snake_case mapping
  * when inserting into the database.
  */
+
+@Serializable
+internal data class ProfileRecoverySourceRpcRequest(
+    @SerialName("p_source_profile_id") val sourceProfileId: String?,
+    @SerialName("p_workout_session_ids") val workoutSessionIds: List<String>,
+    @SerialName("p_routine_ids") val routineIds: List<String>,
+    @SerialName("p_cycle_ids") val cycleIds: List<String>,
+    @SerialName("p_personal_record_ids") val personalRecordIds: List<String>,
+    @SerialName("p_proof_workout_session_ids") val proofWorkoutSessionIds: List<String>,
+    @SerialName("p_proof_routine_ids") val proofRoutineIds: List<String>,
+    @SerialName("p_proof_cycle_ids") val proofCycleIds: List<String>,
+    @SerialName("p_proof_personal_record_ids") val proofPersonalRecordIds: List<String>,
+)
+
+@Serializable
+internal data class ProfileRecoverySourceRpcRow(
+    val verified: Boolean,
+    @SerialName("authenticated_owner_user_id") val authenticatedOwnerUserId: String? = null,
+    @SerialName("verified_proof_count") val verifiedProofCount: Int = 0,
+)
 
 // ─── Top Level: Workout Session ─────────────────────────────────────
 
@@ -43,6 +77,7 @@ data class PortalWorkoutSessionDto(
     val exerciseCount: Int = 0,
     val prCount: Int = 0,
     val routineName: String? = null,
+    val notes: String? = null,
     val workoutMode: String? = null, // SCREAMING_SNAKE
     val routineSessionId: String? = null,
     val exercises: List<PortalExerciseDto> = emptyList(),
@@ -102,6 +137,13 @@ data class PortalExerciseDto(
      * this field is unverified; do not assume the portal never recomputes it.
      */
     val velocityEstimatedOneRepMaxKg: Float? = null,
+    /**
+     * Physical cables used for this exercise: exactly 1 or 2, or null when unknown.
+     * The portal rejects the whole push batch for any other value, so always build
+     * it via [PortalMappings.cableCountToWire]. Null is omitted on the wire
+     * (explicitNulls = false); older portals strip the unknown key.
+     */
+    val cableCount: Int? = null,
     val sets: List<PortalSetDto> = emptyList(),
 )
 
@@ -271,9 +313,35 @@ data class PortalTrainingCycleSyncDto(
     val lastUsedAt: String? = null, // ISO 8601
     /** ISO 8601 last-write timestamp for LWW gate (Phase 3.2+). Null falls back to server NOW(). */
     val updatedAt: String? = null,
+    /** Absent/false preserves legacy progression settings; true plus null clears them. */
+    val progressionSettingsPresent: Boolean? = null,
     val progressionSettings: String? = null, // JSON
     val deloadSettings: String? = null, // JSON
+    /**
+     * Absent/false preserves legacy remote progress. True plus a value replaces it;
+     * true with an omitted/null [progressState] explicitly clears it.
+     */
+    val progressStatePresent: Boolean? = null,
+    val progressState: PortalCycleProgressStateSyncDto? = null,
     val days: List<PortalCycleDaySyncDto> = emptyList(),
+    /**
+     * The portal's `updated_at` for this cycle as last seen by this device (from a
+     * pull's `updatedAt` or a push response's `cycleVersions`), sent back verbatim.
+     * The portal keeps name/days edited after this version. Null (omitted on the
+     * wire) for cycles never synced; older portals ignore the key.
+     */
+    val baseUpdatedAt: String? = null,
+)
+
+@Serializable
+data class PortalCycleProgressStateSyncDto(
+    val currentDayNumber: Int,
+    val lastCompletedDate: Long? = null,
+    val cycleStartDate: Long,
+    val lastAdvancedAt: Long? = null,
+    val completedDays: List<Int> = emptyList(),
+    val missedDays: List<Int> = emptyList(),
+    val rotationCount: Int = 0,
 )
 
 /**
@@ -293,6 +361,11 @@ data class PortalCycleDaySyncDto(
     val restOverride: Int? = null,
     val restType: String? = null,
     val notes: String? = null,
+    /** Presence flags distinguish a complete snapshot clear from legacy omission. */
+    val echoLevelPresent: Boolean? = null,
+    val echoLevel: String? = null,
+    val eccentricLoadPercentPresent: Boolean? = null,
+    val eccentricLoadPercent: Int? = null,
 )
 
 // ─── RPG/Gamification Sync DTOs ─────────────────────────────────────
@@ -401,6 +474,31 @@ data class PortalAssessmentResultDto(
  */
 @Serializable
 data class LocalProfileDto(val id: String, val name: String, val colorIndex: Int)
+
+/** Permanent workout-deletion mutation sent to the account-level portal ledger. */
+@Serializable
+data class PortalWorkoutDeletionDto(
+    val mutationId: String,
+    val scope: WorkoutDeletionScope,
+    val portalSessionId: String,
+    val componentSessionId: String? = null,
+    val deletedAt: String,
+)
+
+/**
+ * Account-bound ownership repair sent before deletions and ordinary entity
+ * writes. Every list contains exact immutable entity ids.
+ */
+@Serializable
+data class PortalOwnershipTransferDto(
+    val mutationId: String,
+    val sourceProfileId: String? = null,
+    val targetProfileId: String,
+    val workoutSessionIds: List<String> = emptyList(),
+    val routineIds: List<String> = emptyList(),
+    val cycleIds: List<String> = emptyList(),
+    val personalRecordIds: List<String> = emptyList(),
+)
 
 private val LOCAL_ONLY_PROFILE_PREFERENCE_KEYS = setOf(
     "safeword",
@@ -556,11 +654,41 @@ data class PortalSyncPushResponse(
     val profilePreferencesAccepted: Boolean? = null,
     val canonicalProfilePreferenceSections: List<PortalProfilePreferenceSectionCanonicalDto> = emptyList(),
     val profilePreferenceRejections: List<ProfilePreferenceSectionRejectionDto> = emptyList(),
+    /** Exact durable-operation ids acknowledged after the portal transaction commits. */
+    val acknowledgedWorkoutDeletionIds: List<String> = emptyList(),
+    val acknowledgedOwnershipTransferIds: List<String> = emptyList(),
+    val acknowledgedDeletedCycleIds: List<String> = emptyList(),
+    /** Exact active entity parent ids committed by this request. Missing means no acknowledgement. */
+    val acknowledgedWorkoutSessionIds: List<String> = emptyList(),
+    val acknowledgedCycleIds: List<String> = emptyList(),
     /**
      * Per-entity LWW rejections. Empty when SYNC_LWW_ENABLED is false on
      * the server or when every incoming row cleared the LWW gate. Phase 3.2.
      */
     val rejections: SyncRejectionsDto = SyncRejectionsDto(),
+    /**
+     * Routine/cycle ids the server refused to write because they were deleted
+     * on the server (portal delete or another device). The pushed row is not
+     * re-created; mobile deletes its local copy (delete wins). Absent on older
+     * servers, so it defaults to empty.
+     */
+    val skippedDeleted: SkippedDeletedDto = SkippedDeletedDto(),
+    /**
+     * cycle id -> server `updated_at` (ISO) for cycles whose pushed structure was
+     * applied. The device stores it as the cycle's next baseUpdatedAt. A cycle
+     * missing here keeps its previous base. Absent on older portals.
+     */
+    val cycleVersions: Map<String, String> = emptyMap(),
+)
+
+/**
+ * `skippedDeleted` push response key: ids dropped from the push because the
+ * server holds a deletion tombstone for them. Both lists default to empty.
+ */
+@Serializable
+data class SkippedDeletedDto(
+    val routines: List<String> = emptyList(),
+    val cycles: List<String> = emptyList(),
 )
 
 /**
@@ -643,6 +771,12 @@ data class PortalPersonalRecordDto(
     val workoutMode: String? = null,
 )
 
+@Serializable
+data class PortalDeletedCycleDto(
+    val id: String,
+    val updatedAt: String,
+)
+
 // ─── Composite Sync Payload ─────────────────────────────────────────
 
 /**
@@ -660,6 +794,7 @@ data class PortalSyncPayload(
     val deletedRoutineIds: List<String> = emptyList(),
     val cycles: List<PortalTrainingCycleSyncDto> = emptyList(),
     val deletedCycleIds: List<String> = emptyList(),
+    val deletedCycles: List<PortalDeletedCycleDto> = emptyList(),
     val rpgAttributes: PortalRpgAttributesSyncDto? = null,
     val badges: List<PortalEarnedBadgeSyncDto> = emptyList(),
     val gamificationStats: PortalGamificationStatsSyncDto? = null,
@@ -677,6 +812,9 @@ data class PortalSyncPayload(
     // Dedicated personal_records rows; authoritative over legacy set PR hints.
     val personalRecords: List<PortalPersonalRecordDto> = emptyList(),
     val profilePreferenceSections: List<PortalProfilePreferenceSectionMutationDto>? = null,
+    /** Durable account operations. The portal applies transfers, then deletions, then live writes. */
+    val workoutDeletions: List<PortalWorkoutDeletionDto> = emptyList(),
+    val ownershipTransfers: List<PortalOwnershipTransferDto> = emptyList(),
 )
 
 // ─── External Activities (Integration sync) ──────────────────────────
@@ -729,7 +867,10 @@ data class KnownEntityIds(
 @Serializable
 data class PortalSyncPullRequest(
     val deviceId: String,
-    /** @deprecated Use knownEntityIds for parity-based sync. Kept for backward compatibility. */
+    /**
+     * Server `syncTime` (epoch millis) of the last completed pull; 0 asks for everything.
+     * Combined with [knownEntityIds]: known entities unchanged since lastSync are skipped.
+     */
     val lastSync: Long = 0,
     val profileId: String? = null,
     val cursor: String? = null,
@@ -760,10 +901,14 @@ data class PortalSyncPullResponse(
     // Pagination metadata (Plan 03-05)
     val nextCursor: String? = null,
     val hasMore: Boolean = false,
+    /** True when the server hit its external-activities cap (500) and omitted the rest. */
+    val externalActivitiesHasMore: Boolean = false,
     // Entity data
     val sessions: List<PullWorkoutSessionDto> = emptyList(), // Merged via INSERT OR IGNORE (local wins)
     val routines: List<PullRoutineDto> = emptyList(),
     val cycles: List<PullTrainingCycleDto> = emptyList(),
+    val workoutDeletions: List<PulledWorkoutDeletionDto> = emptyList(),
+    val ownershipEvents: List<PortalOwnershipEventDto> = emptyList(),
     val personalRecords: List<PullPersonalRecordDto> = emptyList(),
     val rpgAttributes: PullRpgAttributesDto? = null,
     val badges: List<PullBadgeDto> = emptyList(),
@@ -773,6 +918,41 @@ data class PortalSyncPullResponse(
     val profilePreferenceSections: List<PortalProfilePreferenceSectionCanonicalDto>? = null,
     // External integration activities (paid users only)
     val externalActivities: List<ExternalActivitySyncDto> = emptyList(),
+    /**
+     * Routine/cycle ids deleted on the server (portal or another device).
+     * Sent on the first page only. May include ids this device never held,
+     * so mobile treats them as "delete if present" and hard-deletes locally
+     * without pushing a tombstone back. Absent on older servers → empty.
+     */
+    val deletedRoutineIds: List<String> = emptyList(),
+    val deletedCycleIds: List<String> = emptyList(),
+)
+
+/** Permanent account-level deletion pulled from the portal. */
+@Serializable
+data class PulledWorkoutDeletionDto(
+    val mutationId: String,
+    /** Routes the mutation to a local profile queue; it is not part of target identity. */
+    val profileId: String? = null,
+    val scope: WorkoutDeletionScope,
+    val portalSessionId: String,
+    val componentSessionId: String? = null,
+    val deletedAt: String,
+)
+
+/** Immutable account-level ownership event pulled from the portal. */
+@Serializable
+data class PortalOwnershipEventDto(
+    val mutationId: String,
+    val sourceProfileId: String? = null,
+    val targetProfileId: String,
+    val targetProfileName: String,
+    val targetProfileColorIndex: Int,
+    val workoutSessionIds: List<String> = emptyList(),
+    val routineIds: List<String> = emptyList(),
+    val cycleIds: List<String> = emptyList(),
+    val personalRecordIds: List<String> = emptyList(),
+    val transferredAt: String,
 )
 
 /**
@@ -819,6 +999,8 @@ data class PullExerciseDto(
     val name: String = "",
     val muscleGroup: String = "General",
     val orderIndex: Int = 0,
+    /** 1 or 2; null/absent = unknown (older portals omit it). Never treat null as 2. */
+    val cableCount: Int? = null,
     val sets: List<PullSetDto> = emptyList(),
 )
 
@@ -927,10 +1109,45 @@ data class PullTrainingCycleDto(
     val status: String = "draft",
     val startedAt: String? = null,
     val lastUsedAt: String? = null,
+    val progressionSettingsPresent: Boolean? = null,
     val progressionSettings: String? = null,
     val deloadSettings: String? = null,
+    val progressStatePresent: Boolean? = null,
+    val progressState: PortalCycleProgressStateSyncDto? = null,
     val days: List<PullCycleDayDto> = emptyList(),
+    /**
+     * Server `updated_at` as raw ISO text. Numeric epoch-millis responses from the
+     * short-lived mobile contract are accepted and normalized to ISO for compatibility.
+     */
+    @Serializable(with = PortalCycleUpdatedAtSerializer::class)
+    val updatedAt: String? = null,
 )
+
+internal object PortalCycleUpdatedAtSerializer : KSerializer<String?> {
+    override val descriptor: SerialDescriptor = String.serializer().nullable.descriptor
+
+    override fun deserialize(decoder: Decoder): String? {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("PortalCycleUpdatedAt requires JSON")
+        return when (val element = jsonDecoder.decodeJsonElement()) {
+            JsonNull -> null
+            is JsonPrimitive -> if (element.isString) {
+                element.content
+            } else {
+                element.longOrNull
+                    ?.let { kotlin.time.Instant.fromEpochMilliseconds(it).toString() }
+                    ?: throw SerializationException("Cycle updatedAt must be ISO text or epoch milliseconds")
+            }
+            else -> throw SerializationException("Cycle updatedAt must be a scalar")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: String?) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw SerializationException("PortalCycleUpdatedAt requires JSON")
+        jsonEncoder.encodeJsonElement(value?.let(::JsonPrimitive) ?: JsonNull)
+    }
+}
 
 @Serializable
 data class PullCycleDayDto(
@@ -944,6 +1161,10 @@ data class PullCycleDayDto(
     val restOverride: Int? = null,
     val restType: String? = null,
     val notes: String? = null,
+    val echoLevelPresent: Boolean? = null,
+    val echoLevel: String? = null,
+    val eccentricLoadPercentPresent: Boolean? = null,
+    val eccentricLoadPercent: Int? = null,
 )
 
 @Serializable

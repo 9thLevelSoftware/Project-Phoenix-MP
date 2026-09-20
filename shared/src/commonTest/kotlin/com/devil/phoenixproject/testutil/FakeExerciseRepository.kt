@@ -111,15 +111,6 @@ class FakeExerciseRepository : ExerciseRepository {
         return Result.success(Unit)
     }
 
-    override suspend fun updateOneRepMax(exerciseId: String, oneRepMaxKg: Float?) {
-        exercises[exerciseId]?.let { exercise ->
-            exercises[exerciseId] = exercise.copy(oneRepMaxKg = oneRepMaxKg)
-            updateFlow()
-        }
-    }
-
-    override fun getExercisesWithOneRepMax(): Flow<List<Exercise>> = _exercisesFlow.map { list -> list.filter { it.oneRepMaxKg != null } }
-
     override suspend fun findByName(name: String): Exercise? = exercises.values.find { it.name == name }
 
     override suspend fun findByIdOrName(id: String?, name: String): Exercise? {

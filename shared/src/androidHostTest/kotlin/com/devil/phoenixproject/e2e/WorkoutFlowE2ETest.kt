@@ -25,6 +25,7 @@ import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
 import com.devil.phoenixproject.testutil.FakePreferencesManager
+import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeTrainingCycleRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
@@ -55,6 +56,7 @@ class WorkoutFlowE2ETest {
     private lateinit var fakeWorkoutRepository: FakeWorkoutRepository
     private lateinit var fakeExerciseRepository: FakeExerciseRepository
     private lateinit var fakePersonalRecordRepository: FakePersonalRecordRepository
+    private lateinit var fakeBaselineRepository: FakeProfileExerciseBaselineRepository
     private lateinit var fakePreferencesManager: FakePreferencesManager
     private lateinit var fakeGamificationRepository: FakeGamificationRepository
     private lateinit var fakeTrainingCycleRepository: FakeTrainingCycleRepository
@@ -72,13 +74,14 @@ class WorkoutFlowE2ETest {
         fakeWorkoutRepository = FakeWorkoutRepository()
         fakeExerciseRepository = FakeExerciseRepository()
         fakePersonalRecordRepository = FakePersonalRecordRepository()
+        fakeBaselineRepository = FakeProfileExerciseBaselineRepository()
         fakePreferencesManager = FakePreferencesManager()
         fakeGamificationRepository = FakeGamificationRepository()
         fakeTrainingCycleRepository = FakeTrainingCycleRepository()
         fakeCompletedSetRepository = FakeCompletedSetRepository()
         fakeRepMetricRepository = FakeRepMetricRepository()
         repCounter = RepCounterFromMachine()
-        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeExerciseRepository, FakeVelocityOneRepMaxRepository())
+        resolveWeightsUseCase = ResolveRoutineWeightsUseCase(fakePersonalRecordRepository, fakeBaselineRepository, FakeVelocityOneRepMaxRepository())
         fakeUserProfileRepository = FakeUserProfileRepository().apply { setActiveProfileForTest() }
         profileEquipmentRackRepository = ProfileEquipmentRackRepository(
             fakeUserProfileRepository,
@@ -90,6 +93,7 @@ class WorkoutFlowE2ETest {
             workoutRepository = fakeWorkoutRepository,
             exerciseRepository = fakeExerciseRepository,
             personalRecordRepository = fakePersonalRecordRepository,
+            profileExerciseBaselineRepository = fakeBaselineRepository,
             repCounter = repCounter,
             preferencesManager = fakePreferencesManager,
             gamificationRepository = fakeGamificationRepository,
@@ -135,7 +139,7 @@ class WorkoutFlowE2ETest {
                 hasEstimates = { _, _ -> false },
                 computeAllTime = { _, _, _ -> null },
             ),
-            machineSafetyCoordinator = fakeMachineSafetyCoordinator(kotlinx.coroutines.CoroutineScope(testCoroutineRule.dispatcher)),
+            machineSafetyCoordinator = fakeMachineSafetyCoordinator(kotlinx.coroutines.CoroutineScope(testCoroutineRule.dispatcher), fakeBleRepository),
         )
         val deterministicElapsedRealtime: () -> Long = { testCoroutineRule.dispatcher.scheduler.currentTime }
         viewModel.workoutSessionManager.activeSessionEngine.javaClass

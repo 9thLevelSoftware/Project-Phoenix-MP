@@ -128,7 +128,9 @@ object PortalPullAdapter {
                 routineName = portalSession.routineName,
                 heaviestLiftKg = maxWeight,
                 totalVolumeKg = null, // Let effectiveTotalVolumeKg() compute from weightPerCableKg * cableCount * totalReps
-                cableCount = null, // Let effectiveTotalVolumeKg() use session-level cableCount if available
+                // Portal per-exercise cable count (1|2); null = unknown → effectiveTotalVolumeKg()
+                // treats it as single cable (old default) and the LWW merge keeps a local value.
+                cableCount = PortalMappings.cableCountToWire(exercise.cableCount),
                 // Issue #591: best-effort hydration from per-set rep summaries.
                 // Any field that the portal does not supply stays null and
                 // falls back to the locally captured value at LWW merge time.
@@ -267,7 +269,9 @@ object PortalPullAdapter {
                 routineName = portalSession.routineName,
                 heaviestLiftKg = maxWeight,
                 totalVolumeKg = null, // Let effectiveTotalVolumeKg() compute from weightPerCableKg * cableCount * totalReps
-                cableCount = null, // Let effectiveTotalVolumeKg() use session-level cableCount if available
+                // Portal per-exercise cable count (1|2); null = unknown → effectiveTotalVolumeKg()
+                // treats it as single cable (old default) and the LWW merge keeps a local value.
+                cableCount = PortalMappings.cableCountToWire(exercise.cableCount),
                 profileId = profileId,
             )
         }

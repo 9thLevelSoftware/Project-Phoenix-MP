@@ -6,6 +6,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.AssessmentRepository
 import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
+import com.devil.phoenixproject.data.repository.ProfileRecoveryActivityTracker
 import com.devil.phoenixproject.domain.assessment.AssessmentEngine
 import com.devil.phoenixproject.domain.assessment.AssessmentResult
 import com.devil.phoenixproject.domain.assessment.AssessmentSetResult
@@ -78,6 +79,7 @@ class AssessmentViewModel(
     private val exerciseRepository: ExerciseRepository,
     private val assessmentRepository: AssessmentRepository,
     private val assessmentEngine: AssessmentEngine,
+    private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
 ) : ViewModel() {
 
     private val _currentStep = MutableStateFlow<AssessmentStep>(AssessmentStep.ExerciseSelection())
@@ -127,6 +129,7 @@ class AssessmentViewModel(
      * Loads exercise demo images; if none found, skips to ProgressiveLoading.
      */
     fun selectExercise(exercise: Exercise) {
+        if (profileRecoveryActivityTracker?.setAssessmentActive(true) == false) return
         selectedExercise = exercise
         viewModelScope.launch {
             val exerciseId = exercise.id
@@ -318,6 +321,7 @@ class AssessmentViewModel(
                     finalOneRepMaxKg = finalOneRm,
                     exerciseName = exercise.displayName,
                 )
+                profileRecoveryActivityTracker?.setAssessmentActive(false)
 
                 Logger.i("Assessment saved: ${exercise.displayName} -> $finalOneRm kg 1RM")
             } catch (e: CancellationException) {
@@ -424,5 +428,11 @@ class AssessmentViewModel(
         _currentStep.value = AssessmentStep.ExerciseSelection(
             exercises = _exercises.value,
         )
+        profileRecoveryActivityTracker?.setAssessmentActive(false)
+    }
+
+    override fun onCleared() {
+        profileRecoveryActivityTracker?.setAssessmentActive(false)
+        super.onCleared()
     }
 }
