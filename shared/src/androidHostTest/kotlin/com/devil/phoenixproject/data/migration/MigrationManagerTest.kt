@@ -1,7 +1,6 @@
 package com.devil.phoenixproject.data.migration
 
 import app.cash.sqldelight.db.SqlDriver
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.StartupSurface
 import com.devil.phoenixproject.startupSurface
 import com.devil.phoenixproject.data.preferences.SettingsLegacyProfilePreferencesReader
@@ -13,6 +12,8 @@ import com.devil.phoenixproject.data.repository.SqlDelightUserProfileRepository
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
+import com.devil.phoenixproject.testutil.seedExercise
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import com.russhwolf.settings.MapSettings
 import kotlinx.coroutines.test.runTest
@@ -419,8 +420,7 @@ class MigrationManagerTest {
 
     @Test
     fun `repairOrphanedPRRecords preserves target uuid when better orphan duplicate lacks one`() = runTest {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        PhoenixDatabase.Schema.create(driver)
+        val driver = createTestDriver()
         val localDatabase = PhoenixDatabase(driver)
         val localMigrationManager = createMigrationManager(localDatabase, driver)
         val queries = localDatabase.phoenixDatabaseQueries
@@ -622,8 +622,7 @@ class MigrationManagerTest {
 
     @Test
     fun `orphan repair preserves target ids and deterministic PR badge sync metadata`() = runTest {
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        PhoenixDatabase.Schema.create(driver)
+        val driver = createTestDriver()
         val localDatabase = PhoenixDatabase(driver)
         val localMigrationManager = createMigrationManager(localDatabase, driver)
         val queries = localDatabase.phoenixDatabaseQueries
@@ -938,6 +937,7 @@ class MigrationManagerTest {
     }
 
     private fun insertMinimalRoutineExercise(id: String, routineId: String, exerciseName: String, exerciseId: String) {
+        database.seedExercise(exerciseId, exerciseName)
         database.phoenixDatabaseQueries.insertRoutineExerciseIgnore(
             id = id,
             routineId = routineId,

@@ -16,6 +16,7 @@ import com.devil.phoenixproject.domain.model.UserProfilePreferences
 import com.devil.phoenixproject.domain.model.VbtPreferences
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
+import com.devil.phoenixproject.testutil.createTestSchema
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
 import java.util.concurrent.CountDownLatch
@@ -908,6 +909,7 @@ class SqlDelightUserProfileRepositoryTest {
         val source = repository.createProfile("Source", 1)
         val sourceId = source.id
         insertWorkoutSession("owned-session", 5, 20.0, sourceId)
+        executeSql("INSERT INTO Exercise(id, name, muscleGroup, muscleGroups, equipment, defaultCableConfig) VALUES ('bench', 'Bench', 'Chest', 'Chest', 'BAR', 'DOUBLE')")
         executeSql("INSERT INTO RoutineGroup(id, name, createdAt, profile_id) VALUES ('owned-group', 'G', 1, ?)", sourceId)
         executeSql("INSERT INTO Routine(id, name, createdAt, profile_id, groupId) VALUES ('owned-routine', 'R', 1, ?, 'owned-group')", sourceId)
         executeSql("INSERT INTO TrainingCycle(id, name, created_at, profile_id) VALUES ('owned-cycle', 'C', 1, ?)", sourceId)
@@ -952,6 +954,7 @@ class SqlDelightUserProfileRepositoryTest {
     fun personalRecordBadgeAndMvtCollisionsRetainTargetIdentityAndMergeMetadata() = runTest {
         ready()
         val source = repository.createProfile("Source", 1)
+        executeSql("INSERT INTO Exercise(id, name, muscleGroup, muscleGroups, equipment, defaultCableConfig) VALUES ('bench', 'Bench', 'Chest', 'Chest', 'BAR', 'DOUBLE')")
         executeSql("INSERT INTO PersonalRecord(id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, updatedAt, serverId, profile_id, uuid) VALUES (800, 'bench', 'Target Bench', 50, 5, 60, 10, 'Old School', 'MAX_WEIGHT', 250, 'COMBINED', 10, 'target-server', 'default', 'target-uuid')")
         executeSql("INSERT INTO PersonalRecord(id, exerciseId, exerciseName, weight, reps, oneRepMax, achievedAt, workoutMode, prType, volume, phase, updatedAt, serverId, profile_id, uuid) VALUES (801, 'bench', '', 70, 5, 80, 20, 'OldSchool', 'MAX_WEIGHT', 350, 'COMBINED', 20, 'source-server', ?, 'source-uuid')", source.id)
         executeSql("INSERT INTO EarnedBadge(id, badgeId, earnedAt, celebratedAt, updatedAt, serverId, profile_id) VALUES (810, 'shared', 200, 250, 20, 'target-badge', 'default')")
@@ -1202,7 +1205,7 @@ class SqlDelightUserProfileRepositoryTest {
         .toSet()
 
     private fun createDatabase(driver: SqlDriver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)): PhoenixDatabase {
-        PhoenixDatabase.Schema.create(driver)
+        createTestSchema(driver)
         return PhoenixDatabase(driver)
     }
 

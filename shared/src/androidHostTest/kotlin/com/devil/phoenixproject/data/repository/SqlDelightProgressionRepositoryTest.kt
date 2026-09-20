@@ -5,6 +5,7 @@ import com.devil.phoenixproject.domain.model.ProgressionEvent
 import com.devil.phoenixproject.domain.model.ProgressionReason
 import com.devil.phoenixproject.domain.model.ProgressionResponse
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
@@ -20,6 +21,7 @@ class SqlDelightProgressionRepositoryTest {
     @Before
     fun setup() {
         database = createTestDatabase()
+        database.seedExercise("bench", "Bench Press")
         repository = SqlDelightProgressionRepository(database)
     }
 
