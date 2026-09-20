@@ -603,10 +603,15 @@ class SyncManager(
      *
      * @return Result from the subsequent sync operation
      */
-    suspend fun forceFullResync(): Result<Long> {
-        Logger.i("SyncManager") { "Forcing full resync - resetting lastSyncTimestamp to 0" }
-        tokenStorage.setLastSyncTimestamp(0L)
-        return sync()
+    suspend fun forceFullResync(): Result<Long> = syncMutex.withLock {
+        withProfileMutationBarrier {
+            // Keep the reset and the following sync in one critical section. Otherwise an
+            // already-running sync can complete after this reset, restore a non-zero checkpoint,
+            // and make the queued "full" pull a delta pull.
+            Logger.i("SyncManager") { "Forcing full resync - resetting lastSyncTimestamp to 0" }
+            tokenStorage.setLastSyncTimestamp(0L)
+            syncLocked()
+        }
     }
 
     /**
@@ -1726,10 +1731,20 @@ class SyncManager(
         val storedDeltaPullKey = tokenStorage.getDeltaPullKey()
         val deltaMarkerMatches = deltaPullKey != null && storedDeltaPullKey == deltaPullKey
         val requestLastSync = if (deltaMarkerMatches) lastSync else 0L
+        // An explicit key mismatch means [lastSync] belongs to another profile and cannot
+        // safely participate in this profile's routine LWW comparison. An absent marker is
+        // different: it represents upgrade/truncation recovery, where the stored boundary still
+        // protects local edits while the wire request deliberately performs a full pull.
+        val mergeLastSync = if (storedDeltaPullKey != null && storedDeltaPullKey != deltaPullKey) {
+            0L
+        } else {
+            lastSync
+        }
         val serverWinsRoutineIds = pendingServerWinsRoutineIds.toSet()
         Logger.i("SyncManager") {
             "Pull mode: requestLastSync=$requestLastSync (stored=$lastSync, deltaMarkerMatches=$deltaMarkerMatches, " +
-                "profile=$mergeProfileId, serverWinsRoutines=${serverWinsRoutineIds.size})"
+                "mergeLastSync=$mergeLastSync, profile=$mergeProfileId, " +
+                "serverWinsRoutines=${serverWinsRoutineIds.size})"
         }
 
         // Collect local entity IDs for parity comparison.
@@ -1964,7 +1979,7 @@ class SyncManager(
             // Merge this page in preference-first repository order
             val mergeResult = mergePullPage(
                 pullResponse = pullResponse,
-                lastSync = lastSync,
+                lastSync = mergeLastSync,
                 mergeProfileId = mergeProfileId,
                 isFirstPage = pagesProcessed == 1,
                 serverWinsRoutineIds = serverWinsRoutineIds,

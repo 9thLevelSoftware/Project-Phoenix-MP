@@ -72,8 +72,8 @@ class SyncManagerTest {
     private val fakeCompletedSetRepo = FakeCompletedSetRepository()
     private val json = Json { encodeDefaults = true }
 
-    private fun createManager() = SyncManager(
-        apiClient = fakeApi,
+    private fun createManager(apiClient: PortalApiClient = fakeApi) = SyncManager(
+        apiClient = apiClient,
         tokenStorage = tokenStorage,
         syncRepository = fakeSyncRepo,
         gamificationRepository = fakeGamificationRepo,
@@ -1758,6 +1758,98 @@ class SyncManagerTest {
         // The next ordinary sync is a delta pull again.
         manager.sync()
         assertEquals(listOf(0L, 0L, 9000L), fakeApi.pullCallLastSyncs)
+    }
+
+    @Test
+    fun forceFullResyncResetsCheckpointAfterAnInflightSyncCompletes() = runTest {
+        setupAuthenticated()
+        tokenStorage.recordCompletedPull(1_000L, "user-123:default")
+        val firstPullEntered = CompletableDeferred<Unit>()
+        val releaseFirstPull = CompletableDeferred<Unit>()
+        val blockingApi = object : FakePortalApiClient() {
+            override suspend fun pullPortalPayload(
+                knownEntityIds: KnownEntityIds,
+                deviceId: String,
+                profileId: String?,
+                cursor: String?,
+                pageSize: Int?,
+                lastSync: Long,
+            ): Result<PortalSyncPullResponse> {
+                val result = super.pullPortalPayload(
+                    knownEntityIds = knownEntityIds,
+                    deviceId = deviceId,
+                    profileId = profileId,
+                    cursor = cursor,
+                    pageSize = pageSize,
+                    lastSync = lastSync,
+                )
+                if (pullCallCount == 1) {
+                    firstPullEntered.complete(Unit)
+                    releaseFirstPull.await()
+                }
+                return result
+            }
+        }.apply {
+            pullResultsQueue = mutableListOf(
+                Result.success(PortalSyncPullResponse(syncTime = 2_000L)),
+                Result.success(PortalSyncPullResponse(syncTime = 3_000L)),
+            )
+        }
+        val manager = createManager(blockingApi)
+
+        val inflightSync = async(start = CoroutineStart.UNDISPATCHED) { manager.sync() }
+        firstPullEntered.await()
+        val forcedSync = async(start = CoroutineStart.UNDISPATCHED) { manager.forceFullResync() }
+
+        assertFalse(forcedSync.isCompleted, "forced sync waits for the in-flight sync mutex owner")
+        releaseFirstPull.complete(Unit)
+        assertTrue(inflightSync.await().isSuccess)
+        assertTrue(forcedSync.await().isSuccess)
+
+        assertEquals(
+            listOf(1_000L, 0L),
+            blockingApi.pullCallLastSyncs,
+            "the forced sync resets the checkpoint only after the prior sync releases the mutex",
+        )
+    }
+
+    @Test
+    fun retryPullForAnotherProfileUsesZeroRoutineMergeBoundary() = runTest {
+        setupAuthenticated()
+        tokenStorage.recordCompletedPull(5_000L, "user-123:profile-a")
+        fakeUserProfileRepo.setActiveProfileForTest(id = "profile-b")
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 6_000L,
+                routines = listOf(PullRoutineDto(id = "routine-b", name = "Profile B routine")),
+            ),
+        )
+        val manager = createManager()
+
+        assertTrue(manager.retryPull().isSuccess)
+
+        assertEquals(listOf(0L), fakeApi.pullCallLastSyncs)
+        assertEquals(0L, fakeSyncRepo.lastAtomicMergeLastSync)
+        assertEquals("profile-b", fakeSyncRepo.lastAtomicMergeProfileId)
+    }
+
+    @Test
+    fun retryFullPullWithAbsentMarkerPreservesStoredRoutineMergeBoundary() = runTest {
+        setupAuthenticated()
+        tokenStorage.setLastSyncTimestamp(5_000L)
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 6_000L,
+                routines = listOf(PullRoutineDto(id = "routine-a", name = "Local profile routine")),
+            ),
+        )
+        val manager = createManager()
+
+        assertTrue(manager.retryPull().isSuccess)
+
+        assertEquals(listOf(0L), fakeApi.pullCallLastSyncs)
+        assertEquals(5_000L, fakeSyncRepo.lastAtomicMergeLastSync)
+        assertEquals("default", fakeSyncRepo.lastAtomicMergeProfileId)
     }
 
     @Test
