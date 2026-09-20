@@ -2,18 +2,21 @@ package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.data.repository.WorkoutDeletionScope
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.descriptors.SerialDescriptor
 import kotlinx.serialization.encoding.Decoder
 import kotlinx.serialization.encoding.Encoder
 import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
 import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.JsonTransformingSerializer
 import kotlinx.serialization.json.longOrNull
 
 /**
@@ -288,6 +291,13 @@ data class PortalRoutineExerciseSyncDto(
     val rackBehaviorOverrides: String? = null, // JSON map of rackItemId -> behavior name
     val dropSetEnabled: Boolean = false,
     val dropSetMinWeightKg: Float? = null,
+    /**
+     * Timed-exercise duration, with three wire states. Kotlin `null` omits the
+     * key, [kotlinx.serialization.json.JsonNull] clears the server value, and a
+     * positive integer sends seconds. Build this through
+     * [PortalSyncAdapter.durationSecondsWire].
+     */
+    val durationSeconds: JsonPrimitive? = null,
 )
 
 // ─── Training Cycle Sync DTOs ─────────────────────────────────────
@@ -1051,7 +1061,8 @@ data class PullRoutineDto(
     val timesCompleted: Int = 0,
     val isFavorite: Boolean = false,
     val updatedAt: Long? = null,
-    val exercises: List<PullRoutineExerciseDto> = emptyList(),
+    val exercises: List<@Serializable(with = PullRoutineExerciseWireSerializer::class) PullRoutineExerciseDto> =
+        emptyList(),
 )
 
 @Serializable
@@ -1090,7 +1101,20 @@ data class PullRoutineExerciseDto(
     val rackBehaviorOverrides: String? = null, // JSON map of rackItemId -> behavior name
     val dropSetEnabled: Boolean? = null,
     val dropSetMinWeightKg: Float? = null,
+    // Timed-exercise duration in seconds; null for rep-based exercises.
+    val durationSeconds: Int? = null,
+    // True when the server sent durationSeconds (number or null). Older servers
+    // omit it, in which case the existing local value must be preserved.
+    val durationSecondsPresent: Boolean = durationSeconds != null,
 )
+
+internal object PullRoutineExerciseWireSerializer :
+    JsonTransformingSerializer<PullRoutineExerciseDto>(PullRoutineExerciseDto.serializer()) {
+    override fun transformDeserialize(element: JsonElement): JsonElement {
+        if (element !is JsonObject) return element
+        return JsonObject(element + ("durationSecondsPresent" to JsonPrimitive("durationSeconds" in element)))
+    }
+}
 
 /**
  * Pulled training cycle with nested days.

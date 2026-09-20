@@ -2414,6 +2414,44 @@ class SyncManagerTest {
     }
 
     @Test
+    fun `pull retains duration backfill routines in parity for deletion convergence`() = runTest {
+        setupAuthenticated()
+        tokenStorage.recordCompletedPull(5_000L, "user-123:default")
+        val current = "88888888-8888-4888-a888-888888888888"
+        val needsBackfill = "99999999-9999-4999-a999-999999999999"
+        fakeSyncRepo.routineIds = listOf(current, needsBackfill)
+        fakeSyncRepo.routineIdsNeedingDurationBackfill = listOf(needsBackfill)
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        createManager().sync()
+
+        assertEquals(listOf(current, needsBackfill), fakeApi.lastPullKnownEntityIds?.routineIds)
+        assertEquals(
+            listOf(0L),
+            fakeApi.pullCallLastSyncs,
+            "pending duration backfill requires a full pull even with a current delta marker",
+        )
+    }
+
+    @Test
+    fun `local cycle template duration does not pin portal pulls to full sync`() = runTest {
+        setupAuthenticated()
+        tokenStorage.recordCompletedPull(5_000L, "user-123:default")
+        fakeSyncRepo.routineIds = listOf("cycle_routine_template")
+        fakeSyncRepo.routineIdsNeedingDurationBackfill = listOf("cycle_routine_template")
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        createManager().sync()
+
+        assertEquals(listOf(5_000L), fakeApi.pullCallLastSyncs)
+        assertEquals(emptyList(), fakeApi.lastPullKnownEntityIds?.routineIds)
+    }
+
+    @Test
     fun pullDropsNonUuidBadgeAndPersonalRecordIdsBeforeSend() = runTest {
         setupAuthenticated()
         val badgeId = "eeeeeeee-eeee-4eee-aeee-eeeeeeeeeeee"

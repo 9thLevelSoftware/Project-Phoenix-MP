@@ -1812,7 +1812,22 @@ class SyncManager(
         val deltaPullKey = tokenStorage.currentUser.value?.id?.let { userId -> "$userId:$mergeProfileId" }
         val storedDeltaPullKey = tokenStorage.getDeltaPullKey()
         val deltaMarkerMatches = deltaPullKey != null && storedDeltaPullKey == deltaPullKey
-        val requestLastSync = if (deltaMarkerMatches) lastSync else 0L
+        val durationBackfillRoutineIds = syncRepository
+            .getRoutineIdsNeedingDurationBackfill(mergeProfileId)
+            // Template-derived cycle routines are local-only and cannot converge through
+            // the portal's UUID contract. They must not pin every later pull to lastSync=0.
+            .filter(CANONICAL_UUID_REGEX::matches)
+            .toHashSet()
+        // Legacy rows require one complete server snapshot to establish whether duration was
+        // explicitly null or merely absent from older sync payloads. Keep routine IDs in parity
+        // so tombstones still converge, but bypass the delta timestamp until backfill completes.
+        val requestLastSync = if (durationBackfillRoutineIds.isNotEmpty()) {
+            0L
+        } else if (deltaMarkerMatches) {
+            lastSync
+        } else {
+            0L
+        }
         // An explicit key mismatch means [lastSync] belongs to another profile and cannot
         // safely participate in this profile's routine LWW comparison. An absent marker is
         // different: it represents upgrade/truncation recovery, where the stored boundary still
@@ -1899,7 +1914,8 @@ class SyncManager(
         Logger.i("SyncManager") {
             "Parity sync: sending ${entityIds.sessionIds.size} session IDs, " +
                 "${entityIds.routineIds.size} routine IDs, ${entityIds.cycleIds.size} cycle IDs, " +
-                "${entityIds.personalRecordIds.size} personal record IDs"
+                "${entityIds.personalRecordIds.size} personal record IDs; " +
+                "${durationBackfillRoutineIds.size} routines pending duration backfill"
         }
 
         var pagesProcessed = 0

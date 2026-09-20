@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlin.time.Instant
@@ -239,6 +240,46 @@ class PortalPullAdapterTest {
     fun `parseEchoLevel is case insensitive`() {
         assertEquals(0L, PortalPullAdapter.parseEchoLevel("hard"))
         assertEquals(3L, PortalPullAdapter.parseEchoLevel("Epic"))
+    }
+
+    // ========== PullRoutineExerciseDto.durationSeconds ==========
+
+    private fun decodeSingleExercise(exerciseJson: String): PullRoutineExerciseDto =
+        PortalWireJson.decodeFromString(
+            PullRoutineDto.serializer(),
+            """{"id":"routine-1","name":"R","exercises":[$exerciseJson]}""",
+        ).exercises.single()
+
+    @Test
+    fun `pulled routine exercise decodes durationSeconds`() {
+        val dto = decodeSingleExercise("""{"id":"rex-1","durationSeconds":45}""")
+
+        assertEquals(45, dto.durationSeconds)
+        assertTrue(dto.durationSecondsPresent)
+    }
+
+    @Test
+    fun `pulled routine exercise tells an explicit null from an absent durationSeconds`() {
+        val explicitNull = decodeSingleExercise("""{"id":"rex-1","durationSeconds":null}""")
+        val absent = decodeSingleExercise("""{"id":"rex-2"}""")
+
+        assertNull(explicitNull.durationSeconds)
+        assertTrue(explicitNull.durationSecondsPresent)
+        assertNull(absent.durationSeconds)
+        assertFalse(absent.durationSecondsPresent)
+    }
+
+    @Test
+    fun `sanitizeDurationSeconds accepts only the app supported duration range`() {
+        assertNull(PortalSyncAdapter.sanitizeDurationSeconds(-5))
+        assertNull(PortalSyncAdapter.sanitizeDurationSeconds(0))
+        assertNull(PortalSyncAdapter.sanitizeDurationSeconds(9))
+        assertNull(PortalSyncAdapter.sanitizeDurationSeconds(null))
+        assertEquals(10, PortalSyncAdapter.sanitizeDurationSeconds(10))
+        assertEquals(45, PortalSyncAdapter.sanitizeDurationSeconds(45))
+        assertEquals(300, PortalSyncAdapter.sanitizeDurationSeconds(300))
+        assertNull(PortalSyncAdapter.sanitizeDurationSeconds(301))
+        assertNull(PortalSyncAdapter.sanitizeDurationSeconds(Int.MAX_VALUE))
     }
 
     // ========== toRoutineSyncDto ==========

@@ -21,6 +21,7 @@ import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 
@@ -133,6 +134,30 @@ class PortalApiClientProfilePreferenceLimitsTest {
     private fun effectiveContentTypes(request: HttpRequestData): List<ContentType> =
         request.headers.getAll(HttpHeaders.ContentType).orEmpty().map(ContentType::parse) +
             listOfNotNull(request.body.contentType)
+
+    @Test
+    fun `pull retains known routine identities while requesting full server state`() =
+        runPortalHttpTest {
+            val requests = mutableListOf<HttpRequestData>()
+            val engine = MockEngine { request ->
+                requests += request
+                respond("""{"syncTime":1}""", HttpStatusCode.OK, JSON_RESPONSE_HEADERS)
+            }
+            val routineId = "99999999-9999-4999-a999-999999999999"
+
+            val result = client(engine).pullPortalPayload(
+                knownEntityIds = KnownEntityIds(routineIds = listOf(routineId)),
+                deviceId = "device",
+                profileId = "profile",
+            )
+
+            assertTrue(result.isSuccess)
+            val request = Json.decodeFromString<PortalSyncPullRequest>(
+                requestBodyBytes(requests.single()).decodeToString(),
+            )
+            assertEquals(0L, request.lastSync)
+            assertEquals(listOf(routineId), request.knownEntityIds?.routineIds)
+        }
 
     @Test
     fun `transport writes the exact counted preference bytes with one JSON content type`() =

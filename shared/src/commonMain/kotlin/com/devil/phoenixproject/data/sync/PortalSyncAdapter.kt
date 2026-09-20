@@ -7,6 +7,7 @@ import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
+import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.SupersetColors
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.WorkoutPhase
@@ -19,6 +20,8 @@ import kotlinx.serialization.builtins.MapSerializer
 import kotlinx.serialization.builtins.nullable
 import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
 
 /**
  * Transforms mobile data structures into portal-compatible DTOs.
@@ -559,6 +562,20 @@ object PortalSyncAdapter {
 
     // ─── Routine Mapping ────────────────────────────────────────────
 
+    /** A timed duration accepted by the app's editor and workout runtime. */
+    fun sanitizeDurationSeconds(seconds: Int?): Int? =
+        RoutineExercise.supportedTimedDurationSeconds(seconds)
+
+    /**
+     * The only producer of [PortalRoutineExerciseSyncDto.durationSeconds].
+     *  - supported duration -> seconds;
+     *  - no duration and [known] -> explicit JSON null, which clears the server value;
+     *  - no duration and not [known] -> null, so the key is omitted and the server keeps
+     *    its stored duration (a pre-upgrade row may hold a stale NULL).
+     */
+    fun durationSecondsWire(seconds: Int?, known: Boolean): JsonPrimitive? =
+        sanitizeDurationSeconds(seconds)?.let { JsonPrimitive(it) } ?: if (known) JsonNull else null
+
     /**
      * Convert a mobile Routine to portal-format DTO.
      */
@@ -636,6 +653,7 @@ object PortalSyncAdapter {
                     },
                 dropSetEnabled = ex.dropSetEnabled,
                 dropSetMinWeightKg = ex.dropSetMinWeightKg,
+                durationSeconds = durationSecondsWire(ex.duration, ex.durationSyncKnown),
             )
         }
 

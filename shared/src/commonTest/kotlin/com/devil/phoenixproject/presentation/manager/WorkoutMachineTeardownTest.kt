@@ -567,7 +567,10 @@ class WorkoutMachineTeardownTest {
                     orderIndex = 0,
                     setReps = listOf(10),
                     weightPerCableKg = 0f,
+                    // Simulates a runtime modifier result while staying below the independent
+                    // five-second machine-teardown timeout exercised by this concurrency test.
                     duration = 1,
+                    isLaunchAdjustedDuration = true,
                     setRestSeconds = listOf(0),
                 ),
                 RoutineExercise(

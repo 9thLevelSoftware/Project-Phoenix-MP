@@ -236,6 +236,9 @@ interface SyncRepository {
      */
     suspend fun getAllRoutineIds(profileId: String = "default"): List<String>
 
+    /** Routine IDs whose legacy exercises still need an authoritative portal duration. */
+    suspend fun getRoutineIdsNeedingDurationBackfill(profileId: String = "default"): List<String> = emptyList()
+
     /**
      * Get all training cycle IDs for the given profile.
      */

@@ -272,6 +272,8 @@ CREATE TABLE RoutineExercise (
     -- Drop set offer (added in migration 46, issue #673 PR 3)
     dropSetEnabled INTEGER NOT NULL DEFAULT 0,
     dropSetMinWeightKg REAL,
+    -- Duration sync state: 0 unknown, 1 authoritative, 2 malformed portal value observed.
+    durationSyncKnown INTEGER NOT NULL DEFAULT 0,
     FOREIGN KEY (routineId) REFERENCES Routine(id) ON DELETE CASCADE,
     FOREIGN KEY (exerciseId) REFERENCES Exercise(id) ON DELETE SET NULL,
     FOREIGN KEY (supersetId) REFERENCES Superset(id) ON DELETE SET NULL
@@ -1456,6 +1458,17 @@ updateExerciseSupersetRef:
 UPDATE RoutineExercise
 SET supersetId = ?, orderInSuperset = ?
 WHERE id = ?;
+
+-- Mark whether a routine exercise's duration is known to be current for portal sync.
+updateRoutineExerciseDurationSyncKnown:
+UPDATE RoutineExercise
+SET durationSyncKnown = ?
+WHERE id = ?;
+
+hydrateRoutineExerciseDurationFromSync:
+UPDATE RoutineExercise
+SET duration = :duration, durationSyncKnown = 1
+WHERE id = :id AND routineId = :routineId AND durationSyncKnown != 1;
 
 -- Heal legacy routine rows that are missing an exerciseId by resolving from exerciseName.
 updateRoutineExerciseId:
@@ -3601,8 +3614,24 @@ UPDATE PersonalRecord SET updatedAt = ? WHERE id IN ?;
 -- Get routines modified since last sync
 selectRoutinesModifiedSince:
 SELECT * FROM Routine
-WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
+WHERE (
+    updatedAt > :timestamp OR updatedAt IS NULL OR EXISTS (
+        SELECT 1 FROM RoutineExercise
+        WHERE RoutineExercise.routineId = Routine.id
+          AND RoutineExercise.durationSyncKnown = 0
+    )
+)
+AND deletedAt IS NULL
 AND profile_id = :profileId;
+
+-- Existing exercises from before duration sync keep their parent eligible for a full pull
+-- until the portal sends an authoritative duration (including an explicit null).
+selectRoutineIdsNeedingDurationBackfill:
+SELECT DISTINCT Routine.id FROM Routine
+JOIN RoutineExercise ON RoutineExercise.routineId = Routine.id
+WHERE RoutineExercise.durationSyncKnown = 0
+AND Routine.deletedAt IS NULL
+AND Routine.profile_id = :profileId;
 
 -- Get soft-deleted routines (for push — tombstones to propagate deletion to server)
 selectDeletedRoutinesSince:

@@ -1078,7 +1078,7 @@ fun SetRow(
                         CompactNumberPicker(
                             value = setConfig.duration,
                             onValueChange = onDurationChange,
-                            range = 10..300,
+                            range = RoutineExercise.MIN_TIMED_DURATION_SECONDS..RoutineExercise.MAX_TIMED_DURATION_SECONDS,
                             label = if (setConfig.setNumber == 1) "Duration" else "",
                             suffix = "sec",
                             modifier = Modifier.fillMaxWidth(),

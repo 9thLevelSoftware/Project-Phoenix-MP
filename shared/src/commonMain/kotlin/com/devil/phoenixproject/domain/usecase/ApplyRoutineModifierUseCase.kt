@@ -53,9 +53,11 @@ class ApplyRoutineModifierUseCase(
 
     private fun applyHeavyDeload(routine: Routine, percent: Int): Routine = routine.copy(
         exercises = routine.exercises.map { exercise ->
+            val timedDuration = exercise.supportedTimedDurationSeconds
             exercise.copy(
                 setReps = exercise.setReps.map { reps -> reps?.let { scaleReps(it, percent) } },
-                duration = exercise.duration?.let { scaleDurationSeconds(it, percent) },
+                duration = timedDuration?.let { scaleDurationSeconds(it, percent) } ?: exercise.duration,
+                isLaunchAdjustedDuration = timedDuration != null,
                 warmupSets = exercise.warmupSets.map { it.copy(reps = scaleReps(it.reps, percent)) },
             )
         },
