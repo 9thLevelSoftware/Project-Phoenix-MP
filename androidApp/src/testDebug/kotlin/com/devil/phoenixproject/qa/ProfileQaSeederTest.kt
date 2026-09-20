@@ -296,7 +296,7 @@ class ProfileQaSeederTest {
                     muscleGroup = "Chest",
                     equipment = "BAR",
                 )
-            }
+            }
             coEvery { workouts.deleteSession(any()) } coAnswers { sessions.remove(firstArg()) }
             // Fixture cleanup discards rows instead of tombstoning them.
             coEvery { workouts.discardSession(any()) } coAnswers { sessions.remove(firstArg()) }
