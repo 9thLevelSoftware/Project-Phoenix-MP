@@ -365,6 +365,8 @@ interface SyncRepository {
      * @param personalRecords Personal record DTOs
      * @param lastSync Timestamp for routine conflict resolution
      * @param profileId Target profile for all entities
+     * @param serverWinsRoutineIds Routines whose push the server rejected under LWW: the
+     *   portal version is applied even if the local row was modified after [lastSync]
      */
     suspend fun mergeAllPullData(
         ownerUserId: String = "",
@@ -377,6 +379,7 @@ interface SyncRepository {
         personalRecords: List<PersonalRecordSyncDto>,
         lastSync: Long,
         profileId: String,
+        serverWinsRoutineIds: Set<String> = emptySet(),
         sessionNotes: Map<String, SessionNotesEntry> = emptyMap(),
         sessionUpdatedAtById: Map<String, Long> = emptyMap(),
     )

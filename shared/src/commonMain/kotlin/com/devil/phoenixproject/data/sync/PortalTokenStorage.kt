@@ -62,6 +62,7 @@ class PortalTokenStorage(private val settings: Settings) {
         val isPremium: Boolean,
         val subscriptionTier: String?,
         val lastSync: Long,
+        val deltaPullKey: String?,
     )
 
     companion object {
@@ -74,6 +75,14 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_REFRESH_TOKEN = "portal_refresh_token"
         private const val KEY_EXPIRES_AT = "portal_token_expires_at"
         private const val KEY_LAST_SYNC = "portal_last_sync_timestamp"
+
+        /**
+         * "userId:profileId" of the completed pull that produced the stored [KEY_LAST_SYNC].
+         * Absent on the first sync after upgrading from builds that always pulled with
+         * lastSync=0, so sync sends one full lastSync=0 pull before switching to delta pulls.
+         * A pull for another user or profile also sends lastSync=0.
+         */
+        private const val KEY_DELTA_PULL_KEY = "portal_delta_pull_key"
         private const val KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX = "portal_phase_pr_backfill_checkpoint_"
         private const val KEY_DEVICE_ID = "portal_device_id"
         private const val KEY_STORAGE_VERIFIED = "portal_storage_verified"
@@ -162,6 +171,7 @@ class PortalTokenStorage(private val settings: Settings) {
             isPremium = settings[KEY_IS_PREMIUM, false],
             subscriptionTier = settings.getStringOrNull(KEY_SUBSCRIPTION_TIER),
             lastSync = settings[KEY_LAST_SYNC, 0L],
+            deltaPullKey = settings.getStringOrNull(KEY_DELTA_PULL_KEY),
         )
     }
 
@@ -179,6 +189,7 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_IS_PREMIUM] = snapshot.isPremium
         restoreString(KEY_SUBSCRIPTION_TIER, snapshot.subscriptionTier)
         settings.putLong(KEY_LAST_SYNC, snapshot.lastSync)
+        restoreString(KEY_DELTA_PULL_KEY, snapshot.deltaPullKey)
         _lastSyncTimestamp.value = snapshot.lastSync
         _isAuthenticated.value = snapshot.accessToken != null
         _currentUser.value = loadUser()
@@ -220,6 +231,12 @@ class PortalTokenStorage(private val settings: Settings) {
         val previousUserId: String? = settings.getStringOrNull(KEY_USER_ID)
         val sameUser = previousUserId != null && previousUserId == response.user.id
         val existingPremium: Boolean = if (sameUser) settings[KEY_IS_PREMIUM, false] else false
+        if (!sameUser) {
+            // A different account must not reuse the previous account's delta-pull state:
+            // clear the user-keyed marker here. KEY_LAST_SYNC is reset below with the
+            // rest of the account-scoped sync and entitlement state.
+            settings.remove(KEY_DELTA_PULL_KEY)
+        }
 
         settings[KEY_TOKEN] = response.accessToken
         settings[KEY_REFRESH_TOKEN] = response.refreshToken
@@ -270,6 +287,26 @@ class PortalTokenStorage(private val settings: Settings) {
         withPlatformLock(authLock) {
             settings[KEY_LAST_SYNC] = timestamp
             _lastSyncTimestamp.value = timestamp
+        }
+    }
+
+    /** "userId:profileId" of the pull that produced the stored lastSync, or null if unknown. */
+    fun getDeltaPullKey(): String? = settings.getStringOrNull(KEY_DELTA_PULL_KEY)
+
+    /**
+     * Records a completed pull: the new lastSync first, then the delta-pull marker, so an
+     * interruption between the two writes leaves an absent/stale marker (next pull is a
+     * safe full pull) rather than a marker vouching for an older lastSync. A null
+     * [deltaPullKey] removes the marker so the next pull is a full pull.
+     */
+    fun recordCompletedPull(syncTime: Long, deltaPullKey: String?) {
+        withPlatformLock(authLock) {
+            settings.remove(KEY_DELTA_PULL_KEY)
+            settings[KEY_LAST_SYNC] = syncTime
+            _lastSyncTimestamp.value = syncTime
+            if (deltaPullKey != null) {
+                settings[KEY_DELTA_PULL_KEY] = deltaPullKey
+            }
         }
     }
 
@@ -358,6 +395,7 @@ class PortalTokenStorage(private val settings: Settings) {
         settings.remove(KEY_IS_PREMIUM)
         settings.remove(KEY_SUBSCRIPTION_TIER)
         settings.remove(KEY_LAST_SYNC) // Reset so re-link does a full pull
+        settings.remove(KEY_DELTA_PULL_KEY)
         _lastSyncTimestamp.value = 0L
         // Keep device ID for stable identity
 
