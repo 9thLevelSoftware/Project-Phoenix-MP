@@ -1,9 +1,9 @@
 package com.devil.phoenixproject.data.repository
 
-import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -155,8 +155,7 @@ class SqlDelightPersonalRecordRepositoryTest {
     @Test
     fun `Issue 319 transaction rollback prevents partial PR writes when downstream write fails`() = runTest {
         // Create a dedicated database with driver reference for raw SQL trigger injection
-        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
-        PhoenixDatabase.Schema.create(driver)
+        val driver = createTestDriver()
         val testDb = PhoenixDatabase(driver)
         val testRepo = SqlDelightPersonalRecordRepository(testDb)
 

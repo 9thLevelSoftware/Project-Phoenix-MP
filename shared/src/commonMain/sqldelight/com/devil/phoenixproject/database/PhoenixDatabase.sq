@@ -1205,10 +1205,18 @@ SELECT * FROM Routine WHERE id = ?;
 insertRoutine:
 INSERT INTO Routine (id, name, description, createdAt, lastUsed, useCount, profile_id, groupId, deletedAt) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- Upsert routine (insert or replace) - handles both new and existing routines
-upsertRoutine:
-INSERT OR REPLACE INTO Routine (id, name, description, createdAt, lastUsed, useCount, updatedAt, profile_id, groupId)
+-- Routine upsert = updateRoutineFields/updateRoutineById, then insertRoutineIgnore.
+-- Never INSERT OR REPLACE a Routine: with foreign keys ON the implicit delete cascades
+-- RoutineExercise/Superset rows, nulls CycleDay.routine_id and clears deletedAt.
+insertRoutineIgnore:
+INSERT OR IGNORE INTO Routine (id, name, description, createdAt, lastUsed, useCount, updatedAt, profile_id, groupId)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- Leaves deletedAt and serverId untouched.
+updateRoutineFields:
+UPDATE Routine
+SET name = ?, description = ?, createdAt = ?, lastUsed = ?, useCount = ?, updatedAt = ?, profile_id = ?, groupId = ?
+WHERE id = ?;
 
 updateRoutineLastUsed:
 UPDATE Routine SET lastUsed = ?, useCount = useCount + 1 WHERE id = ?;
@@ -1284,6 +1292,21 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 
 deleteRoutineExercises:
 DELETE FROM RoutineExercise WHERE routineId = ?;
+
+deleteRoutineExerciseById:
+DELETE FROM RoutineExercise WHERE id = ?;
+
+-- In-place update used by the portal pull merge (keeps PlannedSet children intact).
+updateRoutineExercise:
+UPDATE RoutineExercise SET
+    exerciseName = ?, exerciseMuscleGroup = ?, exerciseEquipment = ?, exerciseDefaultCableConfig = ?,
+    exerciseId = ?, cableConfig = ?, orderIndex = ?, setReps = ?, weightPerCableKg = ?, setWeights = ?, mode = ?,
+    eccentricLoad = ?, echoLevel = ?, progressionKg = ?, restSeconds = ?, duration = ?, setRestSeconds = ?,
+    perSetRestTime = ?, isAMRAP = ?, supersetId = ?, orderInSuperset = ?,
+    usePercentOfPR = ?, weightPercentOfPR = ?, prTypeForScaling = ?, setWeightsPercentOfPR = ?,
+    stallDetectionEnabled = ?, stopAtTop = ?, repCountTiming = ?, setEchoLevels = ?, warmupSets = ?, defaultRackItemIds = ?,
+    rackBehaviorOverrides = ?, scalingBasis = ?, isBodyweight = ?, dropSetEnabled = ?, dropSetMinWeightKg = ?
+WHERE id = ?;
 
 deleteRoutineById:
 DELETE FROM Routine WHERE id = ?;

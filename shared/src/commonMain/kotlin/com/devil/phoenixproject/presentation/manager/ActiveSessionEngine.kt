@@ -569,6 +569,14 @@ class ActiveSessionEngine(
     private val elapsedRealtimeProvider: () -> Long = ::elapsedRealtimeMillis,
     private val wallClockMillisProvider: () -> Long = ::currentTimeMillis,
 ) {
+    private data class PendingRestRackSelection(
+        val itemIds: List<String>,
+        val behaviorOverrides: Map<String, RackItemBehavior> = emptyMap(),
+    )
+
+    /** Rest edits target the resolved upcoming routine entry while the completed entry remains current. */
+    private val pendingRestRackSelections = mutableMapOf<Pair<Int, Int>, PendingRestRackSelection>()
+
     internal suspend fun discoverRoutineResume(
         routine: Routine,
         inMemoryProgress: InMemoryRoutineProgressSnapshot?,
@@ -931,6 +939,15 @@ class ActiveSessionEngine(
             return deleteInvalidDiscoveredRuntime(handle, pending)
         }
         val validation = RuntimeHydrationValidation.Valid(document, preparation, source)
+        val restRackSelection = try {
+            resolveRestoredRestRackSelection(preparation)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return ActiveWorkoutRuntimeResumeResult.RetryableFailure
+        }
+        currentCoroutineContext().ensureActive()
+        if (!runtimeResumeAuthorityIsCurrent(handle, pending)) return ActiveWorkoutRuntimeResumeResult.Superseded
 
         var restoredOwner: RestoredRuntimeOwner? = null
         var restoredTimerPublication: RestoredRestTimerPublication? = null
@@ -974,6 +991,7 @@ class ActiveSessionEngine(
                     restoredTimerPublication = publishRestoredRuntime(
                         handle = handle,
                         validation = validation,
+                        restRackSelection = restRackSelection,
                         guardOwner = owner,
                         externalCommandInputStamp = pending.externalCommandInputStamp,
                     )
@@ -1471,9 +1489,31 @@ class ActiveSessionEngine(
         false
     }
 
+    private suspend fun resolveRestoredRestRackSelection(
+        preparation: RoutineRecoveryPreparation,
+    ): RoutineRackSelectionSnapshot {
+        val nextStep = flowDelegate?.getNextStepForRecovery(
+            preparation.resolvedRoutine,
+            preparation.sourceExerciseIndex,
+            preparation.sourceSetIndex,
+        ) ?: return preparation.rackSelection
+        val nextExercise = preparation.resolvedRoutine.exercises.getOrNull(nextStep.first)
+            ?: return preparation.rackSelection
+        if (isBodyweightExercise(nextExercise)) return preparation.rackSelection
+        return flowDelegate?.prepareRoutineForRecovery(
+            routine = preparation.resolvedRoutine,
+            exerciseIndex = nextStep.first,
+            setIndex = nextStep.second,
+            launchOrigin = preparation.launchOrigin,
+            cycleId = preparation.cycleId,
+            cycleDayNumber = preparation.cycleDayNumber,
+        )?.rackSelection ?: preparation.rackSelection
+    }
+
     private fun publishRestoredRuntime(
         handle: RoutineResumeHandle.Persisted,
         validation: RuntimeHydrationValidation.Valid,
+        restRackSelection: RoutineRackSelectionSnapshot,
         guardOwner: RestoredRuntimeOwnerToken,
         externalCommandInputStamp: ExternalCommandInputStamp,
     ): RestoredRestTimerPublication {
@@ -1535,11 +1575,11 @@ class ActiveSessionEngine(
         coordinator.activeCycleDayNumber = preparation.cycleDayNumber
         coordinator._workoutParameters.value = source.commandTemplate
         coordinator.setActiveRackSelection(
-            itemIds = preparation.rackSelection.itemIds,
-            precomputedAdjustment = preparation.rackSelection.adjustment,
-            precomputedItemsJson = preparation.rackSelection.itemsJson,
+            itemIds = restRackSelection.itemIds,
+            precomputedAdjustment = restRackSelection.adjustment,
+            precomputedItemsJson = restRackSelection.itemsJson,
         )
-        coordinator._activeRackBehaviorOverrides.value = preparation.rackSelection.behaviorOverrides
+        coordinator._activeRackBehaviorOverrides.value = restRackSelection.behaviorOverrides
         setActiveRuntimeDocument(document)
         coordinator._restTransitionPlan.value = document.restTransitionPlan
         acceptedRetryPermission = null
@@ -1556,7 +1596,7 @@ class ActiveSessionEngine(
             documentVersion = activeRuntimeDocumentVersion,
             guardOwner = guardOwner,
             sourceContext = source,
-            rackBehaviorOverrides = preparation.rackSelection.behaviorOverrides.toMap(),
+            rackBehaviorOverrides = restRackSelection.behaviorOverrides.toMap(),
             externalCommandInputStamp = externalCommandInputStamp,
         )
         val replacedRestoredTimer = replaceRestoredRestTimerOwner(
@@ -4585,6 +4625,14 @@ class ActiveSessionEngine(
             if (failureReason != null) {
                 executionGuard.markRecoveryRequired(lease, failureReason)
             } else {
+                // #782: the set ended through a successful RESET while still connected, so its
+                // hidden arm row is resolved while this lease still owns the teardown, i.e. before
+                // the guard publishes Ready and before any successor start or continuation runs.
+                if (executionGuard.captureMachineTeardownLease()?.sameExecutionAs(lease) == true) {
+                    withContext(NonCancellable) {
+                        machineSafetyCoordinator?.resolveArmedExecution(lease.executionId)
+                    }
+                }
                 val ready = executionGuard.markTeardownReady(lease)
                 if (ready) {
                     val resetOwner = resetMachineTeardownOwner.value
@@ -4854,6 +4902,9 @@ class ActiveSessionEngine(
 
         /** Get current exercise from loaded routine */
         fun getCurrentExercise(): RoutineExercise?
+
+        /** Get next step without triggering an action-navigation observation. */
+        fun getNextStepForRecovery(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>?
 
         /** Get next step in routine navigation */
         fun getNextStep(routine: Routine, exerciseIndex: Int, setIndex: Int): Pair<Int, Int>?
@@ -7101,6 +7152,7 @@ class ActiveSessionEngine(
             expectedLease = lease,
             afterExpectedLeaseReset = {
                 if (restSeconds > 0) startJustLiftEggTimer(restSeconds)
+                if (completion.reason != SetEndReason.USER_STOPPED) restartJustLiftAutoStartIfHandlesHeld()
                 afterJustLiftResetPresentationForTest?.invoke()
             },
             skipMachineTeardown = true,
@@ -7112,6 +7164,7 @@ class ActiveSessionEngine(
         afterExpectedLeaseReset: (() -> Unit)? = null,
         skipMachineTeardown: Boolean = false,
     ): Boolean {
+        pendingRestRackSelections.clear()
         val expectedResetToken = expectedLease?.let { lease ->
             executionGuard.claimExpectedResetAndCaptureResetCleanupToken(lease)
                 ?: return false
@@ -7263,6 +7316,7 @@ class ActiveSessionEngine(
 
     fun updateActiveRackSelection(itemIds: List<String>) {
         supersedeConfigurationInputIntent()
+        val restTarget = currentRestRackTarget()
         // Issue #534: For body-weight exercises, recompute _currentRackLoadAdjustment
         // synchronously when the user toggles a vest / counterweight on the live-set
         // screen, so that applyBodyweightVolume (called from confirmBodyweightSetResult)
@@ -7275,6 +7329,13 @@ class ActiveSessionEngine(
         // (so the next set / chip UI shows the new state) but skip the adjustment
         // recompute and skip the workoutParameters mirror copy.
         val distinctIds = itemIds.filter { it.isNotBlank() }.distinct()
+        restTarget?.let { target ->
+            pendingRestRackSelections[target] = PendingRestRackSelection(
+                itemIds = distinctIds,
+                behaviorOverrides = pendingRestRackSelections[target]?.behaviorOverrides
+                    ?: coordinator._activeRackBehaviorOverrides.value,
+            )
+        }
         val currentExercise = coordinator._loadedRoutine.value
             ?.exercises
             ?.getOrNull(coordinator._currentExerciseIndex.value)
@@ -7311,9 +7372,32 @@ class ActiveSessionEngine(
     }
 
     fun updateActiveRackBehaviorOverrides(overrides: Map<String, RackItemBehavior>) {
+        currentRestRackTarget()?.let { target ->
+            pendingRestRackSelections[target] = PendingRestRackSelection(
+                itemIds = pendingRestRackSelections[target]?.itemIds ?: coordinator._activeRackItemIds.value,
+                behaviorOverrides = overrides,
+            )
+        }
         publishLoadedRoutineRackBehaviorOverrides(
             updatedRoutine = null,
             overrides = overrides,
+        )
+    }
+
+    private fun applyPendingRestRackSelection(target: Pair<Int, Int>): Boolean {
+        val pending = pendingRestRackSelections.remove(target) ?: return false
+        coordinator._activeRackBehaviorOverrides.value = pending.behaviorOverrides
+        coordinator.setActiveRackSelection(pending.itemIds)
+        return true
+    }
+
+    private fun currentRestRackTarget(): Pair<Int, Int>? {
+        if (coordinator._workoutState.value !is WorkoutState.Resting) return null
+        val routine = coordinator._loadedRoutine.value ?: return null
+        return flowDelegate?.getNextStep(
+            routine,
+            coordinator._currentExerciseIndex.value,
+            coordinator._currentSetIndex.value,
         )
     }
 
@@ -8570,6 +8654,9 @@ class ActiveSessionEngine(
                 val machineSafetyStartAllowed = isBodyweight ||
                     (machineSafetyCoordinator?.canStartMachine() ?: true)
                 if (!machineSafetyStartAllowed) {
+                    // Never refuse silently: re-show the stored hazard's recovery UI (unless the only
+                    // row is the replaced live set's own arm, which its teardown will resolve).
+                    machineSafetyCoordinator?.surfaceStoredHazard(liveExecutionId = outgoingLease?.executionId)
                     failStart(lease, priorWorkoutState)
                     return@launch
                 }
@@ -9467,10 +9554,12 @@ class ActiveSessionEngine(
     }
 
     internal fun beginRoutineCompletedRuntimeCleanup() {
+        pendingRestRackSelections.clear()
         beginTrackedRuntimeCleanup(RuntimeCleanupReason.ROUTINE_COMPLETED)
     }
 
     internal fun beginRoutineAbandonmentRuntimeCleanup() {
+        pendingRestRackSelections.clear()
         beginTrackedRuntimeCleanup(RuntimeCleanupReason.EXPLICIT_RESTART)
     }
 
@@ -10082,6 +10171,7 @@ class ActiveSessionEngine(
     }
 
     fun stopWorkout(exitingWorkout: Boolean = false) {
+        pendingRestRackSelections.clear()
         val cleanupCandidateAtInvocation = if (exitingWorkout) runtimeCleanupCandidateRef.value else null
         val restoredOwnerAtInvocation = restoredRuntimeOwnerRef.value
         val pendingNoLeaseCleanupAtInvocation = if (
@@ -11482,6 +11572,8 @@ class ActiveSessionEngine(
                                 Logger.d("Just Lift: Starting egg timer ($justLiftRestSeconds s)")
                                 startJustLiftEggTimer(justLiftRestSeconds)
                             }
+                            // #761. Defensive: no Just Lift completion carries USER_STOPPED here today.
+                            if (completion.reason != SetEndReason.USER_STOPPED) restartJustLiftAutoStartIfHandlesHeld()
                             afterJustLiftResetPresentationForTest?.invoke()
                         }, skipMachineTeardown = true)
                         if (!resetSucceeded) return@launchCompletionJob
@@ -11741,6 +11833,12 @@ class ActiveSessionEngine(
                 null
             }
             val nextSetIdxFromStep = nextStep?.second
+
+            // Publish the upcoming entry's defaults before the rest UI is rendered. The
+            // current exercise index intentionally remains on the completed entry during rest.
+            if (nextStep != null && nextExerciseFromStep != null && !isBodyweightExercise(nextExerciseFromStep)) {
+                flowDelegate?.seedRackSelectionForExercise(nextStep.first)
+            }
 
             // Issue #354: Always use the exercise's configured rest time, even within supersets.
             // Previously, supersets used a hardcoded short rest time, but users should configure
@@ -12805,6 +12903,13 @@ class ActiveSessionEngine(
                 // Without re-seeding rack defaults here, a vest toggled on the previous
                 // exercise leaks into captureRackLoadSnapshot for the next exercise.
                 flowDelegate?.seedRackSelectionForExercise(nextExIdx)
+                // Autoplay starts the set immediately, so the rest edit must be applied
+                // before startWorkout captures its rack snapshot. Manual progression
+                // enters SetReady below, which republishes defaults; retain the pending
+                // entry until after that call instead.
+                if (settingsManager.autoplayEnabled.value) {
+                    applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                }
                 repCounter.reset()
                 // Phase 35C: Initialize warm-up phase for new exercise with warmupSets
                 if (nextSetIdx == 0 && nextExercise.warmupSets.isNotEmpty() && !nextIsBodyweight) {
@@ -12817,6 +12922,11 @@ class ActiveSessionEngine(
                 }
                 resetAutoStopState()
                 startWorkoutOrSetReady(lease)
+                // enterSetReady republishes the upcoming exercise defaults for manual
+                // progression; reapply the rest-screen edit after that transition.
+                // Autoplay consumed the pending entry before startWorkout(), so this is
+                // intentionally a no-op on the automatic path.
+                applyPendingRestRackSelection(nextExIdx to nextSetIdx)
             } else if (isSameExerciseContinuation) {
                 // Issue #572: same-exercise continuation across entries. We do NOT call
                 // startWorkout() here even when autoplay is on, because that would send
@@ -12833,6 +12943,7 @@ class ActiveSessionEngine(
                 // rest/summary UI; once the SetReady state has preserved any rest-screen
                 // edits, flip the workout state to Idle so navigation can occur.
                 flowDelegate?.enterSetReady(nextExIdx, nextSetIdx)
+                applyPendingRestRackSelection(nextExIdx to nextSetIdx)
                 coordinator._workoutState.value = WorkoutState.Idle
             } else {
                 // Same-entry set advance (isChangingExercise == false). Preserve the
@@ -12845,6 +12956,7 @@ class ActiveSessionEngine(
             }
             coordinator._userAdjustedWeightDuringRest = false
         } else {
+            pendingRestRackSelections.clear()
             coordinator._userAdjustedWeightDuringRest = false
             Logger.d { "startNextSetOrExercise: No more steps - showing routine complete" }
             supersedeConfigurationInputIntent()
@@ -13545,6 +13657,27 @@ class ActiveSessionEngine(
                 }
             }
         }
+    }
+
+    /**
+     * #761: auto-start is edge-triggered on handleState. A grab late in a timed Just Lift
+     * summary starts a countdown bound to the completed lease; the summary reset retires
+     * that lease, the countdown aborts, and the still-held handles never produce a new
+     * Grabbed edge. Called only from the Just Lift waiting-for-successor resets (timed
+     * summary expiry and manual dismissal of a non-user-stopped completion), so
+     * stop/end/skip teardowns never auto-restart a user holding the handles.
+     */
+    private fun restartJustLiftAutoStartIfHandlesHeld() {
+        val params = coordinator._workoutParameters.value
+        if (!params.isJustLift || !params.useAutoStart) return
+        // The detector keeps its last state across an unexpected link drop; never
+        // re-arm from a reading that may predate a disconnect.
+        if (bleRepository.connectionState.value !is ConnectionState.Connected) return
+        if (bleRepository.handleState.value != HandleState.Grabbed) return
+        // Any countdown still running was bound to the lease this reset just retired
+        // and can never complete. Restart unbound: it only runs while no lease exists.
+        cancelAutoStartTimer()
+        startAutoStartTimer(expectedLease = null)
     }
 
     private fun cancelAutoStartTimer() {

@@ -135,7 +135,7 @@ class WorkoutFlowE2ETest {
                 hasEstimates = { _, _ -> false },
                 computeAllTime = { _, _, _ -> null },
             ),
-            machineSafetyCoordinator = fakeMachineSafetyCoordinator(kotlinx.coroutines.CoroutineScope(testCoroutineRule.dispatcher)),
+            machineSafetyCoordinator = fakeMachineSafetyCoordinator(kotlinx.coroutines.CoroutineScope(testCoroutineRule.dispatcher), fakeBleRepository),
         )
         val deterministicElapsedRealtime: () -> Long = { testCoroutineRule.dispatcher.scheduler.currentTime }
         viewModel.workoutSessionManager.activeSessionEngine.javaClass

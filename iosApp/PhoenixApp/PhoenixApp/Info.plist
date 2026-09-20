@@ -42,7 +42,7 @@
 	<key>NSBluetoothPeripheralUsageDescription</key>
 	<string>Project Phoenix needs Bluetooth to connect to your smart fitness machine.</string>
 	<key>NSHealthShareUsageDescription</key>
-	<string>Project Phoenix can read your health data to avoid logging duplicate workouts.</string>
+	<string>Project Phoenix reads your body weight from Apple Health to fill in your profile.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>Project Phoenix writes your completed workouts to Apple Health so they appear alongside your other fitness data.</string>
 	<key>NSMicrophoneUsageDescription</key>

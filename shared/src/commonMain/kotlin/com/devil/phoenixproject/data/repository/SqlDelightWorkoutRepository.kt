@@ -219,14 +219,14 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                                 Logger.w {
                                     "Routine exercise had stale exerciseId=$exerciseId; resolved by name '${row.exerciseName}' -> ${byName.id} and healing row ${row.id}"
                                 }
-                                queries.updateRoutineExerciseId(byName.id, row.id)
+                                healRoutineExerciseId(byName.id, row.id)
                             }
                 } ?: exerciseRepository.findByName(row.exerciseName)
                     ?.also { byName ->
                         Logger.i {
                             "Routine exercise missing exerciseId for '${row.exerciseName}'; resolved to ${byName.id} and healing row ${row.id}"
                         }
-                        queries.updateRoutineExerciseId(byName.id, row.id)
+                        healRoutineExerciseId(byName.id, row.id)
                     }
 
                 val exercise = resolvedExercise ?: run {
@@ -247,7 +247,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                                 "(was null in RoutineExercise ${row.id})"
                         }
                         // Heal the DB row so subsequent loads don't repeat this
-                        queries.updateRoutineExerciseId(autoCreated.id!!, row.id)
+                        healRoutineExerciseId(autoCreated.id!!, row.id)
                         autoCreated
                     } else {
                         // Last resort: generate a synthetic ID to prevent null propagation
@@ -674,21 +674,47 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
             }
         }
 
+    /**
+     * Best-effort heal of a RoutineExercise.exerciseId. A failed write (e.g. a foreign-key
+     * violation) must not drop the exercise from the loaded routine: the caller keeps the
+     * resolved exercise and the row stays unhealed until the next load (F-083).
+     */
+    private fun healRoutineExerciseId(exerciseId: String?, rowId: String) {
+        try {
+            queries.updateRoutineExerciseId(exerciseId, rowId)
+        } catch (e: Exception) {
+            Logger.w(e) { "Could not heal exerciseId for routine exercise $rowId; keeping the unhealed row" }
+        }
+    }
+
     override suspend fun saveRoutine(routine: Routine) {
         withContext(Dispatchers.IO) {
             // Generate a UUID for the routine if not provided
             val routineId = routine.id.takeIf { it.isNotBlank() } ?: generateUUID()
 
             db.transaction {
-                // Upsert the routine (handles both new and existing routines)
-                queries.upsertRoutine(
-                    id = routineId,
+                // Upsert in place: UPDATE, then INSERT OR IGNORE. A REPLACE would cascade-delete
+                // the routine and null CycleDay.routine_id for any training cycle using it.
+                val updatedAt = currentTimeMillis()
+                queries.updateRoutineFields(
                     name = routine.name,
                     description = "", // Default empty description
                     createdAt = routine.createdAt,
                     lastUsed = routine.lastUsed,
                     useCount = routine.useCount.toLong(),
-                    updatedAt = currentTimeMillis(),
+                    updatedAt = updatedAt,
+                    profile_id = routine.profileId,
+                    groupId = routine.groupId,
+                    id = routineId,
+                )
+                queries.insertRoutineIgnore(
+                    id = routineId,
+                    name = routine.name,
+                    description = "",
+                    createdAt = routine.createdAt,
+                    lastUsed = routine.lastUsed,
+                    useCount = routine.useCount.toLong(),
+                    updatedAt = updatedAt,
                     profile_id = routine.profileId,
                     groupId = routine.groupId,
                 )

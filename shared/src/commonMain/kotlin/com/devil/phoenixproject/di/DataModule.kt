@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.di
 
+import app.cash.sqldelight.db.SqlDriver
 import com.devil.phoenixproject.data.integration.ExternalActivityRepository
 import com.devil.phoenixproject.data.integration.ExternalExerciseTemplateRepository
 import com.devil.phoenixproject.data.integration.ExternalMeasurementRepository
@@ -13,13 +14,14 @@ import com.devil.phoenixproject.data.integration.SqlDelightExternalMeasurementRe
 import com.devil.phoenixproject.data.integration.SqlDelightExternalProgramRepository
 import com.devil.phoenixproject.data.integration.SqlDelightExternalRoutineRepository
 import com.devil.phoenixproject.data.integration.SqlDelightIntegrationSyncCursorRepository
-import com.devil.phoenixproject.data.local.DatabaseFactory
+import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.preferences.LegacyProfilePreferencesReader
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.SettingsLegacyProfilePreferencesReader
 import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
 import com.devil.phoenixproject.data.repository.*
+import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -31,8 +33,10 @@ import com.devil.phoenixproject.presentation.manager.MachineSafetyTransport
 
 val dataModule = module {
     // Database
-    // DriverFactory is provided by platformModule
-    single { DatabaseFactory(get()).createDatabase() }
+    // DriverFactory is provided by platformModule. Create the driver once and hand
+    // the same instance to PhoenixDatabase and MigrationManager.
+    single<SqlDriver> { get<DriverFactory>().createDriver() }
+    single { PhoenixDatabase(get()) }
 
     // Data Import
     single { ExerciseImporter(get()) }

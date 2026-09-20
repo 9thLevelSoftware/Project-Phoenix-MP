@@ -574,7 +574,7 @@ fun AnalyticsScreen(
             }
         }
 
-        // Connection error dialog (ConnectingOverlay removed - status shown in top bar button)
+        // Connection error dialog
         connectionError?.let { error ->
             com.devil.phoenixproject.presentation.components.ConnectionErrorDialog(
                 message = error,

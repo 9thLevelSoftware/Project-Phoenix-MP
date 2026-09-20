@@ -101,7 +101,7 @@ object UnitConverter {
  *
  * PARITY-CRITICAL: `estimate()` is the canonical cross-stack 1RM formula.
  * Mobile computes it and ships it to the portal (per-cable kg). The portal
- * MUST NOT use a different formula — see the monorepo parity doctrine.
+ * MUST NOT use a different formula — see "1RM Estimate Parity" in CLAUDE.md.
  */
 object OneRepMaxCalculator {
     /** Epley: weight * (1 + reps/30). Linear estimate; tends to overestimate at very high rep counts (>20). */

@@ -50,6 +50,9 @@ class Issue687WorkoutExecutionIsolationTest {
         var replaceAtVbtCommit = false
         harness = DWSMTestHarness(
             testScope = this,
+            // Starts B over an armed A with no RESET teardown in between; the #782 barrier
+            // would (correctly) refuse B, so this isolation test opts out of it.
+            machineSafetyBarrier = false,
             biomechanicsDispatcher = StandardTestDispatcher(testScheduler),
             beforeVbtCommit = { _, _, repNumber ->
                 if (replaceAtVbtCommit && repNumber == 2) {
@@ -529,6 +532,9 @@ class Issue687WorkoutExecutionIsolationTest {
         lateinit var harness: DWSMTestHarness
         harness = DWSMTestHarness(
             testScope = this,
+            // Starts B over an armed A with no RESET teardown in between; the #782 barrier
+            // would (correctly) refuse B, so this isolation test opts out of it.
+            machineSafetyBarrier = false,
             biomechanicsDispatcher = StandardTestDispatcher(testScheduler),
             afterExecutionBegin = { _, _ ->
                 if (releaseDuringReplacement) {

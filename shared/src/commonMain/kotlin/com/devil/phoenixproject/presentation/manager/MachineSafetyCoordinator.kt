@@ -35,7 +35,14 @@ sealed interface MachineSafetyUiState {
     ) : MachineSafetyUiState
 }
 
-/** Durable, trainer-identity-bound safety recovery. Never equates transport ACK with unload. */
+/**
+ * Durable, trainer-identity-bound safety recovery. A transport ACK is never treated as unload,
+ * with one exception: [resolveArmedExecution] clears this process's own hidden arm row after a
+ * clean teardown RESET that succeeded while still connected to the armed trainer. That includes
+ * a set resumed after a dismissed connection loss, whose re-arm replaced the loss row. A row
+ * that is visible, or that this process did not arm (for example after a relaunch), still needs
+ * the user's explicit acknowledgement through [acknowledgeUnloaded].
+ */
 class MachineSafetyCoordinator(
     private val repository: MachineSafetyHazardRepository,
     private val transport: MachineSafetyTransport,
@@ -51,7 +58,19 @@ class MachineSafetyCoordinator(
     private var nextGeneration = 0L
     private var interruptedWorkoutResumeAuthorized = false
 
-    suspend fun restoreOnStartup() {
+    /** The hidden arm row this coordinator last persisted; only it may be resolved by a clean teardown. */
+    private var armedDocument: MachineSafetyHazardDocument? = null
+
+    suspend fun restoreOnStartup() = surfaceStoredHazard()
+
+    /**
+     * Show the most recent stored hazard, e.g. when a machine start was refused by the barrier.
+     * Does nothing while a warning is already visible, so an in-flight recovery is never replaced.
+     * A refusal caused only by [liveExecutionId]'s own hidden arm row is a replacement-start
+     * race over a live set, not a hazard, so it is not surfaced.
+     */
+    suspend fun surfaceStoredHazard(liveExecutionId: Long? = null): Unit = mutex.withLock {
+        if (_uiState.value is MachineSafetyUiState.Visible) return
         val results = try { repository.loadAll() } catch (_: Exception) {
             listOf(MachineSafetyLoadResult.Rejected(MachineSafetyRejection.CORRUPT_JSON, null))
         }
@@ -62,6 +81,10 @@ class MachineSafetyCoordinator(
                 MachineSafetyLoadResult.Missing -> null
             }
         }
+        val armed = armedDocument
+        val onlyLiveArm = liveExecutionId != null && armed != null && armed.executionId == liveExecutionId &&
+            results.all { (it as? MachineSafetyLoadResult.Loaded)?.document?.generation == armed.generation }
+        if (onlyLiveArm) return
         records.maxByOrNull { it.updatedAtEpochMs }?.let { show(it, records.any { doc -> doc.sessionId.startsWith("rejected-") }) }
     }
 
@@ -75,6 +98,12 @@ class MachineSafetyCoordinator(
         return try {
             repository.replace(persisted)
             nextGeneration = safeGeneration
+            // A visible loss replaces that trainer's arm row and is never cleared by a clean teardown.
+            if (!showRecoveryUi) {
+                armedDocument = persisted
+            } else if (armedDocument?.trainerAddress == persisted.trainerAddress) {
+                armedDocument = null
+            }
             if (showRecoveryUi) {
                 // A new visible loss owns RESET-only recovery. Never let a continuation
                 // authorization granted for an earlier hidden execution cross this boundary.
@@ -115,6 +144,30 @@ class MachineSafetyCoordinator(
     }
 
     /**
+     * Clear the hidden arm row for [executionId] after its set ended through a successful
+     * RESET while still connected to the same trainer. Only the exact row this coordinator
+     * armed (same trainer, generation and execution) is deleted; a visible loss, a newer
+     * arm, or a different connected trainer leaves the durable barrier in place.
+     */
+    suspend fun resolveArmedExecution(executionId: Long): Boolean = mutex.withLock {
+        val armed = armedDocument ?: return false
+        if (armed.executionId != executionId) return false
+        if (_uiState.value !is MachineSafetyUiState.Hidden) return false
+        if (transport.connectedTrainerAddress != armed.trainerAddress) return false
+        return try {
+            val stored = (repository.load(armed.trainerAddress) as? MachineSafetyLoadResult.Loaded)?.document
+            if (stored == null || stored.generation != armed.generation || stored.executionId != executionId) return false
+            repository.deleteIfGenerationMatches(armed.trainerAddress, armed.generation).also { deleted ->
+                if (deleted) armedDocument = null
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    /**
      * Authorize the already interrupted execution to rebuild its current set after a
      * transport reconnect. This is deliberately separate from dismissal: it is a
      * one-shot continuation for an existing execution, not permission for a new start.
@@ -127,8 +180,13 @@ class MachineSafetyCoordinator(
         }
     }
 
-    /** A dismissed warning remains a durable start barrier until physical acknowledgement. */
-    suspend fun canStartMachine(): Boolean = try {
+    /**
+     * A dismissed warning remains a durable start barrier until physical acknowledgement.
+     * Serialized with [resolveArmedExecution], so a start never reads a row a resolve is clearing.
+     */
+    suspend fun canStartMachine(): Boolean = mutex.withLock { canStartMachineLocked() }
+
+    private suspend fun canStartMachineLocked(): Boolean = try {
         val hasUnresolvedHazard = repository.loadAll().any { result ->
             when (result) {
                 is MachineSafetyLoadResult.Loaded -> true
@@ -146,6 +204,8 @@ class MachineSafetyCoordinator(
             interruptedWorkoutResumeAuthorized = false
             false
         }
+    } catch (cancelled: CancellationException) {
+        throw cancelled
     } catch (_: Exception) {
         false
     }

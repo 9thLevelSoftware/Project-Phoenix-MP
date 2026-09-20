@@ -208,11 +208,6 @@ interface SyncRepository {
     suspend fun mergePRs(records: List<PersonalRecordSyncDto>)
 
     /**
-     * Merge routines from server
-     */
-    suspend fun mergeRoutines(routines: List<RoutineSyncDto>)
-
-    /**
      * Merge custom exercises from server
      */
     suspend fun mergeCustomExercises(exercises: List<CustomExerciseSyncDto>)

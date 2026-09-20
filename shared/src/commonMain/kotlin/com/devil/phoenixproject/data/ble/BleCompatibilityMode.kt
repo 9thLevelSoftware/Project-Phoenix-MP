@@ -40,14 +40,6 @@ object BleCompatibilityMode {
             BleCompatibilitySetting.AUTO -> isAffectedDevice
         }
 
-    /** The GATT heartbeat loop is suppressed on the compatibility path. */
-    fun includeHeartbeat(isAffectedDevice: Boolean = DeviceInfo.isBcm4389Pixel()): Boolean =
-        !isActive(isAffectedDevice)
-
-    /** Best-effort pre-ready firmware/version reads are skipped on the compatibility path. */
-    fun includePreReadyDiagnosticReads(isAffectedDevice: Boolean = DeviceInfo.isBcm4389Pixel()): Boolean =
-        !isActive(isAffectedDevice)
-
     fun summary(isAffectedDevice: Boolean = DeviceInfo.isBcm4389Pixel()): String =
         "setting=${setting.name}, affectedDevice=$isAffectedDevice, active=${isActive(isAffectedDevice)}"
 }

@@ -520,6 +520,12 @@ fun EnhancedMainScreen(
                         viewModel.dismissMachineSafetyWarning()
                         viewModel.dismissConnectionLostAlert()
                     },
+                    onAcknowledgeUnloaded = (machineSafetyUiState as? MachineSafetyUiState.Visible)?.let { visible ->
+                        {
+                            viewModel.acknowledgeMachineSafetyUnloaded(visible.document.generation)
+                            viewModel.dismissConnectionLostAlert()
+                        }
+                    },
                 )
             }
 

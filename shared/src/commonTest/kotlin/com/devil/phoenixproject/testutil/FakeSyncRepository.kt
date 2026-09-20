@@ -52,7 +52,6 @@ class FakeSyncRepository : SyncRepository {
     var mergedGamificationStats: GamificationStatsSyncDto? = null
     var mergedSessions: List<WorkoutSessionSyncDto> = emptyList()
     var mergedPRs: List<PersonalRecordSyncDto> = emptyList()
-    var mergedRoutines: List<RoutineSyncDto> = emptyList()
     var mergedCustomExercises: List<CustomExerciseSyncDto> = emptyList()
     var updatedIdMappings: IdMappings? = null
 
@@ -103,10 +102,6 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun mergePRs(records: List<PersonalRecordSyncDto>) {
         mergedPRs = records
-    }
-
-    override suspend fun mergeRoutines(routines: List<RoutineSyncDto>) {
-        mergedRoutines = routines
     }
 
     override suspend fun mergeCustomExercises(exercises: List<CustomExerciseSyncDto>) {

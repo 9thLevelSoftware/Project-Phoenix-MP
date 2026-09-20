@@ -160,7 +160,7 @@ class ConflictResolutionTest {
         // Note: With NULL updatedAt and lastSync=0, the comparison "NULL > 0" is false,
         // so portal version is applied
         assertEquals("Portal Push Day", afterMerge.name, "Portal name should be applied when local has no updatedAt")
-        // UseCount is preserved because upsertRoutine preserves it from existing record
+        // UseCount is preserved because the pull updates the routine row in place
         assertEquals(5L, afterMerge.useCount, "Local useCount should be preserved")
     }
 
