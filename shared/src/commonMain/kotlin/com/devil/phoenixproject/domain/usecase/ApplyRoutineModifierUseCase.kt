@@ -1,7 +1,7 @@
 package com.devil.phoenixproject.domain.usecase
 
-import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.getBestWeightPRForWorkoutMode
 import com.devil.phoenixproject.domain.model.AppliedRoutineModifier
 import com.devil.phoenixproject.domain.model.Routine
@@ -18,7 +18,7 @@ import kotlin.math.roundToInt
  */
 class ApplyRoutineModifierUseCase(
     private val prRepository: PersonalRecordRepository,
-    private val exerciseRepository: ExerciseRepository,
+    private val baselineRepository: ProfileExerciseBaselineRepository,
 ) {
     suspend operator fun invoke(
         routine: Routine,
@@ -70,9 +70,8 @@ class ApplyRoutineModifierUseCase(
 
         if (weightPrOneRepMax != null) return weightPrOneRepMax
 
-        // The training max is per profile (migration 49): never another member's value.
         val storedOneRepMax = exerciseId
-            ?.let { exerciseRepository.getTrainingMax(it, profileId) }
+            ?.let { baselineRepository.get(profileId, it)?.oneRepMaxPerCableKg }
             ?.takeIf { it > 0 }
 
         return storedOneRepMax ?: exercise.weightPerCableKg.takeIf { it > 0 } ?: MIN_WEIGHT_KG

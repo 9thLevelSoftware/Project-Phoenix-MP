@@ -3,7 +3,16 @@ package com.devil.phoenixproject.util
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import kotlin.math.abs
 
+/**
+ * The backstop for machine commands (KD-9).
+ *
+ * Bounds are [CommandLimits]. The primary defense is [CommandLimits.resolve] at
+ * command-resolution time, which clamps and tells the user; this validator rejects, and
+ * is only reachable by bypassing that clamp. Callers pass the connected model's ceiling:
+ * a command builder that does not know the model gets the absolute hardware maximum.
+ */
 object WorkoutCommandValidator {
     // Byte value 0xFF (255) is reserved on the wire as the unlimited / Just Lift /
     // AMRAP sentinel (see BlePacketFactory). A finite rep count that serializes to
@@ -18,9 +27,11 @@ object WorkoutCommandValidator {
         programMode: ProgramMode,
         weightPerCableKg: Float,
         targetReps: Int,
+        maxWeightPerCableKg: Float,
     ): Result<Unit> {
         validateFiniteWeight(weightPerCableKg).onFailure { return Result.failure(it) }
-        validateWeightRange(weightPerCableKg, allowZero = false).onFailure { return Result.failure(it) }
+        validateWeightRange(weightPerCableKg, allowZero = false, maxWeightPerCableKg)
+            .onFailure { return Result.failure(it) }
         validateRepByte("targetReps", targetReps, allowZero = false).onFailure { return Result.failure(it) }
         if (programMode == ProgramMode.Echo) {
             return failure("Legacy workout command must not be used for Echo mode")
@@ -28,13 +39,22 @@ object WorkoutCommandValidator {
         return Result.success(Unit)
     }
 
-    fun validateProgramParams(params: WorkoutParameters): Result<Unit> {
+    fun validateProgramParams(params: WorkoutParameters, maxWeightPerCableKg: Float): Result<Unit> {
         if (params.isEchoMode) {
             return failure("Program parameter packet must not be used for Echo mode")
         }
         validateFiniteWeight(params.weightPerCableKg).onFailure { return Result.failure(it) }
         validateFiniteWeight(params.progressionRegressionKg, field = "progressionRegressionKg")
             .onFailure { return Result.failure(it) }
+        // F-020/F-044: the per-rep increment reaches the machine at OFFSET_PROGRESSION and
+        // is applied to every rep, so an unbounded value from a backup, CSV or portal pull
+        // must never reach the frame.
+        if (abs(params.progressionRegressionKg) > CommandLimits.MAX_PROGRESSION_KG) {
+            return failure(
+                "progressionRegressionKg must be within " +
+                    "±${CommandLimits.MAX_PROGRESSION_KG}kg/rep, got ${params.progressionRegressionKg}",
+            )
+        }
 
         if (params.isJustLift && params.weightPerCableKg < Constants.JUST_LIFT_MIN_VALID_WEIGHT_KG) {
             return failure(
@@ -44,6 +64,7 @@ object WorkoutCommandValidator {
         validateWeightRange(
             params.weightPerCableKg,
             allowZero = params.isAMRAP && !params.isJustLift,
+            maxWeightPerCableKg = maxWeightPerCableKg,
         ).onFailure { return Result.failure(it) }
 
         validateRepByte("warmupReps", params.warmupReps, allowZero = true)
@@ -99,13 +120,17 @@ object WorkoutCommandValidator {
 
     private fun isFinite(value: Float): Boolean = !value.isNaN() && !value.isInfinite()
 
-    private fun validateWeightRange(weightPerCableKg: Float, allowZero: Boolean): Result<Unit> {
+    private fun validateWeightRange(weightPerCableKg: Float, allowZero: Boolean, maxWeightPerCableKg: Float): Result<Unit> {
         if (!allowZero && weightPerCableKg <= Constants.MIN_WEIGHT_KG) {
             return failure("weightPerCableKg must be greater than ${Constants.MIN_WEIGHT_KG}kg, got $weightPerCableKg")
         }
-        if (weightPerCableKg < Constants.MIN_WEIGHT_KG || weightPerCableKg > Constants.MAX_WEIGHT_PER_CABLE_KG) {
+        // F-009: the ceiling is the CONNECTED model's, not a model-agnostic constant.
+        // The tolerance absorbs float/lb rounding (220.5 lb is 100.017 kg on a 100 kg cable).
+        if (weightPerCableKg < Constants.MIN_WEIGHT_KG ||
+            weightPerCableKg > maxWeightPerCableKg + CommandLimits.WEIGHT_TOLERANCE_KG
+        ) {
             return failure(
-                "weightPerCableKg must be ${Constants.MIN_WEIGHT_KG}..${Constants.MAX_WEIGHT_PER_CABLE_KG}kg, got $weightPerCableKg",
+                "weightPerCableKg must be ${Constants.MIN_WEIGHT_KG}..${maxWeightPerCableKg}kg, got $weightPerCableKg",
             )
         }
         return Result.success(Unit)

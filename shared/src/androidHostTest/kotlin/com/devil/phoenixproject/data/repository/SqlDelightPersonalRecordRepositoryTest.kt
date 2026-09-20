@@ -1,6 +1,5 @@
 package com.devil.phoenixproject.data.repository
 
-import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.testutil.createTestDatabase
@@ -18,12 +17,15 @@ class SqlDelightPersonalRecordRepositoryTest {
 
     private lateinit var database: PhoenixDatabase
     private lateinit var repository: SqlDelightPersonalRecordRepository
+    private lateinit var baselineRepository: SqlDelightProfileExerciseBaselineRepository
 
     @Before
     fun setup() {
         database = createTestDatabase()
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
+        baselineRepository = SqlDelightProfileExerciseBaselineRepository(database)
         repository = SqlDelightPersonalRecordRepository(database)
-        insertExerciseIfAbsent(id = "bench", name = "Bench Press")
+        insertExercise(id = "bench", name = "Bench Press")
     }
 
     @Test
@@ -52,6 +54,7 @@ class SqlDelightPersonalRecordRepositoryTest {
 
     @Test
     fun `updatePRsIfBetter uses achieved load for weight PR and conservative load for volume PR`() = runTest {
+        baselineRepository.set("default", "bench", 42.25f, updatedAt = 500L)
         repository.updatePRsIfBetter(
             exerciseId = "bench",
             weightPRWeightPerCableKg = 60f,
@@ -64,59 +67,14 @@ class SqlDelightPersonalRecordRepositoryTest {
 
         val weightPr = repository.getWeightPR("bench", "Old School", profileId = "default")
         val volumePr = repository.getVolumePR("bench", "Old School", profileId = "default")
-        val exercise = database.phoenixDatabaseQueries.selectExerciseById(
-            "bench",
-        ).executeAsOneOrNull()
+        val baseline = baselineRepository.get("default", "bench")
 
         assertEquals(60f, weightPr?.weightPerCableKg)
         assertEquals(300f, weightPr?.volume)
         assertEquals(50f, volumePr?.weightPerCableKg)
         assertEquals(250f, volumePr?.volume)
-        // A PR save writes no training max at all (migration 49): not the legacy global
-        // column, and not a row for any profile.
-        assertNull(exercise?.one_rep_max_kg)
-        assertEquals(
-            0L,
-            database.phoenixDatabaseQueries.countTrainingMaxRowsForTest().executeAsOne(),
-        )
-    }
-
-    @Test
-    fun `a PR save leaves a manually set training max alone, for every profile`() = runTest {
-        seedProfile("alice")
-        seedProfile("bob")
-        val exercises = SqlDelightExerciseRepository(
-            database,
-            ExerciseImporter(database),
-            com.devil.phoenixproject.testutil.FakePreferencesManager(),
-        )
-        // Alice typed 80 kg as her 5/3/1 training max.
-        exercises.setTrainingMax("bench", "alice", 80f, TrainingMaxSource.MANUAL)
-
-        // Bob then breaks a PR whose hybrid estimate (112.5) is far above it, on the same
-        // shared catalogue row. Before migration 49 this overwrote the one global value.
-        repository.updatePRsIfBetter(
-            exerciseId = "bench",
-            weightPRWeightPerCableKg = 100f,
-            volumePRWeightPerCableKg = 100f,
-            reps = 5,
-            workoutMode = "Old School",
-            timestamp = 2000L,
-            profileId = "bob",
-        ).getOrThrow()
-
-        assertEquals(80f, exercises.getTrainingMax("bench", "alice"))
-        assertNull(exercises.getTrainingMax("bench", "bob"))
-    }
-
-    private fun seedProfile(id: String) {
-        database.phoenixDatabaseQueries.insertUserProfileIgnore(
-            id = id,
-            name = id,
-            colorIndex = 0L,
-            createdAt = 0L,
-            isActive = 0L,
-        )
+        assertEquals(42.25f, baseline?.oneRepMaxPerCableKg, "saving a PR must not overwrite the explicit baseline")
+        assertEquals(1L, baseline?.revision)
     }
 
     @Test
@@ -187,19 +145,20 @@ class SqlDelightPersonalRecordRepositoryTest {
     /**
      * Issue #319: Proves that db.transaction {} in updatePRsIfBetterInternal is atomic.
      *
-     * Strategy: Install a SQLite trigger that makes the 1RM-sync UPDATE fail AFTER
-     * the weight-PR and volume-PR upserts have already executed inside the same
-     * transaction. If the transaction is truly atomic, the PR upserts are rolled
-     * back and the database remains clean.
+     * Strategy: Install a SQLite trigger that makes the volume-PR insert fail after
+     * the weight-PR upsert has executed in the same transaction. If the transaction
+     * is truly atomic, the weight PR is rolled back and the database remains clean.
      */
     @Test
     fun `Issue 319 transaction rollback prevents partial PR writes when downstream write fails`() = runTest {
         // Create a dedicated database with driver reference for raw SQL trigger injection
         val driver = createTestDriver()
         val testDb = PhoenixDatabase(driver)
+        testDb.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
+        val testBaselineRepository = SqlDelightProfileExerciseBaselineRepository(testDb)
         val testRepo = SqlDelightPersonalRecordRepository(testDb)
 
-        testDb.phoenixDatabaseQueries.insertExerciseIfAbsent(
+        testDb.phoenixDatabaseQueries.insertExercise(
             id = "squat", name = "Squat", displayName = null, description = null,
             created = 0L, muscleGroup = "Legs", muscleGroups = "Legs",
             muscles = null, equipment = "BAR", movement = null,
@@ -207,17 +166,16 @@ class SqlDelightPersonalRecordRepositoryTest {
             minRepRange = null, popularity = 0.0, archived = 0L,
             isFavorite = 0L, isCustom = 0L, timesPerformed = 0L,
             lastPerformed = null, aliases = null, defaultCableConfig = "DOUBLE",
-            mvtOverrideMs = null, isBodyweight = null,
+            one_rep_max_kg = null, mvtOverrideMs = null,
+            isBodyweight = null,
         )
 
-        // Trigger fires on the volume-PR upsert, i.e. the SECOND write in the transaction,
-        // after the weight-PR upsert has already executed. (It used to fire on the 1RM sync,
-        // a third write that migration 49 removed: a PR save no longer touches any 1RM.)
+        // Trigger fires on the second PR write, after the weight PR was inserted.
         driver.execute(
             null,
             "CREATE TRIGGER fail_volume_pr BEFORE INSERT ON PersonalRecord " +
                 "WHEN NEW.prType = 'MAX_VOLUME' " +
-                "BEGIN SELECT RAISE(ABORT, 'Issue 319: simulated downstream failure'); END",
+                "BEGIN SELECT RAISE(ABORT, 'Issue 319: simulated volume PR failure'); END",
             0,
         )
 
@@ -234,7 +192,7 @@ class SqlDelightPersonalRecordRepositoryTest {
         )
 
         // The trigger should have caused the entire transaction to roll back
-        assertTrue(result.isFailure, "Expected Result.failure from the simulated downstream crash")
+        assertTrue(result.isFailure, "Expected Result.failure from simulated 1RM sync crash")
 
         // CRITICAL: Neither PR should exist — both upserts rolled back
         assertNull(
@@ -246,9 +204,10 @@ class SqlDelightPersonalRecordRepositoryTest {
             "Volume PR must not survive a rolled-back transaction",
         )
 
-        // Exercise 1RM should remain null (trigger prevented the UPDATE)
-        val exercise = testDb.phoenixDatabaseQueries.selectExerciseById("squat").executeAsOneOrNull()
-        assertNull(exercise?.one_rep_max_kg, "Exercise 1RM should still be null after rollback")
+        assertNull(
+            testBaselineRepository.get("default", "squat"),
+            "Scoped baseline should still be absent after rollback",
+        )
 
         // Positive control: remove trigger, verify the exact same call now succeeds
         driver.execute(null, "DROP TRIGGER fail_volume_pr", 0)
@@ -266,6 +225,10 @@ class SqlDelightPersonalRecordRepositoryTest {
         assertNotNull(
             testRepo.getWeightPR("squat", "Old School", profileId = "default"),
             "Weight PR should exist after successful write",
+        )
+        assertNull(
+            testBaselineRepository.get("default", "squat"),
+            "saving a PR must not create a training baseline",
         )
     }
 
@@ -354,8 +317,8 @@ class SqlDelightPersonalRecordRepositoryTest {
         assertEquals(90f, replacementPr.weightPerCableKg)
     }
 
-    private fun insertExerciseIfAbsent(id: String, name: String) {
-        database.phoenixDatabaseQueries.insertExerciseIfAbsent(
+    private fun insertExercise(id: String, name: String) {
+        database.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = name,
             displayName = null,
@@ -378,6 +341,7 @@ class SqlDelightPersonalRecordRepositoryTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
+            one_rep_max_kg = null,
             mvtOverrideMs = null,
             isBodyweight = null,
         )

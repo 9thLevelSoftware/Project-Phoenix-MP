@@ -226,26 +226,16 @@ class HistoryManager(
     }
 
     /**
-     * Issue #591 follow-up (chatgpt-codex-connector P2): delete every
-     * WorkoutSession row belonging to this routine session so the
-     * zero-rep / ghost rows hidden by `getHistoryVisibleSessions`
+     * Issue #591 follow-up (chatgpt-codex-connector P2): soft-delete
+     * every WorkoutSession row belonging to this routine session so
+     * the zero-rep / ghost rows hidden by `getHistoryVisibleSessions`
      * do not survive the History "Delete All Sets" affordance.
      */
-    fun deleteRoutineWorkouts(routineSessionId: String) {
-        scope.launch { workoutRepository.deleteSessionsByRoutineSessionId(routineSessionId) }
+    fun deleteRoutineWorkouts(profileId: String, routineSessionId: String) {
+        scope.launch { workoutRepository.deleteSessionsByRoutineSessionId(profileId, routineSessionId) }
     }
 
-    /**
-     * "Delete All Workouts" deletes the ACTIVE profile's history only
-     * (user decision A-009). The history this manager shows is scoped the
-     * same way, so a wipe can never reach a profile the user isn't looking at.
-     */
-    fun deleteAllWorkouts() {
-        // Same null fallback as every read path in this class and as
-        // MainViewModel.activeProfileName, which is the name the confirm dialog shows.
-        // Diverging would let the user confirm "Delete all workouts for Default?" over the
-        // default profile's history and then silently delete nothing.
-        val profileId = userProfileRepository.activeProfile.value?.id ?: "default"
-        scope.launch { workoutRepository.deleteAllSessionsForProfile(profileId) }
+    fun deleteAllWorkouts(profileId: String) {
+        scope.launch { workoutRepository.deleteAllSessions(profileId) }
     }
 }

@@ -159,7 +159,7 @@ class ProfileQaSeeder(
         sessionIds(profileKey).forEach { sessionId ->
             repMetricRepository.deleteRepMetrics(sessionId)
             // Fixture cleanup, not a user deletion: no tombstone.
-            workoutRepository.discardSession(sessionId)
+            workoutRepository.discardSessionInternal(sessionId)
         }
         personalRecordRepository.getAllPRsForExercise(exerciseId, profileId)
             .filter { it.workoutMode == WORKOUT_MODE }
@@ -206,9 +206,6 @@ class ProfileQaSeeder(
         }
     }
 
-    // No try/finally restoring a catalogue 1RM any more: a PR save no longer writes a
-    // training max at all (migration 49 made it per profile), so seeding PRs leaves
-    // nothing to put back.
     private suspend fun seedPersonalRecords(
         profileId: String,
         exerciseId: String,

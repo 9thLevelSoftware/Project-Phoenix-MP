@@ -1,8 +1,7 @@
 package com.devil.phoenixproject.domain.usecase
 
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.TrainingMaxSource
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.CycleDay
@@ -14,7 +13,7 @@ import com.devil.phoenixproject.domain.model.computeFiveThreeOneSetWeightsForWee
 class RegenerateFiveThreeOneRoutinesUseCase(
     private val trainingCycleRepository: TrainingCycleRepository,
     private val workoutRepository: WorkoutRepository,
-    private val exerciseRepository: ExerciseRepository,
+    private val baselineRepository: ProfileExerciseBaselineRepository,
 ) {
     suspend fun execute(cycleId: String, targetWeek: Int, bumpTrainingMax: Boolean): Boolean {
         val cycle = trainingCycleRepository.getCycleById(cycleId) ?: return false
@@ -88,31 +87,23 @@ class RegenerateFiveThreeOneRoutinesUseCase(
         if (bumpTrainingMax) {
             for (canonicalId in matchedLiftIds) {
                 val exerciseId = storedLiftIdsByCanonical[canonicalId] ?: canonicalId
-                val exercise = exerciseRepository.getExerciseById(exerciseId)
-                if (exercise == null) {
-                    Logger.w { "5/3/1 TM bump skipped missing exercise row: exerciseId=$exerciseId" }
-                    continue
-                }
-
-                // Per profile (migration 49): the bump moves the cycle owner's training
-                // max, never the one another household member set for the same lift.
-                val currentOneRepMax = exerciseRepository.getTrainingMax(exerciseId, cycle.profileId)
-                if (currentOneRepMax == null) {
-                    Logger.w { "5/3/1 TM bump skipped missing training max: exerciseId=$exerciseId" }
-                    continue
-                }
-
                 val bump = if (canonicalId in FiveThreeOneRoutineDetector.UPPER_LIFT_IDS) {
                     UPPER_ONE_REP_MAX_BUMP_KG
                 } else {
                     LOWER_ONE_REP_MAX_BUMP_KG
                 }
-                exerciseRepository.setTrainingMax(
-                    exerciseId = exerciseId,
+                val incremented = baselineRepository.increment(
                     profileId = cycle.profileId,
-                    oneRepMaxKg = currentOneRepMax + bump,
-                    source = TrainingMaxSource.CYCLE_BUMP,
+                    exerciseId = exerciseId,
+                    incrementKg = bump,
+                    updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
                 )
+                if (incremented == null) {
+                    Logger.w {
+                        "5/3/1 TM bump skipped null scoped baseline: " +
+                            "profileId=${cycle.profileId} exerciseId=$exerciseId"
+                    }
+                }
             }
         }
 

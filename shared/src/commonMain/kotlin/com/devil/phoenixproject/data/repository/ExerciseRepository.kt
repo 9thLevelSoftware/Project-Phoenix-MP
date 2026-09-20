@@ -123,41 +123,6 @@ interface ExerciseRepository {
      */
     suspend fun deleteCustomExercise(exerciseId: String): Result<Unit>
 
-    // ========== Training Max (stored 1RM) — per profile ==========
-    //
-    // The exercise catalogue is shared between profiles, so the training max is NOT a
-    // property of the exercise: it lives in ExerciseTrainingMax, keyed by
-    // (exercise, profile) (migration 49). Every read and write goes through these two
-    // methods, and `Exercise` carries no 1RM field, so one household member's PRs can
-    // never move another member's commanded load.
-
-    /**
-     * The profile's stored training max for an exercise, or null when it has none.
-     * @param exerciseId Exercise ID
-     * @param profileId Profile the value belongs to
-     */
-    suspend fun getTrainingMax(exerciseId: String, profileId: String): Float?
-
-    /**
-     * Write the profile's training max, or clear it with a null value.
-     * @param source where the number came from, for diagnostics
-     */
-    suspend fun setTrainingMax(
-        exerciseId: String,
-        profileId: String,
-        oneRepMaxKg: Float?,
-        source: TrainingMaxSource,
-    )
-
-    /**
-     * A pre-migration-49 stored 1RM whose owner could not be determined, and which no
-     * profile has claimed yet. Null once any profile holds a training max for the
-     * exercise. No baseline ever uses this value — it is only offered to the active
-     * profile as a one-time claim prompt, because assigning it by guess is exactly the
-     * cross-profile leak migration 49 exists to close.
-     */
-    suspend fun getUnassignedLegacyTrainingMax(exerciseId: String): Float?
-
     /**
      * Find an exercise by its exact name
      * @param name Exercise name (case-sensitive)
@@ -173,22 +138,4 @@ interface ExerciseRepository {
      * @return Exercise or null if all strategies fail
      */
     suspend fun findByIdOrName(id: String?, name: String): Exercise?
-}
-
-/** Where a stored training max came from. Diagnostic only; no logic branches on it. */
-enum class TrainingMaxSource {
-    /** Typed by the user (5/3/1 setup, exercise config). */
-    MANUAL,
-
-    /** Written by a completed load-velocity assessment. */
-    ASSESSMENT,
-
-    /** The 5/3/1 week rollover's automatic training-max bump. */
-    CYCLE_BUMP,
-
-    /** A profile claimed an unattributable pre-migration-49 value. */
-    CLAIMED_LEGACY,
-
-    /** Copied from the legacy global column by migration 49 or its post-open repair. */
-    LEGACY_MIGRATION,
 }

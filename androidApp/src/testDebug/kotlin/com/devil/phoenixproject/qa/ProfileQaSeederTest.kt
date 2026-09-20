@@ -60,6 +60,16 @@ class ProfileQaSeederTest {
     }
 
     @Test
+    fun `fixture PR writes seed independent profile baselines`() = runTest {
+        val fixture = SeederFixture()
+
+        val result = fixture.seeder().seed()
+
+        assertTrue(fixture.scopedBaselines.getValue(result.profileAId to "bench-press") > 0f)
+        assertTrue(fixture.scopedBaselines.getValue(result.profileBId to "bench-press") > 0f)
+    }
+
+    @Test
     fun `two seed runs reuse exact profiles and leave five fixed completed sessions each`() = runTest {
         val fixture = SeederFixture()
         val seeder = fixture.seeder()
@@ -248,6 +258,7 @@ class ProfileQaSeederTest {
         val personalRecords = mutableListOf<PersonalRecord>()
         val assessments = mutableListOf<AssessmentResultEntity>()
         val velocity = mutableListOf<VelocityOneRepMaxEntity>()
+        val scopedBaselines = mutableMapOf<Pair<String, String>, Float>()
 
         private var nextProfile = 1
         private var nextPr = 1L
@@ -299,7 +310,7 @@ class ProfileQaSeederTest {
             }
             coEvery { workouts.deleteSession(any()) } coAnswers { sessions.remove(firstArg()) }
             // Fixture cleanup discards rows instead of tombstoning them.
-            coEvery { workouts.discardSession(any()) } coAnswers { sessions.remove(firstArg()) }
+            coEvery { workouts.discardSessionInternal(any()) } coAnswers { sessions.remove(firstArg()) }
             coEvery { workouts.saveSession(any()) } coAnswers {
                 val session = firstArg<WorkoutSession>()
                 sessions[session.id] = session
@@ -356,8 +367,13 @@ class ProfileQaSeederTest {
                 }
                 replace(PRType.MAX_WEIGHT, weightForWeightPr, weightForWeightPr * reps)
                 replace(PRType.MAX_VOLUME, weightForVolumePr, weightForVolumePr * reps)
-                // A PR save deliberately writes no training max (migration 49): the stored
-                // max is per profile and the user owns it.
+                if (broken.isNotEmpty()) {
+                    val key = profileId to exerciseId
+                    scopedBaselines[key] = maxOf(
+                        scopedBaselines[key] ?: 0f,
+                        OneRepMaxCalculator.estimate(weightForWeightPr, reps),
+                    )
+                }
                 Result.success(broken)
             }
 

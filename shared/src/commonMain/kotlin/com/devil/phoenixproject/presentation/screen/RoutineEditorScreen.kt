@@ -86,6 +86,7 @@ import com.devil.phoenixproject.presentation.components.SupersetHeader
 import com.devil.phoenixproject.presentation.components.SupersetPickerDialog
 import com.devil.phoenixproject.presentation.routine.buildDefaultRoutineExerciseForEditor
 import com.devil.phoenixproject.ui.theme.SupersetTheme
+import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.UnitConverter
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
@@ -879,6 +880,9 @@ fun RoutineEditorScreen(
             },
             rackItems = rackItems,
             weightStepOverride = userPreferences.effectiveWeightIncrementKg, // Issue #266/#410
+            planningMaxWeightPerCableKg = CommandLimits.planningMaxWeightPerCableKg(
+                userPreferences.lastConnectedModel,
+            ),
             onSave = { configuredExercise ->
                 if (isNewExercise) {
                     updateExercises(state.exercises + configuredExercise)

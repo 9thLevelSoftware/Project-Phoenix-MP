@@ -9,7 +9,6 @@ import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.currentTimeMillis
-import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -48,7 +47,7 @@ class SqlDelightExerciseRepository(
         lastPerformed: Long?,
         aliases: String?,
         defaultCableConfig: String,
-        one_rep_max_kg: Double?,
+        @Suppress("UNUSED_PARAMETER") one_rep_max_kg: Double?,
         // Sync fields (migration 11)
         updatedAt: Long?,
         serverId: String?,
@@ -180,14 +179,10 @@ class SqlDelightExerciseRepository(
 
     override suspend fun createCustomExercise(exercise: Exercise): Result<Exercise> = withContext(Dispatchers.IO) {
         try {
-            // A UUID, not a timestamp: the insert is INSERT OR IGNORE (INSERT OR REPLACE
-            // would CASCADE-delete every profile's training max for the row it replaced),
-            // so two creates in the same millisecond used to leave the second un-inserted
-            // while still returning success with an id describing a different exercise
-            // (review R-3/R-8/R-30).
-            val customId = "custom_${generateUUID()}"
+            // Generate a unique ID for custom exercises
+            val customId = "custom_${currentTimeMillis()}"
 
-            queries.insertExerciseIfAbsent(
+            queries.insertExercise(
                 id = customId,
                 name = exercise.name,
                 displayName = null, // Custom exercises use name directly
@@ -210,6 +205,7 @@ class SqlDelightExerciseRepository(
                 lastPerformed = null,
                 aliases = null,
                 defaultCableConfig = "DOUBLE", // Legacy field - no longer used
+                one_rep_max_kg = null,
                 mvtOverrideMs = exercise.mvtOverrideMs?.toDouble(),
                 // Custom exercises carry no explicit flag; classification derives from
                 // their equipment token (HANDLES/BODYWEIGHT set by CreateExerciseDialog).
@@ -261,6 +257,9 @@ class SqlDelightExerciseRepository(
                     minRepRange = null,
                     aliases = null,
                     defaultCableConfig = "DOUBLE", // Legacy field - no longer used
+                    // Legacy-only recovery value. Ordinary exercise edits must preserve it
+                    // until the required baseline repair explicitly consumes it.
+                    one_rep_max_kg = existing.one_rep_max_kg,
                     id = exerciseId,
                 )
 
@@ -298,49 +297,6 @@ class SqlDelightExerciseRepository(
                 Result.failure(e)
             }
         }
-    }
-
-    // ========== Training Max (stored 1RM) — per profile ==========
-
-    override suspend fun getTrainingMax(exerciseId: String, profileId: String): Float? = withContext(Dispatchers.IO) {
-        queries.selectTrainingMax(exerciseId = exerciseId, profileId = profileId)
-            .executeAsOneOrNull()
-            ?.toFloat()
-    }
-
-    override suspend fun setTrainingMax(
-        exerciseId: String,
-        profileId: String,
-        oneRepMaxKg: Float?,
-        source: TrainingMaxSource,
-    ) {
-        withContext(Dispatchers.IO) {
-            if (oneRepMaxKg == null || oneRepMaxKg <= 0f) {
-                queries.deleteTrainingMax(exerciseId = exerciseId, profileId = profileId)
-            } else {
-                queries.upsertTrainingMax(
-                    exerciseId = exerciseId,
-                    profileId = profileId,
-                    oneRepMaxKg = oneRepMaxKg.toDouble(),
-                    source = source.name,
-                    updatedAt = currentTimeMillis(),
-                )
-            }
-        }
-    }
-
-    override suspend fun getUnassignedLegacyTrainingMax(exerciseId: String): Float? = withContext(Dispatchers.IO) {
-        // Nothing is offered until the repair has run: before that the owner rule has not
-        // had its chance, so a value it *would* attribute to one profile would be handed to
-        // whoever opens the editor first (review R-20). The repair also clears the legacy
-        // column for the values it did attribute, so what is left here is genuinely
-        // unattributable.
-        if (!preferencesManager.isTrainingMaxBackfillComplete()) {
-            return@withContext null
-        }
-        queries.selectUnassignedLegacyTrainingMax(exerciseId)
-            .executeAsOneOrNull()
-            ?.toFloat()
     }
 
     override suspend fun findByName(name: String): Exercise? = withContext(Dispatchers.IO) {

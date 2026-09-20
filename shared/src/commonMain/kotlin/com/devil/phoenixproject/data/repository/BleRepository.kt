@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.data.ble.DiagnosticPacket
 import com.devil.phoenixproject.domain.model.ConnectionState
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -175,9 +176,17 @@ interface BleRepository {
     suspend fun setColorScheme(schemeIndex: Int): Result<Unit>
     suspend fun sendWorkoutCommand(command: ByteArray): Result<Unit>
 
+    /**
+     * Model of the currently connected trainer, or null when not connected.
+     *
+     * Per-cable ceilings differ per model, so this is what bounds every machine command
+     * (see [com.devil.phoenixproject.util.CommandLimits]). Detected at connect time from
+     * the advertised device name.
+     */
+    val connectedModel: PhoenixModel?
+        get() = (connectionState.value as? ConnectionState.Connected)?.hardwareModel
+
     // High-level workout control (parity with parent repo)
-    suspend fun sendInitSequence(): Result<Unit>
-    suspend fun startWorkout(params: com.devil.phoenixproject.domain.model.WorkoutParameters): Result<Unit>
     suspend fun stopWorkout(): Result<Unit>
 
     /**

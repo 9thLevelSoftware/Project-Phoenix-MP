@@ -42,7 +42,7 @@ fun PhoenixDatabase.seedExercise(
     isCustom: Boolean = false,
 ) {
     if (phoenixDatabaseQueries.selectExerciseById(id).executeAsOneOrNull() != null) return
-    phoenixDatabaseQueries.insertExerciseIfAbsent(
+    phoenixDatabaseQueries.insertExercise(
         id = id,
         name = name,
         displayName = null,
@@ -65,6 +65,7 @@ fun PhoenixDatabase.seedExercise(
         lastPerformed = null,
         aliases = null,
         defaultCableConfig = "DOUBLE",
+        one_rep_max_kg = null,
         mvtOverrideMs = null,
         isBodyweight = null,
     )

@@ -14,7 +14,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
-import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runCurrent
@@ -25,6 +24,7 @@ import org.junit.Test
 class SqlDelightAssessmentRepositoryTest {
     private lateinit var database: PhoenixDatabase
     private lateinit var exerciseRepository: SqlDelightExerciseRepository
+    private lateinit var baselineRepository: SqlDelightProfileExerciseBaselineRepository
     private lateinit var workoutRepository: SqlDelightWorkoutRepository
     private lateinit var repository: SqlDelightAssessmentRepository
 
@@ -37,21 +37,15 @@ class SqlDelightAssessmentRepositoryTest {
             com.devil.phoenixproject.testutil.FakePreferencesManager(),
         )
         workoutRepository = SqlDelightWorkoutRepository(database, exerciseRepository)
+        baselineRepository = SqlDelightProfileExerciseBaselineRepository(database)
         repository = SqlDelightAssessmentRepository(
             database,
             workoutRepository,
-            exerciseRepository,
+            baselineRepository,
         )
-        insertExerciseIfAbsent(id = "bench-press", name = "Bench Press")
-        // ExerciseTrainingMax has an FK to UserProfile (migration 49) and the test DB runs
-        // with foreign keys ON, so the profile these tests write for has to exist.
-        database.phoenixDatabaseQueries.insertUserProfileIgnore(
-            id = ATHLETE,
-            name = "Athlete A",
-            colorIndex = 0L,
-            createdAt = 0L,
-            isActive = 0L,
-        )
+        database.phoenixDatabaseQueries.insertProfile("athlete-a", "Athlete A", 0L, 1L, 1L)
+        database.phoenixDatabaseQueries.insertProfile("athlete-b", "Athlete B", 1L, 2L, 0L)
+        insertExercise(id = "bench-press", name = "Bench Press")
     }
 
     @Test
@@ -60,19 +54,19 @@ class SqlDelightAssessmentRepositoryTest {
             val sessionId = repository.saveSessionForTest(
                 estimatedOneRepMaxKg = 100f,
                 userOverrideKg = null,
-                profileId = ATHLETE,
+                profileId = "athlete-a",
             )
 
             val session = workoutRepository.getSession(sessionId)
-            val assessment = repository.getLatestAssessment("bench-press", ATHLETE)
-            assertEquals(ATHLETE, session?.profileId)
+            val assessment = repository.getLatestAssessment("bench-press", "athlete-a")
+            assertEquals("athlete-a", session?.profileId)
             assertEquals(30f, session?.weightPerCableKg)
             assertEquals(100f, assessment?.estimatedOneRepMaxKg)
             assertNull(assessment?.userOverrideKg)
             assertEquals(sessionId, assessment?.assessmentSessionId)
             assertEquals(
                 50f,
-                exerciseRepository.getTrainingMax("bench-press", ATHLETE),
+                baselineRepository.get("athlete-a", "bench-press")?.oneRepMaxPerCableKg,
             )
         }
 
@@ -82,16 +76,16 @@ class SqlDelightAssessmentRepositoryTest {
             val sessionId = repository.saveSessionForTest(
                 estimatedOneRepMaxKg = 100f,
                 userOverrideKg = 120f,
-                profileId = ATHLETE,
+                profileId = "athlete-a",
             )
 
-            val assessment = repository.getLatestAssessment("bench-press", ATHLETE)
+            val assessment = repository.getLatestAssessment("bench-press", "athlete-a")
             assertEquals(100f, assessment?.estimatedOneRepMaxKg)
             assertEquals(120f, assessment?.userOverrideKg)
             assertEquals(sessionId, assessment?.assessmentSessionId)
             assertEquals(
                 60f,
-                exerciseRepository.getTrainingMax("bench-press", ATHLETE),
+                baselineRepository.get("athlete-a", "bench-press")?.oneRepMaxPerCableKg,
             )
         }
 
@@ -103,7 +97,7 @@ class SqlDelightAssessmentRepositoryTest {
             loadVelocityDataJson = "[]",
             sessionId = null,
             userOverrideKg = null,
-            profileId = ATHLETE,
+            profileId = "athlete-a",
         )
         repository.saveAssessment(
             exerciseId = "bench-press",
@@ -116,7 +110,7 @@ class SqlDelightAssessmentRepositoryTest {
 
         assertEquals(
             100f,
-            repository.getLatestAssessment("bench-press", ATHLETE)
+            repository.getLatestAssessment("bench-press", "athlete-a")
                 ?.estimatedOneRepMaxKg,
         )
         assertEquals(
@@ -147,183 +141,185 @@ class SqlDelightAssessmentRepositoryTest {
     }
 
     @Test
-    fun `ordinary post-write failure removes rows and restores prior per-cable 1RM`() =
+    fun `failure before atomic baseline write removes session and result rows`() =
         runTest {
-            exerciseRepository.setTrainingMax("bench-press", ATHLETE, 40f, TrainingMaxSource.MANUAL)
+            baselineRepository.set("athlete-a", "bench-press", 40f, 1L)
             val failure = IllegalStateException("test failure")
             val failingRepository = repositoryWithExerciseUpdate(
                 afterDelegateUpdate = { throw failure },
             )
 
             val thrown = assertFailsWith<IllegalStateException> {
-                failingRepository.saveSessionForTest(profileId = ATHLETE)
+                failingRepository.saveSessionForTest(profileId = "athlete-a")
             }
 
             assertEquals(failure::class, thrown::class)
             assertEquals(failure.message, thrown.message)
-            assertEquals(emptyList(), workoutRepository.getAllSessions(ATHLETE).first())
-            assertNull(repository.getLatestAssessment("bench-press", ATHLETE))
+            assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
+            assertNull(repository.getLatestAssessment("bench-press", "athlete-a"))
             assertEquals(
                 40f,
-                exerciseRepository.getTrainingMax("bench-press", ATHLETE),
+                baselineRepository.get("athlete-a", "bench-press")?.oneRepMaxPerCableKg,
             )
         }
 
     @Test
     fun `pre-exercise-write failure does not restore over a newer value`() = runTest {
-        exerciseRepository.setTrainingMax("bench-press", ATHLETE, 40f, TrainingMaxSource.MANUAL)
+        baselineRepository.set("athlete-a", "bench-press", 40f, 1L)
         val failingWorkoutRepository = object : WorkoutRepository by workoutRepository {
             override suspend fun saveSession(session: WorkoutSession) {
-                exerciseRepository.setTrainingMax("bench-press", ATHLETE, 55f, TrainingMaxSource.MANUAL)
+                baselineRepository.set("athlete-a", "bench-press", 55f, 2L)
                 throw IllegalStateException("pre-write failure")
             }
         }
         val failingRepository = SqlDelightAssessmentRepository(
             database,
             failingWorkoutRepository,
-            exerciseRepository,
+            baselineRepository,
         )
 
         assertFailsWith<IllegalStateException> {
-            failingRepository.saveSessionForTest(profileId = ATHLETE)
+            failingRepository.saveSessionForTest(profileId = "athlete-a")
         }
 
         assertEquals(
             55f,
-            exerciseRepository.getTrainingMax("bench-press", ATHLETE),
+            baselineRepository.get("athlete-a", "bench-press")?.oneRepMaxPerCableKg,
         )
-        assertNull(repository.getLatestAssessment("bench-press", ATHLETE))
+        assertNull(repository.getLatestAssessment("bench-press", "athlete-a"))
     }
 
     @Test
-    fun `compensation snapshots the value immediately before the exercise write`() = runTest {
-        exerciseRepository.setTrainingMax("bench-press", ATHLETE, 40f, TrainingMaxSource.MANUAL)
+    fun `failure before atomic baseline write preserves a concurrent manual value`() = runTest {
+        baselineRepository.set("athlete-a", "bench-press", 40f, 1L)
         val workoutWithConcurrentManualUpdate = object : WorkoutRepository by workoutRepository {
             override suspend fun saveSession(session: WorkoutSession) {
                 workoutRepository.saveSession(session)
-                exerciseRepository.setTrainingMax("bench-press", ATHLETE, 55f, TrainingMaxSource.MANUAL)
+                baselineRepository.set("athlete-a", "bench-press", 55f, 2L)
             }
         }
-        val failingExerciseRepository = object : ExerciseRepository by exerciseRepository {
-            override suspend fun setTrainingMax(
-                exerciseId: String,
+        val failingBaselineRepository = object : ProfileExerciseBaselineRepository by baselineRepository {
+            override suspend fun writeForAssessment(
                 profileId: String,
-                oneRepMaxKg: Float?,
-                source: TrainingMaxSource,
-            ) {
-                exerciseRepository.setTrainingMax(exerciseId, profileId, oneRepMaxKg, source)
+                exerciseId: String,
+                oneRepMaxPerCableKg: Float,
+                updatedAt: Long,
+            ): AssessmentBaselineWriteReceipt {
                 throw IllegalStateException("post-write failure")
             }
         }
         val failingRepository = SqlDelightAssessmentRepository(
             database,
             workoutWithConcurrentManualUpdate,
-            failingExerciseRepository,
+            failingBaselineRepository,
         )
 
         assertFailsWith<IllegalStateException> {
-            failingRepository.saveSessionForTest(profileId = ATHLETE)
+            failingRepository.saveSessionForTest(profileId = "athlete-a")
         }
 
-        assertEquals(emptyList(), workoutRepository.getAllSessions(ATHLETE).first())
-        assertNull(repository.getLatestAssessment("bench-press", ATHLETE))
+        assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
+        assertNull(repository.getLatestAssessment("bench-press", "athlete-a"))
         assertEquals(
             55f,
-            exerciseRepository.getTrainingMax("bench-press", ATHLETE),
+            baselineRepository.get("athlete-a", "bench-press")?.oneRepMaxPerCableKg,
         )
     }
 
     @Test
-    fun `compare-and-set compensation preserves a newer post-write value`() = runTest {
-        exerciseRepository.setTrainingMax("bench-press", ATHLETE, 40f, TrainingMaxSource.MANUAL)
+    fun `failure before atomic baseline write preserves a newer value`() = runTest {
+        baselineRepository.set("athlete-a", "bench-press", 40f, 1L)
         val failingRepository = repositoryWithExerciseUpdate {
-            exerciseRepository.setTrainingMax("bench-press", ATHLETE, 55f, TrainingMaxSource.MANUAL)
+            baselineRepository.set("athlete-a", "bench-press", 55f, 3L)
             throw IllegalStateException("failure after newer value")
         }
 
         assertFailsWith<IllegalStateException> {
-            failingRepository.saveSessionForTest(profileId = ATHLETE)
+            failingRepository.saveSessionForTest(profileId = "athlete-a")
         }
 
-        assertEquals(emptyList(), workoutRepository.getAllSessions(ATHLETE).first())
-        assertNull(repository.getLatestAssessment("bench-press", ATHLETE))
+        assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
+        assertNull(repository.getLatestAssessment("bench-press", "athlete-a"))
         assertEquals(
             55f,
-            exerciseRepository.getTrainingMax("bench-press", ATHLETE),
+            baselineRepository.get("athlete-a", "bench-press")?.oneRepMaxPerCableKg,
         )
     }
 
     @Test
-    fun `restore precedes suspendable cleanup so a same-value newer write survives`() = runTest {
-        exerciseRepository.setTrainingMax("bench-press", ATHLETE, 40f, TrainingMaxSource.MANUAL)
+    fun `baseline handling precedes internal session discard cleanup`() = runTest {
+        baselineRepository.set("athlete-a", "bench-press", 40f, 1L)
         val deleteSessionReached = CompletableDeferred<Unit>()
         val releaseDeleteSession = CompletableDeferred<Unit>()
+        var userDeleteCalled = false
         val pausingWorkoutRepository = object : WorkoutRepository by workoutRepository {
-            // The rollback discards the session (no tombstone: it was never the user's to
-            // delete), so that is the call this test has to pause on.
-            override suspend fun discardSession(sessionId: String) {
+            override suspend fun deleteSession(sessionId: String) {
+                userDeleteCalled = true
+                workoutRepository.deleteSession(sessionId)
+            }
+
+            override suspend fun discardSessionInternal(sessionId: String) {
                 deleteSessionReached.complete(Unit)
                 releaseDeleteSession.await()
-                workoutRepository.discardSession(sessionId)
+                workoutRepository.discardSessionInternal(sessionId)
             }
         }
-        val failingExerciseRepository = object : ExerciseRepository by exerciseRepository {
-            override suspend fun setTrainingMax(
-                exerciseId: String,
+        val failingBaselineRepository = object : ProfileExerciseBaselineRepository by baselineRepository {
+            override suspend fun writeForAssessment(
                 profileId: String,
-                oneRepMaxKg: Float?,
-                source: TrainingMaxSource,
-            ) {
-                exerciseRepository.setTrainingMax(exerciseId, profileId, oneRepMaxKg, source)
+                exerciseId: String,
+                oneRepMaxPerCableKg: Float,
+                updatedAt: Long,
+            ): AssessmentBaselineWriteReceipt {
                 throw IllegalStateException("post-write failure")
             }
         }
         val failingRepository = SqlDelightAssessmentRepository(
             database,
             pausingWorkoutRepository,
-            failingExerciseRepository,
+            failingBaselineRepository,
         )
         val save = async {
             runCatching {
                 failingRepository.saveSessionForTest(
                     estimatedOneRepMaxKg = 100f,
-                    profileId = ATHLETE,
+                    profileId = "athlete-a",
                 )
             }
         }
 
         deleteSessionReached.await()
-        exerciseRepository.setTrainingMax("bench-press", ATHLETE, 50f, TrainingMaxSource.MANUAL)
+        baselineRepository.set("athlete-a", "bench-press", 50f, 4L)
         releaseDeleteSession.complete(Unit)
         val failure = save.await().exceptionOrNull()
 
         assertEquals(IllegalStateException::class, failure?.let { it::class })
         assertEquals("post-write failure", failure?.message)
-        assertEquals(emptyList(), workoutRepository.getAllSessions(ATHLETE).first())
-        assertNull(repository.getLatestAssessment("bench-press", ATHLETE))
+        assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
+        assertNull(repository.getLatestAssessment("bench-press", "athlete-a"))
+        assertFalse(userDeleteCalled)
         assertEquals(
             50f,
-            exerciseRepository.getTrainingMax("bench-press", ATHLETE),
+            baselineRepository.get("athlete-a", "bench-press")?.oneRepMaxPerCableKg,
         )
     }
 
     @Test
     fun `concurrent failing and successful saves are serialized and keep the successful row`() =
         runTest {
-            exerciseRepository.setTrainingMax("bench-press", ATHLETE, 40f, TrainingMaxSource.MANUAL)
+            baselineRepository.set("athlete-a", "bench-press", 40f, 1L)
             val ioDispatcher = StandardTestDispatcher(testScheduler)
             val updateCount = AtomicInteger(0)
             val firstUpdateReached = CompletableDeferred<Unit>()
             val releaseFirstFailure = CompletableDeferred<Unit>()
             val secondUpdateReached = CompletableDeferred<Unit>()
-            val serializingExerciseRepository = object : ExerciseRepository by exerciseRepository {
-                override suspend fun setTrainingMax(
-                    exerciseId: String,
+            val serializingBaselineRepository = object : ProfileExerciseBaselineRepository by baselineRepository {
+                override suspend fun writeForAssessment(
                     profileId: String,
-                    oneRepMaxKg: Float?,
-                    source: TrainingMaxSource,
-                ) {
-                    exerciseRepository.setTrainingMax(exerciseId, profileId, oneRepMaxKg, source)
+                    exerciseId: String,
+                    oneRepMaxPerCableKg: Float,
+                    updatedAt: Long,
+                ): AssessmentBaselineWriteReceipt {
                     when (updateCount.incrementAndGet()) {
                         1 -> {
                             firstUpdateReached.complete(Unit)
@@ -332,19 +328,25 @@ class SqlDelightAssessmentRepositoryTest {
                         }
                         2 -> secondUpdateReached.complete(Unit)
                     }
+                    return baselineRepository.writeForAssessment(
+                        profileId,
+                        exerciseId,
+                        oneRepMaxPerCableKg,
+                        updatedAt,
+                    )
                 }
             }
             val serializingRepository = SqlDelightAssessmentRepository(
                 database,
                 workoutRepository,
-                serializingExerciseRepository,
+                serializingBaselineRepository,
                 ioDispatcher,
             )
             val first = async {
                 runCatching {
                     serializingRepository.saveSessionForTest(
                         estimatedOneRepMaxKg = 100f,
-                        profileId = ATHLETE,
+                        profileId = "athlete-a",
                     )
                 }
             }
@@ -353,7 +355,7 @@ class SqlDelightAssessmentRepositoryTest {
             val second = async {
                 serializingRepository.saveSessionForTest(
                     estimatedOneRepMaxKg = 120f,
-                    profileId = ATHLETE,
+                    profileId = "athlete-a",
                 )
             }
             runCurrent()
@@ -369,14 +371,14 @@ class SqlDelightAssessmentRepositoryTest {
 
             assertEquals(
                 listOf(successfulSessionId),
-                workoutRepository.getAllSessions(ATHLETE).first().map { it.id },
+                workoutRepository.getAllSessions("athlete-a").first().map { it.id },
             )
-            val assessment = repository.getLatestAssessment("bench-press", ATHLETE)
+            val assessment = repository.getLatestAssessment("bench-press", "athlete-a")
             assertEquals(successfulSessionId, assessment?.assessmentSessionId)
             assertEquals(120f, assessment?.estimatedOneRepMaxKg)
             assertEquals(
                 60f,
-                exerciseRepository.getTrainingMax("bench-press", ATHLETE),
+                baselineRepository.get("athlete-a", "bench-press")?.oneRepMaxPerCableKg,
             )
         }
 
@@ -392,7 +394,7 @@ class SqlDelightAssessmentRepositoryTest {
         }
         val failingSession = async {
             runCatching {
-                failingRepository.saveSessionForTest(profileId = ATHLETE)
+                failingRepository.saveSessionForTest(profileId = "athlete-a")
             }
         }
         runCurrent()
@@ -404,7 +406,7 @@ class SqlDelightAssessmentRepositoryTest {
                 loadVelocityDataJson = "[]",
                 sessionId = null,
                 userOverrideKg = null,
-                profileId = ATHLETE,
+                profileId = "athlete-a",
             )
         }
         runCurrent()
@@ -417,7 +419,7 @@ class SqlDelightAssessmentRepositoryTest {
         assertEquals(IllegalStateException::class, sessionFailure?.let { it::class })
         assertEquals("session save fails", sessionFailure?.message)
         val rawId = rawSave.await()
-        val remaining = repository.getAssessmentsByExercise("bench-press", ATHLETE).first()
+        val remaining = repository.getAssessmentsByExercise("bench-press", "athlete-a").first()
         assertEquals(listOf(rawId), remaining.map { it.id })
         assertEquals(135f, remaining.single().estimatedOneRepMaxKg)
         assertNull(remaining.single().assessmentSessionId)
@@ -427,8 +429,8 @@ class SqlDelightAssessmentRepositoryTest {
     fun `sixteen concurrent raw saves return IDs for their own exercise rows`() = runTest {
         val calls = (0 until 16).map { index ->
             val exerciseId = "raw-exercise-$index"
-            insertExerciseIfAbsent(id = exerciseId, name = "Raw Exercise $index")
-            Triple(exerciseId, ATHLETE, 100f + index)
+            insertExercise(id = exerciseId, name = "Raw Exercise $index")
+            Triple(exerciseId, "athlete-a", 100f + index)
         }
 
         val saves = calls.map { (exerciseId, profileId, estimateKg) ->
@@ -447,7 +449,7 @@ class SqlDelightAssessmentRepositoryTest {
 
         assertEquals(16, saves.map { it.third }.distinct().size)
         saves.forEach { (exerciseId, estimateKg, returnedId) ->
-            val row = repository.getLatestAssessment(exerciseId, ATHLETE)
+            val row = repository.getLatestAssessment(exerciseId, "athlete-a")
             assertEquals(returnedId, row?.id, exerciseId)
             assertEquals(estimateKg, row?.estimatedOneRepMaxKg, exerciseId)
         }
@@ -456,53 +458,114 @@ class SqlDelightAssessmentRepositoryTest {
     @Test
     fun `real child cancellation runs non-cancellable compensation and escapes unchanged`() =
         runTest {
-            exerciseRepository.setTrainingMax("bench-press", ATHLETE, 40f, TrainingMaxSource.MANUAL)
-            val exerciseWriteApplied = CompletableDeferred<Unit>()
+            baselineRepository.set("athlete-a", "bench-press", 40f, 1L)
+            val baselineWriteEntered = CompletableDeferred<Unit>()
+            val releaseBaselineWrite = CompletableDeferred<Unit>()
             val cancellingRepository = repositoryWithExerciseUpdate {
-                exerciseWriteApplied.complete(Unit)
-                awaitCancellation()
+                baselineWriteEntered.complete(Unit)
+                releaseBaselineWrite.await()
             }
             val save = async {
                 cancellingRepository.saveSessionForTest(
                     estimatedOneRepMaxKg = 120f,
-                    profileId = ATHLETE,
+                    profileId = "athlete-a",
                 )
             }
-            exerciseWriteApplied.await()
+            baselineWriteEntered.await()
             val cancellation = CancellationException("route popped")
 
             save.cancel(cancellation)
+            releaseBaselineWrite.complete(Unit)
             val thrown = assertFailsWith<CancellationException> { save.await() }
 
             assertEquals(CancellationException::class, thrown::class)
             assertEquals(cancellation.message, thrown.message)
-            assertEquals(emptyList(), workoutRepository.getAllSessions(ATHLETE).first())
-            assertNull(repository.getLatestAssessment("bench-press", ATHLETE))
+            assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
+            assertNull(repository.getLatestAssessment("bench-press", "athlete-a"))
             assertEquals(
                 40f,
-                exerciseRepository.getTrainingMax("bench-press", ATHLETE),
+                baselineRepository.get("athlete-a", "bench-press")?.oneRepMaxPerCableKg,
             )
         }
+
+    @Test
+    fun `cancellation at baseline commit return still receives receipt and compensates`() = runTest {
+        baselineRepository.set("athlete-a", "bench-press", 40f, 1L)
+        val ioDispatcher = StandardTestDispatcher(testScheduler)
+        val writeCommitted = CompletableDeferred<Unit>()
+        val releaseWriteReturn = CompletableDeferred<Unit>()
+        val pausingBaselineRepository = object : ProfileExerciseBaselineRepository by baselineRepository {
+            override suspend fun writeForAssessment(
+                profileId: String,
+                exerciseId: String,
+                oneRepMaxPerCableKg: Float,
+                updatedAt: Long,
+            ): AssessmentBaselineWriteReceipt {
+                val receipt = baselineRepository.writeForAssessment(
+                    profileId,
+                    exerciseId,
+                    oneRepMaxPerCableKg,
+                    updatedAt,
+                )
+                writeCommitted.complete(Unit)
+                releaseWriteReturn.await()
+                return receipt
+            }
+        }
+        val cancellingRepository = SqlDelightAssessmentRepository(
+            database,
+            workoutRepository,
+            pausingBaselineRepository,
+            ioDispatcher,
+        )
+        val save = async {
+            cancellingRepository.saveSessionForTest(
+                estimatedOneRepMaxKg = 120f,
+                profileId = "athlete-a",
+            )
+        }
+        runCurrent()
+        writeCommitted.await()
+        val cancellation = CancellationException("canceled at baseline return")
+
+        save.cancel(cancellation)
+        releaseWriteReturn.complete(Unit)
+        runCurrent()
+        val thrown = assertFailsWith<CancellationException> { save.await() }
+
+        assertEquals(cancellation.message, thrown.message)
+        assertEquals(emptyList(), workoutRepository.getAllSessions("athlete-a").first())
+        assertNull(repository.getLatestAssessment("bench-press", "athlete-a"))
+        assertEquals(
+            40f,
+            baselineRepository.get("athlete-a", "bench-press")?.oneRepMaxPerCableKg,
+        )
+    }
 
     private fun repositoryWithExerciseUpdate(
         ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
         afterDelegateUpdate: suspend () -> Unit,
     ): SqlDelightAssessmentRepository {
-        val failingExerciseRepository = object : ExerciseRepository by exerciseRepository {
-            override suspend fun setTrainingMax(
-                exerciseId: String,
+        val failingBaselineRepository = object : ProfileExerciseBaselineRepository by baselineRepository {
+            override suspend fun writeForAssessment(
                 profileId: String,
-                oneRepMaxKg: Float?,
-                source: TrainingMaxSource,
-            ) {
-                exerciseRepository.setTrainingMax(exerciseId, profileId, oneRepMaxKg, source)
+                exerciseId: String,
+                oneRepMaxPerCableKg: Float,
+                updatedAt: Long,
+            ): AssessmentBaselineWriteReceipt {
                 afterDelegateUpdate()
+                return baselineRepository.writeForAssessment(
+                    profileId,
+                    exerciseId,
+                    oneRepMaxPerCableKg,
+                    updatedAt,
+                )
             }
         }
         return SqlDelightAssessmentRepository(
             database,
             workoutRepository,
-            failingExerciseRepository,
+            failingBaselineRepository,
             ioDispatcher,
         )
     }
@@ -523,12 +586,8 @@ class SqlDelightAssessmentRepositoryTest {
         profileId = profileId,
     )
 
-    private companion object {
-        const val ATHLETE = "athlete-a"
-    }
-
-    private fun insertExerciseIfAbsent(id: String, name: String) {
-        database.phoenixDatabaseQueries.insertExerciseIfAbsent(
+    private fun insertExercise(id: String, name: String) {
+        database.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = name,
             displayName = null,
@@ -551,6 +610,7 @@ class SqlDelightAssessmentRepositoryTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
+            one_rep_max_kg = null,
             mvtOverrideMs = null,
             isBodyweight = null,
         )

@@ -64,6 +64,10 @@ data class UserPreferences(
     val adultsOnlyPrompted: Boolean = false, // One-shot flag: true after the 18+ modal is shown (confirm or decline)
     // Issue #333: BLE small-MTU compatibility path (Auto = on for Pixel 6/7 family)
     val bleCompatibilityMode: BleCompatibilitySetting = BleCompatibilitySetting.AUTO,
+    // KD-9: last trainer model this install connected to. Planning/editor screens run
+    // offline, so they pick a per-cable ceiling from this instead of assuming the widest
+    // hardware. Commands never use it — they use the LIVE connected model.
+    val lastConnectedModel: PhoenixModel = PhoenixModel.Unknown,
 ) {
     /**
      * Get the effective weight increment in the user's display unit.

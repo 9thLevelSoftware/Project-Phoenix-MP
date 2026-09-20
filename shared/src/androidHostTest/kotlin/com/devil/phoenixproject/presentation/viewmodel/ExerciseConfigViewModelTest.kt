@@ -1,6 +1,9 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
 import com.devil.phoenixproject.data.repository.SqlDelightPersonalRecordRepository
+import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
+import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
@@ -16,6 +19,7 @@ import com.devil.phoenixproject.presentation.screen.shouldShowCableOnlyExerciseC
 import com.devil.phoenixproject.presentation.screen.shouldShowStopAtTopToggle
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
 import com.devil.phoenixproject.testutil.FakePersonalRecordRepository
+import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
 import kotlin.test.assertEquals
@@ -27,13 +31,21 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
-private const val CLAIMANT = "athlete-a"
-
 class ExerciseConfigViewModelTest {
+
+    private fun createViewModel(
+        personalRecordRepository: PersonalRecordRepository? = null,
+        velocityOneRepMaxRepository: VelocityOneRepMaxRepository? = null,
+        baselineRepository: ProfileExerciseBaselineRepository = FakeProfileExerciseBaselineRepository(),
+    ) = ExerciseConfigViewModel(
+        personalRecordRepository = personalRecordRepository,
+        velocityOneRepMaxRepository = velocityOneRepMaxRepository,
+        baselineRepository = baselineRepository,
+    )
 
     @Test
     fun `initialize detects bodyweight exercise and forces duration mode`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-1",
             exercise = Exercise(
@@ -85,113 +97,8 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
-    fun `an unassigned legacy value is offered to a profile that has no training max`() = runTest {
-        val exercises = FakeExerciseRepository().apply {
-            addExercise(benchExercise())
-            unassignedLegacyTrainingMaxes["bench-1"] = 140f
-        }
-        val viewModel = claimViewModel(exercises)
-
-        viewModel.initialize(
-            exercise = benchRoutineExercise(id = "rex-claim", setReps = listOf(10), weightPerCableKg = 20f),
-            unit = WeightUnit.KG,
-            toDisplay = { v, _ -> v },
-            toKg = { v, _ -> v },
-            profileId = CLAIMANT,
-        )
-        advanceUntilIdle()
-        waitForCondition { viewModel.unclaimedLegacyTrainingMaxKg.value == 140f }
-
-        assertNull(viewModel.storedOneRepMaxKg.value)
-    }
-
-    @Test
-    fun `no offer is made to a profile that already holds a training max`() = runTest {
-        val exercises = FakeExerciseRepository().apply {
-            addExercise(benchExercise())
-            unassignedLegacyTrainingMaxes["bench-1"] = 140f
-            setTrainingMaxDirectly("bench-1", CLAIMANT, 90f)
-        }
-        val viewModel = claimViewModel(exercises)
-
-        viewModel.initialize(
-            exercise = benchRoutineExercise(id = "rex-claim-2", setReps = listOf(10), weightPerCableKg = 20f),
-            unit = WeightUnit.KG,
-            toDisplay = { v, _ -> v },
-            toKg = { v, _ -> v },
-            profileId = CLAIMANT,
-        )
-        advanceUntilIdle()
-        waitForCondition { viewModel.storedOneRepMaxKg.value == 90f }
-
-        assertNull(viewModel.unclaimedLegacyTrainingMaxKg.value)
-    }
-
-    @Test
-    fun `claiming writes for the profile initialize was given, not default`() = runTest {
-        // activeProfileId defaults to "default" and is only overwritten by initialize().
-        // A claim that ignored the passed id would put another member's number on Default —
-        // the one outcome KD-5 forbids (review R-16).
-        val exercises = FakeExerciseRepository().apply {
-            addExercise(benchExercise())
-            unassignedLegacyTrainingMaxes["bench-1"] = 140f
-        }
-        val viewModel = claimViewModel(exercises)
-        viewModel.initialize(
-            exercise = benchRoutineExercise(id = "rex-claim-3", setReps = listOf(10), weightPerCableKg = 20f),
-            unit = WeightUnit.KG,
-            toDisplay = { v, _ -> v },
-            toKg = { v, _ -> v },
-            profileId = CLAIMANT,
-        )
-        advanceUntilIdle()
-        waitForCondition { viewModel.unclaimedLegacyTrainingMaxKg.value == 140f }
-
-        viewModel.claimLegacyTrainingMax()
-        advanceUntilIdle()
-        waitForCondition { viewModel.storedOneRepMaxKg.value == 140f }
-
-        assertEquals(140f, exercises.getTrainingMax("bench-1", CLAIMANT))
-        assertNull(exercises.getTrainingMax("bench-1", "default"))
-        // The offer is gone for everyone, not just this profile.
-        assertNull(viewModel.unclaimedLegacyTrainingMaxKg.value)
-        assertNull(exercises.getUnassignedLegacyTrainingMax("bench-1"))
-    }
-
-    @Test
-    fun `onSave coerces the per-rep progression to the machine's bound`() = runTest {
-        // The command path clamps progression to +/-3 kg per rep for every set, so a
-        // larger saved number just makes the editor promise something the machine will
-        // never do (F-020). Coerce on save, in both directions and in either unit.
-        fun savedProgressionKg(displayChange: Int, unit: WeightUnit): Float {
-            val viewModel = ExerciseConfigViewModel()
-            viewModel.initialize(
-                exercise = benchRoutineExercise(
-                    id = "rex-progression",
-                    setReps = listOf(10),
-                    weightPerCableKg = 20f,
-                    setWeightsPerCableKg = listOf(20f),
-                ),
-                unit = unit,
-                toDisplay = { kg, u -> if (u == WeightUnit.LB) kg * 2f else kg },
-                toKg = { display, u -> if (u == WeightUnit.LB) display / 2f else display },
-            )
-            viewModel.onWeightChange(displayChange)
-            var saved: RoutineExercise? = null
-            viewModel.onSave { updated -> saved = updated }
-            return assertNotNull(saved).progressionKg
-        }
-
-        assertEquals(3f, savedProgressionKg(10, WeightUnit.KG))
-        assertEquals(-3f, savedProgressionKg(-10, WeightUnit.KG))
-        assertEquals(2f, savedProgressionKg(2, WeightUnit.KG))
-        // 10 lb at this fixture's 2x conversion is 5 kg, which still coerces to 3.
-        assertEquals(3f, savedProgressionKg(10, WeightUnit.LB))
-    }
-
-    @Test
     fun `onSave applies uniform rest time when per-set rest disabled`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-2",
             exercise = Exercise(
@@ -237,9 +144,10 @@ class ExerciseConfigViewModelTest {
     @Test
     fun `percent of PR syncs visible set weights and saves resolved snapshots`() = runTest {
         val database = createTestDatabase()
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         val queries = database.phoenixDatabaseQueries
         val repository = SqlDelightPersonalRecordRepository(database)
-        val viewModel = ExerciseConfigViewModel(repository)
+        val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = benchRoutineExercise(
             id = "rex-pr-sync",
             setReps = listOf(10, 10, 10),
@@ -247,7 +155,7 @@ class ExerciseConfigViewModelTest {
             setWeightsPerCableKg = listOf(5f, 5f, 5f),
         )
 
-        insertExerciseIfAbsent(queries, id = "bench-1", name = "Bench Press")
+        insertExercise(queries, id = "bench-1", name = "Bench Press")
         insertWeightPR(queries, weight = 50.0)
 
         viewModel.initialize(
@@ -280,9 +188,10 @@ class ExerciseConfigViewModelTest {
     @Test
     fun `percent of PR uses nearest half kg rounding when syncing set weights`() = runTest {
         val database = createTestDatabase()
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         val queries = database.phoenixDatabaseQueries
         val repository = SqlDelightPersonalRecordRepository(database)
-        val viewModel = ExerciseConfigViewModel(repository)
+        val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = benchRoutineExercise(
             id = "rex-pr-rounding",
             setReps = listOf(10),
@@ -292,7 +201,7 @@ class ExerciseConfigViewModelTest {
             weightPercentOfPR = 80,
         )
 
-        insertExerciseIfAbsent(queries, id = "bench-1", name = "Bench Press")
+        insertExercise(queries, id = "bench-1", name = "Bench Press")
         insertWeightPR(queries, weight = 47.0)
 
         viewModel.initialize(
@@ -311,7 +220,7 @@ class ExerciseConfigViewModelTest {
     fun `global PR percent preserves custom per-set percentages`() = runTest {
         val repository = FakePersonalRecordRepository()
         repository.addRecord(weightPR(weight = 50f))
-        val viewModel = ExerciseConfigViewModel(repository)
+        val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = benchRoutineExercise(
             id = "rex-pr-custom",
             setReps = listOf(10, 10, 10),
@@ -352,7 +261,7 @@ class ExerciseConfigViewModelTest {
     @Test
     fun `manual PR percent weight edit before PR load converts when PR becomes available`() = runTest {
         val repository = FakePersonalRecordRepository()
-        val viewModel = ExerciseConfigViewModel(repository)
+        val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = benchRoutineExercise(
             id = "rex-pr-pending",
             setReps = listOf(10, 10),
@@ -393,7 +302,7 @@ class ExerciseConfigViewModelTest {
     fun `delete set while PR percent disabled keeps percentages aligned when re-enabled`() = runTest {
         val repository = FakePersonalRecordRepository()
         repository.addRecord(weightPR(weight = 50f))
-        val viewModel = ExerciseConfigViewModel(repository)
+        val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = benchRoutineExercise(
             id = "rex-pr-delete-disabled",
             setReps = listOf(10, 10, 10),
@@ -430,7 +339,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `initialize and save preserve default rack item ids`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = benchRoutineExercise(
             id = "rex-rack-defaults",
             setReps = listOf(10),
@@ -459,9 +368,10 @@ class ExerciseConfigViewModelTest {
     @Test
     fun `initialize reloads PR lookup when active profile changes`() = runTest {
         val database = createTestDatabase()
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         val queries = database.phoenixDatabaseQueries
         val repository = SqlDelightPersonalRecordRepository(database)
-        val viewModel = ExerciseConfigViewModel(repository)
+        val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = RoutineExercise(
             id = "rex-3",
             exercise = Exercise(
@@ -479,7 +389,7 @@ class ExerciseConfigViewModelTest {
             echoLevel = EchoLevel.HARDER,
         )
 
-        insertExerciseIfAbsent(queries, id = "bench-1", name = "Bench Press")
+        insertExercise(queries, id = "bench-1", name = "Bench Press")
         queries.insertRecord(
             exerciseId = "bench-1",
             exerciseName = "Bench Press",
@@ -540,16 +450,17 @@ class ExerciseConfigViewModelTest {
     @Test
     fun `initialize uses concentric PR for normal workout setup and ignores higher eccentric PR`() = runTest {
         val database = createTestDatabase()
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         val queries = database.phoenixDatabaseQueries
         val repository = SqlDelightPersonalRecordRepository(database)
-        val viewModel = ExerciseConfigViewModel(repository)
+        val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = benchRoutineExercise(
             id = "rex-phase",
             setReps = listOf(10),
             weightPerCableKg = 20f,
         )
 
-        insertExerciseIfAbsent(queries, id = "bench-1", name = "Bench Press")
+        insertExercise(queries, id = "bench-1", name = "Bench Press")
         insertWeightPR(queries, weight = 35.0, phase = WorkoutPhase.COMBINED)
         insertWeightPR(queries, weight = 45.0, phase = WorkoutPhase.CONCENTRIC)
         insertWeightPR(queries, weight = 90.0, phase = WorkoutPhase.ECCENTRIC)
@@ -569,7 +480,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `initialize and save preserve explicit scalingBasis`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = benchRoutineExercise(
             id = "rex-scaling-basis",
             setReps = listOf(10),
@@ -599,9 +510,10 @@ class ExerciseConfigViewModelTest {
     @Test
     fun `legacy null scalingBasis with MAX_VOLUME prType resolves basis and baseline to volume PR`() = runTest {
         val database = createTestDatabase()
+        database.phoenixDatabaseQueries.insertProfile("default", "Default", 0L, 0L, 1L)
         val queries = database.phoenixDatabaseQueries
         val repository = SqlDelightPersonalRecordRepository(database)
-        val viewModel = ExerciseConfigViewModel(repository)
+        val viewModel = createViewModel(personalRecordRepository = repository)
         val exercise = benchRoutineExercise(
             id = "rex-legacy-volume",
             setReps = listOf(10),
@@ -614,7 +526,7 @@ class ExerciseConfigViewModelTest {
             prTypeForScaling = PRType.MAX_VOLUME,
         )
 
-        insertExerciseIfAbsent(queries, id = "bench-1", name = "Bench Press")
+        insertExercise(queries, id = "bench-1", name = "Bench Press")
         // Max-weight PR (heavier) and a distinct max-volume PR (lighter, more reps)
         queries.insertRecord(
             exerciseId = "bench-1",
@@ -667,7 +579,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `initialize with null scalingBasis derives from prTypeForScaling`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = benchRoutineExercise(
             id = "rex-scaling-null",
             setReps = listOf(10),
@@ -696,16 +608,7 @@ class ExerciseConfigViewModelTest {
     fun `editor preview uses same profile cross mode baseline when selected mode has none`() = runTest {
         val prRepository = FakePersonalRecordRepository()
         val velocityRepository = FakeVelocityOneRepMaxRepository()
-        val exerciseRepository = FakeExerciseRepository()
-        exerciseRepository.addExercise(
-            Exercise(
-                id = "bench-1",
-                name = "Bench Press",
-                muscleGroup = "Chest",
-                muscleGroups = "Chest",
-                equipment = "BAR",
-            ),
-        )
+        val baselineRepository = FakeProfileExerciseBaselineRepository()
         prRepository.addRecord(
             PersonalRecord(
                 id = 595,
@@ -722,7 +625,7 @@ class ExerciseConfigViewModelTest {
             ),
         )
 
-        val viewModel = ExerciseConfigViewModel(prRepository, velocityRepository, exerciseRepository)
+        val viewModel = createViewModel(prRepository, velocityRepository, baselineRepository)
         val exercise = benchRoutineExercise(
             id = "rex-cross-mode-preview",
             setReps = listOf(10),
@@ -750,7 +653,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `drop set defaults disabled with null minimum`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         viewModel.initialize(
             exercise = benchRoutineExercise(id = "rex-drop-default", setReps = listOf(8), weightPerCableKg = 20f),
             unit = WeightUnit.KG,
@@ -765,7 +668,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `drop set loads existing enabled floor and blocks invalid save`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         viewModel.initialize(
             exercise = benchRoutineExercise(
                 id = "rex-drop-load",
@@ -803,7 +706,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `drop set conversion stays canonical kilograms`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         viewModel.initialize(
             exercise = benchRoutineExercise(
                 id = "rex-drop-lb",
@@ -826,7 +729,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `changing away from Old School preserves drop set values without blocking save`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         viewModel.initialize(
             exercise = benchRoutineExercise(
                 id = "rex-drop-mode",
@@ -861,20 +764,6 @@ class ExerciseConfigViewModelTest {
         assertEquals(5f, restored.dropSetMinWeightKg)
         assertEquals(ProgramMode.OldSchool, restored.programMode)
     }
-
-    private fun claimViewModel(exercises: FakeExerciseRepository) = ExerciseConfigViewModel(
-        FakePersonalRecordRepository(),
-        FakeVelocityOneRepMaxRepository(),
-        exercises,
-    )
-
-    private fun benchExercise() = Exercise(
-        id = "bench-1",
-        name = "Bench Press",
-        muscleGroup = "Chest",
-        muscleGroups = "Chest",
-        equipment = "BAR",
-    )
 
     private fun benchRoutineExercise(
         id: String,
@@ -928,8 +817,8 @@ class ExerciseConfigViewModelTest {
         volume = weight * 6,
     )
 
-    private fun insertExerciseIfAbsent(queries: com.devil.phoenixproject.database.PhoenixDatabaseQueries, id: String, name: String) {
-        queries.insertExerciseIfAbsent(
+    private fun insertExercise(queries: com.devil.phoenixproject.database.PhoenixDatabaseQueries, id: String, name: String) {
+        queries.insertExercise(
             id = id,
             name = name,
             displayName = null,
@@ -952,6 +841,7 @@ class ExerciseConfigViewModelTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
+            one_rep_max_kg = null,
             mvtOverrideMs = null,
             isBodyweight = null,
         )
@@ -993,7 +883,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `onRepeatCountChange updates correct set`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-667-1",
             exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
@@ -1014,7 +904,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `onRepeatCountChange coerces to 1-20 range`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-667-2",
             exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
@@ -1036,7 +926,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `totalExpandedSetCount sums repeatCounts`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-667-3",
             exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
@@ -1057,7 +947,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `onSave with repeatCount produces expanded arrays`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-667-4",
             exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
@@ -1092,7 +982,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `onSave with repeatCount and AMRAP sets`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-667-5",
             exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
@@ -1121,7 +1011,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `onSave with repeatCount and uniform rest`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-667-6",
             exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
@@ -1151,7 +1041,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `initialize sets all repeatCount to 1`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-667-7",
             exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
@@ -1168,7 +1058,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `addSet creates set with repeatCount 1`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-667-8",
             exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
@@ -1186,7 +1076,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `deleteSet preserves repeatCount on remaining sets`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-667-9",
             exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
@@ -1210,7 +1100,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `onSave backward compat - all repeatCount 1 produces identical output`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-667-10",
             exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
@@ -1237,7 +1127,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `onSave preserves per-set echo overrides through expansion`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-667-echo",
             exercise = Exercise(id = "bench-1", name = "Bench Press", muscleGroup = "Chest", muscleGroups = "Chest", equipment = "BAR"),
@@ -1276,7 +1166,7 @@ class ExerciseConfigViewModelTest {
 
     @Test
     fun `initialize loads per-set echo overrides into SetConfiguration`() = runTest {
-        val viewModel = ExerciseConfigViewModel()
+        val viewModel = createViewModel()
         val exercise = RoutineExercise(
             id = "rex-667-echo-init",
             exercise = Exercise(id = "squat-1", name = "Squat", muscleGroup = "Legs", muscleGroups = "Legs", equipment = "BAR"),

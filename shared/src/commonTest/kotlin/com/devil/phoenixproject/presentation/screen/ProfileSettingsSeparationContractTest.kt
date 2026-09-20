@@ -86,7 +86,6 @@ class ProfileSettingsSeparationContractTest {
         "onAdultsOnlyPromptedChange",
         "onPlayDominatrixUnlockSound",
         "onNavigateToBadges",
-        "UserProfileRepository",
         "ExternalMeasurementRepository",
         "SafeWordCalibrationDialog",
         "AdultsOnlyConfirmDialog",
@@ -161,8 +160,7 @@ class ProfileSettingsSeparationContractTest {
                 onEnableVideoPlaybackChange: (Boolean) -> Unit,
                 onThemeModeChange: (ThemeMode) -> Unit,
                 onDynamicColorEnabledChange: (Boolean) -> Unit,
-                activeProfileName: String,
-                onDeleteAllWorkouts: () -> Unit,
+                onDeleteAllWorkouts: (String) -> Unit,
                 onNavigateToConnectionLogs: () -> Unit,
                 onNavigateToDiagnostics: () -> Unit,
                 onNavigateToLinkAccount: () -> Unit,
@@ -190,11 +188,22 @@ class ProfileSettingsSeparationContractTest {
 
     @Test
     fun settingsContainsNoCanonicalProfileOwnedSymbolOrModalState() {
+        val settingsTab = functionSource(source(settingsPath), "SettingsTab")
         assertNoCanonicalSymbols(
-            functionSource(source(settingsPath), "SettingsTab"),
+            settingsTab,
             settingsForbiddenSymbols,
             "SettingsTab",
         )
+        // Durable delete-all is the narrow profile-aware exception in global Settings: the
+        // confirmation must retain the profile shown when the user opened it. Recovery UI is
+        // likewise hosted here, while canonical preference editing remains on ProfileScreen.
+        listOf(
+            "val userProfileRepository: UserProfileRepository = koinInject()",
+            "val activeProfile by userProfileRepository.activeProfile.collectAsState()",
+            "onClick = { deleteAllTarget = activeProfile }",
+            "onDeleteAllWorkouts(targetProfile.id)",
+            "ProfileRecoverySettingsSection(",
+        ).forEach { permittedScope -> assertContains(settingsTab, permittedScope) }
     }
 
     @Test
@@ -335,13 +344,10 @@ class ProfileSettingsSeparationContractTest {
             "val backupStats by viewModel.backupStats.collectAsState()",
             "viewModel.refreshBackupStats()",
         ).forEach { contract -> assertContains(settingsDestination, contract) }
-        // globalSettings, connectionError, backupStats and activeProfileName. The last one
-        // is a read, not a profile-owned setting: "Delete All Workouts" deletes the active
-        // profile's history only, so the dialog has to name it.
         assertEquals(
-            4,
+            3,
             Regex("\\.collectAsState\\s*\\(").findAll(settingsDestination).count(),
-            "Settings must collect exactly four flows",
+            "Settings must collect exactly three flows",
         )
         assertNoCanonicalSymbols(settingsDestination, settingsForbiddenSymbols, "Settings destination")
 
@@ -357,7 +363,6 @@ class ProfileSettingsSeparationContractTest {
             "backupDestination = globalSettings.backupDestination",
             "selectedLanguage = globalSettings.language",
             "connectionError = connectionError",
-            "activeProfileName = activeProfileName",
         ).forEach { assignment ->
             assertTrue(
                 compactKotlin(call).contains(compactKotlin(assignment)),

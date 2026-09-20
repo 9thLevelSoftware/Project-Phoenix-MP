@@ -8,6 +8,8 @@ import kotlin.test.AfterTest
 import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
+import kotlin.test.assertTrue
 import kotlinx.cinterop.ExperimentalForeignApi
 import platform.Foundation.NSFileManager
 
@@ -31,13 +33,13 @@ class Issue725FreshInstallDriverFactoryTest {
     }
 
     @Test
-    fun createDriver_fromCleanFilesystem_enablesWalAndValidatesSchema47() {
+    fun createDriver_fromCleanFilesystem_enablesWalAndValidatesCurrentSchema() {
         val driver = DriverFactory().createDriver()
         try {
-            assertEquals(47L, PhoenixDatabase.Schema.version)
             assertEquals(PhoenixDatabase.Schema.version, driver.queryLong("PRAGMA user_version"))
             assertEquals("wal", driver.queryText("PRAGMA journal_mode").lowercase())
             assertEquals("ok", driver.queryText("PRAGMA quick_check").lowercase())
+            assertEquals(1L, driver.queryLong("PRAGMA foreign_keys"))
         } finally {
             driver.close()
         }
@@ -52,6 +54,36 @@ class Issue725FreshInstallDriverFactoryTest {
             assertEquals(PhoenixDatabase.Schema.version, driver.queryLong("PRAGMA user_version"))
             assertEquals("wal", driver.queryText("PRAGMA journal_mode").lowercase())
             assertEquals("ok", driver.queryText("PRAGMA quick_check").lowercase())
+            assertEquals(1L, driver.queryLong("PRAGMA foreign_keys"))
+        } finally {
+            driver.close()
+        }
+    }
+
+    @Test
+    fun reopenedDriver_rejectsMetricSampleWithMissingSession() {
+        DriverFactory().createDriver().close()
+
+        val driver = DriverFactory().createDriver()
+        try {
+            driver.execute(
+                null,
+                "INSERT INTO WorkoutSession(id, timestamp, mode, targetReps, weightPerCableKg) VALUES ('valid-session', 1, 'OldSchool', 0, 0)",
+                0,
+            )
+            driver.execute(
+                null,
+                "INSERT INTO MetricSample(sessionId, timestamp) VALUES ('valid-session', 2)",
+                0,
+            )
+            val failure = assertFailsWith<Throwable> {
+                driver.execute(
+                    null,
+                    "INSERT INTO MetricSample(sessionId, timestamp) VALUES ('missing-session', 1)",
+                    0,
+                )
+            }
+            assertTrue(failure.message?.contains("FOREIGN KEY", ignoreCase = true) == true)
         } finally {
             driver.close()
         }

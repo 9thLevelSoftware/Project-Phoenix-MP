@@ -182,6 +182,129 @@ class SchemaManifestTest {
     }
 
     @Test
+    fun `session origin heal conservatively marks existing rows local`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE WorkoutSession (id TEXT PRIMARY KEY, timestamp INTEGER NOT NULL, mode TEXT NOT NULL, targetReps INTEGER NOT NULL, weightPerCableKg REAL NOT NULL)",
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('existing',1,'OldSchool',8,40.0)",
+            0,
+        )
+
+        val result = applyColumnHeal(
+            driver,
+            manifestColumns.first { it.table == "WorkoutSession" && it.column == "portalOrigin" },
+        )
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        var origin: Long? = null
+        driver.executeQuery(
+            null,
+            "SELECT portalOrigin FROM WorkoutSession WHERE id = 'existing'",
+            { cursor ->
+                if (cursor.next().value) origin = cursor.getLong(0)
+                QueryResult.Value(Unit)
+            },
+            0,
+        )
+        assertEquals(0L, origin)
+    }
+
+    @Test
+    fun `baseline table and remap index reconcile idempotently`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(null, "CREATE TABLE UserProfile(id TEXT PRIMARY KEY)", 0)
+        driver.execute(null, "CREATE TABLE Exercise(id TEXT PRIMARY KEY)", 0)
+        val tableOp = manifestTables.first { it.table == "ProfileExerciseBaseline" }
+        val indexOp = manifestIndexes.first { it.name == "idx_profile_exercise_baseline_exercise" }
+
+        assertEquals(ReconciliationStatus.CREATED, applyTableCreate(driver, tableOp).status)
+        assertEquals(ReconciliationStatus.CREATED, applyIndexCreate(driver, indexOp).status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyTableCreate(driver, tableOp).status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyIndexCreate(driver, indexOp).status)
+        assertTrue(tableExists(driver, "ProfileExerciseBaseline"))
+        assertTrue(indexExists(driver, "idx_profile_exercise_baseline_exercise"))
+    }
+
+    @Test
+    fun `workout generation heals keep legacy rows dirty`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE WorkoutSession (id TEXT PRIMARY KEY, timestamp INTEGER NOT NULL, mode TEXT NOT NULL, targetReps INTEGER NOT NULL, weightPerCableKg REAL NOT NULL)",
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO WorkoutSession(id,timestamp,mode,targetReps,weightPerCableKg) VALUES('legacy',1,'OldSchool',8,40.0)",
+            0,
+        )
+
+        val local = manifestColumns.first { it.table == "WorkoutSession" && it.column == "local_sync_generation" }
+        val synced = manifestColumns.first { it.table == "WorkoutSession" && it.column == "synced_sync_generation" }
+        assertEquals(ReconciliationStatus.CREATED, applyColumnHeal(driver, local).status)
+        assertEquals(ReconciliationStatus.CREATED, applyColumnHeal(driver, synced).status)
+        assertEquals("1", queryScalar(driver, "SELECT CAST(local_sync_generation AS TEXT) FROM WorkoutSession WHERE id='legacy'"))
+        assertEquals("0", queryScalar(driver, "SELECT CAST(synced_sync_generation AS TEXT) FROM WorkoutSession WHERE id='legacy'"))
+    }
+
+    @Test
+    fun `durable recovery and deletion structures reconcile idempotently`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        listOf(
+            "AppliedDataRepair",
+            "PendingProfileRecovery",
+            "OwnershipTransferOutbox",
+            "AppliedOwnershipEvent",
+            "WorkoutDeletion",
+        ).forEach { table ->
+            val operation = manifestTables.first { it.table == table }
+            assertEquals(ReconciliationStatus.CREATED, applyTableCreate(driver, operation).status, table)
+            assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyTableCreate(driver, operation).status, table)
+        }
+        listOf("idx_workout_deletion_pending", "idx_workout_deletion_target").forEach { index ->
+            val operation = manifestIndexes.first { it.name == index }
+            assertEquals(ReconciliationStatus.CREATED, applyIndexCreate(driver, operation).status, index)
+            assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyIndexCreate(driver, operation).status, index)
+        }
+    }
+
+    @Test
+    fun `cycle sync and conflict structures reconcile idempotently`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE TrainingCycle(id TEXT PRIMARY KEY NOT NULL, created_at INTEGER NOT NULL)",
+            0,
+        )
+        val updatedAt = manifestColumns.first { it.table == "TrainingCycle" && it.column == "updatedAt" }
+        assertEquals(ReconciliationStatus.CREATED, applyColumnHeal(driver, updatedAt).status)
+        listOf("CycleSyncState", "CycleConflictDraft").forEach { table ->
+            val operation = manifestTables.first { it.table == table }
+            assertEquals(ReconciliationStatus.CREATED, applyTableCreate(driver, operation).status, table)
+            assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyTableCreate(driver, operation).status, table)
+        }
+        val index = manifestIndexes.first { it.name == "idx_cycle_conflict_draft_profile_cycle" }
+        assertEquals(ReconciliationStatus.CREATED, applyIndexCreate(driver, index).status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyIndexCreate(driver, index).status)
+    }
+
+    @Test
+    fun `retained ownership claims reconcile idempotently`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        val table = manifestTables.first { it.table == "LocalOwnershipClaim" }
+        assertEquals(ReconciliationStatus.CREATED, applyTableCreate(driver, table).status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyTableCreate(driver, table).status)
+        val index = manifestIndexes.first { it.name == "idx_local_ownership_claim_mutation" }
+        assertEquals(ReconciliationStatus.CREATED, applyIndexCreate(driver, index).status)
+        assertEquals(ReconciliationStatus.ALREADY_PRESENT, applyIndexCreate(driver, index).status)
+    }
+
+    @Test
     fun `applyColumnHeal returns TABLE_MISSING when table does not exist`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
 

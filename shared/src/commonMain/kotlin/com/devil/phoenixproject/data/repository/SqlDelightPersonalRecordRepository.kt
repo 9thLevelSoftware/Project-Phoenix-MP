@@ -16,7 +16,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 
-class SqlDelightPersonalRecordRepository(private val db: PhoenixDatabase) : PersonalRecordRepository {
+class SqlDelightPersonalRecordRepository(
+    private val db: PhoenixDatabase,
+) : PersonalRecordRepository {
     private val queries = db.phoenixDatabaseQueries
 
     // SQLDelight mapper - parameters must match query columns even if not all are used
@@ -278,13 +280,9 @@ class SqlDelightPersonalRecordRepository(private val db: PhoenixDatabase) : Pers
         profileId: String,
         cableCount: Int? = null,
     ): List<PRType> {
-        // Issue #319: Defensive validation for profileId
-        if (profileId.isBlank()) {
-            Logger.e(IllegalStateException("Blank profileId while updating PRs for exercise=$exerciseId")) {
-                "PR_SAVE: CRITICAL - profileId is blank for exercise=$exerciseId, using 'default' as fallback."
-            }
-        }
-        val effectiveProfileId = profileId.ifBlank { "default" }
+        require(profileId.isNotBlank()) { "PR profileId must not be blank" }
+        require(exerciseId.isNotBlank()) { "PR exerciseId must not be blank" }
+        val effectiveProfileId = profileId
 
         val brokenPRs = mutableListOf<PRType>()
         val canonicalWorkoutMode = normalizeWorkoutModeKey(workoutMode)
@@ -394,13 +392,6 @@ class SqlDelightPersonalRecordRepository(private val db: PhoenixDatabase) : Pers
                 brokenPRs.add(PRType.MAX_VOLUME)
             }
 
-            // A PR save deliberately writes NOTHING to the training max. It used to copy the
-            // estimated 1RM onto the global Exercise.one_rep_max_kg, which meant one
-            // profile's PR silently raised every other profile's "% of PR" load and
-            // overwrote a manually entered 5/3/1 training max. The training max is now a
-            // per-profile value the user owns (ExerciseTrainingMax, migration 49); a PR is a
-            // separate metric, and the baseline resolver already falls back to the profile's
-            // own PRs.
         }
 
         if (brokenPRs.isNotEmpty()) {

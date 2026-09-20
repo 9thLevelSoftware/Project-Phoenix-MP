@@ -114,7 +114,15 @@ CREATE TABLE WorkoutSession (
     -- Equipment rack context (added in migration 33)
     externalAddedLoadKg REAL NOT NULL DEFAULT 0,
     counterweightKg REAL NOT NULL DEFAULT 0,
-    rackItemsJson TEXT NOT NULL DEFAULT '[]'
+    rackItemsJson TEXT NOT NULL DEFAULT '[]',
+    -- 0 = captured/legacy local row; 1 = first materialized from portal pull.
+    -- Existing rows heal to local so migration never invents remote provenance.
+    portalOrigin INTEGER NOT NULL DEFAULT 0 CHECK(portalOrigin IN (0, 1)),
+    -- Local wire-visible content generation. New local rows begin dirty; rows
+    -- first materialized from portal pull explicitly write 0/0.
+    local_sync_generation INTEGER NOT NULL DEFAULT 1 CHECK(local_sync_generation >= 0),
+    synced_sync_generation INTEGER NOT NULL DEFAULT 0
+        CHECK(synced_sync_generation >= 0 AND synced_sync_generation <= local_sync_generation)
 );
 
 CREATE INDEX idx_workout_session_timestamp ON WorkoutSession(timestamp);
@@ -452,8 +460,7 @@ CREATE INDEX idx_assessment_profile ON AssessmentResult(profile_id);
 
 -- ==================== VELOCITY-BASED 1RM ESTIMATES ====================
 -- Auto-computed velocity 1RM time-series (issue #517). Separate from
--- AssessmentResult (wizard) and from the per-profile training max
--- (ExerciseTrainingMax, migration 49).
+-- AssessmentResult (wizard) and the legacy-recovery-only Exercise.one_rep_max_kg.
 
 CREATE TABLE VelocityOneRepMaxEstimate (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -587,24 +594,23 @@ SELECT * FROM Exercise WHERE id = ?;
 updateFavorite:
 UPDATE Exercise SET isFavorite = ? WHERE id = ?;
 
--- The only Exercise insert. It was INSERT OR REPLACE ("insertExercise") until
--- migration 49 made ExerciseTrainingMax a CASCADE child of Exercise: REPLACE
--- deletes the conflicting row before re-inserting it, which would have taken every
--- profile's training max with it on a catalogue re-import. Neither caller ever
--- wanted an overwrite (the importer skips ids it already has, custom ids are freshly
--- minted), so there is no UPDATE counterpart.
---
--- one_rep_max_kg is deliberately absent: the legacy column is written by nothing
--- any more, and naming it here would let a re-insert clear a value still waiting to
--- be claimed.
+insertExercise:
+INSERT INTO Exercise (
+    id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
+    equipment, movement, sidedness, grip, gripWidth, minRepRange,
+    popularity, archived, isFavorite, isCustom, timesPerformed, lastPerformed,
+    aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs, isBodyweight
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
 insertExerciseIfAbsent:
 INSERT OR IGNORE INTO Exercise (
     id, name, displayName, description, created, muscleGroup, muscleGroups, muscles,
     equipment, movement, sidedness, grip, gripWidth, minRepRange,
     popularity, archived, isFavorite, isCustom, timesPerformed, lastPerformed,
-    aliases, defaultCableConfig, mvtOverrideMs, isBodyweight
+    aliases, defaultCableConfig, one_rep_max_kg, mvtOverrideMs, isBodyweight
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateCatalogExercise:
 UPDATE Exercise SET
@@ -625,6 +631,22 @@ UPDATE Exercise SET
     isBodyweight = ?
 WHERE id = ? AND isCustom = 0;
 
+updateCustomExerciseFromSync:
+UPDATE Exercise SET
+    name = :name,
+    displayName = :displayName,
+    muscleGroup = :muscleGroup,
+    muscleGroups = :muscleGroups,
+    equipment = :equipment,
+    defaultCableConfig = :defaultCableConfig,
+    updatedAt = :updatedAt,
+    serverId = COALESCE(:serverId, serverId),
+    deletedAt = COALESCE(:deletedAt, deletedAt)
+WHERE id = :id
+  AND isCustom = 1
+  AND (updatedAt IS NULL OR updatedAt <= :updatedAt)
+  AND (deletedAt IS NULL OR :deletedAt IS NOT NULL);
+
 countExercises:
 SELECT COUNT(*) FROM Exercise;
 
@@ -632,7 +654,10 @@ selectStockExercisesForRemap:
 SELECT id, name, archived FROM Exercise WHERE isCustom = 0;
 
 reassignWorkoutSessionExerciseId:
-UPDATE WorkoutSession SET exerciseId = :newId WHERE exerciseId = :oldId;
+UPDATE WorkoutSession
+SET exerciseId = :newId,
+    local_sync_generation = local_sync_generation + 1
+WHERE exerciseId = :oldId;
 
 reassignRoutineExerciseId:
 UPDATE RoutineExercise SET exerciseId = :newId WHERE exerciseId = :oldId;
@@ -702,16 +727,12 @@ updateCustomExercise:
 UPDATE Exercise
 SET name = ?, description = ?, muscleGroup = ?, muscleGroups = ?, muscles = ?,
     equipment = ?, movement = ?, sidedness = ?, grip = ?, gripWidth = ?,
-    minRepRange = ?, aliases = ?, defaultCableConfig = ?
+    minRepRange = ?, aliases = ?, defaultCableConfig = ?, one_rep_max_kg = ?
 WHERE id = ? AND isCustom = 1;
 
 deleteCustomExercise:
 DELETE FROM Exercise WHERE id = ? AND isCustom = 1;
 
--- Every user-facing delete writes a DeletedWorkoutSession tombstone in the
--- same transaction (see SqlDelightWorkoutRepository and the
--- DeletedWorkoutSession section at the end of this file), so the next pull
--- cannot resurrect the row.
 deleteSession:
 DELETE FROM WorkoutSession WHERE id = ?;
 
@@ -720,18 +741,22 @@ DELETE FROM WorkoutSession WHERE id = ?;
 -- History "Delete All Sets" affordance so ghost rows hidden by the
 -- `selectHistoryVisibleSessions` filter do not survive the user-level
 -- deletion (chatgpt-codex-connector P2). This mirrors deleteSession's
--- local deletion semantics, tombstones included.
+-- local deletion semantics; workout-session tombstone push is not
+-- currently implemented.
 deleteSessionsByRoutineSessionId:
 DELETE FROM WorkoutSession WHERE routineSessionId = ?;
 
 -- Tombstone helper for code paths that intentionally keep deleted
--- workout rows locally. Do not use for user-facing History deletes:
--- those hard-delete and write a DeletedWorkoutSession row instead.
+-- workout rows locally. Do not use for user-facing History deletes
+-- unless session tombstones are also pushed to the portal.
 softDeleteSessionsByRoutineSessionId:
 UPDATE WorkoutSession
 SET deletedAt = ?, updatedAt = ?
 WHERE routineSessionId = ?
   AND deletedAt IS NULL;
+
+deleteAllSessions:
+DELETE FROM WorkoutSession;
 
 -- Exercise image queries
 selectImagesByExercise:
@@ -803,6 +828,32 @@ LIMIT 1;
 selectSessionById:
 SELECT * FROM WorkoutSession WHERE id = ?;
 
+selectSessionMergeStateById:
+SELECT id, updatedAt, deletedAt, profile_id, portalOrigin, serverId
+FROM WorkoutSession
+WHERE id = ?;
+
+selectSessionMergeStateByServerId:
+SELECT id, updatedAt, deletedAt, profile_id, portalOrigin, serverId
+FROM WorkoutSession
+WHERE serverId = ?;
+
+-- Phase 3.3 (audit item #1): cheap LWW-gate read. Returns just the
+-- existing updatedAt for a given session id so the repository can
+-- decide whether to accept an incoming pull row without loading the
+-- full row body.
+selectSessionUpdatedAt:
+SELECT updatedAt FROM WorkoutSession WHERE id = ?;
+
+-- Issue #591 follow-up: batch-read the existing updatedAt for a list of
+-- session ids. Used by SqlDelightSyncRepository.mergeSessionsLww so the
+-- LWW gate does not issue one round-trip per incoming pull row. Returns
+-- (id, updatedAt) so the caller can build an in-memory map keyed by id.
+selectSessionsUpdatedAtByIds:
+SELECT id, updatedAt, deletedAt, profile_id, portalOrigin
+FROM WorkoutSession
+WHERE id IN ?;
+
 -- Issue #517: Velocity-based 1RM foundation. Returns per-set load + MCV
 -- points for a specific exercise, used by VelocityOneRepMaxEstimator.
 -- Load uses workingAvgWeightKg when available (more accurate than the
@@ -819,6 +870,40 @@ WHERE exerciseId = :exerciseId
   AND avgMcvMmS IS NOT NULL
   AND workingReps > 0
 ORDER BY timestamp DESC;
+
+-- Issue #591 follow-up: batch-read the detailed metric / biomechanics
+-- columns used by the LWW preservation guard for a list of session ids.
+-- Mirrors the column list in
+-- SqlDelightSyncRepository.preserveMetrics() so the LWW gate can fall
+-- back to the locally captured values without a per-row full-row read.
+selectSessionsMetricsForPreservationByIds:
+SELECT
+    id,
+    peakForceConcentricA,
+    peakForceConcentricB,
+    peakForceEccentricA,
+    peakForceEccentricB,
+    avgForceConcentricA,
+    avgForceConcentricB,
+    avgForceEccentricA,
+    avgForceEccentricB,
+    heaviestLiftKg,
+    totalVolumeKg,
+    cableCount,
+    display_multiplier,
+    estimatedCalories,
+    warmupAvgWeightKg,
+    workingAvgWeightKg,
+    burnoutAvgWeightKg,
+    peakWeightKg,
+    rpe,
+    avgMcvMmS,
+    avgAsymmetryPercent,
+    totalVelocityLossPercent,
+    dominantSide,
+    strengthProfile,
+    formScore
+FROM WorkoutSession WHERE id IN ?;
 
 -- Backup/export session rows. Unlike selectAllSessionsSync, this must
 -- not serialize local tombstones: WorkoutSessionBackup has no deletedAt
@@ -908,10 +993,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 
 -- Insert session only if ID doesn't already exist (for sync pull deduplication).
 -- Includes updatedAt to prevent re-push (selectSessionsModifiedSince picks up updatedAt IS NULL).
--- Never INSERT OR REPLACE a WorkoutSession: with foreign keys ON the implicit delete cascades
--- to MetricSample, PhaseStatistics, RepMetric, RepBiomechanics and CompletedSet. The sync pull
--- only inserts sessions it doesn't have; the one in-place change it makes is
--- updatePulledSessionTag below.
 insertSessionIgnore:
 INSERT OR IGNORE INTO WorkoutSession (
     id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,
@@ -931,58 +1012,107 @@ INSERT OR IGNORE INTO WorkoutSession (
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
 
--- Sync pull: carry a newer exercise tag (e.g. a Just Lift session re-tagged on another
--- device) onto a row this device pulled. Only the tag columns and the stamp change.
--- Origin gate: the row must carry the explicit PulledWorkoutSession marker (migration
--- 48), so a row captured on this device keeps its own tag even when it has no children.
--- Local-data gate: MetricSample/RepMetric/CompletedSet rows mean this device has
--- measurements for the id (e.g. a backup restore wrote children onto a pulled row), so
--- the tag stays put. Same predicate as the 48 backfill and selectSessionsModifiedSince.
--- A pull carrying the same exerciseId is a no-op (nothing to re-tag, stamp untouched).
-updatePulledSessionTag:
-UPDATE WorkoutSession
-SET exerciseId = :exerciseId, exerciseName = :exerciseName, updatedAt = :updatedAt
-WHERE id = :id
-  AND COALESCE(updatedAt, 0) < :updatedAt
-  AND exerciseId IS NOT :exerciseId
-  AND EXISTS (SELECT 1 FROM PulledWorkoutSession WHERE PulledWorkoutSession.id = :id)
-  AND NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = :id)
-  AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = :id)
-  AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = :id);
+-- First materialization of a portal exercise-row projection. Existing rows
+-- are never replaced: the repository uses updatePortalSessionProjection for
+-- accepted portal-origin changes.
+mergeSessionLww:
+INSERT OR IGNORE INTO WorkoutSession (
+    id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,
+    duration, totalReps, warmupReps, workingReps,
+    isJustLift, stopAtTop, eccentricLoad, echoLevel,
+    exerciseId, exerciseName, routineSessionId, routineName, routineId,
+    safetyFlags, deloadWarningCount, romViolationCount, spotterActivations,
+    peakForceConcentricA, peakForceConcentricB, peakForceEccentricA, peakForceEccentricB,
+    avgForceConcentricA, avgForceConcentricB, avgForceEccentricA, avgForceEccentricB,
+    heaviestLiftKg, totalVolumeKg, cableCount, estimatedCalories,
+    warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe,
+    avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile,
+    formScore,
+    updatedAt,
+    profile_id,
+    display_multiplier, externalAddedLoadKg, counterweightKg, rackItemsJson,
+    portalOrigin, local_sync_generation, synced_sync_generation
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0);
+
+updatePortalSessionProjection:
+UPDATE WorkoutSession SET
+    timestamp = :timestamp,
+    mode = :mode,
+    targetReps = :targetReps,
+    weightPerCableKg = :weightPerCableKg,
+    duration = :duration,
+    totalReps = :totalReps,
+    warmupReps = :warmupReps,
+    workingReps = :workingReps,
+    exerciseId = :exerciseId,
+    exerciseName = :exerciseName,
+    routineSessionId = :routineSessionId,
+    routineName = :routineName,
+    peakForceConcentricA = :peakForceConcentricA,
+    peakForceConcentricB = :peakForceConcentricB,
+    peakForceEccentricA = :peakForceEccentricA,
+    peakForceEccentricB = :peakForceEccentricB,
+    avgForceConcentricA = :avgForceConcentricA,
+    avgForceConcentricB = :avgForceConcentricB,
+    avgForceEccentricA = :avgForceEccentricA,
+    avgForceEccentricB = :avgForceEccentricB,
+    heaviestLiftKg = :heaviestLiftKg,
+    totalVolumeKg = :totalVolumeKg,
+    cableCount = :cableCount,
+    estimatedCalories = :estimatedCalories,
+    warmupAvgWeightKg = :warmupAvgWeightKg,
+    workingAvgWeightKg = :workingAvgWeightKg,
+    burnoutAvgWeightKg = :burnoutAvgWeightKg,
+    peakWeightKg = :peakWeightKg,
+    rpe = :rpe,
+    avgMcvMmS = :avgMcvMmS,
+    avgAsymmetryPercent = :avgAsymmetryPercent,
+    totalVelocityLossPercent = :totalVelocityLossPercent,
+    dominantSide = :dominantSide,
+    strengthProfile = :strengthProfile,
+    formScore = :formScore,
+    updatedAt = :updatedAt
+WHERE id = :id AND portalOrigin = 1;
 
 updateSession:
 UPDATE WorkoutSession
-SET duration = ?, totalReps = ?, workingReps = ?, formScore = ?
+SET duration = ?, totalReps = ?, workingReps = ?, formScore = ?,
+    local_sync_generation = local_sync_generation + 1
 WHERE id = ?;
 
 updateSessionMode:
 UPDATE WorkoutSession
-SET mode = ?
+SET mode = ?, local_sync_generation = local_sync_generation + 1
 WHERE id = ?;
 
 updateSessionRoutineName:
 UPDATE WorkoutSession
-SET routineName = ?
+SET routineName = ?, local_sync_generation = local_sync_generation + 1
 WHERE id = ?;
 
 updateSessionRoutineSessionId:
 UPDATE WorkoutSession
-SET routineSessionId = ?
+SET routineSessionId = ?, local_sync_generation = local_sync_generation + 1
 WHERE id = ?;
 
 updateSessionRoutineId:
 UPDATE WorkoutSession
-SET routineId = ?
+SET routineId = ?, local_sync_generation = local_sync_generation + 1
 WHERE id = ?;
 
 updateSessionExerciseTag:
 UPDATE WorkoutSession
-SET exerciseId = ?, exerciseName = ?, updatedAt = ?
+SET exerciseId = ?, exerciseName = ?, updatedAt = ?,
+    local_sync_generation = local_sync_generation + 1
 WHERE id = ?;
 
 -- Metric Queries
 selectMetricsBySession:
 SELECT * FROM MetricSample WHERE sessionId = ? ORDER BY timestamp ASC;
+
+selectMetricById:
+SELECT * FROM MetricSample WHERE id = :id;
 
 -- Sync version for backup
 selectAllMetricsSync:
@@ -991,6 +1121,16 @@ SELECT * FROM MetricSample;
 insertMetric:
 INSERT INTO MetricSample (sessionId, timestamp, position, positionB, velocity, velocityB, load, loadB, power, status)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+insertMetricRestoreIfAbsent:
+INSERT OR IGNORE INTO MetricSample(
+    id, sessionId, timestamp, position, positionB, velocity, velocityB,
+    load, loadB, power, status
+)
+VALUES (
+    :id, :sessionId, :timestamp, :position, :positionB, :velocity, :velocityB,
+    :load, :loadB, :power, :status
+);
 
 deleteMetricsBySession:
 DELETE FROM MetricSample WHERE sessionId = ?;
@@ -1213,6 +1353,9 @@ VALUES (?, ?, ?, ?, ?);
 -- Routine Exercise Queries
 selectExercisesByRoutine:
 SELECT * FROM RoutineExercise WHERE routineId = ? ORDER BY orderIndex ASC;
+
+selectRoutineExerciseById:
+SELECT * FROM RoutineExercise WHERE id = :id;
 
 -- Sync version for backup
 selectAllRoutineExercisesSync:
@@ -1513,6 +1656,10 @@ SELECT * FROM StreakHistory WHERE profile_id = :profileId ORDER BY length DESC;
 insertStreakHistory:
 INSERT INTO StreakHistory (startDate, endDate, length, profile_id) VALUES (?, ?, ?, :profileId);
 
+insertStreakHistoryRestoreIfAbsent:
+INSERT OR IGNORE INTO StreakHistory(id, startDate, endDate, length, profile_id)
+VALUES (:id, :startDate, :endDate, :length, :profileId);
+
 -- Gamification Stats Queries
 selectGamificationStats:
 SELECT *
@@ -1533,6 +1680,18 @@ upsertGamificationStatsWithSync:
 INSERT OR REPLACE INTO GamificationStats
 (id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak, uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate, lastUpdated, updatedAt, serverId, profile_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, :profileId);
+
+insertGamificationStatsRestoreIfAbsent:
+INSERT OR IGNORE INTO GamificationStats(
+    id, totalWorkouts, totalReps, totalVolumeKg, longestStreak, currentStreak,
+    uniqueExercisesUsed, prsAchieved, lastWorkoutDate, streakStartDate,
+    lastUpdated, updatedAt, serverId, profile_id
+)
+VALUES (
+    :id, :totalWorkouts, :totalReps, :totalVolumeKg, :longestStreak, :currentStreak,
+    :uniqueExercisesUsed, :prsAchieved, :lastWorkoutDate, :streakStartDate,
+    :lastUpdated, :updatedAt, :serverId, :profileId
+);
 
 -- Analytics helpers for gamification (profile-scoped)
 countTotalWorkouts:
@@ -1661,10 +1820,36 @@ CREATE TABLE TrainingCycle (
     -- Template identity for generated cycles (added in migration 41)
     template_id TEXT,
     -- Persisted 5/3/1 current week (added in migration 41)
-    week_number INTEGER NOT NULL DEFAULT 1
+    week_number INTEGER NOT NULL DEFAULT 1,
+    -- Canonical LWW clock for the complete cycle graph (migration 50).
+    updatedAt INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX idx_cycle_profile ON TrainingCycle(profile_id);
+
+CREATE TABLE CycleSyncState (
+    cycle_id TEXT PRIMARY KEY NOT NULL,
+    profile_id TEXT NOT NULL,
+    account_id TEXT,
+    dirty_generation INTEGER NOT NULL DEFAULT 1,
+    acknowledged_generation INTEGER NOT NULL DEFAULT 0,
+    pending_delete_updated_at INTEGER,
+    pending_delete_generation INTEGER,
+    FOREIGN KEY (cycle_id) REFERENCES TrainingCycle(id) ON DELETE CASCADE
+);
+
+CREATE TABLE CycleConflictDraft (
+    id TEXT PRIMARY KEY NOT NULL,
+    cycle_id TEXT NOT NULL,
+    original_profile_id TEXT NOT NULL,
+    rejected_updated_at INTEGER NOT NULL,
+    payload_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    resolution TEXT
+);
+
+CREATE INDEX idx_cycle_conflict_draft_profile_cycle
+ON CycleConflictDraft(original_profile_id, cycle_id);
 
 -- Cycle Days (replaces ProgramDay - day 1, 2, 3... instead of Mon/Tue/Wed)
 CREATE TABLE CycleDay (
@@ -1776,14 +1961,19 @@ selectActiveTrainingCycle:
 SELECT * FROM TrainingCycle WHERE is_active = 1 AND profile_id = :profileId AND deletedAt IS NULL LIMIT 1;
 
 insertTrainingCycle:
-INSERT INTO TrainingCycle (id, name, description, created_at, is_active, profile_id, template_id, week_number)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT INTO TrainingCycle (id, name, description, created_at, is_active, profile_id, template_id, week_number, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 updateTrainingCycle:
-UPDATE TrainingCycle SET name = ?, description = ?, is_active = ?, template_id = ?, week_number = ? WHERE id = ?;
+UPDATE TrainingCycle
+SET name = ?, description = ?, is_active = ?, template_id = ?, week_number = ?, updatedAt = ?
+WHERE id = ?;
 
 updateTrainingCycleWeekNumber:
-UPDATE TrainingCycle SET week_number = ? WHERE id = ?;
+UPDATE TrainingCycle SET week_number = ?, updatedAt = ? WHERE id = ?;
+
+touchTrainingCycleUpdatedAt:
+UPDATE TrainingCycle SET updatedAt = :updatedAt WHERE id = :cycleId;
 
 setActiveTrainingCycle:
 UPDATE TrainingCycle SET is_active = CASE WHEN id = ? THEN 1 ELSE 0 END WHERE profile_id = :profileId;
@@ -1797,7 +1987,126 @@ SELECT COUNT(*) FROM TrainingCycle WHERE is_active = 1 AND profile_id = :profile
 
 -- Soft-delete training cycle (for sync — tombstone propagation to server)
 softDeleteTrainingCycle:
-UPDATE TrainingCycle SET deletedAt = ? WHERE id = ?;
+UPDATE TrainingCycle SET deletedAt = :deletedAt, updatedAt = :updatedAt WHERE id = :id;
+
+selectCycleSyncState:
+SELECT * FROM CycleSyncState WHERE cycle_id = :cycleId;
+
+selectAllCycleSyncStates:
+SELECT * FROM CycleSyncState ORDER BY profile_id, cycle_id;
+
+insertCycleSyncState:
+INSERT INTO CycleSyncState(
+    cycle_id, profile_id, account_id, dirty_generation, acknowledged_generation,
+    pending_delete_updated_at, pending_delete_generation
+)
+VALUES (
+    :cycleId, :profileId, :accountId, :dirtyGeneration, :acknowledgedGeneration,
+    :pendingDeleteUpdatedAt, :pendingDeleteGeneration
+);
+
+insertCycleSyncStateIfAbsent:
+INSERT OR IGNORE INTO CycleSyncState(
+    cycle_id, profile_id, account_id, dirty_generation, acknowledged_generation,
+    pending_delete_updated_at, pending_delete_generation
+)
+VALUES (
+    :cycleId, :profileId, :accountId, :dirtyGeneration, :acknowledgedGeneration,
+    :pendingDeleteUpdatedAt, :pendingDeleteGeneration
+);
+
+markCycleDirty:
+UPDATE CycleSyncState
+SET profile_id = :profileId,
+    dirty_generation = dirty_generation + 1
+WHERE cycle_id = :cycleId;
+
+selectDirtyCycleStates:
+SELECT * FROM CycleSyncState
+WHERE profile_id = :profileId
+  AND pending_delete_updated_at IS NULL
+  AND dirty_generation > acknowledged_generation
+ORDER BY cycle_id;
+
+ackCycleStateIfGenerationMatches:
+UPDATE CycleSyncState
+SET acknowledged_generation = :generation
+WHERE cycle_id = :cycleId
+  AND dirty_generation = :generation
+  AND acknowledged_generation < :generation
+  AND pending_delete_updated_at IS NULL;
+
+markCycleDeletionPending:
+UPDATE CycleSyncState
+SET profile_id = :profileId,
+    account_id = COALESCE(account_id, :accountId),
+    dirty_generation = dirty_generation + 1,
+    pending_delete_updated_at = :deletedAt,
+    pending_delete_generation = dirty_generation + 1
+WHERE cycle_id = :cycleId;
+
+selectPendingCycleDeletions:
+SELECT cycle_id AS id,
+       pending_delete_updated_at AS updatedAt,
+       pending_delete_generation AS generation
+FROM CycleSyncState
+WHERE account_id = :accountId
+  AND profile_id = :profileId
+  AND pending_delete_updated_at IS NOT NULL
+  AND pending_delete_generation IS NOT NULL
+ORDER BY pending_delete_updated_at, cycle_id;
+
+ackCycleDeletionIfMatches:
+DELETE FROM TrainingCycle
+WHERE id = :cycleId
+  AND profile_id = :profileId
+  AND deletedAt = :deletedAt
+  AND EXISTS (
+      SELECT 1 FROM CycleSyncState AS state
+      WHERE state.cycle_id = TrainingCycle.id
+        AND state.account_id = :accountId
+        AND state.profile_id = :profileId
+        AND state.dirty_generation = :generation
+        AND state.pending_delete_generation = :generation
+        AND state.pending_delete_updated_at = :deletedAt
+  );
+
+insertCycleConflictDraft:
+INSERT INTO CycleConflictDraft(
+    id, cycle_id, original_profile_id, rejected_updated_at,
+    payload_json, created_at, resolution
+)
+VALUES (
+    :id, :cycleId, :originalProfileId, :rejectedUpdatedAt,
+    :payloadJson, :createdAt, NULL
+);
+
+insertCycleConflictDraftIfAbsent:
+INSERT OR IGNORE INTO CycleConflictDraft(
+    id, cycle_id, original_profile_id, rejected_updated_at,
+    payload_json, created_at, resolution
+)
+VALUES (
+    :id, :cycleId, :originalProfileId, :rejectedUpdatedAt,
+    :payloadJson, :createdAt, :resolution
+);
+
+selectCycleConflictDraftById:
+SELECT * FROM CycleConflictDraft WHERE id = :id;
+
+selectUnresolvedCycleConflictDrafts:
+SELECT * FROM CycleConflictDraft
+WHERE original_profile_id = :profileId AND resolution IS NULL
+ORDER BY created_at, id;
+
+selectAllCycleConflictDrafts:
+SELECT * FROM CycleConflictDraft ORDER BY created_at, id;
+
+resolveCycleConflictDraft:
+UPDATE CycleConflictDraft SET resolution = :resolution WHERE id = :id AND resolution IS NULL;
+
+deleteCycleConflictDraft:
+DELETE FROM CycleConflictDraft WHERE id = :id;
 
 -- CycleDay Queries
 selectCycleDaysByCycle:
@@ -1822,6 +2131,9 @@ DELETE FROM CycleDay WHERE cycle_id = ?;
 -- CycleProgress Queries
 selectCycleProgressByCycle:
 SELECT * FROM CycleProgress WHERE cycle_id = ?;
+
+selectCycleProgressById:
+SELECT * FROM CycleProgress WHERE id = :id;
 
 insertCycleProgress:
 INSERT INTO CycleProgress (id, cycle_id, current_day_number, last_completed_date, cycle_start_date, last_advanced_at, completed_days, missed_days, rotation_count)
@@ -1995,9 +2307,9 @@ DELETE FROM CompletedSet WHERE id = ?;
 deleteCompletedSetsBySession:
 DELETE FROM CompletedSet WHERE session_id = ?;
 
--- The stored 1RM / training max is per profile from migration 49 on; see the
--- ExerciseTrainingMax section at the end of this file. Nothing writes
--- Exercise.one_rep_max_kg any more.
+-- Legacy Exercise 1RM recovery read. Runtime baseline writes are profile-scoped.
+getExercisesWithOneRepMax:
+SELECT * FROM Exercise WHERE one_rep_max_kg IS NOT NULL;
 
 findExerciseByName:
 SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) ORDER BY archived ASC LIMIT 1;
@@ -2039,6 +2351,9 @@ SELECT * FROM CompletedSet;
 selectAllProgressionEventsSync:
 SELECT * FROM ProgressionEvent;
 
+selectProgressionEventById:
+SELECT * FROM ProgressionEvent WHERE id = :id;
+
 -- Backup sync queries for gamification tables
 selectAllEarnedBadgesSync:
 SELECT * FROM EarnedBadge;
@@ -2060,8 +2375,8 @@ SELECT id FROM UserProfile;
 -- INSERT OR IGNORE queries for backup import (skips duplicates)
 
 insertTrainingCycleIgnore:
-INSERT OR IGNORE INTO TrainingCycle (id, name, description, created_at, is_active, profile_id, template_id, week_number)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+INSERT OR IGNORE INTO TrainingCycle (id, name, description, created_at, is_active, profile_id, template_id, week_number, updatedAt)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
 
 insertCycleDayIgnore:
 INSERT OR IGNORE INTO CycleDay (id, cycle_id, day_number, name, routine_id, is_rest_day, echo_level, eccentric_load_percent, weight_progression_percent, rep_modifier, rest_time_override_seconds)
@@ -2113,6 +2428,25 @@ UPDATE WorkoutSession SET profile_id = :profileId WHERE id = :id AND profile_id 
 adoptRoutineProfile:
 UPDATE Routine SET profile_id = :profileId WHERE id = :id AND profile_id != :profileId;
 
+adoptTrainingCycleProfile:
+UPDATE TrainingCycle SET profile_id = :profileId WHERE id = :id AND profile_id != :profileId;
+
+adoptCycleSyncStateForCycle:
+UPDATE CycleSyncState
+SET profile_id = :targetProfileId
+WHERE cycle_id = :cycleId AND profile_id != :targetProfileId;
+
+adoptCycleSyncStateProfile:
+UPDATE CycleSyncState
+SET profile_id = :targetProfileId
+WHERE profile_id = :sourceProfileId;
+
+selectAllRetainedCycleIdsByProfile:
+SELECT id FROM TrainingCycle WHERE profile_id = :profileId ORDER BY id;
+
+adoptPersonalRecordProfileByUuid:
+UPDATE PersonalRecord SET profile_id = :profileId WHERE uuid = :uuid AND profile_id != :profileId;
+
 -- ==================== USER PROFILES ====================
 -- User Profiles for multi-user support
 
@@ -2128,6 +2462,526 @@ CREATE TABLE UserProfile (
     subscription_expires_at INTEGER,
     last_auth_at INTEGER
 );
+
+CREATE TABLE ProfileExerciseBaseline (
+    profile_id TEXT NOT NULL,
+    exercise_id TEXT NOT NULL,
+    one_rep_max_per_cable_kg REAL,
+    updated_at INTEGER NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+    PRIMARY KEY (profile_id, exercise_id),
+    FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE,
+    FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_profile_exercise_baseline_exercise ON ProfileExerciseBaseline(exercise_id);
+
+selectProfileExerciseBaseline:
+SELECT * FROM ProfileExerciseBaseline
+WHERE profile_id = :profileId AND exercise_id = :exerciseId;
+
+selectProfileExerciseBaselinesByProfile:
+SELECT * FROM ProfileExerciseBaseline
+WHERE profile_id = :profileId
+ORDER BY exercise_id;
+
+selectProfileExerciseBaselinesByExercise:
+SELECT * FROM ProfileExerciseBaseline
+WHERE exercise_id = :exerciseId
+ORDER BY profile_id;
+
+selectAllProfileExerciseBaselines:
+SELECT * FROM ProfileExerciseBaseline
+ORDER BY profile_id, exercise_id;
+
+insertProfileExerciseBaselineIfAbsent:
+INSERT OR IGNORE INTO ProfileExerciseBaseline(
+    profile_id, exercise_id, one_rep_max_per_cable_kg, updated_at, revision
+)
+VALUES (:profileId, :exerciseId, :oneRepMaxPerCableKg, :updatedAt, :revision);
+
+updateProfileExerciseBaselineAtRevision:
+UPDATE ProfileExerciseBaseline
+SET one_rep_max_per_cable_kg = :oneRepMaxPerCableKg,
+    updated_at = MAX(updated_at, :updatedAt),
+    revision = revision + 1
+WHERE profile_id = :profileId
+  AND exercise_id = :exerciseId
+  AND revision = :expectedRevision;
+
+incrementProfileExerciseBaseline:
+UPDATE ProfileExerciseBaseline
+SET one_rep_max_per_cable_kg = one_rep_max_per_cable_kg + :incrementKg,
+    updated_at = MAX(updated_at, :updatedAt),
+    revision = revision + 1
+WHERE profile_id = :profileId
+  AND exercise_id = :exerciseId
+  AND one_rep_max_per_cable_kg IS NOT NULL;
+
+deleteProfileExerciseBaseline:
+DELETE FROM ProfileExerciseBaseline
+WHERE profile_id = :profileId AND exercise_id = :exerciseId;
+
+consumeLegacyOneRepMaxIfCurrent:
+UPDATE Exercise
+SET one_rep_max_kg = NULL
+WHERE id = :exerciseId AND one_rep_max_kg = :expectedOneRepMaxKg;
+
+copyProfileExerciseBaselinesForCatalogRemap:
+INSERT OR IGNORE INTO ProfileExerciseBaseline(
+    profile_id, exercise_id, one_rep_max_per_cable_kg, updated_at, revision
+)
+SELECT profile_id, :newExerciseId, one_rep_max_per_cable_kg, updated_at, revision
+FROM ProfileExerciseBaseline
+WHERE exercise_id = :oldExerciseId;
+
+mergeProfileExerciseBaselinesForCatalogRemap:
+UPDATE ProfileExerciseBaseline
+SET one_rep_max_per_cable_kg = (
+        SELECT source.one_rep_max_per_cable_kg
+        FROM ProfileExerciseBaseline AS source
+        WHERE source.profile_id = ProfileExerciseBaseline.profile_id
+          AND source.exercise_id = :oldExerciseId
+    ),
+    updated_at = (
+        SELECT source.updated_at
+        FROM ProfileExerciseBaseline AS source
+        WHERE source.profile_id = ProfileExerciseBaseline.profile_id
+          AND source.exercise_id = :oldExerciseId
+    ),
+    revision = MAX(
+        revision,
+        (
+            SELECT source.revision
+            FROM ProfileExerciseBaseline AS source
+            WHERE source.profile_id = ProfileExerciseBaseline.profile_id
+              AND source.exercise_id = :oldExerciseId
+        )
+    ) + 1
+WHERE exercise_id = :newExerciseId
+  AND EXISTS (
+      SELECT 1
+      FROM ProfileExerciseBaseline AS source
+      WHERE source.profile_id = ProfileExerciseBaseline.profile_id
+        AND source.exercise_id = :oldExerciseId
+        AND source.updated_at > ProfileExerciseBaseline.updated_at
+  );
+
+deleteProfileExerciseBaselinesByExercise:
+DELETE FROM ProfileExerciseBaseline WHERE exercise_id = :exerciseId;
+
+copyProfileExerciseBaselinesForProfileDelete:
+INSERT OR IGNORE INTO ProfileExerciseBaseline(
+    profile_id, exercise_id, one_rep_max_per_cable_kg, updated_at, revision
+)
+SELECT :targetProfileId, exercise_id, one_rep_max_per_cable_kg, updated_at, revision
+FROM ProfileExerciseBaseline
+WHERE profile_id = :sourceProfileId;
+
+CREATE TABLE AppliedDataRepair (
+    repair_key TEXT PRIMARY KEY NOT NULL,
+    applied_at INTEGER NOT NULL
+);
+
+selectAppliedDataRepair:
+SELECT * FROM AppliedDataRepair WHERE repair_key = :repairKey;
+
+selectAllAppliedDataRepairs:
+SELECT * FROM AppliedDataRepair ORDER BY applied_at, repair_key;
+
+insertAppliedDataRepair:
+INSERT OR IGNORE INTO AppliedDataRepair(repair_key, applied_at)
+VALUES (:repairKey, :appliedAt);
+
+CREATE TABLE PendingProfileRecovery (
+    recovery_id TEXT PRIMARY KEY NOT NULL,
+    kind TEXT NOT NULL CHECK(kind IN ('PROFILE_DATA', 'LEGACY_BASELINE')),
+    source_key TEXT NOT NULL UNIQUE,
+    source_profile_id TEXT,
+    source_profile_name TEXT NOT NULL,
+    owner_user_id TEXT,
+    counts_json TEXT NOT NULL,
+    discovered_at INTEGER NOT NULL,
+    resolved_at INTEGER
+);
+
+selectPendingProfileRecoveryBySourceKey:
+SELECT * FROM PendingProfileRecovery WHERE source_key = :sourceKey;
+
+selectPendingProfileRecoveryById:
+SELECT * FROM PendingProfileRecovery WHERE recovery_id = :recoveryId;
+
+selectUnresolvedProfileRecoveries:
+SELECT * FROM PendingProfileRecovery
+WHERE resolved_at IS NULL
+ORDER BY discovered_at, recovery_id;
+
+selectAllPendingProfileRecoveries:
+SELECT * FROM PendingProfileRecovery ORDER BY discovered_at, recovery_id;
+
+insertPendingProfileRecoveryIfAbsent:
+INSERT OR IGNORE INTO PendingProfileRecovery(
+    recovery_id, kind, source_key, source_profile_id, source_profile_name,
+    owner_user_id, counts_json, discovered_at
+)
+VALUES (
+    :recoveryId, :kind, :sourceKey, :sourceProfileId, :sourceProfileName,
+    :ownerUserId, :countsJson, :discoveredAt
+);
+
+insertPendingProfileRecoveryRestoreIfAbsent:
+INSERT OR IGNORE INTO PendingProfileRecovery(
+    recovery_id, kind, source_key, source_profile_id, source_profile_name,
+    owner_user_id, counts_json, discovered_at, resolved_at
+)
+VALUES (
+    :recoveryId, :kind, :sourceKey, :sourceProfileId, :sourceProfileName,
+    :ownerUserId, :countsJson, :discoveredAt, :resolvedAt
+);
+
+markProfileRecoveryResolved:
+UPDATE PendingProfileRecovery
+SET resolved_at = :resolvedAt
+WHERE recovery_id = :recoveryId AND resolved_at IS NULL;
+
+bindPendingProfileRecoveryOwner:
+UPDATE PendingProfileRecovery
+SET owner_user_id = :ownerUserId
+WHERE recovery_id = :recoveryId
+  AND resolved_at IS NULL
+  AND owner_user_id IS NULL
+  AND counts_json = :expectedCountsJson;
+
+CREATE TABLE OwnershipTransferOutbox (
+    mutation_id TEXT PRIMARY KEY NOT NULL,
+    owner_user_id TEXT NOT NULL,
+    source_profile_id TEXT,
+    target_profile_id TEXT NOT NULL,
+    workout_session_ids_json TEXT NOT NULL,
+    routine_ids_json TEXT NOT NULL,
+    cycle_ids_json TEXT NOT NULL,
+    personal_record_ids_json TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    acknowledged_at INTEGER,
+    CHECK(
+        workout_session_ids_json <> '[]' OR
+        routine_ids_json <> '[]' OR
+        cycle_ids_json <> '[]' OR
+        personal_record_ids_json <> '[]'
+    )
+);
+
+insertOwnershipTransferOutbox:
+INSERT INTO OwnershipTransferOutbox(
+    mutation_id, owner_user_id, source_profile_id, target_profile_id,
+    workout_session_ids_json, routine_ids_json, cycle_ids_json,
+    personal_record_ids_json, created_at, acknowledged_at
+)
+VALUES (
+    :mutationId, :ownerUserId, :sourceProfileId, :targetProfileId,
+    :workoutSessionIdsJson, :routineIdsJson, :cycleIdsJson,
+    :personalRecordIdsJson, :createdAt, NULL
+);
+
+selectOwnershipTransferByMutationId:
+SELECT * FROM OwnershipTransferOutbox WHERE mutation_id = :mutationId;
+
+selectAllOwnershipTransfers:
+SELECT * FROM OwnershipTransferOutbox ORDER BY created_at, mutation_id;
+
+insertOwnershipTransferRestoreIfAbsent:
+INSERT OR IGNORE INTO OwnershipTransferOutbox(
+    mutation_id, owner_user_id, source_profile_id, target_profile_id,
+    workout_session_ids_json, routine_ids_json, cycle_ids_json,
+    personal_record_ids_json, created_at, acknowledged_at
+)
+VALUES (
+    :mutationId, :ownerUserId, :sourceProfileId, :targetProfileId,
+    :workoutSessionIdsJson, :routineIdsJson, :cycleIdsJson,
+    :personalRecordIdsJson, :createdAt, :acknowledgedAt
+);
+
+selectPendingOwnershipTransfersForOwner:
+SELECT * FROM OwnershipTransferOutbox
+WHERE owner_user_id = :ownerUserId AND acknowledged_at IS NULL
+ORDER BY created_at, mutation_id;
+
+selectAllPendingOwnershipTransfers:
+SELECT * FROM OwnershipTransferOutbox
+WHERE acknowledged_at IS NULL
+ORDER BY created_at, mutation_id;
+
+acknowledgeOwnershipTransfer:
+UPDATE OwnershipTransferOutbox
+SET acknowledged_at = :acknowledgedAt
+WHERE owner_user_id = :ownerUserId
+  AND mutation_id = :mutationId
+  AND acknowledged_at IS NULL;
+
+advanceOwnershipTransferAcknowledgedAt:
+UPDATE OwnershipTransferOutbox
+SET acknowledged_at = :acknowledgedAt
+WHERE mutation_id = :mutationId
+  AND owner_user_id = :ownerUserId
+  AND (acknowledged_at IS NULL OR acknowledged_at < :acknowledgedAt);
+
+CREATE TABLE AppliedOwnershipEvent (
+    owner_user_id TEXT NOT NULL,
+    mutation_id TEXT NOT NULL,
+    canonical_body_hash TEXT NOT NULL,
+    applied_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_user_id, mutation_id)
+);
+
+CREATE TABLE LocalOwnershipClaim (
+    owner_user_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL CHECK(entity_type IN ('WORKOUT', 'ROUTINE', 'CYCLE', 'PERSONAL_RECORD')),
+    entity_id TEXT NOT NULL,
+    mutation_id TEXT NOT NULL,
+    source_profile_id TEXT,
+    target_profile_id TEXT NOT NULL,
+    transferred_at INTEGER NOT NULL,
+    PRIMARY KEY (owner_user_id, entity_type, entity_id)
+);
+
+CREATE INDEX idx_local_ownership_claim_mutation
+ON LocalOwnershipClaim(owner_user_id, mutation_id);
+
+selectLocalOwnershipClaim:
+SELECT * FROM LocalOwnershipClaim
+WHERE owner_user_id = :ownerUserId
+  AND entity_type = :entityType
+  AND entity_id = :entityId;
+
+selectAllLocalOwnershipClaims:
+SELECT * FROM LocalOwnershipClaim
+ORDER BY owner_user_id, entity_type, entity_id;
+
+selectLocalOwnershipClaimsByMutation:
+SELECT * FROM LocalOwnershipClaim
+WHERE owner_user_id = :ownerUserId AND mutation_id = :mutationId
+ORDER BY entity_type, entity_id;
+
+selectLocalOwnershipClaimsForEntity:
+SELECT * FROM LocalOwnershipClaim
+WHERE entity_type = :entityType AND entity_id = :entityId
+ORDER BY owner_user_id;
+
+insertLocalOwnershipClaimIfAbsent:
+INSERT OR IGNORE INTO LocalOwnershipClaim(
+    owner_user_id, entity_type, entity_id, mutation_id,
+    source_profile_id, target_profile_id, transferred_at
+)
+VALUES (
+    :ownerUserId, :entityType, :entityId, :mutationId,
+    :sourceProfileId, :targetProfileId, :transferredAt
+);
+
+replaceLocalOwnershipClaimIfNewer:
+UPDATE LocalOwnershipClaim
+SET mutation_id = :mutationId,
+    source_profile_id = :sourceProfileId,
+    target_profile_id = :targetProfileId,
+    transferred_at = :transferredAt
+WHERE owner_user_id = :ownerUserId
+  AND entity_type = :entityType
+  AND entity_id = :entityId
+  AND transferred_at < :transferredAt;
+
+selectAppliedOwnershipEvent:
+SELECT * FROM AppliedOwnershipEvent
+WHERE owner_user_id = :ownerUserId AND mutation_id = :mutationId;
+
+selectAllAppliedOwnershipEvents:
+SELECT * FROM AppliedOwnershipEvent ORDER BY applied_at, owner_user_id, mutation_id;
+
+insertAppliedOwnershipEventIfAbsent:
+INSERT OR IGNORE INTO AppliedOwnershipEvent(
+    owner_user_id, mutation_id, canonical_body_hash, applied_at
+)
+VALUES (:ownerUserId, :mutationId, :canonicalBodyHash, :appliedAt);
+
+CREATE TABLE WorkoutDeletion (
+    mutation_id TEXT NOT NULL PRIMARY KEY,
+    owner_user_id TEXT,
+    profile_id TEXT NOT NULL,
+    scope TEXT NOT NULL CHECK(scope IN ('COMPONENT', 'WORKOUT')),
+    portal_session_id TEXT NOT NULL,
+    component_session_id TEXT,
+    deleted_at INTEGER NOT NULL,
+    acknowledged_at INTEGER,
+    source TEXT NOT NULL CHECK(source IN ('LOCAL', 'REMOTE')),
+    CHECK(
+        (scope = 'COMPONENT' AND component_session_id IS NOT NULL) OR
+        (scope = 'WORKOUT' AND component_session_id IS NULL)
+    )
+);
+
+CREATE INDEX idx_workout_deletion_pending
+ON WorkoutDeletion(owner_user_id, profile_id, source, acknowledged_at, deleted_at, mutation_id);
+
+CREATE INDEX idx_workout_deletion_target
+ON WorkoutDeletion(owner_user_id, portal_session_id, component_session_id, scope);
+
+selectDirtyWorkoutPortalParentIds:
+SELECT DISTINCT COALESCE(NULLIF(routineSessionId, ''), id) AS portalSessionId
+FROM WorkoutSession
+WHERE profile_id = :profileId
+  AND deletedAt IS NULL
+  AND local_sync_generation > synced_sync_generation
+ORDER BY portalSessionId;
+
+selectLiveWorkoutComponentsForPortalParents:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+  AND deletedAt IS NULL
+  AND COALESCE(NULLIF(routineSessionId, ''), id) IN :portalSessionIds
+ORDER BY COALESCE(NULLIF(routineSessionId, ''), id), timestamp, id;
+
+ackWorkoutComponentSnapshot:
+UPDATE WorkoutSession
+SET synced_sync_generation = :snapshotGeneration
+WHERE id = :id
+  AND local_sync_generation = :snapshotGeneration
+  AND synced_sync_generation < :snapshotGeneration;
+
+markWorkoutComponentDirty:
+UPDATE WorkoutSession
+SET local_sync_generation = local_sync_generation + 1
+WHERE id = :id AND deletedAt IS NULL;
+
+markWorkoutPortalParentDirty:
+UPDATE WorkoutSession
+SET local_sync_generation = local_sync_generation + 1
+WHERE deletedAt IS NULL
+  AND COALESCE(NULLIF(routineSessionId, ''), id) = :portalSessionId;
+
+selectWorkoutDeletionByMutationId:
+SELECT * FROM WorkoutDeletion WHERE mutation_id = :mutationId;
+
+selectAllWorkoutDeletions:
+SELECT * FROM WorkoutDeletion ORDER BY deleted_at, mutation_id;
+
+insertWorkoutDeletion:
+INSERT INTO WorkoutDeletion(
+    mutation_id, owner_user_id, profile_id, scope, portal_session_id,
+    component_session_id, deleted_at, acknowledged_at, source
+)
+VALUES (
+    :mutationId, :ownerUserId, :profileId, :scope, :portalSessionId,
+    :componentSessionId, :deletedAt, NULL, :source
+);
+
+insertWorkoutDeletionRestoreIfAbsent:
+INSERT OR IGNORE INTO WorkoutDeletion(
+    mutation_id, owner_user_id, profile_id, scope, portal_session_id,
+    component_session_id, deleted_at, acknowledged_at, source
+)
+VALUES (
+    :mutationId, :ownerUserId, :profileId, :scope, :portalSessionId,
+    :componentSessionId, :deletedAt, :acknowledgedAt, :source
+);
+
+selectPendingWorkoutDeletions:
+SELECT * FROM WorkoutDeletion
+WHERE owner_user_id = :ownerUserId
+  AND profile_id = :profileId
+  AND source = 'LOCAL'
+  AND acknowledged_at IS NULL
+ORDER BY deleted_at, mutation_id;
+
+selectPendingWorkoutDeletionsForOwner:
+SELECT * FROM WorkoutDeletion
+WHERE owner_user_id = :ownerUserId
+  AND source = 'LOCAL'
+  AND acknowledged_at IS NULL
+ORDER BY deleted_at, mutation_id;
+
+acknowledgeWorkoutDeletion:
+UPDATE WorkoutDeletion
+SET acknowledged_at = :acknowledgedAt
+WHERE owner_user_id = :ownerUserId
+  AND mutation_id = :mutationId
+  AND source = 'LOCAL'
+  AND acknowledged_at IS NULL;
+
+advanceWorkoutDeletionAcknowledgedAt:
+UPDATE WorkoutDeletion
+SET acknowledged_at = :acknowledgedAt
+WHERE mutation_id = :mutationId
+  AND (
+      owner_user_id = :ownerUserId OR
+      (owner_user_id IS NULL AND :ownerUserId IS NULL)
+  )
+  AND (acknowledged_at IS NULL OR acknowledged_at < :acknowledgedAt);
+
+selectBlockingWorkoutDeletion:
+SELECT * FROM WorkoutDeletion
+WHERE (owner_user_id = :ownerUserId OR owner_user_id IS NULL)
+  AND portal_session_id = :portalSessionId
+  AND (
+      scope = 'WORKOUT' OR
+      (scope = 'COMPONENT' AND component_session_id = :componentSessionId)
+  )
+LIMIT 1;
+
+selectBlockingWorkoutDeletionForRestore:
+SELECT * FROM WorkoutDeletion
+WHERE profile_id = :profileId
+  AND (
+      :ownerUserId IS NULL OR
+      owner_user_id IS NULL OR
+      owner_user_id = :ownerUserId
+  )
+  AND portal_session_id = :portalSessionId
+  AND (
+      scope = 'WORKOUT' OR
+      (scope = 'COMPONENT' AND component_session_id = :componentSessionId)
+  )
+LIMIT 1;
+
+selectLiveWorkoutComponentsForDeletion:
+SELECT * FROM WorkoutSession
+WHERE deletedAt IS NULL
+  AND COALESCE(NULLIF(routineSessionId, ''), id) = :portalSessionId
+ORDER BY timestamp, id;
+
+selectLiveProfileWorkoutComponentsForDeletion:
+SELECT * FROM WorkoutSession
+WHERE profile_id = :profileId
+  AND deletedAt IS NULL
+  AND COALESCE(NULLIF(routineSessionId, ''), id) = :portalSessionId
+ORDER BY timestamp, id;
+
+hardDeleteWorkoutComponent:
+DELETE FROM WorkoutSession WHERE id = :id;
+
+hardDeleteWorkoutPortalParent:
+DELETE FROM WorkoutSession
+WHERE COALESCE(NULLIF(routineSessionId, ''), id) = :portalSessionId;
+
+hardDeleteProfileWorkoutPortalParent:
+DELETE FROM WorkoutSession
+WHERE profile_id = :profileId
+  AND COALESCE(NULLIF(routineSessionId, ''), id) = :portalSessionId;
+
+hardDeleteAllWorkoutSessionsForProfile:
+DELETE FROM WorkoutSession WHERE profile_id = :profileId;
+
+selectDistinctLiveWorkoutPortalParentsForProfile:
+SELECT DISTINCT COALESCE(NULLIF(routineSessionId, ''), id) AS portalSessionId
+FROM WorkoutSession
+WHERE profile_id = :profileId AND deletedAt IS NULL
+ORDER BY portalSessionId;
+
+selectPortalSessionIdsByProfile:
+SELECT DISTINCT CASE
+    WHEN routineSessionId IS NULL OR TRIM(routineSessionId) = '' THEN id
+    ELSE routineSessionId
+END AS portal_session_id
+FROM WorkoutSession
+WHERE profile_id = :profileId
+ORDER BY portal_session_id;
 
 CREATE TABLE UserProfilePreferences (
     profile_id TEXT PRIMARY KEY NOT NULL,
@@ -2637,24 +3491,10 @@ SELECT subscription_status FROM UserProfile WHERE isActive = 1;
 -- ==================== SYNC QUERIES ====================
 
 -- Get sessions modified since last sync (for push)
--- Push gather. A session this device only ever pulled is excluded by ORIGIN,
--- not by timestamp (PulledWorkoutSession, migration 48): re-pushing it would
--- create a duplicate portal workout for a standalone row and can never add
--- anything the portal does not already have. The escape hatch is local
--- measurements: a MetricSample, RepMetric or CompletedSet row for the id means
--- this device holds data the portal does not, so the row is ours to push.
--- That is the same "this device has local data" predicate as the migration 48
--- backfill and updatePulledSessionTag — keep the three in step.
 selectSessionsModifiedSince:
 SELECT * FROM WorkoutSession
 WHERE (updatedAt > ? OR updatedAt IS NULL) AND deletedAt IS NULL
 AND profile_id = :profileId
-AND (
-    NOT EXISTS (SELECT 1 FROM PulledWorkoutSession WHERE PulledWorkoutSession.id = WorkoutSession.id)
-    OR EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = WorkoutSession.id)
-    OR EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
-    OR EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id)
-)
 ORDER BY timestamp DESC;
 
 -- Get soft-deleted sessions (for push)
@@ -2669,6 +3509,53 @@ UPDATE WorkoutSession SET serverId = ? WHERE id = ?;
 -- Soft delete session
 softDeleteSession:
 UPDATE WorkoutSession SET deletedAt = ?, updatedAt = ? WHERE id = ?;
+
+-- Insert a legacy pull row if absent. Existing rows are updated through the
+-- guarded updateLegacyPortalSessionProjection query without replacing the FK parent.
+upsertSyncSession:
+INSERT OR IGNORE INTO WorkoutSession (
+    id, timestamp, mode, targetReps, weightPerCableKg, progressionKg,
+    duration, totalReps, warmupReps, workingReps,
+    isJustLift, stopAtTop, eccentricLoad, echoLevel,
+    exerciseId, exerciseName, routineSessionId, routineName, routineId,
+    safetyFlags, deloadWarningCount, romViolationCount, spotterActivations,
+    peakForceConcentricA, peakForceConcentricB, peakForceEccentricA, peakForceEccentricB,
+    avgForceConcentricA, avgForceConcentricB, avgForceEccentricA, avgForceEccentricB,
+    heaviestLiftKg, totalVolumeKg, cableCount, estimatedCalories,
+    warmupAvgWeightKg, workingAvgWeightKg, burnoutAvgWeightKg, peakWeightKg, rpe,
+    avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent, dominantSide, strengthProfile,
+    formScore,
+    updatedAt, serverId, deletedAt,
+    profile_id,
+    display_multiplier, externalAddedLoadKg, counterweightKg, rackItemsJson,
+    portalOrigin, local_sync_generation, synced_sync_generation
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 0, 0);
+
+updateLegacyPortalSessionProjection:
+UPDATE WorkoutSession SET
+    timestamp = :timestamp,
+    mode = :mode,
+    targetReps = :targetReps,
+    weightPerCableKg = :weightPerCableKg,
+    duration = :duration,
+    totalReps = :totalReps,
+    workingReps = :workingReps,
+    exerciseId = :exerciseId,
+    exerciseName = :exerciseName,
+    updatedAt = :updatedAt,
+    serverId = COALESCE(:serverId, serverId),
+    deletedAt = CASE
+        WHEN :deletedAt IS NULL THEN deletedAt
+        WHEN deletedAt IS NULL OR :deletedAt > deletedAt THEN :deletedAt
+        ELSE deletedAt
+    END
+WHERE id = :id AND portalOrigin = 1;
+
+attachSessionServerIdIfAbsent:
+UPDATE WorkoutSession
+SET serverId = :serverId
+WHERE id = :id AND serverId IS NULL;
 
 -- Get PRs modified since last sync, including tombstones for convergence.
 selectPRsModifiedSince:
@@ -2737,6 +3624,10 @@ LIMIT 1;
 -- Update gamification stats server ID (profile-scoped)
 updateGamificationStatsServerId:
 UPDATE GamificationStats SET serverId = ? WHERE profile_id = :profileId;
+
+-- Find session by server ID (for conflict resolution)
+selectSessionByServerId:
+SELECT * FROM WorkoutSession WHERE serverId = ?;
 
 -- Find PR by server ID
 selectPRByServerId:
@@ -3522,341 +4413,3 @@ SELECT * FROM SessionNotes;
 insertSessionNotesIgnore:
 INSERT OR IGNORE INTO SessionNotes(routineSessionId, notes, updatedAt)
 VALUES (?, ?, ?);
-
--- ────────────────────────────────────────────────────────────────────────────
--- DeletedWorkoutSession / PulledWorkoutSession (migration 48.sqm)
---
--- Deletion and origin bookkeeping for workout sessions.
---
--- DeletedWorkoutSession: a workout the user deleted on this device. The pull
--- merge skips these ids and the pull request sends their portal_id as a known
--- id, so the portal stops offering the workout as new. `portal_id` is the id
--- the portal knows: routineSessionId for a grouped routine workout, otherwise
--- the session id. Neither table has a foreign key to UserProfile: a tombstone
--- has to outlive a permanently deleted profile.
---
--- PulledWorkoutSession: the sessions this device got from a pull. They are
--- excluded from the push gather (selectSessionsModifiedSince) so a pulled row
--- is never sent back as local work.
--- ────────────────────────────────────────────────────────────────────────────
-
-CREATE TABLE IF NOT EXISTS DeletedWorkoutSession (
-    id TEXT NOT NULL PRIMARY KEY,
-    portal_id TEXT NOT NULL,
-    profile_id TEXT NOT NULL,
-    deleted_at INTEGER NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_deleted_session_profile
-    ON DeletedWorkoutSession(profile_id);
-
-CREATE INDEX IF NOT EXISTS idx_deleted_session_portal
-    ON DeletedWorkoutSession(portal_id);
-
-CREATE TABLE IF NOT EXISTS PulledWorkoutSession (
-    id TEXT NOT NULL PRIMARY KEY
-);
-
--- Tombstone writers. Each runs in the same transaction as its DELETE (see
--- SqlDelightWorkoutRepository), reading portal_id and profile_id off the rows
--- that are about to go. INSERT OR REPLACE refreshes deleted_at when a session
--- is deleted, restored from a backup and deleted again.
-insertSessionTombstone:
-INSERT OR REPLACE INTO DeletedWorkoutSession(id, portal_id, profile_id, deleted_at)
-SELECT id, COALESCE(routineSessionId, id), profile_id, :deletedAt
-FROM WorkoutSession WHERE id = :id;
-
-insertSessionTombstonesForRoutineSession:
-INSERT OR REPLACE INTO DeletedWorkoutSession(id, portal_id, profile_id, deleted_at)
-SELECT id, COALESCE(routineSessionId, id), profile_id, :deletedAt
-FROM WorkoutSession WHERE routineSessionId = :routineSessionId;
-
-insertSessionTombstonesForProfile:
-INSERT OR REPLACE INTO DeletedWorkoutSession(id, portal_id, profile_id, deleted_at)
-SELECT id, COALESCE(routineSessionId, id), profile_id, :deletedAt
-FROM WorkoutSession WHERE profile_id = :profileId;
-
--- "Delete All Workouts" is scoped to one profile. There is deliberately no
--- unscoped variant: nothing else wipes the session table.
-deleteAllSessionsForProfile:
-DELETE FROM WorkoutSession WHERE profile_id = :profileId;
-
--- Pull request: the portal knows a deleted workout under its portal_id. Sending
--- it as a known id stops the portal returning the workout on every pull.
---
--- Not profile-filtered, on purpose: the merge-side skip is id-only (see
--- selectSessionKnownOrTombstoned), and anything that separates a tombstone from
--- the profile that now owns the workout — a profile merge reassigning sessions
--- to Default, the portal re-scoping a deleted profile's rows — would otherwise
--- leave the portal re-sending it forever while the merge silently drops it.
---
--- A grouped routine workout's portal_id is only contributed once NO live row of
--- that group is left: while any row survives, the portal must keep returning
--- the workout so an exercise added to it on another device still arrives.
---
--- Newest first, so a capped parity list keeps the most recent deletions.
-selectDeletedSessionPortalIds:
-SELECT portal_id FROM DeletedWorkoutSession AS d
-WHERE NOT EXISTS (
-    SELECT 1 FROM WorkoutSession AS w
-    WHERE w.routineSessionId = d.portal_id OR w.id = d.portal_id
-)
-GROUP BY portal_id
-ORDER BY MAX(deleted_at) DESC;
-
--- Post-open repair for the migration 48 backfill: the same statement, run once
--- behind a one-shot marker in MigrationManager, so a database whose migration
--- could not complete the backfill (a missing child table is not a recoverable
--- error for the resilient fallback) still gets its origin markers instead of
--- re-pushing every pulled session.
-backfillPulledWorkoutSessions:
-INSERT OR IGNORE INTO PulledWorkoutSession(id)
-SELECT id FROM WorkoutSession
-WHERE updatedAt IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = WorkoutSession.id)
-  AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
-  AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id);
-
--- Pull merge guard, used by the shared session insert helper: an id this device
--- already has, or deleted, is never inserted, and only a real insert is marked
--- pulled-origin. The tombstone half is matched by id only and is never filtered
--- by profile: a deleted workout stays deleted even after the portal re-scopes a
--- deleted profile's rows to Default. The trade-off is that a tombstoned id can
--- never be recovered by pulling it into another local profile; the id-only skip
--- is chosen over that recoverability on purpose.
-selectSessionKnownOrTombstoned:
-SELECT 1 FROM WorkoutSession WHERE id = :id
-UNION ALL
-SELECT 1 FROM DeletedWorkoutSession WHERE id = :id
-LIMIT 1;
-
-markSessionPulled:
-INSERT OR IGNORE INTO PulledWorkoutSession(id) VALUES (?);
-
--- Origin markers, for tests and diagnostics: which sessions this device pulled.
-selectPulledSessionIds:
-SELECT id FROM PulledWorkoutSession;
-
--- ==================== PER-PROFILE TRAINING MAX (migration 49) ====================
---
--- The stored 1RM / training max, keyed by (exercise, profile). Exercise.one_rep_max_kg
--- was global: every profile's PR saves wrote it and every profile's "% of PR"
--- resolution read it, so one household member's PR raised another member's commanded
--- load and silently replaced a manually entered 5/3/1 training max. The legacy column
--- is kept (no DROP COLUMN on API 26) and is read ONLY by migration 49 and its
--- post-open repair below; `oneRepMaxKg` is gone from the Exercise domain model so the
--- compiler enforces that.
---
--- CASCADE on both sides: an exercise row that goes takes its training maxes with it,
--- and so does a permanently deleted profile.
-CREATE TABLE IF NOT EXISTS ExerciseTrainingMax (
-    exercise_id TEXT NOT NULL,
-    profile_id TEXT NOT NULL,
-    one_rep_max_kg REAL NOT NULL,
-    source TEXT NOT NULL,
-    updated_at INTEGER NOT NULL,
-    PRIMARY KEY (exercise_id, profile_id),
-    FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE,
-    FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE
-);
-
-CREATE INDEX IF NOT EXISTS idx_training_max_profile ON ExerciseTrainingMax(profile_id);
-
-selectTrainingMax:
-SELECT one_rep_max_kg FROM ExerciseTrainingMax
-WHERE exercise_id = :exerciseId AND profile_id = :profileId;
-
-upsertTrainingMax:
-INSERT OR REPLACE INTO ExerciseTrainingMax(exercise_id, profile_id, one_rep_max_kg, source, updated_at)
-VALUES (:exerciseId, :profileId, :oneRepMaxKg, :source, :updatedAt);
-
-deleteTrainingMax:
-DELETE FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId AND profile_id = :profileId;
-
--- Profile deletion is a MERGE into a target profile: every profile-scoped row is
--- reassigned before the UserProfile row goes. ExerciseTrainingMax CASCADEs off
--- UserProfile, so its rows have to move in the same transaction or they vanish with it.
--- The TARGET's own value always wins (INSERT OR IGNORE), so a merge can never raise the
--- surviving profile's commanded load from the deleted profile's number; the source rows
--- are then removed by the cascade.
-reassignTrainingMaxProfile:
-INSERT OR IGNORE INTO ExerciseTrainingMax(exercise_id, profile_id, one_rep_max_kg, source, updated_at)
-SELECT exercise_id, :targetProfileId, one_rep_max_kg, source, updated_at
-FROM ExerciseTrainingMax WHERE profile_id = :profileId;
-
--- Compensating rollback for a failed assessment save (see SqlDelightAssessmentRepository):
--- put the profile's previous training max back, but only while the value the failed save
--- wrote is still the current one, so a concurrent edit is never clobbered.
-selectTrainingMaxRow:
-SELECT * FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId AND profile_id = :profileId;
-
-restoreTrainingMaxIfCurrent:
-UPDATE ExerciseTrainingMax
-SET one_rep_max_kg = :previousOneRepMaxKg, source = :previousSource, updated_at = :previousUpdatedAt
-WHERE exercise_id = :exerciseId AND profile_id = :profileId
-  AND one_rep_max_kg = :attemptedOneRepMaxKg;
-
-deleteTrainingMaxIfCurrent:
-DELETE FROM ExerciseTrainingMax
-WHERE exercise_id = :exerciseId AND profile_id = :profileId
-  AND one_rep_max_kg = :attemptedOneRepMaxKg;
-
--- The claim prompt's source: a legacy value migration 49 could not attribute to any
--- single profile. "Unassigned" means no profile holds a training max for the exercise
--- at all; the first profile to claim it ends the prompt for everyone, because the row
--- it writes makes this query return nothing.
-selectUnassignedLegacyTrainingMax:
-SELECT one_rep_max_kg FROM Exercise
-WHERE id = :exerciseId
-  AND one_rep_max_kg IS NOT NULL
-  AND one_rep_max_kg > 0
-  AND NOT EXISTS (SELECT 1 FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId);
-
--- Legacy-id remap (ExerciseImporter): move a training max from an archived catalogue
--- row onto its replacement, keeping the newer row on a (exercise, profile) collision.
--- Run promote first, then drop whatever is left behind on the old id.
-promoteTrainingMaxToNewExerciseId:
-INSERT OR REPLACE INTO ExerciseTrainingMax(exercise_id, profile_id, one_rep_max_kg, source, updated_at)
-SELECT :newId, old.profile_id, old.one_rep_max_kg, old.source, old.updated_at
-FROM ExerciseTrainingMax AS old
-WHERE old.exercise_id = :oldId
-  AND NOT EXISTS (
-      SELECT 1 FROM ExerciseTrainingMax AS existing
-      WHERE existing.exercise_id = :newId
-        AND existing.profile_id = old.profile_id
-        AND existing.updated_at >= old.updated_at
-  );
-
-deleteTrainingMaxesForExercise:
-DELETE FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId;
-
-deleteTrainingMaxesForProfile:
-DELETE FROM ExerciseTrainingMax WHERE profile_id = :profileId;
-
--- Test-only: assert that a code path wrote no training max anywhere.
-countTrainingMaxRowsForTest:
-SELECT COUNT(*) FROM ExerciseTrainingMax;
--- Test-only: who ended up owning an exercise's training max, and with what value.
-selectTrainingMaxRowsForTest:
-SELECT profile_id, one_rep_max_kg FROM ExerciseTrainingMax
-WHERE exercise_id = :exerciseId ORDER BY profile_id;
-
--- The migration 49 legacy copy. It lives here and NOT in 49.sqm: attributing a value
--- needs UserProfile, PersonalRecord, AssessmentResult, TrainingCycle, CycleDay and
--- RoutineExercise, several of which (and their profile_id columns) are created by
--- SchemaManifest heal operations rather than by a numbered migration, so inside the
--- migration chain they may not exist yet -- and a missing column is a non-recoverable
--- prepare-time error for the resilient fallback. MigrationManager runs this once behind
--- a one-shot marker, after reconcileFullSchema has healed the schema and
--- ensureDefaultProfile has run; a failure leaves the marker unset so the next open
--- retries. INSERT OR IGNORE: a value a profile has already claimed or edited is never
--- overwritten.
---
--- A value whose owner is ambiguous is left UNASSIGNED, never handed to 'default': that
--- would raise Default's commanded load from another member's number, which is the exact
--- leak this table closes. Every signal must be CAUSAL -- something that actually wrote
--- the legacy column -- because a mis-attributed value becomes someone else's % of PR
--- baseline and therefore their commanded load. Owner rules, in order:
---   1. the sole UserProfile;
---   2. the one profile with a COMBINED PersonalRecord whose oneRepMax equals the stored
---      value (within 0.01 kg) -- the deleted PR-save auto-write put most values there;
---   3. the one profile with an AssessmentResult whose per-cable 1RM equals the stored
---      value -- SqlDelightAssessmentRepository wrote COALESCE(userOverrideKg,
---      estimatedOneRepMaxKg) / 2 into the column, so the same arithmetic recovers it;
---   4. the one profile owning a 5/3/1 TrainingCycle that uses the exercise -- the only
---      signal for a manually typed training max, which matches no PR and no assessment.
---
--- Bare ownership of a VelocityOneRepMaxEstimate is deliberately NOT a signal: nothing
--- ever wrote a velocity estimate into this column, so such a row says only "this member
--- trained this lift", which in a two-person household hands one member's typed max to
--- the other (review R-2). It is dropped rather than demoted.
---
--- A rule with TWO OR MORE candidates TERMINATES the search (the "> 1 THEN NULL" arms)
--- instead of falling through: two profiles whose PR matches the value must not lose to a
--- third that merely owns an assessment. Ambiguous means unassigned, and the claim prompt
--- handles that safely.
---
--- Every predicate is written as "profiles that ...", which keeps each count and pick
--- identical and avoids aggregate-without-GROUP-BY forms that older SQLite builds on
--- API 26 devices reject.
---
--- updated_at is 0, not the repair's clock: a migrated value is not a fresh edit, and
--- stamping it "now" would let it win promoteTrainingMaxToNewExerciseId's newest-wins
--- tie-break against a value the user typed earlier (review R-22).
-backfillExerciseTrainingMaxes:
-INSERT OR IGNORE INTO ExerciseTrainingMax(exercise_id, profile_id, one_rep_max_kg, source, updated_at)
-SELECT id, owner_profile_id, legacy_one_rep_max_kg, 'LEGACY_MIGRATION', 0
-FROM (
-    SELECT
-        id,
-        legacy_one_rep_max_kg,
-        CASE
-            WHEN profile_count = 1 THEN sole_profile_id
-            WHEN pr_owner_count = 1 THEN pr_owner_id
-            WHEN pr_owner_count > 1 THEN NULL
-            WHEN assessment_owner_count = 1 THEN assessment_owner_id
-            WHEN assessment_owner_count > 1 THEN NULL
-            WHEN cycle_owner_count = 1 THEN cycle_owner_id
-        END AS owner_profile_id
-    FROM (
-        SELECT
-            e.id AS id,
-            e.one_rep_max_kg AS legacy_one_rep_max_kg,
-            (SELECT COUNT(*) FROM UserProfile) AS profile_count,
-            (SELECT MIN(p.id) FROM UserProfile p) AS sole_profile_id,
-            (SELECT COUNT(*) FROM UserProfile p WHERE EXISTS (
-                 SELECT 1 FROM PersonalRecord pr
-                 WHERE pr.exerciseId = e.id AND pr.profile_id = p.id
-                   AND pr.phase = 'COMBINED' AND pr.deletedAt IS NULL
-                   AND ABS(pr.oneRepMax - e.one_rep_max_kg) <= 0.01)) AS pr_owner_count,
-            (SELECT MIN(p.id) FROM UserProfile p WHERE EXISTS (
-                 SELECT 1 FROM PersonalRecord pr
-                 WHERE pr.exerciseId = e.id AND pr.profile_id = p.id
-                   AND pr.phase = 'COMBINED' AND pr.deletedAt IS NULL
-                   AND ABS(pr.oneRepMax - e.one_rep_max_kg) <= 0.01)) AS pr_owner_id,
-            (SELECT COUNT(*) FROM UserProfile p WHERE EXISTS (
-                 SELECT 1 FROM AssessmentResult ar
-                 WHERE ar.exerciseId = e.id AND ar.profile_id = p.id
-                   AND ABS(COALESCE(ar.userOverrideKg, ar.estimatedOneRepMaxKg) / 2.0 - e.one_rep_max_kg) <= 0.01)) AS assessment_owner_count,
-            (SELECT MIN(p.id) FROM UserProfile p WHERE EXISTS (
-                 SELECT 1 FROM AssessmentResult ar
-                 WHERE ar.exerciseId = e.id AND ar.profile_id = p.id
-                   AND ABS(COALESCE(ar.userOverrideKg, ar.estimatedOneRepMaxKg) / 2.0 - e.one_rep_max_kg) <= 0.01)) AS assessment_owner_id,
-            (SELECT COUNT(*) FROM UserProfile p WHERE EXISTS (
-                 SELECT 1 FROM TrainingCycle tc
-                 JOIN CycleDay cd ON cd.cycle_id = tc.id
-                 JOIN RoutineExercise re ON re.routineId = cd.routine_id
-                 WHERE tc.profile_id = p.id AND tc.deletedAt IS NULL
-                   AND tc.template_id = 'template_531' AND re.exerciseId = e.id)) AS cycle_owner_count,
-            (SELECT MIN(p.id) FROM UserProfile p WHERE EXISTS (
-                 SELECT 1 FROM TrainingCycle tc
-                 JOIN CycleDay cd ON cd.cycle_id = tc.id
-                 JOIN RoutineExercise re ON re.routineId = cd.routine_id
-                 WHERE tc.profile_id = p.id AND tc.deletedAt IS NULL
-                   AND tc.template_id = 'template_531' AND re.exerciseId = e.id)) AS cycle_owner_id
-        FROM Exercise e
-        WHERE e.one_rep_max_kg IS NOT NULL AND e.one_rep_max_kg > 0
-    )
-)
-WHERE owner_profile_id IS NOT NULL;
-
--- Second half of the repair, run in the same transaction as the copy above: a legacy
--- value the repair ATTRIBUTED is decided, so it must stop being offerable. Without this,
--- the owner re-measuring (setTrainingMax(null) deletes their row) makes
--- selectUnassignedLegacyTrainingMax's NOT EXISTS true again and re-offers their number
--- to a different profile (review R-20). Only repair-attributed rows are cleared: a value
--- nobody could be shown to own stays in the column for the claim prompt, and a training
--- max the user typed for an exercise the repair could not attribute does not erase the
--- legacy value behind it.
---
--- Trade-off, stated deliberately: the legacy column stops being a second recovery source
--- for these exercises. By then the value is in ExerciseTrainingMax, which backup/restore
--- must carry anyway (PR 22), and re-offering one member's number to another is the worse
--- failure.
-clearAttributedLegacyTrainingMaxes:
-UPDATE Exercise SET one_rep_max_kg = NULL
-WHERE one_rep_max_kg IS NOT NULL
-  AND EXISTS (
-      SELECT 1 FROM ExerciseTrainingMax t
-      WHERE t.exercise_id = Exercise.id AND t.source = 'LEGACY_MIGRATION'
-  );

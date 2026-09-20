@@ -92,7 +92,7 @@ class ActiveSessionEngineIntegrationTest {
             assertIs<com.devil.phoenixproject.domain.model.WorkoutState.Idle>(
                 harness.activeSessionEngine.coordinator.workoutState.value,
             )
-            assertEquals(0, harness.fakeBleRepo.workoutParameters.size)
+            assertEquals(0, harness.fakeBleRepo.programCommands.size)
         } finally {
             harness.cleanup()
         }
@@ -549,11 +549,11 @@ class ActiveSessionEngineIntegrationTest {
             assertEquals(1, harness.fakeTrainingCycleRepo.getCycleById(cycle.id)?.weekNumber)
             assertEquals(
                 100f + (1.25f / 0.9f),
-                harness.fakeExerciseRepo.getTrainingMax(BENCH_ID, CYCLE_PROFILE_ID),
+                harness.fakeBaselineRepo.get("default", BENCH_ID)?.oneRepMaxPerCableKg,
             )
             assertEquals(
                 160f + (2.5f / 0.9f),
-                harness.fakeExerciseRepo.getTrainingMax(DEADLIFT_ID, CYCLE_PROFILE_ID),
+                harness.fakeBaselineRepo.get("default", DEADLIFT_ID)?.oneRepMaxPerCableKg,
             )
         } finally {
             harness.cleanup()
@@ -585,16 +585,10 @@ class ActiveSessionEngineIntegrationTest {
 
         listOf(bench, squat, press, deadlift, inclineBench, row, plank, facePull, lunge, tricep, crunch, shrug, goodMorning)
             .forEach(harness.fakeExerciseRepo::addExercise)
-
-        // Training maxes are per profile (migration 49), so they are seeded against the
-        // cycle's profile rather than hung off the shared catalogue row.
-        mapOf(benchId to 100f, squatId to 140f, shoulderPressId to 90f, deadliftId to 160f)
-            .forEach { (id, trainingMax) ->
-                harness.fakeExerciseRepo.setTrainingMaxDirectly(id, CYCLE_PROFILE_ID, trainingMax)
-            }
-        listOf(inclineBench, row, facePull, lunge, tricep, shrug, goodMorning).forEach { accessory ->
-            harness.fakeExerciseRepo.setTrainingMaxDirectly(accessory.id!!, CYCLE_PROFILE_ID, 50f)
-        }
+        harness.fakeBaselineRepo.seed("default", benchId, 100f)
+        harness.fakeBaselineRepo.seed("default", squatId, 140f)
+        harness.fakeBaselineRepo.seed("default", shoulderPressId, 90f)
+        harness.fakeBaselineRepo.seed("default", deadliftId, 160f)
 
         val benchRoutine = Routine(
             id = "routine-bench",
@@ -807,8 +801,6 @@ class ActiveSessionEngineIntegrationTest {
     private fun orderedExercises(vararg exercises: RoutineExercise): List<RoutineExercise> = exercises.mapIndexed { index, exercise -> exercise.copy(orderIndex = index) }
 
     private companion object {
-        /** TrainingCycle.create defaults to this profile, and the TM bump follows the cycle. */
-        const val CYCLE_PROFILE_ID = "default"
         const val BENCH_ID = "Barbell_Bench_Press_-_Medium_Grip"
         const val SHOULDER_PRESS_ID = "Barbell_Shoulder_Press"
         const val SQUAT_ID = "Barbell_Squat"

@@ -321,10 +321,6 @@ fun AppContent(
         launchSplashStartedAtMillis = 0L
     }
 
-    LaunchedEffect(migrationManager) {
-        migrationManager.runRequiredMigrations()
-    }
-
     // Startup succeeded, so a database export made from the failure screen is no longer needed.
     LaunchedEffect(Unit) {
         withContext(Dispatchers.Default) { deleteDatabaseExportArchive() }

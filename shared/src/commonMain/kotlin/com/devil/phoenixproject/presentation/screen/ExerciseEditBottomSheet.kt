@@ -70,6 +70,7 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.PersonalRecord
@@ -92,6 +93,8 @@ import com.devil.phoenixproject.presentation.viewmodel.ExerciseType
 import com.devil.phoenixproject.presentation.viewmodel.SetConfiguration
 import com.devil.phoenixproject.presentation.viewmodel.SetMode
 import com.devil.phoenixproject.ui.theme.Spacing
+import com.devil.phoenixproject.util.CommandLimits
+import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.parseLocalizedDecimal
 import kotlin.math.roundToInt
 import kotlinx.coroutines.launch
@@ -110,8 +113,6 @@ import projectphoenix.shared.generated.resources.drop_set_title
 import projectphoenix.shared.generated.resources.label_duration
 import projectphoenix.shared.generated.resources.label_reps
 import projectphoenix.shared.generated.resources.percent_label
-import projectphoenix.shared.generated.resources.training_max_claim_action
-import projectphoenix.shared.generated.resources.training_max_claim_notice
 
 /**
  * Exercise configuration bottom sheet for SingleExerciseScreen
@@ -132,16 +133,25 @@ fun ExerciseEditBottomSheet(
     onDismiss: () -> Unit,
     buttonText: String = "Save",
     weightStepOverride: Float = 0f, // Issue #266/#410: 0 = use default for unit
+    // KD-9: per-cable ceiling for the weight slider. This editor is used offline, so the
+    // caller supplies the LAST connected trainer's ceiling (widest hardware when unknown).
+    planningMaxWeightPerCableKg: Float = Constants.MAX_WEIGHT_PER_CABLE_KG,
     primaryActionEnabled: Boolean = true,
     primaryActionSupportingContent: (@Composable () -> Unit)? = null,
 ) {
     // Create local ViewModel instance with repositories for PR and velocity-1RM lookups
     val velocityOneRepMaxRepository: VelocityOneRepMaxRepository = koinInject()
-    val viewModel = remember { ExerciseConfigViewModel(personalRecordRepository, velocityOneRepMaxRepository, exerciseRepository) }
+    val baselineRepository: ProfileExerciseBaselineRepository = koinInject()
+    val viewModel = remember {
+        ExerciseConfigViewModel(
+            personalRecordRepository = personalRecordRepository,
+            velocityOneRepMaxRepository = velocityOneRepMaxRepository,
+            baselineRepository = baselineRepository,
+        )
+    }
     val userProfileRepository: UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val activeProfileId = activeProfile?.id ?: "default"
-    val activeProfileName = activeProfile?.name.orEmpty()
 
     var images by remember { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
     LaunchedEffect(exercise.exercise.id) {
@@ -156,14 +166,7 @@ fun ExerciseEditBottomSheet(
 
     // Initialize the ViewModel - PR loading is now handled internally by the ViewModel
     LaunchedEffect(exercise, weightUnit, activeProfileId) {
-        viewModel.initialize(
-            exercise,
-            weightUnit,
-            kgToDisplay,
-            displayToKg,
-            profileId = activeProfileId,
-            profileName = activeProfileName,
-        )
+        viewModel.initialize(exercise, weightUnit, kgToDisplay, displayToKg, profileId = activeProfileId)
     }
 
     // Collect state from the ViewModel
@@ -202,7 +205,6 @@ fun ExerciseEditBottomSheet(
     val currentMaxVolumePR by viewModel.currentMaxVolumePR.collectAsState()
     val velocityEstimateKg by viewModel.velocityEstimateKg.collectAsState()
     val storedOneRepMaxKg by viewModel.storedOneRepMaxKg.collectAsState()
-    val unclaimedLegacyTrainingMaxKg by viewModel.unclaimedLegacyTrainingMaxKg.collectAsState()
     val routineScalingBaseline by viewModel.routineScalingBaseline.collectAsState()
 
     // Resolved baseline weight for the currently-selected scaling basis, mirroring
@@ -244,14 +246,17 @@ fun ExerciseEditBottomSheet(
         sharedBaselineKg != null
 
     val weightSuffix = if (weightUnit == WeightUnit.LB) "lbs" else "kg"
-    val maxWeight = if (weightUnit == WeightUnit.LB) 242f else 110f // 110kg per cable max
+    val maxWeight = kgToDisplay(planningMaxWeightPerCableKg, weightUnit)
     // Issue #266/#410: Use configured increment if provided, otherwise default for unit
     val weightStep = if (weightStepOverride > 0f) {
         kgToDisplay(weightStepOverride, weightUnit)
     } else {
         if (weightUnit == WeightUnit.LB) 0.5f else 0.25f
     }
-    val maxWeightChange = 10
+    // KD-9 / F-020: the per-rep progression slider now offers only what may actually be
+    // commanded. Values are whole display units, so LB rounds DOWN (6 lb = 2.72 kg) rather
+    // than offering a step the command-resolution clamp would immediately cap.
+    val maxWeightChange = kgToDisplay(CommandLimits.MAX_PROGRESSION_KG, weightUnit).toInt()
     val showCableOnlyExerciseControls = shouldShowCableOnlyExerciseControls(exerciseType)
     val isTutMode = showCableOnlyExerciseControls &&
         (selectedMode is WorkoutMode.TUT || selectedMode is WorkoutMode.TUTBeast)
@@ -554,10 +559,6 @@ fun ExerciseEditBottomSheet(
                         baselineWeightKg = baselineWeightKg,
                         hasAnyBaseline = hasAnyBaseline,
                         baselineSourceMessage = baselineSourceMessage,
-                        unclaimedLegacyTrainingMaxKg = unclaimedLegacyTrainingMaxKg,
-                        onClaimLegacyTrainingMax = viewModel::claimLegacyTrainingMax,
-                        activeProfileName = activeProfileName,
-                        exerciseDisplayName = exercise.exercise.displayName,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
                         onUsePercentOfPRChange = viewModel::onUsePercentOfPRChange,
@@ -1395,15 +1396,6 @@ fun WeightConfigurationCard(
      */
     hasAnyBaseline: Boolean = baselineWeightKg != null,
     baselineSourceMessage: String? = null,
-    /**
-     * A pre-migration-49 stored 1RM with no determinable owner. It is deliberately NOT a
-     * baseline and resolves no weight; the card offers it to the active profile once, and
-     * claiming is what makes it that profile's training max (KD-5).
-     */
-    unclaimedLegacyTrainingMaxKg: Float? = null,
-    onClaimLegacyTrainingMax: () -> Unit = {},
-    activeProfileName: String = "",
-    exerciseDisplayName: String = "",
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
     onUsePercentOfPRChange: (Boolean) -> Unit,
@@ -1585,31 +1577,6 @@ fun WeightConfigurationCard(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                }
-            }
-
-            // One-time claim offer for a legacy value migration 49 could not attribute.
-            unclaimedLegacyTrainingMaxKg?.takeIf { it > 0f }?.let { legacyKg ->
-                Spacer(modifier = Modifier.height(Spacing.small))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        text = stringResource(
-                            Res.string.training_max_claim_notice,
-                            formatWeight(legacyKg, weightUnit),
-                            exerciseDisplayName,
-                            activeProfileName,
-                        ),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.weight(1f),
-                    )
-                    TextButton(onClick = onClaimLegacyTrainingMax) {
-                        Text(stringResource(Res.string.training_max_claim_action))
-                    }
                 }
             }
 

@@ -99,9 +99,9 @@ class AssessmentViewModelProfileScopeTest {
     }
 
     @Test
-    fun startingLoad_isExactlyTwentyTotalKgForEveryProfileDespiteGlobalExerciseOneRm() =
+    fun startingLoad_isExactlyTwentyTotalKgForEveryProfile() =
         runTest {
-            val sharedExercises = exerciseRepository(oneRepMaxKg = 100f)
+            val sharedExercises = exerciseRepository()
             val profileA = readyViewModel(FakeAssessmentRepository(), sharedExercises)
             val profileB = readyViewModel(FakeAssessmentRepository(), sharedExercises)
             advanceUntilIdle()
@@ -131,9 +131,7 @@ class AssessmentViewModelProfileScopeTest {
         assessmentEngine = AssessmentEngine(),
     )
 
-    // oneRepMaxKg seeds a training max for BOTH profiles, which is the shape this test
-    // guards: the starting load must be 20 kg regardless of any stored max.
-    private fun exerciseRepository(oneRepMaxKg: Float? = null) =
+    private fun exerciseRepository() =
         FakeExerciseRepository().apply {
             addExercise(
                 Exercise(
@@ -143,10 +141,6 @@ class AssessmentViewModelProfileScopeTest {
                     equipment = "BAR",
                 ),
             )
-            oneRepMaxKg?.let {
-                setTrainingMaxDirectly("bench", "athlete-a", it)
-                setTrainingMaxDirectly("bench", "default", it)
-            }
         }
 
     private suspend fun TestScope.reachResults(viewModel: AssessmentViewModel) {

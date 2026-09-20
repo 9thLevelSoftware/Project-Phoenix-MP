@@ -16,9 +16,6 @@ import com.devil.phoenixproject.testutil.createTestDriver
 import com.devil.phoenixproject.testutil.seedExercise
 import com.devil.phoenixproject.util.OneRepMaxCalculator
 import com.russhwolf.settings.MapSettings
-import kotlin.test.assertTrue
-import kotlin.test.assertFalse
-import com.devil.phoenixproject.data.local.manifestTables
 import kotlinx.coroutines.test.runTest
 import kotlin.test.assertEquals
 import kotlin.test.assertNotNull
@@ -29,101 +26,20 @@ import org.junit.Test
 
 class MigrationManagerTest {
 
-    private lateinit var driver: app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
     private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
     private lateinit var migrationManager: MigrationManager
 
     @Before
     fun setup() {
-        driver = createTestDriver()
-        database = PhoenixDatabase(driver)
+        database = createTestDatabase()
         migrationManager = createMigrationManager(database)
-    }
-
-    @Test
-    fun `a failed training-max copy leaves the marker unset and recovers on the next open`() = runTest {
-        // This is the whole justification for shipping 49.sqm as DDL only: the copy is a
-        // post-open repair, so "it survives a failure and recovers on the next open" is the
-        // ONLY resilience path that exists (R-15). Nothing exercised the runCatching
-        // failure branch before (review R-13/R-27).
-        val queries = database.phoenixDatabaseQueries
-        val settings = MapSettings()
-        insertMinimalExercise(id = "bench", name = "Bench Press")
-        driver.execute(null, "UPDATE Exercise SET one_rep_max_kg = 100.0 WHERE id = 'bench'", 0)
-        // Make the copy throw: without the table the INSERT cannot even be prepared.
-        driver.execute(null, "DROP TABLE ExerciseTrainingMax", 0)
-
-        val manager = createMigrationManager(database, settings = settings)
-        manager.runRequiredMigrations()
-
-        // The gate must still open — a failed repair cannot wedge startup — and the marker
-        // must stay unset so the next open tries again.
-        assertEquals(RequiredMigrationState.Ready, manager.requiredMigrationState.value)
-        assertFalse(settings.getBoolean("exercise_training_max_backfill_complete_v1", false))
-
-        // Next open: the schema is whole again (reconcileFullSchema re-creates the table in
-        // production) and the value lands on its owner.
-        driver.execute(
-            null,
-            manifestTables.single { it.table == "ExerciseTrainingMax" }.createSql,
-            0,
-        )
-        createMigrationManager(database, settings = settings).runRequiredMigrations()
-
-        assertEquals(
-            listOf("default" to 100.0),
-            queries.selectTrainingMaxRowsForTest("bench").executeAsList()
-                .map { it.profile_id to it.one_rep_max_kg },
-        )
-        assertTrue(settings.getBoolean("exercise_training_max_backfill_complete_v1", false))
-    }
-
-    @Test
-    fun `startup copies the legacy training max to its owner exactly once`() = runTest {
-        // Migration 49 ships DDL only: attributing a legacy value needs tables and
-        // profile_id columns that SchemaManifest heals rather than the migration chain
-        // creating them, and a missing column is a non-recoverable statement that fails the
-        // database open on iOS. So the copy runs here, after reconcileFullSchema and after
-        // ensureDefaultProfile — which is also why a database with no UserProfile row at
-        // migrate time still gets its value, assigned to the now-sole default profile.
-        val queries = database.phoenixDatabaseQueries
-        val settings = MapSettings()
-        insertMinimalExercise(id = "bench", name = "Bench Press")
-        driver.execute(null, "UPDATE Exercise SET one_rep_max_kg = 100.0 WHERE id = 'bench'", 0)
-
-        createMigrationManager(database, settings = settings).runRequiredMigrations()
-
-        assertEquals(
-            listOf("default" to 100.0),
-            queries.selectTrainingMaxRowsForTest("bench").executeAsList()
-                .map { it.profile_id to it.one_rep_max_kg },
-        )
-
-        // One-shot: a second startup does not re-run the copy, so a value the user has
-        // since changed is not quietly reverted to the legacy number.
-        queries.upsertTrainingMax(
-            exerciseId = "bench",
-            profileId = "default",
-            oneRepMaxKg = 130.0,
-            source = "MANUAL",
-            updatedAt = 1L,
-        )
-        insertMinimalExercise(id = "squat", name = "Squat")
-        driver.execute(null, "UPDATE Exercise SET one_rep_max_kg = 150.0 WHERE id = 'squat'", 0)
-        createMigrationManager(database, settings = settings).runRequiredMigrations()
-
-        assertEquals(
-            listOf("default" to 130.0),
-            queries.selectTrainingMaxRowsForTest("bench").executeAsList()
-                .map { it.profile_id to it.one_rep_max_kg },
-        )
-        assertEquals(emptyList(), queries.selectTrainingMaxRowsForTest("squat").executeAsList())
     }
 
     private fun createMigrationManager(
         database: PhoenixDatabase,
         driver: SqlDriver? = null,
         settings: MapSettings = MapSettings(),
+        personalRecordHistoryRepair: PersonalRecordHistoryRepair? = null,
     ): MigrationManager {
         val preferences = SqlDelightProfilePreferencesRepository(database)
         val safety = SettingsProfileLocalSafetyStore(settings)
@@ -146,6 +62,7 @@ class MigrationManagerTest {
                 settings,
             ),
             driver = driver,
+            personalRecordHistoryRepair = personalRecordHistoryRepair,
         )
     }
 
@@ -518,7 +435,7 @@ class MigrationManagerTest {
             createdAt = 1_700_000_000_000,
             isActive = 1L,
         )
-        queries.insertExerciseIfAbsent(
+        queries.insertExercise(
             id = "deadlift",
             name = "Conventional Deadlift",
             displayName = null,
@@ -541,6 +458,7 @@ class MigrationManagerTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
+            one_rep_max_kg = null,
             mvtOverrideMs = null,
             isBodyweight = null,
         )
@@ -701,7 +619,10 @@ class MigrationManagerTest {
         assertEquals(70.0, bench.weight)
         assertEquals("Target Bench", bench.exerciseName)
         assertEquals("target-fallback-uuid", bench.uuid)
-        assertEquals(2, settings.getInt("migration_repair_version", 0))
+        assertNotNull(
+            queries.selectAppliedDataRepair("workout-mode-keys-v1").executeAsOneOrNull(),
+        )
+        assertEquals(1, settings.getInt("migration_repair_version", 0))
     }
 
     @Test
@@ -837,6 +758,52 @@ class MigrationManagerTest {
     }
 
     @Test
+    fun `failed personal record history repair stays unledgered and succeeds on retry`() = runTest {
+        insertMinimalSession(
+            id = "repair-session",
+            routineSessionId = null,
+            routineName = null,
+            exerciseId = "deadlift",
+            exerciseName = "Deadlift",
+            workingReps = 5,
+            heaviestLiftKg = 80.0,
+        )
+        var failRepair = true
+        var attempts = 0
+        val localManager = createMigrationManager(
+            database = database,
+            personalRecordHistoryRepair = PersonalRecordHistoryRepair { _, _ ->
+                attempts++
+                if (failRepair) error("injected PR repair failure")
+                1
+            },
+        )
+
+        localManager.runMigrationsNow()
+
+        assertEquals(
+            NonCriticalRepairState.Failed("PERSONAL_RECORD_HISTORY_REPAIR_FAILED"),
+            localManager.nonCriticalRepairState.value,
+        )
+        assertNull(
+            database.phoenixDatabaseQueries
+                .selectAppliedDataRepair("personal-record-history-v1")
+                .executeAsOneOrNull(),
+        )
+
+        failRepair = false
+        localManager.runMigrationsNow()
+
+        assertEquals(NonCriticalRepairState.Ready, localManager.nonCriticalRepairState.value)
+        assertNotNull(
+            database.phoenixDatabaseQueries
+                .selectAppliedDataRepair("personal-record-history-v1")
+                .executeAsOneOrNull(),
+        )
+        assertEquals(2, attempts)
+    }
+
+    @Test
     fun `repair personal records from workout history backfills achieved load and stays idempotent`() {
         val queries = database.phoenixDatabaseQueries
         insertMinimalExercise(id = "deadlift", name = "Conventional Deadlift")
@@ -874,6 +841,8 @@ class MigrationManagerTest {
             profileId = "default",
         ).executeAsOneOrNull()
         val exercise = queries.selectExerciseById("deadlift").executeAsOneOrNull()
+        val baseline = queries.selectProfileExerciseBaseline("default", "deadlift")
+            .executeAsOneOrNull()
         val repairedRecords = queries.selectAllRecords(profileId = "default").executeAsList()
             .filter { it.exerciseId == "deadlift" }
 
@@ -885,8 +854,10 @@ class MigrationManagerTest {
         assertEquals(50.0, volumePr.weight)
         assertEquals(500.0, volumePr.volume)
         assertEquals(2, repairedRecords.size)
-        // The PR repair writes no training max: it is per profile now (migration 49) and
-        // a PR is a separate metric from the max the user set.
+        assertEquals(
+            OneRepMaxCalculator.estimate(60f, 10).toDouble(),
+            baseline?.one_rep_max_per_cable_kg,
+        )
         assertNull(exercise?.one_rep_max_kg)
     }
 
@@ -990,7 +961,7 @@ class MigrationManagerTest {
     }
 
     private fun insertMinimalExercise(id: String, name: String, oneRepMaxKg: Double? = null) {
-        database.phoenixDatabaseQueries.insertExerciseIfAbsent(
+        database.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = name,
             displayName = null,
@@ -1013,6 +984,7 @@ class MigrationManagerTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
+            one_rep_max_kg = oneRepMaxKg,
             mvtOverrideMs = null,
             isBodyweight = null,
         )
@@ -1060,34 +1032,6 @@ class MigrationManagerTest {
             dropSetEnabled = 0L,
             dropSetMinWeightKg = null,
         )
-    }
-
-    @Test
-    fun `startup backfills missing pulled-session markers exactly once`() = runTest {
-        // Migration 48 writes these markers, but a database whose migration could not
-        // finish the backfill (a missing child table is not a recoverable error for the
-        // resilient fallback) would have the table and no markers — and every pulled
-        // session would then be re-pushed. This post-open repair closes that.
-        val queries = database.phoenixDatabaseQueries
-        val settings = MapSettings()
-        val manager = createMigrationManager(database, settings = settings)
-        insertMinimalSession(id = "pulled-row", routineSessionId = null, routineName = null)
-        queries.updateSessionTimestamp(1_000L, "pulled-row")
-        insertMinimalSession(id = "captured-row", routineSessionId = null, routineName = null)
-        queries.updateSessionTimestamp(1_000L, "captured-row")
-        queries.insertMetric("captured-row", 1_010L, 0.5, 0.5, 0.1, 0.1, 20.0, 20.0, 40.0, 0L)
-        insertMinimalSession(id = "never-uploaded", routineSessionId = null, routineName = null)
-
-        manager.runRequiredMigrations()
-
-        assertEquals(listOf("pulled-row"), queries.selectPulledSessionIds().executeAsList())
-
-        // One-shot: the marker keeps the full-table scan off later startups.
-        insertMinimalSession(id = "later-row", routineSessionId = null, routineName = null)
-        queries.updateSessionTimestamp(2_000L, "later-row")
-        createMigrationManager(database, settings = settings).runRequiredMigrations()
-
-        assertEquals(listOf("pulled-row"), queries.selectPulledSessionIds().executeAsList())
     }
 
     private fun insertMinimalSession(

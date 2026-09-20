@@ -45,7 +45,12 @@ val dataModule = module {
     // BleRepository is provided by platformModule
     // Order matters: ExerciseRepository must be created before WorkoutRepository
     single<ExerciseRepository> { SqlDelightExerciseRepository(get(), get(), get()) }
+    single<ProfileExerciseBaselineRepository> { SqlDelightProfileExerciseBaselineRepository(get()) }
+    single { LegacyBaselineRepair(get()) }
+    single { ProfileMutationBarrier() }
+    single { ProfileRecoveryActivityTracker() }
     single<WorkoutRepository> { SqlDelightWorkoutRepository(get(), get()) }
+    single<WorkoutDeletionRepository> { SqlDelightWorkoutDeletionRepository(get()) }
     single<PersonalRecordRepository> { SqlDelightPersonalRecordRepository(get()) }
     single<GamificationRepository> { SqlDelightGamificationRepository(get()) }
     single<ProfilePreferencesRepository> { SqlDelightProfilePreferencesRepository(get()) }
@@ -59,6 +64,31 @@ val dataModule = module {
             profileLocalSafetyStore = get(),
             gamificationRepository = get(),
             profileScopedDataMerger = get(),
+            profileMutationBarrier = get(),
+        )
+    }
+    single { ProfileRecoveryDiscovery(database = get(), driver = get()) }
+    single<OwnershipTransferRepository> { SqlDelightOwnershipTransferRepository(get()) }
+    single<LocalOwnershipClaimLookup> { SqlDelightLocalOwnershipClaimLookup(get()) }
+    single<OwnershipEventApplier> {
+        SqlDelightOwnershipEventApplier(
+            database = get(),
+            driver = get(),
+            profileScopedDataMerger = get(),
+        )
+    }
+    single<ProfileRecoveryRepository> {
+        SqlDelightProfileRecoveryRepository(
+            database = get(),
+            driver = get(),
+            profileScopedDataMerger = get(),
+            baselineRepository = get(),
+            legacyBaselineRepair = get(),
+            userProfileRepository = get(),
+            gamificationRepository = get(),
+            profileMutationBarrier = get(),
+            activityTracker = get(),
+            profileRecoverySourceVerifier = get(),
         )
     }
 

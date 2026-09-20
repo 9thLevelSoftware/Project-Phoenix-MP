@@ -10,7 +10,6 @@ import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.repository.AutoStopUiState
 import com.devil.phoenixproject.data.repository.ExerciseImageEntity
 import com.devil.phoenixproject.data.repository.ExerciseRepository
-import com.devil.phoenixproject.data.repository.TrainingMaxSource
 import com.devil.phoenixproject.domain.model.*
 import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
@@ -1103,15 +1102,6 @@ private class PreviewExerciseRepository : ExerciseRepository {
     override suspend fun updateCustomExercise(exercise: Exercise): Result<Exercise> = Result.success(exercise)
     override suspend fun deleteCustomExercise(exerciseId: String): Result<Unit> = Result.success(Unit)
 
-    // Training max (per profile) methods
-    override suspend fun getTrainingMax(exerciseId: String, profileId: String): Float? = null
-    override suspend fun setTrainingMax(
-        exerciseId: String,
-        profileId: String,
-        oneRepMaxKg: Float?,
-        source: TrainingMaxSource,
-    ) {}
-    override suspend fun getUnassignedLegacyTrainingMax(exerciseId: String): Float? = null
     override suspend fun findByName(name: String): Exercise? = null
     override suspend fun findByIdOrName(id: String?, name: String): Exercise? = null
 }

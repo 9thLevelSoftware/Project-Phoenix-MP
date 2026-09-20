@@ -1,12 +1,133 @@
 package com.devil.phoenixproject.data.sync
 
-import kotlinx.coroutines.test.runTest
+import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.CycleProgress
+import com.devil.phoenixproject.domain.model.CycleProgression
+import com.devil.phoenixproject.domain.model.EchoLevel
+import com.devil.phoenixproject.domain.model.TrainingCycle
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlin.time.Instant
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.jsonObject
 
 class PortalPullAdapterTest {
+
+    @Test
+    fun `complete cycle push round trips through pull wire DTO`() {
+        val cycle = TrainingCycle.create(
+            id = "cycle-round-trip",
+            name = "Round trip",
+            days = listOf(
+                CycleDay(
+                    id = "day-round-trip",
+                    cycleId = "cycle-round-trip",
+                    dayNumber = 1,
+                    name = "Day one",
+                    routineId = "routine-1",
+                    isRestDay = false,
+                    echoLevel = EchoLevel.EPIC,
+                    eccentricLoadPercent = 140,
+                ),
+            ),
+        )
+        val progress = CycleProgress(
+            id = "local-progress-id",
+            cycleId = cycle.id,
+            currentDayNumber = 2,
+            lastCompletedDate = 200L,
+            cycleStartDate = 100L,
+            lastAdvancedAt = 150L,
+            completedDays = setOf(3, 1),
+            missedDays = setOf(4, 2),
+            rotationCount = 6,
+        )
+        val pushed = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(
+                cycle = cycle,
+                progress = progress,
+                progression = CycleProgression(
+                    cycleId = cycle.id,
+                    frequencyCycles = 4,
+                    weightIncreasePercent = 3f,
+                    echoLevelIncrease = true,
+                    eccentricLoadIncreasePercent = 15,
+                ),
+            ),
+            userId = "user-1",
+        )
+
+        val pulled = PortalWireJson.decodeFromString(
+            PullTrainingCycleDto.serializer(),
+            normalizedPullWireJson(pushed),
+        )
+
+        assertEquals(true, pulled.progressionSettingsPresent)
+        assertEquals(pushed.progressionSettings, pulled.progressionSettings)
+        assertEquals(true, pulled.progressStatePresent)
+        assertEquals(pushed.progressState, pulled.progressState)
+        with(pulled.days.single()) {
+            assertEquals(true, echoLevelPresent)
+            assertEquals(EchoLevel.EPIC.name, echoLevel)
+            assertEquals(true, eccentricLoadPercentPresent)
+            assertEquals(140, eccentricLoadPercent)
+        }
+    }
+
+    @Test
+    fun `cycle pull distinguishes legacy omission from authoritative clears`() {
+        val legacy = PortalWireJson.decodeFromString(
+            PullTrainingCycleDto.serializer(),
+            """{"id":"legacy-cycle","name":"Legacy","days":[{"id":"legacy-day"}]}""",
+        )
+        assertNull(legacy.progressionSettingsPresent)
+        assertNull(legacy.progressionSettings)
+        assertNull(legacy.progressStatePresent)
+        assertNull(legacy.progressState)
+        with(legacy.days.single()) {
+            assertNull(echoLevelPresent)
+            assertNull(echoLevel)
+            assertNull(eccentricLoadPercentPresent)
+            assertNull(eccentricLoadPercent)
+        }
+
+        val clearCycle = TrainingCycle.create(
+            id = "clear-cycle",
+            name = "Clear",
+            days = listOf(CycleDay.restDay(cycleId = "clear-cycle", dayNumber = 1)),
+        )
+        val pushedClear = PortalSyncAdapter.toPortalTrainingCycle(
+            PortalSyncAdapter.CycleWithContext(clearCycle, progress = null),
+            userId = "user-1",
+        )
+        val pulledClear = PortalWireJson.decodeFromString(
+            PullTrainingCycleDto.serializer(),
+            normalizedPullWireJson(pushedClear),
+        )
+
+        assertEquals(true, pulledClear.progressionSettingsPresent)
+        assertNull(pulledClear.progressionSettings)
+        assertEquals(true, pulledClear.progressStatePresent)
+        assertNull(pulledClear.progressState)
+        with(pulledClear.days.single()) {
+            assertEquals(true, echoLevelPresent)
+            assertNull(echoLevel)
+            assertEquals(true, eccentricLoadPercentPresent)
+            assertNull(eccentricLoadPercent)
+        }
+    }
+
+    /** The portal normalizes the push ISO clock to epoch milliseconds in pull responses. */
+    private fun normalizedPullWireJson(pushed: PortalTrainingCycleSyncDto): String {
+        val pushWire = PortalWireJson.parseToJsonElement(
+            PortalWireJson.encodeToString(PortalTrainingCycleSyncDto.serializer(), pushed),
+        ).jsonObject
+        val updatedAtMillis = Instant.parse(requireNotNull(pushed.updatedAt)).toEpochMilliseconds()
+        return JsonObject(pushWire + ("updatedAt" to JsonPrimitive(updatedAtMillis))).toString()
+    }
 
     // ========== portalModeToMobileMode ==========
 
@@ -120,84 +241,50 @@ class PortalPullAdapterTest {
         assertEquals(3L, PortalPullAdapter.parseEchoLevel("Epic"))
     }
 
-    // ========== toWorkoutSessionsWithLookup: session-level fields ==========
+    // ========== toRoutineSyncDto ==========
 
     @Test
-    fun `pulled standalone session keeps rep split and echo config and has no routineSessionId`() = runTest {
-        val portalSession = makePullSessionDto(
-            id = "standalone-1",
-            routineSessionId = null,
-            warmupReps = 3,
-            workingReps = 8,
-            eccentricLoad = 150,
-            echoLevel = 3,
-            exercises = listOf(makePullExerciseDto(id = "standalone-1", orderIndex = 0, reps = 11)),
-        )
+    fun `toRoutineSyncDto uses portal id as both clientId and serverId`() {
+        val pullRoutine = makePullRoutineDto(id = "portal-routine-123", name = "Push Day")
 
-        val row = PortalPullAdapter.toWorkoutSessionsWithLookup(portalSession, "default") { _, _, _ -> null }.single()
+        val result = PortalPullAdapter.toRoutineSyncDto(pullRoutine)
 
-        assertEquals(11, row.totalReps)
-        assertEquals(3, row.warmupReps)
-        assertEquals(8, row.workingReps)
-        assertEquals(150, row.eccentricLoad)
-        assertEquals(3, row.echoLevel)
-        assertNull(row.routineSessionId, "a standalone portal session is not a routine group")
+        assertEquals("portal-routine-123", result.clientId)
+        assertEquals("portal-routine-123", result.serverId)
     }
 
     @Test
-    fun `pulled multi-exercise session ignores the session rep split even when orderIndex ties`() = runTest {
-        // Partial per-set pushes restart orderIndex at 0, so several exercises can share it,
-        // and the session-level split may belong to any of them.
-        val portalSession = makePullSessionDto(
-            id = "group-1",
-            routineSessionId = "group-1",
-            warmupReps = 2,
-            workingReps = 10,
-            exercises = listOf(
-                makePullExerciseDto(id = "ex-b", orderIndex = 0, reps = 9),
-                makePullExerciseDto(id = "ex-a", orderIndex = 0, reps = 12),
-            ),
+    fun `toRoutineSyncDto maps name and description`() {
+        val pullRoutine = makePullRoutineDto(
+            name = "Leg Day",
+            description = "Heavy squats and accessories",
         )
 
-        val rows = PortalPullAdapter.toWorkoutSessionsWithLookup(portalSession, "default") { _, _, _ -> null }
-            .associateBy { it.id }
+        val result = PortalPullAdapter.toRoutineSyncDto(pullRoutine)
 
-        assertEquals(0, rows.getValue("ex-a").warmupReps)
-        assertEquals(12, rows.getValue("ex-a").workingReps)
-        assertEquals(0, rows.getValue("ex-b").warmupReps)
-        assertEquals(9, rows.getValue("ex-b").workingReps)
-        assertEquals("group-1", rows.getValue("ex-a").routineSessionId)
-        assertEquals("group-1", rows.getValue("ex-b").routineSessionId)
+        assertEquals("Leg Day", result.name)
+        assertEquals("Heavy squats and accessories", result.description)
     }
 
     @Test
-    fun `pulled rep split is clamped to the row's total reps`() = runTest {
-        val portalSession = makePullSessionDto(
-            id = "clamp-1",
-            warmupReps = 5,
-            workingReps = 20,
-            exercises = listOf(makePullExerciseDto(id = "clamp-1", orderIndex = 0, reps = 12)),
-        )
+    fun `toRoutineSyncDto sets deletedAt to null`() {
+        val pullRoutine = makePullRoutineDto()
 
-        val row = PortalPullAdapter.toWorkoutSessionsWithLookup(portalSession, "default") { _, _, _ -> null }.single()
+        val result = PortalPullAdapter.toRoutineSyncDto(pullRoutine)
 
-        assertEquals(12, row.workingReps)
-        assertEquals(0, row.warmupReps)
+        assertNull(result.deletedAt)
     }
 
     @Test
-    fun `pulled session without rep split or echo config falls back to defaults`() = runTest {
-        val portalSession = makePullSessionDto(
-            id = "legacy-1",
-            exercises = listOf(makePullExerciseDto(id = "legacy-1", orderIndex = 0, reps = 7)),
-        )
+    fun `toRoutineSyncDto sets createdAt and updatedAt to current time`() {
+        val before = currentTimeApprox()
+        val pullRoutine = makePullRoutineDto()
 
-        val row = PortalPullAdapter.toWorkoutSessionsWithLookup(portalSession, "default") { _, _, _ -> null }.single()
+        val result = PortalPullAdapter.toRoutineSyncDto(pullRoutine)
 
-        assertEquals(0, row.warmupReps)
-        assertEquals(7, row.workingReps)
-        assertEquals(100, row.eccentricLoad)
-        assertEquals(com.devil.phoenixproject.domain.model.WorkoutSession().echoLevel, row.echoLevel)
+        // createdAt and updatedAt should be recent (within last 5 seconds)
+        assertTrue(result.createdAt >= before - 5000, "createdAt should be recent")
+        assertTrue(result.updatedAt >= before - 5000, "updatedAt should be recent")
     }
 
     // ========== toBadgeSyncDto ==========
@@ -353,35 +440,21 @@ class PortalPullAdapterTest {
 
     // ========== Factory Helpers ==========
 
-    private fun makePullSessionDto(
-        id: String,
-        routineSessionId: String? = null,
-        warmupReps: Int? = null,
-        workingReps: Int? = null,
-        eccentricLoad: Int? = null,
-        echoLevel: Int? = null,
-        exercises: List<PullExerciseDto>,
-    ) = PullWorkoutSessionDto(
+    private fun makePullRoutineDto(
+        id: String = "routine-1",
+        name: String = "Test Routine",
+        description: String = "",
+        exercises: List<PullRoutineExerciseDto> = emptyList(),
+    ) = PullRoutineDto(
         id = id,
         userId = "user-1",
-        startedAt = "2026-03-20T10:00:00Z",
-        durationSeconds = 300,
+        name = name,
+        description = description,
         exerciseCount = exercises.size,
-        workoutMode = "OLD_SCHOOL",
-        routineSessionId = routineSessionId,
-        warmupReps = warmupReps,
-        workingReps = workingReps,
-        eccentricLoad = eccentricLoad,
-        echoLevel = echoLevel,
+        estimatedDuration = 3600,
+        timesCompleted = 0,
+        isFavorite = false,
         exercises = exercises,
-    )
-
-    private fun makePullExerciseDto(id: String, orderIndex: Int, reps: Int) = PullExerciseDto(
-        id = id,
-        sessionId = "session",
-        name = "Exercise $id",
-        orderIndex = orderIndex,
-        sets = listOf(PullSetDto(id = "set-$id", exerciseId = id, setNumber = 1, actualReps = reps, weightKg = 40f)),
     )
 
     private fun makePullBadgeDto(badgeId: String = "badge-1", earnedAt: String = "2026-01-01T00:00:00Z") = PullBadgeDto(

@@ -19,6 +19,8 @@ import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
+import com.devil.phoenixproject.data.repository.ProfileRecoveryActivityTracker
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
@@ -37,6 +39,7 @@ import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.HapticEvent
 import com.devil.phoenixproject.domain.model.PRCelebrationEvent
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.PhoenixModel
 import com.devil.phoenixproject.domain.model.RackItem
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.RackLoadAdjustment
@@ -74,6 +77,8 @@ import com.devil.phoenixproject.presentation.manager.HistoryManager
 import com.devil.phoenixproject.presentation.manager.JustLiftDefaults
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import com.devil.phoenixproject.presentation.manager.MachineSafetyCoordinator
+import com.devil.phoenixproject.presentation.manager.MachineSafetyHazardIdentity
+import com.devil.phoenixproject.presentation.manager.MachineSafetyRecoveryRequestResult
 import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.manager.RestActionIdentity
 import com.devil.phoenixproject.presentation.manager.RestTransitionCommand
@@ -87,6 +92,7 @@ import com.devil.phoenixproject.presentation.manager.currentProfileTestSoundEven
 import com.devil.phoenixproject.presentation.navigation.NavigationRoutes
 import com.devil.phoenixproject.util.BackupDestination
 import com.devil.phoenixproject.util.BackupStats
+import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.DataBackupManager
 import kotlin.coroutines.resume
 import kotlinx.atomicfu.atomic
@@ -110,6 +116,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 
 // HistoryItem, SingleSessionHistoryItem, GroupedRoutineHistoryItem moved to
 // com.devil.phoenixproject.presentation.manager.HistoryManager
@@ -511,6 +518,7 @@ class MainViewModel(
     private val workoutRepository: WorkoutRepository,
     val exerciseRepository: ExerciseRepository,
     val personalRecordRepository: PersonalRecordRepository,
+    private val profileExerciseBaselineRepository: ProfileExerciseBaselineRepository,
     private val repCounter: RepCounterFromMachine,
     private val preferencesManager: PreferencesManager,
     private val gamificationRepository: GamificationRepository,
@@ -522,7 +530,8 @@ class MainViewModel(
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
-    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase = ApplyRoutineModifierUseCase(personalRecordRepository, exerciseRepository),
+    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase =
+        ApplyRoutineModifierUseCase(personalRecordRepository, profileExerciseBaselineRepository),
     private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
@@ -541,6 +550,7 @@ class MainViewModel(
     // Issue #517: one-time startup backfill of velocity-1RM estimates for historical data.
     private val backfillVelocityOneRepMaxUseCase: BackfillVelocityOneRepMaxUseCase,
     internal val machineSafetyCoordinator: MachineSafetyCoordinator,
+    private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -639,6 +649,7 @@ class MainViewModel(
         workoutRepository = workoutRepository,
         exerciseRepository = exerciseRepository,
         personalRecordRepository = personalRecordRepository,
+        profileExerciseBaselineRepository = profileExerciseBaselineRepository,
         repCounter = repCounter,
         preferencesManager = preferencesManager,
         gamificationManager = gamificationManager,
@@ -664,6 +675,7 @@ class MainViewModel(
         scope = viewModelScope,
         _hapticEvents = _hapticEvents,
         machineSafetyCoordinator = machineSafetyCoordinator,
+        profileRecoveryActivityTracker = profileRecoveryActivityTracker,
     )
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===
@@ -703,6 +715,15 @@ class MainViewModel(
     val autoStartCountdown: StateFlow<Int?> get() = workoutSessionManager.coordinator.autoStartCountdown
     val hapticEvents: SharedFlow<HapticEvent> get() = workoutSessionManager.coordinator.hapticEvents
     val userFeedbackEvents: SharedFlow<String> get() = workoutSessionManager.coordinator.userFeedbackEvents
+
+    /**
+     * KD-9: "the command was capped" notice, held as state so the screen that shows it can
+     * arrive after the command was sent (Just Lift skips the countdown). Drained by the
+     * screen that displays it.
+     */
+    val commandLimitNotice: StateFlow<String?> get() = workoutSessionManager.coordinator.commandLimitNotice
+
+    fun consumeCommandLimitNotice() = workoutSessionManager.coordinator.consumeCommandLimitNotice()
     val routines: StateFlow<List<Routine>> get() = workoutSessionManager.coordinator.routines
     val routineGroups: StateFlow<List<RoutineGroup>> get() = workoutSessionManager.coordinator.routineGroups
     val loadedRoutine: StateFlow<Routine?> get() = workoutSessionManager.coordinator.loadedRoutine
@@ -740,22 +761,38 @@ class MainViewModel(
     fun disconnect() = bleConnectionManager.disconnect()
     fun clearConnectionError() = bleConnectionManager.clearConnectionError()
     fun dismissConnectionLostAlert() = bleConnectionManager.dismissConnectionLostAlert()
-    fun dismissMachineSafetyWarning() = machineSafetyCoordinator.hideTemporarily()
-    fun requestMachineSafetyRecovery() = machineSafetyCoordinator.requestReleaseRecovery()
-    fun acknowledgeMachineSafetyUnloaded(generation: Long) = machineSafetyCoordinator.acknowledgeUnloaded(generation)
-    fun ensureConnection(onConnected: () -> Unit, onFailed: () -> Unit = {}) = bleConnectionManager.ensureConnection(onConnected, onFailed)
-    fun reconnectInterruptedWorkout() {
-        if (machineSafetyCoordinator.uiState.value is MachineSafetyUiState.Visible) {
-            machineSafetyCoordinator.requestReleaseRecovery()
-            return
-        }
-        machineSafetyCoordinator.authorizeInterruptedWorkoutResume()
-        bleConnectionManager.dismissConnectionLostAlert()
-        bleConnectionManager.ensureConnection(
-            onConnected = { workoutSessionManager.reconnectInterruptedWorkout() },
-            onFailed = {},
-        )
+    fun dismissMachineSafetyWarning() {
+        viewModelScope.launch { machineSafetyCoordinator.hideTemporarily() }
     }
+    fun requestMachineSafetyRecovery(identity: MachineSafetyHazardIdentity?) {
+        viewModelScope.launch {
+            val requestedIdentity = identity ?: run {
+                machineSafetyCoordinator.surfaceStoredHazard()
+                (machineSafetyCoordinator.uiState.value as? MachineSafetyUiState.Visible)?.identity
+            }
+            val result = if (requestedIdentity == null) {
+                MachineSafetyRecoveryRequestResult.NO_VISIBLE_HAZARD
+            } else {
+                machineSafetyCoordinator.requestReleaseRecovery(requestedIdentity)
+            }
+            when (result) {
+                MachineSafetyRecoveryRequestResult.NO_VISIBLE_HAZARD ->
+                    workoutSessionManager.coordinator._userFeedbackEvents.tryEmit(
+                        "No stored machine recovery was found. Confirm the machine is unloaded before starting again.",
+                    )
+                MachineSafetyRecoveryRequestResult.STALE_HAZARD ->
+                    workoutSessionManager.coordinator._userFeedbackEvents.tryEmit(
+                        "The machine safety warning changed. Review it and try again.",
+                    )
+                MachineSafetyRecoveryRequestResult.STARTED,
+                MachineSafetyRecoveryRequestResult.ALREADY_IN_PROGRESS -> Unit
+            }
+        }
+    }
+    fun acknowledgeMachineSafetyUnloaded(identity: MachineSafetyHazardIdentity) {
+        viewModelScope.launch { machineSafetyCoordinator.acknowledgeUnloaded(identity) }
+    }
+    fun ensureConnection(onConnected: () -> Unit, onFailed: () -> Unit = {}) = bleConnectionManager.ensureConnection(onConnected, onFailed)
     fun cancelConnection() = bleConnectionManager.cancelConnection()
 
     // ===== History Delegation =====
@@ -804,9 +841,10 @@ class MainViewModel(
      * so zero-rep ghost rows hidden by `getHistoryVisibleSessions` are
      * soft-deleted along with the visible sets.
      */
-    fun deleteRoutineWorkouts(routineSessionId: String) = historyManager.deleteRoutineWorkouts(routineSessionId)
+    fun deleteRoutineWorkouts(profileId: String, routineSessionId: String) =
+        historyManager.deleteRoutineWorkouts(profileId, routineSessionId)
 
-    fun deleteAllWorkouts() = historyManager.deleteAllWorkouts()
+    fun deleteAllWorkouts(profileId: String) = historyManager.deleteAllWorkouts(profileId)
 
     // ===== Settings Delegation =====
 
@@ -1262,12 +1300,22 @@ class MainViewModel(
 
     init {
         viewModelScope.launch { machineSafetyCoordinator.restoreOnStartup() }
+        // KD-9: remember the model we connect to, so the offline planning/editor sliders
+        // can use that trainer's per-cable ceiling. Unknown is never stored: it would
+        // narrow a known Trainer+ owner's planning range on a bad name read.
+        viewModelScope.launch {
+            bleRepository.connectionState.collect { state ->
+                val model = (state as? ConnectionState.Connected)?.hardwareModel
+                if (model != null && model != PhoenixModel.Unknown) {
+                    preferencesManager.setLastConnectedModel(model)
+                }
+            }
+        }
         viewModelScope.launch {
             bleRepository.reconnectionRequested.collect { request ->
-                machineSafetyCoordinator.recordConnectionLost(
+                machineSafetyCoordinator.recordUnexpectedDisconnect(
                     trainerAddress = request.deviceAddress,
                     trainerName = request.deviceName,
-                    kind = com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind.UNKNOWN,
                 )
             }
         }
@@ -1318,21 +1366,50 @@ class MainViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        workoutSessionManager.cleanup()
         bleConnectionManager.cancelConnectionJob()
+        // Read before cleanup(), which invalidates the lease. Mid-set or mid-teardown
+        // the trainer may still be resisting after the link drops, so try a RESET first.
+        // A RESET is attempted only while the link is up: off-link it can only fail, and
+        // skipping it keeps cleanup() (and the workout foreground service stop) immediate.
+        val holdsMachineLease = (
+            workoutState.value !is WorkoutState.Idle ||
+                workoutSessionManager.machineTeardownState.value !is MachineTeardownState.Ready
+            ) && bleRepository.connectionState.value is ConnectionState.Connected
 
         // Issue: BLE resource leak - Disconnect BLE when ViewModel is cleared
         // to prevent battery drain and orphaned connections.
-        // Use NonCancellable context since viewModelScope may be cancelled during onCleared
+        // Use NonCancellable context since viewModelScope may be cancelled during onCleared.
+        // Without a lease nothing here suspends before cleanup(), so on Main.immediate the
+        // no-lease path still runs cleanup() synchronously inside onCleared, as it always did.
+        // With a lease this body can outlive the ViewModel by up to the GATT timeout.
         viewModelScope.launch(kotlinx.coroutines.NonCancellable) {
+            if (holdsMachineLease) {
+                // Raw BLE RESET only: the engine's teardown path would resolve the #782 arm
+                // row, and this unconfirmed exit must keep it so the relaunch warning fires.
+                try {
+                    val result = withTimeoutOrNull(BleConstants.GATT_OPERATION_TIMEOUT_MS) {
+                        bleRepository.stopWorkout()
+                    }
+                    if (result?.isSuccess == true) {
+                        Logger.i { "RESET before ViewModel teardown confirmed" }
+                    } else {
+                        // The machine may still be resisting: this is the line a field log is read for.
+                        Logger.w { "RESET before ViewModel teardown NOT confirmed: ${result ?: "timed out"}" }
+                    }
+                } catch (e: Exception) {
+                    // Cancellation is absorbed on purpose (no rethrowIfCancellation here): the body is
+                    // NonCancellable, and rethrowing would skip cleanup() and leave the radio connected.
+                    Logger.e(e) { "RESET before ViewModel teardown failed, machine may still be loaded" }
+                }
+            }
+            workoutSessionManager.cleanup()
             try {
                 bleRepository.disconnect()
                 Logger.i { "BLE disconnected during ViewModel cleanup" }
             } catch (e: Exception) {
                 Logger.e { "Failed to disconnect BLE during cleanup: ${e.message}" }
             }
+            Logger.i { "MainViewModel cleared, all jobs cancelled" }
         }
-
-        Logger.i { "MainViewModel cleared, all jobs cancelled" }
     }
 }

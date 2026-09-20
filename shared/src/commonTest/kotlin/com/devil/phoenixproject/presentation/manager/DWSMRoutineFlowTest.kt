@@ -547,7 +547,7 @@ class DWSMRoutineFlowTest {
     }
 
     @Test
-    fun enterSetReady_clampsOutOfRangeRoutineProgressionToControlRange() = runTest {
+    fun enterSetReady_surfacesStoredProgressionUnchangedAndLeavesTheBoundToTheCommand() = runTest {
         val harness = DWSMTestHarness(this)
         val routine = Routine(
             id = "routine-progress-set-ready-clamp",
@@ -572,14 +572,17 @@ class DWSMRoutineFlowTest {
         advanceUntilIdle()
         harness.dwsm.enterSetReady(0, 0)
 
+        // KD-9: entering Set Ready no longer carries its own copy of the +/-3kg bound. The
+        // stored value is surfaced as it is, and CommandLimits.resolve bounds the frame at
+        // command-resolution time with a user-visible notice (StoredRoutineLimitsTest).
         val state = harness.dwsm.coordinator.routineFlowState.value
         assertIs<RoutineFlowState.SetReady>(state)
-        assertEquals(3f, state.adjustedProgressionKg)
-        assertEquals(3f, harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg)
+        assertEquals(5f, state.adjustedProgressionKg)
+        assertEquals(5f, harness.dwsm.coordinator.workoutParameters.value.progressionRegressionKg)
         assertEquals(
             5f,
             routine.exercises.single().progressionKg,
-            "Clamping the runtime Set Ready value must not mutate the saved routine default.",
+            "Entering Set Ready must not mutate the saved routine default.",
         )
         harness.cleanup()
     }

@@ -47,9 +47,11 @@ class Issue790CycleRoutineSyncTest {
                 )
             } else {
                 syncRepository.mergeAllPullData(
+                    ownerUserId = "",
+                    workoutDeletions = emptyList(),
                     sessions = emptyList(), routines = emptyList(), badges = emptyList(),
                     gamificationStats = null, personalRecords = emptyList(), lastSync = 0L,
-                    profileId = "default", cycles = listOf(PullTrainingCycleDto(
+                    profileId = "default", sessionUpdatedAtById = emptyMap(), cycles = listOf(PullTrainingCycleDto(
                         id = cycleId, name = "RCA fixture", status = "active",
                         days = listOf(PullCycleDayDto(id = "remote-day-id", cycleId = cycleId,
                             dayNumber = 1, routineId = null, notes = "Full Body A"))

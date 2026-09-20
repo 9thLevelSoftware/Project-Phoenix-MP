@@ -3,7 +3,6 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.database.ExerciseTrainingMax
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -23,12 +22,12 @@ import kotlinx.coroutines.withContext
  *
  * Uses existing AssessmentResult queries from PhoenixDatabase.sq,
  * delegates session creation to [WorkoutRepository], and updates
- * exercise 1RM via [ExerciseRepository].
+ * the profile-scoped training baseline via [ProfileExerciseBaselineRepository].
  */
 class SqlDelightAssessmentRepository(
-    db: PhoenixDatabase,
+    private val db: PhoenixDatabase,
     private val workoutRepository: WorkoutRepository,
-    private val exerciseRepository: ExerciseRepository,
+    private val baselineRepository: ProfileExerciseBaselineRepository,
     private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : AssessmentRepository {
 
@@ -72,16 +71,20 @@ class SqlDelightAssessmentRepository(
         require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
         return assessmentWriteMutex.withLock {
             withContext(ioDispatcher) {
-                queries.insertAssessmentResult(
-                    exerciseId = exerciseId,
-                    estimatedOneRepMaxKg = estimatedOneRepMaxKg.toDouble(),
-                    loadVelocityData = loadVelocityDataJson,
-                    assessmentSessionId = sessionId,
-                    userOverrideKg = userOverrideKg?.toDouble(),
-                    createdAt = currentTimeMillis(),
-                    profile_id = profileId,
-                )
-                queries.lastInsertRowId().executeAsOne()
+                var resultId: Long? = null
+                db.transaction {
+                    queries.insertAssessmentResult(
+                        exerciseId = exerciseId,
+                        estimatedOneRepMaxKg = estimatedOneRepMaxKg.toDouble(),
+                        loadVelocityData = loadVelocityDataJson,
+                        assessmentSessionId = sessionId,
+                        userOverrideKg = userOverrideKg?.toDouble(),
+                        createdAt = currentTimeMillis(),
+                        profile_id = profileId,
+                    )
+                    resultId = queries.lastInsertRowId().executeAsOne()
+                }
+                requireNotNull(resultId)
             }
         }
     }
@@ -121,104 +124,80 @@ class SqlDelightAssessmentRepository(
     ): String {
         require(profileId.isNotBlank()) { "Assessment profileId must not be blank" }
         return assessmentWriteMutex.withLock {
-            withContext(ioDispatcher) {
-                val finalOneRepMaxTotalKg = userOverrideKg ?: estimatedOneRepMaxKg
-                val attemptedOneRepMaxPerCableKg = finalOneRepMaxTotalKg / 2f
-                // setTrainingMax treats a non-positive value as "clear", which DELETEs the
-                // row — and the compensating rollback is an UPDATE, so it could not put the
-                // previous value back. Refuse before writing instead (review R-6).
-                require(attemptedOneRepMaxPerCableKg > 0f) {
-                    "Assessment 1RM must be positive, was $attemptedOneRepMaxPerCableKg kg per cable"
-                }
-                val sessionId = generateUUID()
-                val session = WorkoutSession(
-                    id = sessionId,
-                    timestamp = currentTimeMillis(),
-                    mode = "OldSchool",
-                    reps = totalReps,
-                    weightPerCableKg = weightPerCableKg,
-                    duration = durationMs,
-                    totalReps = totalReps,
-                    exerciseId = exerciseId,
-                    exerciseName = exerciseName,
-                    routineName = ASSESSMENT_ROUTINE_NAME,
-                    profileId = profileId,
-                )
+            val finalOneRepMaxTotalKg = userOverrideKg ?: estimatedOneRepMaxKg
+            val attemptedOneRepMaxPerCableKg = finalOneRepMaxTotalKg / 2f
+            require(attemptedOneRepMaxPerCableKg.isFinite() && attemptedOneRepMaxPerCableKg > 0f) {
+                "Assessment one-rep max must be finite and positive"
+            }
+            val sessionId = generateUUID()
+            val session = WorkoutSession(
+                id = sessionId,
+                timestamp = currentTimeMillis(),
+                mode = "OldSchool",
+                reps = totalReps,
+                weightPerCableKg = weightPerCableKg,
+                duration = durationMs,
+                totalReps = totalReps,
+                exerciseId = exerciseId,
+                exerciseName = exerciseName,
+                routineName = ASSESSMENT_ROUTINE_NAME,
+                profileId = profileId,
+            )
 
-                var insertedResultId: Long? = null
-                var previousTrainingMax: ExerciseTrainingMax? = null
-                var trainingMaxWriteAttempted = false
-                try {
+            var insertedResultId: Long? = null
+            var baselineReceipt: AssessmentBaselineWriteReceipt? = null
+            try {
+                withContext(ioDispatcher) {
                     workoutRepository.saveSession(session)
-                    queries.insertAssessmentResult(
-                        exerciseId = exerciseId,
-                        estimatedOneRepMaxKg = estimatedOneRepMaxKg.toDouble(),
-                        loadVelocityData = loadVelocityDataJson,
-                        assessmentSessionId = sessionId,
-                        userOverrideKg = userOverrideKg?.toDouble(),
-                        createdAt = currentTimeMillis(),
-                        profile_id = profileId,
-                    )
-                    insertedResultId = queries.lastInsertRowId().executeAsOne()
+                    db.transaction {
+                        queries.insertAssessmentResult(
+                            exerciseId = exerciseId,
+                            estimatedOneRepMaxKg = estimatedOneRepMaxKg.toDouble(),
+                            loadVelocityData = loadVelocityDataJson,
+                            assessmentSessionId = sessionId,
+                            userOverrideKg = userOverrideKg?.toDouble(),
+                            createdAt = currentTimeMillis(),
+                            profile_id = profileId,
+                        )
+                        insertedResultId = queries.lastInsertRowId().executeAsOne()
+                    }
 
-                    // The assessment belongs to the profile that ran it, so its training
-                    // max is written for that profile only (migration 49).
-                    previousTrainingMax = queries.selectTrainingMaxRow(
-                        exerciseId = exerciseId,
-                        profileId = profileId,
-                    ).executeAsOneOrNull()
-                    trainingMaxWriteAttempted = true
-                    exerciseRepository.setTrainingMax(
-                        exerciseId = exerciseId,
-                        profileId = profileId,
-                        oneRepMaxKg = attemptedOneRepMaxPerCableKg,
-                        source = TrainingMaxSource.ASSESSMENT,
-                    )
+                    withContext(NonCancellable) {
+                        baselineReceipt = baselineRepository.writeForAssessment(
+                            profileId = profileId,
+                            exerciseId = exerciseId,
+                            oneRepMaxPerCableKg = attemptedOneRepMaxPerCableKg,
+                            updatedAt = currentTimeMillis(),
+                        )
+                    }
                     Logger.d {
                         "Assessment saved for $exerciseName: " +
                             "$attemptedOneRepMaxPerCableKg kg per cable"
                     }
-                } catch (failure: Throwable) {
-                    withContext(NonCancellable) {
-                        if (trainingMaxWriteAttempted) {
-                            runCatching {
-                                val previous = previousTrainingMax
-                                if (previous == null) {
-                                    queries.deleteTrainingMaxIfCurrent(
-                                        exerciseId = exerciseId,
-                                        profileId = profileId,
-                                        attemptedOneRepMaxKg =
-                                            attemptedOneRepMaxPerCableKg.toDouble(),
-                                    )
-                                } else {
-                                    queries.restoreTrainingMaxIfCurrent(
-                                        previousOneRepMaxKg = previous.one_rep_max_kg,
-                                        previousSource = previous.source,
-                                        previousUpdatedAt = previous.updated_at,
-                                        exerciseId = exerciseId,
-                                        profileId = profileId,
-                                        attemptedOneRepMaxKg =
-                                            attemptedOneRepMaxPerCableKg.toDouble(),
-                                    )
-                                }
-                            }
-                        }
-                        insertedResultId?.let { id ->
-                            runCatching { queries.deleteAssessmentResult(id) }
-                        }
-                        // discardSession, not deleteSession: this row is being rolled back,
-                        // not deleted by the user, so it must not leave a tombstone that
-                        // blackballs the id and rides along in every pull's known ids.
-                        runCatching { workoutRepository.discardSession(sessionId) }
-                    }
-                    if (failure is CancellationException) throw failure
-                    Logger.w(failure) {
-                        "Assessment save failed; compensated session, result, and training max"
-                    }
-                    throw failure
+                    sessionId
                 }
-
-                sessionId
+            } catch (failure: Throwable) {
+                withContext(NonCancellable + ioDispatcher) {
+                    baselineReceipt?.let { receipt ->
+                        runCatching {
+                            baselineRepository.compensateAssessmentWrite(
+                                profileId = profileId,
+                                exerciseId = exerciseId,
+                                expectedWrittenRevision = receipt.written.revision,
+                                previous = receipt.previous,
+                            )
+                        }
+                    }
+                    insertedResultId?.let { id ->
+                        runCatching { queries.deleteAssessmentResult(id) }
+                    }
+                    runCatching { workoutRepository.discardSessionInternal(sessionId) }
+                }
+                if (failure is CancellationException) throw failure
+                Logger.w(failure) {
+                    "Assessment save failed; compensated session, result, and scoped baseline"
+                }
+                throw failure
             }
         }
     }

@@ -12,7 +12,7 @@ class SqlDelightPersonalMvtRepositoryTest {
     private fun createInMemoryTestDatabase(): PhoenixDatabase = createTestDatabase()
 
     private fun seedExercise(db: PhoenixDatabase, id: String) {
-        db.phoenixDatabaseQueries.insertExerciseIfAbsent(
+        db.phoenixDatabaseQueries.insertExercise(
             id = id,
             name = id,
             displayName = null,
@@ -35,6 +35,7 @@ class SqlDelightPersonalMvtRepositoryTest {
             lastPerformed = null,
             aliases = null,
             defaultCableConfig = "DOUBLE",
+            one_rep_max_kg = null,
             mvtOverrideMs = null,
             isBodyweight = null,
         )

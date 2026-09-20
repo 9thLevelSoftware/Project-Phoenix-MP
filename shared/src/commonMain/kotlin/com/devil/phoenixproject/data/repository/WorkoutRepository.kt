@@ -29,39 +29,22 @@ interface WorkoutRepository {
     fun getAllSessions(profileId: String): Flow<List<WorkoutSession>>
     suspend fun saveSession(session: WorkoutSession)
     suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String)
-
-    /**
-     * Delete one session **as a user deletion**. The row is hard-deleted (the
-     * cascade frees its samples and rep data) and a `DeletedWorkoutSession`
-     * tombstone is written in the same transaction, so the next portal pull
-     * cannot resurrect it. For internal cleanup use [discardSession].
-     */
+    /** User-facing deletion. Records a durable tombstone before hard-deleting local data. */
     suspend fun deleteSession(sessionId: String)
+    suspend fun deleteAllSessions(profileId: String)
 
-    /**
-     * Drop a session this device wrote and never meant to keep: a compensating
-     * rollback for a failed multi-step save, or QA fixture cleanup. No
-     * tombstone — the workout was never the user's to delete, and a tombstone
-     * would blackball the id for good and ride along in every pull's known ids.
-     */
-    suspend fun discardSession(sessionId: String)
-
-    /**
-     * Delete every workout of ONE profile ("Delete All Workouts"), tombstones
-     * included. There is no unscoped variant: the user action must never touch
-     * another profile's history.
-     */
-    suspend fun deleteAllSessionsForProfile(profileId: String)
+    /** Internal rollback/compensation path. Never creates a user deletion tombstone. */
+    suspend fun discardSessionInternal(sessionId: String)
 
     /**
      * Issue #591 follow-up (chatgpt-codex-connector P2): delete every
-     * WorkoutSession row that belongs to the given routine session id.
+     * WorkoutSession row that belongs to the given profile and routine session id.
      * Used by the History "Delete All Sets" affordance so zero-rep /
      * ghost rows hidden by `getHistoryVisibleSessions` do not survive
-     * the user-level deletion. This mirrors `deleteSession`'s local
-     * hard-delete-plus-tombstone semantics.
+     * the user-level deletion. The repository records one durable workout
+     * tombstone before hard-deleting the complete group.
      */
-    suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String)
+    suspend fun deleteSessionsByRoutineSessionId(profileId: String, routineSessionId: String)
 
     /**
      * Get recent workout sessions

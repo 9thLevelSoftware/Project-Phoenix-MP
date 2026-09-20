@@ -15,6 +15,8 @@ import com.devil.phoenixproject.data.repository.CompletedSetRepository
 import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
+import com.devil.phoenixproject.data.repository.ProfileRecoveryActivityTracker
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -137,6 +139,15 @@ data class ResumableProgressInfo(
     val totalExercises: Int,
 )
 
+internal fun isWorkoutRecoveryBlocking(state: WorkoutState): Boolean = when (state) {
+    WorkoutState.Idle,
+    WorkoutState.Completed,
+    WorkoutState.RoutineComplete,
+    is WorkoutState.Error,
+    -> false
+    else -> true
+}
+
 data class RoutineResumeManagerGeneration(
     val configurationInputEpoch: Long,
     val recoveryPublicationEpoch: Long,
@@ -225,6 +236,7 @@ class DefaultWorkoutSessionManager(
     private val workoutRepository: WorkoutRepository,
     private val exerciseRepository: ExerciseRepository,
     private val personalRecordRepository: PersonalRecordRepository,
+    private val profileExerciseBaselineRepository: ProfileExerciseBaselineRepository,
     private val repCounter: RepCounterFromMachine,
     private val preferencesManager: PreferencesManager,
     private val gamificationManager: GamificationManager,
@@ -257,6 +269,7 @@ class DefaultWorkoutSessionManager(
     private val healthExportCursorRepository: IntegrationSyncCursorRepository? = null,
     private val scope: CoroutineScope,
     private val machineSafetyCoordinator: MachineSafetyCoordinator? = null,
+    private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
     private val biomechanicsDispatcher: CoroutineDispatcher = Dispatchers.Default,
     private val biomechanicsRepProcessor: BiomechanicsRepProcessor = BiomechanicsRepProcessor.Default,
     private val beforeVbtCommit: (executionId: Long, sessionId: String, repNumber: Int) -> Unit = { _, _, _ -> },
@@ -387,7 +400,7 @@ class DefaultWorkoutSessionManager(
         regenerateFiveThreeOneUseCase = RegenerateFiveThreeOneRoutinesUseCase(
             trainingCycleRepository = trainingCycleRepository,
             workoutRepository = workoutRepository,
-            exerciseRepository = exerciseRepository,
+            baselineRepository = profileExerciseBaselineRepository,
         ),
         dataBackupManager = dataBackupManager,
         healthIntegration = healthIntegration,
@@ -466,6 +479,18 @@ class DefaultWorkoutSessionManager(
             override fun clearCycleContext() = routineFlowManager.clearCycleContext()
             override fun seedRackSelectionForExercise(exerciseIndex: Int) = routineFlowManager.seedRackSelectionForExercise(exerciseIndex)
             override fun proceedFromSummary(completion: SetExecutionCompletion) = this@DefaultWorkoutSessionManager.proceedFromSummary(completion)
+        }
+
+        scope.launch {
+            try {
+                coordinator.workoutState.collect { state ->
+                    profileRecoveryActivityTracker?.setWorkoutActive(
+                        isWorkoutRecoveryBlocking(state),
+                    )
+                }
+            } finally {
+                profileRecoveryActivityTracker?.setWorkoutActive(false)
+            }
         }
 
         scope.launch {
@@ -660,10 +685,6 @@ class DefaultWorkoutSessionManager(
 
     override val isWorkoutMidSet: Boolean
         get() = coordinator._workoutState.value is WorkoutState.Active
-
-    override fun onWorkoutConnectionLost() {
-        activeSessionEngine.captureInterruptedWorkoutForRecovery()
-    }
 
     private fun buildWorkoutServiceSnapshot(
         inputs: WorkoutServiceInputs,
@@ -896,7 +917,19 @@ class DefaultWorkoutSessionManager(
     internal fun beginConfigurationInputMutation(): ConfigurationInputMutationToken = activeSessionEngine.beginConfigurationInputMutation()
     internal fun endConfigurationInputMutation(token: ConfigurationInputMutationToken) = activeSessionEngine.endConfigurationInputMutation(token)
     fun clearActiveRackSelection() = activeSessionEngine.clearActiveRackSelection()
-    fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) = activeSessionEngine.startWorkout(skipCountdown, isJustLiftMode)
+    fun startWorkout(skipCountdown: Boolean = false, isJustLiftMode: Boolean = false) {
+        val tracker = profileRecoveryActivityTracker
+        if (tracker?.setWorkoutActive(true) == false) return
+        try {
+            activeSessionEngine.startWorkout(skipCountdown, isJustLiftMode)
+        } catch (error: Throwable) {
+            tracker?.setWorkoutActive(isWorkoutRecoveryBlocking(coordinator._workoutState.value))
+            throw error
+        }
+        if (!isWorkoutRecoveryBlocking(coordinator._workoutState.value)) {
+            tracker?.setWorkoutActive(false)
+        }
+    }
     fun skipCountdown() = activeSessionEngine.skipCountdown()
     fun stopWorkout(exitingWorkout: Boolean = false) = activeSessionEngine.stopWorkout(exitingWorkout)
     val machineTeardownState: StateFlow<MachineTeardownState>
@@ -920,8 +953,6 @@ class DefaultWorkoutSessionManager(
     fun stopAndSkipCurrentExercise() = activeSessionEngine.stopAndSkipCurrentExercise()
     fun pauseWorkout() = activeSessionEngine.pauseWorkout()
     fun resumeWorkout() = activeSessionEngine.resumeWorkout()
-    fun reconnectInterruptedWorkout() = activeSessionEngine.reconnectInterruptedWorkout()
-
     // ===== Weight Adjustment — delegated to ActiveSessionEngine =====
 
     fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) = activeSessionEngine.adjustWeight(newWeightKg, sendToMachine)

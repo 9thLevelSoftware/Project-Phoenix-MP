@@ -59,7 +59,7 @@ import platform.darwin.dispatch_time
  * - Coexists with music via AVAudioSession .playAndRecord + .mixWithOthers
  * - Processes partial results to detect the safe word with minimal latency
  */
-actual class SafeWordListener(private val safeWord: String) {
+class IosSafeWordListener(private val safeWord: String) : SafeWordListener {
     private companion object {
         const val TAG = "SafeWordListener"
         const val RESTART_DELAY_NS = 500_000_000L // 500ms in nanoseconds
@@ -74,11 +74,11 @@ actual class SafeWordListener(private val safeWord: String) {
     private var recognitionTask: SFSpeechRecognitionTask? = null
     private var inputTapInstalled = false
 
-    private val _isListening = MutableStateFlow(false)
-    actual val isListening: StateFlow<Boolean> = _isListening.asStateFlow()
+    private val _state = MutableStateFlow<SafeWordState>(SafeWordState.Disabled)
+    override val state: StateFlow<SafeWordState> = _state.asStateFlow()
 
     private val _detectedWord = MutableSharedFlow<String>(extraBufferCapacity = 1)
-    actual val detectedWord: SharedFlow<String> = _detectedWord.asSharedFlow()
+    override val detectedWord: SharedFlow<String> = _detectedWord.asSharedFlow()
 
     /** Tracks whether we *want* to be listening (guards auto-restart). */
     private var shouldBeListening = false
@@ -88,6 +88,9 @@ actual class SafeWordListener(private val safeWord: String) {
 
     /** Guards against re-entrant tearDown calls from concurrent dispatch. */
     private var isTearingDown = false
+
+    /** Bounds a restart loop that never manages to open the microphone. */
+    private val armingTracker = SafeWordArmingTracker()
 
     /**
      * Identifies recognition callbacks so lifecycle recovery can suppress only
@@ -106,11 +109,14 @@ actual class SafeWordListener(private val safeWord: String) {
     private var lifecycleObserversInstalled = false
     private var lifecycleObserverGeneration = 0L
 
-    actual fun startListening() {
+    override fun startListening() {
         if (shouldBeListening) return
 
         if (!speechRecognizer.isAvailable()) {
+            // F-039: report instead of returning silently — the user believes
+            // the safe word will stop the machine.
             NSLog("$TAG: Speech recognition not available on this device")
+            _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.RECOGNIZER_UNAVAILABLE)
             return
         }
 
@@ -125,7 +131,7 @@ actual class SafeWordListener(private val safeWord: String) {
                         dispatch_async(dispatch_get_main_queue()) { startListening() }
                     } else {
                         NSLog("$TAG: Speech recognition denied by user")
-                        _isListening.value = false
+                        _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.PERMISSION)
                     }
                 }
                 return // Wait for callback
@@ -133,12 +139,13 @@ actual class SafeWordListener(private val safeWord: String) {
 
             else -> {
                 NSLog("$TAG: Speech recognition not authorized (status=$authStatus)")
-                _isListening.value = false
+                _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.PERMISSION)
                 return
             }
         }
 
         shouldBeListening = true
+        _state.value = SafeWordState.Arming
         val generation = ++lifecycleObserverGeneration
         dispatch_async(dispatch_get_main_queue()) {
             if (shouldBeListening && generation == lifecycleObserverGeneration) {
@@ -148,7 +155,7 @@ actual class SafeWordListener(private val safeWord: String) {
         startRecognitionWhenRecordPermissionGranted()
     }
 
-    actual fun stopListening() {
+    override fun stopListening() {
         shouldBeListening = false
         val generation = ++lifecycleObserverGeneration
         dispatch_async(dispatch_get_main_queue()) {
@@ -160,6 +167,7 @@ actual class SafeWordListener(private val safeWord: String) {
                 removeLifecycleObservers()
             }
             tearDown()
+            _state.value = SafeWordState.Disabled
         }
     }
 
@@ -179,7 +187,8 @@ actual class SafeWordListener(private val safeWord: String) {
                             } else {
                                 NSLog("$TAG: Microphone recording permission denied by user")
                                 shouldBeListening = false
-                                _isListening.value = false
+                                _state.value =
+                                    SafeWordState.Unavailable(SafeWordUnavailableReason.PERMISSION)
                             }
                         }
                     }
@@ -189,13 +198,13 @@ actual class SafeWordListener(private val safeWord: String) {
             AVAudioSessionRecordPermissionDenied -> {
                 NSLog("$TAG: Microphone recording permission denied")
                 shouldBeListening = false
-                _isListening.value = false
+                _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.PERMISSION)
             }
 
             else -> {
                 NSLog("$TAG: Microphone recording permission unavailable (status=${session.recordPermission})")
                 shouldBeListening = false
-                _isListening.value = false
+                _state.value = SafeWordState.Unavailable(SafeWordUnavailableReason.PERMISSION)
             }
         }
     }
@@ -208,6 +217,18 @@ actual class SafeWordListener(private val safeWord: String) {
 
     private fun startRecognition() {
         if (!shouldBeListening) return
+
+        // F-039: a start attempt only becomes Armed once the audio engine is
+        // actually running. Too many attempts in a row that never get there mean
+        // the microphone is not coming, so say so instead of restarting forever.
+        val attemptState = armingTracker.onStartAttempt()
+        if (attemptState is SafeWordState.Unavailable) {
+            NSLog("$TAG: Speech recognition kept restarting without ever opening the microphone")
+            shouldBeListening = false
+            _state.value = attemptState
+            tearDown()
+            return
+        }
 
         try {
             // Clear any existing task/engine before creating a fresh input tap.
@@ -238,7 +259,7 @@ actual class SafeWordListener(private val safeWord: String) {
                     "$TAG: Invalid input format for speech recognition " +
                         "(sampleRate=${recordingFormat.sampleRate}, channels=${recordingFormat.channelCount})",
                 )
-                _isListening.value = false
+                _state.value = attemptState
                 scheduleRestart()
                 return
             }
@@ -264,7 +285,7 @@ actual class SafeWordListener(private val safeWord: String) {
                 started
             }
             if (!engineStarted) {
-                _isListening.value = false
+                _state.value = attemptState
                 scheduleRestart()
                 return
             }
@@ -277,14 +298,14 @@ actual class SafeWordListener(private val safeWord: String) {
                 handleRecognitionResult(callbackGeneration, result, error)
             }
 
-            _isListening.value = true
+            _state.value = armingTracker.onRecognizerReady()
             // fix(audit): H — do not log the configured safe word. It is user-
             // chosen and may be PII or a sensitive phrase. Log only a length
             // hint for debugging startup issues.
             NSLog("$TAG: Speech recognition started (safe word len=${safeWord.length})")
         } catch (e: Exception) {
             NSLog("$TAG: Failed to start speech recognition: ${e.message}")
-            _isListening.value = false
+            _state.value = attemptState
             scheduleRestart()
         }
     }
@@ -386,7 +407,11 @@ actual class SafeWordListener(private val safeWord: String) {
 
             cancelExistingTask()
 
-            _isListening.value = false
+            // Only downgrade from Armed: a terminal Unavailable(reason) recorded by
+            // the caller must survive the teardown it triggers (F-039).
+            if (_state.value is SafeWordState.Armed) {
+                _state.value = if (shouldBeListening) SafeWordState.Arming else SafeWordState.Disabled
+            }
 
             // Deactivate audio session to release resources
             try {

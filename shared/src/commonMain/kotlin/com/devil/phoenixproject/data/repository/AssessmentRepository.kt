@@ -21,7 +21,7 @@ data class AssessmentResultEntity(
  *
  * Bridges the domain assessment engine and the AssessmentResult database table.
  * Handles persisting assessment results, creating assessment WorkoutSessions
- * with the `__ASSESSMENT__` marker, and writing the assessing profile's training max.
+ * with the `__ASSESSMENT__` marker, and updating the profile-scoped training baseline.
  */
 interface AssessmentRepository {
 
@@ -69,7 +69,7 @@ interface AssessmentRepository {
     /**
      * Save a complete assessment session: creates a WorkoutSession with
      * routineName = "__ASSESSMENT__", inserts the AssessmentResult, and
-     * writes the assessing profile's training max (ExerciseTrainingMax, migration 49).
+     * updates the profile-scoped per-cable baseline.
      *
      * @param exerciseId Exercise ID
      * @param exerciseName Exercise display name

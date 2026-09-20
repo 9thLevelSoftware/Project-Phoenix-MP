@@ -15,6 +15,7 @@ import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.TemplateExercise
 import com.devil.phoenixproject.domain.model.computeFiveThreeOneSetWeightsForWeek
 import com.devil.phoenixproject.testutil.FakeExerciseRepository
+import com.devil.phoenixproject.testutil.FakeProfileExerciseBaselineRepository
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -56,9 +57,8 @@ class TemplateConverterTest {
                     equipment = "BAR",
                 ),
             )
-                setTrainingMaxDirectly("bench-001", "default", 120f)
         }
-        val converter = TemplateConverter(repository)
+        val converter = TemplateConverter(repository, FakeProfileExerciseBaselineRepository())
 
         val template = CycleTemplate(
             id = "template-1",
@@ -100,9 +100,11 @@ class TemplateConverterTest {
                     equipment = "BAR",
                 ),
             )
-                setTrainingMaxDirectly("squat-001", "default", 140f)
         }
-        val converter = TemplateConverter(repository)
+        val baselines = FakeProfileExerciseBaselineRepository().apply {
+            seed("default", "squat-001", 140f)
+        }
+        val converter = TemplateConverter(repository, baselines)
 
         val template = CycleTemplate(
             id = "template-2",
@@ -170,9 +172,8 @@ class TemplateConverterTest {
                     equipment = "BAR",
                 ),
             )
-                setTrainingMaxDirectly("bench-001", "default", 100f)
         }
-        val converter = TemplateConverter(repository)
+        val converter = TemplateConverter(repository, FakeProfileExerciseBaselineRepository())
 
         val template = CycleTemplate(
             id = "custom-531",
@@ -220,7 +221,7 @@ class TemplateConverterTest {
     @Test
     fun `all production templates convert without dropped days or warnings`() = runTest {
         val templates = CycleTemplates.all()
-        val converter = TemplateConverter(repositoryFor(*templates.toTypedArray()))
+        val converter = TemplateConverter(repositoryFor(*templates.toTypedArray()), FakeProfileExerciseBaselineRepository())
 
         for (template in templates) {
             val result = converter.convert(template)
@@ -254,7 +255,7 @@ class TemplateConverterTest {
     @Test
     fun `all production template exercises use live percent resolution and non-zero fallback weights`() = runTest {
         val templates = CycleTemplates.all()
-        val converter = TemplateConverter(repositoryFor(*templates.toTypedArray()))
+        val converter = TemplateConverter(repositoryFor(*templates.toTypedArray()), FakeProfileExerciseBaselineRepository())
 
         for (template in templates) {
             val bodyweightNames = template.days
@@ -304,7 +305,7 @@ class TemplateConverterTest {
     @Test
     fun `production 531 main lifts carry week one percentage prescriptions`() = runTest {
         val template = CycleTemplates.fiveThreeOne()
-        val converter = TemplateConverter(repositoryFor(template))
+        val converter = TemplateConverter(repositoryFor(template), FakeProfileExerciseBaselineRepository())
 
         val result = converter.convert(template)
         // Filter to the percentage-based instances: Shoulder Press also appears as a
@@ -331,7 +332,7 @@ class TemplateConverterTest {
     @Test
     fun `week number selects the 531 percentage scheme`() = runTest {
         val template = CycleTemplates.fiveThreeOne()
-        val converter = TemplateConverter(repositoryFor(template))
+        val converter = TemplateConverter(repositoryFor(template), FakeProfileExerciseBaselineRepository())
 
         val week2 = converter.convert(template, weekNumber = 2)
         val week2Lift = week2.routines.flatMap { it.exercises }
@@ -362,7 +363,7 @@ class TemplateConverterTest {
                 ),
             )
         }
-        val converter = TemplateConverter(repository)
+        val converter = TemplateConverter(repository, FakeProfileExerciseBaselineRepository())
 
         val template = CycleTemplate(
             id = "template-3",
@@ -400,9 +401,8 @@ class TemplateConverterTest {
                     equipment = "SINGLE_HANDLE",
                 ),
             )
-                setTrainingMaxDirectly("curl-001", "default", 40f)
         }
-        val converter = TemplateConverter(repository)
+        val converter = TemplateConverter(repository, FakeProfileExerciseBaselineRepository())
 
         val template = CycleTemplate(
             id = "template-4",
@@ -464,10 +464,11 @@ class TemplateConverterTest {
                     equipment = "SINGLE_HANDLE",
                 ),
             )
-            // 0.3 × 70% = 0.21 → would round to 0kg without the floor
-            setTrainingMaxDirectly("band-001", "default", 0.3f)
         }
-        val converter = TemplateConverter(repository)
+        val baselines = FakeProfileExerciseBaselineRepository().apply {
+            seed("default", "band-001", 0.3f)
+        }
+        val converter = TemplateConverter(repository, baselines)
 
         val template = CycleTemplate(
             id = "template-6",
@@ -507,10 +508,8 @@ class TemplateConverterTest {
                     equipment = "",
                 ),
             )
-            // even with (nonsense) 1RM data present
-            setTrainingMaxDirectly("plank-001", "default", 100f)
         }
-        val converter = TemplateConverter(repository)
+        val converter = TemplateConverter(repository, FakeProfileExerciseBaselineRepository())
 
         val template = CycleTemplate(
             id = "template-7",
@@ -543,7 +542,7 @@ class TemplateConverterTest {
 
     @Test
     fun `day with no resolvable exercises is kept with empty routine and warning`() = runTest {
-        val converter = TemplateConverter(FakeExerciseRepository())
+        val converter = TemplateConverter(FakeExerciseRepository(), FakeProfileExerciseBaselineRepository())
 
         val template = CycleTemplate(
             id = "template-5",

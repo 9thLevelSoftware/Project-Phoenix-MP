@@ -98,6 +98,7 @@ import com.devil.phoenixproject.domain.usecase.RoutineSetWeightResolver
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.util.BleConstants
 import com.devil.phoenixproject.util.BlePacketFactory
+import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
 import com.devil.phoenixproject.util.DataBackupManager
 import com.devil.phoenixproject.util.KmpUtils
@@ -3667,7 +3668,11 @@ class ActiveSessionEngine(
             eccentricPct = params.eccentricLoad.percentage,
         )
     } else {
-        WorkoutCommandValidator.validateProgramParams(params)
+        // Feasibility gate for a drop-set retry candidate, not the send itself. It uses the
+        // ABSOLUTE hardware maximum so an over-ceiling stored routine is not fail-closed out
+        // of a retry it is otherwise allowed to start; the send site applies the connected
+        // model's ceiling after CommandLimits.resolve has clamped.
+        WorkoutCommandValidator.validateProgramParams(params, Constants.MAX_WEIGHT_PER_CABLE_KG)
     }
 
     private suspend fun failAcceptedRetryClosed(
@@ -4771,8 +4776,7 @@ class ActiveSessionEngine(
         if (!routineContextIsCoherent) return null
         val exerciseIndex = coordinator._currentExerciseIndex.value
         val exercise = loadedRoutine?.exercises?.getOrNull(exerciseIndex)
-        val startOverride = pendingStartOverride
-        val params = (startOverride?.params ?: coordinator._workoutParameters.value).let { current ->
+        val params = coordinator._workoutParameters.value.let { current ->
             current.copy(activeRackItemIds = current.activeRackItemIds.toList())
         }
         return QueuedStartCandidate(
@@ -4948,42 +4952,6 @@ class ActiveSessionEngine(
      * Set by DWSM after construction.
      */
     internal var flowDelegate: WorkoutFlowDelegate? = null
-
-    private data class InterruptedSetRecoverySnapshot(
-        val routineId: String,
-        val exerciseIndex: Int,
-        val setIndex: Int,
-        val warmupSetIndex: Int,
-        val repCount: RepCount,
-    )
-
-    private data class StartWorkoutOverride(
-        val params: WorkoutParameters,
-        val preserveWarmupReps: Boolean,
-        val skipVariableWarmupOverride: Boolean,
-    )
-
-    private sealed interface InterruptedWorkoutRecoveryPlan {
-        data class Resume(
-            val params: WorkoutParameters,
-            val warmupSetIndex: Int,
-            val preserveWarmupReps: Boolean,
-            val skipVariableWarmupOverride: Boolean,
-        ) : InterruptedWorkoutRecoveryPlan
-
-        data class EnterSetReady(
-            val exerciseIndex: Int,
-            val setIndex: Int,
-            val adjustedWeight: Float,
-            val adjustedReps: Int,
-            val feedback: String,
-        ) : InterruptedWorkoutRecoveryPlan
-
-        data class ShowRoutineComplete(val feedback: String) : InterruptedWorkoutRecoveryPlan
-    }
-
-    private var interruptedSetRecovery: InterruptedSetRecoverySnapshot? = null
-    private var pendingStartOverride: StartWorkoutOverride? = null
 
     /** Detector for identifying rep phase boundaries from position data */
     private val repBoundaryDetector = RepBoundaryDetector()
@@ -5351,6 +5319,21 @@ class ActiveSessionEngine(
     }
 
     /**
+     * A sample is concentric (lifting) only when a cable is moving outward faster than
+     * the velocity dead-band. The band keeps sensor noise and the near-stationary drift
+     * between reps out of the phase split, so a rep's mean concentric velocity describes
+     * the pull rather than the pauses around it.
+     */
+    private fun isConcentricSample(metric: WorkoutMetric): Boolean {
+        return metric.velocityA > VELOCITY_DEAD_BAND_MM_S || metric.velocityB > VELOCITY_DEAD_BAND_MM_S
+    }
+
+    /** Mirror of [isConcentricSample] for the lowering phase. */
+    private fun isEccentricSample(metric: WorkoutMetric): Boolean {
+        return metric.velocityA < -VELOCITY_DEAD_BAND_MM_S || metric.velocityB < -VELOCITY_DEAD_BAND_MM_S
+    }
+
+    /**
      * Calculate enhanced metrics for the set summary display.
      */
     internal fun calculateSetSummaryMetrics(
@@ -5460,12 +5443,35 @@ class ActiveSessionEngine(
         }
         val isSingleCable = cableCount == 1
 
+        // AF-1: a max-weight PR is the measured peak load over the WORKING reps only.
+        // A warmup rep can produce a heavier transient than the working load (a hard
+        // first pull against a light warmup weight), and that peak used to be recorded
+        // as the set's heaviest lift and turned into a PR.  Fall back to every sample
+        // when the set had no warmup reps, when the warmup mark was never recorded, or
+        // when no sample landed after it.
+        //
+        // Every load and force statistic of the summary is taken over this window, so
+        // the set reports one consistent answer to "how heavy was this set": the
+        // heaviest lift, the phase peaks that become CONCENTRIC/ECCENTRIC PR rows, the
+        // averages beside them, and Echo's measured weight (R-2, R-7, R-8, R-15, R-19,
+        // R-20).  The cable-count heuristic stays whole-set (cable topology is a
+        // property of the set, not of a phase), and so does the calorie integral: the
+        // work done during the warmup is work the user really did.
+        //
+        // The mark's own sample counts as the first working sample (`>=`), which is the
+        // same convention the seeded rep-1 window uses for its lower bound (R-6).
+        val workingMetrics = if (warmupRepsCount > 0 && warmupCompleteTimeMs > 0L) {
+            metrics.filter { it.timestamp >= warmupCompleteTimeMs }.ifEmpty { metrics }
+        } else {
+            metrics
+        }
+
         val heaviestLiftKgPerCable = if (isSingleCable) {
             // Single-cable: use the active cable's load (don't halve)
-            metrics.maxOf { maxOf(it.loadA, it.loadB) }
+            workingMetrics.maxOf { maxOf(it.loadA, it.loadB) }
         } else {
             // Double-cable: raw totalLoad / 2, no baseline subtraction (parent-aligned)
-            metrics.maxOf { it.totalLoad / 2f }
+            workingMetrics.maxOf { it.totalLoad / 2f }
         }
 
         val volumeWeightKgPerCable = if (isEchoMode) {
@@ -5476,16 +5482,23 @@ class ActiveSessionEngine(
         // Fixed-load modes should log the prescribed working load, while Echo uses measured force.
         val totalVolumeKg = volumeWeightKgPerCable * cableCount.toFloat() * repCount
 
-        val concentricMetrics = metrics.filter { it.velocityA > 10 || it.velocityB > 10 }
-        val eccentricMetrics = metrics.filter { it.velocityA < -10 || it.velocityB < -10 }
+        // R-7/R-15: these peaks are not display-only. They travel as
+        // PostSaveWorkoutInput.peakConcentricForceKg / peakEccentricForceKg into
+        // updatePhaseSpecificPRs, which writes MAX_WEIGHT PersonalRecord rows with
+        // phase CONCENTRIC/ECCENTRIC - and the "% of PR" resolver prefers the
+        // CONCENTRIC row over COMBINED for every mode but Eccentric Only. Taking them
+        // over the warmup would have let the transient set a PR and scale a future
+        // commanded load through the back door.
+        val concentricMetrics = workingMetrics.filter { isConcentricSample(it) }
+        val eccentricMetrics = workingMetrics.filter { isEccentricSample(it) }
 
         val peakConcentricA = concentricMetrics.maxOfOrNull { it.loadA } ?: 0f
         val peakConcentricB = concentricMetrics.maxOfOrNull { it.loadB } ?: 0f
         val peakEccentricA = eccentricMetrics.maxOfOrNull { it.loadA } ?: 0f
         val peakEccentricB = eccentricMetrics.maxOfOrNull { it.loadB } ?: 0f
 
-        val peakLoadA = metrics.maxOf { it.loadA }
-        val peakLoadB = metrics.maxOf { it.loadB }
+        val peakLoadA = workingMetrics.maxOf { it.loadA }
+        val peakLoadB = workingMetrics.maxOf { it.loadB }
         val thresholdA = (peakLoadA * 0.1f).coerceAtLeast(1f)
         val thresholdB = (peakLoadB * 0.1f).coerceAtLeast(1f)
 
@@ -5568,10 +5581,12 @@ class ActiveSessionEngine(
         }
 
         val peakLoadKgPerCable = heaviestLiftKgPerCable
+        // R-2/R-8: the average is taken over the same window as the peak, so
+        // `avg <= peak` still holds by construction.
         val avgLoadKgPerCable = if (isSingleCable) {
-            metrics.map { maxOf(it.loadA, it.loadB) }.average().toFloat()
+            workingMetrics.map { maxOf(it.loadA, it.loadB) }.average().toFloat()
         } else {
-            metrics.map { it.totalLoad / 2f }.average().toFloat()
+            workingMetrics.map { it.totalLoad / 2f }.average().toFloat()
         }
 
         // Echo Mode Phase-Aware Metrics
@@ -5581,8 +5596,11 @@ class ActiveSessionEngine(
         var peakWeightKg = 0f
         var burnoutReps = 0
 
-        if (isEchoMode && metrics.size > 10) {
-            val weightSamples = metrics.map { maxOf(it.loadA, it.loadB) }
+        // R-8/R-20: Echo's measured weight comes from the same window, so a set's
+        // stored peakWeightKg and heaviestLiftKg describe the same samples. Echo's own
+        // ramp/working/burnout split then runs inside the working window.
+        if (isEchoMode && workingMetrics.size > 10) {
+            val weightSamples = workingMetrics.map { maxOf(it.loadA, it.loadB) }
             peakWeightKg = weightSamples.maxOrNull() ?: 0f
             val peakThreshold = peakWeightKg * 0.9f
 
@@ -6040,7 +6058,12 @@ class ActiveSessionEngine(
         val currentBoundary = if (boundaries.isNotEmpty()) boundaries.last() else KmpUtils.currentTimeMillis()
 
         val repMetrics = if (boundaries.size >= 2) {
+            // R-18: the exclusive lower bound belongs to the previous rep, but when the
+            // previous boundary is the warmup mark that sample IS this rep's first one.
+            // Only fall back to it when the window would otherwise be empty, so rep 1
+            // keeps producing a quality row instead of silently dropping out.
             metrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
+                .ifEmpty { metrics.filter { it.timestamp in prevBoundary..currentBoundary } }
         } else {
             metrics.takeLast(50) // Fallback for first rep
         }
@@ -6059,8 +6082,10 @@ class ActiveSessionEngine(
             val boundary = phaseBoundaries.first()
             Pair(boundary.concentricIndices, boundary.eccentricIndices)
         } else {
-            // Fallback: split by velocity direction
-            val velocitySplitIndex = repMetrics.indexOfFirst { it.velocityA < 0 || it.velocityB < 0 }
+            // Fallback: split by velocity direction. R-5/R-9/R-21: the same dead-band as
+            // the set summary and the biomechanics window, so the file holds one rule for
+            // "this sample is a lowering sample" rather than a third, sign-only variant.
+            val velocitySplitIndex = repMetrics.indexOfFirst { isEccentricSample(it) }
                 .takeIf { it > 0 } ?: (repMetrics.size / 2)
             Pair(0 until velocitySplitIndex, velocitySplitIndex until repMetrics.size)
         }
@@ -6191,17 +6216,42 @@ class ActiveSessionEngine(
                 val prevBoundary = if (boundaries.size >= 2) boundaries[boundaries.size - 2] else 0L
                 val currentBoundary = boundaries.last()
 
+                // R-4/R-13: the exclusive lower bound belongs to the previous rep, except
+                // when it is the warmup mark - that sample is this rep's first one. Fall
+                // back to it only when the window is otherwise empty, so a rep 1 whose
+                // notification arrives before any further sample still establishes
+                // firstRepMcv instead of leaving velocity-loss tracking baselined on rep 2.
+                //
+                // Round 2, R-4: the fallback sample only counts when it actually carries
+                // concentric movement. The first sample at/after warmup completion is
+                // routinely inside the dead-band, and a one-sample dead-band window would
+                // make firstRepMcv a couple of mm/s - which FINDING-57's `mcv == 0f` guard
+                // does not catch - so every later rep's velocity loss would coerce to 0 and
+                // auto-end plus the VBT alert would be silently off for the whole set, with
+                // that value averaged into session avgMcvMmS. Without a usable sample this
+                // returns early exactly as it did before the fallback existed and rep 2
+                // establishes the baseline, one rep late but genuine. The guard is scoped
+                // to the fallback branch on purpose: applying it to the whole expression
+                // would break the first-half fallback below for a normal rep whose window
+                // happens to hold no concentric sample.
                 val repMetrics = allMetrics.filter { it.timestamp in (prevBoundary + 1)..currentBoundary }
+                    .ifEmpty {
+                        allMetrics.filter { it.timestamp in prevBoundary..currentBoundary }
+                            .takeIf { fallback -> fallback.any { isConcentricSample(it) } }
+                            .orEmpty()
+                    }
                 if (repMetrics.isEmpty()) {
                     Logger.d { "Biomechanics: no metrics for rep $repNumber (boundary $prevBoundary..$currentBoundary)" }
                     return@launch
                 }
 
-                // Split into concentric/eccentric using velocity direction
-                // Concentric = lifting (positive velocity), Eccentric = lowering (negative velocity)
+                // Split into concentric/eccentric using velocity direction.
+                // F-022: the same +-10 mm/s dead-band the set summary uses, so a rep's
+                // mean concentric velocity is not dragged down by near-zero noise
+                // samples that "any positive velocity" used to accept.
                 // Approximate: use first half as concentric if we can't determine from velocity
                 val concentricMetrics = repMetrics.filter {
-                    it.velocityA > 0 || it.velocityB > 0
+                    isConcentricSample(it)
                 }.takeIf { it.isNotEmpty() } ?: run {
                     // Fallback: first half is concentric
                     val midpoint = repMetrics.size / 2
@@ -6365,9 +6415,36 @@ class ActiveSessionEngine(
             coordinator._repCount.value = repCounter.getRepCount()
             coordinator._repRanges.value = repCounter.getRepRanges()
 
-            // Issue #252: Record the moment warmup completes (once per set)
-            if (coordinator.warmupCompleteTimeMs == 0L && coordinator._repCount.value.isWarmupComplete) {
-                coordinator.warmupCompleteTimeMs = currentTimeMillis()
+            // Issue #252: Record the moment warmup completes (once per set).
+            // The mark is compared against sample timestamps (set duration, the
+            // working-reps-only peak load, the rep-1 biomechanics window), so it is
+            // stamped from this sample's own clock rather than read separately.
+            // Both come from the same wall clock in production (MonitorDataProcessor
+            // stamps each sample as it is parsed).
+            //
+            // R-1: the mark is only recorded while no working rep has been counted yet.
+            // RepCounterFromMachine force-completes the warmup when the machine first
+            // reports repsSetCount > workingReps, so warmup completion and working rep 1
+            // can arrive in the same notification; the first sample after that lands
+            // AFTER rep 1 - usually the heaviest rep - and using it as the warmup mark
+            // would subtract rep 1 from the max-weight PR. With this guard no mark is
+            // recorded on that path, every statistic falls back to the whole set, and
+            // the only loss is Issue #252's duration exclusion (which on that path used
+            // to subtract the warmup plus rep 1 anyway).
+            if (coordinator.warmupCompleteTimeMs == 0L &&
+                coordinator._repCount.value.isWarmupComplete &&
+                coordinator._repCount.value.workingReps == 0
+            ) {
+                coordinator.warmupCompleteTimeMs = metric.timestamp
+                // F-022: start working rep 1's window at the end of warmup. Without a
+                // boundary here the window reaches back to set start, so rep 1's mean
+                // concentric velocity - the baseline for velocity-loss auto-end and for
+                // the VBT 1RM estimate - averaged in every warmup rep.
+                if (coordinator._repCount.value.warmupReps > 0) {
+                    coordinator.repBoundaryTimestamps.update { boundaries ->
+                        if (boundaries.isEmpty()) listOf(metric.timestamp) else boundaries
+                    }
+                }
             }
 
             if (shouldEnableAutoStop(params)) {
@@ -6595,52 +6672,25 @@ class ActiveSessionEngine(
 
     // ===== Weight Adjustment =====
 
-    /**
-     * Send weight update command to the machine.
-     */
-    private suspend fun sendWeightUpdateToMachine(weightKg: Float) {
-        try {
-            val params = coordinator._workoutParameters.value
-
-            val command = if (!params.isEchoMode) {
-                WorkoutCommandValidator.validateLegacyWorkoutCommand(
-                    params.programMode,
-                    weightKg,
-                    params.reps,
-                ).getOrThrow()
-                BlePacketFactory.createWorkoutCommand(
-                    params.programMode,
-                    weightKg,
-                    params.reps,
-                )
-            } else {
-                return
-            }
-
-            bleRepository.sendWorkoutCommand(command).getOrThrow()
-            Logger.d("Weight update sent to machine: $weightKg kg")
-        } catch (e: Exception) {
-            if (e is CancellationException) throw e
-            val errorPrefix = if (e is IllegalArgumentException) "Invalid BLE weight update" else "BLE weight update failed"
-            coordinator._bleErrorEvents.tryEmit("$errorPrefix: ${e.message}")
-            Logger.e(e) { "Failed to send weight update: ${e.message}" }
-        }
-    }
+    // F-059: sendWeightUpdateToMachine was deleted. It had no callers, and its own comment
+    // said the REGULAR_COMMAND frame it built would fault the machine mid-set. It was also
+    // an unvalidated command builder sitting beside the validated start path.
 
     /**
      * Adjust the weight during an active workout or rest period.
      *
-     * If called during an active set, the BLE command is deferred until the next
-     * set boundary. sendWeightUpdateToMachine() sends a full REGULAR_COMMAND packet
-     * which resets the exercise on the machine (BLE exercise packet lifecycle constraint:
-     * machine can't receive new exercise packet until active one fully ends).
+     * If called during an active set, the BLE command is deferred until the next set
+     * boundary: a full REGULAR_COMMAND packet mid-set resets the exercise on the machine
+     * (BLE exercise packet lifecycle constraint - the machine can't receive a new
+     * exercise packet until the active one fully ends).
      */
     fun adjustWeight(newWeightKg: Float, sendToMachine: Boolean = true) {
-        // Upper bound is 110kg per cable to support both hardware variants:
-        //   V-Form (VIT-200): 100kg max per cable
-        //   Trainer+:         110kg max per cable
-        // Do NOT replace with Constants.MAX_WEIGHT_KG (100f) — that would regress Trainer+ users.
-        val clampedWeight = newWeightKg.coerceIn(0f, 110f)
+        // KD-9: bound by the CONNECTED model's per-cable ceiling (V-Form 100, Trainer+ 110,
+        // unknown or not connected fails closed to 100) instead of a model-agnostic 110.
+        val clampedWeight = newWeightKg.coerceIn(
+            0f,
+            CommandLimits.maxWeightPerCableKg(bleRepository.connectedModel),
+        )
 
         Logger.d("ActiveSessionEngine: Adjusting weight to $clampedWeight kg (sendToMachine=$sendToMachine)")
 
@@ -7239,8 +7289,6 @@ class ActiveSessionEngine(
 
     private fun clearSharedStateForNewWorkout() {
         cancelJustLiftEggTimer()
-        interruptedSetRecovery = null
-        pendingStartOverride = null
         coordinator.currentSessionId = null
         coordinator.workoutStartTime = 0
         coordinator.collectedMetrics.value = emptyList()
@@ -7278,7 +7326,42 @@ class ActiveSessionEngine(
         Logger.d("ActiveSessionEngine") { "LOAD BASELINE: Reset to 0 (disabled)" }
     }
 
-    private fun clampUpcomingProgressionKg(valueKg: Float): Float = valueKg.coerceIn(-3f, 3f)
+    /**
+     * Tell the user what [CommandLimits.resolve] capped, once per command that actually
+     * reached the machine. Stored routine values are deliberately left as they are, so
+     * without this the set would just quietly run lighter than the plan says.
+     *
+     * Published as drainable state rather than an event: Just Lift skips the countdown and
+     * navigates to the screen that shows feedback only once the state turns Active, so an
+     * emission on the replay-0 feedback flow would be dropped with no subscriber.
+     *
+     * @param isEchoCommand true when the 32-byte Echo control frame was sent. That frame
+     *   encodes neither a target weight nor a per-rep progression, so a resolution that
+     *   trimmed either of them capped nothing that was going to be commanded.
+     */
+    private fun emitCommandLimitNotice(limits: CommandLimits.Resolution, isEchoCommand: Boolean) {
+        if (isEchoCommand || !limits.cappedAnything) {
+            coordinator._commandLimitNotice.value = null
+            return
+        }
+        val notice = buildString {
+            if (limits.weightCapped) {
+                append("Weight capped to ${formatLimitKg(limits.maxWeightPerCableKg)} kg/cable ")
+                append(if (limits.modelKnown) "for this trainer" else "(trainer model not recognised)")
+            }
+            if (limits.progressionCapped) {
+                if (isNotEmpty()) append(". ")
+                append("Progression capped to ${formatLimitKg(CommandLimits.MAX_PROGRESSION_KG)} kg/rep")
+            }
+        }
+        Logger.w { "CommandLimits: $notice" }
+        coordinator._commandLimitNotice.value = notice
+    }
+
+    private fun formatLimitKg(valueKg: Float): String {
+        val rounded = kotlin.math.round(valueKg)
+        return if (kotlin.math.abs(valueKg - rounded) < 0.01f) rounded.toInt().toString() else valueKg.toString()
+    }
 
     fun updateWorkoutParameters(params: WorkoutParameters) {
         supersedeConfigurationInputIntent()
@@ -7386,8 +7469,27 @@ class ActiveSessionEngine(
 
     private fun applyPendingRestRackSelection(target: Pair<Int, Int>): Boolean {
         val pending = pendingRestRackSelections.remove(target) ?: return false
+        val exercise = coordinator._loadedRoutine.value?.exercises?.getOrNull(target.first)
+        val params = coordinator._workoutParameters.value
+        val selectedItems = equipmentRackRepository.rackItems.value
+            .filter { it.enabled && it.id in pending.itemIds }
+        val adjustment = applyEquipmentRackLoadUseCase.calculate(
+            programmedWeightPerCableKg = params.weightPerCableKg,
+            physicalCableCount = exercise?.exercise?.preferredCableCount ?: 1,
+            selectedItems = selectedItems,
+            isEchoMode = params.isEchoMode,
+            validatorMinimumPerCableKg = validatorSafeMinimum(params),
+            behaviorOverrides = pending.behaviorOverrides,
+        )
         coordinator._activeRackBehaviorOverrides.value = pending.behaviorOverrides
-        coordinator.setActiveRackSelection(pending.itemIds)
+        coordinator.setActiveRackSelection(
+            itemIds = pending.itemIds,
+            precomputedAdjustment = adjustment,
+            precomputedItemsJson = rackJson.encodeToString(
+                ListSerializer(RackItem.serializer()),
+                selectedItems,
+            ),
+        )
         return true
     }
 
@@ -7491,294 +7593,6 @@ class ActiveSessionEngine(
 
     internal fun endConfigurationInputMutation(token: ConfigurationInputMutationToken) {
         executionGuard.endConfigurationInputMutation(token)
-    }
-
-    fun captureInterruptedWorkoutForRecovery() {
-        val routine = coordinator._loadedRoutine.value
-        if (coordinator._workoutState.value !is WorkoutState.Active || routine == null) {
-            interruptedSetRecovery = null
-            return
-        }
-
-        interruptedSetRecovery = InterruptedSetRecoverySnapshot(
-            routineId = routine.id,
-            exerciseIndex = coordinator._currentExerciseIndex.value,
-            setIndex = coordinator._currentSetIndex.value,
-            warmupSetIndex = coordinator._currentWarmupSetIndex.value,
-            repCount = coordinator._repCount.value,
-        )
-        Logger.w {
-            "Captured interrupted set recovery snapshot: routine=${routine.name}, " +
-                "exerciseIndex=${coordinator._currentExerciseIndex.value}, setIndex=${coordinator._currentSetIndex.value}, " +
-                "warmupSetIndex=${coordinator._currentWarmupSetIndex.value}, reps=${coordinator._repCount.value}"
-        }
-    }
-
-    fun reconnectInterruptedWorkout() {
-        supersedeConfigurationInputIntent()
-        val plan = buildInterruptedWorkoutRecoveryPlan()
-        applyInterruptedWorkoutRecoveryPlan(plan)
-    }
-
-    private fun buildInterruptedWorkoutRecoveryPlan(): InterruptedWorkoutRecoveryPlan {
-        val snapshot = interruptedSetRecovery
-        val routine = coordinator._loadedRoutine.value
-        if (snapshot == null || routine == null || routine.id != snapshot.routineId) {
-            return InterruptedWorkoutRecoveryPlan.EnterSetReady(
-                exerciseIndex = coordinator._currentExerciseIndex.value,
-                setIndex = coordinator._currentSetIndex.value,
-                adjustedWeight = coordinator._workoutParameters.value.weightPerCableKg,
-                adjustedReps = coordinator._workoutParameters.value.reps,
-                feedback = "Phoenix reconnected, but couldn't rebuild the interrupted set. Restart it from Set Ready.",
-            )
-        }
-
-        val exercise = routine.exercises.getOrNull(snapshot.exerciseIndex) ?: return InterruptedWorkoutRecoveryPlan.EnterSetReady(
-            exerciseIndex = snapshot.exerciseIndex,
-            setIndex = snapshot.setIndex,
-            adjustedWeight = coordinator._workoutParameters.value.weightPerCableKg,
-            adjustedReps = coordinator._workoutParameters.value.reps,
-            feedback = "Phoenix reconnected, but the interrupted exercise could not be resolved safely.",
-        )
-
-        val baseParams = buildRoutineRecoveryBaseParameters(exercise, snapshot.setIndex)
-        if (isBodyweightExercise(exercise) || exercise.duration != null || baseParams.isAMRAP || baseParams.isJustLift) {
-            return InterruptedWorkoutRecoveryPlan.EnterSetReady(
-                exerciseIndex = snapshot.exerciseIndex,
-                setIndex = snapshot.setIndex,
-                adjustedWeight = baseParams.weightPerCableKg,
-                adjustedReps = baseParams.reps,
-                feedback = "Phoenix reconnected, but this set type needs a manual restart from Set Ready.",
-            )
-        }
-
-        return if (snapshot.warmupSetIndex >= 0) {
-            buildVariableWarmupRecoveryPlan(snapshot, routine, exercise, baseParams)
-        } else {
-            buildStandardRecoveryPlan(snapshot, routine, exercise, baseParams)
-        }
-    }
-
-    private fun buildStandardRecoveryPlan(
-        snapshot: InterruptedSetRecoverySnapshot,
-        routine: Routine,
-        exercise: RoutineExercise,
-        baseParams: WorkoutParameters,
-    ): InterruptedWorkoutRecoveryPlan {
-        val warmupRemaining = (baseParams.warmupReps - snapshot.repCount.warmupReps).coerceAtLeast(0)
-        val workingRemaining = if (warmupRemaining > 0) {
-            baseParams.reps
-        } else {
-            (baseParams.reps - snapshot.repCount.workingReps).coerceAtLeast(0)
-        }
-
-        if (warmupRemaining == 0 && workingRemaining == 0) {
-            return nextRoutineStepPlan(
-                routine = routine,
-                exercise = exercise,
-                exerciseIndex = snapshot.exerciseIndex,
-                setIndex = snapshot.setIndex,
-                feedback = "Phoenix reconnected after the set had already completed. Continue from the next step.",
-            )
-        }
-
-        return InterruptedWorkoutRecoveryPlan.Resume(
-            params = baseParams.copy(
-                warmupReps = warmupRemaining,
-                reps = workingRemaining,
-            ),
-            warmupSetIndex = -1,
-            preserveWarmupReps = true,
-            skipVariableWarmupOverride = false,
-        )
-    }
-
-    private fun buildVariableWarmupRecoveryPlan(
-        snapshot: InterruptedSetRecoverySnapshot,
-        routine: Routine,
-        exercise: RoutineExercise,
-        baseParams: WorkoutParameters,
-    ): InterruptedWorkoutRecoveryPlan {
-        val warmupSet = exercise.warmupSets.getOrNull(snapshot.warmupSetIndex)
-            ?: return InterruptedWorkoutRecoveryPlan.EnterSetReady(
-                exerciseIndex = snapshot.exerciseIndex,
-                setIndex = snapshot.setIndex,
-                adjustedWeight = baseParams.weightPerCableKg,
-                adjustedReps = baseParams.reps,
-                feedback = "Phoenix reconnected, but the interrupted warm-up set could not be rebuilt safely.",
-            )
-
-        val completedReps = snapshot.repCount.workingReps
-        val remainingReps = (warmupSet.reps - completedReps).coerceAtLeast(0)
-        if (remainingReps > 0) {
-            return InterruptedWorkoutRecoveryPlan.Resume(
-                params = buildWarmupOverrideParams(
-                    baseParams = baseParams,
-                    workingWeightKg = baseParams.weightPerCableKg,
-                    warmupSet = warmupSet,
-                    reps = remainingReps,
-                ),
-                warmupSetIndex = snapshot.warmupSetIndex,
-                preserveWarmupReps = true,
-                skipVariableWarmupOverride = true,
-            )
-        }
-
-        val nextWarmupIndex = snapshot.warmupSetIndex + 1
-        if (nextWarmupIndex < exercise.warmupSets.size) {
-            return InterruptedWorkoutRecoveryPlan.Resume(
-                params = buildWarmupOverrideParams(
-                    baseParams = baseParams,
-                    workingWeightKg = baseParams.weightPerCableKg,
-                    warmupSet = exercise.warmupSets[nextWarmupIndex],
-                    reps = exercise.warmupSets[nextWarmupIndex].reps,
-                ),
-                warmupSetIndex = nextWarmupIndex,
-                preserveWarmupReps = true,
-                skipVariableWarmupOverride = true,
-            )
-        }
-
-        return InterruptedWorkoutRecoveryPlan.Resume(
-            params = baseParams,
-            warmupSetIndex = -1,
-            preserveWarmupReps = true,
-            skipVariableWarmupOverride = false,
-        )
-    }
-
-    private fun nextRoutineStepPlan(
-        routine: Routine,
-        exercise: RoutineExercise,
-        exerciseIndex: Int,
-        setIndex: Int,
-        feedback: String,
-    ): InterruptedWorkoutRecoveryPlan {
-        val nextStep = flowDelegate?.getNextStep(routine, exerciseIndex, setIndex)
-        if (nextStep == null) {
-            return InterruptedWorkoutRecoveryPlan.ShowRoutineComplete(feedback)
-        }
-
-        val (nextExerciseIndex, nextSetIndex) = nextStep
-        val nextExercise = routine.exercises.getOrNull(nextExerciseIndex) ?: return InterruptedWorkoutRecoveryPlan.ShowRoutineComplete(feedback)
-        val nextParams = buildRoutineRecoveryBaseParameters(nextExercise, nextSetIndex)
-        return InterruptedWorkoutRecoveryPlan.EnterSetReady(
-            exerciseIndex = nextExerciseIndex,
-            setIndex = nextSetIndex,
-            adjustedWeight = nextParams.weightPerCableKg,
-            adjustedReps = nextParams.reps,
-            feedback = feedback,
-        )
-    }
-
-    private fun buildRoutineRecoveryBaseParameters(exercise: RoutineExercise, setIndex: Int): WorkoutParameters {
-        val rawSetReps = exercise.setReps.getOrNull(setIndex)
-        val resolvedSetReps = rawSetReps ?: exercise.reps
-        return coordinator._workoutParameters.value.copy(
-            programMode = exercise.programMode,
-            weightPerCableKg = resolveOccurrenceSetWeight(exercise, setIndex),
-            reps = resolvedSetReps,
-            warmupReps = Constants.DEFAULT_WARMUP_REPS,
-            echoLevel = exercise.getEchoLevelForSet(setIndex),
-            eccentricLoad = exercise.eccentricLoad,
-            selectedExerciseId = exercise.exercise.id,
-            stallDetectionEnabled = exercise.stallDetectionEnabled,
-            repCountTiming = exercise.repCountTiming,
-            stopAtTop = exercise.stopAtTop,
-            isAMRAP = rawSetReps == null,
-            progressionRegressionKg = exercise.progressionKg,
-            isJustLift = false,
-            useAutoStart = false,
-        )
-    }
-
-    private fun buildWarmupOverrideParams(
-        baseParams: WorkoutParameters,
-        workingWeightKg: Float,
-        warmupSet: com.devil.phoenixproject.domain.model.WarmupSet,
-        reps: Int,
-    ): WorkoutParameters {
-        val warmupWeight = (workingWeightKg * warmupSet.percentOfWorking / 100f).coerceIn(0f, 110f)
-        return baseParams.copy(
-            weightPerCableKg = warmupWeight,
-            reps = reps,
-            warmupReps = Constants.DEFAULT_WARMUP_REPS,
-            isAMRAP = false,
-        )
-    }
-
-    private fun applyInterruptedWorkoutRecoveryPlan(plan: InterruptedWorkoutRecoveryPlan) {
-        when (plan) {
-            is InterruptedWorkoutRecoveryPlan.Resume -> {
-                Logger.i {
-                    "Rebuilding interrupted set: exerciseIndex=${coordinator._currentExerciseIndex.value}, " +
-                        "setIndex=${coordinator._currentSetIndex.value}, warmupSetIndex=${plan.warmupSetIndex}, params=${plan.params}"
-                }
-                interruptedSetRecovery = null
-                executionGuard.mutateConfigurationInputs {
-                    pendingStartOverride = StartWorkoutOverride(
-                        params = plan.params,
-                        preserveWarmupReps = plan.preserveWarmupReps,
-                        skipVariableWarmupOverride = plan.skipVariableWarmupOverride,
-                    )
-                    coordinator._currentWarmupSetIndex.value = plan.warmupSetIndex
-                    coordinator._workoutParameters.value = plan.params
-                }
-                resetInterruptedWorkoutTrackingState()
-                startWorkout(skipCountdown = true)
-            }
-
-            is InterruptedWorkoutRecoveryPlan.EnterSetReady -> {
-                Logger.w { "Interrupted workout requires manual restart from Set Ready" }
-                interruptedSetRecovery = null
-                pendingStartOverride = null
-                resetInterruptedWorkoutTrackingState()
-                coordinator._workoutState.value = WorkoutState.Idle
-                flowDelegate?.enterSetReadyWithAdjustments(
-                    exerciseIndex = plan.exerciseIndex,
-                    setIndex = plan.setIndex,
-                    adjustedWeight = plan.adjustedWeight,
-                    adjustedReps = plan.adjustedReps,
-                )
-                coordinator._userFeedbackEvents.tryEmit(plan.feedback)
-            }
-
-            is InterruptedWorkoutRecoveryPlan.ShowRoutineComplete -> {
-                Logger.w { "Interrupted workout already completed before reconnect; showing routine complete" }
-                // Issue #395: Write aggregate health workout before clearing routine state
-                writeRoutineHealthData()
-                autoBackupRoutineIfEnabled("interrupted-routine-complete")
-                interruptedSetRecovery = null
-                pendingStartOverride = null
-                resetInterruptedWorkoutTrackingState()
-                coordinator._workoutState.value = WorkoutState.Idle
-                flowDelegate?.showRoutineComplete()
-                coordinator._userFeedbackEvents.tryEmit(plan.feedback)
-            }
-        }
-    }
-
-    private fun resetInterruptedWorkoutTrackingState() {
-        coordinator.workoutJob?.cancel()
-        coordinator.workoutJob = null
-        repCounter.reset()
-        resetAutoStopState()
-        coordinator._repCount.value = RepCount()
-        coordinator._repRanges.value = null
-        coordinator._timedExerciseRemainingSeconds.value = null
-        coordinator._currentHeuristicKgMax.value = 0f
-        coordinator.collectedMetrics.value = emptyList()
-        coordinator.setRepMetrics.value = emptyList()
-        coordinator.repBoundaryTimestamps.value = emptyList()
-        executionGuard.currentLease?.let(::resetBiomechanicsContext)
-        coordinator.repQualityScorer.reset()
-        coordinator._latestRepQuality.value = null
-        coordinator._loadBaselineA.value = 0f
-        coordinator._loadBaselineB.value = 0f
-        coordinator.warmupCompleteTimeMs = 0
-        coordinator.currentSessionId = null
-        coordinator.bodyweightTimerJob?.cancel()
-        coordinator.bodyweightTimerJob = null
     }
 
     private fun rejectStart(reason: StartRejectionReason) {
@@ -7963,13 +7777,7 @@ class ActiveSessionEngine(
             return null
         }
 
-        val capturedStartOverride = if (retryRequest == null) {
-            pendingStartOverride
-        } else {
-            null
-        }
         val seedParams = retryRequest?.params
-            ?: capturedStartOverride?.params
             ?: queuedStartCandidate?.workoutParameters
             ?: coordinator._workoutParameters.value
         val durationSeconds = currentExercise?.duration?.takeIf { it > 0 }
@@ -8031,9 +7839,6 @@ class ActiveSessionEngine(
         if (queuedStartCandidate != null && captureQueuedStartCandidate() != queuedStartCandidate) {
             executionGuard.invalidate(lease, ExecutionInvalidationReason.START_FAILED)
             return null
-        }
-        if (retryRequest == null && pendingStartOverride === capturedStartOverride) {
-            pendingStartOverride = null
         }
         outgoingLease?.let(::discardTeardownReadyContinuation)
         afterExecutionBegin(outgoingLease?.executionId, lease.executionId)
@@ -8097,16 +7902,11 @@ class ActiveSessionEngine(
             var configurationTeardownHandedOff = false
             var retryStartCommitted = false
             try {
-                val startOverride = capturedStartOverride
-                if (startOverride != null) {
-                    coordinator._workoutParameters.value = startOverride.params
-                }
                 if (queuedStartCandidate != null && captureQueuedStartCandidate() != queuedStartCandidate) {
                     failStart(lease, priorWorkoutState)
                     return@launch
                 }
                 val baseParams = retryRequest?.params
-                    ?: startOverride?.params
                     ?: queuedStartCandidate?.workoutParameters
                     ?: coordinator._workoutParameters.value
 
@@ -8365,8 +8165,7 @@ class ActiveSessionEngine(
                 }
 
                 val effectiveWarmupReps = Constants.DEFAULT_WARMUP_REPS
-                val preserveWarmupReps = startOverride?.preserveWarmupReps == true
-                val effectiveParams = if (!preserveWarmupReps && params.warmupReps != effectiveWarmupReps) {
+                val effectiveParams = if (params.warmupReps != effectiveWarmupReps) {
                     Logger.d("ActiveSessionEngine") { "Issue #222: Forcing warmupReps=$effectiveWarmupReps for cable exercise (was ${params.warmupReps})" }
                     val updated = params.copy(warmupReps = effectiveWarmupReps)
                     coordinator._workoutParameters.value = updated
@@ -8391,9 +8190,8 @@ class ActiveSessionEngine(
                 // Each warm-up set is a separate BLE stop/start cycle at a percentage of working weight.
                 val warmupSetIndex = coordinator._currentWarmupSetIndex.value
                 val isInWarmupPhase = warmupSetIndex >= 0
-                val skipVariableWarmupOverride = startOverride?.skipVariableWarmupOverride == true
                 val hasVariableWarmupOverrideApplied: Boolean
-                val warmupOverrideParams = if (!skipVariableWarmupOverride && isInWarmupPhase && currentExercise != null) {
+                val warmupOverrideParams = if (isInWarmupPhase && currentExercise != null) {
                     val warmupSet = currentExercise.warmupSets.getOrNull(warmupSetIndex)
                     if (warmupSet != null) {
                         val warmupWeight = (effectiveParams.weightPerCableKg * warmupSet.percentOfWorking / 100f)
@@ -8438,14 +8236,12 @@ class ActiveSessionEngine(
                     // Issue #481: Variable warm-up sets must never carry the working-set's
                     // per-rep weight progression to the machine — the firmware applies the
                     // increment to every rep, including warm-up reps. The warm-up override
-                    // (inline above and buildWarmupOverrideParams) intentionally inherits
+                    // (inline above) intentionally inherits
                     // progressionRegressionKg so that _workoutParameters retains the working
                     // value for the warm-up→working transition (handleSetCompletion restores
                     // weight/reps but NOT progression). So zero it here for the BLE packet
                     // ONLY, leaving persisted state intact. Covers both the inline override
-                    // and the interrupted-workout recovery replay (skipVariableWarmupOverride).
-                    val sendingWarmupSet = hasVariableWarmupOverrideApplied ||
-                        (skipVariableWarmupOverride && isInWarmupPhase)
+                    val sendingWarmupSet = hasVariableWarmupOverrideApplied
                     if (sendingWarmupSet && base.progressionRegressionKg != 0f) {
                         Logger.d { "Issue #481: zeroing per-rep progression for warm-up BLE packet (was ${base.progressionRegressionKg}kg)" }
                         base.copy(progressionRegressionKg = 0f)
@@ -8501,12 +8297,11 @@ class ActiveSessionEngine(
                             "routineExercise.setWeightsPerCableKg=${routineExercise.setWeightsPerCableKg}, " +
                             "routineExercise.usePercentOfPR=${routineExercise.usePercentOfPR}, " +
                             "routineExercise.weightPercentOfPR=${routineExercise.weightPercentOfPR}%, " +
-                            "setIndex=${coordinator._currentSetIndex.value}, " +
-                            "hadStartOverride=${startOverride != null}"
+                            "setIndex=${coordinator._currentSetIndex.value}"
                     }
                 }
                 Logger.w("Issue390") {
-                    "BLE PARAMS FINAL: weightPerCableKg=${bleParams.weightPerCableKg}kg, " +
+                    "BLE PARAMS PRE-LIMIT: weightPerCableKg=${bleParams.weightPerCableKg}kg, " +
                         "progressionRegressionKg=${bleParams.progressionRegressionKg}kg, " +
                         "reps=${bleParams.reps}, isAMRAP=${bleParams.isAMRAP}, " +
                         "isJustLift=${bleParams.isJustLift}, mode=${bleParams.programMode}"
@@ -8526,17 +8321,39 @@ class ActiveSessionEngine(
                     }
                 }
 
-                val commandValidation = if (bleParams.isEchoMode) {
+                // KD-9: the one command-resolution clamp. Every start path — set 1, later
+                // sets, recovery replay, DWSM's next-exercise advance and Just Lift —
+                // reaches the machine through this block, so bounding here also covers
+                // values that arrived from a portal pull, a backup or a CSV import without
+                // rewriting what the user has stored. bleParams itself is left alone: the
+                // accepted-retry matcher below compares it against the captured request.
+                val connectedModel = bleRepository.connectedModel
+                val commandCeilingKg = CommandLimits.maxWeightPerCableKg(connectedModel)
+                val limits = CommandLimits.resolve(
+                    weightKg = bleParams.weightPerCableKg,
+                    progressionKg = bleParams.progressionRegressionKg,
+                    model = connectedModel,
+                )
+                val commandParams = bleParams.copy(
+                    weightPerCableKg = limits.weightPerCableKg,
+                    progressionRegressionKg = limits.progressionKg,
+                )
+                // The notice is emitted only once the command has actually reached the
+                // machine (below), so a start that is refused by the safety barrier, the
+                // configuration claim or the validator never announces a cap for a set that
+                // never happened.
+
+                val commandValidation = if (commandParams.isEchoMode) {
                     WorkoutCommandValidator.validateEchoControl(
-                        level = bleParams.echoLevel,
-                        warmupReps = bleParams.warmupReps,
-                        targetReps = bleParams.reps,
-                        isJustLift = isJustLiftMode || bleParams.isJustLift,
-                        isAMRAP = bleParams.isAMRAP,
-                        eccentricPct = bleParams.eccentricLoad.percentage,
+                        level = commandParams.echoLevel,
+                        warmupReps = commandParams.warmupReps,
+                        targetReps = commandParams.reps,
+                        isJustLift = isJustLiftMode || commandParams.isJustLift,
+                        isAMRAP = commandParams.isAMRAP,
+                        eccentricPct = commandParams.eccentricLoad.percentage,
                     )
                 } else {
-                    WorkoutCommandValidator.validateProgramParams(bleParams)
+                    WorkoutCommandValidator.validateProgramParams(commandParams, commandCeilingKg)
                 }
                 commandValidation.onFailure { error ->
                     Logger.e(error) { "Invalid BLE workout command parameters: ${error.message}" }
@@ -8549,19 +8366,22 @@ class ActiveSessionEngine(
                     return@launch
                 }
 
-                val command = if (bleParams.isEchoMode) {
+                val command = if (commandParams.isEchoMode) {
                     BlePacketFactory.createEchoControl(
-                        level = bleParams.echoLevel,
-                        warmupReps = bleParams.warmupReps,
-                        targetReps = bleParams.reps,
-                        isJustLift = isJustLiftMode || bleParams.isJustLift,
-                        isAMRAP = bleParams.isAMRAP,
-                        eccentricPct = bleParams.eccentricLoad.percentage,
+                        level = commandParams.echoLevel,
+                        warmupReps = commandParams.warmupReps,
+                        targetReps = commandParams.reps,
+                        isJustLift = isJustLiftMode || commandParams.isJustLift,
+                        isAMRAP = commandParams.isAMRAP,
+                        eccentricPct = commandParams.eccentricLoad.percentage,
                     )
                 } else {
-                    BlePacketFactory.createProgramParams(bleParams)
+                    BlePacketFactory.createProgramParams(
+                        params = commandParams,
+                        maxWeightPerCableKg = commandCeilingKg,
+                    )
                 }
-                Logger.d { "Built ${command.size}-byte workout command for ${bleParams.programMode}" }
+                Logger.d { "Built ${command.size}-byte workout command for ${commandParams.programMode}" }
 
                 coordinator._repCount.value = RepCount()
                 coordinator.warmupCompleteTimeMs = 0
@@ -8695,6 +8515,35 @@ class ActiveSessionEngine(
                     }
                     configMayHaveReachedMachine = true
                     bleRepository.sendWorkoutCommand(command).getOrThrow()
+                    // Freeze what the trainer actually received on this execution. The stored
+                    // routine and coordinator parameters remain the user's requested values;
+                    // completion/history must use the bounded command values instead.
+                    executionContext = executionContext?.let { context ->
+                        if (
+                            context.lease.executionId == lease.executionId &&
+                            context.lease.sessionId == lease.sessionId
+                        ) {
+                            // History stores the programmed cable weight together with rack
+                            // metadata. Apply only the command-resolution delta so that an
+                            // ordinary rack adjustment retains that representation while a
+                            // firmware-limit clamp records the equivalent load that ran.
+                            val executedWeight = params.weightPerCableKg +
+                                (commandParams.weightPerCableKg - bleParams.weightPerCableKg)
+                            val executedProgression = params.progressionRegressionKg +
+                                (commandParams.progressionRegressionKg - bleParams.progressionRegressionKg)
+                            context.copy(
+                                completionFacts = context.completionFacts.copy(
+                                    executedWeightPerCableKg = executedWeight,
+                                    executedProgressionKg = executedProgression,
+                                ),
+                            )
+                        } else {
+                            // The send suspended and a successor execution won authority.
+                            // Never let this stale completion erase its context.
+                            context
+                        }
+                    }
+                    emitCommandLimitNotice(limits, isEchoCommand = commandParams.isEchoMode)
                     if (retryRequest != null) {
                         afterAcceptedRetryConfigSentForTest?.invoke()
                         currentCoroutineContext().ensureActive()
@@ -8988,6 +8837,13 @@ class ActiveSessionEngine(
         buildExitSnapshot(completion, terminalPath)
     }
 
+    private fun WorkoutParameters.withExecutedCommand(
+        completion: SetExecutionCompletion,
+    ): WorkoutParameters = copy(
+        weightPerCableKg = completion.executedWeightPerCableKg ?: weightPerCableKg,
+        progressionRegressionKg = completion.executedProgressionKg ?: progressionRegressionKg,
+    )
+
     private fun mergedWorkoutCompleteRepCount(
         published: RepCount,
         counter: RepCount,
@@ -9043,6 +8899,7 @@ class ActiveSessionEngine(
     ): WorkoutExitSnapshot {
         val lease = completion.lease
         val params = coordinator._workoutParameters.value
+        val executedParams = params.withExecutedCommand(completion)
         val repCount = coordinator._repCount.value
         val metrics = coordinator.collectedMetrics.value.toList()
         val exerciseIndex = coordinator._currentExerciseIndex.value
@@ -9086,8 +8943,8 @@ class ActiveSessionEngine(
         val summary = calculateSetSummaryMetrics(
             metrics = metrics,
             repCount = repCount.workingReps,
-            fallbackWeightKg = params.weightPerCableKg,
-            configuredWeightKgPerCable = params.weightPerCableKg,
+            fallbackWeightKg = executedParams.weightPerCableKg,
+            configuredWeightKgPerCable = executedParams.weightPerCableKg,
             isEchoMode = params.isEchoMode,
             warmupRepsCount = repCount.warmupReps,
             workingRepsCount = repCount.workingReps,
@@ -9118,15 +8975,15 @@ class ActiveSessionEngine(
         val savedWeightKg = if (lease.isBodyweight) {
             summary.heaviestLiftKgPerCable.takeIf { it > 0f } ?: params.weightPerCableKg
         } else {
-            params.weightPerCableKg
+            executedParams.weightPerCableKg
         }
         val session = WorkoutSession(
             id = lease.sessionId,
             timestamp = coordinator.workoutStartTime,
             mode = params.programMode.displayName,
             reps = params.reps,
-            weightPerCableKg = params.weightPerCableKg,
-            progressionKg = params.progressionRegressionKg,
+            weightPerCableKg = executedParams.weightPerCableKg,
+            progressionKg = executedParams.progressionRegressionKg,
             duration = (wallClockMillisProvider() - effectiveStart).coerceAtLeast(0L),
             totalReps = repCount.totalReps,
             warmupReps = repCount.warmupReps,
@@ -10981,6 +10838,7 @@ class ActiveSessionEngine(
             return
         }
         val params = coordinator._workoutParameters.value
+        val executedParams = params.withExecutedCommand(completion)
         val warmup = coordinator._repCount.value.warmupReps
         val working = coordinator._repCount.value.workingReps
 
@@ -11020,8 +10878,8 @@ class ActiveSessionEngine(
         val summary = calculateSetSummaryMetrics(
             metrics = metricsSnapshot,
             repCount = working,
-            fallbackWeightKg = params.weightPerCableKg,
-            configuredWeightKgPerCable = params.weightPerCableKg,
+            fallbackWeightKg = executedParams.weightPerCableKg,
+            configuredWeightKgPerCable = executedParams.weightPerCableKg,
             isEchoMode = params.isEchoMode,
             warmupRepsCount = warmup,
             workingRepsCount = working,
@@ -11036,7 +10894,7 @@ class ActiveSessionEngine(
         val savedWeightKg = if (isBodyweightExercise(currentExercise)) {
             summary.heaviestLiftKgPerCable.takeIf { it > 0f } ?: params.weightPerCableKg
         } else {
-            params.weightPerCableKg
+            executedParams.weightPerCableKg
         }
         val rackAdjustment = coordinator._currentRackLoadAdjustment.value
 
@@ -11050,8 +10908,8 @@ class ActiveSessionEngine(
             timestamp = coordinator.workoutStartTime,
             mode = params.programMode.displayName,
             reps = params.reps,
-            weightPerCableKg = params.weightPerCableKg,
-            progressionKg = params.progressionRegressionKg,
+            weightPerCableKg = executedParams.weightPerCableKg,
+            progressionKg = executedParams.progressionRegressionKg,
             duration = duration,
             totalReps = working,
             warmupReps = warmup,
@@ -11927,7 +11785,7 @@ class ActiveSessionEngine(
                         programMode = exerciseForNextSet.programMode,
                         echoLevel = exerciseForNextSet.getEchoLevelForSet(nextSetIdx),
                         eccentricLoad = exerciseForNextSet.eccentricLoad,
-                        progressionRegressionKg = clampUpcomingProgressionKg(exerciseForNextSet.progressionKg),
+                        progressionRegressionKg = exerciseForNextSet.progressionKg,
                         selectedExerciseId = exerciseForNextSet.exercise.id,
                         isAMRAP = nextIsAMRAP,
                         stallDetectionEnabled = exerciseForNextSet.stallDetectionEnabled,
@@ -12355,7 +12213,7 @@ class ActiveSessionEngine(
                 programMode = nextExercise.programMode,
                 echoLevel = nextExercise.getEchoLevelForSet(nextSetIndex),
                 eccentricLoad = nextExercise.eccentricLoad,
-                progressionRegressionKg = clampUpcomingProgressionKg(nextExercise.progressionKg),
+                progressionRegressionKg = nextExercise.progressionKg,
                 selectedExerciseId = nextExercise.exercise.id,
                 isAMRAP = nextSetReps == null || (nextExercise.isAMRAP && isNextSetLastSet),
                 stallDetectionEnabled = nextExercise.stallDetectionEnabled,
@@ -12698,7 +12556,7 @@ class ActiveSessionEngine(
             val setProgressionKg = if (coordinator._userAdjustedWeightDuringRest) {
                 currentParams.progressionRegressionKg
             } else {
-                clampUpcomingProgressionKg(currentExercise.progressionKg)
+                currentExercise.progressionKg
             }
             coordinator._userAdjustedWeightDuringRest = false
 
@@ -12711,6 +12569,13 @@ class ActiveSessionEngine(
                 isAMRAP = nextIsAMRAP,
                 stallDetectionEnabled = currentExercise.stallDetectionEnabled,
                 progressionRegressionKg = setProgressionKg,
+            )
+            // The rest UI may have captured a rack edit for this exact next set. Keep
+            // the same ordering as every routine transition: destination defaults first,
+            // then the pending user selection, before startWorkout snapshots command inputs.
+            flowDelegate?.seedRackSelectionForExercise(coordinator._currentExerciseIndex.value)
+            applyPendingRestRackSelection(
+                coordinator._currentExerciseIndex.value to coordinator._currentSetIndex.value,
             )
             Logger.d { "advanceToNextSetInSingleExercise: Issue #203 - setIdx=${coordinator._currentSetIndex.value}, isAMRAP=$nextIsAMRAP" }
 
@@ -12733,9 +12598,8 @@ class ActiveSessionEngine(
     /**
      * Start workout or enter SetReady based on autoplay preference.
      */
-    private fun startWorkoutOrSetReady(lease: ExecutionLease?) {
+    private fun startWorkoutOrSetReady(lease: ExecutionLease?, autoplay: Boolean) {
         if (!hasExpectedAuthority(lease, "workout_or_set_ready")) return
-        val autoplay = settingsManager.autoplayEnabled.value
         if (autoplay) {
             startWorkout(skipCountdown = true)
         } else {
@@ -12798,6 +12662,7 @@ class ActiveSessionEngine(
             val (nextExIdx, nextSetIdx) = nextStep
             val nextExercise = routine.exercises[nextExIdx]
             val currentExercise = routine.exercises.getOrNull(coordinator._currentExerciseIndex.value)
+            val autoplay = settingsManager.autoplayEnabled.value
 
             val isChangingExercise = nextExIdx != coordinator._currentExerciseIndex.value
             // Issue #572: when getNextStep advances to the next entry but the new entry
@@ -12848,7 +12713,7 @@ class ActiveSessionEngine(
             val nextProgressionKg = if (preserveRestEdits) {
                 currentParams.progressionRegressionKg
             } else {
-                clampUpcomingProgressionKg(nextExercise.progressionKg)
+                nextExercise.progressionKg
             }
 
             val nextIsBodyweight = isBodyweightExercise(nextExercise)
@@ -12899,15 +12764,10 @@ class ActiveSessionEngine(
             }
 
             if (isChangingExercise && !isSameExerciseContinuation) {
-                // Issue #536: autoplay advances via startNextSetOrExercise, not enterSetReady.
-                // Without re-seeding rack defaults here, a vest toggled on the previous
-                // exercise leaks into captureRackLoadSnapshot for the next exercise.
-                flowDelegate?.seedRackSelectionForExercise(nextExIdx)
-                // Autoplay starts the set immediately, so the rest edit must be applied
-                // before startWorkout captures its rack snapshot. Manual progression
-                // enters SetReady below, which republishes defaults; retain the pending
-                // entry until after that call instead.
-                if (settingsManager.autoplayEnabled.value) {
+                if (autoplay) {
+                    // Autoplay bypasses SetReady, so publish the destination defaults and
+                    // then consume the rest edit before startWorkout captures command inputs.
+                    flowDelegate?.seedRackSelectionForExercise(nextExIdx)
                     applyPendingRestRackSelection(nextExIdx to nextSetIdx)
                 }
                 repCounter.reset()
@@ -12921,12 +12781,11 @@ class ActiveSessionEngine(
                     coordinator._totalWarmupSets.value = 0
                 }
                 resetAutoStopState()
-                startWorkoutOrSetReady(lease)
-                // enterSetReady republishes the upcoming exercise defaults for manual
-                // progression; reapply the rest-screen edit after that transition.
-                // Autoplay consumed the pending entry before startWorkout(), so this is
-                // intentionally a no-op on the automatic path.
-                applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                startWorkoutOrSetReady(lease, autoplay)
+                if (!autoplay) {
+                    // Manual progression lets SetReady seed destination defaults first.
+                    applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                }
             } else if (isSameExerciseContinuation) {
                 // Issue #572: same-exercise continuation across entries. We do NOT call
                 // startWorkout() here even when autoplay is on, because that would send
@@ -12946,13 +12805,16 @@ class ActiveSessionEngine(
                 applyPendingRestRackSelection(nextExIdx to nextSetIdx)
                 coordinator._workoutState.value = WorkoutState.Idle
             } else {
-                // Same-entry set advance (isChangingExercise == false). Preserve the
-                // existing behaviour so that manual rest-screen weight/rep edits
-                // (captured by _userAdjustedWeightDuringRest above) are kept when
-                // startWorkoutOrSetReady() runs.
                 repCounter.resetCountsOnly()
                 resetAutoStopState()
-                startWorkoutOrSetReady(lease)
+                if (autoplay) {
+                    applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                }
+                startWorkoutOrSetReady(lease, autoplay)
+                if (!autoplay) {
+                    // SetReady republishes this entry's defaults even for a later set.
+                    applyPendingRestRackSelection(nextExIdx to nextSetIdx)
+                }
             }
             coordinator._userAdjustedWeightDuringRest = false
         } else {
@@ -13729,6 +13591,17 @@ class ActiveSessionEngine(
 
     private companion object {
         const val TEMPLATE_531_ID = "template_531"
+
+        // F-022: the phase dead-band (mm/s) shared by the set summary, the per-rep
+        // biomechanics window and the rep-quality split, so all three split concentric
+        // from eccentric the same way.
+        //
+        // R-16: changing this value recalibrates a load-commanding metric. MCV is a
+        // plain average over the samples the dead-band admits, so widening the band
+        // raises every rep's MCV, and MCV aggregates into session avgMcvMmS -> the
+        // velocity-1RM regression -> the ESTIMATED_1RM scaling baseline. Pre- and
+        // post-change rows mix inside that estimator's 28-day window.
+        const val VELOCITY_DEAD_BAND_MM_S = 10.0
 
         // Issue #649: verbal cues are typically <30s; this ceiling covers the cue
         // plus a short post-cue transition window. Exceeding it releases the defer
