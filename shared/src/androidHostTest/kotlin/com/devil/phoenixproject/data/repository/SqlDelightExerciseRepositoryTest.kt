@@ -276,6 +276,15 @@ class SqlDelightExerciseRepositoryTest {
             timesPerformed = 9L,
             lastPerformed = 1_700_000_000_000L,
         )
+        // The headline hazard of migration 49: ExerciseTrainingMax CASCADEs off Exercise,
+        // so any re-import that delete-and-reinserts the catalogue row (an INSERT OR
+        // REPLACE, as insertExercise used to be) destroys EVERY profile's training max for
+        // it. Foreign keys are ON in createTestSchema, so this fails for real if that
+        // regresses (review R-14).
+        seedProfile("alice")
+        seedProfile("bob")
+        database.phoenixDatabaseQueries.upsertTrainingMax("Plank", "alice", 120.0, "MANUAL", 10L)
+        database.phoenixDatabaseQueries.upsertTrainingMax("Plank", "bob", 90.0, "MANUAL", 10L)
 
         val result = importer.importFromFreeExerciseJson(
             """
@@ -301,6 +310,11 @@ class SqlDelightExerciseRepositoryTest {
         assertEquals(true, plank.isFavorite)
         assertEquals(42.5, legacyOneRepMaxOf("Plank"))
         assertEquals(9, plank.timesPerformed)
+        assertEquals(
+            listOf("alice" to 120.0, "bob" to 90.0),
+            database.phoenixDatabaseQueries.selectTrainingMaxRowsForTest("Plank").executeAsList()
+                .map { it.profile_id to it.one_rep_max_kg },
+        )
         val row = database.phoenixDatabaseQueries.selectExerciseById("Plank").executeAsOne()
         assertEquals(1_700_000_000_000L, row.lastPerformed)
         assertEquals("Hold a straight line.", row.description)

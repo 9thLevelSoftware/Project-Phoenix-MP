@@ -53,6 +53,14 @@ class FakePreferencesManager : PreferencesManager {
 
     override fun getExerciseCatalogSource(): String = exerciseCatalogSource
 
+    /**
+     * Defaults to true so existing tests see the production steady state. A test that
+     * cares about the pre-repair window sets it to false.
+     */
+    var trainingMaxBackfillComplete: Boolean = true
+
+    override fun isTrainingMaxBackfillComplete(): Boolean = trainingMaxBackfillComplete
+
     override suspend fun setExerciseCatalogSource(source: String) {
         exerciseCatalogSource = source
     }

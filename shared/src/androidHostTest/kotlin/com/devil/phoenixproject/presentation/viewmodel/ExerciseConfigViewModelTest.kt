@@ -27,6 +27,8 @@ import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import org.junit.Test
 
+private const val CLAIMANT = "athlete-a"
+
 class ExerciseConfigViewModelTest {
 
     @Test
@@ -80,6 +82,80 @@ class ExerciseConfigViewModelTest {
                 listOf(SetConfiguration(setNumber = 1, reps = null)),
             ),
         )
+    }
+
+    @Test
+    fun `an unassigned legacy value is offered to a profile that has no training max`() = runTest {
+        val exercises = FakeExerciseRepository().apply {
+            addExercise(benchExercise())
+            unassignedLegacyTrainingMaxes["bench-1"] = 140f
+        }
+        val viewModel = claimViewModel(exercises)
+
+        viewModel.initialize(
+            exercise = benchRoutineExercise(id = "rex-claim", setReps = listOf(10), weightPerCableKg = 20f),
+            unit = WeightUnit.KG,
+            toDisplay = { v, _ -> v },
+            toKg = { v, _ -> v },
+            profileId = CLAIMANT,
+        )
+        advanceUntilIdle()
+        waitForCondition { viewModel.unclaimedLegacyTrainingMaxKg.value == 140f }
+
+        assertNull(viewModel.storedOneRepMaxKg.value)
+    }
+
+    @Test
+    fun `no offer is made to a profile that already holds a training max`() = runTest {
+        val exercises = FakeExerciseRepository().apply {
+            addExercise(benchExercise())
+            unassignedLegacyTrainingMaxes["bench-1"] = 140f
+            setTrainingMaxDirectly("bench-1", CLAIMANT, 90f)
+        }
+        val viewModel = claimViewModel(exercises)
+
+        viewModel.initialize(
+            exercise = benchRoutineExercise(id = "rex-claim-2", setReps = listOf(10), weightPerCableKg = 20f),
+            unit = WeightUnit.KG,
+            toDisplay = { v, _ -> v },
+            toKg = { v, _ -> v },
+            profileId = CLAIMANT,
+        )
+        advanceUntilIdle()
+        waitForCondition { viewModel.storedOneRepMaxKg.value == 90f }
+
+        assertNull(viewModel.unclaimedLegacyTrainingMaxKg.value)
+    }
+
+    @Test
+    fun `claiming writes for the profile initialize was given, not default`() = runTest {
+        // activeProfileId defaults to "default" and is only overwritten by initialize().
+        // A claim that ignored the passed id would put another member's number on Default —
+        // the one outcome KD-5 forbids (review R-16).
+        val exercises = FakeExerciseRepository().apply {
+            addExercise(benchExercise())
+            unassignedLegacyTrainingMaxes["bench-1"] = 140f
+        }
+        val viewModel = claimViewModel(exercises)
+        viewModel.initialize(
+            exercise = benchRoutineExercise(id = "rex-claim-3", setReps = listOf(10), weightPerCableKg = 20f),
+            unit = WeightUnit.KG,
+            toDisplay = { v, _ -> v },
+            toKg = { v, _ -> v },
+            profileId = CLAIMANT,
+        )
+        advanceUntilIdle()
+        waitForCondition { viewModel.unclaimedLegacyTrainingMaxKg.value == 140f }
+
+        viewModel.claimLegacyTrainingMax()
+        advanceUntilIdle()
+        waitForCondition { viewModel.storedOneRepMaxKg.value == 140f }
+
+        assertEquals(140f, exercises.getTrainingMax("bench-1", CLAIMANT))
+        assertNull(exercises.getTrainingMax("bench-1", "default"))
+        // The offer is gone for everyone, not just this profile.
+        assertNull(viewModel.unclaimedLegacyTrainingMaxKg.value)
+        assertNull(exercises.getUnassignedLegacyTrainingMax("bench-1"))
     }
 
     @Test
@@ -785,6 +861,20 @@ class ExerciseConfigViewModelTest {
         assertEquals(5f, restored.dropSetMinWeightKg)
         assertEquals(ProgramMode.OldSchool, restored.programMode)
     }
+
+    private fun claimViewModel(exercises: FakeExerciseRepository) = ExerciseConfigViewModel(
+        FakePersonalRecordRepository(),
+        FakeVelocityOneRepMaxRepository(),
+        exercises,
+    )
+
+    private fun benchExercise() = Exercise(
+        id = "bench-1",
+        name = "Bench Press",
+        muscleGroup = "Chest",
+        muscleGroups = "Chest",
+        equipment = "BAR",
+    )
 
     private fun benchRoutineExercise(
         id: String,

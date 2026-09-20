@@ -3730,6 +3730,9 @@ WHERE old.exercise_id = :oldId
 deleteTrainingMaxesForExercise:
 DELETE FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId;
 
+deleteTrainingMaxesForProfile:
+DELETE FROM ExerciseTrainingMax WHERE profile_id = :profileId;
+
 -- Test-only: assert that a code path wrote no training max anywhere.
 countTrainingMaxRowsForTest:
 SELECT COUNT(*) FROM ExerciseTrainingMax;
@@ -3739,78 +3742,121 @@ SELECT profile_id, one_rep_max_kg FROM ExerciseTrainingMax
 WHERE exercise_id = :exerciseId ORDER BY profile_id;
 
 -- The migration 49 legacy copy. It lives here and NOT in 49.sqm: attributing a value
--- needs UserProfile, PersonalRecord, AssessmentResult, VelocityOneRepMaxEstimate,
--- TrainingCycle, CycleDay and RoutineExercise, several of which (and their profile_id
--- columns) are created by SchemaManifest heal operations rather than by a numbered
--- migration, so inside the migration chain they may not exist yet -- and a missing
--- column is a non-recoverable prepare-time error for the resilient fallback.
--- MigrationManager runs this once behind a one-shot marker, after reconcileFullSchema
--- has healed the schema and ensureDefaultProfile has run; a failure leaves the marker
--- unset so the next open retries. INSERT OR IGNORE: a value a profile has already
--- claimed or edited is never overwritten.
+-- needs UserProfile, PersonalRecord, AssessmentResult, TrainingCycle, CycleDay and
+-- RoutineExercise, several of which (and their profile_id columns) are created by
+-- SchemaManifest heal operations rather than by a numbered migration, so inside the
+-- migration chain they may not exist yet -- and a missing column is a non-recoverable
+-- prepare-time error for the resilient fallback. MigrationManager runs this once behind
+-- a one-shot marker, after reconcileFullSchema has healed the schema and
+-- ensureDefaultProfile has run; a failure leaves the marker unset so the next open
+-- retries. INSERT OR IGNORE: a value a profile has already claimed or edited is never
+-- overwritten.
 --
--- A value whose owner is ambiguous is left UNASSIGNED, never handed to 'default':
--- that would raise Default's commanded load from another member's number, which is
--- the exact leak this table closes. Owner rules, in order, each requiring EXACTLY ONE
--- candidate profile that still exists in UserProfile:
+-- A value whose owner is ambiguous is left UNASSIGNED, never handed to 'default': that
+-- would raise Default's commanded load from another member's number, which is the exact
+-- leak this table closes. Every signal must be CAUSAL -- something that actually wrote
+-- the legacy column -- because a mis-attributed value becomes someone else's % of PR
+-- baseline and therefore their commanded load. Owner rules, in order:
 --   1. the sole UserProfile;
---   2. the one profile with a COMBINED PersonalRecord whose oneRepMax equals the
---      stored value (within 0.01 kg) -- the PR-save auto-write put most values there;
---   3. the one profile owning an AssessmentResult or a velocity 1RM estimate for the
---      exercise (the assessment wizard also wrote the column; nothing ever wrote a
---      velocity estimate into it, so ownership -- not a value match -- is the signal);
---   4. the one profile owning a 5/3/1 TrainingCycle that uses the exercise (a manually
---      entered training max matches no PR and no assessment).
+--   2. the one profile with a COMBINED PersonalRecord whose oneRepMax equals the stored
+--      value (within 0.01 kg) -- the deleted PR-save auto-write put most values there;
+--   3. the one profile with an AssessmentResult whose per-cable 1RM equals the stored
+--      value -- SqlDelightAssessmentRepository wrote COALESCE(userOverrideKg,
+--      estimatedOneRepMaxKg) / 2 into the column, so the same arithmetic recovers it;
+--   4. the one profile owning a 5/3/1 TrainingCycle that uses the exercise -- the only
+--      signal for a manually typed training max, which matches no PR and no assessment.
 --
--- Every predicate is written as "profiles that ...", which keeps the count and the pick
+-- Bare ownership of a VelocityOneRepMaxEstimate is deliberately NOT a signal: nothing
+-- ever wrote a velocity estimate into this column, so such a row says only "this member
+-- trained this lift", which in a two-person household hands one member's typed max to
+-- the other (review R-2). It is dropped rather than demoted.
+--
+-- A rule with TWO OR MORE candidates TERMINATES the search (the "> 1 THEN NULL" arms)
+-- instead of falling through: two profiles whose PR matches the value must not lose to a
+-- third that merely owns an assessment. Ambiguous means unassigned, and the claim prompt
+-- handles that safely.
+--
+-- Every predicate is written as "profiles that ...", which keeps each count and pick
 -- identical and avoids aggregate-without-GROUP-BY forms that older SQLite builds on
 -- API 26 devices reject.
+--
+-- updated_at is 0, not the repair's clock: a migrated value is not a fresh edit, and
+-- stamping it "now" would let it win promoteTrainingMaxToNewExerciseId's newest-wins
+-- tie-break against a value the user typed earlier (review R-22).
 backfillExerciseTrainingMaxes:
 INSERT OR IGNORE INTO ExerciseTrainingMax(exercise_id, profile_id, one_rep_max_kg, source, updated_at)
-SELECT id, owner_profile_id, legacy_one_rep_max_kg, 'LEGACY_MIGRATION', CAST(strftime('%s', 'now') AS INTEGER) * 1000
+SELECT id, owner_profile_id, legacy_one_rep_max_kg, 'LEGACY_MIGRATION', 0
 FROM (
     SELECT
-        e.id AS id,
-        e.one_rep_max_kg AS legacy_one_rep_max_kg,
-        COALESCE(
-            CASE WHEN (SELECT COUNT(*) FROM UserProfile) = 1
-                 THEN (SELECT p.id FROM UserProfile p) END,
-            CASE WHEN (SELECT COUNT(*) FROM UserProfile p WHERE EXISTS (
-                           SELECT 1 FROM PersonalRecord pr
-                           WHERE pr.exerciseId = e.id AND pr.profile_id = p.id
-                             AND pr.phase = 'COMBINED' AND pr.deletedAt IS NULL
-                             AND ABS(pr.oneRepMax - e.one_rep_max_kg) <= 0.01)) = 1
-                 THEN (SELECT MIN(p.id) FROM UserProfile p WHERE EXISTS (
-                           SELECT 1 FROM PersonalRecord pr
-                           WHERE pr.exerciseId = e.id AND pr.profile_id = p.id
-                             AND pr.phase = 'COMBINED' AND pr.deletedAt IS NULL
-                             AND ABS(pr.oneRepMax - e.one_rep_max_kg) <= 0.01)) END,
-            CASE WHEN (SELECT COUNT(*) FROM UserProfile p WHERE
-                           EXISTS (SELECT 1 FROM AssessmentResult ar
-                                   WHERE ar.exerciseId = e.id AND ar.profile_id = p.id)
-                           OR EXISTS (SELECT 1 FROM VelocityOneRepMaxEstimate v
-                                      WHERE v.exerciseId = e.id AND v.profile_id = p.id
-                                        AND v.deletedAt IS NULL)) = 1
-                 THEN (SELECT MIN(p.id) FROM UserProfile p WHERE
-                           EXISTS (SELECT 1 FROM AssessmentResult ar
-                                   WHERE ar.exerciseId = e.id AND ar.profile_id = p.id)
-                           OR EXISTS (SELECT 1 FROM VelocityOneRepMaxEstimate v
-                                      WHERE v.exerciseId = e.id AND v.profile_id = p.id
-                                        AND v.deletedAt IS NULL)) END,
-            CASE WHEN (SELECT COUNT(*) FROM UserProfile p WHERE EXISTS (
-                           SELECT 1 FROM TrainingCycle tc
-                           JOIN CycleDay cd ON cd.cycle_id = tc.id
-                           JOIN RoutineExercise re ON re.routineId = cd.routine_id
-                           WHERE tc.profile_id = p.id AND tc.deletedAt IS NULL
-                             AND tc.template_id = 'template_531' AND re.exerciseId = e.id)) = 1
-                 THEN (SELECT MIN(p.id) FROM UserProfile p WHERE EXISTS (
-                           SELECT 1 FROM TrainingCycle tc
-                           JOIN CycleDay cd ON cd.cycle_id = tc.id
-                           JOIN RoutineExercise re ON re.routineId = cd.routine_id
-                           WHERE tc.profile_id = p.id AND tc.deletedAt IS NULL
-                             AND tc.template_id = 'template_531' AND re.exerciseId = e.id)) END
-        ) AS owner_profile_id
-    FROM Exercise e
-    WHERE e.one_rep_max_kg IS NOT NULL AND e.one_rep_max_kg > 0
+        id,
+        legacy_one_rep_max_kg,
+        CASE
+            WHEN profile_count = 1 THEN sole_profile_id
+            WHEN pr_owner_count = 1 THEN pr_owner_id
+            WHEN pr_owner_count > 1 THEN NULL
+            WHEN assessment_owner_count = 1 THEN assessment_owner_id
+            WHEN assessment_owner_count > 1 THEN NULL
+            WHEN cycle_owner_count = 1 THEN cycle_owner_id
+        END AS owner_profile_id
+    FROM (
+        SELECT
+            e.id AS id,
+            e.one_rep_max_kg AS legacy_one_rep_max_kg,
+            (SELECT COUNT(*) FROM UserProfile) AS profile_count,
+            (SELECT MIN(p.id) FROM UserProfile p) AS sole_profile_id,
+            (SELECT COUNT(*) FROM UserProfile p WHERE EXISTS (
+                 SELECT 1 FROM PersonalRecord pr
+                 WHERE pr.exerciseId = e.id AND pr.profile_id = p.id
+                   AND pr.phase = 'COMBINED' AND pr.deletedAt IS NULL
+                   AND ABS(pr.oneRepMax - e.one_rep_max_kg) <= 0.01)) AS pr_owner_count,
+            (SELECT MIN(p.id) FROM UserProfile p WHERE EXISTS (
+                 SELECT 1 FROM PersonalRecord pr
+                 WHERE pr.exerciseId = e.id AND pr.profile_id = p.id
+                   AND pr.phase = 'COMBINED' AND pr.deletedAt IS NULL
+                   AND ABS(pr.oneRepMax - e.one_rep_max_kg) <= 0.01)) AS pr_owner_id,
+            (SELECT COUNT(*) FROM UserProfile p WHERE EXISTS (
+                 SELECT 1 FROM AssessmentResult ar
+                 WHERE ar.exerciseId = e.id AND ar.profile_id = p.id
+                   AND ABS(COALESCE(ar.userOverrideKg, ar.estimatedOneRepMaxKg) / 2.0 - e.one_rep_max_kg) <= 0.01)) AS assessment_owner_count,
+            (SELECT MIN(p.id) FROM UserProfile p WHERE EXISTS (
+                 SELECT 1 FROM AssessmentResult ar
+                 WHERE ar.exerciseId = e.id AND ar.profile_id = p.id
+                   AND ABS(COALESCE(ar.userOverrideKg, ar.estimatedOneRepMaxKg) / 2.0 - e.one_rep_max_kg) <= 0.01)) AS assessment_owner_id,
+            (SELECT COUNT(*) FROM UserProfile p WHERE EXISTS (
+                 SELECT 1 FROM TrainingCycle tc
+                 JOIN CycleDay cd ON cd.cycle_id = tc.id
+                 JOIN RoutineExercise re ON re.routineId = cd.routine_id
+                 WHERE tc.profile_id = p.id AND tc.deletedAt IS NULL
+                   AND tc.template_id = 'template_531' AND re.exerciseId = e.id)) AS cycle_owner_count,
+            (SELECT MIN(p.id) FROM UserProfile p WHERE EXISTS (
+                 SELECT 1 FROM TrainingCycle tc
+                 JOIN CycleDay cd ON cd.cycle_id = tc.id
+                 JOIN RoutineExercise re ON re.routineId = cd.routine_id
+                 WHERE tc.profile_id = p.id AND tc.deletedAt IS NULL
+                   AND tc.template_id = 'template_531' AND re.exerciseId = e.id)) AS cycle_owner_id
+        FROM Exercise e
+        WHERE e.one_rep_max_kg IS NOT NULL AND e.one_rep_max_kg > 0
+    )
 )
 WHERE owner_profile_id IS NOT NULL;
+
+-- Second half of the repair, run in the same transaction as the copy above: a legacy
+-- value the repair ATTRIBUTED is decided, so it must stop being offerable. Without this,
+-- the owner re-measuring (setTrainingMax(null) deletes their row) makes
+-- selectUnassignedLegacyTrainingMax's NOT EXISTS true again and re-offers their number
+-- to a different profile (review R-20). Only repair-attributed rows are cleared: a value
+-- nobody could be shown to own stays in the column for the claim prompt, and a training
+-- max the user typed for an exercise the repair could not attribute does not erase the
+-- legacy value behind it.
+--
+-- Trade-off, stated deliberately: the legacy column stops being a second recovery source
+-- for these exercises. By then the value is in ExerciseTrainingMax, which backup/restore
+-- must carry anyway (PR 22), and re-offering one member's number to another is the worse
+-- failure.
+clearAttributedLegacyTrainingMaxes:
+UPDATE Exercise SET one_rep_max_kg = NULL
+WHERE one_rep_max_kg IS NOT NULL
+  AND EXISTS (
+      SELECT 1 FROM ExerciseTrainingMax t
+      WHERE t.exercise_id = Exercise.id AND t.source = 'LEGACY_MIGRATION'
+  );

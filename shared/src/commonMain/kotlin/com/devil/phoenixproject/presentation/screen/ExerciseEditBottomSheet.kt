@@ -141,6 +141,7 @@ fun ExerciseEditBottomSheet(
     val userProfileRepository: UserProfileRepository = koinInject()
     val activeProfile by userProfileRepository.activeProfile.collectAsState()
     val activeProfileId = activeProfile?.id ?: "default"
+    val activeProfileName = activeProfile?.name.orEmpty()
 
     var images by remember { mutableStateOf<List<ExerciseImageEntity>>(emptyList()) }
     LaunchedEffect(exercise.exercise.id) {
@@ -155,7 +156,14 @@ fun ExerciseEditBottomSheet(
 
     // Initialize the ViewModel - PR loading is now handled internally by the ViewModel
     LaunchedEffect(exercise, weightUnit, activeProfileId) {
-        viewModel.initialize(exercise, weightUnit, kgToDisplay, displayToKg, profileId = activeProfileId)
+        viewModel.initialize(
+            exercise,
+            weightUnit,
+            kgToDisplay,
+            displayToKg,
+            profileId = activeProfileId,
+            profileName = activeProfileName,
+        )
     }
 
     // Collect state from the ViewModel
@@ -548,6 +556,7 @@ fun ExerciseEditBottomSheet(
                         baselineSourceMessage = baselineSourceMessage,
                         unclaimedLegacyTrainingMaxKg = unclaimedLegacyTrainingMaxKg,
                         onClaimLegacyTrainingMax = viewModel::claimLegacyTrainingMax,
+                        activeProfileName = activeProfileName,
                         exerciseDisplayName = exercise.exercise.displayName,
                         weightUnit = weightUnit,
                         formatWeight = formatWeight,
@@ -1393,6 +1402,7 @@ fun WeightConfigurationCard(
      */
     unclaimedLegacyTrainingMaxKg: Float? = null,
     onClaimLegacyTrainingMax: () -> Unit = {},
+    activeProfileName: String = "",
     exerciseDisplayName: String = "",
     weightUnit: WeightUnit,
     formatWeight: (Float, WeightUnit) -> String,
@@ -1591,6 +1601,7 @@ fun WeightConfigurationCard(
                             Res.string.training_max_claim_notice,
                             formatWeight(legacyKg, weightUnit),
                             exerciseDisplayName,
+                            activeProfileName,
                         ),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

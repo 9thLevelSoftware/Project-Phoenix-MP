@@ -265,6 +265,11 @@ class SqlDelightUserProfileRepository(
                 // UserProfile (migration 49), so the merged profile's training maxes would
                 // otherwise disappear with its row. The target's own value wins.
                 queries.reassignTrainingMaxProfile(targetProfileId, id)
+                // Explicit, like deleteProfilePreferences: every other step here removes or
+                // moves its own rows rather than leaning on the FK cascade. An orphan left
+                // behind would also make selectUnassignedLegacyTrainingMax's NOT EXISTS
+                // true and silently suppress the claim offer forever (review R-21).
+                queries.deleteTrainingMaxesForProfile(id)
                 queries.reassignProgressionProfile(targetProfileId, id)
                 queries.deleteIntegrationStatusByProfile(id)
                 queries.deleteIntegrationSyncCursorByProfile(id)

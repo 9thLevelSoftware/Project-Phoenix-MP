@@ -69,7 +69,15 @@ class ExerciseConfigViewModel constructor(
 
     private val log = Logger.withTag("ExerciseConfigViewModel")
     private val _initialized = MutableStateFlow(false)
+    // Not a default in the "sensible fallback" sense: every caller passes a real id
+    // through initialize(). It governs which profile a training max is written for, so a
+    // call site that forgot would claim another member's number into Default — the one
+    // outcome KD-5 forbids. Pinned by ExerciseConfigViewModelTest (review R-16).
     private var activeProfileId: String = "default"
+
+    /** Shown in the claim notice so the offer names who it will write to (review R-23). */
+    private val _activeProfileName = MutableStateFlow("")
+    val activeProfileName: StateFlow<String> = _activeProfileName.asStateFlow()
 
     // Dependencies that need to be passed in
     private lateinit var originalExercise: RoutineExercise
@@ -187,6 +195,7 @@ class ExerciseConfigViewModel constructor(
         toKg: (Float, WeightUnit) -> Float,
         prWeightKg: Float? = null, // Optional PR weight to use as default
         profileId: String = "default",
+        profileName: String = "",
     ) {
         if (_initialized.value && originalExercise.id == exercise.id && activeProfileId == profileId) {
             return
@@ -197,6 +206,7 @@ class ExerciseConfigViewModel constructor(
         kgToDisplay = toDisplay
         displayToKg = toKg
         activeProfileId = profileId
+        _activeProfileName.value = profileName
 
         _exerciseType.value = if (exercise.exercise.isBodyweight) {
             ExerciseType.BODYWEIGHT

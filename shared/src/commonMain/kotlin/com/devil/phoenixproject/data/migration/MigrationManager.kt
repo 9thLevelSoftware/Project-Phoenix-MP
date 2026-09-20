@@ -49,6 +49,14 @@ sealed interface RequiredMigrationState {
  * Call [checkAndRunMigrations] after Koin is initialized.
  * Call [close] when done to prevent memory leaks.
  */
+/**
+ * One-shot marker for the migration 49 legacy training-max copy. Written by
+ * [MigrationManager] once the repair succeeds and read by
+ * `SqlDelightExerciseRepository.getUnassignedLegacyTrainingMax`, which must not offer a
+ * value before the rule has had its chance to attribute it.
+ */
+internal const val KEY_TRAINING_MAX_BACKFILL_COMPLETE = "exercise_training_max_backfill_complete_v1"
+
 class MigrationManager(
     private val database: PhoenixDatabase,
     private val userProfileRepository: UserProfileRepository,
@@ -75,8 +83,6 @@ class MigrationManager(
             "profile_preferences_legacy_migration_complete_v1"
         private const val KEY_PULLED_SESSION_BACKFILL_COMPLETE =
             "pulled_workout_session_backfill_complete_v1"
-        private const val KEY_TRAINING_MAX_BACKFILL_COMPLETE =
-            "exercise_training_max_backfill_complete_v1"
     }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -243,6 +249,11 @@ class MigrationManager(
      * keeps it off the startup path afterwards, and a failure leaves the marker unset so
      * the next open retries.
      *
+     * Until it has run, the claim prompt is suppressed entirely
+     * ([ExerciseRepository.getUnassignedLegacyTrainingMax] reads the same marker): on that
+     * session the rule has not decided yet, and offering a value it *would* have given to A
+     * hands A's number to whoever opens the editor first (review R-20).
+     *
      * It runs AFTER [migrateProfilePreferences], which calls `ensureDefaultProfile()`. On a
      * database that had no `UserProfile` row at migrate time (so migration 49 wrote
      * nothing) that default row is by then the SOLE profile, and rule 1 assigns the value
@@ -251,7 +262,15 @@ class MigrationManager(
      */
     private fun backfillExerciseTrainingMaxes() {
         if (settings.getBoolean(KEY_TRAINING_MAX_BACKFILL_COMPLETE, false)) return
-        runCatching { queries.backfillExerciseTrainingMaxes() }
+        runCatching {
+            database.transaction {
+                queries.backfillExerciseTrainingMaxes()
+                // Same transaction: an attributed value must stop being offerable the
+                // instant it has an owner, or its owner re-measuring re-offers their
+                // number to another profile (review R-20).
+                queries.clearAttributedLegacyTrainingMaxes()
+            }
+        }
             .onSuccess { settings.putBoolean(KEY_TRAINING_MAX_BACKFILL_COMPLETE, true) }
             .onFailure { error ->
                 log.w(error) { "Training-max backfill failed; retrying on next startup" }

@@ -82,6 +82,136 @@ class TrainingMaxMigrationTest {
     }
 
     @Test
+    fun `the 5_3_1 cycle owner gets a manually typed value no PR or assessment explains`() {
+        seedProfile("alice")
+        seedProfile("bob")
+        seedLegacyOneRepMax("bench", 140.0)
+        // A hand-typed training max matches no PR and no assessment. Only alice runs 5/3/1
+        // on this lift, so rule 4 is the only signal that can attribute it.
+        seedFiveThreeOneCycle(profileId = "alice", cycleId = "cycle-a", routineId = "routine-a")
+
+        backfill()
+
+        assertEquals(listOf("alice" to 140.0), trainingMaxes("bench"))
+    }
+
+    @Test
+    fun `two profiles both running 5_3_1 on the lift leave the value unassigned`() {
+        seedProfile("alice")
+        seedProfile("bob")
+        seedLegacyOneRepMax("bench", 140.0)
+        seedFiveThreeOneCycle(profileId = "alice", cycleId = "cycle-a", routineId = "routine-a")
+        seedFiveThreeOneCycle(profileId = "bob", cycleId = "cycle-b", routineId = "routine-b")
+
+        backfill()
+
+        assertEquals(emptyList(), trainingMaxes("bench"))
+    }
+
+    @Test
+    fun `a soft-deleted 5_3_1 cycle is not ownership evidence`() {
+        seedProfile("alice")
+        seedProfile("bob")
+        seedLegacyOneRepMax("bench", 140.0)
+        seedFiveThreeOneCycle(
+            profileId = "alice",
+            cycleId = "cycle-a",
+            routineId = "routine-a",
+            deletedAt = 5_000L,
+        )
+
+        backfill()
+
+        assertEquals(emptyList(), trainingMaxes("bench"))
+    }
+
+    @Test
+    fun `owning a velocity estimate is not ownership of the value`() {
+        // Nothing ever wrote a velocity estimate into the legacy column, so a VBT row says
+        // only "this member trained this lift". Treating it as attribution handed alice's
+        // typed max to bob whenever bob was the only one with velocity data (review R-2).
+        seedProfile("alice")
+        seedProfile("bob")
+        seedLegacyOneRepMax("bench", 140.0)
+        seedVelocityEstimate(profileId = "bob", estimatedPerCableKg = 62.5)
+        seedFiveThreeOneCycle(profileId = "alice", cycleId = "cycle-a", routineId = "routine-a")
+
+        backfill()
+
+        // Rule 4 decides, and it picks the cycle owner.
+        assertEquals(listOf("alice" to 140.0), trainingMaxes("bench"))
+    }
+
+    @Test
+    fun `an assessment attributes only when its per-cable value matches`() {
+        seedProfile("alice")
+        seedProfile("bob")
+        seedLegacyOneRepMax("bench", 75.0)
+        // SqlDelightAssessmentRepository stored COALESCE(userOverrideKg, estimated) / 2.
+        // bob's assessment halves to 60, not 75, so it explains nothing.
+        seedAssessment(profileId = "bob", estimatedOneRepMaxKg = 120.0)
+
+        backfill()
+
+        assertEquals(emptyList(), trainingMaxes("bench"))
+    }
+
+    @Test
+    fun `two profiles whose PR matches do not fall through to a weaker rule`() {
+        // A rule with two candidates TERMINATES: it must not lose to a third profile that
+        // merely owns an assessment or a cycle (review R-2, safer reading of R-5).
+        seedProfile("alice")
+        seedProfile("bob")
+        seedProfile("carol")
+        seedLegacyOneRepMax("bench", 120.0)
+        seedCombinedWeightPr(profileId = "alice", oneRepMax = 120.0)
+        seedCombinedWeightPr(profileId = "bob", oneRepMax = 120.0)
+        seedFiveThreeOneCycle(profileId = "carol", cycleId = "cycle-c", routineId = "routine-c")
+
+        backfill()
+
+        assertEquals(emptyList(), trainingMaxes("bench"))
+    }
+
+    @Test
+    fun `an attributed legacy value stops being offered, even after its owner clears it`() {
+        // Without the clear, setTrainingMax(null) makes NOT EXISTS true again and re-offers
+        // alice's number to bob as ownerless (review R-20).
+        seedProfile("alice")
+        seedProfile("bob")
+        seedLegacyOneRepMax("bench", 140.0)
+        seedFiveThreeOneCycle(profileId = "alice", cycleId = "cycle-a", routineId = "routine-a")
+
+        backfill()
+        clearAttributed()
+        assertEquals(listOf("alice" to 140.0), trainingMaxes("bench"))
+
+        // alice re-measures and clears her value.
+        database.phoenixDatabaseQueries.deleteTrainingMax(exerciseId = "bench", profileId = "alice")
+
+        assertNull(
+            database.phoenixDatabaseQueries.selectUnassignedLegacyTrainingMax("bench").executeAsOneOrNull(),
+        )
+    }
+
+    @Test
+    fun `a value nobody could be shown to own stays offerable after the repair`() {
+        seedProfile("alice")
+        seedProfile("bob")
+        seedLegacyOneRepMax("bench", 111.0)
+        seedCombinedWeightPr(profileId = "alice", oneRepMax = 90.0)
+        seedCombinedWeightPr(profileId = "bob", oneRepMax = 95.0)
+
+        backfill()
+        clearAttributed()
+
+        assertEquals(
+            111.0,
+            database.phoenixDatabaseQueries.selectUnassignedLegacyTrainingMax("bench").executeAsOneOrNull(),
+        )
+    }
+
+    @Test
     fun `an unmatched value is assigned to nobody, and never to default`() {
         seedProfile("default")
         seedProfile("alice")
@@ -184,6 +314,8 @@ class TrainingMaxMigrationTest {
 
     private fun backfill() = database.phoenixDatabaseQueries.backfillExerciseTrainingMaxes()
 
+    private fun clearAttributed() = database.phoenixDatabaseQueries.clearAttributedLegacyTrainingMaxes()
+
     private fun trainingMaxes(exerciseId: String): List<Pair<String, Double>> =
         database.phoenixDatabaseQueries.selectTrainingMaxRowsForTest(exerciseId)
             .executeAsList()
@@ -240,6 +372,49 @@ class TrainingMaxMigrationTest {
                 "workoutMode, prType, volume, phase, profile_id) " +
                 "VALUES('bench', 'Bench Press', 80.0, 5, $oneRepMax, 1000, 'Old School', 'MAX_WEIGHT', " +
                 "400.0, 'COMBINED', '$profileId')",
+            0,
+        )
+    }
+
+    private fun seedVelocityEstimate(profileId: String, estimatedPerCableKg: Double) {
+        driver.execute(
+            null,
+            "INSERT INTO VelocityOneRepMaxEstimate(exerciseId, estimatedPerCableKg, mvtUsedMs, r2, " +
+                "distinctLoads, passedQualityGate, computedAt, profile_id) " +
+                "VALUES('bench', $estimatedPerCableKg, 200.0, 0.95, 3, 1, 1000, '$profileId')",
+            0,
+        )
+    }
+
+    /** A `template_531` cycle whose single day's routine contains the exercise (owner rule 4). */
+    private fun seedFiveThreeOneCycle(
+        profileId: String,
+        cycleId: String,
+        routineId: String,
+        deletedAt: Long? = null,
+    ) {
+        driver.execute(
+            null,
+            "INSERT INTO Routine(id, name, createdAt, profile_id) " +
+                "VALUES('$routineId', 'Bench Day', 0, '$profileId')",
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO RoutineExercise(id, routineId, exerciseName, exerciseId, orderIndex) " +
+                "VALUES('re-$routineId', '$routineId', 'Bench Press', 'bench', 0)",
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO TrainingCycle(id, name, created_at, profile_id, template_id, deletedAt) " +
+                "VALUES('$cycleId', '5/3/1', 0, '$profileId', 'template_531', ${deletedAt ?: "NULL"})",
+            0,
+        )
+        driver.execute(
+            null,
+            "INSERT INTO CycleDay(id, cycle_id, day_number, routine_id) " +
+                "VALUES('day-$cycleId', '$cycleId', 1, '$routineId')",
             0,
         )
     }

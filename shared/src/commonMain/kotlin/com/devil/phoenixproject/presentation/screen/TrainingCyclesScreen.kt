@@ -686,14 +686,17 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
                         val exerciseId = exercise.id ?: return@let
 
-                        // First try to get the PR (best weight ever achieved)
+                        // PR weight is still loaded for the indicator in ModeConfirmation.
                         val pr = personalRecordRepository.getBestWeightPR(exerciseId, profileId)
-                        val prOneRepMax = pr?.oneRepMax
 
-                        // Use the profile's PR 1RM if available, else its own training max
-                        // (ExerciseTrainingMax, migration 49). Never another profile's value.
-                        val valueToUse = prOneRepMax?.takeIf { it > 0f }
-                            ?: exerciseRepository.getTrainingMax(exerciseId, profileId)?.takeIf { it > 0f }
+                        // The profile's OWN training max wins the prefill. Continue writes
+                        // whatever is in the field back as MANUAL, so prefilling a
+                        // PR-derived estimate over a hand-typed training max let one tap
+                        // replace it — the same overwrite F-019 is about, just routed
+                        // through the UI (review R-10/R-29). The PR estimate is the
+                        // fallback for a profile that has no training max yet.
+                        val valueToUse = exerciseRepository.getTrainingMax(exerciseId, profileId)?.takeIf { it > 0f }
+                            ?: pr?.oneRepMax?.takeIf { it > 0f }
 
                         if (valueToUse != null) {
                             oneRepMaxValues[exerciseName] = valueToUse
@@ -733,6 +736,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     mainLiftNames = mainLiftNames,
                     existingOneRepMaxValues = loadedOneRepMaxValues,
                     unclaimedLegacyValues = unclaimedLegacyValues,
+                    activeProfileName = activeProfile?.name.orEmpty(),
                     weightUnit = weightUnit,
                     kgToDisplay = viewModel::kgToDisplay,
                     displayToKg = viewModel::displayToKg,

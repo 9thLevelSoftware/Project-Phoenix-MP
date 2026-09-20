@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.preferences
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.ble.BleCompatibilityMode
+import com.devil.phoenixproject.data.migration.KEY_TRAINING_MAX_BACKFILL_COMPLETE
 import com.devil.phoenixproject.domain.model.BleCompatibilitySetting
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.ProgramMode
@@ -114,6 +115,14 @@ interface PreferencesManager {
     suspend fun setBleCompatibilityMode(setting: BleCompatibilitySetting)
     fun getExerciseCatalogSource(): String
     suspend fun setExerciseCatalogSource(source: String)
+
+    /**
+     * True once the migration 49 legacy training-max copy has completed at least once.
+     * MigrationManager owns the write; the exercise repository reads it so the claim
+     * prompt cannot offer a value before the owner rule has had its chance to attribute
+     * it (review R-20).
+     */
+    fun isTrainingMaxBackfillComplete(): Boolean
 
     @Deprecated("Legacy migration read only")
     suspend fun getSingleExerciseDefaults(exerciseId: String): SingleExerciseDefaults?
@@ -612,6 +621,9 @@ class SettingsPreferencesManager(private val settings: Settings) : PreferencesMa
 
     override fun getExerciseCatalogSource(): String =
         settings.getString(KEY_EXERCISE_CATALOG_SOURCE, "")
+
+    override fun isTrainingMaxBackfillComplete(): Boolean =
+        settings.getBoolean(KEY_TRAINING_MAX_BACKFILL_COMPLETE, false)
 
     override suspend fun setExerciseCatalogSource(source: String) {
         settings.putString(KEY_EXERCISE_CATALOG_SOURCE, source)

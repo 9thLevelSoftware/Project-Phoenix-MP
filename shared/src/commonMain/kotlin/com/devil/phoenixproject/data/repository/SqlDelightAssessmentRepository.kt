@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.repository
 import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.database.ExerciseTrainingMax
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
@@ -123,6 +124,12 @@ class SqlDelightAssessmentRepository(
             withContext(ioDispatcher) {
                 val finalOneRepMaxTotalKg = userOverrideKg ?: estimatedOneRepMaxKg
                 val attemptedOneRepMaxPerCableKg = finalOneRepMaxTotalKg / 2f
+                // setTrainingMax treats a non-positive value as "clear", which DELETEs the
+                // row — and the compensating rollback is an UPDATE, so it could not put the
+                // previous value back. Refuse before writing instead (review R-6).
+                require(attemptedOneRepMaxPerCableKg > 0f) {
+                    "Assessment 1RM must be positive, was $attemptedOneRepMaxPerCableKg kg per cable"
+                }
                 val sessionId = generateUUID()
                 val session = WorkoutSession(
                     id = sessionId,
@@ -139,7 +146,7 @@ class SqlDelightAssessmentRepository(
                 )
 
                 var insertedResultId: Long? = null
-                var previousTrainingMax: com.devil.phoenixproject.database.ExerciseTrainingMax? = null
+                var previousTrainingMax: ExerciseTrainingMax? = null
                 var trainingMaxWriteAttempted = false
                 try {
                     workoutRepository.saveSession(session)

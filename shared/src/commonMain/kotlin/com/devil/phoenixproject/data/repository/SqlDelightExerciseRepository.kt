@@ -9,6 +9,7 @@ import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.ExerciseCableIntent
 import com.devil.phoenixproject.domain.model.currentTimeMillis
+import com.devil.phoenixproject.domain.model.generateUUID
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.flow.Flow
@@ -179,8 +180,12 @@ class SqlDelightExerciseRepository(
 
     override suspend fun createCustomExercise(exercise: Exercise): Result<Exercise> = withContext(Dispatchers.IO) {
         try {
-            // Generate a unique ID for custom exercises
-            val customId = "custom_${currentTimeMillis()}"
+            // A UUID, not a timestamp: the insert is INSERT OR IGNORE (INSERT OR REPLACE
+            // would CASCADE-delete every profile's training max for the row it replaced),
+            // so two creates in the same millisecond used to leave the second un-inserted
+            // while still returning success with an id describing a different exercise
+            // (review R-3/R-8/R-30).
+            val customId = "custom_${generateUUID()}"
 
             queries.insertExerciseIfAbsent(
                 id = customId,
@@ -325,6 +330,14 @@ class SqlDelightExerciseRepository(
     }
 
     override suspend fun getUnassignedLegacyTrainingMax(exerciseId: String): Float? = withContext(Dispatchers.IO) {
+        // Nothing is offered until the repair has run: before that the owner rule has not
+        // had its chance, so a value it *would* attribute to one profile would be handed to
+        // whoever opens the editor first (review R-20). The repair also clears the legacy
+        // column for the values it did attribute, so what is left here is genuinely
+        // unattributable.
+        if (!preferencesManager.isTrainingMaxBackfillComplete()) {
+            return@withContext null
+        }
         queries.selectUnassignedLegacyTrainingMax(exerciseId)
             .executeAsOneOrNull()
             ?.toFloat()
