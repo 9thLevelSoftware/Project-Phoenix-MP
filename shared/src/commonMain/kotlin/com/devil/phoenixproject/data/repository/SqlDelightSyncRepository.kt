@@ -11,8 +11,6 @@ import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
-import com.devil.phoenixproject.data.sync.RoutineSyncDto
-import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.RoutineExercise as RoutineExerciseRow
 import com.devil.phoenixproject.database.Superset as SupersetRow
@@ -57,18 +55,6 @@ class SqlDelightSyncRepository(
     private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String = "$exerciseId:$timestamp"
 
     /**
-     * Issue #591 follow-up (chatgpt-codex-connector P2): SQLite host
-     * parameter limit is implementation-defined (999 on Android,
-     * 32766 on desktop). For initial/full pulls of large histories the
-     * batched preservation SELECTs would otherwise throw
-     * `SQLITE_RANGE: too many SQL variables`. 500 keeps us safely under
-     * the stricter limit and still eliminates the per-row round-trips.
-     */
-    private companion object {
-        const val BATCH_LOOKUP_CHUNK_SIZE = 500
-    }
-
-    /**
      * Preserve a local template-cycle association when the portal cannot represent it.
      * Template routines deliberately use the cycle_routine_ prefix and are omitted from
      * the UUID-only sync payload, so a null pull value is lossy rather than an explicit
@@ -101,26 +87,6 @@ class SqlDelightSyncRepository(
 
     // === Push Operations ===
 
-    override suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String): List<WorkoutSessionSyncDto> = withContext(Dispatchers.IO) {
-        queries.selectSessionsModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
-            WorkoutSessionSyncDto(
-                clientId = row.id,
-                serverId = row.serverId,
-                timestamp = row.timestamp,
-                mode = row.mode,
-                targetReps = row.targetReps.toInt(),
-                weightPerCableKg = row.weightPerCableKg.toFloat(),
-                duration = row.duration, // Long ms — no toInt() conversion needed
-                totalReps = row.totalReps.toInt(),
-                exerciseId = row.exerciseId,
-                exerciseName = row.exerciseName,
-                deletedAt = row.deletedAt,
-                createdAt = row.timestamp, // Use timestamp as createdAt
-                updatedAt = row.updatedAt ?: row.timestamp,
-            )
-        }
-    }
-
     override suspend fun getPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecordSyncDto> = withContext(Dispatchers.IO) {
         queries.selectPRsModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
             PersonalRecordSyncDto(
@@ -142,20 +108,6 @@ class SqlDelightSyncRepository(
                 deletedAt = row.deletedAt,
                 createdAt = row.achievedAt,
                 updatedAt = row.updatedAt ?: row.achievedAt,
-            )
-        }
-    }
-
-    override suspend fun getRoutinesModifiedSince(timestamp: Long, profileId: String): List<RoutineSyncDto> = withContext(Dispatchers.IO) {
-        queries.selectRoutinesModifiedSince(timestamp, profileId = profileId).executeAsList().map { row ->
-            RoutineSyncDto(
-                clientId = row.id,
-                serverId = row.serverId,
-                name = row.name,
-                description = row.description,
-                deletedAt = row.deletedAt,
-                createdAt = row.createdAt,
-                updatedAt = row.updatedAt ?: row.createdAt,
             )
         }
     }
@@ -262,94 +214,6 @@ class SqlDelightSyncRepository(
     // === Pull Operations ===
 
     /**
-     * Merge sessions from server (legacy push-path).
-     *
-     * CONFLICT RESOLUTION STRATEGY: SERVER WINS (UPSERT)
-     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 1 "Workout Sessions"
-     *
-     * This is the legacy push-path merge used for initial sync/migration.
-     * For the authoritative pull-path, see [mergePortalSessions] which uses LOCAL WINS.
-     *
-     * Sessions are immutable workout records created by BLE execution. Mobile is authoritative.
-     * The push-path upsert allows server data to populate initially, but the pull-path
-     * (INSERT OR IGNORE) ensures local sessions are never overwritten after initial sync.
-     */
-    override suspend fun mergeSessions(sessions: List<WorkoutSessionSyncDto>) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                sessions.forEach { dto ->
-                    // Check if we have this session locally (by serverId or clientId)
-                    val existingByServer = dto.serverId?.let {
-                        queries.selectSessionByServerId(it).executeAsOneOrNull()
-                    }
-
-                    val existingLocalSession = existingByServer ?: queries.selectSessionById(dto.clientId).executeAsOneOrNull()
-                    val localId = existingLocalSession?.id ?: dto.clientId
-
-                    // Server wins for initial population (upsert pattern)
-                    queries.upsertSyncSession(
-                        id = localId,
-                        timestamp = dto.timestamp,
-                        mode = dto.mode,
-                        targetReps = dto.targetReps.toLong(),
-                        weightPerCableKg = dto.weightPerCableKg.toDouble(),
-                        progressionKg = 0.0,
-                        duration = dto.duration, // Already Long ms
-                        totalReps = dto.totalReps.toLong(),
-                        warmupReps = 0L,
-                        workingReps = dto.totalReps.toLong(),
-                        isJustLift = 0L,
-                        stopAtTop = 0L,
-                        eccentricLoad = 100L,
-                        echoLevel = 1L,
-                        exerciseId = dto.exerciseId,
-                        exerciseName = dto.exerciseName,
-                        routineSessionId = null,
-                        routineName = null,
-                        routineId = null,
-                        safetyFlags = 0L,
-                        deloadWarningCount = 0L,
-                        romViolationCount = 0L,
-                        spotterActivations = 0L,
-                        peakForceConcentricA = null,
-                        peakForceConcentricB = null,
-                        peakForceEccentricA = null,
-                        peakForceEccentricB = null,
-                        avgForceConcentricA = null,
-                        avgForceConcentricB = null,
-                        avgForceEccentricA = null,
-                        avgForceEccentricB = null,
-                        heaviestLiftKg = null,
-                        totalVolumeKg = null,
-                        cableCount = null,
-                        estimatedCalories = null,
-                        warmupAvgWeightKg = null,
-                        workingAvgWeightKg = null,
-                        burnoutAvgWeightKg = null,
-                        peakWeightKg = null,
-                        rpe = null,
-                        avgMcvMmS = null,
-                        avgAsymmetryPercent = null,
-                        totalVelocityLossPercent = null,
-                        dominantSide = null,
-                        strengthProfile = null,
-                        formScore = null,
-                        updatedAt = dto.updatedAt,
-                        serverId = dto.serverId,
-                        deletedAt = dto.deletedAt,
-                        profile_id = userProfileRepository.activeProfile.value?.id ?: "default",
-                        display_multiplier = existingLocalSession?.display_multiplier,
-                        externalAddedLoadKg = existingLocalSession?.externalAddedLoadKg ?: 0.0,
-                        counterweightKg = existingLocalSession?.counterweightKg ?: 0.0,
-                        rackItemsJson = existingLocalSession?.rackItemsJson ?: "[]",
-                    )
-                }
-            }
-            Logger.d { "Merged ${sessions.size} sessions from server" }
-        }
-    }
-
-    /**
      * Merge personal records from server (legacy push-path).
      *
      * CONFLICT RESOLUTION STRATEGY: SERVER WINS (UPSERT by compound key)
@@ -388,59 +252,6 @@ class SqlDelightSyncRepository(
                 }
             }
             Logger.d { "Merged ${records.size} PRs from server" }
-        }
-    }
-
-    /**
-     * Merge custom exercises from server.
-     *
-     * CONFLICT RESOLUTION STRATEGY: INSERT (no conflict expected)
-     * Reference: CONFLICT-RESOLUTION-DESIGN.md Task 2, Section 8 "Custom Exercises"
-     *
-     * Custom exercises are created locally on mobile. Server doesn't push custom exercises
-     * back, so this is effectively a one-way push. Uses INSERT (not UPSERT) since duplicates
-     * shouldn't occur - each custom exercise has a unique client-generated ID.
-     */
-    override suspend fun mergeCustomExercises(exercises: List<CustomExerciseSyncDto>) {
-        withContext(Dispatchers.IO) {
-            db.transaction {
-                exercises.forEach { dto ->
-                    // Custom exercises - insert by clientId (no conflict expected)
-                    queries.insertExercise(
-                        id = dto.clientId,
-                        name = dto.name,
-                        displayName = dto.displayName, // Carry display name from sync (#404)
-                        description = null,
-                        created = dto.createdAt,
-                        muscleGroup = dto.muscleGroup,
-                        muscleGroups = dto.muscleGroup,
-                        muscles = null,
-                        equipment = dto.equipment,
-                        movement = null,
-                        sidedness = null,
-                        grip = null,
-                        gripWidth = null,
-                        minRepRange = null,
-                        popularity = 0.0,
-                        archived = 0L,
-                        isFavorite = 0L,
-                        isCustom = 1L,
-                        timesPerformed = 0L,
-                        lastPerformed = null,
-                        aliases = null,
-                        defaultCableConfig = dto.defaultCableConfig,
-                        one_rep_max_kg = null,
-                        mvtOverrideMs = null,
-                        // Custom exercises carry no explicit flag (#635); derive from equipment.
-                        isBodyweight = null,
-                    )
-
-                    if (dto.serverId != null) {
-                        queries.updateExerciseServerId(dto.serverId, dto.clientId)
-                    }
-                }
-            }
-            Logger.d { "Merged ${exercises.size} custom exercises from server" }
         }
     }
 
@@ -708,60 +519,7 @@ class SqlDelightSyncRepository(
             db.transaction {
                 for (session in sessions) {
                     // INSERT OR IGNORE - local session wins if ID exists
-                    queries.insertSessionIgnore(
-                        id = session.id,
-                        timestamp = session.timestamp,
-                        mode = session.mode,
-                        targetReps = session.reps.toLong(),
-                        weightPerCableKg = session.weightPerCableKg.toDouble(),
-                        progressionKg = session.progressionKg.toDouble(),
-                        duration = session.duration,
-                        totalReps = session.totalReps.toLong(),
-                        warmupReps = session.warmupReps.toLong(),
-                        workingReps = session.workingReps.toLong(),
-                        isJustLift = if (session.isJustLift) 1L else 0L,
-                        stopAtTop = if (session.stopAtTop) 1L else 0L,
-                        eccentricLoad = session.eccentricLoad.toLong(),
-                        echoLevel = session.echoLevel.toLong(),
-                        exerciseId = session.exerciseId,
-                        exerciseName = session.exerciseName,
-                        routineSessionId = session.routineSessionId,
-                        routineName = session.routineName,
-                        routineId = session.routineId,
-                        safetyFlags = session.safetyFlags.toLong(),
-                        deloadWarningCount = session.deloadWarningCount.toLong(),
-                        romViolationCount = session.romViolationCount.toLong(),
-                        spotterActivations = session.spotterActivations.toLong(),
-                        peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
-                        peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
-                        peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
-                        peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
-                        avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
-                        avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
-                        avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
-                        avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
-                        heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
-                        totalVolumeKg = session.totalVolumeKg?.toDouble(),
-                        cableCount = session.cableCount?.toLong(),
-                        estimatedCalories = session.estimatedCalories?.toDouble(),
-                        warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
-                        workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
-                        burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
-                        peakWeightKg = session.peakWeightKg?.toDouble(),
-                        rpe = session.rpe?.toLong(),
-                        avgMcvMmS = session.avgMcvMmS?.toDouble(),
-                        avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
-                        totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
-                        dominantSide = session.dominantSide,
-                        strengthProfile = session.strengthProfile,
-                        formScore = session.formScore?.toLong(),
-                        updatedAt = session.timestamp, // Mark as already-synced to prevent re-push
-                        profile_id = session.profileId,
-                        display_multiplier = session.displayMultiplier?.toLong(),
-                        externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
-                        counterweightKg = session.counterweightKg.toDouble(),
-                        rackItemsJson = session.rackItemsJson,
-                    )
+                    insertSessionIfAbsent(session, updatedAt = session.timestamp)
                 }
             }
             Logger.d { "Merged ${sessions.size} portal sessions (INSERT OR IGNORE)" }
@@ -1516,60 +1274,7 @@ class SqlDelightSyncRepository(
                 // 1. Sessions — INSERT OR IGNORE (local wins)
                 // Full field list matches mergePortalSessions
                 for (session in sessions) {
-                    queries.insertSessionIgnore(
-                        id = session.id,
-                        timestamp = session.timestamp,
-                        mode = session.mode,
-                        targetReps = session.reps.toLong(),
-                        weightPerCableKg = session.weightPerCableKg.toDouble(),
-                        progressionKg = session.progressionKg.toDouble(),
-                        duration = session.duration,
-                        totalReps = session.totalReps.toLong(),
-                        warmupReps = session.warmupReps.toLong(),
-                        workingReps = session.workingReps.toLong(),
-                        isJustLift = if (session.isJustLift) 1L else 0L,
-                        stopAtTop = if (session.stopAtTop) 1L else 0L,
-                        eccentricLoad = session.eccentricLoad.toLong(),
-                        echoLevel = session.echoLevel.toLong(),
-                        exerciseId = session.exerciseId,
-                        exerciseName = session.exerciseName,
-                        routineSessionId = session.routineSessionId,
-                        routineName = session.routineName,
-                        routineId = session.routineId,
-                        safetyFlags = session.safetyFlags.toLong(),
-                        deloadWarningCount = session.deloadWarningCount.toLong(),
-                        romViolationCount = session.romViolationCount.toLong(),
-                        spotterActivations = session.spotterActivations.toLong(),
-                        peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
-                        peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
-                        peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
-                        peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
-                        avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
-                        avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
-                        avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
-                        avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
-                        heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
-                        totalVolumeKg = session.totalVolumeKg?.toDouble(),
-                        cableCount = session.cableCount?.toLong(),
-                        estimatedCalories = session.estimatedCalories?.toDouble(),
-                        warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
-                        workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
-                        burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
-                        peakWeightKg = session.peakWeightKg?.toDouble(),
-                        rpe = session.rpe?.toLong(),
-                        avgMcvMmS = session.avgMcvMmS?.toDouble(),
-                        avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
-                        totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
-                        dominantSide = session.dominantSide,
-                        strengthProfile = session.strengthProfile,
-                        formScore = session.formScore?.toLong(),
-                        updatedAt = session.timestamp, // Mark as already-synced
-                        profile_id = profileId,
-                        display_multiplier = session.displayMultiplier?.toLong(),
-                        externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
-                        counterweightKg = session.counterweightKg.toDouble(),
-                        rackItemsJson = session.rackItemsJson,
-                    )
+                    insertSessionIfAbsent(session, updatedAt = session.timestamp, profileId = profileId)
                 }
 
                 // 2. Routines — TIMESTAMP LWW (local wins if modified after lastSync)
@@ -1789,27 +1494,21 @@ class SqlDelightSyncRepository(
      */
 
     /**
-     * Phase 3.3 (audit item #1): replace the legacy INSERT OR IGNORE pull
-     * merge with `updatedAt`-gated LWW. SQLite 3.18 does not support
-     * `INSERT ... ON CONFLICT DO UPDATE WHERE`, so the gate lives here:
-     * SELECT existing.updatedAt → compare to incoming → INSERT OR REPLACE
-     * iff incoming wins. Wrapped in a single transaction so the read+write
-     * pair is atomic per row.
+     * Pull merge for sessions (KD-3): insert the rows this device doesn't have yet and never
+     * REPLACE an existing row.
      *
-     * `updatedAtBySessionId` keys on the per-exercise WorkoutSession.id
-     * (== portal exercise id; one portal session expands to N mobile rows
-     * in PortalPullAdapter.toWorkoutSessionsWithLookup). Missing entries
-     * default to "older" so first-time pulls always write.
+     * A local WorkoutSession row is a measurement captured on a device, and the pull projection
+     * is lossy (no rep data, session-level config). Rebuilding an existing row from it could
+     * only lose data, and a REPLACE would also cascade-delete its MetricSample, RepMetric,
+     * PhaseStatistics and CompletedSet children.
      *
-     * Issue #591: When the incoming pull row is null in detailed metric
-     * columns (`peakForce*`, `avgForce*`, biomechanics, etc.) but the
-     * local row captured real measurements during recording, do not erase
-     * the locally captured metrics. LWW still applies for non-metric
-     * columns (timestamps, reps, mode, exercise tags) — only metric
-     * columns fall back to the existing local value when the incoming is
-     * null. This prevents the History "after v0.2.1" placeholder from
-     * appearing for current sessions whose metrics were lost during sync
-     * rehydration.
+     * The one in-place change is the exercise tag: when the portal copy is newer, its
+     * exerciseId/exerciseName are applied to a pulled-origin row (no local RepMetric or
+     * CompletedSet children), so a Just Lift re-tag on another device still arrives. Nothing
+     * else on the row changes, and a null incoming exerciseId never clears a local tag.
+     *
+     * New rows are stamped with the portal `updatedAt` from [updatedAtBySessionId] (0 when
+     * absent) so they are not picked up as local changes by the next push.
      */
     override suspend fun mergeSessionsLww(
         sessions: List<WorkoutSession>,
@@ -1817,249 +1516,87 @@ class SqlDelightSyncRepository(
     ) = withContext(Dispatchers.IO) {
         if (sessions.isEmpty()) return@withContext
         db.transaction {
-            // Issue #591 follow-up: collapse the per-row
-            // selectSessionUpdatedAt + selectSessionById pair into a single
-            // batched round-trip per concern. For a 20-set routine this
-            // drops 40+ queries (one LWW gate read + one full-row read per
-            // incoming pull) down to two queries total.
-            //
-            // chatgpt-codex-connector P2 (follow-up): chunk the batched
-            // SELECTs because SQLite's host-parameter limit is
-            // implementation-defined (commonly 999 on Android, 32766 on
-            // desktop). For initial/full pulls of large histories the id
-            // list can exceed the limit and throw "too many SQL variables".
-            // Chunking at CHUNK_SIZE 500 keeps us safely under both
-            // limits while still eliminating the per-row round-trips.
-            val ids = sessions.map { it.id }
-            val existingUpdatedAtById: Map<String, Long?> =
-                ids.chunked(BATCH_LOOKUP_CHUNK_SIZE)
-                    .flatMap { chunk ->
-                        queries.selectSessionsUpdatedAtByIds(chunk)
-                            .executeAsList()
-                    }
-                    .associate { it.id to it.updatedAt }
-            val preservationRowsById: Map<String, PreservationRow> =
-                ids.chunked(BATCH_LOOKUP_CHUNK_SIZE)
-                    .flatMap { chunk ->
-                        queries.selectSessionsMetricsForPreservationByIds(chunk)
-                            .executeAsList()
-                            .map { it.toPreservationRow() }
-                    }
-                    .associate { it.id to it }
-
             for (session in sessions) {
-                val existingTs = existingUpdatedAtById[session.id]
                 val incomingTs = updatedAtBySessionId[session.id]
-                // Accept when: the local row is absent (first-time pull), OR the incoming has a
-                // real timestamp that is at least as recent as the local row. When a local row
-                // exists but incomingTs is absent from the map, we cannot determine recency —
-                // skip to preserve the existing local data (rather than the original 0L default
-                // which silently lost every LWW comparison against any non-zero existing timestamp).
-                val accept = existingTs == null || (incomingTs != null && incomingTs >= existingTs)
-                if (!accept) continue
-
-                // Issue #591: Preserve non-null detailed metric columns from
-                // the existing local row when the incoming pull is null.
-                // The pull path does not (yet) populate peakForce* / avgForce*
-                // / biomechanics fields from PullSetDto.repSummaries for every
-                // session; without this guard, an incoming row with null
-                // metrics would clobber locally captured metrics and force
-                // HistoryTab to render the stale "after v0.2.1" placeholder.
-                val preservation = preservationRowsById[session.id]
-                val preserved = if (preservation != null) {
-                    preserveMetrics(preservation, session)
-                } else {
-                    session
+                insertSessionIfAbsent(session, updatedAt = incomingTs ?: 0L)
+                val exerciseId = session.exerciseId
+                if (incomingTs != null && exerciseId != null) {
+                    queries.updatePulledSessionTag(
+                        exerciseId = exerciseId,
+                        exerciseName = session.exerciseName,
+                        updatedAt = incomingTs,
+                        id = session.id,
+                    )
                 }
-
-                queries.mergeSessionLww(
-                    id = preserved.id,
-                    timestamp = preserved.timestamp,
-                    mode = preserved.mode,
-                    targetReps = preserved.reps.toLong(),
-                    weightPerCableKg = preserved.weightPerCableKg.toDouble(),
-                    progressionKg = preserved.progressionKg.toDouble(),
-                    duration = preserved.duration,
-                    totalReps = preserved.totalReps.toLong(),
-                    warmupReps = preserved.warmupReps.toLong(),
-                    workingReps = preserved.workingReps.toLong(),
-                    isJustLift = if (preserved.isJustLift) 1L else 0L,
-                    stopAtTop = if (preserved.stopAtTop) 1L else 0L,
-                    eccentricLoad = preserved.eccentricLoad.toLong(),
-                    echoLevel = preserved.echoLevel.toLong(),
-                    exerciseId = preserved.exerciseId,
-                    exerciseName = preserved.exerciseName,
-                    routineSessionId = preserved.routineSessionId,
-                    routineName = preserved.routineName,
-                    routineId = preserved.routineId,
-                    safetyFlags = preserved.safetyFlags.toLong(),
-                    deloadWarningCount = preserved.deloadWarningCount.toLong(),
-                    romViolationCount = preserved.romViolationCount.toLong(),
-                    spotterActivations = preserved.spotterActivations.toLong(),
-                    peakForceConcentricA = preserved.peakForceConcentricA?.toDouble(),
-                    peakForceConcentricB = preserved.peakForceConcentricB?.toDouble(),
-                    peakForceEccentricA = preserved.peakForceEccentricA?.toDouble(),
-                    peakForceEccentricB = preserved.peakForceEccentricB?.toDouble(),
-                    avgForceConcentricA = preserved.avgForceConcentricA?.toDouble(),
-                    avgForceConcentricB = preserved.avgForceConcentricB?.toDouble(),
-                    avgForceEccentricA = preserved.avgForceEccentricA?.toDouble(),
-                    avgForceEccentricB = preserved.avgForceEccentricB?.toDouble(),
-                    heaviestLiftKg = preserved.heaviestLiftKg?.toDouble(),
-                    totalVolumeKg = preserved.totalVolumeKg?.toDouble(),
-                    cableCount = preserved.cableCount?.toLong(),
-                    estimatedCalories = preserved.estimatedCalories?.toDouble(),
-                    warmupAvgWeightKg = preserved.warmupAvgWeightKg?.toDouble(),
-                    workingAvgWeightKg = preserved.workingAvgWeightKg?.toDouble(),
-                    burnoutAvgWeightKg = preserved.burnoutAvgWeightKg?.toDouble(),
-                    peakWeightKg = preserved.peakWeightKg?.toDouble(),
-                    rpe = preserved.rpe?.toLong(),
-                    avgMcvMmS = preserved.avgMcvMmS?.toDouble(),
-                    avgAsymmetryPercent = preserved.avgAsymmetryPercent?.toDouble(),
-                    totalVelocityLossPercent = preserved.totalVelocityLossPercent?.toDouble(),
-                    dominantSide = preserved.dominantSide,
-                    strengthProfile = preserved.strengthProfile,
-                    formScore = preserved.formScore?.toLong(),
-                    // Stamp with the real incoming timestamp; fall back to 0L for new rows
-                    // that have no timestamp in the map (accept=true only when existingTs==null).
-                    updatedAt = incomingTs ?: 0L,
-                    profile_id = preserved.profileId,
-                    display_multiplier = preserved.displayMultiplier?.toLong(),
-                    externalAddedLoadKg = preserved.externalAddedLoadKg.toDouble(),
-                    counterweightKg = preserved.counterweightKg.toDouble(),
-                    rackItemsJson = preserved.rackItemsJson,
-                )
             }
         }
     }
 
     /**
-     * Issue #591: For detailed metric / biomechanics columns, prefer the
-     * existing local value whenever the incoming pull is null. All other
-     * columns use the incoming value (LWW semantics).
-     *
-     * Exception: `PortalPullAdapter` can only hydrate per-cable concentric
-     * peaks from `leftForceAvg` / `rightForceAvg`, which are average-force
-     * proxies from the push DTO rather than true peak captures. If a local
-     * row already has true per-cable peak values, keep those instead of
-     * replacing them with the pull-side proxy. First-time pulls still keep
-     * the proxy value because there is no local capture to preserve.
-     *
-     * Backed by `selectSessionsMetricsForPreservationByIds` so the LWW
-     * gate does not issue a full-row read per incoming pull. The column
-     * list here must stay in sync with that SQL query.
-     *
-     * Columns preserved when local is non-null and incoming is null:
-     *   - peakForce* / avgForce* (concentric + eccentric, A + B)
-     *   - heaviestLiftKg, totalVolumeKg
-     *   - estimatedCalories, warmupAvgWeightKg, workingAvgWeightKg,
-     *     burnoutAvgWeightKg, peakWeightKg
-     *   - avgMcvMmS, avgAsymmetryPercent, totalVelocityLossPercent
-     *   - dominantSide, strengthProfile
-     *   - cableCount, displayMultiplier
-     *   - rpe, formScore
-     *
-     * Note: `weightPerCableKg`, `totalReps`, `duration`, and exercise/routine
-     * identity are intentionally NOT preserved — those should follow LWW so
-     * the row matches whatever the server / push thinks the workout was.
+     * INSERT OR IGNORE of the full session projection: an existing row with the same id is left
+     * untouched. Must be called inside a [db.transaction] block.
      */
-    private fun preserveMetrics(
-        existing: PreservationRow,
-        incoming: WorkoutSession,
-    ): WorkoutSession = incoming.copy(
-        peakForceConcentricA = existing.peakForceConcentricA?.toFloat() ?: incoming.peakForceConcentricA,
-        peakForceConcentricB = existing.peakForceConcentricB?.toFloat() ?: incoming.peakForceConcentricB,
-        peakForceEccentricA = incoming.peakForceEccentricA ?: existing.peakForceEccentricA?.toFloat(),
-        peakForceEccentricB = incoming.peakForceEccentricB ?: existing.peakForceEccentricB?.toFloat(),
-        avgForceConcentricA = incoming.avgForceConcentricA ?: existing.avgForceConcentricA?.toFloat(),
-        avgForceConcentricB = incoming.avgForceConcentricB ?: existing.avgForceConcentricB?.toFloat(),
-        avgForceEccentricA = incoming.avgForceEccentricA ?: existing.avgForceEccentricA?.toFloat(),
-        avgForceEccentricB = incoming.avgForceEccentricB ?: existing.avgForceEccentricB?.toFloat(),
-        heaviestLiftKg = incoming.heaviestLiftKg ?: existing.heaviestLiftKg?.toFloat(),
-        totalVolumeKg = incoming.totalVolumeKg ?: existing.totalVolumeKg?.toFloat(),
-        cableCount = incoming.cableCount ?: existing.cableCount?.toInt(),
-        displayMultiplier = incoming.displayMultiplier ?: existing.displayMultiplier?.toInt(),
-        estimatedCalories = incoming.estimatedCalories ?: existing.estimatedCalories?.toFloat(),
-        warmupAvgWeightKg = incoming.warmupAvgWeightKg ?: existing.warmupAvgWeightKg?.toFloat(),
-        workingAvgWeightKg = incoming.workingAvgWeightKg ?: existing.workingAvgWeightKg?.toFloat(),
-        burnoutAvgWeightKg = incoming.burnoutAvgWeightKg ?: existing.burnoutAvgWeightKg?.toFloat(),
-        peakWeightKg = incoming.peakWeightKg ?: existing.peakWeightKg?.toFloat(),
-        rpe = incoming.rpe ?: existing.rpe?.toInt(),
-        avgMcvMmS = incoming.avgMcvMmS ?: existing.avgMcvMmS?.toFloat(),
-        avgAsymmetryPercent = incoming.avgAsymmetryPercent ?: existing.avgAsymmetryPercent?.toFloat(),
-        totalVelocityLossPercent = incoming.totalVelocityLossPercent ?: existing.totalVelocityLossPercent?.toFloat(),
-        dominantSide = incoming.dominantSide ?: existing.dominantSide,
-        strengthProfile = incoming.strengthProfile ?: existing.strengthProfile,
-        formScore = incoming.formScore ?: existing.formScore?.toInt(),
-    )
+    private fun insertSessionIfAbsent(
+        session: WorkoutSession,
+        updatedAt: Long,
+        profileId: String = session.profileId,
+    ) {
 
-    /**
-     * Issue #591 follow-up: in-memory projection of the
-     * `selectSessionsMetricsForPreservationByIds` SQL row, holding only
-     * the metric / biomechanics columns the LWW preservation guard
-     * consumes. Keeps [preserveMetrics] free of SqlDelight-generated
-     * row types so the column contract lives in one obvious place.
-     */
-    private data class PreservationRow(
-        val id: String,
-        val peakForceConcentricA: Double?,
-        val peakForceConcentricB: Double?,
-        val peakForceEccentricA: Double?,
-        val peakForceEccentricB: Double?,
-        val avgForceConcentricA: Double?,
-        val avgForceConcentricB: Double?,
-        val avgForceEccentricA: Double?,
-        val avgForceEccentricB: Double?,
-        val heaviestLiftKg: Double?,
-        val totalVolumeKg: Double?,
-        val cableCount: Long?,
-        val displayMultiplier: Long?,
-        val estimatedCalories: Double?,
-        val warmupAvgWeightKg: Double?,
-        val workingAvgWeightKg: Double?,
-        val burnoutAvgWeightKg: Double?,
-        val peakWeightKg: Double?,
-        val rpe: Long?,
-        val avgMcvMmS: Double?,
-        val avgAsymmetryPercent: Double?,
-        val totalVelocityLossPercent: Double?,
-        val dominantSide: String?,
-        val strengthProfile: String?,
-        val formScore: Long?,
-    )
-
-    /**
-     * Bridge the SqlDelight-generated row into [PreservationRow]. The
-     * generated row type name follows the SQL query name
-     * (`SelectSessionsMetricsForPreservationByIds`). If the SQL column
-     * list changes, regenerate and update this helper.
-     */
-    private fun com.devil.phoenixproject.database.SelectSessionsMetricsForPreservationByIds.toPreservationRow(): PreservationRow = PreservationRow(
-        id = id,
-        peakForceConcentricA = peakForceConcentricA,
-        peakForceConcentricB = peakForceConcentricB,
-        peakForceEccentricA = peakForceEccentricA,
-        peakForceEccentricB = peakForceEccentricB,
-        avgForceConcentricA = avgForceConcentricA,
-        avgForceConcentricB = avgForceConcentricB,
-        avgForceEccentricA = avgForceEccentricA,
-        avgForceEccentricB = avgForceEccentricB,
-        heaviestLiftKg = heaviestLiftKg,
-        totalVolumeKg = totalVolumeKg,
-        cableCount = cableCount,
-        displayMultiplier = display_multiplier,
-        estimatedCalories = estimatedCalories,
-        warmupAvgWeightKg = warmupAvgWeightKg,
-        workingAvgWeightKg = workingAvgWeightKg,
-        burnoutAvgWeightKg = burnoutAvgWeightKg,
-        peakWeightKg = peakWeightKg,
-        rpe = rpe,
-        avgMcvMmS = avgMcvMmS,
-        avgAsymmetryPercent = avgAsymmetryPercent,
-        totalVelocityLossPercent = totalVelocityLossPercent,
-        dominantSide = dominantSide,
-        strengthProfile = strengthProfile,
-        formScore = formScore,
-    )
+        queries.insertSessionIgnore(
+            id = session.id,
+            timestamp = session.timestamp,
+            mode = session.mode,
+            targetReps = session.reps.toLong(),
+            weightPerCableKg = session.weightPerCableKg.toDouble(),
+            progressionKg = session.progressionKg.toDouble(),
+            duration = session.duration,
+            totalReps = session.totalReps.toLong(),
+            warmupReps = session.warmupReps.toLong(),
+            workingReps = session.workingReps.toLong(),
+            isJustLift = if (session.isJustLift) 1L else 0L,
+            stopAtTop = if (session.stopAtTop) 1L else 0L,
+            eccentricLoad = session.eccentricLoad.toLong(),
+            echoLevel = session.echoLevel.toLong(),
+            exerciseId = session.exerciseId,
+            exerciseName = session.exerciseName,
+            routineSessionId = session.routineSessionId,
+            routineName = session.routineName,
+            routineId = session.routineId,
+            safetyFlags = session.safetyFlags.toLong(),
+            deloadWarningCount = session.deloadWarningCount.toLong(),
+            romViolationCount = session.romViolationCount.toLong(),
+            spotterActivations = session.spotterActivations.toLong(),
+            peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+            peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+            peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+            peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+            avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+            avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+            avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+            avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+            heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+            totalVolumeKg = session.totalVolumeKg?.toDouble(),
+            cableCount = session.cableCount?.toLong(),
+            estimatedCalories = session.estimatedCalories?.toDouble(),
+            warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+            workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+            burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+            peakWeightKg = session.peakWeightKg?.toDouble(),
+            rpe = session.rpe?.toLong(),
+            avgMcvMmS = session.avgMcvMmS?.toDouble(),
+            avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
+            totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
+            dominantSide = session.dominantSide,
+            strengthProfile = session.strengthProfile,
+            formScore = session.formScore?.toLong(),
+            updatedAt = updatedAt,
+            profile_id = profileId,
+            display_multiplier = session.displayMultiplier?.toLong(),
+            externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+            counterweightKg = session.counterweightKg.toDouble(),
+            rackItemsJson = session.rackItemsJson,
+        )
+    }
 
     /**
      * Merge one portal routine (pull path) with TIMESTAMP LWW, shared by [mergePortalRoutines]

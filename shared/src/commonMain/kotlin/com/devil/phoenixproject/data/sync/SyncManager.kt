@@ -618,10 +618,8 @@ class SyncManager(
         Logger.i("SyncManager") { "Push succeeded" }
 
         // Inspect per-entity LWW rejections (Phase 3.2 contract: the server
-        // rejects an incoming row when it already holds a newer updated_at,
-        // and mobile is expected to log the conflict and let the next pull
-        // repair convergence). Without this, rejections were decoded but never
-        // surfaced (audit F025).
+        // rejects an incoming row when it already holds a newer updated_at).
+        // Without this, rejections were decoded but never surfaced (audit F025).
         val pushResponse = pushResult.getOrThrow()
         val rejections = pushResponse.rejections
         val rejectedSessionIds = rejections.sessions.map { it.id }.toSet()
@@ -633,8 +631,7 @@ class SyncManager(
                 "Push LWW rejections ($totalRejections): " +
                     "sessions=${rejections.sessions.size}, routines=${rejections.routines.size}, " +
                     "cycles=${rejections.cycles.size}, externalActivities=${rejections.externalActivities.size}, " +
-                    "rpgAttributes=${rejections.rpgAttributes.size}, gamificationStats=${rejections.gamificationStats.size}. " +
-                    "Next pull will repair convergence."
+                    "rpgAttributes=${rejections.rpgAttributes.size}, gamificationStats=${rejections.gamificationStats.size}."
             }
         }
 
@@ -643,14 +640,14 @@ class SyncManager(
         // Use prePushLastSync (captured before push) so batched push doesn't cause
         // earlier-batch sessions to be missed by the re-query.
         //
-        // CRITICAL (audit F001): never stamp a session the server rejected under
-        // LWW. Stamping with currentTimeMillis() makes the stale local row look
-        // newer than the authoritative server row, so the immediate pull merge
-        // (mergeSessionsLww accepts incoming only when incomingTs >= existingTs)
-        // would keep the stale local row and silently drop the server-newer
-        // change. Leaving rejected rows unstamped lets the pull repair them.
-        // A rejection id is the portal session id (routineSessionId for grouped
-        // routine sessions, else the local session id), so match on either.
+        // Never stamp a session the server rejected under LWW. A rejection can mean
+        // the portal skipped this session's set/rep data (its children are gated on
+        // acceptance), or that a local edit never landed; stamping would mark that
+        // unsent data as synced for good. Rejected rows stay pending and are retried
+        // on the next sync. (The pull no longer rewrites existing rows, so nothing
+        // "repairs" them from the portal side; the durable fix is PR 10's watermark
+        // work.) A rejection id is the portal session id (routineSessionId for
+        // grouped routine sessions, else the local session id), so match on either.
         val stampTime = currentTimeMillis()
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
         val pushedSessions = dedupeWorkoutSessionsById(
@@ -675,7 +672,7 @@ class SyncManager(
         if (stampedCount > 0 || skippedRejected > 0) {
             Logger.d("SyncManager") {
                 "Stamped $stampedCount pushed sessions with updatedAt=$stampTime" +
-                    (if (skippedRejected > 0) "; left $skippedRejected LWW-rejected session(s) unstamped for pull repair" else "")
+                    (if (skippedRejected > 0) "; left $skippedRejected LWW-rejected session(s) unstamped for retry" else "")
             }
         }
 
@@ -1921,8 +1918,9 @@ class SyncManager(
             }
             .toMap()
 
-        // 3. Execute ordinary repository merges. Sessions use the LWW path when incoming
-        // updatedAt values are present and fall back to legacy INSERT OR IGNORE otherwise.
+        // 3. Execute ordinary repository merges. Sessions are insert-only on both paths
+        // (existing rows are never REPLACEd); the updatedAt path stamps new rows with the
+        // portal updatedAt and also carries newer exercise tags onto pulled-origin rows.
         // These calls may commit independently of the preference repository call above.
         val sessionsHaveUpdatedAt = sessionUpdatedAtById.values.any { it > 0L }
         try {

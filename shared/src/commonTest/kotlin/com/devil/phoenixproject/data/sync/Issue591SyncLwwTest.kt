@@ -15,13 +15,12 @@ import kotlin.test.assertNull
  * multi-exercise routine; per-set drill-down shows 'after v0.2.1'
  * placeholder on v0.9.2.
  *
- * Regression coverage for the LWW preservation guard added to
- * SqlDelightSyncRepository.mergeSessionsLww: when an incoming pull
- * row has null detailed metric columns but the existing local row
- * has captured non-null metrics, the local values must be preserved
- * instead of being overwritten with null. This is the exact
- * regression that triggered the "after v0.2.1" placeholder in
- * Analytics for current v0.9.2 sessions.
+ * Regression coverage for SqlDelightSyncRepository.mergeSessionsLww:
+ * a pull must never clobber locally captured metric columns. Since KD-3
+ * the pull never rewrites an existing session row at all, even when the
+ * incoming updatedAt is newer, so every local column survives. Losing
+ * these columns is what triggered the "after v0.2.1" placeholder in
+ * Analytics for v0.9.2 sessions.
  *
  * Mirrors the test scaffolding from ConflictResolutionTest so the
  * pattern stays consistent across the sync suite.
@@ -43,7 +42,7 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww preserves local peakForceConcentric when incoming is null`() = runTest {
+    fun `mergeSessionsLww keeps local metrics when a newer pull has null metrics`() = runTest {
         setUp()
 
         // GIVEN: A locally recorded session with non-null detailed metrics.
@@ -124,7 +123,7 @@ class Issue591SyncLwwTest {
     }
 
     @Test
-    fun `mergeSessionsLww preserves local true peaks but applies incoming average metrics`() = runTest {
+    fun `mergeSessionsLww keeps every local metric when a newer pull carries different values`() = runTest {
         setUp()
 
         // GIVEN: A locally recorded session with true peak values and
@@ -149,11 +148,9 @@ class Issue591SyncLwwTest {
             updatedAt = now - 60_000L,
         )
 
-        // WHEN: A newer portal pull arrives. PortalPullAdapter can only
-        // reconstruct peakForceConcentricA/B from leftForceAvg/rightForceAvg,
-        // so those incoming peak fields are proxies and must not overwrite
-        // true local peaks. Average-force fields are real pull-side values and
-        // still follow normal incoming-wins LWW semantics.
+        // WHEN: A newer portal pull arrives with different metric values
+        // (PortalPullAdapter's peaks are average-force proxies, and its
+        // averages are rebuilt from the portal's rep summaries).
         val incoming = WorkoutSession(
             id = sessionId,
             timestamp = now,
@@ -174,20 +171,21 @@ class Issue591SyncLwwTest {
             updatedAtBySessionId = mapOf(sessionId to now + 60_000L),
         )
 
-        // THEN: True local peaks are preserved, while incoming non-peak
-        // metrics still apply.
+        // THEN: the existing row is untouched: true local peaks and the
+        // locally captured averages both survive.
         val after = database.phoenixDatabaseQueries
             .selectSessionById(sessionId)
             .executeAsOneOrNull()
         assertNotNull(after)
         assertEquals(30f, after.peakForceConcentricA?.toFloat())
         assertEquals(32f, after.peakForceConcentricB?.toFloat())
-        assertEquals(31f, after.avgForceConcentricA?.toFloat())
-        assertEquals(33f, after.avgForceConcentricB?.toFloat())
+        assertEquals(20f, after.avgForceConcentricA?.toFloat())
+        assertEquals(21f, after.avgForceConcentricB?.toFloat())
+        assertEquals(now - 60_000L, after.updatedAt, "the local stamp is not rewritten either")
     }
 
     @Test
-    fun `mergeSessionsLww preserves biomechanics fields when incoming is null`() = runTest {
+    fun `mergeSessionsLww keeps local biomechanics fields when a newer pull has none`() = runTest {
         setUp()
 
         val sessionId = "issue-591-set-3"
@@ -324,80 +322,5 @@ class Issue591SyncLwwTest {
             counterweightKg = session.counterweightKg.toDouble(),
             rackItemsJson = session.rackItemsJson,
         )
-    }
-
-    /**
-     * Issue #591 follow-up (chatgpt-codex-connector P2): the
-     * batched preservation SELECTs must chunk when the incoming id
-     * list exceeds SQLite's host-parameter limit (commonly 999 on
-     * Android). Build a payload that spans 3 chunks at
-     * `BATCH_LOOKUP_CHUNK_SIZE = 500` and assert every session still
-     * preserves its locally captured metric column.
-     */
-    @Test
-    fun `mergeSessionsLww chunked batch lookup preserves metrics across all chunks`() = runTest {
-        setUp()
-
-        val chunkSize = 500
-        val totalCount = chunkSize * 3 + 17 // spans 4 chunks
-
-        val sessions = (0 until totalCount).map { i ->
-            val sessionId = "chunked-$i"
-            // GIVEN: each session starts as a local row with a unique
-            // metric value so we can detect cross-chunk contamination
-            // or off-by-one chunking bugs.
-            insertLocalSession(
-                WorkoutSession(
-                    id = sessionId,
-                    timestamp = now + i * 1_000L,
-                    mode = "OldSchool",
-                    reps = 8,
-                    weightPerCableKg = 30f,
-                    duration = 60_000L,
-                    totalReps = 8,
-                    warmupReps = 0,
-                    workingReps = 8,
-                    exerciseName = "Squat",
-                    peakForceConcentricA = 40f + i, // unique per session
-                    profileId = testProfileId,
-                ),
-                updatedAt = now - 60_000L,
-            )
-            // Incoming pull with NEWER updatedAt but null metrics so
-            // the LWW preservation guard must restore the local value.
-            WorkoutSession(
-                id = sessionId,
-                timestamp = now + i * 1_000L,
-                mode = "OldSchool",
-                reps = 8,
-                weightPerCableKg = 30f,
-                duration = 60_000L,
-                totalReps = 8,
-                warmupReps = 0,
-                workingReps = 8,
-                exerciseName = "Squat",
-                profileId = testProfileId,
-            )
-        }
-        repository.mergeSessionsLww(
-            sessions = sessions,
-            updatedAtBySessionId = sessions.associate { it.id to (now + 10_000_000L + it.timestamp) },
-        )
-
-        // Spot-check a session from each chunk boundary plus the
-        // middle of one chunk. If chunking dropped or reordered ids,
-        // one of these will land on the wrong row.
-        val samples = listOf(0, chunkSize - 1, chunkSize, chunkSize * 2 - 1, chunkSize * 2, totalCount - 1)
-        for (i in samples) {
-            val after = database.phoenixDatabaseQueries
-                .selectSessionById("chunked-$i")
-                .executeAsOneOrNull()
-            assertNotNull(after, "chunked-$i must exist after merge")
-            assertEquals(
-                40f + i,
-                after.peakForceConcentricA?.toFloat(),
-                "chunked-$i local metric must survive chunked preservation lookup",
-            )
-        }
     }
 }

@@ -777,7 +777,7 @@ data class PortalSyncPullResponse(
 
 /**
  * Pulled workout session -- merged into local DB via INSERT OR IGNORE.
- * Local data wins on conflict (existing sessions are not overwritten).
+ * Existing local sessions are never REPLACEd by a pull (KD-3).
  * Multi-device scenario: sessions from device A appear on device B after pull.
  */
 @Serializable
@@ -801,13 +801,18 @@ data class PullWorkoutSessionDto(
      */
     val notes: String? = null,
     /**
-     * Server-canonical last-write timestamp (ISO 8601). Mobile uses this as
-     * the LWW gate when merging the pull row into the local WorkoutSession
-     * table. Optional for backward compat with Edge Function responses
-     * that pre-date Phase 3.3 — when null, mobile falls back to the
-     * legacy INSERT OR IGNORE path. Resolves audit item #1 mobile half.
+     * Server-canonical last-write timestamp (ISO 8601). Stamped onto newly
+     * inserted pulled rows, gates the exercise-tag update on pulled-origin
+     * rows, and drives the SessionNotes LWW. It never causes an existing
+     * local session row to be rebuilt.
      */
     val updatedAt: String? = null,
+    // Session-level config, taken from the first exercise row at push time
+    // (PortalSyncAdapter.buildPortalSession). Null when the pushed value was 0.
+    val eccentricLoad: Int? = null,
+    val echoLevel: Int? = null,
+    val warmupReps: Int? = null,
+    val workingReps: Int? = null,
     val exercises: List<PullExerciseDto> = emptyList(),
 )
 

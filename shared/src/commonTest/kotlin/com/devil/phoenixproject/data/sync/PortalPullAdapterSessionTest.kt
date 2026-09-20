@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.sync
 
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNull
 
 class PortalPullAdapterSessionTest {
 
@@ -43,7 +44,7 @@ class PortalPullAdapterSessionTest {
         assertEquals("OldSchool", session.mode) // portalModeToMobileMode converts SCREAMING_SNAKE to PascalCase
         assertEquals(60f, session.weightPerCableKg) // max weight across sets (DB stores per-cable, no division needed)
         assertEquals(28, session.totalReps) // 10 + 10 + 8
-        assertEquals("portal-session-1", session.routineSessionId)
+        assertNull(session.routineSessionId, "standalone portal sessions are not routine groups")
         assertEquals("default", session.profileId)
     }
 
@@ -59,6 +60,7 @@ class PortalPullAdapterSessionTest {
             exerciseCount = 2,
             routineName = "Push Day",
             workoutMode = "OLD_SCHOOL",
+            routineSessionId = "portal-session-2",
             exercises = listOf(
                 PullExerciseDto(
                     id = "ex-1",
@@ -88,8 +90,9 @@ class PortalPullAdapterSessionTest {
         assertEquals(2, sessions.size)
         assertEquals("Bench Press", sessions[0].exerciseName)
         assertEquals("Shoulder Press", sessions[1].exerciseName)
-        // Both share the same routineSessionId
-        assertEquals(sessions[0].routineSessionId, sessions[1].routineSessionId)
+        // Both share the portal routineSessionId
+        assertEquals("portal-session-2", sessions[0].routineSessionId)
+        assertEquals("portal-session-2", sessions[1].routineSessionId)
         assertEquals("Push Day", sessions[0].routineName)
     }
 

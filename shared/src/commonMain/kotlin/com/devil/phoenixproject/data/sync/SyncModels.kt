@@ -95,25 +95,6 @@ data class PortalUser(val id: String, val email: String, val displayName: String
 // bodies are defined in PortalSyncDtos.kt (PortalSyncPayload, PortalSyncPullResponse, etc.).
 
 @Serializable
-data class WorkoutSessionSyncDto(
-    val clientId: String,
-    val serverId: String? = null,
-    val timestamp: Long,
-    val mode: String,
-    val targetReps: Int,
-    val weightPerCableKg: Float,
-    /** Session duration in milliseconds. Matches [com.devil.phoenixproject.domain.model.WorkoutSession.duration]. */
-    val duration: Long = 0L,
-    val totalReps: Int = 0,
-    val exerciseId: String? = null,
-    val exerciseName: String? = null,
-    val displayMultiplier: Int? = null,
-    val deletedAt: Long? = null,
-    val createdAt: Long,
-    val updatedAt: Long,
-)
-
-@Serializable
 data class PersonalRecordSyncDto(
     val clientId: String,
     val serverId: String? = null,
@@ -128,17 +109,6 @@ data class PersonalRecordSyncDto(
     val phase: String = "COMBINED",
     val volume: Float = 0f,
     val cableCount: Int? = null,
-    val deletedAt: Long? = null,
-    val createdAt: Long,
-    val updatedAt: Long,
-)
-
-@Serializable
-data class RoutineSyncDto(
-    val clientId: String,
-    val serverId: String? = null,
-    val name: String,
-    val description: String = "",
     val deletedAt: Long? = null,
     val createdAt: Long,
     val updatedAt: Long,
