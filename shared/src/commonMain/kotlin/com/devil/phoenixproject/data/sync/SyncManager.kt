@@ -1001,7 +1001,7 @@ class SyncManager(
         // one sync per completed set, is every set but the last. Re-gather the whole
         // group whenever any of its rows is in the delta.
         val deltaGroupIds = delta.mapNotNullTo(linkedSetOf()) { it.routineSessionId }
-        val repairGroupIds = routineGroupRepairCandidates(activeProfileId, exclude = deltaGroupIds)
+        val repairGroupIds = routineGroupRepairCandidates(activeProfileId)
         val groupIds = deltaGroupIds + repairGroupIds.keys
 
         // 1b. Hold, never split. A sibling this device only pulled and has no
@@ -1990,15 +1990,11 @@ class SyncManager(
      *
      * @return routineSessionId → newest member timestamp for this sync's batch.
      */
-    private suspend fun routineGroupRepairCandidates(
-        profileId: String,
-        exclude: Set<String>,
-    ): Map<String, Long> {
+    private suspend fun routineGroupRepairCandidates(profileId: String): Map<String, Long> {
         val cursor = tokenStorage.getRoutineGroupRepairCursor(profileId)
         if (cursor <= 0L) return emptyMap()
         val candidates = syncRepository
             .getRoutineGroupRepairCandidates(cursor, ROUTINE_GROUP_REPAIR_BATCH, profileId)
-            .filter { (groupId, _) -> groupId !in exclude }
             .toMap()
         if (candidates.isNotEmpty()) {
             Logger.i("SyncManager") {
