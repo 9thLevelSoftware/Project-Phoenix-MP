@@ -1247,5 +1247,11 @@ WHERE gs.rowid = (
         ON LocalOwnershipClaim(owner_user_id, mutation_id)""",
     )
 
+    // Migration 52: portal version of each training cycle (sent as baseUpdatedAt).
+    // Mirrors 52.sqm exactly.
+    52 -> listOf(
+        "ALTER TABLE TrainingCycle ADD COLUMN server_updated_at TEXT",
+    )
+
     else -> emptyList()
 }

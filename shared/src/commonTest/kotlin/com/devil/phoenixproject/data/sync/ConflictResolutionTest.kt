@@ -449,7 +449,7 @@ class ConflictResolutionTest {
                 id = cycleId,
                 name = "Updated Name From Portal",
                 status = "draft", // Not active — only single-active enforcement should change is_active
-                updatedAt = now + 1L,
+                updatedAt = kotlin.time.Instant.fromEpochMilliseconds(now + 1L).toString(),
                 days = emptyList(),
             ),
         )
@@ -514,7 +514,7 @@ class ConflictResolutionTest {
                     templateId = "template_531",
                     currentWeek = 1,
                     status = "active",
-                    updatedAt = now + 1L,
+                    updatedAt = kotlin.time.Instant.fromEpochMilliseconds(now + 1L).toString(),
                     days = emptyList(),
                 ),
             ),

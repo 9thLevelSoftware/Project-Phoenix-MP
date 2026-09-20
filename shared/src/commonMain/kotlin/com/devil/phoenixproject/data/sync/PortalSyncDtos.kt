@@ -1,8 +1,20 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.data.repository.WorkoutDeletionScope
+import kotlinx.serialization.KSerializer
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerialName
+import kotlinx.serialization.builtins.nullable
+import kotlinx.serialization.builtins.serializer
+import kotlinx.serialization.descriptors.SerialDescriptor
+import kotlinx.serialization.encoding.Decoder
+import kotlinx.serialization.encoding.Encoder
+import kotlinx.serialization.json.JsonDecoder
+import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.longOrNull
 
 /**
  * DTOs matching the portal's 3-tier database structure:
@@ -125,6 +137,13 @@ data class PortalExerciseDto(
      * this field is unverified; do not assume the portal never recomputes it.
      */
     val velocityEstimatedOneRepMaxKg: Float? = null,
+    /**
+     * Physical cables used for this exercise: exactly 1 or 2, or null when unknown.
+     * The portal rejects the whole push batch for any other value, so always build
+     * it via [PortalMappings.cableCountToWire]. Null is omitted on the wire
+     * (explicitNulls = false); older portals strip the unknown key.
+     */
+    val cableCount: Int? = null,
     val sets: List<PortalSetDto> = emptyList(),
 )
 
@@ -305,6 +324,13 @@ data class PortalTrainingCycleSyncDto(
     val progressStatePresent: Boolean? = null,
     val progressState: PortalCycleProgressStateSyncDto? = null,
     val days: List<PortalCycleDaySyncDto> = emptyList(),
+    /**
+     * The portal's `updated_at` for this cycle as last seen by this device (from a
+     * pull's `updatedAt` or a push response's `cycleVersions`), sent back verbatim.
+     * The portal keeps name/days edited after this version. Null (omitted on the
+     * wire) for cycles never synced; older portals ignore the key.
+     */
+    val baseUpdatedAt: String? = null,
 )
 
 @Serializable
@@ -647,6 +673,12 @@ data class PortalSyncPushResponse(
      * servers, so it defaults to empty.
      */
     val skippedDeleted: SkippedDeletedDto = SkippedDeletedDto(),
+    /**
+     * cycle id -> server `updated_at` (ISO) for cycles whose pushed structure was
+     * applied. The device stores it as the cycle's next baseUpdatedAt. A cycle
+     * missing here keeps its previous base. Absent on older portals.
+     */
+    val cycleVersions: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -962,6 +994,8 @@ data class PullExerciseDto(
     val name: String = "",
     val muscleGroup: String = "General",
     val orderIndex: Int = 0,
+    /** 1 or 2; null/absent = unknown (older portals omit it). Never treat null as 2. */
+    val cableCount: Int? = null,
     val sets: List<PullSetDto> = emptyList(),
 )
 
@@ -1070,14 +1104,45 @@ data class PullTrainingCycleDto(
     val status: String = "draft",
     val startedAt: String? = null,
     val lastUsedAt: String? = null,
-    val updatedAt: Long? = null,
     val progressionSettingsPresent: Boolean? = null,
     val progressionSettings: String? = null,
     val deloadSettings: String? = null,
     val progressStatePresent: Boolean? = null,
     val progressState: PortalCycleProgressStateSyncDto? = null,
     val days: List<PullCycleDayDto> = emptyList(),
+    /**
+     * Server `updated_at` as raw ISO text. Numeric epoch-millis responses from the
+     * short-lived mobile contract are accepted and normalized to ISO for compatibility.
+     */
+    @Serializable(with = PortalCycleUpdatedAtSerializer::class)
+    val updatedAt: String? = null,
 )
+
+internal object PortalCycleUpdatedAtSerializer : KSerializer<String?> {
+    override val descriptor: SerialDescriptor = String.serializer().nullable.descriptor
+
+    override fun deserialize(decoder: Decoder): String? {
+        val jsonDecoder = decoder as? JsonDecoder
+            ?: throw SerializationException("PortalCycleUpdatedAt requires JSON")
+        return when (val element = jsonDecoder.decodeJsonElement()) {
+            JsonNull -> null
+            is JsonPrimitive -> if (element.isString) {
+                element.content
+            } else {
+                element.longOrNull
+                    ?.let { kotlin.time.Instant.fromEpochMilliseconds(it).toString() }
+                    ?: throw SerializationException("Cycle updatedAt must be ISO text or epoch milliseconds")
+            }
+            else -> throw SerializationException("Cycle updatedAt must be a scalar")
+        }
+    }
+
+    override fun serialize(encoder: Encoder, value: String?) {
+        val jsonEncoder = encoder as? JsonEncoder
+            ?: throw SerializationException("PortalCycleUpdatedAt requires JSON")
+        jsonEncoder.encodeJsonElement(value?.let(::JsonPrimitive) ?: JsonNull)
+    }
+}
 
 @Serializable
 data class PullCycleDayDto(

@@ -167,6 +167,12 @@ interface SyncRepository {
     ) = Unit
 
     /**
+     * Store the portal versions acknowledged by a successful push (`cycleVersions`)
+     * as each cycle's base for the next push. Cycles not in [versions] keep their base.
+     */
+    suspend fun updateCycleServerVersions(versions: Map<String, String>)
+
+    /**
      * Get full PersonalRecord domain objects modified since timestamp, scoped to profile.
      * Returns rich objects with prType, phase, and volume for PortalSyncAdapter PR metadata.
      */
