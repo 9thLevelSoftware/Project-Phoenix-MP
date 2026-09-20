@@ -3852,6 +3852,23 @@ abstract class BaseDataBackupManager(
         supabaseUserId = up.supabase_user_id,
     )
 
+    /**
+     * v6 restore rejects sessions whose profile is absent and drops custom exercise
+     * IDs that are not in the catalog. Auto-backups must therefore ship the
+     * referenced identity rows, not only the workout payload.
+     */
+    private fun referencedUserProfiles(profileIds: Collection<String?>): List<UserProfileBackup> =
+        profileIds.filterNotNull().distinct().mapNotNull { profileId ->
+            queries.getProfileById(profileId).executeAsOneOrNull()?.let(::mapUserProfileToBackup)
+        }
+
+    private fun referencedCustomExercises(exerciseIds: Collection<String?>): List<CustomExerciseBackup> =
+        exerciseIds.filterNotNull().distinct().mapNotNull { exerciseId ->
+            queries.selectExerciseById(exerciseId).executeAsOneOrNull()
+                ?.takeIf { it.isCustom == 1L }
+                ?.let(::mapCustomExerciseToBackup)
+        }
+
     // -- Per-session auto-backup (Phase 36) --
 
     override suspend fun getBackupStats(): BackupStats = withContext(Dispatchers.IO) {
@@ -3869,8 +3886,12 @@ abstract class BaseDataBackupManager(
 
             val metrics = queries.selectMetricsBySession(sessionId).executeAsList()
             val completedSets = queries.selectCompletedSetsBySession(sessionId).executeAsList()
+            val sessions = listOf(session)
 
-            // Build a minimal BackupData with just this session (import-compatible)
+            // Session payload plus the profile/custom-exercise parents v6 restore requires.
+            // Note: mapSessionToBackup called without routineNameResolutionContext.
+            // This means legacy sessions (pre-migration 12) won't get enriched routine names.
+            // Acceptable trade-off: avoids loading all routines for a single-session backup.
             val sessionBackupNowMs = KmpUtils.currentTimeMillis()
             val backupData = BackupData(
                 version = CURRENT_BACKUP_VERSION,
@@ -3878,10 +3899,9 @@ abstract class BaseDataBackupManager(
                     KmpUtils.formatTimestamp(sessionBackupNowMs, "HH:mm:ss") + "Z",
                 appVersion = Constants.APP_VERSION,
                 data = BackupContent(
-                    // Note: mapSessionToBackup called without routineNameResolutionContext.
-                    // This means legacy sessions (pre-migration 12) won't get enriched routine names.
-                    // Acceptable trade-off: avoids loading all routines for a single-session backup.
-                    workoutSessions = listOf(mapSessionToBackup(session)),
+                    userProfiles = referencedUserProfiles(sessions.map { it.profile_id }),
+                    customExercises = referencedCustomExercises(sessions.map { it.exerciseId }),
+                    workoutSessions = sessions.map { mapSessionToBackup(it) },
                     metricSamples = metrics.map { mapMetricToBackup(it) },
                     completedSets = completedSets.map { mapCompletedSetToBackup(it) },
                 ),
@@ -3948,6 +3968,8 @@ abstract class BaseDataBackupManager(
                     KmpUtils.formatTimestamp(routineNowMs, "HH:mm:ss") + "Z",
                 appVersion = Constants.APP_VERSION,
                 data = BackupContent(
+                    userProfiles = referencedUserProfiles(sessions.map { it.profile_id }),
+                    customExercises = referencedCustomExercises(sessions.map { it.exerciseId }),
                     workoutSessions = sessions.map { mapSessionToBackup(it) },
                     metricSamples = allMetrics.map { mapMetricToBackup(it) },
                     completedSets = allCompletedSets.map { mapCompletedSetToBackup(it) },

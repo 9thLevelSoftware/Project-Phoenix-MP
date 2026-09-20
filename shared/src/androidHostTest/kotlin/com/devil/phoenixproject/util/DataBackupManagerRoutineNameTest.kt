@@ -645,6 +645,67 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `exportSession packages referenced profile and custom exercise for fresh restore`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertProfile(
+            id = "user-alpha",
+            name = "Alpha",
+            colorIndex = 3L,
+            createdAt = 1_700_000_000_000,
+            isActive = 1L,
+        )
+        queries.insertDefaultProfilePreferences("user-alpha", 1L)
+        queries.setActiveProfile("user-alpha")
+        val custom = customExerciseBackup("custom-export-session")
+        insertCustomExercise(database, custom)
+
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "session-custom-profile",
+                exerciseId = custom.id,
+                exerciseName = custom.name,
+                timestamp = 1_700_000_000_000L,
+                mode = "OLD_SCHOOL",
+                reps = 8,
+                weightPerCableKg = 40f,
+                duration = 90_000L,
+                totalReps = 8,
+                workingReps = 8,
+                profileId = "user-alpha",
+            ),
+        )
+
+        val result = backupManager.exportSession("session-custom-profile")
+        assertTrue(result.isSuccess, "exportSession should succeed: ${result.exceptionOrNull()?.message}")
+        val filePath = result.getOrThrow()
+        val fileContent = File(filePath).readText()
+        val backupData = testJson.decodeFromString<BackupData>(fileContent)
+
+        assertEquals(listOf("user-alpha"), backupData.data.userProfiles.map { it.id })
+        assertEquals("Alpha", backupData.data.userProfiles.single().name)
+        assertEquals(listOf(custom.id), backupData.data.customExercises.map { it.id })
+        assertEquals(custom.id, backupData.data.workoutSessions.single().exerciseId)
+        assertEquals("user-alpha", backupData.data.workoutSessions.single().profileId)
+
+        val targetDatabase = createTestDatabase()
+        val targetManager = TestDataBackupManager(targetDatabase)
+        val importResult = targetManager.importFromJson(fileContent).getOrThrow()
+        assertEquals(0, importResult.entitiesWithErrors)
+        assertEquals(1, importResult.sessionsImported)
+        assertEquals(1, importResult.customExercisesImported)
+        assertNotNull(targetDatabase.phoenixDatabaseQueries.getProfileById("user-alpha").executeAsOneOrNull())
+        val restoredSession = targetDatabase.phoenixDatabaseQueries.selectSessionById("session-custom-profile").executeAsOne()
+        assertEquals("user-alpha", restoredSession.profile_id)
+        assertEquals(custom.id, restoredSession.exerciseId)
+        assertEquals(
+            1L,
+            targetDatabase.phoenixDatabaseQueries.selectExerciseById(custom.id).executeAsOne().isCustom,
+        )
+
+        File(filePath).delete()
+    }
+
+    @Test
     fun `buffered and streaming completed set imports canonicalize unknown end reasons`() = runTest {
         val backup = BackupData(
             version = CURRENT_BACKUP_VERSION,
@@ -936,6 +997,89 @@ class DataBackupManagerRoutineNameTest {
         // completedSets.sessionId references must match the included sessions
         val completedSetSessionIds = backupData.data.completedSets.map { it.sessionId }.toSet()
         assertEquals(setOf("routine-bench", "routine-row"), completedSetSessionIds)
+
+        File(filePath).delete()
+    }
+
+    @Test
+    fun `exportRoutine packages referenced profile and custom exercises for fresh restore`() = runTest {
+        val queries = database.phoenixDatabaseQueries
+        queries.insertProfile(
+            id = "user-beta",
+            name = "Beta",
+            colorIndex = 4L,
+            createdAt = 1_700_000_000_000,
+            isActive = 1L,
+        )
+        queries.insertDefaultProfilePreferences("user-beta", 1L)
+        queries.setActiveProfile("user-beta")
+        val custom = customExerciseBackup("custom-export-routine")
+        insertCustomExercise(database, custom)
+        database.seedExercise("exercise-catalog-row", "Row", isCustom = false)
+        val sharedRoutineSessionId = "routine-session-custom-profile"
+
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "routine-custom-bench",
+                exerciseId = custom.id,
+                exerciseName = custom.name,
+                routineSessionId = sharedRoutineSessionId,
+                routineName = "Custom Day",
+                timestamp = 1_700_000_000_000L,
+                mode = "OLD_SCHOOL",
+                reps = 8,
+                weightPerCableKg = 40f,
+                duration = 90_000L,
+                totalReps = 8,
+                workingReps = 8,
+                profileId = "user-beta",
+            ),
+        )
+        workoutRepository.saveSession(
+            WorkoutSession(
+                id = "routine-catalog-row",
+                exerciseId = "exercise-catalog-row",
+                exerciseName = "Row",
+                routineSessionId = sharedRoutineSessionId,
+                routineName = "Custom Day",
+                timestamp = 1_700_000_100_000L,
+                mode = "OLD_SCHOOL",
+                reps = 10,
+                weightPerCableKg = 30f,
+                duration = 80_000L,
+                totalReps = 10,
+                workingReps = 10,
+                profileId = "user-beta",
+            ),
+        )
+
+        val result = backupManager.exportRoutine(sharedRoutineSessionId)
+        assertTrue(result.isSuccess, "exportRoutine should succeed: ${result.exceptionOrNull()?.message}")
+        val filePath = result.getOrThrow()
+        val fileContent = File(filePath).readText()
+        val backupData = testJson.decodeFromString<BackupData>(fileContent)
+
+        assertEquals(listOf("user-beta"), backupData.data.userProfiles.map { it.id })
+        assertEquals(listOf(custom.id), backupData.data.customExercises.map { it.id })
+        assertEquals(
+            setOf("routine-custom-bench", "routine-catalog-row"),
+            backupData.data.workoutSessions.map { it.id }.toSet(),
+        )
+
+        val targetDatabase = createTestDatabase()
+        targetDatabase.seedExercise("exercise-catalog-row", "Row", isCustom = false)
+        val targetManager = TestDataBackupManager(targetDatabase)
+        val importResult = targetManager.importFromJson(fileContent).getOrThrow()
+        assertEquals(0, importResult.entitiesWithErrors)
+        assertEquals(2, importResult.sessionsImported)
+        assertEquals(1, importResult.customExercisesImported)
+        assertNotNull(targetDatabase.phoenixDatabaseQueries.getProfileById("user-beta").executeAsOneOrNull())
+        val restoredCustom = targetDatabase.phoenixDatabaseQueries.selectSessionById("routine-custom-bench").executeAsOne()
+        val restoredCatalog = targetDatabase.phoenixDatabaseQueries.selectSessionById("routine-catalog-row").executeAsOne()
+        assertEquals("user-beta", restoredCustom.profile_id)
+        assertEquals(custom.id, restoredCustom.exerciseId)
+        assertEquals("user-beta", restoredCatalog.profile_id)
+        assertEquals("exercise-catalog-row", restoredCatalog.exerciseId)
 
         File(filePath).delete()
     }
