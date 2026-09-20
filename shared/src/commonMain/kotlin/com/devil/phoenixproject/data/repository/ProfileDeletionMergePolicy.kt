@@ -43,6 +43,11 @@ object ProfileDeletionMergePolicy {
     val directProfileOwnedTables: Set<String> = setOf(
         "ActiveWorkoutRuntime",
         "AssessmentResult",
+        // Session tombstones (migration 48). Profile-scoped so the pull request can send
+        // this profile's deleted portal ids, but they must SURVIVE a profile deletion:
+        // once the portal re-scopes the deleted profile's workouts to Default, the
+        // tombstones are what keeps them from reappearing. Never delete or reassign them.
+        "DeletedWorkoutSession",
         "EarnedBadge",
         "ExerciseMvt",
         "ExternalActivity",
