@@ -63,7 +63,6 @@
 
     <!-- Workout controls -->
     <string name="start_workout">Démarrer l\'entraînement</string>
-    <string name="stop_workout">Arrêter l\'entraînement</string>
     <string name="start_exercise">DÉMARRER L\'EXERCICE</string>
     <string name="stop_set">Arrêter la série</string>
     <string name="end_workout">Terminer l\'entraînement</string>
@@ -188,7 +187,6 @@
     <string name="duplicate_routines_message">De nouvelles copies seront créées avec le suffixe \'(Copie)\'.</string>
     <string name="move_to_profile">Déplacer vers le profil</string>
     <string name="copy_to_profile">Copier vers le profil</string>
-    <string name="select_target_profile">Sélectionner le profil cible</string>
     <string name="move_routines_confirm">Déplacer %1$d routines vers %2$s ?</string>
     <string name="copy_routines_confirm">Copier %1$d routines vers %2$s ?</string>
     <string name="no_other_profiles">Aucun autre profil disponible. Créez d\'abord un nouveau profil.</string>
@@ -434,7 +432,6 @@
     <string name="cd_stop">Stop</string>
     <string name="cd_previous">Previous</string>
     <string name="cd_next">Next</string>
-    <string name="cd_select">Select</string>
     <string name="cd_tip">Tip</string>
 
     <!-- Workout -->

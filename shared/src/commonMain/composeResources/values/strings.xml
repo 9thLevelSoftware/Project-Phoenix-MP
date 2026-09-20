@@ -55,7 +55,6 @@
 
     <!-- ==================== Workout controls ==================== -->
     <string name="start_workout">Start Workout</string>
-    <string name="stop_workout">Stop Workout</string>
     <string name="start_exercise">START EXERCISE</string>
     <string name="stop_set">Stop Set</string>
     <string name="end_workout">End Workout</string>
@@ -222,7 +221,6 @@
     <string name="duplicate_routines_message">New copies will be created with \'(Copy)\' suffix.</string>
     <string name="move_to_profile">Move to Profile</string>
     <string name="copy_to_profile">Copy to Profile</string>
-    <string name="select_target_profile">Select Target Profile</string>
     <string name="move_routines_confirm">Move %1$d routines to %2$s?</string>
     <string name="copy_routines_confirm">Copy %1$d routines to %2$s?</string>
     <string name="no_other_profiles">No other profiles available. Create a new profile first.</string>
@@ -517,7 +515,6 @@
     <string name="cd_stop">Stop</string>
     <string name="cd_previous">Previous</string>
     <string name="cd_next">Next</string>
-    <string name="cd_select">Select</string>
     <string name="cd_tip">Tip</string>
 
     <!-- Workout -->

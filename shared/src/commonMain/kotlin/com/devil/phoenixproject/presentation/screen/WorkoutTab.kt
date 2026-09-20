@@ -137,7 +137,6 @@ import projectphoenix.shared.generated.resources.reconnect
 import projectphoenix.shared.generated.resources.save_set
 import projectphoenix.shared.generated.resources.scan
 import projectphoenix.shared.generated.resources.scanning_for_devices
-import projectphoenix.shared.generated.resources.stop_workout
 import projectphoenix.shared.generated.resources.tag_lift_message
 import projectphoenix.shared.generated.resources.tag_lift_title
 import projectphoenix.shared.generated.resources.workout_teardown_finishing
