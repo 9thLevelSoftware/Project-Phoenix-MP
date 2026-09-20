@@ -2452,8 +2452,31 @@ class SyncManagerTest {
         assertEquals(listOf("cycle-active"), notice.deletedActiveCycleIds)
         assertEquals(listOf("routine-edited"), notice.discardedRoutineEditIds)
         assertTrue(notice.message.isNotBlank())
-        manager.clearServerDeletionNotice()
+        manager.clearServerDeletionNotice(notice)
         assertNull(manager.serverDeletionNotice.value)
+    }
+
+    @Test
+    fun deletingInactiveLocallyEditedCycleSurfacesNotice() = runTest {
+        setupAuthenticated()
+        tokenStorage.setLastSyncTimestamp(5_000L)
+        fakeSyncRepo.localCycleIds = mutableSetOf("cycle-edited")
+        fakeSyncRepo.locallyEditedCycleIds = mutableSetOf("cycle-edited")
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        fakeApi.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = 1740916800000L,
+                deletedCycleIds = listOf("cycle-edited"),
+            ),
+        )
+        val manager = createManager()
+
+        manager.sync()
+
+        val notice = assertNotNull(manager.serverDeletionNotice.value)
+        assertEquals(listOf("cycle-edited"), notice.discardedCycleEditIds)
+        assertTrue(notice.deletedActiveCycleIds.isEmpty())
+        assertTrue(notice.message.contains("unsynced changes"))
     }
 
     @Test
@@ -2488,6 +2511,49 @@ class SyncManagerTest {
         assertEquals(listOf(routineId), notice.discardedRoutineEditIds)
         assertEquals(listOf(cycleId), notice.deletedActiveCycleIds)
         assertEquals(2, fakeSyncRepo.serverDeletionCalls.size)
+    }
+
+    @Test
+    fun clearingDisplayedDeletionNoticeDoesNotDiscardNewerMergedWarning() = runTest {
+        setupAuthenticated()
+        tokenStorage.setLastSyncTimestamp(5_000L)
+        val routineId = "11111111-1111-4111-8111-111111111111"
+        val cycleId = "22222222-2222-4222-8222-222222222222"
+        fakeSyncRepo.routinesToReturn = listOf(
+            Routine(id = routineId, name = "Edited", exercises = emptyList(), updatedAt = 6_000L),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:00:00Z",
+                skippedDeleted = SkippedDeletedDto(routines = listOf(routineId)),
+            ),
+        )
+        fakeApi.pullResult = Result.success(PortalSyncPullResponse(syncTime = 1740916800000L))
+        val manager = createManager()
+
+        manager.sync()
+        val displayed = assertNotNull(manager.serverDeletionNotice.value)
+        assertEquals(listOf(routineId), displayed.discardedRoutineEditIds)
+
+        fakeSyncRepo.localCycleIds = mutableSetOf(cycleId)
+        fakeSyncRepo.locallyEditedCycleIds = mutableSetOf(cycleId)
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(
+                syncTime = "2026-03-02T12:01:00Z",
+                skippedDeleted = SkippedDeletedDto(cycles = listOf(cycleId)),
+            ),
+        )
+        fakeApi.pullResult = Result.success(PortalSyncPullResponse(syncTime = 1740916860000L))
+
+        manager.sync()
+        val merged = assertNotNull(manager.serverDeletionNotice.value)
+        assertEquals(listOf(routineId), merged.discardedRoutineEditIds)
+        assertEquals(listOf(cycleId), merged.discardedCycleEditIds)
+
+        manager.clearServerDeletionNotice(displayed)
+        assertEquals(merged, manager.serverDeletionNotice.value)
+        manager.clearServerDeletionNotice(merged)
+        assertNull(manager.serverDeletionNotice.value)
     }
 
     @Test

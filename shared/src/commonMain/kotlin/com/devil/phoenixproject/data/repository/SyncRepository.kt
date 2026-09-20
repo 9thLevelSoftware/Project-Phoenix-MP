@@ -26,6 +26,8 @@ data class ServerDeletionResult(
     val deletedCycleIds: List<String> = emptyList(),
     /** Deleted routines that carried a local edit newer than lastSync (discarded: delete wins). */
     val discardedRoutineEditIds: List<String> = emptyList(),
+    /** Deleted cycles whose complete-graph clock was newer than lastSync (discarded: delete wins). */
+    val discardedCycleEditIds: List<String> = emptyList(),
     /** Deleted cycles that were active or had progress (user-visible loss of the current program). */
     val deletedActiveCycleIds: List<String> = emptyList(),
     /** Local-only `cycle_routine_*` template routines removed with their deleted cycle. */
@@ -425,8 +427,8 @@ interface SyncRepository {
      * push), together with their children. "Delete if present": unknown ids
      * are ignored. No local tombstone is left behind, so nothing is pushed
      * back (the server already knows). Delete wins over unsynced local edits
-     * (routine `updatedAt > lastSync`); those are reported in the result so
-     * the caller can log them. Cycle days that referenced a deleted routine
+     * (`updatedAt > lastSync` for either entity); those are reported in the
+     * result so the caller can notify the user. Cycle days that referenced a deleted routine
      * keep the day with `routine_id = NULL`, mirroring the server FK.
      * Local-only `cycle_routine_*` template routines used only by a deleted
      * cycle are removed with it. Discarded edits are not classified when

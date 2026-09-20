@@ -8,7 +8,6 @@ import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullRoutineExerciseDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
-import com.devil.phoenixproject.data.sync.PullCycleDayDto
 import com.devil.phoenixproject.data.sync.PortalCycleProgressStateSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.data.sync.PulledWorkoutDeletionDto
@@ -2541,6 +2540,29 @@ class SqlDelightSyncRepositoryTest {
 
         assertEquals(listOf("routine-x"), result.deletedRoutineIds)
         assertTrue(result.discardedRoutineEditIds.isEmpty())
+    }
+
+    @Test
+    fun `applyServerDeletions reports inactive cycle edited after last sync without progress`() = runTest {
+        seedRoutineAndCycles()
+        val queries = database.phoenixDatabaseQueries
+        queries.touchTrainingCycleUpdatedAt(
+            updatedAt = 1_700_000_000_900,
+            cycleId = "cycle-keep",
+        )
+        assertEquals(0L, queries.selectTrainingCycleById("cycle-keep").executeAsOne().is_active)
+        assertNull(queries.selectCycleProgressByCycle("cycle-keep").executeAsOneOrNull())
+
+        val result = repository.applyServerDeletions(
+            ownerUserId = "owner-user",
+            routineIds = emptyList(),
+            cycleIds = listOf("cycle-keep"),
+            lastSync = 1_700_000_000_500,
+        )
+
+        assertEquals(listOf("cycle-keep"), result.discardedCycleEditIds)
+        assertTrue(result.deletedActiveCycleIds.isEmpty())
+        assertNull(queries.selectTrainingCycleById("cycle-keep").executeAsOneOrNull())
     }
 
     @Test

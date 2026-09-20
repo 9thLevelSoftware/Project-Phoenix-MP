@@ -401,6 +401,8 @@ class FakeSyncRepository : SyncRepository {
 
     /** Subset of [localCycleIds] the fake treats as active / in progress. */
     var activeLocalCycleIds: MutableSet<String> = mutableSetOf()
+    /** Subset of [localCycleIds] the fake treats as edited after lastSync. */
+    var locallyEditedCycleIds: MutableSet<String> = mutableSetOf()
     var applyServerDeletionsShouldFail: Boolean = false
 
     override suspend fun applyServerDeletions(
@@ -423,6 +425,7 @@ class FakeSyncRepository : SyncRepository {
             discardedRoutineEditIds = removedRoutines
                 .filter { lastSync > 0L && (it.updatedAt ?: 0L) > lastSync }
                 .map { it.id },
+            discardedCycleEditIds = if (lastSync > 0L) removedCycles.filter { it in locallyEditedCycleIds } else emptyList(),
             deletedActiveCycleIds = removedCycles.filter { it in activeLocalCycleIds },
         )
     }

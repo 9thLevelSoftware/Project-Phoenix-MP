@@ -785,7 +785,7 @@ class ConflictResolutionTest {
             queries.insertRoutine(
                 id = id,
                 name = id,
-                description = null,
+                description = "",
                 createdAt = now,
                 lastUsed = null,
                 useCount = 0L,

@@ -45,6 +45,7 @@ import kotlinx.coroutines.sync.withLock
  */
 data class ServerDeletionNotice(
     val discardedRoutineEditIds: List<String> = emptyList(),
+    val discardedCycleEditIds: List<String> = emptyList(),
     val deletedActiveCycleIds: List<String> = emptyList(),
 ) {
     val message: String
@@ -54,6 +55,9 @@ data class ServerDeletionNotice(
             }
             if (discardedRoutineEditIds.isNotEmpty()) {
                 add("A routine deleted on the portal had unsynced changes on this device; those changes were discarded.")
+            }
+            if (discardedCycleEditIds.isNotEmpty()) {
+                add("A training cycle deleted on the portal had unsynced changes on this device; those changes were discarded.")
             }
         }.joinToString(" ")
 }
@@ -433,8 +437,9 @@ class SyncManager(
 
     /**
      * Set when a server-reported delete removed something the user will notice
-     * (an unsynced routine edit, or the active / in-progress cycle). The UI can
-     * show [ServerDeletionNotice.message] and then call [clearServerDeletionNotice].
+     * (an unsynced routine/cycle edit, or the active / in-progress cycle). The UI can
+     * show [ServerDeletionNotice.message] and then call [clearServerDeletionNotice]
+     * with the notice it actually displayed.
      */
     val serverDeletionNotice: StateFlow<ServerDeletionNotice?> = _serverDeletionNotice.asStateFlow()
 
@@ -2345,11 +2350,23 @@ class SyncManager(
                     "local cycle progress removed (delete wins): ${result.deletedActiveCycleIds.joinToString()}"
             }
         }
-        if (result.discardedRoutineEditIds.isNotEmpty() || result.deletedActiveCycleIds.isNotEmpty()) {
+        if (result.discardedCycleEditIds.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                "Server deleted ${result.discardedCycleEditIds.size} cycle(s) with unsynced local edits " +
+                    "($source); local edits discarded (delete wins): ${result.discardedCycleEditIds.joinToString()}"
+            }
+        }
+        if (
+            result.discardedRoutineEditIds.isNotEmpty() ||
+            result.discardedCycleEditIds.isNotEmpty() ||
+            result.deletedActiveCycleIds.isNotEmpty()
+        ) {
             _serverDeletionNotice.update { existing ->
                 ServerDeletionNotice(
                     discardedRoutineEditIds =
                         (existing?.discardedRoutineEditIds.orEmpty() + result.discardedRoutineEditIds).distinct(),
+                    discardedCycleEditIds =
+                        (existing?.discardedCycleEditIds.orEmpty() + result.discardedCycleEditIds).distinct(),
                     deletedActiveCycleIds =
                         (existing?.deletedActiveCycleIds.orEmpty() + result.deletedActiveCycleIds).distinct(),
                 )
@@ -2362,9 +2379,9 @@ class SyncManager(
         }
     }
 
-    /** Clears [serverDeletionNotice] once the UI has shown it. */
-    fun clearServerDeletionNotice() {
-        _serverDeletionNotice.value = null
+    /** Clears [notice] only if it is still the exact notice the UI displayed. */
+    fun clearServerDeletionNotice(notice: ServerDeletionNotice) {
+        _serverDeletionNotice.update { current -> if (current == notice) null else current }
     }
 
     private fun getPlatformName(): String {

@@ -2262,6 +2262,7 @@ class SqlDelightSyncRepository(
         val deletedRoutines = mutableListOf<String>()
         val discardedRoutineEdits = mutableListOf<String>()
         val deletedCycles = mutableListOf<String>()
+        val discardedCycleEdits = mutableListOf<String>()
         val deletedActiveCycles = mutableListOf<String>()
         val deletedTemplateRoutines = mutableListOf<String>()
 
@@ -2288,6 +2289,9 @@ class SqlDelightSyncRepository(
                 val cycle = queries.selectTrainingCycleById(cycleId).executeAsOneOrNull() ?: continue
                 if (!profileOwnerMatches(cycle.profile_id, ownerUserId)) continue
                 val hadProgress = queries.selectCycleProgressByCycle(cycleId).executeAsOneOrNull() != null
+                if (lastSync > 0L && cycle.deletedAt == null && cycle.updatedAt > lastSync) {
+                    discardedCycleEdits += cycleId
+                }
                 if (cycle.deletedAt == null && (cycle.is_active == 1L || hadProgress)) {
                     deletedActiveCycles += cycleId
                 }
@@ -2322,6 +2326,7 @@ class SqlDelightSyncRepository(
             deletedRoutineIds = deletedRoutines,
             deletedCycleIds = deletedCycles,
             discardedRoutineEditIds = discardedRoutineEdits,
+            discardedCycleEditIds = discardedCycleEdits,
             deletedActiveCycleIds = deletedActiveCycles,
             deletedTemplateRoutineIds = deletedTemplateRoutines,
         )
