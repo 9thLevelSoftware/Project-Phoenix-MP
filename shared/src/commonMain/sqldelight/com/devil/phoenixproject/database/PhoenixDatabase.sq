@@ -3613,8 +3613,8 @@ WHERE (
 AND deletedAt IS NULL
 AND profile_id = :profileId;
 
--- Existing exercises from before duration sync must be omitted from pull parity until
--- the portal sends an authoritative duration (including an explicit null).
+-- Existing exercises from before duration sync keep their parent eligible for a full pull
+-- until the portal sends an authoritative duration (including an explicit null).
 selectRoutineIdsNeedingDurationBackfill:
 SELECT DISTINCT Routine.id FROM Routine
 JOIN RoutineExercise ON RoutineExercise.routineId = Routine.id

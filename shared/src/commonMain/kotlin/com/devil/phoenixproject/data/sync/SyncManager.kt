@@ -1762,6 +1762,9 @@ class SyncManager(
         val deltaMarkerMatches = deltaPullKey != null && storedDeltaPullKey == deltaPullKey
         val durationBackfillRoutineIds = syncRepository
             .getRoutineIdsNeedingDurationBackfill(mergeProfileId)
+            // Template-derived cycle routines are local-only and cannot converge through
+            // the portal's UUID contract. They must not pin every later pull to lastSync=0.
+            .filter(CANONICAL_UUID_REGEX::matches)
             .toHashSet()
         // Legacy rows require one complete server snapshot to establish whether duration was
         // explicitly null or merely absent from older sync payloads. Keep routine IDs in parity
