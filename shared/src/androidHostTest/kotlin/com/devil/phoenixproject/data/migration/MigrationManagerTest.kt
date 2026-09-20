@@ -26,13 +26,57 @@ import org.junit.Test
 
 class MigrationManagerTest {
 
+    private lateinit var driver: app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
     private lateinit var database: com.devil.phoenixproject.database.PhoenixDatabase
     private lateinit var migrationManager: MigrationManager
 
     @Before
     fun setup() {
-        database = createTestDatabase()
+        driver = createTestDriver()
+        database = PhoenixDatabase(driver)
         migrationManager = createMigrationManager(database)
+    }
+
+    @Test
+    fun `startup copies the legacy training max to its owner exactly once`() = runTest {
+        // Migration 49 ships DDL only: attributing a legacy value needs tables and
+        // profile_id columns that SchemaManifest heals rather than the migration chain
+        // creating them, and a missing column is a non-recoverable statement that fails the
+        // database open on iOS. So the copy runs here, after reconcileFullSchema and after
+        // ensureDefaultProfile — which is also why a database with no UserProfile row at
+        // migrate time still gets its value, assigned to the now-sole default profile.
+        val queries = database.phoenixDatabaseQueries
+        val settings = MapSettings()
+        insertMinimalExercise(id = "bench", name = "Bench Press")
+        driver.execute(null, "UPDATE Exercise SET one_rep_max_kg = 100.0 WHERE id = 'bench'", 0)
+
+        createMigrationManager(database, settings = settings).runRequiredMigrations()
+
+        assertEquals(
+            listOf("default" to 100.0),
+            queries.selectTrainingMaxRowsForTest("bench").executeAsList()
+                .map { it.profile_id to it.one_rep_max_kg },
+        )
+
+        // One-shot: a second startup does not re-run the copy, so a value the user has
+        // since changed is not quietly reverted to the legacy number.
+        queries.upsertTrainingMax(
+            exerciseId = "bench",
+            profileId = "default",
+            oneRepMaxKg = 130.0,
+            source = "MANUAL",
+            updatedAt = 1L,
+        )
+        insertMinimalExercise(id = "squat", name = "Squat")
+        driver.execute(null, "UPDATE Exercise SET one_rep_max_kg = 150.0 WHERE id = 'squat'", 0)
+        createMigrationManager(database, settings = settings).runRequiredMigrations()
+
+        assertEquals(
+            listOf("default" to 130.0),
+            queries.selectTrainingMaxRowsForTest("bench").executeAsList()
+                .map { it.profile_id to it.one_rep_max_kg },
+        )
+        assertEquals(emptyList(), queries.selectTrainingMaxRowsForTest("squat").executeAsList())
     }
 
     private fun createMigrationManager(

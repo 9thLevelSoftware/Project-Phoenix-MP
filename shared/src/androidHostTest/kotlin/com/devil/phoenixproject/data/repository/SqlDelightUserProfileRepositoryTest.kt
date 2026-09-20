@@ -17,6 +17,7 @@ import com.devil.phoenixproject.domain.model.VbtPreferences
 import com.devil.phoenixproject.domain.model.WorkoutPreferences
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.createTestSchema
+import com.devil.phoenixproject.testutil.seedExercise
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
 import java.util.concurrent.CountDownLatch
@@ -1191,6 +1192,36 @@ class SqlDelightUserProfileRepositoryTest {
         assertNotNull(merged)
         assertEquals(2, merged.totalWorkouts.toInt())
         assertEquals(22, merged.totalReps.toInt())
+    }
+
+    @Test
+    fun deletingAProfileCarriesItsTrainingMaxesToTheTargetWithoutRaisingTheTargets() = runTest {
+        // A profile delete is a MERGE: everything the profile owned is reassigned to the
+        // target. ExerciseTrainingMax CASCADEs off UserProfile, so without an explicit
+        // reassignment the merged member's training maxes would vanish with the row.
+        // The target's own value must win, or a merge could raise what the machine pulls
+        // for the surviving profile.
+        ready()
+        val queries = database.phoenixDatabaseQueries
+        database.seedExercise("bench")
+        database.seedExercise("squat")
+        val source = repository.createProfile("Source", 1)
+        queries.upsertTrainingMax("bench", source.id, 140.0, "MANUAL", 20L)
+        queries.upsertTrainingMax("squat", source.id, 180.0, "MANUAL", 20L)
+        queries.upsertTrainingMax("bench", "default", 90.0, "MANUAL", 10L)
+
+        assertTrue(repository.deleteProfile(source.id))
+
+        assertEquals(
+            listOf("default" to 90.0),
+            queries.selectTrainingMaxRowsForTest("bench").executeAsList()
+                .map { it.profile_id to it.one_rep_max_kg },
+        )
+        assertEquals(
+            listOf("default" to 180.0),
+            queries.selectTrainingMaxRowsForTest("squat").executeAsList()
+                .map { it.profile_id to it.one_rep_max_kg },
+        )
     }
 
     private suspend fun ready() {

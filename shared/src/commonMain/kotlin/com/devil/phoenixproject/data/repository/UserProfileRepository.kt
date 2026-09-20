@@ -261,6 +261,10 @@ class SqlDelightUserProfileRepository(
                 queries.deleteRpgAttributesByProfile(targetProfileId)
                 queries.reassignAssessmentResultProfile(targetProfileId, id)
                 queries.reassignVelocityOneRepMaxProfile(targetProfileId, id)
+                // Must run BEFORE deleteProfile: ExerciseTrainingMax CASCADEs off
+                // UserProfile (migration 49), so the merged profile's training maxes would
+                // otherwise disappear with its row. The target's own value wins.
+                queries.reassignTrainingMaxProfile(targetProfileId, id)
                 queries.reassignProgressionProfile(targetProfileId, id)
                 queries.deleteIntegrationStatusByProfile(id)
                 queries.deleteIntegrationSyncCursorByProfile(id)

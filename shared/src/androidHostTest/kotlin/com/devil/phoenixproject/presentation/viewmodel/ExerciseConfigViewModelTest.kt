@@ -83,6 +83,37 @@ class ExerciseConfigViewModelTest {
     }
 
     @Test
+    fun `onSave coerces the per-rep progression to the machine's bound`() = runTest {
+        // The command path clamps progression to +/-3 kg per rep for every set, so a
+        // larger saved number just makes the editor promise something the machine will
+        // never do (F-020). Coerce on save, in both directions and in either unit.
+        fun savedProgressionKg(displayChange: Int, unit: WeightUnit): Float {
+            val viewModel = ExerciseConfigViewModel()
+            viewModel.initialize(
+                exercise = benchRoutineExercise(
+                    id = "rex-progression",
+                    setReps = listOf(10),
+                    weightPerCableKg = 20f,
+                    setWeightsPerCableKg = listOf(20f),
+                ),
+                unit = unit,
+                toDisplay = { kg, u -> if (u == WeightUnit.LB) kg * 2f else kg },
+                toKg = { display, u -> if (u == WeightUnit.LB) display / 2f else display },
+            )
+            viewModel.onWeightChange(displayChange)
+            var saved: RoutineExercise? = null
+            viewModel.onSave { updated -> saved = updated }
+            return assertNotNull(saved).progressionKg
+        }
+
+        assertEquals(3f, savedProgressionKg(10, WeightUnit.KG))
+        assertEquals(-3f, savedProgressionKg(-10, WeightUnit.KG))
+        assertEquals(2f, savedProgressionKg(2, WeightUnit.KG))
+        // 10 lb at this fixture's 2x conversion is 5 kg, which still coerces to 3.
+        assertEquals(3f, savedProgressionKg(10, WeightUnit.LB))
+    }
+
+    @Test
     fun `onSave applies uniform rest time when per-set rest disabled`() = runTest {
         val viewModel = ExerciseConfigViewModel()
         val exercise = RoutineExercise(

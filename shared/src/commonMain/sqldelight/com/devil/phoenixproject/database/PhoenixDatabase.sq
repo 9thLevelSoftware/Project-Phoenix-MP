@@ -452,7 +452,8 @@ CREATE INDEX idx_assessment_profile ON AssessmentResult(profile_id);
 
 -- ==================== VELOCITY-BASED 1RM ESTIMATES ====================
 -- Auto-computed velocity 1RM time-series (issue #517). Separate from
--- AssessmentResult (wizard) and from Exercise.oneRepMaxKg (authoritative true 1RM).
+-- AssessmentResult (wizard) and from the per-profile training max
+-- (ExerciseTrainingMax, migration 49).
 
 CREATE TABLE VelocityOneRepMaxEstimate (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -3790,15 +3791,23 @@ selectTrainingMax:
 SELECT one_rep_max_kg FROM ExerciseTrainingMax
 WHERE exercise_id = :exerciseId AND profile_id = :profileId;
 
-selectTrainingMaxesForProfile:
-SELECT exercise_id, one_rep_max_kg FROM ExerciseTrainingMax WHERE profile_id = :profileId;
-
 upsertTrainingMax:
 INSERT OR REPLACE INTO ExerciseTrainingMax(exercise_id, profile_id, one_rep_max_kg, source, updated_at)
 VALUES (:exerciseId, :profileId, :oneRepMaxKg, :source, :updatedAt);
 
 deleteTrainingMax:
 DELETE FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId AND profile_id = :profileId;
+
+-- Profile deletion is a MERGE into a target profile: every profile-scoped row is
+-- reassigned before the UserProfile row goes. ExerciseTrainingMax CASCADEs off
+-- UserProfile, so its rows have to move in the same transaction or they vanish with it.
+-- The TARGET's own value always wins (INSERT OR IGNORE), so a merge can never raise the
+-- surviving profile's commanded load from the deleted profile's number; the source rows
+-- are then removed by the cascade.
+reassignTrainingMaxProfile:
+INSERT OR IGNORE INTO ExerciseTrainingMax(exercise_id, profile_id, one_rep_max_kg, source, updated_at)
+SELECT exercise_id, :targetProfileId, one_rep_max_kg, source, updated_at
+FROM ExerciseTrainingMax WHERE profile_id = :profileId;
 
 -- Compensating rollback for a failed assessment save (see SqlDelightAssessmentRepository):
 -- put the profile's previous training max back, but only while the value the failed save
@@ -3848,7 +3857,11 @@ DELETE FROM ExerciseTrainingMax WHERE exercise_id = :exerciseId;
 
 -- Test-only: assert that a code path wrote no training max anywhere.
 countTrainingMaxRowsForTest:
-SELECT COUNT(*) FROM ExerciseTrainingMax;
+SELECT COUNT(*) FROM ExerciseTrainingMax;
+-- Test-only: who ended up owning an exercise's training max, and with what value.
+selectTrainingMaxRowsForTest:
+SELECT profile_id, one_rep_max_kg FROM ExerciseTrainingMax
+WHERE exercise_id = :exerciseId ORDER BY profile_id;
 
 -- The migration 49 legacy copy. It lives here and NOT in 49.sqm: attributing a value
 -- needs UserProfile, PersonalRecord, AssessmentResult, VelocityOneRepMaxEstimate,

@@ -401,7 +401,8 @@ class ExerciseConfigViewModel constructor(
     }
 
     /**
-     * Load mode-independent baselines: velocity estimate and stored Exercise.oneRepMaxKg.
+     * Load mode-independent baselines: velocity estimate and the active profile's
+     * training max (plus any unclaimed legacy value, which is offered, never used).
      * Called once per initialize; these do not change when the workout mode selector changes.
      */
     private fun loadModeIndependentBaselines(exerciseId: String) {
@@ -455,7 +456,7 @@ class ExerciseConfigViewModel constructor(
      * mirroring ResolveRoutineWeightsUseCase's resolution order:
      *   MAX_WEIGHT_PR  → max-weight PR
      *   MAX_VOLUME_PR  → max-volume PR
-     *   ESTIMATED_1RM  → velocity estimate → stored Exercise.oneRepMaxKg → max-weight PR (last resort)
+     *   ESTIMATED_1RM  → velocity estimate → this profile's training max → max-weight PR (last resort)
      *
      * Returns null when no data is available for the selected basis (controls preview and gating).
      */

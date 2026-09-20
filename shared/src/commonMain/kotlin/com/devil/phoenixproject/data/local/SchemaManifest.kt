@@ -1311,7 +1311,7 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
 
     // VelocityOneRepMaxEstimate -- introduced by migration 36.sqm (issue #517).
     // Auto-computed velocity 1RM time-series. Separate from AssessmentResult (wizard)
-    // and from Exercise.oneRepMaxKg (authoritative true 1RM).
+    // and from the per-profile training max (ExerciseTrainingMax, migration 49).
     SchemaTableOperation(
         table = "VelocityOneRepMaxEstimate",
         createSql = """

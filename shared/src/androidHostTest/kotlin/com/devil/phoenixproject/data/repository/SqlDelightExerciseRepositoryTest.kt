@@ -492,6 +492,98 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
+    fun `remap moves each profile's training max onto the replacement id, newest winning`() = runTest {
+        // ExerciseTrainingMax CASCADEs off Exercise, so a training max left on an archived
+        // catalogue row is lost the moment that row goes. The remap has to carry it over.
+        insertExerciseIfAbsent(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+        )
+        seedProfile("alice")
+        seedProfile("bob")
+        val queries = database.phoenixDatabaseQueries
+        val replacement = "Barbell_Bench_Press_-_Medium_Grip"
+        val imported = importer.importFromFreeExerciseJson(
+            """
+            [
+              {
+                "id": "Barbell_Bench_Press_-_Medium_Grip",
+                "name": "Barbell Bench Press - Medium Grip",
+                "equipment": "barbell",
+                "primaryMuscles": ["chest"],
+                "secondaryMuscles": [],
+                "instructions": [],
+                "category": "strength",
+                "images": []
+              }
+            ]
+            """.trimIndent(),
+        )
+        assertTrue(imported.isSuccess)
+
+        // alice has one only on the legacy row; bob has one on each, and his NEWER one is
+        // the legacy row's, so that is the value that must survive.
+        queries.upsertTrainingMax("ZZ92N8QsBdp6HCh3", "alice", 100.0, "MANUAL", 10L)
+        queries.upsertTrainingMax("ZZ92N8QsBdp6HCh3", "bob", 140.0, "MANUAL", 20L)
+        queries.upsertTrainingMax(replacement, "bob", 90.0, "MANUAL", 5L)
+
+        importer.remapLegacyCatalogueIds()
+
+        assertEquals(
+            listOf("alice" to 100.0, "bob" to 140.0),
+            queries.selectTrainingMaxRowsForTest(replacement).executeAsList()
+                .map { it.profile_id to it.one_rep_max_kg },
+        )
+        assertEquals(emptyList(), queries.selectTrainingMaxRowsForTest("ZZ92N8QsBdp6HCh3").executeAsList())
+    }
+
+    @Test
+    fun `remap keeps a newer training max already on the replacement id`() = runTest {
+        insertExerciseIfAbsent(
+            id = "ZZ92N8QsBdp6HCh3",
+            name = "Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            archived = 1L,
+        )
+        seedProfile("alice")
+        val queries = database.phoenixDatabaseQueries
+        val replacement = "Barbell_Bench_Press_-_Medium_Grip"
+        assertTrue(
+            importer.importFromFreeExerciseJson(
+                """
+                [
+                  {
+                    "id": "Barbell_Bench_Press_-_Medium_Grip",
+                    "name": "Barbell Bench Press - Medium Grip",
+                    "equipment": "barbell",
+                    "primaryMuscles": ["chest"],
+                    "secondaryMuscles": [],
+                    "instructions": [],
+                    "category": "strength",
+                    "images": []
+                  }
+                ]
+                """.trimIndent(),
+            ).isSuccess,
+        )
+        queries.upsertTrainingMax("ZZ92N8QsBdp6HCh3", "alice", 100.0, "MANUAL", 10L)
+        queries.upsertTrainingMax(replacement, "alice", 125.0, "MANUAL", 30L)
+
+        importer.remapLegacyCatalogueIds()
+
+        assertEquals(
+            listOf("alice" to 125.0),
+            queries.selectTrainingMaxRowsForTest(replacement).executeAsList()
+                .map { it.profile_id to it.one_rep_max_kg },
+        )
+        assertEquals(emptyList(), queries.selectTrainingMaxRowsForTest("ZZ92N8QsBdp6HCh3").executeAsList())
+    }
+
+    @Test
     fun `remap maps duplicate bench press catalogue id`() = runTest {
         insertExerciseIfAbsent(
             id = "b5d0f3d1-994b-4589-9d2b-b3f36f1412c7",
