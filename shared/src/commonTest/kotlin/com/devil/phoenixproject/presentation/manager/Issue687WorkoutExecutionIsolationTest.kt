@@ -1354,17 +1354,19 @@ class Issue687WorkoutExecutionIsolationTest {
         packetTimestamp: Long,
     ) {
         val metricTimestamp = KmpUtils.currentTimeMillis() - 10L
-        harness.coordinator.collectedMetrics.value = List(4) { index ->
-            WorkoutMetric(
-                timestamp = metricTimestamp + index,
-                loadA = 20f,
-                loadB = 20f,
-                positionA = index * 50f,
-                positionB = index * 50f,
-                velocityA = velocityMmS,
-                velocityB = velocityMmS,
-            )
-        }
+        harness.coordinator.collectedMetrics.seedAll(
+            List(4) { index ->
+                WorkoutMetric(
+                    timestamp = metricTimestamp + index,
+                    loadA = 20f,
+                    loadB = 20f,
+                    positionA = index * 50f,
+                    positionB = index * 50f,
+                    velocityA = velocityMmS,
+                    velocityB = velocityMmS,
+                )
+            },
+        )
         harness.coordinator.repBoundaryTimestamps.value = emptyList()
         harness.fakeBleRepo.emitRepNotification(
             harness.modernRepPacket(

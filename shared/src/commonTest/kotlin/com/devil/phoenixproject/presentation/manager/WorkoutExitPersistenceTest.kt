@@ -476,7 +476,7 @@ class WorkoutExitPersistenceTest {
         try {
             startTrackedRoutineCableSet(harness, "routine-a")
             advanceTimeBy(1_000)
-            harness.coordinator.collectedMetrics.value = biomechanicsMetrics()
+            harness.coordinator.collectedMetrics.seedAll(biomechanicsMetrics())
             val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
             harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
 
@@ -660,7 +660,7 @@ class WorkoutExitPersistenceTest {
             startTrackedCableSet(harness)
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
             val rawMetrics = biomechanicsMetrics()
-            harness.coordinator.collectedMetrics.value = rawMetrics
+            harness.coordinator.collectedMetrics.seedAll(rawMetrics)
             harness.fakeCompletedSetRepo.afterSaveCompletedSet = {
                 if (failOnce) {
                     failOnce = false
@@ -772,7 +772,7 @@ class WorkoutExitPersistenceTest {
         try {
             startTrackedCableSet(harness)
             val leaseA = harness.activeSessionEngine.currentExecutionLeaseForTest()
-            harness.coordinator.setRepMetrics.value = listOf(repMetric())
+            harness.coordinator.setRepMetrics.seed(repMetric())
             harness.fakeCompletedSetRepo.afterSaveCompletedSet = { completedSet ->
                 if (completedSet.sessionId == leaseA.sessionId && failedCompletedSetId == null) {
                     failedCompletedSetId = completedSet.id
@@ -821,7 +821,7 @@ class WorkoutExitPersistenceTest {
                 startTrackedCableSet(harness)
                 val successfulLease = harness.activeSessionEngine.currentExecutionLeaseForTest()
                 successfulSessionIds += successfulLease.sessionId
-                harness.coordinator.collectedMetrics.value = listOf(
+                harness.coordinator.collectedMetrics.seed(
                     WorkoutMetric(
                         timestamp = 1_000L + index,
                         loadA = 20f,
@@ -919,7 +919,7 @@ class WorkoutExitPersistenceTest {
             )
             val expectedRepPositions = repMetric.concentricPositions.copyOf()
             val expectedForces = biomechanicsResult.forceCurve.normalizedForceN.copyOf()
-            harness.coordinator.setRepMetrics.value = listOf(repMetric)
+            harness.coordinator.setRepMetrics.seed(repMetric)
             harness.fakeWorkoutRepo.beforeSaveSession = { releaseSave.await() }
 
             harness.dwsm.stopWorkout(exitingWorkout = true)

@@ -24,6 +24,8 @@ import com.devil.phoenixproject.domain.premium.BiomechanicsEngine
 import com.devil.phoenixproject.domain.premium.RepQualityScorer
 import com.devil.phoenixproject.util.withPlatformLock
 import kotlin.concurrent.Volatile
+import kotlinx.atomicfu.locks.reentrantLock
+import kotlinx.atomicfu.locks.withLock
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -33,6 +35,46 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+
+/**
+ * Append-only buffer for the samples collected during a single set.
+ *
+ * [append] is O(1). The live-set BLE path appends a sample on every monitor poll,
+ * so the copy-on-append `MutableStateFlow<List<T>>` this replaces made a set
+ * quadratic in its own sample count (a long Just Lift set allocates and copies
+ * the whole list thousands of times). Nothing ever observed those flows as
+ * flows — every reader took `.value` — so the flow machinery is gone with them.
+ *
+ * Threading: access is single-dispatcher today. Appends, reads and clears all
+ * run on the engine's `scope`, which is the ViewModel's main dispatcher, and the
+ * one background consumer (`processBiomechanicsForRep`) takes its [snapshot]
+ * before switching to the biomechanics dispatcher. The lock is defensive — it
+ * keeps a future off-main reader from copying a half-grown list — and
+ * uncontended it costs far less than the per-sample copy it replaces.
+ *
+ * [snapshot] returns a private copy, so a caller may hold and iterate it while
+ * the collector keeps appending.
+ */
+internal class CollectedMetricsBuffer<T> {
+    private val lock = reentrantLock()
+    private val items = ArrayList<T>() // guarded by lock
+
+    val size: Int get() = lock.withLock { items.size }
+
+    fun isEmpty(): Boolean = lock.withLock { items.isEmpty() }
+
+    fun append(item: T) {
+        lock.withLock { items.add(item) }
+    }
+
+    fun snapshot(): List<T> = lock.withLock {
+        if (items.isEmpty()) emptyList() else ArrayList(items)
+    }
+
+    fun clear() {
+        lock.withLock { items.clear() }
+    }
+}
 
 internal data class VbtRuntimeSettings(
     val enabled: Boolean = true,
@@ -399,11 +441,11 @@ class WorkoutCoordinator(
     internal var workoutStartTime: Long = 0
     internal var warmupCompleteTimeMs: Long = 0 // Issue #252: Exclude warmup time from duration
     internal var routineStartTime: Long = 0 // Issue #195: Track routine start separately from per-set start
-    internal val collectedMetrics = MutableStateFlow<List<WorkoutMetric>>(emptyList())
+    internal val collectedMetrics = CollectedMetricsBuffer<WorkoutMetric>()
 
-    // C3: Thread-safe via MutableStateFlow snapshot — prevents ConcurrentModificationException
-    // across coroutine dispatchers during rep processing and set completion
-    internal val setRepMetrics = MutableStateFlow<List<RepMetricData>>(emptyList())
+    // C3: readers take a private snapshot() copy, so rep processing and set completion
+    // can iterate while the collector keeps appending — see CollectedMetricsBuffer.
+    internal val setRepMetrics = CollectedMetricsBuffer<RepMetricData>()
 
     internal var currentRoutineSessionId: String? = null
     internal var currentRoutineName: String? = null

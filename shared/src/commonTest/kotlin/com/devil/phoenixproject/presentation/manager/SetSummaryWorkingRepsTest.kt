@@ -299,7 +299,7 @@ class SetSummaryWorkingRepsTest {
         )
         assertEquals(
             1,
-            harness.coordinator.setRepMetrics.value.size,
+            harness.coordinator.setRepMetrics.size,
             "Rep 1 must still write its quality row",
         )
         harness.cleanup()
@@ -319,7 +319,7 @@ class SetSummaryWorkingRepsTest {
         )
         assertEquals(
             1,
-            harness.coordinator.setRepMetrics.value.size,
+            harness.coordinator.setRepMetrics.size,
             "The quality row is still written - only the velocity baseline is withheld",
         )
 

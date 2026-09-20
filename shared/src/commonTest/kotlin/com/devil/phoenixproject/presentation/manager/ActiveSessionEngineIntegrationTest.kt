@@ -696,7 +696,7 @@ class ActiveSessionEngineIntegrationTest {
             totalReps = 5,
             isWarmupComplete = true,
         )
-        harness.coordinator.collectedMetrics.value = listOf(
+        harness.coordinator.collectedMetrics.seed(
             WorkoutMetric(
                 timestamp = 100L,
                 loadA = 40f,

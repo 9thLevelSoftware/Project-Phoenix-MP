@@ -130,7 +130,7 @@ class DWSMEquipmentRackTest {
             totalReps = 8,
             isWarmupComplete = true,
         )
-        harness.dwsm.coordinator.collectedMetrics.value = listOf(
+        harness.dwsm.coordinator.collectedMetrics.seed(
             WorkoutMetric(
                 timestamp = 100L,
                 loadA = 40f,
@@ -599,7 +599,7 @@ class DWSMEquipmentRackTest {
             totalReps = 8,
             isWarmupComplete = true,
         )
-        harness.dwsm.coordinator.collectedMetrics.value = listOf(
+        harness.dwsm.coordinator.collectedMetrics.seed(
             WorkoutMetric(
                 timestamp = 100L,
                 loadA = 40f,
