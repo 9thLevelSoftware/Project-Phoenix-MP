@@ -433,6 +433,7 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
             template_id,
             week_number,
             updatedAt,
+            _serverUpdatedAt,
         ->
         TrainingCycle(
             id = id,
@@ -491,6 +492,7 @@ class SqlDelightTrainingCycleRepository(private val db: PhoenixDatabase) : Train
             template_id,
             week_number,
             updatedAt,
+            _serverUpdatedAt,
         ->
         TrainingCycle(
             id = id,
