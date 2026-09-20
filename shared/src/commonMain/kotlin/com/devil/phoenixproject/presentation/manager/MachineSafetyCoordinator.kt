@@ -12,12 +12,15 @@ import com.devil.phoenixproject.data.repository.MachineSafetyWriteResult
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withContext
 import kotlin.random.Random
 
 interface MachineSafetyTransport {
@@ -32,15 +35,34 @@ sealed interface MachineSafetyUiState {
         val document: MachineSafetyHazardDocument,
         val restoreWasRejected: Boolean = false,
         val blockedMachineStart: Boolean = true,
-    ) : MachineSafetyUiState
+    ) : MachineSafetyUiState {
+        val identity: MachineSafetyHazardIdentity
+            get() = MachineSafetyHazardIdentity(document.trainerAddress, document.generation)
+    }
+}
+
+data class MachineSafetyHazardIdentity(
+    val trainerAddress: String,
+    val generation: Long,
+) {
+    init {
+        require(trainerAddress.isNotBlank())
+        require(generation > 0L)
+    }
+}
+
+enum class MachineSafetyRecoveryRequestResult {
+    STARTED,
+    ALREADY_IN_PROGRESS,
+    NO_VISIBLE_HAZARD,
+    STALE_HAZARD,
 }
 
 /**
  * Durable, trainer-identity-bound safety recovery. A transport ACK is never treated as unload,
  * with one exception: [resolveArmedExecution] clears this process's own hidden arm row after a
- * clean teardown RESET that succeeded while still connected to the armed trainer. That includes
- * a set resumed after a dismissed connection loss, whose re-arm replaced the loss row. A row
- * that is visible, or that this process did not arm (for example after a relaunch), still needs
+ * clean teardown RESET that succeeded while still connected to the armed trainer. A row that is
+ * visible, or that this process did not arm (for example after a relaunch), still needs
  * the user's explicit acknowledgement through [acknowledgeUnloaded].
  */
 class MachineSafetyCoordinator(
@@ -55,8 +77,8 @@ class MachineSafetyCoordinator(
     private val _uiState = MutableStateFlow<MachineSafetyUiState>(MachineSafetyUiState.Hidden)
     val uiState: StateFlow<MachineSafetyUiState> = _uiState.asStateFlow()
     private var recoveryJob: Job? = null
+    private var acknowledgementInProgress: MachineSafetyHazardIdentity? = null
     private var nextGeneration = 0L
-    private var interruptedWorkoutResumeAuthorized = false
 
     /** The hidden arm row this coordinator last persisted; only it may be resolved by a clean teardown. */
     private var armedDocument: MachineSafetyHazardDocument? = null
@@ -71,7 +93,11 @@ class MachineSafetyCoordinator(
      */
     suspend fun surfaceStoredHazard(liveExecutionId: Long? = null): Unit = mutex.withLock {
         if (_uiState.value is MachineSafetyUiState.Visible) return
-        val results = try { repository.loadAll() } catch (_: Exception) {
+        val results = try {
+            repository.loadAll()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
             listOf(MachineSafetyLoadResult.Rejected(MachineSafetyRejection.CORRUPT_JSON, null))
         }
         val records = results.mapNotNull { result ->
@@ -105,12 +131,11 @@ class MachineSafetyCoordinator(
                 armedDocument = null
             }
             if (showRecoveryUi) {
-                // A new visible loss owns RESET-only recovery. Never let a continuation
-                // authorization granted for an earlier hidden execution cross this boundary.
-                interruptedWorkoutResumeAuthorized = false
                 show(persisted)
             }
             true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
         } catch (_: Exception) {
             false
         }
@@ -168,19 +193,6 @@ class MachineSafetyCoordinator(
     }
 
     /**
-     * Authorize the already interrupted execution to rebuild its current set after a
-     * transport reconnect. This is deliberately separate from dismissal: it is a
-     * one-shot continuation for an existing execution, not permission for a new start.
-     * A visible safety warning never takes this path; its RESET-only recovery remains
-     * owned by [requestReleaseRecovery].
-     */
-    fun authorizeInterruptedWorkoutResume() {
-        if (_uiState.value is MachineSafetyUiState.Hidden) {
-            interruptedWorkoutResumeAuthorized = true
-        }
-    }
-
-    /**
      * A dismissed warning remains a durable start barrier until physical acknowledgement.
      * Serialized with [resolveArmedExecution], so a start never reads a row a resolve is clearing.
      */
@@ -194,89 +206,118 @@ class MachineSafetyCoordinator(
                 MachineSafetyLoadResult.Missing -> false
             }
         }
-        if (!hasUnresolvedHazard) {
-            interruptedWorkoutResumeAuthorized = false
-            true
-        } else if (interruptedWorkoutResumeAuthorized && _uiState.value is MachineSafetyUiState.Hidden) {
-            interruptedWorkoutResumeAuthorized = false
-            true
-        } else {
-            interruptedWorkoutResumeAuthorized = false
-            false
-        }
+        !hasUnresolvedHazard && _uiState.value !is MachineSafetyUiState.Visible
     } catch (cancelled: CancellationException) {
         throw cancelled
     } catch (_: Exception) {
         false
     }
 
-    suspend fun recordConnectionLost(
+    suspend fun recordUnexpectedDisconnect(
         trainerAddress: String?,
         trainerName: String? = null,
-        sessionId: String = sessionIdFactory(),
-        profileId: String? = null,
-        kind: MachineSafetyWorkoutKind = MachineSafetyWorkoutKind.UNKNOWN,
-        executionId: Long? = null,
-    ): Boolean {
+    ): Boolean = mutex.withLock {
         if (trainerAddress.isNullOrBlank()) return false
-        val now = nowEpochMs()
-        val document = MachineSafetyHazardDocument(
-            generation = nextGeneration + 1L,
-            trainerAddress = trainerAddress,
-            trainerName = trainerName,
-            sessionId = sessionId,
-            executionId = executionId,
-            profileId = profileId,
-            workoutKind = kind,
-            createdAtEpochMs = now,
-            updatedAtEpochMs = now,
+        if (_uiState.value is MachineSafetyUiState.Visible) return true
+
+        val loadResult = try {
+            repository.load(trainerAddress)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            MachineSafetyLoadResult.Rejected(MachineSafetyRejection.CORRUPT_JSON, trainerAddress)
+        }
+        val durable = when (loadResult) {
+            is MachineSafetyLoadResult.Loaded -> loadResult.document
+            is MachineSafetyLoadResult.Rejected -> rejectedDocument(loadResult)
+            MachineSafetyLoadResult.Missing -> armedDocument?.takeIf { it.trainerAddress == trainerAddress }
+        } ?: return false
+        val loss = durable.copy(
+            trainerName = trainerName ?: durable.trainerName,
+            updatedAtEpochMs = nowEpochMs(),
             phase = MachineSafetyPhase.UNRESOLVED,
-            physicalRelease = MachineSafetyPhysicalRelease.UNKNOWN,
+            lastConnectResult = MachineSafetyConnectResult.NONE,
+            lastWriteResult = MachineSafetyWriteResult.NONE,
+            recoveryAttemptToken = 0L,
         )
-        return recordMachineSessionArmed(document, showRecoveryUi = true)
+        armedDocument = null
+        try {
+            repository.replace(loss)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Keep the in-memory warning visible so the process remains fail closed.
+        }
+        show(loss, restoreWasRejected = loadResult is MachineSafetyLoadResult.Rejected)
+        true
     }
 
-    fun requestReleaseRecovery() {
-        val visible = _uiState.value as? MachineSafetyUiState.Visible ?: return
-        if (recoveryJob?.isActive == true) return
-        recoveryJob = scope.launch {
-            val token = visible.document.recoveryAttemptToken + 1L
-            val connecting = visible.document.copy(
+    suspend fun requestReleaseRecovery(
+        identity: MachineSafetyHazardIdentity,
+    ): MachineSafetyRecoveryRequestResult = mutex.withLock {
+        val visible = _uiState.value as? MachineSafetyUiState.Visible
+            ?: return MachineSafetyRecoveryRequestResult.NO_VISIBLE_HAZARD
+        if (visible.document.identity != identity) {
+            return MachineSafetyRecoveryRequestResult.STALE_HAZARD
+        }
+        if (acknowledgementInProgress == identity) {
+            return MachineSafetyRecoveryRequestResult.ALREADY_IN_PROGRESS
+        }
+        if (recoveryJob?.isActive == true) return MachineSafetyRecoveryRequestResult.ALREADY_IN_PROGRESS
+        recoveryJob = scope.launch { recoverVisibleHazard(identity) }
+        return MachineSafetyRecoveryRequestResult.STARTED
+    }
+
+    private suspend fun recoverVisibleHazard(identity: MachineSafetyHazardIdentity) {
+        val connecting = mutex.withLock {
+            val current = _uiState.value as? MachineSafetyUiState.Visible ?: return
+            if (current.document.identity != identity) return
+            val document = current.document.copy(
                 updatedAtEpochMs = nowEpochMs(),
                 phase = MachineSafetyPhase.CONNECTING,
-                recoveryAttemptToken = token,
+                recoveryAttemptToken = current.document.recoveryAttemptToken + 1L,
             )
-            if (!persistIfCurrent(visible.document.generation, connecting)) return@launch
-            val connected = transport.connectedTrainerAddress
-            val connectResult = if (connected == visible.document.trainerAddress) {
-                Result.success(Unit)
-            } else if (connected != null) {
-                Result.failure(IllegalStateException("wrong trainer"))
-            } else {
-                transport.connectMatchingTrainer(visible.document.trainerAddress)
-            }
-            if (!isCurrent(visible.document.generation, token)) return@launch
-            if (connectResult.isFailure || transport.connectedTrainerAddress != visible.document.trainerAddress) {
-                val failure = connecting.copy(
-                    updatedAtEpochMs = nowEpochMs(),
-                    phase = MachineSafetyPhase.RELEASE_REQUEST_FAILED,
-                    lastConnectResult = if (connected != null) MachineSafetyConnectResult.WRONG_TRAINER else MachineSafetyConnectResult.FAILED,
-                    lastWriteResult = MachineSafetyWriteResult.NOT_CONNECTED,
-                )
-                persistIfCurrent(visible.document.generation, failure)
-                return@launch
-            }
-            val write = try { transport.stopWorkout() } catch (cancelled: CancellationException) {
-                throw cancelled
-            } catch (_: Exception) { Result.failure(IllegalStateException("stop failed")) }
-            if (!isCurrent(visible.document.generation, token)) return@launch
-            val disconnectedDuringWrite = transport.connectedTrainerAddress != visible.document.trainerAddress
-            val outcome = if (write.isSuccess && !disconnectedDuringWrite) connecting.copy(
+            if (!persistIfCurrentLocked(identity, document)) return
+            document
+        }
+        val token = connecting.recoveryAttemptToken
+        val connected = transport.connectedTrainerAddress
+        val connectResult = if (connected == identity.trainerAddress) {
+            Result.success(Unit)
+        } else if (connected != null) {
+            Result.failure(IllegalStateException("wrong trainer"))
+        } else {
+            transport.connectMatchingTrainer(identity.trainerAddress)
+        }
+        if (!isCurrent(identity, token)) return
+        if (connectResult.isFailure || transport.connectedTrainerAddress != identity.trainerAddress) {
+            val failure = connecting.copy(
+                updatedAtEpochMs = nowEpochMs(),
+                phase = MachineSafetyPhase.RELEASE_REQUEST_FAILED,
+                lastConnectResult = if (connected != null) MachineSafetyConnectResult.WRONG_TRAINER else MachineSafetyConnectResult.FAILED,
+                lastWriteResult = MachineSafetyWriteResult.NOT_CONNECTED,
+            )
+            persistIfCurrent(identity, failure)
+            return
+        }
+        val write = try {
+            transport.stopWorkout()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            Result.failure(IllegalStateException("stop failed"))
+        }
+        if (!isCurrent(identity, token)) return
+        val disconnectedDuringWrite = transport.connectedTrainerAddress != identity.trainerAddress
+        val outcome = if (write.isSuccess && !disconnectedDuringWrite) {
+            connecting.copy(
                 updatedAtEpochMs = nowEpochMs(),
                 phase = MachineSafetyPhase.RELEASE_REQUEST_SENT,
                 lastConnectResult = MachineSafetyConnectResult.MATCHING_READY,
                 lastWriteResult = MachineSafetyWriteResult.TRANSPORT_ACK,
-            ) else connecting.copy(
+            )
+        } else {
+            connecting.copy(
                 updatedAtEpochMs = nowEpochMs(),
                 phase = MachineSafetyPhase.RELEASE_REQUEST_FAILED,
                 lastConnectResult = MachineSafetyConnectResult.MATCHING_READY,
@@ -286,31 +327,84 @@ class MachineSafetyCoordinator(
                     MachineSafetyWriteResult.TRANSPORT_FAIL
                 },
             )
-            persistIfCurrent(visible.document.generation, outcome)
+        }
+        persistIfCurrent(identity, outcome)
+    }
+
+    suspend fun hideTemporarily(): Unit = mutex.withLock {
+        if (_uiState.value is MachineSafetyUiState.Visible) {
+            _uiState.value = MachineSafetyUiState.Hidden
         }
     }
 
-    fun hideTemporarily() { if (_uiState.value is MachineSafetyUiState.Visible) _uiState.value = MachineSafetyUiState.Hidden }
-
-    fun acknowledgeUnloaded(generation: Long) {
-        val visible = _uiState.value as? MachineSafetyUiState.Visible ?: return
-        if (visible.document.generation != generation) return
-        scope.launch {
-            if (repository.deleteIfGenerationMatches(visible.document.trainerAddress, generation)) {
-                _uiState.value = MachineSafetyUiState.Hidden
+    suspend fun acknowledgeUnloaded(identity: MachineSafetyHazardIdentity) {
+        val recoveryToCancel = mutex.withLock {
+            val visible = _uiState.value as? MachineSafetyUiState.Visible ?: return
+            if (visible.document.identity != identity || acknowledgementInProgress != null) return
+            acknowledgementInProgress = identity
+            recoveryJob
+        }
+        try {
+            recoveryToCancel?.cancelAndJoin()
+            mutex.withLock {
+                val visible = _uiState.value as? MachineSafetyUiState.Visible ?: return@withLock
+                if (visible.document.identity != identity || acknowledgementInProgress != identity) {
+                    return@withLock
+                }
+                if (repository.deleteIfGenerationMatches(identity.trainerAddress, identity.generation) &&
+                    (_uiState.value as? MachineSafetyUiState.Visible)?.document?.identity == identity
+                ) {
+                    if (armedDocument?.identity == identity) armedDocument = null
+                    _uiState.value = MachineSafetyUiState.Hidden
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Keep the exact warning visible and the start gate closed.
+        } finally {
+            withContext(NonCancellable) {
+                recoveryToCancel?.cancelAndJoin()
+                mutex.withLock {
+                    if (acknowledgementInProgress == identity) acknowledgementInProgress = null
+                    if (recoveryJob === recoveryToCancel && recoveryToCancel?.isCompleted == true) {
+                        recoveryJob = null
+                    }
+                }
             }
         }
     }
 
-    private suspend fun persistIfCurrent(generation: Long, document: MachineSafetyHazardDocument): Boolean = mutex.withLock {
-        val current = _uiState.value as? MachineSafetyUiState.Visible ?: return false
-        if (current.document.generation != generation || current.document.recoveryAttemptToken > document.recoveryAttemptToken) return false
-        return try { repository.replace(document); show(document); true } catch (_: Exception) { false }
+    private suspend fun persistIfCurrent(
+        identity: MachineSafetyHazardIdentity,
+        document: MachineSafetyHazardDocument,
+    ): Boolean = mutex.withLock {
+        persistIfCurrentLocked(identity, document)
     }
 
-    private suspend fun isCurrent(generation: Long, token: Long): Boolean = mutex.withLock {
+    private suspend fun persistIfCurrentLocked(
+        identity: MachineSafetyHazardIdentity,
+        document: MachineSafetyHazardDocument,
+    ): Boolean {
         val current = _uiState.value as? MachineSafetyUiState.Visible ?: return false
-        current.document.generation == generation && current.document.recoveryAttemptToken == token
+        if (current.document.identity != identity ||
+            document.identity != identity ||
+            current.document.recoveryAttemptToken > document.recoveryAttemptToken
+        ) return false
+        return try {
+            repository.replace(document)
+            show(document, current.restoreWasRejected)
+            true
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            false
+        }
+    }
+
+    private suspend fun isCurrent(identity: MachineSafetyHazardIdentity, token: Long): Boolean = mutex.withLock {
+        val current = _uiState.value as? MachineSafetyUiState.Visible ?: return false
+        current.document.identity == identity && current.document.recoveryAttemptToken == token
     }
 
     private fun show(document: MachineSafetyHazardDocument, restoreWasRejected: Boolean = false) {
@@ -331,4 +425,7 @@ class MachineSafetyCoordinator(
             physicalRelease = MachineSafetyPhysicalRelease.UNKNOWN,
         )
     }
+
+    private val MachineSafetyHazardDocument.identity: MachineSafetyHazardIdentity
+        get() = MachineSafetyHazardIdentity(trainerAddress, generation)
 }

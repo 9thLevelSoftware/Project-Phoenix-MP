@@ -189,21 +189,22 @@ class FakeWorkoutRepository : WorkoutRepository {
         updateSessionsFlow()
     }
 
-    /** Same in-memory effect as [deleteSession]; the fake has no tombstone table. */
-    override suspend fun discardSession(sessionId: String) {
-        deleteSession(sessionId)
+    override suspend fun discardSessionInternal(sessionId: String) {
+        sessions.remove(sessionId)
+        metrics.remove(sessionId)
+        updateSessionsFlow()
     }
 
-    override suspend fun deleteAllSessionsForProfile(profileId: String) {
-        val doomed = sessions.filterValues { it.profileId == profileId }.keys.toList()
-        doomed.forEach { id ->
+    override suspend fun deleteAllSessions(profileId: String) {
+        val matchingIds = sessions.values.filter { it.profileId == profileId }.map { it.id }
+        matchingIds.forEach { id ->
             sessions.remove(id)
             metrics.remove(id)
         }
         updateSessionsFlow()
     }
 
-    override suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String) {
+    override suspend fun deleteSessionsByRoutineSessionId(profileId: String, routineSessionId: String) {
         // Issue #591 follow-up: remove every session belonging to the
         // routine session id, including any zero-rep / ghost rows that
         // `getHistoryVisibleSessions` would have filtered out. Mirrors
@@ -211,7 +212,9 @@ class FakeWorkoutRepository : WorkoutRepository {
         // group level) without the SQL deletedAt bookkeeping the
         // production repository maintains.
         val matchingIds = sessions.entries
-            .filter { (_, session) -> session.routineSessionId == routineSessionId }
+            .filter { (_, session) ->
+                session.profileId == profileId && session.routineSessionId == routineSessionId
+            }
             .map { it.key }
         matchingIds.forEach { id ->
             sessions.remove(id)

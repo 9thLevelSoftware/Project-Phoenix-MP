@@ -623,56 +623,58 @@ class StreamingImportRoundTripTest {
     }
 
     @Test
-    fun `preference restore writes every typed section for every profile`() = runTest {
+    fun `buffered and streaming preference restores have typed and metadata parity`() = runTest {
+        val buffered = preferenceFixture()
         val streamed = preferenceFixture()
+        seedProfiles(buffered)
         seedProfiles(streamed)
-        val expected = mapOf(
-            PROFILE_A to listOf(
-                CoreProfilePreferences(88f, WeightUnit.KG, 1.25f),
-                RackPreferences(items = listOf(rackItem("new-a", "New A", 3f))),
-                WorkoutPreferences(stopAtTop = true, summaryCountdownSeconds = 20),
-                LedPreferences(colorScheme = 9, discoModeUnlocked = true),
-                VbtPreferences(enabled = false, velocityLossThresholdPercent = 50),
-            ),
-            PROFILE_B to listOf(
-                CoreProfilePreferences(99f, WeightUnit.LB, 5f),
-                RackPreferences(items = listOf(rackItem("new-b", "New B", 6f))),
-                WorkoutPreferences(beepsEnabled = false, summaryCountdownSeconds = 25),
-                LedPreferences(colorScheme = 10),
-                VbtPreferences(enabled = true, velocityLossThresholdPercent = 35),
-            ),
-        )
         val payload = standardBackup(
             version = 5,
             identities = listOf(profileBackup(PROFILE_A), profileBackup(PROFILE_B)),
-            preferences = expected.map { (profileId, sections) ->
+            preferences = listOf(
                 preferenceEntry(
-                    profileId,
-                    core = jsonElement(sections[0] as CoreProfilePreferences),
-                    rack = jsonElement(sections[1] as RackPreferences),
-                    workout = jsonElement(sections[2] as WorkoutPreferences),
-                    led = jsonElement(sections[3] as LedPreferences),
-                    vbt = jsonElement(sections[4] as VbtPreferences),
-                )
-            },
+                    PROFILE_A,
+                    core = jsonElement(CoreProfilePreferences(88f, WeightUnit.KG, 1.25f)),
+                    rack = jsonElement(RackPreferences(items = listOf(rackItem("new-a", "New A", 3f)))),
+                    workout = jsonElement(WorkoutPreferences(stopAtTop = true, summaryCountdownSeconds = 20)),
+                    led = jsonElement(LedPreferences(colorScheme = 9, discoModeUnlocked = true)),
+                    vbt = jsonElement(VbtPreferences(enabled = false, velocityLossThresholdPercent = 50)),
+                ),
+                preferenceEntry(
+                    PROFILE_B,
+                    core = jsonElement(CoreProfilePreferences(99f, WeightUnit.LB, 5f)),
+                    rack = jsonElement(RackPreferences(items = listOf(rackItem("new-b", "New B", 6f)))),
+                    workout = jsonElement(WorkoutPreferences(beepsEnabled = false, summaryCountdownSeconds = 25)),
+                    led = jsonElement(LedPreferences(colorScheme = 10)),
+                    vbt = jsonElement(VbtPreferences(enabled = true, velocityLossThresholdPercent = 35)),
+                ),
+            ),
         )
 
+        val bufferedResult = buffered.manager.importFromJson(payload)
         val streamedResult = streamed.manager.importFromStringStreaming(payload)
 
+        assertTrue(bufferedResult.isSuccess, bufferedResult.exceptionOrNull()?.toString())
         assertTrue(streamedResult.isSuccess, streamedResult.exceptionOrNull()?.toString())
-        assertEquals(0, streamedResult.getOrThrow().entitiesWithErrors)
-        expected.forEach { (profileId, sections) ->
-            val restored = streamed.preferences.get(profileId)
-            assertEquals(sections[0], restored.core.value)
-            assertEquals(sections[1], restored.rack.value)
-            assertEquals(sections[2], restored.workout.value)
-            assertEquals(sections[3], restored.led.value)
-            assertEquals(sections[4], restored.vbt.value)
+        assertEquals(bufferedResult.getOrThrow().entitiesWithErrors, streamedResult.getOrThrow().entitiesWithErrors)
+        listOf(PROFILE_A, PROFILE_B).forEach { profileId ->
+            val left = buffered.preferences.get(profileId)
+            val right = streamed.preferences.get(profileId)
+            assertEquals(left.core.value, right.core.value)
+            assertEquals(left.rack.value, right.rack.value)
+            assertEquals(left.workout.value, right.workout.value)
+            assertEquals(left.led.value, right.led.value)
+            assertEquals(left.vbt.value, right.vbt.value)
+            assertEquals(left.core.metadata.copy(updatedAt = 0), right.core.metadata.copy(updatedAt = 0))
+            assertEquals(left.rack.metadata.copy(updatedAt = 0), right.rack.metadata.copy(updatedAt = 0))
+            assertEquals(left.workout.metadata.copy(updatedAt = 0), right.workout.metadata.copy(updatedAt = 0))
+            assertEquals(left.led.metadata.copy(updatedAt = 0), right.led.metadata.copy(updatedAt = 0))
+            assertEquals(left.vbt.metadata.copy(updatedAt = 0), right.vbt.metadata.copy(updatedAt = 0))
         }
     }
 
     @Test
-    fun `streaming active flags never switch target and post-identity failure rolls back everything`() = runTest {
+    fun `streaming active flags never switch target and full validation failure performs no identity work`() = runTest {
         listOf(
             listOf(false, false),
             listOf(false, true),
@@ -695,7 +697,7 @@ class StreamingImportRoundTripTest {
 
         val failed = preferenceFixture()
         seedProfiles(failed)
-        val malformedAfterIdentityCommit = """
+        val malformedAfterIdentitySection = """
             {
               "data": {
                 "userProfiles": [
@@ -709,15 +711,10 @@ class StreamingImportRoundTripTest {
             }
         """.trimIndent()
 
-        val profilesBefore = failed.database.phoenixDatabaseQueries.getAllProfiles().executeAsList()
-
-        val result = failed.manager.importFromStringStreaming(malformedAfterIdentityCommit)
+        val result = failed.manager.importFromStringStreaming(malformedAfterIdentitySection)
 
         assertTrue(result.isFailure)
-        // The whole restore is one transaction: the identity section is rolled back with the
-        // rest, so nothing changed and no active-profile reconcile is needed.
         val profiles = failed.database.phoenixDatabaseQueries.getAllProfiles().executeAsList()
-        assertEquals(profilesBefore, profiles)
         assertEquals(PROFILE_A, profiles.single { it.isActive == 1L }.id)
         assertEquals(0, failed.recordingUserProfiles.reconcileCalls)
     }

@@ -8,7 +8,12 @@ import com.devil.phoenixproject.data.sync.PersonalRecordSyncDto
 import com.devil.phoenixproject.data.sync.PortalSyncAdapter.CycleWithContext
 import com.devil.phoenixproject.data.sync.PullRoutineDto
 import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
+import com.devil.phoenixproject.data.sync.PulledWorkoutDeletionDto
+import com.devil.phoenixproject.data.sync.RoutineSyncDto
+import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.domain.model.PersonalRecord
+import com.devil.phoenixproject.domain.model.CompletedSet
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutSession
 
@@ -16,6 +21,33 @@ data class PhasePRBackfillResult(
     val changedRows: Int,
     val maxScannedSessionTimestamp: Long? = null,
 )
+
+data class WorkoutComponentSnapshot(
+    val session: WorkoutSession,
+    val portalSessionId: String,
+    val localSyncGeneration: Long,
+)
+
+data class WorkoutSyncSnapshot(
+    val components: List<WorkoutComponentSnapshot>,
+    val repMetricsByComponentId: Map<String, List<RepMetricData>> = emptyMap(),
+    val completedSetsByComponentId: Map<String, List<CompletedSet>> = emptyMap(),
+    val phaseStatisticsByComponentId: Map<String, List<com.devil.phoenixproject.database.PhaseStatistics>> = emptyMap(),
+    val sessionNotesByPortalId: Map<String, SessionNotesEntry> = emptyMap(),
+) {
+    val sessions: List<WorkoutSession> get() = components.map { it.session }
+}
+
+data class CycleComponentSnapshot(
+    val context: CycleWithContext,
+    val localSyncGeneration: Long,
+)
+
+data class CycleSyncSnapshot(
+    val components: List<CycleComponentSnapshot>,
+) {
+    val cycles: List<CycleWithContext> get() = components.map { it.context }
+}
 
 /**
  * Repository interface for sync operations.
@@ -26,9 +58,19 @@ interface SyncRepository {
     // === Push Operations (get local changes) ===
 
     /**
+     * Get workout sessions modified since the given timestamp, scoped to profile
+     */
+    suspend fun getSessionsModifiedSince(timestamp: Long, profileId: String = "default"): List<WorkoutSessionSyncDto>
+
+    /**
      * Get personal records modified since the given timestamp, scoped to profile
      */
     suspend fun getPRsModifiedSince(timestamp: Long, profileId: String = "default"): List<PersonalRecordSyncDto>
+
+    /**
+     * Get routines modified since the given timestamp, scoped to profile
+     */
+    suspend fun getRoutinesModifiedSince(timestamp: Long, profileId: String = "default"): List<RoutineSyncDto>
 
     /**
      * Get custom exercises modified since the given timestamp
@@ -53,6 +95,23 @@ interface SyncRepository {
      */
     suspend fun getWorkoutSessionsModifiedSince(timestamp: Long, profileId: String = "default"): List<WorkoutSession>
 
+    /** Atomically expands every dirty portal parent to all of its live component rows. */
+    suspend fun getDirtyWorkoutSnapshot(profileId: String): WorkoutSyncSnapshot = WorkoutSyncSnapshot(
+        getWorkoutSessionsModifiedSince(0L, profileId).map { session ->
+            WorkoutComponentSnapshot(
+                session = session,
+                portalSessionId = session.routineSessionId?.takeIf { it.isNotBlank() } ?: session.id,
+                localSyncGeneration = 0L,
+            )
+        },
+    )
+
+    /** Clears only unchanged component generations belonging to accepted portal parents. */
+    suspend fun acknowledgeWorkoutSnapshot(
+        snapshot: WorkoutSyncSnapshot,
+        acceptedPortalSessionIds: Set<String>,
+    ) = Unit
+
     /**
      * Get full Routine domain objects modified since timestamp, scoped to profile.
      * Returns rich objects with exercises, supersets, etc. needed by PortalSyncAdapter.toPortalRoutine().
@@ -76,6 +135,19 @@ interface SyncRepository {
      * Returns all matching cycles (no delta — cycles lack updatedAt timestamps).
      */
     suspend fun getFullCyclesForSync(profileId: String = "default"): List<CycleWithContext>
+
+    /** Atomically snapshots complete cycle aggregates whose generation is dirty. */
+    suspend fun getDirtyCycleSnapshot(profileId: String = "default"): CycleSyncSnapshot = CycleSyncSnapshot(
+        getFullCyclesForSync(profileId).map { context ->
+            CycleComponentSnapshot(context = context, localSyncGeneration = 0L)
+        },
+    )
+
+    /** Clears only unchanged generations for cycle IDs accepted by the portal. */
+    suspend fun acknowledgeCycleSnapshot(
+        snapshot: CycleSyncSnapshot,
+        acceptedCycleIds: Set<String>,
+    ) = Unit
 
     /**
      * Get full PersonalRecord domain objects modified since timestamp, scoped to profile.
@@ -137,17 +209,6 @@ interface SyncRepository {
     suspend fun getAllSessionIds(profileId: String = "default"): List<String>
 
     /**
-     * Portal ids of the workouts deleted locally (`routineSessionId` for a grouped routine
-     * workout, otherwise the session id), newest deletion first. They are sent as known ids
-     * so the portal stops offering a deleted workout as new.
-     *
-     * Deliberately NOT profile-scoped, matching the id-only merge skip: a profile merge or
-     * a portal re-scope must not make a tombstone stop suppressing its workout. A grouped
-     * workout contributes its id only once no live row of that group is left.
-     */
-    suspend fun getDeletedSessionPortalIds(): List<String>
-
-    /**
      * Get all routine IDs for the given profile.
      */
     suspend fun getAllRoutineIds(profileId: String = "default"): List<String>
@@ -197,9 +258,19 @@ interface SyncRepository {
     // === Pull Operations (merge remote changes) ===
 
     /**
+     * Merge sessions from server (upsert with conflict resolution)
+     */
+    suspend fun mergeSessions(sessions: List<WorkoutSessionSyncDto>)
+
+    /**
      * Merge personal records from server
      */
     suspend fun mergePRs(records: List<PersonalRecordSyncDto>)
+
+    /**
+     * Merge custom exercises from server
+     */
+    suspend fun mergeCustomExercises(exercises: List<CustomExerciseSyncDto>)
 
     /**
      * Merge badges from server, scoped to profile
@@ -290,6 +361,8 @@ interface SyncRepository {
      * @param profileId Target profile for all entities
      */
     suspend fun mergeAllPullData(
+        ownerUserId: String = "",
+        workoutDeletions: List<PulledWorkoutDeletionDto> = emptyList(),
         sessions: List<WorkoutSession>,
         routines: List<PullRoutineDto>,
         cycles: List<PullTrainingCycleDto>,
@@ -298,6 +371,8 @@ interface SyncRepository {
         personalRecords: List<PersonalRecordSyncDto>,
         lastSync: Long,
         profileId: String,
+        sessionNotes: Map<String, SessionNotesEntry> = emptyMap(),
+        sessionUpdatedAtById: Map<String, Long> = emptyMap(),
     )
 
     /**
@@ -316,17 +391,34 @@ interface SyncRepository {
         // Default no-op for fakes / older implementations.
     }
 
+    /** Saves a local notes edit and dirties every live component in its portal parent. */
+    suspend fun saveLocalSessionNotes(
+        portalSessionId: String,
+        notes: String?,
+        updatedAtMillis: Long,
+    ) {
+        // Default no-op for fakes / older implementations.
+    }
+
+    suspend fun getSessionNotesForPortalParents(
+        portalSessionIds: List<String>,
+    ): Map<String, SessionNotesEntry> = emptyMap()
+
     /**
-     * Pull merge for WorkoutSession rows: inserts sessions that don't exist
-     * locally and never REPLACEs an existing row (KD-3). Local rows are
-     * device-captured measurements and the pull projection is lossy. The only
-     * in-place change is a newer exercise tag (exerciseId/exerciseName) on a
-     * pulled-origin row, so a re-tag on another device still arrives.
+     * Phase 3.3 (audit item #1): LWW pull merge for WorkoutSession rows.
      *
-     * `updatedAtBySessionId` is the server timestamp that portal-sync-pull
-     * returns on `PullWorkoutSessionDto.updatedAt`, keyed on the per-exercise
-     * WorkoutSession.id (== portal exercise id; one portal session expands to
-     * N mobile rows). It stamps new rows and gates the tag update.
+     * Replaces the legacy INSERT OR IGNORE behavior (`mergeAllPullData`)
+     * which silently dropped server-newer rows. For each session, the
+     * implementation reads the existing local `updatedAt`, compares to
+     * `updatedAtBySessionId[session.id]`, and overwrites only when the
+     * incoming timestamp is newer-or-equal. NULL existing or absent map
+     * entry is treated as older (accept incoming) so first-time pulls
+     * always write.
+     *
+     * `updatedAtBySessionId` is the authoritative server timestamp that
+     * portal-sync-pull returns on `PullWorkoutSessionDto.updatedAt`. It
+     * is keyed on the per-exercise WorkoutSession.id (which equals the
+     * portal exercise id; one portal session expands to N mobile rows).
      *
      * Default no-op so unrelated test fakes do not need to implement.
      */

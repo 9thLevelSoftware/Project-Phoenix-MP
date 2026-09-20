@@ -310,6 +310,23 @@ object PortalPullAdapter {
     }
 
     /**
+     * Convert a portal routine to the legacy repository merge shape. Routine exercises
+     * are merged separately by the portal-routine path.
+     */
+    fun toRoutineSyncDto(routine: PullRoutineDto): RoutineSyncDto {
+        val now = currentTimeMillis()
+        return RoutineSyncDto(
+            clientId = routine.id,
+            serverId = routine.id,
+            name = routine.name,
+            description = routine.description,
+            deletedAt = null,
+            createdAt = now,
+            updatedAt = now,
+        )
+    }
+
+    /**
      * Convert portal badge DTO to legacy EarnedBadgeSyncDto for merge.
      */
     fun toBadgeSyncDto(badge: PullBadgeDto): EarnedBadgeSyncDto {

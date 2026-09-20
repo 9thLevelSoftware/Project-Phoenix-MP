@@ -15,6 +15,7 @@ import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.database.PhoenixDatabase
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
 /**
@@ -369,6 +370,7 @@ class AndroidDataBackupManager(
             file.delete()
             Result.success(destPath)
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }
@@ -430,7 +432,6 @@ class AndroidDataBackupManager(
                 File(filePath).inputStream()
             }
 
-            // Every file, whatever its size, goes through the single streaming importer (F-055).
             val source = InputStreamBackupSource(inputStream)
             try {
                 source.open()
@@ -439,6 +440,7 @@ class AndroidDataBackupManager(
                 source.close()
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }

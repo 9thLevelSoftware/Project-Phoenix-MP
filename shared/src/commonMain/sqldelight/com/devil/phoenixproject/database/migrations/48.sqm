@@ -1,51 +1,17 @@
--- Migration 48: session tombstones and pulled-origin markers.
---
--- DeletedWorkoutSession keeps a deleted workout deleted: the pull merge skips
--- tombstoned ids and the pull request sends portal_id as a known id so the
--- portal does not return the workout as new. portal_id is the id the portal
--- knows: routineSessionId for a grouped routine workout, otherwise the session
--- id. There is deliberately NO foreign key to UserProfile -- a tombstone has to
--- outlive a permanently deleted profile.
-CREATE TABLE IF NOT EXISTS DeletedWorkoutSession (
-    id TEXT NOT NULL PRIMARY KEY,
-    portal_id TEXT NOT NULL,
+-- Migration 48: non-destructive session sync provenance and profile-scoped baselines.
+ALTER TABLE WorkoutSession
+ADD COLUMN portalOrigin INTEGER NOT NULL DEFAULT 0 CHECK(portalOrigin IN (0, 1));
+
+CREATE TABLE ProfileExerciseBaseline (
     profile_id TEXT NOT NULL,
-    deleted_at INTEGER NOT NULL
+    exercise_id TEXT NOT NULL,
+    one_rep_max_per_cable_kg REAL,
+    updated_at INTEGER NOT NULL,
+    revision INTEGER NOT NULL DEFAULT 1 CHECK(revision > 0),
+    PRIMARY KEY (profile_id, exercise_id),
+    FOREIGN KEY (profile_id) REFERENCES UserProfile(id) ON DELETE CASCADE,
+    FOREIGN KEY (exercise_id) REFERENCES Exercise(id) ON DELETE CASCADE
 );
 
-CREATE INDEX IF NOT EXISTS idx_deleted_session_profile ON DeletedWorkoutSession(profile_id);
-CREATE INDEX IF NOT EXISTS idx_deleted_session_portal ON DeletedWorkoutSession(portal_id);
-
--- PulledWorkoutSession marks the sessions this device got from a portal pull,
--- so the push never sends them back. Also no foreign key: the marker is origin
--- provenance, not session data.
-CREATE TABLE IF NOT EXISTS PulledWorkoutSession (
-    id TEXT NOT NULL PRIMARY KEY
-);
-
--- Backfill for sessions that predate the marker: a row already stamped by a
--- sync or pull (updatedAt IS NOT NULL) that has no locally captured children.
--- A session recorded on this device writes MetricSample / RepMetric /
--- CompletedSet rows; a session the pull created has none of them.
--- A never-stamped session (updatedAt IS NULL) is never marked even when it is
--- childless: a split-transaction save can leave such a row behind, and marking
--- it would stop it from ever being uploaded.
---
--- Known limitation: updatedAt is also set on a locally recorded session once it
--- has been pushed, so a childless local row (aborted capture, zero-rep ghost
--- row, legacy import) that was pushed at least once is marked too, and the
--- push-origin exclusion is then permanent for it. Nothing is lost against the
--- same portal account (its portal copy has no children from this phone either),
--- but a re-login against another account or a forced full re-push will not
--- re-upload those rows. There is no better discriminator: the portal path never
--- populates serverId. PR 10's watermark work owns any re-push path.
---
--- backfillPulledWorkoutSessions in PhoenixDatabase.sq repeats this statement as
--- an idempotent post-open repair (MigrationManager), for databases where this
--- migration could not finish it.
-INSERT OR IGNORE INTO PulledWorkoutSession(id)
-SELECT id FROM WorkoutSession
-WHERE updatedAt IS NOT NULL
-  AND NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = WorkoutSession.id)
-  AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
-  AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id);
+CREATE INDEX idx_profile_exercise_baseline_exercise
+ON ProfileExerciseBaseline(exercise_id);

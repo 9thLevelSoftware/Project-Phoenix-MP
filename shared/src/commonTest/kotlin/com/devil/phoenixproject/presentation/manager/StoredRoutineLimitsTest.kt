@@ -54,6 +54,13 @@ class StoredRoutineLimitsTest {
             assertEquals(5f, harness.coordinator.loadedRoutine.value!!.exercises[0].progressionKg)
             val notice = harness.coordinator.commandLimitNotice.value
             assertEquals("Progression capped to 3 kg/rep", notice)
+
+            completeCurrentSet(harness)
+            advanceUntilIdle()
+            val saved = harness.fakeWorkoutRepo.saveSessionAttempts.single()
+            assertEquals(40f, saved.weightPerCableKg)
+            assertEquals(3f, saved.progressionKg, "history records the progression sent to the trainer")
+
             // Drainable state, so the screen that shows it can arrive after the send.
             harness.coordinator.consumeCommandLimitNotice()
             assertNull(harness.coordinator.commandLimitNotice.value)
@@ -87,6 +94,12 @@ class StoredRoutineLimitsTest {
                 "Weight capped to 100 kg/cable for this trainer",
                 harness.coordinator.commandLimitNotice.value,
             )
+
+            stopCurrentSet(harness)
+            advanceUntilIdle()
+            val saved = harness.fakeWorkoutRepo.saveSessionAttempts.single()
+            assertEquals(100f, saved.weightPerCableKg, "manual-stop history records the bounded load")
+            assertEquals(105f, harness.coordinator.loadedRoutine.value!!.exercises[0].weightPerCableKg)
         } finally {
             harness.cleanup()
         }
@@ -255,5 +268,15 @@ class StoredRoutineLimitsTest {
             SetEndReason.TARGET_REPS_REACHED,
         )
         runCurrent()
+    }
+
+    private fun stopCurrentSet(harness: DWSMTestHarness) {
+        harness.coordinator._repCount.value = RepCount(
+            warmupReps = 0,
+            workingReps = 10,
+            totalReps = 10,
+            isWarmupComplete = true,
+        )
+        harness.dwsm.stopWorkout(exitingWorkout = false)
     }
 }

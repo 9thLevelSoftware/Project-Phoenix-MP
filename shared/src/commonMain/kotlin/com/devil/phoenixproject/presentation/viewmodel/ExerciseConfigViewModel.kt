@@ -3,8 +3,8 @@ package com.devil.phoenixproject.presentation.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import co.touchlab.kermit.Logger
-import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.getBestVolumePRForWorkoutMode
 import com.devil.phoenixproject.data.repository.getBestWeightPRForWorkoutMode
@@ -56,12 +56,12 @@ data class SetConfiguration(
 class ExerciseConfigViewModel constructor(
     private val personalRecordRepository: PersonalRecordRepository? = null,
     private val velocityOneRepMaxRepository: VelocityOneRepMaxRepository? = null,
-    private val exerciseRepository: ExerciseRepository? = null,
+    private val baselineRepository: ProfileExerciseBaselineRepository,
 ) : ViewModel() {
 
     private val scalingBaselineResolver: ResolveRoutineScalingBaselineUseCase? =
-        if (personalRecordRepository != null && velocityOneRepMaxRepository != null && exerciseRepository != null) {
-            ResolveRoutineScalingBaselineUseCase(personalRecordRepository, exerciseRepository, velocityOneRepMaxRepository)
+        if (personalRecordRepository != null && velocityOneRepMaxRepository != null) {
+            ResolveRoutineScalingBaselineUseCase(personalRecordRepository, baselineRepository, velocityOneRepMaxRepository)
         } else {
             null
         }
@@ -88,7 +88,7 @@ class ExerciseConfigViewModel constructor(
     private val _velocityEstimateKg = MutableStateFlow<Float?>(null)
     val velocityEstimateKg: StateFlow<Float?> = _velocityEstimateKg.asStateFlow()
 
-    // Stored Exercise.oneRepMaxKg (manual/VBT input) — fallback within ESTIMATED_1RM basis
+    // Stored profile-scoped manual/assessment baseline — fallback within ESTIMATED_1RM basis.
     private val _storedOneRepMaxKg = MutableStateFlow<Float?>(null)
     val storedOneRepMaxKg: StateFlow<Float?> = _storedOneRepMaxKg.asStateFlow()
 
@@ -393,7 +393,7 @@ class ExerciseConfigViewModel constructor(
     }
 
     /**
-     * Load mode-independent baselines: velocity estimate and stored Exercise.oneRepMaxKg.
+     * Load mode-independent baselines: velocity estimate and scoped manual baseline.
      * Called once per initialize; these do not change when the workout mode selector changes.
      */
     private fun loadModeIndependentBaselines(exerciseId: String) {
@@ -410,18 +410,18 @@ class ExerciseConfigViewModel constructor(
                 // Re-sync after the velocity baseline lands (ESTIMATED_1RM may now resolve).
                 resyncSetWeightsIfBaselineReady()
             }
-            if (exerciseRepository != null) {
-                try {
-                    val ex = exerciseRepository.getExerciseById(exerciseId)
-                    _storedOneRepMaxKg.value = ex?.oneRepMaxKg?.takeIf { it > 0 }
-                    logDebug("Loaded stored 1RM for exercise=$exerciseId: ${_storedOneRepMaxKg.value ?: "none"}")
-                } catch (e: Exception) {
-                    logWarning("Failed to load stored 1RM for exercise=$exerciseId: ${e.message}")
-                    _storedOneRepMaxKg.value = null
-                }
-                // Re-sync after the stored-1RM fallback lands.
-                resyncSetWeightsIfBaselineReady()
+            try {
+                _storedOneRepMaxKg.value = baselineRepository
+                    .get(activeProfileId, exerciseId)
+                    ?.oneRepMaxPerCableKg
+                    ?.takeIf { it > 0 }
+                logDebug("Loaded scoped 1RM for exercise=$exerciseId profile=$activeProfileId: ${_storedOneRepMaxKg.value ?: "none"}")
+            } catch (e: Exception) {
+                logWarning("Failed to load scoped 1RM for exercise=$exerciseId profile=$activeProfileId: ${e.message}")
+                _storedOneRepMaxKg.value = null
             }
+            // Re-sync after the stored-1RM fallback lands.
+            resyncSetWeightsIfBaselineReady()
             loadRoutineScalingBaseline(exerciseId, _selectedMode.value)
         }
     }
@@ -440,7 +440,7 @@ class ExerciseConfigViewModel constructor(
      * mirroring ResolveRoutineWeightsUseCase's resolution order:
      *   MAX_WEIGHT_PR  → max-weight PR
      *   MAX_VOLUME_PR  → max-volume PR
-     *   ESTIMATED_1RM  → velocity estimate → stored Exercise.oneRepMaxKg → max-weight PR (last resort)
+     *   ESTIMATED_1RM  → velocity estimate → scoped baseline → max-weight PR (last resort)
      *
      * Returns null when no data is available for the selected basis (controls preview and gating).
      */

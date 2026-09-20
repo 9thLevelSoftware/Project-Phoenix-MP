@@ -43,6 +43,10 @@ internal data class SetExecutionCompletion(
     val isCableExercise: Boolean,
     val physicalCableCount: Int? = null,
     val logicalPreRackCommandTemplate: com.devil.phoenixproject.domain.model.WorkoutParameters,
+    /** Programmed cable load adjusted by any safety-limit delta in the accepted command. */
+    val executedWeightPerCableKg: Float? = null,
+    /** Programmed per-rep progression adjusted by any safety-limit delta in the accepted command. */
+    val executedProgressionKg: Float? = null,
 ) {
     init {
         require(attemptNumber > 0)
@@ -198,6 +202,8 @@ internal data class SetExecutionActivationFacts(
     val isCableExercise: Boolean,
     val physicalCableCount: Int? = null,
     val logicalPreRackCommandTemplate: com.devil.phoenixproject.domain.model.WorkoutParameters,
+    val executedWeightPerCableKg: Float? = null,
+    val executedProgressionKg: Float? = null,
 ) {
     fun complete(lease: ExecutionLease, reason: SetEndReason, actualReps: Int) = SetExecutionCompletion(
         lease = lease,
@@ -221,6 +227,8 @@ internal data class SetExecutionActivationFacts(
         isCableExercise = isCableExercise,
         physicalCableCount = physicalCableCount,
         logicalPreRackCommandTemplate = logicalPreRackCommandTemplate,
+        executedWeightPerCableKg = executedWeightPerCableKg,
+        executedProgressionKg = executedProgressionKg,
     )
 }
 

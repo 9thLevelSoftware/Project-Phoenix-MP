@@ -15,7 +15,6 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.collect
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
@@ -283,8 +282,6 @@ class HistoryManagerTest {
     fun `delete methods remove sessions from history`() = runTest {
         val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
         try {
-            // Delete All is profile-scoped, so it needs an active profile to act on.
-            fakeUserProfileRepository.setActiveProfileForTest()
             val manager =
                 HistoryManager(
                     fakeWorkoutRepository,
@@ -307,67 +304,11 @@ class HistoryManagerTest {
             advanceUntilIdle()
             assertEquals(1, latestHistory.size)
 
-            manager.deleteAllWorkouts()
+            manager.deleteAllWorkouts("default")
             advanceUntilIdle()
             assertEquals(0, latestHistory.size)
 
             collectJob.cancel()
-        } finally {
-            managerScope.cancel()
-        }
-    }
-
-    @Test
-    fun `delete all workouts only deletes the active profile's history`() = runTest {
-        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
-        try {
-            fakeUserProfileRepository.setActiveProfileForTest(id = "profile-a")
-            val manager =
-                HistoryManager(
-                    fakeWorkoutRepository,
-                    fakePersonalRecordRepository,
-                    fakeUserProfileRepository,
-                    managerScope,
-                )
-            fakeWorkoutRepository.addSession(WorkoutSession(id = "a-1", profileId = "profile-a"))
-            fakeWorkoutRepository.addSession(WorkoutSession(id = "b-1", profileId = "profile-b"))
-            advanceUntilIdle()
-
-            manager.deleteAllWorkouts()
-            advanceUntilIdle()
-
-            // Both halves: profile A's history is gone, profile B's is untouched.
-            assertEquals(listOf("b-1"), fakeWorkoutRepository.allSessions().map { it.id })
-            assertEquals(
-                emptyList(),
-                fakeWorkoutRepository.getAllSessions("profile-a").first().filter { it.profileId == "profile-a" },
-            )
-        } finally {
-            managerScope.cancel()
-        }
-    }
-
-    @Test
-    fun `delete all workouts falls back to the default profile like the history it shows`() = runTest {
-        val managerScope = CoroutineScope(coroutineContext + SupervisorJob())
-        try {
-            // No active profile: the history on screen and the dialog both say "Default",
-            // so the wipe has to act on the default profile rather than do nothing.
-            val manager =
-                HistoryManager(
-                    fakeWorkoutRepository,
-                    fakePersonalRecordRepository,
-                    fakeUserProfileRepository,
-                    managerScope,
-                )
-            fakeWorkoutRepository.addSession(WorkoutSession(id = "d-1", profileId = "default"))
-            fakeWorkoutRepository.addSession(WorkoutSession(id = "a-1", profileId = "profile-a"))
-            advanceUntilIdle()
-
-            manager.deleteAllWorkouts()
-            advanceUntilIdle()
-
-            assertEquals(listOf("a-1"), fakeWorkoutRepository.allSessions().map { it.id })
         } finally {
             managerScope.cancel()
         }

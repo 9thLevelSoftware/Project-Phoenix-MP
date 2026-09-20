@@ -3,6 +3,9 @@ package com.devil.phoenixproject.testutil
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesCodec
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesValidator
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
+import com.devil.phoenixproject.data.repository.ProfileAccountBindingException
+import com.devil.phoenixproject.data.repository.ProfileAccountLinkReceipt
+import com.devil.phoenixproject.data.repository.ProfileAccountLinkRollbackException
 import com.devil.phoenixproject.data.repository.ProfileContextUnavailableException
 import com.devil.phoenixproject.data.repository.StaleProfileContextException
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
@@ -517,6 +520,14 @@ class FakeUserProfileRepository : UserProfileRepository {
     override suspend fun linkToSupabase(profileId: String, supabaseUserId: String) {
         mutex.withLock {
             profiles[profileId]?.let { profile ->
+                val currentOwnerUserId = profile.supabaseUserId
+                if (currentOwnerUserId != null && currentOwnerUserId != supabaseUserId) {
+                    throw ProfileAccountBindingException(
+                        profileId = profileId,
+                        currentOwnerUserId = currentOwnerUserId,
+                        requestedOwnerUserId = supabaseUserId,
+                    )
+                }
                 profiles[profileId] = profile.copy(
                     supabaseUserId = supabaseUserId,
                     lastAuthAt = currentTimeMillis(),
@@ -525,6 +536,50 @@ class FakeUserProfileRepository : UserProfileRepository {
                 if ((activeProfileContext.value as? ActiveProfileContext.Ready)?.profile?.id == profileId) {
                     publishReady(profileId)
                 }
+            }
+        }
+    }
+
+    override suspend fun linkToSupabaseUnderProfileMutationBarrier(
+        profileId: String,
+        supabaseUserId: String,
+    ): ProfileAccountLinkReceipt = mutex.withLock {
+        val profile = profiles[profileId] ?: error("Profile does not exist: $profileId")
+        val currentOwnerUserId = profile.supabaseUserId
+        if (currentOwnerUserId != null && currentOwnerUserId != supabaseUserId) {
+            throw ProfileAccountBindingException(profileId, currentOwnerUserId, supabaseUserId)
+        }
+        val linkedAt = currentTimeMillis()
+        profiles[profileId] = profile.copy(supabaseUserId = supabaseUserId, lastAuthAt = linkedAt)
+        updateIdentityFlows()
+        if ((activeProfileContext.value as? ActiveProfileContext.Ready)?.profile?.id == profileId) {
+            publishReady(profileId)
+        }
+        ProfileAccountLinkReceipt(
+            profileId = profileId,
+            ownerUserId = supabaseUserId,
+            linkedAt = linkedAt,
+            previousOwnerUserId = currentOwnerUserId,
+            previousLastAuthAt = profile.lastAuthAt,
+        )
+    }
+
+    override suspend fun rollbackSupabaseLinkUnderProfileMutationBarrier(
+        receipt: ProfileAccountLinkReceipt,
+    ) {
+        mutex.withLock {
+            val profile = profiles[receipt.profileId]
+                ?: throw ProfileAccountLinkRollbackException(receipt.profileId)
+            if (profile.supabaseUserId != receipt.ownerUserId || profile.lastAuthAt != receipt.linkedAt) {
+                throw ProfileAccountLinkRollbackException(receipt.profileId)
+            }
+            profiles[receipt.profileId] = profile.copy(
+                supabaseUserId = receipt.previousOwnerUserId,
+                lastAuthAt = receipt.previousLastAuthAt,
+            )
+            updateIdentityFlows()
+            if ((activeProfileContext.value as? ActiveProfileContext.Ready)?.profile?.id == receipt.profileId) {
+                publishReady(receipt.profileId)
             }
         }
     }

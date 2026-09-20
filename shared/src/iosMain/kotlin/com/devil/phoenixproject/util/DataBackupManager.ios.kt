@@ -9,6 +9,7 @@ import kotlinx.cinterop.BetaInteropApi
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 import platform.Foundation.NSData
 import platform.Foundation.NSDate
@@ -25,6 +26,7 @@ import platform.Foundation.NSUTF8StringEncoding
 import platform.Foundation.NSUserDomainMask
 import platform.Foundation.create
 import platform.Foundation.dataUsingEncoding
+import platform.Foundation.dataWithContentsOfFile
 import platform.Foundation.setValue
 import platform.Foundation.timeIntervalSince1970
 import platform.Foundation.valueForKey
@@ -342,7 +344,6 @@ class IosDataBackupManager(
 
     override suspend fun importFromFile(filePath: String): Result<ImportResult> = withContext(Dispatchers.IO) {
         try {
-            // Every file, whatever its size, goes through the single streaming importer (F-055).
             val source = FileBackupStreamSource(filePath)
             try {
                 source.open()
@@ -351,6 +352,7 @@ class IosDataBackupManager(
                 source.close()
             }
         } catch (e: Exception) {
+            if (e is CancellationException) throw e
             Result.failure(e)
         }
     }

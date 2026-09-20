@@ -97,6 +97,9 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         externalAddedLoadKg: Double,
         counterweightKg: Double,
         rackItemsJson: String,
+        portalOrigin: Long,
+        localSyncGeneration: Long,
+        syncedSyncGeneration: Long,
     ): WorkoutSession = WorkoutSession(
         id = id,
         timestamp = timestamp,
@@ -632,50 +635,115 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
         }
     }
 
-    /**
-     * Tombstone first, then hard-delete, in one transaction: the tombstone is
-     * read off the rows that are about to go, so it has to be written while
-     * they still exist. A partial write would either resurrect the workout on
-     * the next pull or tombstone a session that is still here.
-     */
     override suspend fun deleteSession(sessionId: String) {
         withContext(Dispatchers.IO) {
-            val deletedAt = currentTimeMillis()
             db.transaction {
-                queries.insertSessionTombstone(deletedAt = deletedAt, id = sessionId)
-                queries.deleteSession(sessionId)
-            }
-        }
-    }
-
-    /** Internal cleanup: the same hard delete, deliberately without a tombstone. */
-    override suspend fun discardSession(sessionId: String) {
-        withContext(Dispatchers.IO) {
-            queries.deleteSession(sessionId)
-        }
-    }
-
-    override suspend fun deleteSessionsByRoutineSessionId(routineSessionId: String) {
-        withContext(Dispatchers.IO) {
-            val deletedAt = currentTimeMillis()
-            db.transaction {
-                queries.insertSessionTombstonesForRoutineSession(
-                    deletedAt = deletedAt,
-                    routineSessionId = routineSessionId,
+                val session = queries.selectSessionById(sessionId).executeAsOneOrNull()
+                    ?: return@transaction
+                val portalSessionId = session.routineSessionId
+                    ?.takeIf { it.isNotBlank() }
+                    ?: session.id
+                val liveComponents = queries.selectLiveProfileWorkoutComponentsForDeletion(
+                    profileId = session.profile_id,
+                    portalSessionId = portalSessionId,
+                ).executeAsList()
+                val scope = if (session.routineSessionId.isNullOrBlank() || liveComponents.size <= 1) {
+                    WorkoutDeletionScope.WORKOUT
+                } else {
+                    WorkoutDeletionScope.COMPONENT
+                }
+                insertLocalDeletion(
+                    profileId = session.profile_id,
+                    scope = scope,
+                    portalSessionId = portalSessionId,
+                    componentSessionId = session.id.takeIf { scope == WorkoutDeletionScope.COMPONENT },
+                    deletedAt = currentTimeMillis(),
                 )
-                queries.deleteSessionsByRoutineSessionId(routineSessionId)
+                if (scope == WorkoutDeletionScope.WORKOUT) {
+                    queries.hardDeleteProfileWorkoutPortalParent(
+                        profileId = session.profile_id,
+                        portalSessionId = portalSessionId,
+                    )
+                } else {
+                    queries.hardDeleteWorkoutComponent(session.id)
+                }
             }
         }
     }
 
-    override suspend fun deleteAllSessionsForProfile(profileId: String) {
+    override suspend fun deleteSessionsByRoutineSessionId(profileId: String, routineSessionId: String) {
+        require(profileId.isNotBlank()) { "profileId must not be blank" }
+        require(routineSessionId.isNotBlank()) { "routineSessionId must not be blank" }
         withContext(Dispatchers.IO) {
-            val deletedAt = currentTimeMillis()
             db.transaction {
-                queries.insertSessionTombstonesForProfile(deletedAt = deletedAt, profileId = profileId)
-                queries.deleteAllSessionsForProfile(profileId)
+                val components = queries.selectLiveProfileWorkoutComponentsForDeletion(
+                    profileId = profileId,
+                    portalSessionId = routineSessionId,
+                ).executeAsList()
+                if (components.isEmpty()) return@transaction
+                insertLocalDeletion(
+                    profileId = profileId,
+                    scope = WorkoutDeletionScope.WORKOUT,
+                    portalSessionId = routineSessionId,
+                    componentSessionId = null,
+                    deletedAt = currentTimeMillis(),
+                )
+                queries.hardDeleteProfileWorkoutPortalParent(
+                    profileId = profileId,
+                    portalSessionId = routineSessionId,
+                )
             }
         }
+    }
+
+    override suspend fun deleteAllSessions(profileId: String) {
+        require(profileId.isNotBlank()) { "profileId must not be blank" }
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                val deletedAt = currentTimeMillis()
+                val portalSessionIds = queries
+                    .selectDistinctLiveWorkoutPortalParentsForProfile(profileId)
+                    .executeAsList()
+                portalSessionIds.forEach { portalSessionId ->
+                    insertLocalDeletion(
+                        profileId = profileId,
+                        scope = WorkoutDeletionScope.WORKOUT,
+                        portalSessionId = portalSessionId,
+                        componentSessionId = null,
+                        deletedAt = deletedAt,
+                    )
+                }
+                queries.hardDeleteAllWorkoutSessionsForProfile(profileId)
+            }
+        }
+    }
+
+    override suspend fun discardSessionInternal(sessionId: String) {
+        withContext(Dispatchers.IO) {
+            queries.hardDeleteWorkoutComponent(sessionId)
+        }
+    }
+
+    private fun insertLocalDeletion(
+        profileId: String,
+        scope: WorkoutDeletionScope,
+        portalSessionId: String,
+        componentSessionId: String?,
+        deletedAt: Long,
+    ) {
+        val ownerUserId = queries.getProfileById(profileId)
+            .executeAsOneOrNull()
+            ?.supabase_user_id
+        queries.insertWorkoutDeletion(
+            mutationId = generateUUID(),
+            ownerUserId = ownerUserId,
+            profileId = profileId,
+            scope = scope.name,
+            portalSessionId = portalSessionId,
+            componentSessionId = componentSessionId,
+            deletedAt = deletedAt,
+            source = WorkoutDeletionSource.LOCAL.name,
+        )
     }
 
     override fun getAllRoutines(profileId: String): Flow<List<Routine>> = queries.selectAllRoutines(profileId = profileId, mapper = ::mapToRoutineBasic)
@@ -1036,6 +1104,7 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
                         status = metric.status.toLong(),
                     )
                 }
+                queries.markWorkoutComponentDirty(sessionId)
             }
         }
     }
@@ -1134,22 +1203,25 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
     override suspend fun savePhaseStatistics(sessionId: String, stats: com.devil.phoenixproject.domain.model.HeuristicStatistics) {
         withContext(Dispatchers.IO) {
-            queries.insertPhaseStatistics(
-                sessionId = sessionId,
-                concentricKgAvg = stats.concentric.kgAvg.toDouble(),
-                concentricKgMax = stats.concentric.kgMax.toDouble(),
-                concentricVelAvg = stats.concentric.velAvg.toDouble(),
-                concentricVelMax = stats.concentric.velMax.toDouble(),
-                concentricWattAvg = stats.concentric.wattAvg.toDouble(),
-                concentricWattMax = stats.concentric.wattMax.toDouble(),
-                eccentricKgAvg = stats.eccentric.kgAvg.toDouble(),
-                eccentricKgMax = stats.eccentric.kgMax.toDouble(),
-                eccentricVelAvg = stats.eccentric.velAvg.toDouble(),
-                eccentricVelMax = stats.eccentric.velMax.toDouble(),
-                eccentricWattAvg = stats.eccentric.wattAvg.toDouble(),
-                eccentricWattMax = stats.eccentric.wattMax.toDouble(),
-                timestamp = stats.timestamp,
-            )
+            db.transaction {
+                queries.insertPhaseStatistics(
+                    sessionId = sessionId,
+                    concentricKgAvg = stats.concentric.kgAvg.toDouble(),
+                    concentricKgMax = stats.concentric.kgMax.toDouble(),
+                    concentricVelAvg = stats.concentric.velAvg.toDouble(),
+                    concentricVelMax = stats.concentric.velMax.toDouble(),
+                    concentricWattAvg = stats.concentric.wattAvg.toDouble(),
+                    concentricWattMax = stats.concentric.wattMax.toDouble(),
+                    eccentricKgAvg = stats.eccentric.kgAvg.toDouble(),
+                    eccentricKgMax = stats.eccentric.kgMax.toDouble(),
+                    eccentricVelAvg = stats.eccentric.velAvg.toDouble(),
+                    eccentricVelMax = stats.eccentric.velMax.toDouble(),
+                    eccentricWattAvg = stats.eccentric.wattAvg.toDouble(),
+                    eccentricWattMax = stats.eccentric.wattMax.toDouble(),
+                    timestamp = stats.timestamp,
+                )
+                queries.markWorkoutComponentDirty(sessionId)
+            }
             Logger.d { "Saved phase statistics for session $sessionId" }
         }
     }

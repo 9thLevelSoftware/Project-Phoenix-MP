@@ -19,6 +19,8 @@ import com.devil.phoenixproject.data.repository.EquipmentRackRepository
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.PersonalRecordRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
+import com.devil.phoenixproject.data.repository.ProfileRecoveryActivityTracker
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.ScannedDevice
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
@@ -75,6 +77,8 @@ import com.devil.phoenixproject.presentation.manager.HistoryManager
 import com.devil.phoenixproject.presentation.manager.JustLiftDefaults
 import com.devil.phoenixproject.presentation.manager.MachineTeardownState
 import com.devil.phoenixproject.presentation.manager.MachineSafetyCoordinator
+import com.devil.phoenixproject.presentation.manager.MachineSafetyHazardIdentity
+import com.devil.phoenixproject.presentation.manager.MachineSafetyRecoveryRequestResult
 import com.devil.phoenixproject.presentation.manager.MachineSafetyUiState
 import com.devil.phoenixproject.presentation.manager.RestActionIdentity
 import com.devil.phoenixproject.presentation.manager.RestTransitionCommand
@@ -514,6 +518,7 @@ class MainViewModel(
     private val workoutRepository: WorkoutRepository,
     val exerciseRepository: ExerciseRepository,
     val personalRecordRepository: PersonalRecordRepository,
+    private val profileExerciseBaselineRepository: ProfileExerciseBaselineRepository,
     private val repCounter: RepCounterFromMachine,
     private val preferencesManager: PreferencesManager,
     private val gamificationRepository: GamificationRepository,
@@ -525,7 +530,8 @@ class MainViewModel(
     private val repMetricRepository: RepMetricRepository,
     private val biomechanicsRepository: BiomechanicsRepository,
     private val resolveWeightsUseCase: ResolveRoutineWeightsUseCase,
-    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase = ApplyRoutineModifierUseCase(personalRecordRepository, exerciseRepository),
+    private val applyRoutineModifierUseCase: ApplyRoutineModifierUseCase =
+        ApplyRoutineModifierUseCase(personalRecordRepository, profileExerciseBaselineRepository),
     private val recommendWeightAdjustmentUseCase: RecommendWeightAdjustmentUseCase,
     private val equipmentRackRepository: EquipmentRackRepository,
     private val applyEquipmentRackLoadUseCase: ApplyEquipmentRackLoadUseCase,
@@ -544,6 +550,7 @@ class MainViewModel(
     // Issue #517: one-time startup backfill of velocity-1RM estimates for historical data.
     private val backfillVelocityOneRepMaxUseCase: BackfillVelocityOneRepMaxUseCase,
     internal val machineSafetyCoordinator: MachineSafetyCoordinator,
+    private val profileRecoveryActivityTracker: ProfileRecoveryActivityTracker? = null,
 ) : ViewModel() {
 
     // Shared haptic events flow - created here, passed to both GamificationManager and WorkoutSessionManager
@@ -642,6 +649,7 @@ class MainViewModel(
         workoutRepository = workoutRepository,
         exerciseRepository = exerciseRepository,
         personalRecordRepository = personalRecordRepository,
+        profileExerciseBaselineRepository = profileExerciseBaselineRepository,
         repCounter = repCounter,
         preferencesManager = preferencesManager,
         gamificationManager = gamificationManager,
@@ -667,6 +675,7 @@ class MainViewModel(
         scope = viewModelScope,
         _hapticEvents = _hapticEvents,
         machineSafetyCoordinator = machineSafetyCoordinator,
+        profileRecoveryActivityTracker = profileRecoveryActivityTracker,
     )
 
     // === Phase 2a: BleConnectionManager (extracted from this class) ===
@@ -752,22 +761,38 @@ class MainViewModel(
     fun disconnect() = bleConnectionManager.disconnect()
     fun clearConnectionError() = bleConnectionManager.clearConnectionError()
     fun dismissConnectionLostAlert() = bleConnectionManager.dismissConnectionLostAlert()
-    fun dismissMachineSafetyWarning() = machineSafetyCoordinator.hideTemporarily()
-    fun requestMachineSafetyRecovery() = machineSafetyCoordinator.requestReleaseRecovery()
-    fun acknowledgeMachineSafetyUnloaded(generation: Long) = machineSafetyCoordinator.acknowledgeUnloaded(generation)
-    fun ensureConnection(onConnected: () -> Unit, onFailed: () -> Unit = {}) = bleConnectionManager.ensureConnection(onConnected, onFailed)
-    fun reconnectInterruptedWorkout() {
-        if (machineSafetyCoordinator.uiState.value is MachineSafetyUiState.Visible) {
-            machineSafetyCoordinator.requestReleaseRecovery()
-            return
-        }
-        machineSafetyCoordinator.authorizeInterruptedWorkoutResume()
-        bleConnectionManager.dismissConnectionLostAlert()
-        bleConnectionManager.ensureConnection(
-            onConnected = { workoutSessionManager.reconnectInterruptedWorkout() },
-            onFailed = {},
-        )
+    fun dismissMachineSafetyWarning() {
+        viewModelScope.launch { machineSafetyCoordinator.hideTemporarily() }
     }
+    fun requestMachineSafetyRecovery(identity: MachineSafetyHazardIdentity?) {
+        viewModelScope.launch {
+            val requestedIdentity = identity ?: run {
+                machineSafetyCoordinator.surfaceStoredHazard()
+                (machineSafetyCoordinator.uiState.value as? MachineSafetyUiState.Visible)?.identity
+            }
+            val result = if (requestedIdentity == null) {
+                MachineSafetyRecoveryRequestResult.NO_VISIBLE_HAZARD
+            } else {
+                machineSafetyCoordinator.requestReleaseRecovery(requestedIdentity)
+            }
+            when (result) {
+                MachineSafetyRecoveryRequestResult.NO_VISIBLE_HAZARD ->
+                    workoutSessionManager.coordinator._userFeedbackEvents.tryEmit(
+                        "No stored machine recovery was found. Confirm the machine is unloaded before starting again.",
+                    )
+                MachineSafetyRecoveryRequestResult.STALE_HAZARD ->
+                    workoutSessionManager.coordinator._userFeedbackEvents.tryEmit(
+                        "The machine safety warning changed. Review it and try again.",
+                    )
+                MachineSafetyRecoveryRequestResult.STARTED,
+                MachineSafetyRecoveryRequestResult.ALREADY_IN_PROGRESS -> Unit
+            }
+        }
+    }
+    fun acknowledgeMachineSafetyUnloaded(identity: MachineSafetyHazardIdentity) {
+        viewModelScope.launch { machineSafetyCoordinator.acknowledgeUnloaded(identity) }
+    }
+    fun ensureConnection(onConnected: () -> Unit, onFailed: () -> Unit = {}) = bleConnectionManager.ensureConnection(onConnected, onFailed)
     fun cancelConnection() = bleConnectionManager.cancelConnection()
 
     // ===== History Delegation =====
@@ -816,9 +841,10 @@ class MainViewModel(
      * so zero-rep ghost rows hidden by `getHistoryVisibleSessions` are
      * soft-deleted along with the visible sets.
      */
-    fun deleteRoutineWorkouts(routineSessionId: String) = historyManager.deleteRoutineWorkouts(routineSessionId)
+    fun deleteRoutineWorkouts(profileId: String, routineSessionId: String) =
+        historyManager.deleteRoutineWorkouts(profileId, routineSessionId)
 
-    fun deleteAllWorkouts() = historyManager.deleteAllWorkouts()
+    fun deleteAllWorkouts(profileId: String) = historyManager.deleteAllWorkouts(profileId)
 
     // ===== Settings Delegation =====
 
@@ -1287,10 +1313,9 @@ class MainViewModel(
         }
         viewModelScope.launch {
             bleRepository.reconnectionRequested.collect { request ->
-                machineSafetyCoordinator.recordConnectionLost(
+                machineSafetyCoordinator.recordUnexpectedDisconnect(
                     trainerAddress = request.deviceAddress,
                     trainerName = request.deviceName,
-                    kind = com.devil.phoenixproject.data.repository.MachineSafetyWorkoutKind.UNKNOWN,
                 )
             }
         }

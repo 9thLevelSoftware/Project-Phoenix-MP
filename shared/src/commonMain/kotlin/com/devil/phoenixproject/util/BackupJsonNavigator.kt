@@ -346,6 +346,12 @@ class BackupJsonNavigator(private val source: BackupStreamSource) {
         expectLiteral("null")
     }
 
+    /** Reject trailing non-whitespace after the root JSON value. */
+    fun requireEndOfInput() {
+        skipWhitespace()
+        if (hasMore()) parseError("Unexpected trailing content")
+    }
+
     // -- Internal: string reading ------------------------------------------------
 
     /**
