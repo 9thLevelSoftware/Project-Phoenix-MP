@@ -172,7 +172,13 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
     LaunchedEffect(commandLimitNotice) {
         val notice = commandLimitNotice ?: return@LaunchedEffect
         viewModel.consumeCommandLimitNotice()
-        snackbarHostState.showSnackbar(message = notice, duration = SnackbarDuration.Long)
+        // Show it on snackbarScope, not in this effect: consuming the notice flips the state
+        // back to null, which changes this LaunchedEffect's key and cancels its coroutine —
+        // and showSnackbar dismisses the snackbar when cancelled. The snackbar has to outlive
+        // the effect that triggered it, exactly like the feedback collector above.
+        snackbarScope.launch {
+            snackbarHostState.showSnackbar(message = notice, duration = SnackbarDuration.Long)
+        }
     }
 
     // Issue #348: Wake lock moved to EnhancedMainScreen (session-scoped) so it

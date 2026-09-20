@@ -99,6 +99,14 @@ class CommandLimitsWiringTest {
                 activeWorkout.contains("viewModel.consumeCommandLimitNotice()"),
             "ActiveWorkoutScreen must show and drain the capped notice when it arrives.",
         )
+        // Draining the notice changes the LaunchedEffect key and cancels its coroutine, and a
+        // cancelled showSnackbar dismisses itself, so the snackbar must outlive that effect.
+        val afterDrain = activeWorkout.substringAfter("viewModel.consumeCommandLimitNotice()")
+            .substringBefore("snackbarHostState.showSnackbar")
+        assertTrue(
+            afterDrain.contains("snackbarScope.launch"),
+            "The capped notice must be shown on snackbarScope, not inside the effect that drains it.",
+        )
     }
 
     private fun read(relativeToKotlinRoot: String): String {
