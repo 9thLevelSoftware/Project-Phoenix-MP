@@ -42,6 +42,9 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarDuration
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -194,6 +197,21 @@ fun EnhancedMainScreen(
     val syncState by syncManager.syncState.collectAsState()
     val isAuthenticated by syncManager.isAuthenticated.collectAsState()
     val lastSyncTime by syncManager.lastSyncTime.collectAsState()
+    val serverDeletionNotice by syncManager.serverDeletionNotice.collectAsState()
+    val serverDeletionNoticeSnackbarHostState = remember { SnackbarHostState() }
+
+    // Keep the notice pending until its snackbar has been displayed and dismissed. The
+    // acknowledgement is conditional, so a newer notice merged while this one is visible
+    // remains queued for the next snackbar.
+    LaunchedEffect(serverDeletionNotice) {
+        serverDeletionNotice?.let { notice ->
+            serverDeletionNoticeSnackbarHostState.showSnackbar(
+                message = notice.message,
+                duration = SnackbarDuration.Long,
+            )
+            syncManager.clearServerDeletionNotice(notice)
+        }
+    }
 
     var currentRoute by remember(navController) {
         mutableStateOf(navController.currentBackStackEntry?.destination?.route ?: NavigationRoutes.Home.route)
@@ -312,6 +330,9 @@ fun EnhancedMainScreen(
 
             Scaffold(
                 contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                snackbarHost = {
+                    SnackbarHost(hostState = serverDeletionNoticeSnackbarHostState)
+                },
                 topBar = {
                     if (shouldShowTopBar) {
                         TopAppBar(
