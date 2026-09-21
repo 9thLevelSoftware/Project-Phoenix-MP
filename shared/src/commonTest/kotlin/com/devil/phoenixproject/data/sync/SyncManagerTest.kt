@@ -776,6 +776,44 @@ class SyncManagerTest {
     }
 
     @Test
+    fun batchedPushSendsPersonalRecordsOnEveryBatch() = runTest {
+        setupAuthenticated()
+        val prUuid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            makePersonalRecord(
+                id = 7,
+                exerciseId = "bench",
+                exerciseName = "Bench Press",
+                weightPerCableKg = 100f,
+                reps = 3,
+                timestamp = 1_740_916_800_000L,
+                prType = PRType.MAX_WEIGHT,
+                phase = WorkoutPhase.COMBINED,
+                uuid = prUuid,
+            ),
+        )
+        fakeSyncRepo.workoutSessionsToReturn = (0 until SyncManager.SYNC_BATCH_SIZE + 1).map { i ->
+            makeWorkoutSession(id = "pr-batch-session-$i", timestamp = 1_740_916_800_000L + i * 60_000L)
+        }
+        fakeApi.pushResultsQueue = mutableListOf(
+            Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z")),
+            Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:01Z")),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        assertEquals(2, fakeApi.pushPayloads.size, "forced a two-batch push")
+        fakeApi.pushPayloads.forEachIndexed { index, payload ->
+            assertEquals(
+                listOf(prUuid),
+                payload.personalRecords.map { it.id },
+                "batch ${index + 1} must carry dedicated personalRecords so the portal does not derive id-less rows",
+            )
+        }
+    }
+
+    @Test
     fun pushResponseWithoutCycleVersionsLeavesStoredBasesAlone() = runTest {
         setupAuthenticated()
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))

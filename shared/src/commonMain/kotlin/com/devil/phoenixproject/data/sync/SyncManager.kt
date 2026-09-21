@@ -1447,7 +1447,12 @@ class SyncManager(
                     profileName = payloadProfileName,
                     allProfiles = if (isLastBatch) profileDtos else null,
                     externalActivities = if (isLastBatch) externalActivityDtos else emptyList(),
-                    personalRecords = if (isLastBatch) personalRecordDtos else emptyList(),
+                    // Dedicated personalRecords must travel with every session batch.
+                    // An empty list makes the portal derive id-less rows from set.isPr
+                    // and INSERT them (mobile-sync-push, dedicatedPrsPresent). Last-batch-only
+                    // shipping is what produced duplicate personal_records on large history
+                    // syncs. The portal upserts dedicated rows on id, so a repeat send is a no-op.
+                    personalRecords = personalRecordDtos,
                 )
 
                 rejectDuplicatePushPayloadKeys(payload)?.let { return it }
