@@ -103,5 +103,3 @@ bugreport-*.zip
 
 # Codeboarding cache
 .codeboarding/cache/
-.almanac/runs/
-.almanac/index.db

@@ -8,7 +8,6 @@ This file provides guidance to Claude Code (claude.ai/code) and other coding age
 - Spawned agents must stay within this project's tools and skills (`.agents/skills/`: `agent-browser`, `update-phoenix-version`); don't pull in tooling from unrelated projects.
 - All weight fields are **per cable** unless the name says *Total*. Never treat a machine total (200/220 kg) as a per-cable value.
 - Never use `INSERT OR REPLACE` on a table with FK children. REPLACE deletes the old row, and `ON DELETE CASCADE` children (e.g. of `WorkoutSession`, `Exercise`) go with it. Use `INSERT OR IGNORE` + `UPDATE` instead.
-- `.almanac/` is an older agent wiki (historical, last verified 2026-06). Use it as secondary background only; this file and the code win where they disagree.
 
 ## Project Overview
 
