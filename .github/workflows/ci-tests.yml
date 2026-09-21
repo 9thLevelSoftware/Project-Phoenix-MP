@@ -38,6 +38,9 @@ jobs:
       - name: Validate release workflow contracts
         run: python3 .github/scripts/test_release_workflows.py
 
+      - name: Validate release-asset replacement helper
+        run: python3 .github/scripts/test_replace_release_asset.py
+
   unit-tests:
     name: Unit Tests
     runs-on: ubuntu-latest

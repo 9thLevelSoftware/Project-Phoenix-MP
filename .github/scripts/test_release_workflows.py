@@ -31,14 +31,18 @@ class ReleaseWorkflowContracts(unittest.TestCase):
         for name in ("ios-testflight.yml", "ios-testflight-internal.yml"):
             with self.subTest(workflow=name):
                 text = workflow(name)
+                # Contract is SHA-pinned uses + runner/tooling split. Do not assert
+                # Dependabot version comments (`# v4`, `# v7.0.1`, …); those move
+                # independently of the pin. SHA pinning is also covered by
+                # test_release_workflow_actions_are_sha_pinned.
                 self.assertRegex(
                     text,
-                    r"(?ms)^  build:.*?runs-on: macos-26.*?uses: actions/upload-artifact@[0-9a-f]{40} # v4",
+                    r"(?ms)^  build:.*?runs-on: macos-26.*?uses: actions/upload-artifact@[0-9a-f]{40}",
                 )
                 self.assertRegex(
                     text,
                     r"(?ms)^  upload(?:-and-distribute)?:.*?needs: build.*?runs-on: macos-15"
-                    r".*?uses: actions/download-artifact@[0-9a-f]{40} # v4"
+                    r".*?uses: actions/download-artifact@[0-9a-f]{40}"
                     r".*?xcode-select -s /Applications/Xcode_16\.4\.app/Contents/Developer"
                     r".*?xcrun altool",
                 )
@@ -46,7 +50,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 self.assertGreaterEqual(text.count("testflight-ipa-${{ github.run_id }}"), 2)
                 self.assertRegex(
                     text,
-                    r"(?ms)uses: actions/upload-artifact@[0-9a-f]{40} # v4.*?overwrite: true",
+                    r"(?ms)uses: actions/upload-artifact@[0-9a-f]{40}.*?overwrite: true",
                 )
 
     def test_store_jobs_are_not_blocked_by_the_other_platform(self) -> None:
