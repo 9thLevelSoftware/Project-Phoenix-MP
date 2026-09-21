@@ -29,8 +29,6 @@ import androidx.compose.material.icons.filled.BluetoothDisabled
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -42,9 +40,7 @@ import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
-import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
@@ -85,8 +81,6 @@ import com.devil.phoenixproject.domain.usecase.RepRanges
 import com.devil.phoenixproject.presentation.components.AutoStartOverlay
 import com.devil.phoenixproject.presentation.components.AutoStopOverlay
 import com.devil.phoenixproject.presentation.components.ExerciseNavigator
-import com.devil.phoenixproject.presentation.components.LoadingIndicator
-import com.devil.phoenixproject.presentation.components.LoadingIndicatorSize
 import com.devil.phoenixproject.presentation.components.MiniExercisePickerDialog
 import com.devil.phoenixproject.presentation.components.RepQualityIndicator
 import com.devil.phoenixproject.presentation.components.StartGateLabel
@@ -108,7 +102,6 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.launch
 import org.jetbrains.compose.resources.stringResource
 import projectphoenix.shared.generated.resources.Res
-import projectphoenix.shared.generated.resources.action_cancel
 import projectphoenix.shared.generated.resources.action_skip
 import projectphoenix.shared.generated.resources.action_tag
 import projectphoenix.shared.generated.resources.bodyweight_effective_load
@@ -121,23 +114,13 @@ import projectphoenix.shared.generated.resources.bodyweight_set_progress
 import projectphoenix.shared.generated.resources.bodyweight_variant
 import projectphoenix.shared.generated.resources.bodyweight_variant_percent
 import projectphoenix.shared.generated.resources.bodyweight_volume
-import projectphoenix.shared.generated.resources.cd_configure_workout
 import projectphoenix.shared.generated.resources.cd_connection_lost
-import projectphoenix.shared.generated.resources.cd_disconnect
-import projectphoenix.shared.generated.resources.cd_scan_devices
 import projectphoenix.shared.generated.resources.cd_start_new_workout
 import projectphoenix.shared.generated.resources.cd_stop_workout
 import projectphoenix.shared.generated.resources.cd_workout_completed
 import projectphoenix.shared.generated.resources.cd_workout_error
-import projectphoenix.shared.generated.resources.connecting
-import projectphoenix.shared.generated.resources.disconnect
-import projectphoenix.shared.generated.resources.disconnect_message
-import projectphoenix.shared.generated.resources.disconnect_title
-import projectphoenix.shared.generated.resources.not_connected
 import projectphoenix.shared.generated.resources.reconnect
 import projectphoenix.shared.generated.resources.save_set
-import projectphoenix.shared.generated.resources.scan
-import projectphoenix.shared.generated.resources.scanning_for_devices
 import projectphoenix.shared.generated.resources.tag_lift_message
 import projectphoenix.shared.generated.resources.tag_lift_title
 import projectphoenix.shared.generated.resources.workout_teardown_finishing
@@ -173,7 +156,6 @@ fun WorkoutTab(
         weightUnit = state.weightUnit,
         enableVideoPlayback = state.enableVideoPlayback,
         exerciseRepository = exerciseRepository,
-        isWorkoutSetupDialogVisible = state.isWorkoutSetupDialogVisible,
         machineTeardownState = state.machineTeardownState,
         hapticEvents = hapticEvents,
         loadedRoutine = state.loadedRoutine,
@@ -214,11 +196,7 @@ fun WorkoutTab(
         rackItems = state.rackItems,
         activeRackItemIds = state.activeRackItemIds,
         activeRackBehaviorOverrides = state.activeRackBehaviorOverrides,
-        onShowWorkoutSetupDialog = actions::onShowWorkoutSetupDialog,
-        onHideWorkoutSetupDialog = actions::onHideWorkoutSetupDialog,
         modifier = modifier,
-        showConnectionCard = state.showConnectionCard,
-        showWorkoutSetupCard = state.showWorkoutSetupCard,
         loadBaselineA = state.loadBaselineA,
         loadBaselineB = state.loadBaselineB,
         timedExerciseRemainingSeconds = state.timedExerciseRemainingSeconds,
@@ -262,7 +240,6 @@ fun WorkoutTab(
     weightUnit: WeightUnit,
     enableVideoPlayback: Boolean,
     exerciseRepository: ExerciseRepository,
-    isWorkoutSetupDialogVisible: Boolean = false,
     machineTeardownState: MachineTeardownState = MachineTeardownState.Ready,
     hapticEvents: SharedFlow<HapticEvent>? = null,
     loadedRoutine: Routine? = null,
@@ -300,11 +277,7 @@ fun WorkoutTab(
     onUpdateParameters: (WorkoutParameters) -> Unit,
     onUpdateRackSelection: (List<String>) -> Unit = {},
     onUpdateRackBehaviorOverrides: (Map<String, RackItemBehavior>) -> Unit = {},
-    onShowWorkoutSetupDialog: () -> Unit = {},
-    onHideWorkoutSetupDialog: () -> Unit = {},
     modifier: Modifier = Modifier,
-    showConnectionCard: Boolean = true,
-    showWorkoutSetupCard: Boolean = true,
     loadBaselineA: Float = 0f,
     loadBaselineB: Float = 0f,
     timedExerciseRemainingSeconds: Int? = null, // Issue #192: Countdown for timed exercises
@@ -405,16 +378,6 @@ fun WorkoutTab(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            // Connection Card (conditionally shown)
-            if (showConnectionCard) {
-                ConnectionCard(
-                    connectionState = connectionState,
-                    onScan = onScan,
-                    onCancelScan = onCancelScan,
-                    onDisconnect = onDisconnect,
-                )
-            }
-
             WorkoutStartGateNotice(
                 state = machineTeardownState,
                 onRetry = onRetryWorkoutTeardown,
@@ -422,16 +385,7 @@ fun WorkoutTab(
             )
 
             if (connectionState is ConnectionState.Connected) {
-                // Show setup button when in Idle state, otherwise show workout controls
                 when (workoutState) {
-                    is WorkoutState.Idle -> {
-                        if (showWorkoutSetupCard) {
-                            WorkoutSetupCard(
-                                onShowWorkoutSetupDialog = onShowWorkoutSetupDialog,
-                            )
-                        }
-                    }
-
                     is WorkoutState.Error -> {
                         ErrorCard(message = workoutState.message)
                     }
@@ -794,26 +748,6 @@ fun WorkoutTab(
             }
         }
     }
-
-    // Show the workout setup dialog
-    if (isWorkoutSetupDialogVisible) {
-        WorkoutSetupDialog(
-            workoutParameters = workoutParameters,
-            weightUnit = weightUnit,
-            exerciseRepository = exerciseRepository,
-            kgToDisplay = kgToDisplay,
-            displayToKg = displayToKg,
-            onUpdateParameters = onUpdateParameters,
-            onStartWorkout = {
-                onStartWorkout()
-                onHideWorkoutSetupDialog()
-            },
-            onDismiss = onHideWorkoutSetupDialog,
-            machineTeardownState = machineTeardownState,
-            onRetryWorkoutTeardown = onRetryWorkoutTeardown,
-            onReconnectWorkoutTeardown = onReconnectWorkoutTeardown,
-        )
-    }
 }
 
 /**
@@ -851,53 +785,6 @@ private fun JustLiftRestTimerBadge(secondsRemaining: Int) {
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onSecondaryContainer,
             )
-        }
-    }
-}
-
-/**
- * Workout Setup Card - shown when connected and idle
- */
-@Composable
-private fun WorkoutSetupCard(onShowWorkoutSetupDialog: () -> Unit) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
-        ) {
-            Text(
-                "Workout Setup",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(modifier = Modifier.height(Spacing.small))
-            Button(
-                onClick = onShowWorkoutSetupDialog,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                shape = MaterialTheme.shapes.medium,
-                elevation = ButtonDefaults.buttonElevation(
-                    defaultElevation = 4.dp,
-                    pressedElevation = 2.dp,
-                ),
-            ) {
-                Icon(Icons.Default.Settings, contentDescription = stringResource(Res.string.cd_configure_workout))
-                Spacer(modifier = Modifier.width(Spacing.small))
-                Text(
-                    "Setup Workout",
-                    style = MaterialTheme.typography.titleLarge,
-                    fontWeight = FontWeight.Bold,
-                )
-            }
         }
     }
 }
@@ -1326,168 +1213,6 @@ private fun BodyweightRepEntryDialog(
             }
         },
     )
-}
-
-/**
- * Connection Card - shows connection status and controls
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun ConnectionCard(connectionState: ConnectionState, onScan: () -> Unit, onCancelScan: () -> Unit, onDisconnect: () -> Unit) {
-    var showDisconnectDialog by remember { mutableStateOf(false) }
-
-    // Disconnect confirmation dialog
-    if (showDisconnectDialog) {
-        AlertDialog(
-            onDismissRequest = { showDisconnectDialog = false },
-            icon = { Icon(Icons.Default.BluetoothDisabled, contentDescription = null) },
-            title = { Text(stringResource(Res.string.disconnect_title)) },
-            text = {
-                Text(stringResource(Res.string.disconnect_message))
-            },
-            confirmButton = {
-                TextButton(
-                    onClick = {
-                        showDisconnectDialog = false
-                        onDisconnect()
-                    },
-                ) {
-                    Text(stringResource(Res.string.disconnect), color = MaterialTheme.colorScheme.error)
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDisconnectDialog = false }) {
-                    Text(stringResource(Res.string.action_cancel))
-                }
-            },
-        )
-    }
-
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHighest),
-        shape = MaterialTheme.shapes.medium,
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
-        border = BorderStroke(2.dp, MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)),
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(Spacing.medium),
-        ) {
-            Text(
-                "Connection",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Spacer(modifier = Modifier.height(Spacing.small))
-
-            when (connectionState) {
-                is ConnectionState.Disconnected -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Text(stringResource(Res.string.not_connected), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Button(onClick = onScan) {
-                            Icon(Icons.Default.Search, contentDescription = stringResource(Res.string.cd_scan_devices))
-                            Spacer(modifier = Modifier.width(Spacing.small))
-                            Text(stringResource(Res.string.scan))
-                        }
-                    }
-                }
-
-                is ConnectionState.Scanning -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            LoadingIndicator(LoadingIndicatorSize.Medium)
-                            Spacer(modifier = Modifier.width(Spacing.small))
-                            Text(stringResource(Res.string.scanning_for_devices))
-                        }
-                        TextButton(onClick = onCancelScan) {
-                            Text(stringResource(Res.string.action_cancel))
-                        }
-                    }
-                }
-
-                is ConnectionState.Connecting -> {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            LoadingIndicator(LoadingIndicatorSize.Medium)
-                            Spacer(modifier = Modifier.width(Spacing.small))
-                            Text(stringResource(Res.string.connecting))
-                        }
-                        TextButton(onClick = onCancelScan) {
-                            Text(stringResource(Res.string.action_cancel))
-                        }
-                    }
-                }
-
-                is ConnectionState.Connected -> {
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(Spacing.small),
-                            ) {
-                                Icon(
-                                    Icons.Default.Bluetooth,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.primary,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Column {
-                                    Text(
-                                        connectionState.deviceName,
-                                        style = MaterialTheme.typography.bodyLarge,
-                                        fontWeight = FontWeight.Bold,
-                                    )
-                                    Text(
-                                        connectionState.deviceAddress,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                            FilledTonalIconButton(
-                                onClick = { showDisconnectDialog = true },
-                                colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                    containerColor = MaterialTheme.colorScheme.errorContainer,
-                                ),
-                            ) {
-                                Icon(
-                                    Icons.Default.BluetoothDisabled,
-                                    contentDescription = stringResource(Res.string.cd_disconnect),
-                                    tint = MaterialTheme.colorScheme.onErrorContainer,
-                                )
-                            }
-                        }
-                    }
-                }
-
-                is ConnectionState.Error -> {
-                    Text(
-                        "Error: ${connectionState.message}",
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-        }
-    }
 }
 
 /**

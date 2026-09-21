@@ -1252,11 +1252,6 @@ class MainViewModel(
         _topBarBackAction.value = null
     }
 
-    // ===== Workout Setup Dialog (stays here - pure UI state) =====
-
-    private val _isWorkoutSetupDialogVisible = MutableStateFlow(false)
-    val isWorkoutSetupDialogVisible: StateFlow<Boolean> = _isWorkoutSetupDialogVisible.asStateFlow()
-
     // ===== Disco Mode (Easter Egg - stays here) =====
 
     val discoModeActive: StateFlow<Boolean> = bleRepository.discoModeActive
