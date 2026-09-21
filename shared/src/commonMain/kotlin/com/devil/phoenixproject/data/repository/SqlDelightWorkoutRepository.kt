@@ -4,17 +4,21 @@ import app.cash.sqldelight.coroutines.asFlow
 import app.cash.sqldelight.coroutines.mapToList
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.EccentricLoad
 import com.devil.phoenixproject.domain.model.EchoLevel
 import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.ProgramMode
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.ScalingBasis
 import com.devil.phoenixproject.domain.model.RackItemBehavior
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.RoutineGroup
 import com.devil.phoenixproject.domain.model.Superset
+import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.generateUUID
@@ -563,65 +567,183 @@ class SqlDelightWorkoutRepository(private val db: PhoenixDatabase, private val e
 
     override suspend fun saveSession(session: WorkoutSession) {
         withContext(Dispatchers.IO) {
-            queries.insertSession(
-                id = session.id,
-                timestamp = session.timestamp,
-                mode = session.mode,
-                targetReps = session.reps.toLong(),
-                weightPerCableKg = session.weightPerCableKg.toDouble(),
-                progressionKg = session.progressionKg.toDouble(),
-                duration = session.duration,
-                totalReps = session.totalReps.toLong(),
-                warmupReps = session.warmupReps.toLong(),
-                workingReps = session.workingReps.toLong(),
-                isJustLift = if (session.isJustLift) 1L else 0L,
-                stopAtTop = if (session.stopAtTop) 1L else 0L,
-                eccentricLoad = session.eccentricLoad.toLong(),
-                echoLevel = session.echoLevel.toLong(),
-                exerciseId = session.exerciseId,
-                exerciseName = session.exerciseName,
-                routineSessionId = session.routineSessionId,
-                routineName = session.routineName,
-                routineId = session.routineId,
-                safetyFlags = session.safetyFlags.toLong(),
-                deloadWarningCount = session.deloadWarningCount.toLong(),
-                romViolationCount = session.romViolationCount.toLong(),
-                spotterActivations = session.spotterActivations.toLong(),
-                // New summary metrics
-                peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
-                peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
-                peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
-                peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
-                avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
-                avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
-                avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
-                avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
-                heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
-                totalVolumeKg = session.totalVolumeKg?.toDouble(),
-                cableCount = session.cableCount?.toLong(),
-                estimatedCalories = session.estimatedCalories?.toDouble(),
-                warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
-                workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
-                burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
-                peakWeightKg = session.peakWeightKg?.toDouble(),
-                rpe = session.rpe?.toLong(),
-                // Biomechanics summary
-                avgMcvMmS = session.avgMcvMmS?.toDouble(),
-                avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
-                totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
-                dominantSide = session.dominantSide,
-                strengthProfile = session.strengthProfile,
-                // Form Check score
-                formScore = session.formScore?.toLong(),
-                // Multi-profile support
-                profile_id = session.profileId,
-                // Equipment-aware weight display
-                display_multiplier = session.displayMultiplier?.toLong(),
-                externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
-                counterweightKg = session.counterweightKg.toDouble(),
-                rackItemsJson = session.rackItemsJson,
-            )
+            insertSessionRow(session)
         }
+    }
+
+    override suspend fun commitCompletedSet(
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        repBiomechanics: List<BiomechanicsRepResult>,
+    ) {
+        withContext(Dispatchers.IO) {
+            db.transaction {
+                if (queries.selectSessionById(session.id).executeAsOneOrNull() == null) {
+                    insertSessionRow(session)
+                }
+                if (metrics.isNotEmpty()) {
+                    queries.deleteMetricsBySession(session.id)
+                    metrics.forEach { metric -> insertMetricRow(session.id, metric) }
+                }
+                if (completedSet != null &&
+                    queries.selectCompletedSetById(completedSet.id).executeAsOneOrNull() == null
+                ) {
+                    queries.insertCompletedSet(
+                        id = completedSet.id,
+                        session_id = completedSet.sessionId,
+                        planned_set_id = completedSet.plannedSetId,
+                        routine_exercise_id = completedSet.routineExerciseId,
+                        set_number = completedSet.setNumber.toLong(),
+                        set_type = completedSet.setType.name,
+                        attempt_number = completedSet.attemptNumber.coerceAtLeast(1).toLong(),
+                        actual_reps = completedSet.actualReps.toLong(),
+                        actual_weight_kg = completedSet.actualWeightKg.toDouble(),
+                        logged_rpe = completedSet.loggedRpe?.toLong(),
+                        is_pr = if (completedSet.isPr) 1L else 0L,
+                        completed_at = completedSet.completedAt,
+                        set_end_reason = completedSet.setEndReason.name,
+                    )
+                }
+                queries.deleteRepMetricsBySession(session.id)
+                repMetrics.forEach { metric -> insertRepMetricRow(session.id, metric) }
+                queries.deleteRepBiomechanicsBySession(session.id)
+                repBiomechanics.forEach { result -> insertRepBiomechanicsRow(session.id, result) }
+                queries.markWorkoutComponentDirty(session.id)
+            }
+        }
+    }
+
+    private fun insertSessionRow(session: WorkoutSession) {
+        queries.insertSession(
+            id = session.id,
+            timestamp = session.timestamp,
+            mode = session.mode,
+            targetReps = session.reps.toLong(),
+            weightPerCableKg = session.weightPerCableKg.toDouble(),
+            progressionKg = session.progressionKg.toDouble(),
+            duration = session.duration,
+            totalReps = session.totalReps.toLong(),
+            warmupReps = session.warmupReps.toLong(),
+            workingReps = session.workingReps.toLong(),
+            isJustLift = if (session.isJustLift) 1L else 0L,
+            stopAtTop = if (session.stopAtTop) 1L else 0L,
+            eccentricLoad = session.eccentricLoad.toLong(),
+            echoLevel = session.echoLevel.toLong(),
+            exerciseId = session.exerciseId,
+            exerciseName = session.exerciseName,
+            routineSessionId = session.routineSessionId,
+            routineName = session.routineName,
+            routineId = session.routineId,
+            safetyFlags = session.safetyFlags.toLong(),
+            deloadWarningCount = session.deloadWarningCount.toLong(),
+            romViolationCount = session.romViolationCount.toLong(),
+            spotterActivations = session.spotterActivations.toLong(),
+            peakForceConcentricA = session.peakForceConcentricA?.toDouble(),
+            peakForceConcentricB = session.peakForceConcentricB?.toDouble(),
+            peakForceEccentricA = session.peakForceEccentricA?.toDouble(),
+            peakForceEccentricB = session.peakForceEccentricB?.toDouble(),
+            avgForceConcentricA = session.avgForceConcentricA?.toDouble(),
+            avgForceConcentricB = session.avgForceConcentricB?.toDouble(),
+            avgForceEccentricA = session.avgForceEccentricA?.toDouble(),
+            avgForceEccentricB = session.avgForceEccentricB?.toDouble(),
+            heaviestLiftKg = session.heaviestLiftKg?.toDouble(),
+            totalVolumeKg = session.totalVolumeKg?.toDouble(),
+            cableCount = session.cableCount?.toLong(),
+            estimatedCalories = session.estimatedCalories?.toDouble(),
+            warmupAvgWeightKg = session.warmupAvgWeightKg?.toDouble(),
+            workingAvgWeightKg = session.workingAvgWeightKg?.toDouble(),
+            burnoutAvgWeightKg = session.burnoutAvgWeightKg?.toDouble(),
+            peakWeightKg = session.peakWeightKg?.toDouble(),
+            rpe = session.rpe?.toLong(),
+            avgMcvMmS = session.avgMcvMmS?.toDouble(),
+            avgAsymmetryPercent = session.avgAsymmetryPercent?.toDouble(),
+            totalVelocityLossPercent = session.totalVelocityLossPercent?.toDouble(),
+            dominantSide = session.dominantSide,
+            strengthProfile = session.strengthProfile,
+            formScore = session.formScore?.toLong(),
+            profile_id = session.profileId,
+            display_multiplier = session.displayMultiplier?.toLong(),
+            externalAddedLoadKg = session.externalAddedLoadKg.toDouble(),
+            counterweightKg = session.counterweightKg.toDouble(),
+            rackItemsJson = session.rackItemsJson,
+        )
+    }
+
+    private fun insertMetricRow(sessionId: String, metric: WorkoutMetric) {
+        val power = (metric.loadA + metric.loadB) * metric.velocityA.toFloat()
+        queries.insertMetric(
+            sessionId = sessionId,
+            timestamp = metric.timestamp,
+            position = metric.positionA.toDouble(),
+            positionB = metric.positionB.toDouble(),
+            velocity = metric.velocityA,
+            velocityB = metric.velocityB,
+            load = metric.loadA.toDouble(),
+            loadB = metric.loadB.toDouble(),
+            power = power.toDouble(),
+            status = metric.status.toLong(),
+        )
+    }
+
+    private fun insertRepMetricRow(sessionId: String, metric: RepMetricData) {
+        queries.insertRepMetric(
+            sessionId = sessionId,
+            repNumber = metric.repNumber.toLong(),
+            isWarmup = if (metric.isWarmup) 1L else 0L,
+            startTimestamp = metric.startTimestamp,
+            endTimestamp = metric.endTimestamp,
+            durationMs = metric.durationMs,
+            concentricDurationMs = metric.concentricDurationMs,
+            concentricPositions = metric.concentricPositions.toJsonString(),
+            concentricLoadsA = metric.concentricLoadsA.toJsonString(),
+            concentricLoadsB = metric.concentricLoadsB.toJsonString(),
+            concentricVelocities = metric.concentricVelocities.toJsonString(),
+            concentricTimestamps = metric.concentricTimestamps.toJsonString(),
+            eccentricDurationMs = metric.eccentricDurationMs,
+            eccentricPositions = metric.eccentricPositions.toJsonString(),
+            eccentricLoadsA = metric.eccentricLoadsA.toJsonString(),
+            eccentricLoadsB = metric.eccentricLoadsB.toJsonString(),
+            eccentricVelocities = metric.eccentricVelocities.toJsonString(),
+            eccentricTimestamps = metric.eccentricTimestamps.toJsonString(),
+            peakForceA = metric.peakForceA.toDouble(),
+            peakForceB = metric.peakForceB.toDouble(),
+            avgForceConcentricA = metric.avgForceConcentricA.toDouble(),
+            avgForceConcentricB = metric.avgForceConcentricB.toDouble(),
+            avgForceEccentricA = metric.avgForceEccentricA.toDouble(),
+            avgForceEccentricB = metric.avgForceEccentricB.toDouble(),
+            peakVelocity = metric.peakVelocity.toDouble(),
+            avgVelocityConcentric = metric.avgVelocityConcentric.toDouble(),
+            avgVelocityEccentric = metric.avgVelocityEccentric.toDouble(),
+            rangeOfMotionMm = metric.rangeOfMotionMm.toDouble(),
+            peakPowerWatts = metric.peakPowerWatts.toDouble(),
+            avgPowerWatts = metric.avgPowerWatts.toDouble(),
+            updatedAt = null,
+            serverId = null,
+        )
+    }
+
+    private fun insertRepBiomechanicsRow(sessionId: String, result: BiomechanicsRepResult) {
+        queries.insertRepBiomechanics(
+            sessionId = sessionId,
+            repNumber = result.repNumber.toLong(),
+            mcvMmS = result.velocity.meanConcentricVelocityMmS.toDouble(),
+            peakVelocityMmS = result.velocity.peakVelocityMmS.toDouble(),
+            velocityZone = result.velocity.zone.name,
+            velocityLossPercent = result.velocity.velocityLossPercent?.toDouble(),
+            estimatedRepsRemaining = result.velocity.estimatedRepsRemaining?.toLong(),
+            shouldStopSet = if (result.velocity.shouldStopSet) 1L else 0L,
+            normalizedForceN = result.forceCurve.normalizedForceN.toJsonString(),
+            normalizedPositionPct = result.forceCurve.normalizedPositionPct.toJsonString(),
+            stickingPointPct = result.forceCurve.stickingPointPct?.toDouble(),
+            strengthProfile = result.forceCurve.strengthProfile.name,
+            asymmetryPercent = result.asymmetry.asymmetryPercent.toDouble(),
+            dominantSide = result.asymmetry.dominantSide,
+            avgLoadA = result.asymmetry.avgLoadA.toDouble(),
+            avgLoadB = result.asymmetry.avgLoadB.toDouble(),
+            timestamp = result.timestamp,
+        )
     }
 
     override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {

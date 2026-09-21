@@ -22,6 +22,12 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 
+data class PostSaveResult(
+    val brokenCombinedWeightOrVolumePRs: List<PRType> = emptyList(),
+    val phaseBreaks: List<PhasePRBreak> = emptyList(),
+    val celebrate: Boolean = false,
+)
+
 /**
  * Manages gamification events: personal record checking and badge awarding.
  * Extracted from MainViewModel.saveWorkoutSession() during monolith decomposition.
@@ -60,10 +66,11 @@ class GamificationManager(
      * Check for PRs and badges after a workout session is saved.
      * Extracted from MainViewModel.saveWorkoutSession() L3494-3564.
      *
-     * @param peakConcentricForceKg Peak concentric force per cable (max of A/B), 0 if unavailable
-     * @param peakEccentricForceKg Peak eccentric force per cable (max of A/B), 0 if unavailable
-     * @param profileId Active profile ID for profile-scoped gamification
-     * @return true if a celebration sound will play (to avoid sound stacking)
+     * @param achievedAtMs Instant stamped on new PR rows. Must be the session
+     * row's [com.devil.phoenixproject.domain.model.WorkoutSession.timestamp]
+     * so sync can join `"$exerciseId:$timestamp"`.
+     * @return [PostSaveResult]; [PostSaveResult.celebrate] is true when a
+     * celebration sound will play (to avoid sound stacking).
      */
     suspend fun processPostSaveEvents(
         exerciseId: String?,
@@ -77,8 +84,11 @@ class GamificationManager(
         peakEccentricForceKg: Float = 0f,
         profileId: String = "default",
         sessionMcvMmS: Float? = null,
-    ): Boolean {
+        achievedAtMs: Long = currentTimeMillis(),
+    ): PostSaveResult {
         var hasCelebrationSound = false
+        var brokenCombinedWeightOrVolumePRs = emptyList<PRType>()
+        var recordedPhaseBreaks = emptyList<PhasePRBreak>()
 
         // Issue #319: Diagnostic logging for PR tracking pipeline
         // Log at INFO level so it's captured in release builds
@@ -99,7 +109,7 @@ class GamificationManager(
             Logger.w {
                 "GAMIFICATION: Skipped — invalid completion (workingReps=$workingReps)"
             }
-            return false
+            return PostSaveResult()
         }
 
         // Always track PRs (skip for Just Lift and Echo modes)
@@ -121,7 +131,7 @@ class GamificationManager(
                 val exId = exerciseId
                 try {
                     val workoutMode = programMode.displayName
-                    val timestamp = currentTimeMillis()
+                    val timestamp = achievedAtMs
                     // Resolve exercise once for both PR storage and celebration display
                     val exercise = exerciseRepository.getExerciseById(exId)
                     val cableCount = exercise?.displayMultiplier
@@ -140,6 +150,7 @@ class GamificationManager(
 
                     // Issue #319: Always log PR result at INFO level for visibility
                     result.onSuccess { brokenPRs ->
+                        brokenCombinedWeightOrVolumePRs = brokenPRs
                         if (brokenPRs.isNotEmpty()) {
                             Logger.i { "PR_TRACK: SUCCESS — New PR(s) broken: $brokenPRs for exercise=$exId, mode=$workoutMode, profile=$effectiveProfileId" }
                         } else {
@@ -166,6 +177,7 @@ class GamificationManager(
                             cableCount = cableCount,
                         ).onSuccess { breaks ->
                             phasePRBreaks = breaks
+                            recordedPhaseBreaks = breaks
                             if (breaks.isNotEmpty()) {
                                 Logger.i {
                                     "PR_TRACK: SUCCESS — New phase PR(s) broken: $breaks for exercise=$exId, mode=$workoutMode, profile=$effectiveProfileId"
@@ -242,8 +254,16 @@ class GamificationManager(
             }
         }
 
-        // Skip badge checking/awarding when gamification is disabled
-        if (!gamificationEnabled.value) return false
+        // Skip badge checking/awarding when gamification is disabled.
+        // Combined weight/volume PRs were already recorded above so is_pr can
+        // still be set on the CompletedSet (F-058).
+        if (!gamificationEnabled.value) {
+            return PostSaveResult(
+                brokenCombinedWeightOrVolumePRs = brokenCombinedWeightOrVolumePRs,
+                phaseBreaks = recordedPhaseBreaks,
+                celebrate = false,
+            )
+        }
 
         // Update gamification stats and check for badges
         try {
@@ -267,7 +287,11 @@ class GamificationManager(
             Logger.e(e) { "Error updating gamification: ${e.message}" }
         }
 
-        return hasCelebrationSound
+        return PostSaveResult(
+            brokenCombinedWeightOrVolumePRs = brokenCombinedWeightOrVolumePRs,
+            phaseBreaks = recordedPhaseBreaks,
+            celebrate = hasCelebrationSound,
+        )
     }
 
     /**

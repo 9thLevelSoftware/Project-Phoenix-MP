@@ -4,7 +4,10 @@ import com.devil.phoenixproject.data.repository.MAX_RECENT_EXERCISE_SESSIONS
 import com.devil.phoenixproject.data.repository.PersonalRecordEntity
 import com.devil.phoenixproject.data.repository.PhaseStatisticsData
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.BiomechanicsRepResult
+import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.HeuristicStatistics
+import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.WorkoutMetric
 import com.devil.phoenixproject.domain.model.WorkoutSession
@@ -42,6 +45,13 @@ class FakeWorkoutRepository : WorkoutRepository {
     val saveMetricsAttempts = mutableListOf<Pair<String, List<WorkoutMetric>>>()
     var beforeSaveSession: suspend (WorkoutSession) -> Unit = {}
     var afterSaveSession: suspend (WorkoutSession) -> Unit = {}
+    var onCommitCompletedSet: suspend (
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        repBiomechanics: List<BiomechanicsRepResult>,
+    ) -> Unit = { _, _, _, _, _ -> }
     var recentCompletedFailure: Throwable? = null
     var mostRecentCompletedExerciseFailure: Throwable? = null
 
@@ -171,6 +181,22 @@ class FakeWorkoutRepository : WorkoutRepository {
         sessions[session.id] = session
         updateSessionsFlow()
         afterSaveSession(session)
+    }
+
+    override suspend fun commitCompletedSet(
+        session: WorkoutSession,
+        metrics: List<WorkoutMetric>,
+        completedSet: CompletedSet?,
+        repMetrics: List<RepMetricData>,
+        repBiomechanics: List<BiomechanicsRepResult>,
+    ) {
+        if (sessions[session.id] == null) {
+            saveSession(session)
+        }
+        if (metrics.isNotEmpty()) {
+            saveMetrics(session.id, metrics)
+        }
+        onCommitCompletedSet(session, metrics, completedSet, repMetrics, repBiomechanics)
     }
 
     override suspend fun updateSessionExerciseTag(sessionId: String, exerciseId: String, exerciseName: String) {

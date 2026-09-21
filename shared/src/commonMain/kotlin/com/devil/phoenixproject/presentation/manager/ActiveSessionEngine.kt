@@ -9304,67 +9304,58 @@ class ActiveSessionEngine(
         }
         var persistenceSucceeded = false
         try {
-            if (workoutRepository.getSession(sessionId) == null) {
-                workoutRepository.saveSession(snapshot.session)
-            }
-            if (snapshot.metrics.isNotEmpty()) {
-                workoutRepository.saveMetrics(sessionId, snapshot.metrics)
-            }
-            snapshot.completedSet?.let { completedSet ->
-                val alreadySaved = completedSetRepository.getCompletedSets(sessionId)
-                    .any { it.id == completedSet.id }
-                if (!alreadySaved) {
-                    completedSetRepository.saveCompletedSet(completedSet)
-                }
-            }
-            repMetricRepository.deleteRepMetrics(sessionId)
-            if (snapshot.repMetrics.isNotEmpty()) {
-                repMetricRepository.saveRepMetrics(sessionId, snapshot.repMetrics)
-            }
-            biomechanicsRepository.deleteRepBiomechanics(sessionId)
-            if (snapshot.biomechanicsRepResults.isNotEmpty()) {
-                biomechanicsRepository.saveRepBiomechanics(sessionId, snapshot.biomechanicsRepResults)
-            }
-            snapshot.singleExerciseDefaults?.let { defaults ->
-                settingsManager.mutateWorkout(snapshot.lease.profileId) { workoutPreferences ->
-                    workoutPreferences.copy(
-                        singleExerciseDefaults = workoutPreferences.singleExerciseDefaults +
-                            (defaults.exerciseId to defaults),
-                    )
-                }
-            }
-            // Issue #714: the async path is guarded by the same profile-wide
-            // execution gate as the synchronous completion write.
-            persistCapturedJustLiftDefaultsSnapshot(snapshot)
-
-            val postSave = snapshot.postSaveInput
-            val hasPR = gamificationManager.processPostSaveEvents(
-                exerciseId = postSave.exerciseId,
-                workingReps = postSave.workingReps,
-                achievedWeightKg = postSave.achievedWeightKg,
-                volumeWeightKg = postSave.volumeWeightKg,
-                programMode = postSave.programMode,
-                isJustLift = postSave.isJustLift,
-                isEchoMode = postSave.isEchoMode,
-                peakConcentricForceKg = postSave.peakConcentricForceKg,
-                peakEccentricForceKg = postSave.peakEccentricForceKg,
-                profileId = postSave.profileId,
-                sessionMcvMmS = postSave.sessionMcvMmS,
+            workoutRepository.commitCompletedSet(
+                session = snapshot.session,
+                metrics = snapshot.metrics,
+                completedSet = snapshot.completedSet,
+                repMetrics = snapshot.repMetrics,
+                repBiomechanics = snapshot.biomechanicsRepResults,
             )
-            if (hasPR) {
-                snapshot.completedSet?.let { completedSetRepository.markAsPr(it.id) }
-            }
-            if (snapshot.shouldExportIndividualHealthSession) {
-                enqueueWorkoutHealthPush(snapshot.session)
-            }
-            if (snapshot.shouldExportIndividualBackup) {
-                scope.launch {
-                    dataBackupManager?.exportSession(sessionId)
-                        ?.onFailure { error -> Logger.w(error) { "Auto-backup failed for session $sessionId" } }
+            try {
+                snapshot.singleExerciseDefaults?.let { defaults ->
+                    settingsManager.mutateWorkout(snapshot.lease.profileId) { workoutPreferences ->
+                        workoutPreferences.copy(
+                            singleExerciseDefaults = workoutPreferences.singleExerciseDefaults +
+                                (defaults.exerciseId to defaults),
+                        )
+                    }
                 }
+                persistCapturedJustLiftDefaultsSnapshot(snapshot)
+
+                val postSave = snapshot.postSaveInput
+                val postSaveResult = gamificationManager.processPostSaveEvents(
+                    exerciseId = postSave.exerciseId,
+                    workingReps = postSave.workingReps,
+                    achievedWeightKg = postSave.achievedWeightKg,
+                    volumeWeightKg = postSave.volumeWeightKg,
+                    programMode = postSave.programMode,
+                    isJustLift = postSave.isJustLift,
+                    isEchoMode = postSave.isEchoMode,
+                    peakConcentricForceKg = postSave.peakConcentricForceKg,
+                    peakEccentricForceKg = postSave.peakEccentricForceKg,
+                    profileId = postSave.profileId,
+                    sessionMcvMmS = postSave.sessionMcvMmS,
+                    achievedAtMs = snapshot.session.timestamp,
+                )
+                if (postSaveResult.brokenCombinedWeightOrVolumePRs.isNotEmpty()) {
+                    snapshot.completedSet?.let { completedSetRepository.markAsPr(it.id) }
+                }
+                if (snapshot.shouldExportIndividualHealthSession) {
+                    enqueueWorkoutHealthPush(snapshot.session)
+                }
+                if (snapshot.shouldExportIndividualBackup) {
+                    scope.launch {
+                        dataBackupManager?.exportSession(sessionId)
+                            ?.onFailure { error -> Logger.w(error) { "Auto-backup failed for session $sessionId" } }
+                    }
+                }
+                updateCycleProgressFromSnapshot(snapshot)
+                scope.launch { syncTriggerManager?.onWorkoutCompleted() }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Logger.e(error) { "Post-commit effects failed for session $sessionId; the set is already saved" }
             }
-            updateCycleProgressFromSnapshot(snapshot)
-            scope.launch { syncTriggerManager?.onWorkoutCompleted() }
             currentCoroutineContext().ensureActive()
             withContext(NonCancellable) {
                 executionGuard.markPersistenceSucceeded(sessionId)
@@ -10481,7 +10472,7 @@ class ActiveSessionEngine(
                     Logger.d("Saved CompletedSet (manual stop): set #$setIndex, ${repCount.workingReps} reps${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
                 }
 
-                val hasPR = gamificationManager.processPostSaveEvents(
+                val postSaveResult = gamificationManager.processPostSaveEvents(
                     exerciseId = params.selectedExerciseId,
                     workingReps = repCount.workingReps,
                     achievedWeightKg = summary.heaviestLiftKgPerCable,
@@ -10493,6 +10484,7 @@ class ActiveSessionEngine(
                     peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB),
                     profileId = userProfileRepository.activeProfile.value?.id ?: "default",
                     sessionMcvMmS = session.avgMcvMmS,
+                    achievedAtMs = session.timestamp,
                 )
 
                 // Reset biomechanics engine after manual-stop — mirrors handleSetCompletion (~line 3821).
@@ -10500,7 +10492,7 @@ class ActiveSessionEngine(
                 // nothing below this point reads bioSummary or calls getSetSummary().
                 lease?.let(::resetBiomechanicsContext)
 
-                if (hasPR && completedSetId != null) {
+                if (postSaveResult.brokenCombinedWeightOrVolumePRs.isNotEmpty() && completedSetId != null) {
                     completedSetRepository.markAsPr(completedSetId)
                     Logger.d("Marked CompletedSet $completedSetId as PR (manual stop)")
                 }
@@ -11146,7 +11138,7 @@ class ActiveSessionEngine(
             Logger.d("Saved CompletedSet: set #$setIndex, $working reps @ ${savedWeightKg}kg${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
         }
 
-        val hasPR = gamificationManager.processPostSaveEvents(
+        val postSaveResult = gamificationManager.processPostSaveEvents(
             exerciseId = params.selectedExerciseId,
             workingReps = working,
             achievedWeightKg = summary.heaviestLiftKgPerCable,
@@ -11158,9 +11150,10 @@ class ActiveSessionEngine(
             peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB),
             profileId = userProfileRepository.activeProfile.value?.id ?: "default",
             sessionMcvMmS = session.avgMcvMmS,
+            achievedAtMs = session.timestamp,
         )
 
-        if (hasPR && completedSetId != null) {
+        if (postSaveResult.brokenCombinedWeightOrVolumePRs.isNotEmpty() && completedSetId != null) {
             completedSetRepository.markAsPr(completedSetId)
             Logger.d("Marked CompletedSet $completedSetId as PR")
         }

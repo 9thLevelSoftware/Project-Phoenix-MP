@@ -323,6 +323,25 @@ internal class DWSMTestHarness(
     val fakeTrainingCycleRepo = FakeTrainingCycleRepository()
     val fakeRepMetricRepo = FakeRepMetricRepository()
     val fakeBiomechanicsRepo = FakeBiomechanicsRepository()
+
+    init {
+        fakeWorkoutRepo.onCommitCompletedSet = { session, _, completedSet, repMetrics, biomechanics ->
+            completedSet?.let { set ->
+                val alreadySaved = fakeCompletedSetRepo.getCompletedSets(session.id).any { it.id == set.id }
+                if (!alreadySaved) {
+                    fakeCompletedSetRepo.saveCompletedSet(set)
+                }
+            }
+            fakeRepMetricRepo.deleteRepMetrics(session.id)
+            if (repMetrics.isNotEmpty()) {
+                fakeRepMetricRepo.saveRepMetrics(session.id, repMetrics)
+            }
+            fakeBiomechanicsRepo.deleteRepBiomechanics(session.id)
+            if (biomechanics.isNotEmpty()) {
+                fakeBiomechanicsRepo.saveRepBiomechanics(session.id, biomechanics)
+            }
+        }
+    }
     val fakeActiveWorkoutRuntimeRepository = FakeActiveWorkoutRuntimeRepository()
     val fakeWorkoutServiceController = FakeWorkoutServiceController()
     val fakeUserProfileRepo = FakeUserProfileRepository().apply { setActiveProfileForTest() }
