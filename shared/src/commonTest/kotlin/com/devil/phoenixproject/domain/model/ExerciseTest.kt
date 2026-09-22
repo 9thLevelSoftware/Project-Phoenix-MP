@@ -185,8 +185,115 @@ class ExerciseTest {
             cableIntent = ExerciseCableIntent.DUAL,
         )
 
-        assertEquals(22.67965f, squat.oneRepMaxInputToPerCableKg(100f)!!, 0.0001f)
-        assertEquals(100f, squat.perCableKgToOneRepMaxInput(22.67965f)!!, 0.0001f)
+        assertEquals(50f, squat.oneRepMaxInputToPerCableKg(100f)!!, 0.0001f)
+        assertEquals(100f, squat.perCableKgToOneRepMaxInput(50f)!!, 0.0001f)
+    }
+
+    @Test
+    fun `cycle one rep max input rejects unresolved positive values before persistence`() {
+        val known = Exercise(
+            name = "Known Lift",
+            muscleGroup = "Back",
+            id = "known-lift",
+            cableIntent = ExerciseCableIntent.SINGLE,
+        )
+        val unknownIntent = Exercise(
+            name = "Unknown Lift",
+            muscleGroup = "Back",
+            id = "unknown-lift",
+            cableIntent = ExerciseCableIntent.EITHER,
+        )
+
+        val result = normalizeCycleOneRepMaxInputs(
+            inputValues = mapOf(
+                "Known Lift" to 80f,
+                "Unknown Lift" to 100f,
+                "Skipped Lift" to 0f,
+            ),
+            exercisesByName = mapOf(
+                "Known Lift" to known,
+                "Unknown Lift" to unknownIntent,
+            ),
+        )
+
+        assertEquals(
+            CycleOneRepMaxNormalization.Invalid("Unknown Lift"),
+            result,
+        )
+        assertEquals(false, result is CycleOneRepMaxNormalization.Valid)
+    }
+
+    @Test
+    fun `cycle one rep max input rejects signed negative zero`() {
+        assertEquals(
+            CycleOneRepMaxNormalization.Invalid("Negative Zero Lift"),
+            normalizeCycleOneRepMaxInputs(
+                inputValues = mapOf("Negative Zero Lift" to -0.0f),
+                exercisesByName = emptyMap(),
+            ),
+        )
+    }
+
+    @Test
+    fun `cycle one rep max input normalizes positive values and omits zero`() {
+        val known = Exercise(
+            name = "Known Lift",
+            muscleGroup = "Back",
+            id = "known-lift",
+            cableIntent = ExerciseCableIntent.SINGLE,
+        )
+
+        val result = normalizeCycleOneRepMaxInputs(
+            inputValues = mapOf(
+                "Known Lift" to 80f,
+                "Skipped Lift" to 0f,
+            ),
+            exercisesByName = mapOf("Known Lift" to known),
+        )
+
+        assertEquals(
+            CycleOneRepMaxNormalization.Valid(
+                mapOf(
+                    "Known Lift" to NormalizedCycleOneRepMaxValue(
+                        exerciseId = "known-lift",
+                        perCableKg = 80f,
+                    ),
+                ),
+            ),
+            result,
+        )
+    }
+
+    @Test
+    fun `cycle one rep max input rejects negative and non-finite values`() {
+        val known = Exercise(
+            name = "Known Lift",
+            muscleGroup = "Back",
+            id = "known-lift",
+            cableIntent = ExerciseCableIntent.SINGLE,
+        )
+        val exercisesByName = mapOf("Known Lift" to known)
+
+        assertEquals(
+            CycleOneRepMaxNormalization.Invalid("Negative Infinity Lift"),
+            normalizeCycleOneRepMaxInputs(
+                inputValues = mapOf(
+                    "Negative Infinity Lift" to Float.NEGATIVE_INFINITY,
+                    "Skipped Lift" to 0f,
+                ),
+                exercisesByName = exercisesByName,
+            ),
+        )
+        assertEquals(
+            CycleOneRepMaxNormalization.Invalid("Negative Lift"),
+            normalizeCycleOneRepMaxInputs(
+                inputValues = mapOf(
+                    "Negative Lift" to -1f,
+                    "Skipped Lift" to 0f,
+                ),
+                exercisesByName = exercisesByName,
+            ),
+        )
     }
 
     @Test

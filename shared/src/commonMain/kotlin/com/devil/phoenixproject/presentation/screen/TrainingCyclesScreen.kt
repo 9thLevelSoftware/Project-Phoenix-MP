@@ -82,12 +82,13 @@ import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
+import com.devil.phoenixproject.domain.model.CycleOneRepMaxNormalization
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.TrainingCycle
-import com.devil.phoenixproject.domain.model.oneRepMaxInputToPerCableKg
+import com.devil.phoenixproject.domain.model.normalizeCycleOneRepMaxInputs
 import com.devil.phoenixproject.domain.model.perCableKgToOneRepMaxInput
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
 import com.devil.phoenixproject.presentation.components.DayStrip
@@ -747,30 +748,45 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     displayToKg = viewModel::displayToKg,
                     onConfirm = { oneRepMaxValues ->
                         scope.launch {
-                            val normalizedValues = oneRepMaxValues.mapNotNull { (exerciseName, inputKg) ->
-                                if (inputKg <= 0f || !inputKg.isFinite()) return@mapNotNull null
-                                val exercise = exerciseRepository.findByIdOrName(
-                                    templateExerciseIds[exerciseName],
-                                    exerciseName,
-                                ) ?: return@mapNotNull null
-                                val perCableKg = exercise.oneRepMaxInputToPerCableKg(inputKg)
-                                    ?: return@mapNotNull null
-                                exercise.id?.let { id ->
-                                    // ID-first lookup: template IDs are stable, names are not.
-                                    baselineRepository.set(
-                                        profileId = profileId,
-                                        exerciseId = id,
-                                        oneRepMaxPerCableKg = perCableKg,
-                                        updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
+                            val exercisesByName = oneRepMaxValues
+                                .filterValues { it > 0f }
+                                .keys
+                                .associateWith { exerciseName ->
+                                    exerciseRepository.findByIdOrName(
+                                        templateExerciseIds[exerciseName],
+                                        exerciseName,
                                     )
-                                    exerciseName to perCableKg
                                 }
-                            }.toMap()
-                            creationState = CycleCreationState.ModeConfirmation(
-                                template = state.template,
-                                oneRepMaxValues = normalizedValues,
-                                prWeightValues = existingPrWeightValues,
-                            )
+                            when (
+                                val normalization = normalizeCycleOneRepMaxInputs(
+                                    inputValues = oneRepMaxValues,
+                                    exercisesByName = exercisesByName,
+                                )
+                            ) {
+                                is CycleOneRepMaxNormalization.Invalid -> {
+                                    // Keep the user on the input page and reject the entire
+                                    // submission rather than persisting a partial baseline map.
+                                    showErrorDialog =
+                                        "Validation failed: Couldn't save 1RM for ${normalization.exerciseName}. " +
+                                            "Exercise cable metadata is unavailable; review the value and try again."
+                                }
+
+                                is CycleOneRepMaxNormalization.Valid -> {
+                                    normalization.values.forEach { (_, normalizedValue) ->
+                                        baselineRepository.set(
+                                            profileId = profileId,
+                                            exerciseId = normalizedValue.exerciseId,
+                                            oneRepMaxPerCableKg = normalizedValue.perCableKg,
+                                            updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
+                                        )
+                                    }
+                                    creationState = CycleCreationState.ModeConfirmation(
+                                        template = state.template,
+                                        oneRepMaxValues = normalization.values.mapValues { it.value.perCableKg },
+                                        prWeightValues = existingPrWeightValues,
+                                    )
+                                }
+                            }
                         }
                     },
                     onCancel = {
@@ -824,7 +840,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                         } catch (e: Exception) {
                             Logger.e(e) { "Failed to create cycle from template" }
                             creationState = CycleCreationState.Idle
-                            showErrorDialog = e.message ?: "Failed to create training cycle"
+                            showErrorDialog = "Failed to create training cycle: ${e.message ?: "An unexpected error occurred."}"
                         }
                     }
                 },
@@ -941,7 +957,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
         )
     }
 
-    // Error Dialog - shows when cycle creation fails
+    // Error Dialog - shows validation and cycle-creation failures
     showErrorDialog?.let { errorMessage ->
         AlertDialog(
             onDismissRequest = { showErrorDialog = null },
@@ -955,7 +971,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
             title = { Text(stringResource(Res.string.label_error)) },
             text = {
                 Text(
-                    "Failed to create training cycle: $errorMessage",
+                    errorMessage,
                     style = MaterialTheme.typography.bodyMedium,
                 )
             },
