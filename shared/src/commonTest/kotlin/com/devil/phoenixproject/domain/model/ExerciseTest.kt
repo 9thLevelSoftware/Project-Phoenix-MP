@@ -175,4 +175,30 @@ class ExerciseTest {
         assertEquals(1, unknownBar.liveUnifiedAccessoryDisplayMultiplier())
         assertEquals(1, nullExercise.liveUnifiedAccessoryDisplayMultiplier())
     }
+
+    @Test
+    fun `cycle one rep max conversion splits unified total and round trips`() {
+        val squat = Exercise(
+            name = "Barbell Squat",
+            muscleGroup = "Legs",
+            equipment = "BARBELL",
+            cableIntent = ExerciseCableIntent.DUAL,
+        )
+
+        assertEquals(22.67965f, squat.oneRepMaxInputToPerCableKg(100f)!!, 0.0001f)
+        assertEquals(100f, squat.perCableKgToOneRepMaxInput(22.67965f)!!, 0.0001f)
+    }
+
+    @Test
+    fun `cycle one rep max conversion fails closed for unknown cable intent`() {
+        val unknown = Exercise(
+            name = "Unknown Bar",
+            muscleGroup = "Back",
+            equipment = "BAR",
+            cableIntent = ExerciseCableIntent.EITHER,
+        )
+
+        assertEquals(null, unknown.oneRepMaxInputToPerCableKg(100f))
+        assertEquals(null, unknown.perCableKgToOneRepMaxInput(50f))
+    }
 }

@@ -87,6 +87,8 @@ import com.devil.phoenixproject.domain.model.CycleTemplate
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.oneRepMaxInputToPerCableKg
+import com.devil.phoenixproject.domain.model.perCableKgToOneRepMaxInput
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
 import com.devil.phoenixproject.presentation.components.DayStrip
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
@@ -705,8 +707,13 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                 ?.oneRepMaxPerCableKg
                                 ?.takeIf { it > 0f }
 
-                        valueToUse?.let { oneRepMax ->
-                            oneRepMaxValues[exerciseName] = oneRepMax
+                        valueToUse?.let { oneRepMaxPerCableKg ->
+                            // The wizard is a combined-load input for unified
+                            // attachments; show the inverse of the canonical
+                            // per-cable baseline when pre-filling it.
+                            exercise.perCableKgToOneRepMaxInput(oneRepMaxPerCableKg)?.let { inputValue ->
+                                oneRepMaxValues[exerciseName] = inputValue
+                            }
                         }
 
                         // Store the actual PR weight for indicator display
@@ -740,27 +747,31 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     displayToKg = viewModel::displayToKg,
                     onConfirm = { oneRepMaxValues ->
                         scope.launch {
-                            oneRepMaxValues.forEach { (exerciseName, oneRepMax) ->
-                                if (oneRepMax > 0f) {
+                            val normalizedValues = oneRepMaxValues.mapNotNull { (exerciseName, inputKg) ->
+                                if (inputKg <= 0f || !inputKg.isFinite()) return@mapNotNull null
+                                val exercise = exerciseRepository.findByIdOrName(
+                                    templateExerciseIds[exerciseName],
+                                    exerciseName,
+                                ) ?: return@mapNotNull null
+                                val perCableKg = exercise.oneRepMaxInputToPerCableKg(inputKg)
+                                    ?: return@mapNotNull null
+                                exercise.id?.let { id ->
                                     // ID-first lookup: template IDs are stable, names are not.
-                                    exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
-                                        exercise.id?.let { id ->
-                                            baselineRepository.set(
-                                                profileId = profileId,
-                                                exerciseId = id,
-                                                oneRepMaxPerCableKg = oneRepMax,
-                                                updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
-                                            )
-                                        }
-                                    }
+                                    baselineRepository.set(
+                                        profileId = profileId,
+                                        exerciseId = id,
+                                        oneRepMaxPerCableKg = perCableKg,
+                                        updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
+                                    )
+                                    exerciseName to perCableKg
                                 }
-                            }
+                            }.toMap()
+                            creationState = CycleCreationState.ModeConfirmation(
+                                template = state.template,
+                                oneRepMaxValues = normalizedValues,
+                                prWeightValues = existingPrWeightValues,
+                            )
                         }
-                        creationState = CycleCreationState.ModeConfirmation(
-                            template = state.template,
-                            oneRepMaxValues = oneRepMaxValues,
-                            prWeightValues = existingPrWeightValues,
-                        )
                     },
                     onCancel = {
                         creationState = CycleCreationState.Idle
