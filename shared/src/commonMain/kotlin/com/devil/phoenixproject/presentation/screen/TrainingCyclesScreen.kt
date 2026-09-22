@@ -62,6 +62,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -80,6 +81,7 @@ import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.CycleConflictDraft
 import com.devil.phoenixproject.data.repository.ExerciseRepository
 import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineRepository
+import com.devil.phoenixproject.data.repository.ProfileExerciseBaselineUpdate
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
 import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.CycleOneRepMaxNormalization
@@ -116,6 +118,7 @@ import com.devil.phoenixproject.presentation.viewmodel.runRoutineResumeUiOperati
 import com.devil.phoenixproject.ui.theme.ExpressiveMotion
 import com.devil.phoenixproject.ui.theme.ThemeMode
 import com.devil.phoenixproject.ui.theme.screenBackgroundBrush
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -169,6 +172,21 @@ sealed class CycleCreationState {
     data class Creating(val template: CycleTemplate) : CycleCreationState()
 }
 
+internal class CycleCreationSubmissionGate {
+    private var generation = 0L
+
+    fun begin(): Long {
+        generation += 1L
+        return generation
+    }
+
+    fun cancel() {
+        generation += 1L
+    }
+
+    fun isCurrent(token: Long): Boolean = token == generation
+}
+
 /**
  * Training Cycles screen - view and manage rolling workout schedules.
  * Replaces the calendar-bound WeeklyPrograms with flexible Day 1, Day 2, etc.
@@ -187,6 +205,10 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
     val activeProfileContext by userProfileRepository.activeProfileContext.collectAsState()
     val profileId = activeProfile?.id ?: "default"
     val scope = rememberCoroutineScope()
+    val creationSubmissionGate = remember { CycleCreationSubmissionGate() }
+    DisposableEffect(Unit) {
+        onDispose { creationSubmissionGate.cancel() }
+    }
 
     // User preferences for weight unit and increment
     val weightUnit by viewModel.weightUnit.collectAsState()
@@ -653,6 +675,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     creationState = CycleCreationState.OneRepMaxInput(editedTemplate)
                 },
                 onCancel = {
+                    creationSubmissionGate.cancel()
                     creationState = CycleCreationState.Idle
                 },
             )
@@ -747,49 +770,67 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     kgToDisplay = viewModel::kgToDisplay,
                     displayToKg = viewModel::displayToKg,
                     onConfirm = { oneRepMaxValues ->
+                        val submissionToken = creationSubmissionGate.begin()
                         scope.launch {
-                            val exercisesByName = oneRepMaxValues
-                                .filterValues { it > 0f }
-                                .keys
-                                .associateWith { exerciseName ->
-                                    exerciseRepository.findByIdOrName(
-                                        templateExerciseIds[exerciseName],
-                                        exerciseName,
-                                    )
-                                }
-                            when (
-                                val normalization = normalizeCycleOneRepMaxInputs(
-                                    inputValues = oneRepMaxValues,
-                                    exercisesByName = exercisesByName,
-                                )
-                            ) {
-                                is CycleOneRepMaxNormalization.Invalid -> {
-                                    // Keep the user on the input page and reject the entire
-                                    // submission rather than persisting a partial baseline map.
-                                    showErrorDialog =
-                                        "Validation failed: Couldn't save 1RM for ${normalization.exerciseName}. " +
-                                            "Exercise cable metadata is unavailable; review the value and try again."
-                                }
-
-                                is CycleOneRepMaxNormalization.Valid -> {
-                                    normalization.values.forEach { (_, normalizedValue) ->
-                                        baselineRepository.set(
-                                            profileId = profileId,
-                                            exerciseId = normalizedValue.exerciseId,
-                                            oneRepMaxPerCableKg = normalizedValue.perCableKg,
-                                            updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
+                            try {
+                                val exercisesByName = oneRepMaxValues
+                                    .filterValues { it > 0f }
+                                    .keys
+                                    .associateWith { exerciseName ->
+                                        exerciseRepository.findByIdOrName(
+                                            templateExerciseIds[exerciseName],
+                                            exerciseName,
                                         )
                                     }
-                                    creationState = CycleCreationState.ModeConfirmation(
-                                        template = state.template,
-                                        oneRepMaxValues = normalization.values.mapValues { it.value.perCableKg },
-                                        prWeightValues = existingPrWeightValues,
+                                when (
+                                    val normalization = normalizeCycleOneRepMaxInputs(
+                                        inputValues = oneRepMaxValues,
+                                        exercisesByName = exercisesByName,
                                     )
+                                ) {
+                                    is CycleOneRepMaxNormalization.Invalid -> {
+                                        // Keep the user on the input page and reject the entire
+                                        // submission rather than persisting a partial baseline map.
+                                        if (creationSubmissionGate.isCurrent(submissionToken)) {
+                                            showErrorDialog =
+                                                "Validation failed: Couldn't save 1RM for ${normalization.exerciseName}. " +
+                                                    "Exercise cable metadata is unavailable; review the value and try again."
+                                        }
+                                    }
+
+                                    is CycleOneRepMaxNormalization.Valid -> {
+                                        if (!creationSubmissionGate.isCurrent(submissionToken)) return@launch
+                                        baselineRepository.setBatch(
+                                            profileId = profileId,
+                                            updates = normalization.values.values.map { normalizedValue ->
+                                                ProfileExerciseBaselineUpdate(
+                                                    exerciseId = normalizedValue.exerciseId,
+                                                    oneRepMaxPerCableKg = normalizedValue.perCableKg,
+                                                )
+                                            },
+                                            updatedAt = com.devil.phoenixproject.domain.model.currentTimeMillis(),
+                                        )
+                                        if (!creationSubmissionGate.isCurrent(submissionToken)) return@launch
+                                        creationState = CycleCreationState.ModeConfirmation(
+                                            template = state.template,
+                                            oneRepMaxValues = normalization.values.mapValues { it.value.perCableKg },
+                                            prWeightValues = existingPrWeightValues,
+                                        )
+                                    }
+                                }
+                            } catch (_: CancellationException) {
+                                // Cancellation is a user action, not a creation failure.
+                                return@launch
+                            } catch (failure: Exception) {
+                                if (creationSubmissionGate.isCurrent(submissionToken)) {
+                                    showErrorDialog =
+                                        "Failed to save 1RM: ${failure.message ?: "An unexpected error occurred."}"
                                 }
                             }
                         }
                     },
                     onCancel = {
+                        creationSubmissionGate.cancel()
                         creationState = CycleCreationState.Idle
                     },
                 )
@@ -837,6 +878,8 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                             // 5. Navigate back or reset state
                             creationState = CycleCreationState.Idle
                             Logger.d { "Successfully created cycle: ${state.template.name}" }
+                        } catch (_: CancellationException) {
+                            return@launch
                         } catch (e: Exception) {
                             Logger.e(e) { "Failed to create cycle from template" }
                             creationState = CycleCreationState.Idle
@@ -845,6 +888,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     }
                 },
                 onCancel = {
+                    creationSubmissionGate.cancel()
                     creationState = CycleCreationState.Idle
                 },
             )
