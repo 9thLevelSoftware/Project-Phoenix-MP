@@ -238,8 +238,11 @@ class PortalServerApiClient(val server: FakePortalServer) : FakePortalApiClient(
         profileId: String?,
         cursor: String?,
         pageSize: Int?,
+        lastSync: Long,
     ): Result<PortalSyncPullResponse> {
-        super.pullPortalPayload(knownEntityIds, deviceId, profileId, cursor, pageSize)
+        // Kotlin forbids default arguments in a super-call, so every parameter
+        // (including lastSync, which the base defaults to 0L) must be passed.
+        super.pullPortalPayload(knownEntityIds, deviceId, profileId, cursor, pageSize, lastSync)
         return Result.success(server.pull(knownEntityIds))
     }
 }

@@ -3788,6 +3788,13 @@ AND (updatedAt IS NULL OR updatedAt <= :gatherStartedAt);
 clearSessionTimestamps:
 UPDATE WorkoutSession SET updatedAt = NULL WHERE id IN :ids;
 
+-- Mark a session as portal-pulled (the hold-guard sibling in
+-- selectBlockedRoutineGroupSiblings keys off this). On main the pulled-origin
+-- marker is WorkoutSession.portalOrigin = 1 (migration 48); an earlier draft
+-- INSERTed into a PulledWorkoutSession marker table this schema does not carry.
+markSessionPulled:
+UPDATE WorkoutSession SET portalOrigin = 1 WHERE id = ?;
+
 -- ==================== SMART SUGGESTIONS QUERIES ====================
 
 -- Session summaries with exercise muscle group data (for volume/balance analysis)
