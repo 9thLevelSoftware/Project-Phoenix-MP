@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.presentation.viewmodel
 
 import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
+import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.TestCoroutineRule
 import kotlin.coroutines.cancellation.CancellationException
@@ -41,7 +42,7 @@ class ProfileSwitcherViewModelTest {
         assertEquals(ProfileSwitcherUiState(showSwitcher = true), viewModel.uiState.value)
 
         viewModel.dismissSwitcher()
-        viewModel.switchProfile("b")
+        viewModel.switchProfile("b", WorkoutState.Idle)
         advanceUntilIdle()
 
         assertEquals(ProfileSwitcherUiState(showSwitcher = true), viewModel.uiState.value)
@@ -55,7 +56,7 @@ class ProfileSwitcherViewModelTest {
         val viewModel = createViewModel()
         viewModel.openSwitcher()
 
-        viewModel.switchProfile("b")
+        viewModel.switchProfile("b", WorkoutState.Idle)
         assertEquals(
             RootProfileOperation(1L, RootProfileOperationKind.SWITCH, "b"),
             viewModel.uiState.value.operation,
@@ -74,7 +75,7 @@ class ProfileSwitcherViewModelTest {
         val viewModel = createViewModel()
         viewModel.openSwitcher()
 
-        viewModel.switchProfile("b")
+        viewModel.switchProfile("b", WorkoutState.Idle)
         assertEquals(
             RootProfileOperation(1L, RootProfileOperationKind.SWITCH, "b"),
             viewModel.uiState.value.operation,
@@ -97,7 +98,7 @@ class ProfileSwitcherViewModelTest {
         val viewModel = createViewModel()
         viewModel.openSwitcher()
 
-        viewModel.switchProfile("b")
+        viewModel.switchProfile("b", WorkoutState.Idle)
         assertEquals(
             RootProfileOperation(1L, RootProfileOperationKind.SWITCH, "b"),
             viewModel.uiState.value.operation,
@@ -117,7 +118,7 @@ class ProfileSwitcherViewModelTest {
         val viewModel = createViewModel()
         viewModel.openSwitcher()
 
-        viewModel.switchProfile("b")
+        viewModel.switchProfile("b", WorkoutState.Idle)
         assertEquals(
             RootProfileOperation(1L, RootProfileOperationKind.SWITCH, "b"),
             viewModel.uiState.value.operation,
@@ -135,8 +136,8 @@ class ProfileSwitcherViewModelTest {
         val viewModel = createViewModel()
         viewModel.openSwitcher()
 
-        viewModel.switchProfile("b")
-        viewModel.switchProfile("c")
+        viewModel.switchProfile("b", WorkoutState.Idle)
+        viewModel.switchProfile("c", WorkoutState.Idle)
         assertEquals(
             RootProfileOperation(1L, RootProfileOperationKind.SWITCH, "b"),
             viewModel.uiState.value.operation,
@@ -163,7 +164,7 @@ class ProfileSwitcherViewModelTest {
         }
         val viewModel = createViewModel()
         viewModel.openSwitcher()
-        viewModel.switchProfile("b")
+        viewModel.switchProfile("b", WorkoutState.Idle)
         runCurrent()
         assertTrue(entered.isCompleted)
         assertEquals(listOf("b"), profiles.setActiveProfileRequests)

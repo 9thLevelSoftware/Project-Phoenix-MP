@@ -6,6 +6,7 @@ import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.repository.ActiveProfileContext
 import com.devil.phoenixproject.data.repository.ProfileContextRecoveryException
 import com.devil.phoenixproject.data.repository.UserProfileRepository
+import com.devil.phoenixproject.domain.model.WorkoutState
 import kotlin.coroutines.cancellation.CancellationException
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Job
@@ -27,6 +28,9 @@ enum class ProfileOverlayError {
     SWITCH_FAILED,
     CREATE_FAILED,
     RECOVERY_RETRY_FAILED,
+
+    /** FP-6: a switch was refused because a workout is still in progress. */
+    SWITCH_BLOCKED_DURING_WORKOUT,
 }
 
 data class ProfileSwitcherUiState(
@@ -85,11 +89,27 @@ class ProfileSwitcherViewModel(
         }
     }
 
-    fun switchProfile(profileId: String) {
+    /**
+     * FP-6: switching profiles mid-workout would leave the running set's writes
+     * straddling two profiles, so the switch is refused while [workoutState] is
+     * anything but [WorkoutState.Idle]. The refusal is visible: the sheet stays
+     * open carrying [ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT], never a
+     * silent no-op. The caller passes the live workout state because the workout
+     * engine is owned by MainViewModel, not by the DI graph this ViewModel is
+     * built from.
+     */
+    fun switchProfile(profileId: String, workoutState: WorkoutState) {
         val targetProfileId = profileId.trim()
         if (targetProfileId.isEmpty()) return
         val ready = profiles.activeProfileContext.value as? ActiveProfileContext.Ready ?: return
         if (ready.profile.id == targetProfileId || !_uiState.value.showSwitcher) return
+        // Refuse BEFORE any operation starts: a switch mid-workout would split the
+        // running set's writes across two profiles (FP-6). The sheet stays open
+        // carrying the error so the refusal is visible, never a silent no-op.
+        if (workoutState != WorkoutState.Idle) {
+            _uiState.update { it.copy(error = ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT) }
+            return
+        }
         val operation = beginOperation(RootProfileOperationKind.SWITCH, targetProfileId) ?: return
         launchOwned(operation) {
             try {

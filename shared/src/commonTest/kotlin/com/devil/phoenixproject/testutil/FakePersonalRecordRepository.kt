@@ -83,7 +83,10 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
     }
 
     override suspend fun getBestPR(exerciseId: String, profileId: String): PersonalRecord? = records.values
-        .filter { it.exerciseId == exerciseId && it.profileId == profileId }
+        .filter {
+            it.exerciseId == exerciseId && it.profileId == profileId &&
+                it.prType == PRType.MAX_WEIGHT && it.phase == WorkoutPhase.COMBINED
+        }
         .maxByOrNull { it.volume }
 
     override fun getAllPRs(profileId: String): Flow<List<PersonalRecord>> = _recordsFlow.map { list ->
@@ -91,7 +94,10 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
     }
 
     override fun getAllPRsGrouped(profileId: String): Flow<List<PersonalRecord>> = _recordsFlow.map { list ->
-        list.filter { it.profileId == profileId }
+        list.filter {
+            it.profileId == profileId &&
+                it.prType == PRType.MAX_WEIGHT && it.phase == WorkoutPhase.COMBINED
+        }
             .groupBy { it.exerciseId }
             .mapNotNull { (_, records) -> records.maxByOrNull { it.volume } }
     }

@@ -1218,7 +1218,6 @@ class MainViewModel(
     fun decrementWeight(amount: Float = 0.5f) = workoutSessionManager.decrementWeight(amount)
     fun setWeightPreset(presetWeightKg: Float) = workoutSessionManager.setWeightPreset(presetWeightKg)
     suspend fun getLastWeightForExercise(exerciseId: String): Float? = workoutSessionManager.getLastWeightForExercise(exerciseId)
-    suspend fun getPrWeightForExercise(exerciseId: String): Float? = workoutSessionManager.getPrWeightForExercise(exerciseId)
 
     // ===== Just Lift / Handle Detection Delegation =====
 

@@ -125,6 +125,7 @@ import projectphoenix.shared.generated.resources.nav_insights
 import projectphoenix.shared.generated.resources.nav_profile
 import projectphoenix.shared.generated.resources.profile_create_failed
 import projectphoenix.shared.generated.resources.profile_recovery_retry_failed
+import projectphoenix.shared.generated.resources.profile_switch_blocked_during_workout
 import projectphoenix.shared.generated.resources.profile_switch_failed
 
 /**
@@ -265,6 +266,7 @@ fun EnhancedMainScreen(
     val profileContentDescription = stringResource(Res.string.cd_profile)
     val openProfileSwitcherDescription = stringResource(Res.string.cd_open_profile_switcher)
     val switchFailedMessage = stringResource(Res.string.profile_switch_failed)
+    val switchBlockedDuringWorkoutMessage = stringResource(Res.string.profile_switch_blocked_during_workout)
     val createFailedMessage = stringResource(Res.string.profile_create_failed)
     val recoveryRetryFailedMessage = stringResource(Res.string.profile_recovery_retry_failed)
 
@@ -558,11 +560,13 @@ fun EnhancedMainScreen(
                     activeProfileId = readyProfileId,
                     switchingInFlight = switchingInFlight,
                     switchingTargetProfileId = switchingTargetProfileId,
-                    errorMessage = switchFailedMessage.takeIf {
-                        switcherState.error == ProfileOverlayError.SWITCH_FAILED
+                    errorMessage = when (switcherState.error) {
+                        ProfileOverlayError.SWITCH_FAILED -> switchFailedMessage
+                        ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT -> switchBlockedDuringWorkoutMessage
+                        else -> null
                     },
                     onSelectProfile = { profile ->
-                        profileSwitcherViewModel.switchProfile(profile.id)
+                        profileSwitcherViewModel.switchProfile(profile.id, workoutState)
                     },
                     onAddProfile = profileSwitcherViewModel::openAddDialog,
                     onDismiss = profileSwitcherViewModel::dismissSwitcher,
