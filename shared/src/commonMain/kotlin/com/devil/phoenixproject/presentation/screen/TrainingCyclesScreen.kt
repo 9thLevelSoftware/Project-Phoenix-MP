@@ -87,11 +87,12 @@ import com.devil.phoenixproject.data.repository.WorkoutRepository
 import com.devil.phoenixproject.domain.model.CycleOneRepMaxNormalization
 import com.devil.phoenixproject.domain.model.CycleProgress
 import com.devil.phoenixproject.domain.model.CycleTemplate
+import com.devil.phoenixproject.domain.model.Exercise
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineLaunchOrigin
 import com.devil.phoenixproject.domain.model.TrainingCycle
 import com.devil.phoenixproject.domain.model.normalizeCycleOneRepMaxInputs
-import com.devil.phoenixproject.domain.model.perCableKgToOneRepMaxInput
+import com.devil.phoenixproject.domain.model.oneRepMaxInputPrefillKg
 import com.devil.phoenixproject.domain.usecase.TemplateConverter
 import com.devil.phoenixproject.presentation.components.DayStrip
 import com.devil.phoenixproject.presentation.components.DestructiveConfirmDialog
@@ -713,12 +714,16 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
             // on the map's identity; in-place mutation never re-seeds, leaving the prefill
             // blank and Continue disabled for returning users (#633 review, P2).
             var existingOneRepMaxValues by remember { mutableStateOf<Map<String, Float>?>(null) }
+            var existingExercisesByName by remember { mutableStateOf<Map<String, Exercise?>>(emptyMap()) }
             var existingPrWeightValues by remember { mutableStateOf<Map<String, Float>>(emptyMap()) }
             LaunchedEffect(mainLiftNames, profileId) {
                 val oneRepMaxValues = mutableMapOf<String, Float>()
+                val exercisesByName = mutableMapOf<String, Exercise?>()
                 val prWeights = mutableMapOf<String, Float>()
                 mainLiftNames.forEach { exerciseName ->
-                    exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)?.let { exercise ->
+                    val exercise = exerciseRepository.findByIdOrName(templateExerciseIds[exerciseName], exerciseName)
+                    exercisesByName[exerciseName] = exercise
+                    exercise?.let { exercise ->
                         val exerciseId = exercise.id ?: return@let
 
                         // First try to get the PR (best weight ever achieved)
@@ -732,10 +737,9 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                 ?.takeIf { it > 0f }
 
                         valueToUse?.let { oneRepMaxPerCableKg ->
-                            // The wizard is a combined-load input for unified
-                            // attachments; show the inverse of the canonical
-                            // per-cable baseline when pre-filling it.
-                            exercise.perCableKgToOneRepMaxInput(oneRepMaxPerCableKg)?.let { inputValue ->
+                            // Persisted baselines are per-cable kg. The wizard's confirmed
+                            // unified fields accept total load; all other metadata stays unchanged.
+                            exercise.oneRepMaxInputPrefillKg(oneRepMaxPerCableKg)?.let { inputValue ->
                                 oneRepMaxValues[exerciseName] = inputValue
                             }
                         }
@@ -746,11 +750,13 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                         }
                     }
                 }
+                existingExercisesByName = exercisesByName.toMap()
                 existingPrWeightValues = prWeights.toMap()
                 existingOneRepMaxValues = oneRepMaxValues.toMap()
             }
 
             val loadedOneRepMaxValues = existingOneRepMaxValues
+            val loadedExercisesByName = existingExercisesByName
             if (loadedOneRepMaxValues == null) {
                 // Local DB lookups — resolves within a frame or two. Gating avoids
                 // composing the form before the prefill snapshot exists.
@@ -765,6 +771,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
             } else {
                 OneRepMaxInputScreen(
                     mainLiftNames = mainLiftNames,
+                    exerciseByName = loadedExercisesByName,
                     existingOneRepMaxValues = loadedOneRepMaxValues,
                     weightUnit = weightUnit,
                     kgToDisplay = viewModel::kgToDisplay,

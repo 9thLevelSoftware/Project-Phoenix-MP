@@ -297,6 +297,70 @@ class ExerciseTest {
     }
 
     @Test
+    fun `one rep max input label identifies confirmed unified total load only`() {
+        val unifiedBar = Exercise(
+            name = "Barbell Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            cableIntent = ExerciseCableIntent.DUAL,
+        )
+        val dualHandles = Exercise(
+            name = "Dumbbell Curl",
+            muscleGroup = "Biceps",
+            equipment = "HANDLES",
+            cableIntent = ExerciseCableIntent.DUAL,
+        )
+        val singleBar = Exercise(
+            name = "Single Cable Bar",
+            muscleGroup = "Back",
+            equipment = "BAR",
+            cableIntent = ExerciseCableIntent.SINGLE,
+        )
+        val unresolvedIntent = Exercise(
+            name = "Unknown Bar",
+            muscleGroup = "Back",
+            equipment = "BAR",
+            cableIntent = ExerciseCableIntent.EITHER,
+        )
+        val unresolvedExercise: Exercise? = null
+
+        assertEquals("Total load (kg)", unifiedBar.oneRepMaxInputUnitLabel("kg"))
+        assertEquals("Total load (lbs)", unifiedBar.oneRepMaxInputUnitLabel("lbs"))
+        assertEquals("kg", dualHandles.oneRepMaxInputUnitLabel("kg"))
+        assertEquals("kg", singleBar.oneRepMaxInputUnitLabel("kg"))
+        assertEquals("kg", unresolvedIntent.oneRepMaxInputUnitLabel("kg"))
+        assertEquals("kg", unresolvedExercise.oneRepMaxInputUnitLabel("kg"))
+    }
+
+    @Test
+    fun `one rep max prefill converts canonical per cable only for confirmed unified total load`() {
+        val unifiedBar = Exercise(
+            name = "Barbell Bench Press",
+            muscleGroup = "Chest",
+            equipment = "BAR",
+            cableIntent = ExerciseCableIntent.DUAL,
+        )
+        val dualHandles = Exercise(
+            name = "Dumbbell Curl",
+            muscleGroup = "Biceps",
+            equipment = "HANDLES",
+            cableIntent = ExerciseCableIntent.DUAL,
+        )
+        val unresolvedIntent = Exercise(
+            name = "Unknown Bar",
+            muscleGroup = "Back",
+            equipment = "BAR",
+            cableIntent = ExerciseCableIntent.EITHER,
+        )
+        val unresolvedExercise: Exercise? = null
+
+        assertEquals(100f, unifiedBar.oneRepMaxInputPrefillKg(50f)!!, 0.0001f)
+        assertEquals(50f, dualHandles.oneRepMaxInputPrefillKg(50f)!!, 0.0001f)
+        assertEquals<Float?>(null, unresolvedIntent.oneRepMaxInputPrefillKg(50f))
+        assertEquals<Float?>(null, unresolvedExercise.oneRepMaxInputPrefillKg(50f))
+    }
+
+    @Test
     fun `cycle one rep max conversion fails closed for unknown cable intent`() {
         val unknown = Exercise(
             name = "Unknown Bar",

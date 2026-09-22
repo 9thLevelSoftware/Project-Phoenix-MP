@@ -11,6 +11,20 @@ fun Exercise.oneRepMaxInputToPerCableKg(inputKg: Float): Float? =
 fun Exercise.perCableKgToOneRepMaxInput(perCableKg: Float): Float? =
     displayMultiplier?.let { perCableKg * it }
 
+/**
+ * Convert a canonical per-cable baseline back to the wizard's editable kilogram value.
+ * Only resolved display metadata can safely determine the wizard input value.
+ */
+fun Exercise?.oneRepMaxInputPrefillKg(perCableKg: Float): Float? =
+    this?.displayMultiplier?.let { multiplier -> perCableKg * multiplier }
+
+/**
+ * Label the cycle wizard's 1RM input in the user's current unit.
+ * Only the confirmed dual/unified case is a combined total; all other cases stay per-cable.
+ */
+fun Exercise?.oneRepMaxInputUnitLabel(unitLabel: String): String =
+    if (this?.displayMultiplier == 2) "Total load ($unitLabel)" else unitLabel
+
 data class NormalizedCycleOneRepMaxValue(
     val exerciseId: String,
     val perCableKg: Float,
