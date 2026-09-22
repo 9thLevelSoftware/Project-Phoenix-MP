@@ -812,7 +812,7 @@ class SyncManager(
             }
         }
 
-        return@withLock if (pullResult.isSuccess) {
+        return if (pullResult.isSuccess) {
             // Full success: both push and pull succeeded
             val completedPull = pullResult.getOrThrow()
             val finalSyncTime = completedPull.syncTime
@@ -1450,9 +1450,9 @@ class SyncManager(
                     )
                 },
             )
-            rejectDuplicatePushPayloadKeys(payload)?.let { return it }
+            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
             val result = pushPayloadWithRateLimit(payload)
-            if (result.isFailure) return result
+            if (result.isFailure) return Result.failure(result.pushError())
             val response = result.getOrThrow()
             val sentTransferIds = transferBatch.mapTo(linkedSetOf()) { it.mutationId }
             val acknowledgedTransferIds = response.acknowledgedOwnershipTransferIds
@@ -1507,9 +1507,9 @@ class SyncManager(
                     )
                 },
             )
-            rejectDuplicatePushPayloadKeys(payload)?.let { return it }
+            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
             val result = pushPayloadWithRateLimit(payload)
-            if (result.isFailure) return result
+            if (result.isFailure) return Result.failure(result.pushError())
             val response = result.getOrThrow()
             val sentDeletionIds = deletionBatch.mapTo(linkedSetOf()) { it.mutationId }
             val acknowledgedDeletionIds = response.acknowledgedWorkoutDeletionIds
@@ -1550,9 +1550,9 @@ class SyncManager(
                     )
                 },
             )
-            rejectDuplicatePushPayloadKeys(payload)?.let { return it }
+            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
             val result = pushPayloadWithRateLimit(payload)
-            if (result.isFailure) return result
+            if (result.isFailure) return Result.failure(result.pushError())
             val response = result.getOrThrow()
             val acknowledged = response.acknowledgedDeletedCycleIds.toSet()
             deletionBatch.filter { it.id in acknowledged }.forEach { deletion ->

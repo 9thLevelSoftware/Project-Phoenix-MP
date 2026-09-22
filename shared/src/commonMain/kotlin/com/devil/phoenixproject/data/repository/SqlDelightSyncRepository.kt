@@ -67,16 +67,6 @@ class SqlDelightSyncRepository(
     private val queries = db.phoenixDatabaseQueries
     private val json = Json { ignoreUnknownKeys = true }
 
-    private companion object {
-        /**
-         * Ids per `IN (...)` batch. SQLite's default SQLITE_MAX_VARIABLE_NUMBER is 999;
-         * stay well under it so a query with extra bound parameters still fits.
-         */
-        const val BATCH_LOOKUP_CHUNK_SIZE = 500
-    }
-
-    private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String = "$exerciseId:$timestamp"
-
     /**
      * Issue #591 follow-up (chatgpt-codex-connector P2): SQLite host
      * parameter limit is implementation-defined (999 on Android,
@@ -94,6 +84,8 @@ class SqlDelightSyncRepository(
         /** Local-only routines generated for template cycles (never synced). */
         const val CYCLE_TEMPLATE_ROUTINE_PREFIX = "cycle_routine_"
     }
+
+    private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String = "$exerciseId:$timestamp"
 
     /**
      * Preserve a local template-cycle association when the portal cannot represent it.

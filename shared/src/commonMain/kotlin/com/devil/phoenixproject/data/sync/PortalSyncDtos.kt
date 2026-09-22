@@ -80,7 +80,6 @@ data class PortalWorkoutSessionDto(
     val exerciseCount: Int = 0,
     val prCount: Int = 0,
     val routineName: String? = null,
-    val notes: String? = null,
     val workoutMode: String? = null, // SCREAMING_SNAKE
     val routineSessionId: String? = null,
     /**
