@@ -175,10 +175,19 @@ sealed class CycleCreationState {
 
 internal class CycleCreationSubmissionGate {
     private var generation = 0L
+    private var activeSubmissionToken: Long? = null
 
-    fun begin(): Long {
+    fun begin(): Long? {
+        if (activeSubmissionToken != null) return null
         generation += 1L
+        activeSubmissionToken = generation
         return generation
+    }
+
+    fun finish(token: Long) {
+        if (activeSubmissionToken == token) {
+            activeSubmissionToken = null
+        }
     }
 
     fun cancel() {
@@ -777,7 +786,7 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                     kgToDisplay = viewModel::kgToDisplay,
                     displayToKg = viewModel::displayToKg,
                     onConfirm = { oneRepMaxValues ->
-                        val submissionToken = creationSubmissionGate.begin()
+                        val submissionToken = creationSubmissionGate.begin() ?: return@OneRepMaxInputScreen
                         scope.launch {
                             try {
                                 val exercisesByName = oneRepMaxValues
@@ -833,6 +842,9 @@ fun TrainingCyclesScreen(navController: NavController, viewModel: MainViewModel,
                                     showErrorDialog =
                                         "Failed to save 1RM: ${failure.message ?: "An unexpected error occurred."}"
                                 }
+                            }
+                            finally {
+                                creationSubmissionGate.finish(submissionToken)
                             }
                         }
                     },
