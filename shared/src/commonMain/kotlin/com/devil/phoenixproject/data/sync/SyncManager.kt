@@ -1121,17 +1121,30 @@ class SyncManager(
         // curve arrays that are by far the bulk of a RepMetric row.
         val tier = tokenStorage.getSubscriptionTier()
         val telemetryAllowed = tier == TELEMETRY_SYNC_TIER
-        val completedSetsBySessionId = logicalSetCompletedSetsBySessionId(sessions.map { it.id })
+        // Prefer the gather's already-loaded maps. Dirty sessions arrive with their
+        // RepMetric/CompletedSet children in the snapshot; only repair siblings (rows
+        // pulled in by getWorkoutSessionsByRoutineSessionIds, outside the dirty set)
+        // need a second lookup. Below Inferno we project summaries from the snapshot's
+        // rows rather than calling getRepMetrics — R-5 forbids loading the 50 Hz curves
+        // a second time, not summarising rows the gather already holds.
+        val snapshotRepsBySessionId = workoutSnapshot.repMetricsByComponentId
+        val snapshotCompletedSetsBySessionId = workoutSnapshot.completedSetsByComponentId
+        val missingCompletedSetSessionIds = sessions
+            .map { it.id }
+            .filter { it !in snapshotCompletedSetsBySessionId }
+        val completedSetsBySessionId =
+            snapshotCompletedSetsBySessionId + logicalSetCompletedSetsBySessionId(missingCompletedSetSessionIds)
         val sessionsWithReps = sessions.map { session ->
+            val snapshotReps = snapshotRepsBySessionId[session.id].orEmpty()
             val repMetrics = if (telemetryAllowed) {
-                repMetricRepository.getRepMetrics(session.id)
+                snapshotReps.ifEmpty { repMetricRepository.getRepMetrics(session.id) }
             } else {
                 emptyList()
             }
-            val repSummaries = if (repMetrics.isNotEmpty()) {
-                repMetrics.map { it.toSummary() }
-            } else {
-                repMetricRepository.getRepMetricSummaries(session.id)
+            val repSummaries = when {
+                repMetrics.isNotEmpty() -> repMetrics.map { it.toSummary() }
+                snapshotReps.isNotEmpty() -> snapshotReps.map { it.toSummary() }
+                else -> repMetricRepository.getRepMetricSummaries(session.id)
             }
             val sessionKey = session.exerciseId
                 ?.takeIf { it.isNotBlank() }

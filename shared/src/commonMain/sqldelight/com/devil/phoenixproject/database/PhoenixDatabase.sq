@@ -3795,6 +3795,14 @@ UPDATE WorkoutSession SET updatedAt = NULL WHERE id IN :ids;
 markSessionPulled:
 UPDATE WorkoutSession SET portalOrigin = 1 WHERE id = ?;
 
+-- Test helper: mark a row generation-clean, the way ackWorkoutComponentSnapshot
+-- does after a push lands. Main's dirty gather is
+-- local_sync_generation > synced_sync_generation, not `updatedAt > lastSync`, so
+-- modelling "a prior sync already sent this" requires raising synced_sync_generation
+-- and not only stamping updatedAt.
+markSessionSynced:
+UPDATE WorkoutSession SET synced_sync_generation = local_sync_generation WHERE id = ?;
+
 -- ==================== SMART SUGGESTIONS QUERIES ====================
 
 -- Session summaries with exercise muscle group data (for volume/balance analysis)

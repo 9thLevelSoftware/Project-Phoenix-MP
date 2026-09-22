@@ -712,7 +712,13 @@ class RoutineGroupPushTest {
             counterweightKg = 0.0,
             rackItemsJson = "[]",
         )
-        stampedAt?.let { q.updateSessionTimestamp(it, id) }
+        stampedAt?.let {
+            q.updateSessionTimestamp(it, id)
+            // Main's gather keys off local_sync_generation > synced_sync_generation,
+            // not updatedAt > lastSync. A prior sync is therefore modelled by raising
+            // synced_sync_generation as well as stamping updatedAt.
+            q.markSessionSynced(id)
+        }
         if (withLocalData) {
             q.insertCompletedSet(
                 id = "cs-$id",
