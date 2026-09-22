@@ -173,7 +173,17 @@ class FakeSyncRepository : SyncRepository {
         return sessionNotesByPortalId.filterKeys { it in ids }
     }
 
-    override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> = routinesToReturn
+    /**
+     * Mirrors `selectRoutinesModifiedSince` (`updatedAt > :timestamp OR updatedAt IS NULL`).
+     * The timestamp argument is production's `repairFrom` (the per-profile `pushWatermark`,
+     * or 0 while a legacy repair push is owed). Rows with a NULL `updatedAt` always match,
+     * the same way `insertRoutine` rows do.
+     */
+    override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> =
+        routinesToReturn.filter { routine ->
+            val updatedAt = routine.updatedAt
+            updatedAt == null || updatedAt > timestamp
+        }
 
     var deletedRoutineIdsToReturn: List<String> = emptyList()
     var deletedCycleIdsToReturn: List<String> = emptyList()
@@ -311,9 +321,16 @@ class FakeSyncRepository : SyncRepository {
         cycleServerVersionUpdates += versions
     }
 
+    /**
+     * Mirrors `selectPRsModifiedSince` (`updatedAt > ? OR updatedAt IS NULL`), same
+     * `repairFrom` contract as [getFullRoutinesModifiedSince].
+     */
     override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> {
         callLog += "getFullPRsModifiedSince"
-        return fullPRsToReturn
+        return fullPRsToReturn.filter { record ->
+            val updatedAt = record.updatedAt
+            updatedAt == null || updatedAt > timestamp
+        }
     }
 
     override suspend fun backfillPhaseSpecificPRs(

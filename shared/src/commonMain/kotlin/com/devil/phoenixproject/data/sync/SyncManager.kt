@@ -745,9 +745,13 @@ class SyncManager(
             }
         }
 
-        // Step 9: the UI's lastSyncTime is the minimum successful pull time across profiles.
+        // Step 9: the UI's lastSyncTime is the minimum successful pull time across
+        // profiles. Never-pulled profiles (cursor 0) must not drag the floor to
+        // "never synced" — G-4: take the min over profiles that have pulled, and
+        // fall back to 0 only when none have.
         val minPull = profiles
             .map { tokenStorage.getPullCursor(userId, it.id) }
+            .filter { it > 0L }
             .minOrNull() ?: 0L
         tokenStorage.publishMinPullCursor(minPull)
 
@@ -820,7 +824,9 @@ class SyncManager(
                 Result.failure(firstError ?: Exception("Push failed"))
             }
             anyPush && allPull -> {
-                val minPull = outcomes.mapNotNull { it.pullSyncTime }.minOrNull() ?: reportTime
+                val minPull = outcomes.mapNotNull { it.pullSyncTime }
+                    .filter { it > 0L }
+                    .minOrNull() ?: reportTime
                 _syncState.value = SyncState.Success(minPull)
                 Result.success(minPull)
             }
@@ -948,10 +954,12 @@ class SyncManager(
         // instead of re-pushed forever (step 11). Only accepted rows get a hash: a
         // rejected row whose content is unchanged must still match the hash of what was
         // actually uploaded, and a never-accepted row must have no hash at all.
+        // S-1: the hash is namespaced by (userId, profileId) so account A's accept
+        // cannot make account B's never-accepted row look accepted.
         pushOutcome.sentSessionsById
             .filterKeys { it !in rejectedSessionIds }
             .forEach { (portalSessionId, dto) ->
-                tokenStorage.setSessionSentHash(portalSessionId, sessionContentFingerprint(dto))
+                tokenStorage.setSessionSentHash(userId, profile.id, portalSessionId, sessionContentFingerprint(dto))
             }
 
         // Parse syncTime from ISO 8601 to epoch millis
@@ -1091,6 +1099,7 @@ class SyncManager(
         }
         val minPull = profiles
             .map { tokenStorage.getPullCursor(userId, it.id) }
+            .filter { it > 0L }
             .minOrNull() ?: 0L
         tokenStorage.publishMinPullCursor(minPull)
         val combined = combineProfileOutcomes(outcomes)
@@ -2271,10 +2280,12 @@ class SyncManager(
         val unchangedContent = mutableListOf<String>()
         val retryable = sessionRejections.mapNotNull { rejection ->
             val dto = outcome.sentSessionsById[rejection.id] ?: return@mapNotNull null
-            // Step 11: a rejected row whose content is unchanged from what was last sent
-            // is stamped, not re-pushed. Never stamp a row that was never uploaded — the
-            // hash lookup below only matches rows this push actually sent.
-            val sentHash = tokenStorage.getSessionSentHash(rejection.id)
+            // Step 11: a rejected row whose content is unchanged from what was last
+            // accepted is stamped, not re-pushed. Never stamp a row that was never
+            // uploaded — the hash is written only when this account gets an accept
+            // (S-1: namespaced by userId:profileId, so another account's accept cannot
+            // satisfy this lookup).
+            val sentHash = tokenStorage.getSessionSentHash(userId, profileId, rejection.id)
             val currentHash = sessionContentFingerprint(dto)
             if (sentHash != null && sentHash == currentHash) {
                 unchangedContent += rejection.id
@@ -2382,6 +2393,16 @@ class SyncManager(
             .map { it.id }
             .filter { it !in stillRejected }
             .flatMap { outcome.localRowIdsByPortalSessionId[it].orEmpty() }
+        // S-3: a version first delivered by the re-push must record its content hash too,
+        // otherwise a later rejection of that same version compares against the older
+        // hash and re-pushes (clobbering any web note written in between). The retry
+        // DTO's fingerprint equals the next gather's for the same content: `updatedAt`
+        // is excluded from the hash and `notes` comes from the same SessionNotes table.
+        retrySessions
+            .filter { it.id !in stillRejected }
+            .forEach { dto ->
+                tokenStorage.setSessionSentHash(userId, profileId, dto.id, sessionContentFingerprint(dto))
+            }
         // Only rows still rejected (or whose batch failed) get re-armed; accepted ones
         // are stamped in the same transaction.
         val stillRejectedRepairRows = repairRowIdsFor(outcome, stillRejected)
@@ -2459,46 +2480,94 @@ class SyncManager(
      * modified. Exercises (name, muscle group, sets, per-cable weights, reps) and notes
      * are the content the portal's LWW gate is actually arbitrating.
      */
+    /**
+     * Content fingerprint of every field the push payload actually sends (G-2).
+     * Identity fields (`id`, `sessionId`, `routineSessionId`, `startedAt`, `updatedAt`,
+     * `userId`) are excluded: they identify the row, they are not its content. If a
+     * field reaches the portal wire it MUST be here — a rejected session whose only
+     * local edit is in an unhashed field would match the last-accepted hash, get
+     * stamped as synced, and never upload the edit.
+     *
+     * 64-bit FNV-1a rather than 32-bit so a collision cannot mark a changed row
+     * synced (the gate stamps on equality).
+     */
     private fun sessionContentFingerprint(dto: PortalWorkoutSessionDto): String {
         val content = buildString {
-            append(dto.name ?: "")
-            append('|')
-            append(dto.notes ?: "")
-            append('|')
-            append(dto.workoutMode ?: "")
-            append('|')
-            append(dto.durationSeconds)
-            append('|')
-            append(dto.totalVolume)
-            append('|')
-            append(dto.setCount)
-            append('|')
-            append(dto.exerciseCount)
-            append('|')
+            // Session-level content (PortalWorkoutSessionDto).
+            append(dto.name ?: ""); append('|')
+            append(dto.notes ?: ""); append('|')
+            append(dto.workoutMode ?: ""); append('|')
+            append(dto.routineName ?: ""); append('|')
+            append(dto.durationSeconds); append('|')
+            append(dto.totalVolume); append('|')
+            append(dto.setCount); append('|')
+            append(dto.exerciseCount); append('|')
+            append(dto.prCount); append('|')
+            append(dto.avgVelocityMps ?: 0f); append('|')
+            append(dto.avgAsymmetryPct ?: 0f); append('|')
+            append(dto.velocityLossPct ?: 0f); append('|')
+            append(dto.dominantSide ?: ""); append('|')
+            append(dto.strengthProfile ?: ""); append('|')
+            append(dto.formScore ?: 0); append('|')
+            append(dto.deloadWarnings ?: 0); append('|')
+            append(dto.romViolations ?: 0); append('|')
+            append(dto.spotterActivations ?: 0); append('|')
+            append(dto.peakForceN ?: 0f); append('|')
+            append(dto.estimatedCalories ?: 0f); append('|')
+            append(dto.heaviestLiftKg ?: 0f); append('|')
+            append(dto.eccentricLoad ?: 0); append('|')
+            append(dto.echoLevel ?: 0); append('|')
+            append(dto.warmupReps ?: 0); append('|')
+            append(dto.workingReps ?: 0); append('|')
             dto.exercises.sortedBy { it.orderIndex }.forEach { ex ->
-                append(ex.name)
-                append('~')
-                append(ex.muscleGroup)
-                append('~')
-                append(ex.estimatedOneRepMaxKg ?: 0f)
-                append('~')
+                // Exercise-level content (PortalExerciseDto).
+                append(ex.name); append('~')
+                append(ex.muscleGroup); append('~')
+                append(ex.orderIndex); append('~')
+                append(ex.exerciseId ?: ""); append('~')
+                append(ex.estimatedOneRepMaxKg ?: 0f); append('~')
+                append(ex.velocityEstimatedOneRepMaxKg ?: 0f); append('~')
+                append(ex.cableCount ?: 0); append('~')
                 ex.sets.sortedBy { it.setNumber }.forEach { set ->
-                    append(set.actualReps)
-                    append(',')
-                    append(set.weightKg)
-                    append(',')
-                    append(set.isPr)
+                    // Set-level content (PortalSetDto).
+                    append(set.setNumber); append(',')
+                    append(set.targetReps ?: 0); append(',')
+                    append(set.actualReps); append(',')
+                    append(set.weightKg); append(',')
+                    append(set.rpe ?: 0); append(',')
+                    append(set.isPr); append(',')
+                    append(set.prType ?: ""); append(',')
+                    append(set.prPhase ?: ""); append(',')
+                    append(set.prVolume ?: 0f); append(',')
+                    append(set.notes ?: ""); append(',')
+                    append(set.workoutMode ?: ""); append(',')
+                    set.repSummaries.forEach { rep ->
+                        append(rep.repNumber); append('/')
+                        append(rep.meanVelocityMps ?: 0f); append('/')
+                        append(rep.peakVelocityMps ?: 0f); append('/')
+                        append(rep.meanForceN ?: 0f); append('/')
+                        append(rep.peakForceN ?: 0f); append('/')
+                        append(rep.powerWatts ?: 0f); append('/')
+                        append(rep.romMm ?: 0f); append('/')
+                        append(rep.tutMs ?: 0); append('/')
+                        append(rep.leftForceAvg ?: 0f); append('/')
+                        append(rep.rightForceAvg ?: 0f); append('/')
+                        append(rep.asymmetryPct ?: 0f); append('/')
+                        append(rep.vbtZone ?: ""); append('%')
+                    }
                     append(';')
                 }
                 append('|')
             }
         }
-        var hash = 0x811c9dc5.toInt()
+        // 64-bit FNV-1a. Wider than the previous 32-bit digest so a hash collision
+        // cannot satisfy the `sentHash == currentHash` stamp gate.
+        var hash = -0x340d631b7bdddcdbL // 0xcbf29ce484222325 as signed Long
         for (ch in content) {
-            hash = hash xor ch.code
-            hash *= 0x01000193
+            hash = hash xor ch.code.toLong()
+            hash *= 0x100000001b3L
         }
-        return hash.toUInt().toString(16)
+        return hash.toULong().toString(16)
     }
 
     /**
@@ -3052,9 +3121,14 @@ class SyncManager(
         // in mergePullPage and in the push skippedDeleted handling.
 
         // PR 10 step 6: the next pull cursor is the FIRST page's syncTime minus a fixed
-        // 5-minute overlap. Fall back to the stored cursor if no page produced one.
-        val pullSyncTime = (firstPageSyncTime ?: pullCursor)
-            .let { if (it > PULL_CURSOR_OVERLAP_MS) it - PULL_CURSOR_OVERLAP_MS else 0L }
+        // 5-minute overlap. Fall back to the stored cursor unchanged if no page produced
+        // one — subtracting the overlap again would ratchet the cursor backwards on every
+        // occurrence (G-9).
+        val pullSyncTime = if (firstPageSyncTime != null) {
+            if (firstPageSyncTime > PULL_CURSOR_OVERLAP_MS) firstPageSyncTime - PULL_CURSOR_OVERLAP_MS else 0L
+        } else {
+            pullCursor
+        }
 
         return Result.success(
             CompletedPull(
@@ -3232,8 +3306,16 @@ class SyncManager(
             }
             PortalPullAdapter.toPersonalRecordSyncDto(pr, resolvedExerciseId)
         }
-        val gamificationStatsDto = pullResponse.gamificationStats?.let {
-            PortalPullAdapter.toGamificationStatsSyncDto(it)
+        // PR 10 step 3 (R-14): gamification stats are the third user-scoped singleton
+        // (with badges and RPG) and follow the active profile only (S-2). The portal
+        // returns them unfiltered, so without this gate every profile's pull would
+        // overwrite its own row with the user's.
+        val gamificationStatsDto = if (includeUserScoped) {
+            pullResponse.gamificationStats?.let {
+                PortalPullAdapter.toGamificationStatsSyncDto(it)
+            }
+        } else {
+            null
         }
 
         // 2b. Phase 3.5: extract session-level notes for the SessionNotes

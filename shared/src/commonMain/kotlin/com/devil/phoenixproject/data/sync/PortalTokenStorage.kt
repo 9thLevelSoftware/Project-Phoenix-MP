@@ -368,7 +368,8 @@ class PortalTokenStorage(private val settings: Settings) {
         val values = settings.keys
             .filter { it.startsWith(prefix) }
             .map { settings[it, 0L] }
-        _lastSyncTimestamp.value = values.minOrNull() ?: 0L
+        // G-4: never-pulled profiles (cursor 0) must not report "never synced".
+        _lastSyncTimestamp.value = values.filter { it > 0L }.minOrNull() ?: 0L
     }
 
     /**
@@ -417,16 +418,21 @@ class PortalTokenStorage(private val settings: Settings) {
         }
     }
 
-    /** Content fingerprint of the session DTO last sent under this portal session id. */
-    fun getSessionSentHash(portalSessionId: String): String? =
-        settings[sessionSentHashKey(portalSessionId)]
+    /**
+     * Content fingerprint of the session DTO this account last got accepted under
+     * [portalSessionId]. Namespaced by `(userId, profileId)` exactly like the cursors
+     * (S-1): account A's accept must never let account B's never-accepted row be
+     * stamped as synced.
+     */
+    fun getSessionSentHash(userId: String, profileId: String, portalSessionId: String): String? =
+        settings[sessionSentHashKey(userId, profileId, portalSessionId)]
 
-    fun setSessionSentHash(portalSessionId: String, hash: String?) {
+    fun setSessionSentHash(userId: String, profileId: String, portalSessionId: String, hash: String?) {
         withPlatformLock(authLock) {
             if (hash == null) {
-                settings.remove(sessionSentHashKey(portalSessionId))
+                settings.remove(sessionSentHashKey(userId, profileId, portalSessionId))
             } else {
-                settings[sessionSentHashKey(portalSessionId)] = hash
+                settings[sessionSentHashKey(userId, profileId, portalSessionId)] = hash
             }
         }
     }
@@ -574,8 +580,8 @@ class PortalTokenStorage(private val settings: Settings) {
     private fun routineCyclePrRepairKey(userId: String): String =
         "$KEY_ROUTINE_CYCLE_PR_REPAIR_DONE_PREFIX$userId"
 
-    private fun sessionSentHashKey(portalSessionId: String): String =
-        "$KEY_SESSION_SENT_HASH_PREFIX$portalSessionId"
+    private fun sessionSentHashKey(userId: String, profileId: String, portalSessionId: String): String =
+        cursorKey("$KEY_SESSION_SENT_HASH_PREFIX", userId, profileId) + ":$portalSessionId"
 }
 
 /**

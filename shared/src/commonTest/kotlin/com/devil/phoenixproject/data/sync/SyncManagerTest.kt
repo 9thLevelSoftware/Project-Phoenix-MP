@@ -2662,31 +2662,42 @@ class SyncManagerTest {
     @Test
     fun deviceClockBehindServerStillPushesPostSyncEdit() = runTest {
         setupAuthenticated()
-        // The server clock runs 10 minutes ahead of the device (A-010 clock skew).
-        fakeApi.pullTimestampSourceMs = {
-            com.devil.phoenixproject.domain.model.currentTimeMillis() + 10 * 60_000L
-        }
+        // A-010 clock skew: the server clock runs 10 minutes ahead of the device. The
+        // watermark that gates the timestamp-based gather is the *device* clock stored as
+        // `pushWatermark` (production reads it as `repairFrom`). Planting the skew in
+        // `pullTimestampSourceMs` would be vacuous — production never reads that recorder.
+        val deviceNow = com.devil.phoenixproject.domain.model.currentTimeMillis()
+        tokenStorage.markRoutineCyclePrRepairPushDone("user-123")
+        tokenStorage.setPushWatermark("user-123", "default", deviceNow)
         fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
         fakeApi.pullResult = Result.success(PortalSyncPullResponse(syncTime = 1_740_000_000_000L))
-        val manager = createManager()
 
-        assertTrue(manager.sync().isSuccess, "first sync with an empty delta")
-
-        // An edit made AFTER the last sync. The device clock lags the server by 10 minutes,
-        // but the push watermark is the device clock too, so the edit is still newer than
-        // the watermark and the generation-based gather picks it up.
-        val editTs = com.devil.phoenixproject.domain.model.currentTimeMillis() + 5_000L
-        fakeSyncRepo.workoutSessionsToReturn = listOf(
-            makeWorkoutSession(id = "post-sync-edit", timestamp = editTs),
+        // An edit made AFTER the last sync on the device clock. The timestamp-based
+        // routine gather must still select it: `updatedAt > pushWatermark` holds even
+        // though the device clock lags the server by 10 minutes. A routine (not a
+        // session) is the pin — the session gather is generation-based and cannot see
+        // the watermark at all.
+        fakeSyncRepo.routinesToReturn = listOf(
+            Routine(
+                id = LATE_ROUTINE_ID,
+                name = "Post-sync edit",
+                profileId = "default",
+                updatedAt = deviceNow + 5_000L,
+            ),
         )
-        assertTrue(manager.sync().isSuccess)
 
-        val pushedIds = fakeApi.pushPayloads.flatMap { payload -> payload.sessions.map { it.id } }
+        assertTrue(createManager().sync().isSuccess)
+
+        val pushedRoutineIds = fakeApi.pushPayloads.flatMap { payload -> payload.routines.map { it.id } }
         assertTrue(
-            "post-sync-edit" in pushedIds,
-            "an edit made after the last sync must be pushed even when the device clock is 10 min behind the server",
+            LATE_ROUTINE_ID in pushedRoutineIds,
+            "an edit made after the last sync must be pushed even when the device clock is 10 min behind " +
+                "the server (saw $pushedRoutineIds)",
         )
     }
+
+    /** Canonical UUID: SyncManager strips non-UUID routine ids from every push. */
+    private val LATE_ROUTINE_ID = "44444444-4444-4444-8444-444444444444"
 
     private fun makeWorkoutSession(
         id: String,

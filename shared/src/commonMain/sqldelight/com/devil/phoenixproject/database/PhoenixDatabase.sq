@@ -848,7 +848,7 @@ selectSessionUpdatedAt:
 SELECT updatedAt FROM WorkoutSession WHERE id = ?;
 
 -- Issue #591 follow-up: batch-read the existing updatedAt for a list of
--- session ids. Used by SqlDelightSyncRepository.mergeSessionsLww so the
+-- session ids. Used by SqlDelightSyncRepository.mergePulledSessions so the
 -- LWW gate does not issue one round-trip per incoming pull row. Returns
 -- (id, updatedAt) so the caller can build an in-memory map keyed by id.
 selectSessionsUpdatedAtByIds:
@@ -1082,6 +1082,12 @@ UPDATE WorkoutSession
 SET duration = ?, totalReps = ?, workingReps = ?, formScore = ?,
     local_sync_generation = local_sync_generation + 1
 WHERE id = ?;
+
+-- Target reps and RPE are session-level planning/RPE fields the user can edit after
+-- the fact. Leaves the sync generation untouched: callers that mean "this row is
+-- dirty again" must also markWorkoutComponentDirty.
+updateSessionTargetRepsAndRpe:
+UPDATE WorkoutSession SET targetReps = ?, rpe = ? WHERE id = ?;
 
 updateSessionMode:
 UPDATE WorkoutSession
@@ -4529,8 +4535,11 @@ SELECT id FROM Routine WHERE profile_id = :profileId AND deletedAt IS NULL;
 selectAllCycleIdsByProfile:
 SELECT id FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NULL;
 
+-- The portal's badge parity query keys on `badgeId` (the portal UUID), not the
+-- local integer row id. Returning CAST(id AS TEXT) made filterUuids drop the whole
+-- list and forced the nil-UUID sentinel on every pull (S-5).
 selectAllBadgeIdsByProfile:
-SELECT CAST(id AS TEXT) FROM EarnedBadge WHERE profile_id = :profileId;
+SELECT badgeId FROM EarnedBadge WHERE profile_id = :profileId;
 
 selectAllPersonalRecordUuidsByProfile:
 SELECT uuid FROM PersonalRecord

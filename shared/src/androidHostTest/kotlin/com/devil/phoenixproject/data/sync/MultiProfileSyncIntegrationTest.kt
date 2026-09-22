@@ -203,22 +203,12 @@ class MultiProfileSyncIntegrationTest {
         )
         database.phoenixDatabaseQueries.markSessionPulled("b-pulled")
         insertSession("b-local", groupId = null, timestamp = baseTime, profileId = profileB)
-        insertRoutine(routineB, profileB)
-        database.phoenixDatabaseQueries.insertRecord(
-            exerciseId = "bench",
-            exerciseName = "Bench Press",
-            weight = 40.0,
-            reps = 8L,
-            oneRepMax = 45.0,
-            achievedAt = baseTime,
-            workoutMode = "OldSchool",
-            prType = "MAX_WEIGHT",
-            volume = 320.0,
-            phase = "COMBINED",
-            profile_id = profileB,
-            cable_count = 2L,
-            uuid = "pr-b-1",
-        )
+        // Pre-stamped routine/PR (updatedAt strictly below the seeded watermark) so the
+        // ordinary delta cannot carry them: only the one-time repair (repairFrom = 0)
+        // can. A NULL updatedAt would match selectRoutinesModifiedSince / selectPRsModifiedSince
+        // unconditionally and the repair assertions would pass with the repair never firing.
+        insertRoutineStamped(routineB, profileB, baseTime - 120_000L)
+        insertRecordStamped("pr-b-1", profileB, baseTime - 120_000L)
 
         assertTrue(manager.sync().isSuccess)
 
@@ -239,6 +229,62 @@ class MultiProfileSyncIntegrationTest {
         assertTrue(
             bPushes.flatMap { it.personalRecords }.isNotEmpty(),
             "the one-time repair must carry profile B's personal records",
+        )
+    }
+
+    // ===== 5b. G-1 + T-1: the repair payload is real and pinned, for every profile =====
+
+    @Test
+    fun theRepairPayloadCarriesPreStampedRoutinesAndPRsOnlyWhileTheRepairIsOwed() = runTest {
+        // Legacy global cursor so migrateLegacyCursors seeds every profile's pushWatermark.
+        settings.putLong("portal_last_sync_timestamp", baseTime - 60_000L)
+        val oldTs = baseTime - 120_000L // strictly below the seeded watermark
+        val oldRoutineA = "55555555-5555-4555-8555-555555555555"
+        val oldRoutineB = "66666666-6666-4666-8666-666666666666"
+
+        // Pre-stamped rows for BOTH profiles: the ordinary delta (updatedAt > pushWatermark)
+        // cannot see them. Only the one-time repair (repairFrom = 0) can.
+        insertRoutineStamped(oldRoutineA, profileA, oldTs)
+        insertRoutineStamped(oldRoutineB, profileB, oldTs)
+        insertRecordStamped("pr-a-old", profileA, oldTs)
+        insertRecordStamped("pr-b-old", profileB, oldTs)
+
+        // ---- Phase 1: the repair is already done (setup marked it done) ----
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(
+            api.pushPayloads.flatMap { it.routines }.none { it.id == oldRoutineA || it.id == oldRoutineB },
+            "with the repair already done, pre-stamped routines below the watermark must not be pushed " +
+                "(saw ${api.pushPayloads.flatMap { it.routines }.map { it.id }})",
+        )
+        assertTrue(
+            api.pushPayloads.flatMap { it.personalRecords }.none { it.id == "pr-a-old" || it.id == "pr-b-old" },
+            "with the repair already done, pre-stamped PRs below the watermark must not be pushed " +
+                "(saw ${api.pushPayloads.flatMap { it.personalRecords }.map { it.id }})",
+        )
+
+        // ---- Phase 2: the repair is owed again (legacy upgrade) ----
+        settings.remove("portal_rcp_repair_done_$userId")
+        api.pushPayloads.clear()
+
+        assertTrue(manager.sync().isSuccess)
+
+        val routinesByProfile = api.pushPayloads.associate { it.profileId to it.routines.map { r -> r.id } }
+        val prsByProfile = api.pushPayloads.associate { p -> p.profileId to p.personalRecords.map { it.id } }
+        assertTrue(
+            oldRoutineA in (routinesByProfile[profileA] ?: emptyList()),
+            "the repair must carry profile A's pre-stamped routine (saw $routinesByProfile)",
+        )
+        assertTrue(
+            oldRoutineB in (routinesByProfile[profileB] ?: emptyList()),
+            "the repair must carry profile B's pre-stamped routine (saw $routinesByProfile)",
+        )
+        assertTrue(
+            "pr-a-old" in (prsByProfile[profileA] ?: emptyList()),
+            "the repair must carry profile A's pre-stamped PR (saw $prsByProfile)",
+        )
+        assertTrue(
+            "pr-b-old" in (prsByProfile[profileB] ?: emptyList()),
+            "the repair must carry profile B's pre-stamped PR (saw $prsByProfile)",
         )
     }
 
@@ -391,29 +437,65 @@ class MultiProfileSyncIntegrationTest {
             profileId = profileB,
         )
         q.insertEarnedBadge(badgeId = "b-badge", earnedAt = baseTime, profileId = profileB)
+        // S-2: gamification stats are the third user-scoped singleton. B keeps its own row.
+        q.upsertGamificationStats(
+            id = profileB.hashCode().toLong(),
+            totalWorkouts = 7L,
+            totalReps = 70L,
+            // volume/dates are INTEGER columns in the schema
+            totalVolumeKg = 700L,
+            longestStreak = 7L,
+            currentStreak = 7L,
+            uniqueExercisesUsed = 7L,
+            prsAchieved = 7L,
+            lastWorkoutDate = baseTime - 86_400L,
+            streakStartDate = baseTime - 2 * 86_400L,
+            lastUpdated = baseTime,
+            profileId = profileB,
+        )
 
-        // Active profile A pulls first, so the first script carries the user-scoped data.
-        api.pullResponses += PullScript(
-            syncTime = 1_740_000_000_000L,
-            rpg = PullRpgAttributesDto(
-                strength = 99,
-                power = 99,
-                stamina = 99,
-                consistency = 99,
-                mastery = 99,
-                characterClass = "TITAN",
-                level = 9,
-                experiencePoints = 900,
-            ),
-            badges = listOf(
-                PullBadgeDto(
-                    badgeId = "a-badge",
-                    badgeName = "A",
-                    earnedAt = "2026-03-02T12:00:00Z",
-                ),
+        // The portal returns user-scoped data unfiltered on EVERY profile's pull
+        // (production comment on the includeUserScoped gate). Both scripts therefore
+        // carry it: without the gate, B's pull would overwrite its own rows with the
+        // user's, and the assertions below would fail.
+        val userScopedRpg = PullRpgAttributesDto(
+            strength = 99,
+            power = 99,
+            stamina = 99,
+            consistency = 99,
+            mastery = 99,
+            characterClass = "TITAN",
+            level = 9,
+            experiencePoints = 900,
+        )
+        val userScopedBadges = listOf(
+            PullBadgeDto(
+                badgeId = "a-badge",
+                badgeName = "A",
+                earnedAt = "2026-03-02T12:00:00Z",
             ),
         )
-        api.pullResponses += PullScript(syncTime = 1_740_000_000_000L)
+        val userScopedStats = PullGamificationStatsDto(
+            totalWorkouts = 99,
+            totalReps = 990,
+            totalVolumeKg = 9900f,
+            longestStreak = 9,
+            currentStreak = 9,
+        )
+        // Active profile A pulls first; the portal still returns the same unfiltered
+        // user-scoped payload on B's pull in the same loop.
+        api.pullResponses += PullScript(
+            syncTime = 1_740_000_000_000L,
+            rpg = userScopedRpg,
+            badges = userScopedBadges,
+            gamificationStats = userScopedStats,
+        )
+        api.pullResponses += PullScript(
+            syncTime = 1_740_000_000_000L,
+            rpg = userScopedRpg,
+            badges = userScopedBadges,
+            gamificationStats = userScopedStats,
+        )
 
         assertTrue(manager.sync().isSuccess)
 
@@ -421,7 +503,11 @@ class MultiProfileSyncIntegrationTest {
         assertEquals(11L, bRpg.strength, "profile B's RPG must be untouched when A pulls user-scoped data")
         assertEquals(11L, bRpg.power)
         assertEquals("TITAN", bRpg.characterClass)
-        // getAllBadgeIds returns the integer row id as text, so assert by badgeId.
+        val bStats = q.selectGamificationStats(profileB).executeAsOne()
+        assertEquals(7L, bStats.totalWorkouts, "profile B's gamification stats must be untouched (S-2)")
+        assertEquals(70L, bStats.totalReps)
+        assertEquals(7L, bStats.currentStreak)
+        // Assert by badgeId (S-5: getAllBadgeIds now returns badgeId, not the row id).
         assertTrue(
             q.selectEarnedBadgeById("b-badge", profileB).executeAsOneOrNull() != null,
             "profile B must keep its own badge",
@@ -429,6 +515,12 @@ class MultiProfileSyncIntegrationTest {
         assertTrue(
             q.selectEarnedBadgeById("a-badge", profileB).executeAsOneOrNull() == null,
             "profile B must not receive the active profile's badge",
+        )
+        // S-2 (push side): a non-active profile's push must not ship the user's stats.
+        assertTrue(
+            api.pushPayloads.filter { it.profileId == profileB }.all { it.gamificationStats == null },
+            "a non-active profile's push must not carry gamificationStats " +
+                "(saw ${api.pushPayloads.filter { it.profileId == profileB }.map { it.gamificationStats }})",
         )
 
         // The active profile does receive them (so the test is not vacuous).
@@ -454,6 +546,52 @@ class MultiProfileSyncIntegrationTest {
             groupId = null,
             deletedAt = null,
         )
+    }
+
+    /**
+     * A routine whose `updatedAt` is already stamped (non-NULL). Unlike [insertRoutine],
+     * this does NOT match `selectRoutinesModifiedSince`'s `updatedAt IS NULL` arm, so it
+     * only rides a push whose gather floor is at or below [updatedAt] — the repair
+     * (`repairFrom = 0`), not the ordinary delta.
+     */
+    private fun insertRoutineStamped(id: String, profileId: String, updatedAt: Long) {
+        database.phoenixDatabaseQueries.insertRoutineIgnore(
+            id = id,
+            name = "Split",
+            description = "",
+            createdAt = baseTime,
+            lastUsed = null,
+            useCount = 0L,
+            updatedAt = updatedAt,
+            profile_id = profileId,
+            groupId = null,
+        )
+    }
+
+    /**
+     * A personal record whose `updatedAt` is already stamped, so
+     * `selectPRsModifiedSince`'s `updatedAt IS NULL` arm cannot match it. [updatePRTimestamp]
+     * keys on the INTEGER primary key, so look the row up by its `uuid` first.
+     */
+    private fun insertRecordStamped(uuid: String, profileId: String, updatedAt: Long) {
+        val q = database.phoenixDatabaseQueries
+        q.insertRecord(
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            weight = 40.0,
+            reps = 8L,
+            oneRepMax = 45.0,
+            achievedAt = baseTime,
+            workoutMode = "OldSchool",
+            prType = "MAX_WEIGHT",
+            volume = 320.0,
+            phase = "COMBINED",
+            profile_id = profileId,
+            cable_count = 2L,
+            uuid = uuid,
+        )
+        val row = q.selectPRsModifiedSince(0L, profileId).executeAsList().single { it.uuid == uuid }
+        q.updatePRTimestamp(updatedAt, listOf(row.id))
     }
 
     private fun insertSession(
@@ -544,6 +682,7 @@ data class PullScript(
     val sessions: List<PortalSession> = emptyList(),
     val rpg: PullRpgAttributesDto? = null,
     val badges: List<PullBadgeDto> = emptyList(),
+    val gamificationStats: PullGamificationStatsDto? = null,
 )
 
 /**
@@ -614,6 +753,7 @@ class RecordingPortalApi : FakePortalApiClient() {
                     sessions = script.sessions.map { it.toDto() },
                     rpgAttributes = script.rpg,
                     badges = script.badges,
+                    gamificationStats = script.gamificationStats,
                 ),
             )
         }

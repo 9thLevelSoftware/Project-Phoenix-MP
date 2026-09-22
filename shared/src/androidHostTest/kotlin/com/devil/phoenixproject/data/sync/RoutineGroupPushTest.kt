@@ -635,7 +635,7 @@ class RoutineGroupPushTest {
         manager.sync()
         assertStamped("set-1")
         assertTrue(apiClient.pushPayloads.flatMap { it.sessions }.any { it.id == GROUP })
-        val uploadedHash = tokenStorage.getSessionSentHash(GROUP)
+        val uploadedHash = tokenStorage.getSessionSentHash("user-1", profileId, GROUP)
         assertNotNull(uploadedHash, "an accepted push must record the content hash")
 
         server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
@@ -658,7 +658,7 @@ class RoutineGroupPushTest {
     fun `an LWW-rejected session with changed content is re-sent`() = runTest {
         insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
         manager.sync()
-        val uploadedHash = tokenStorage.getSessionSentHash(GROUP)
+        val uploadedHash = tokenStorage.getSessionSentHash("user-1", profileId, GROUP)
         assertNotNull(uploadedHash)
 
         server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
@@ -703,8 +703,119 @@ class RoutineGroupPushTest {
 
         manager.sync()
 
-        assertNull(tokenStorage.getSessionSentHash(GROUP), "a never-accepted row must have no sent hash")
+        assertNull(tokenStorage.getSessionSentHash("user-1", profileId, GROUP), "a never-accepted row must have no sent hash")
         assertNotStamped("set-1")
+    }
+
+    // ===== Review fix round: G-2 / S-1 / T-3 =====
+
+    @Test
+    fun `an LWW-rejected session whose only edit is in targetReps and rpe is re-sent not stamped as unchanged`() = runTest {
+        // Accepted upload records the fingerprint of every field the push sends.
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        assertStamped("set-1")
+        val uploadedHash = tokenStorage.getSessionSentHash("user-1", profileId, GROUP)
+        assertNotNull(uploadedHash, "an accepted push must record the content hash")
+
+        // The website then holds a newer copy (LWW rejection armed), and the only local
+        // change is in two fields the first fingerprint dropped: targetReps and rpe.
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        database.phoenixDatabaseQueries.updateSessionTargetRepsAndRpe(10L, 9L, "set-1")
+        database.phoenixDatabaseQueries.markWorkoutComponentDirty("set-1")
+        apiClient.pushPayloads.clear()
+
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.size >= 2,
+            "an edit that only touches targetReps/rpe must still change the fingerprint and force a re-push " +
+                "(payloads=${apiClient.pushPayloads.size})",
+        )
+        assertTrue(
+            apiClient.pushPayloads.drop(1).flatMap { it.sessions }.any { it.id == GROUP },
+            "the re-push payload must carry the group",
+        )
+        val resent = apiClient.pushPayloads.drop(1).flatMap { it.sessions }.last { it.id == GROUP }
+        val resentSet = resent.exercises.single { it.id == "set-1" }.sets.single()
+        assertEquals(10, resentSet.targetReps, "the re-sent set must carry the edited targetReps")
+        assertEquals(9, resentSet.rpe, "the re-sent set must carry the edited rpe")
+    }
+
+    @Test
+    fun `a sent-hash written for one account never satisfies another account's lookup`() = runTest {
+        // Account A uploads and is accepted: its content hash is stored under A's key.
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        assertStamped("set-1")
+        assertNotNull(tokenStorage.getSessionSentHash("user-1", profileId, GROUP))
+
+        // A different account on the same device. Same session id, never accepted here.
+        tokenStorage.saveGoTrueAuth(
+            GoTrueAuthResponse(
+                accessToken = "token-b",
+                tokenType = "bearer",
+                expiresIn = 3600,
+                expiresAt = com.devil.phoenixproject.domain.model.currentTimeMillis() / 1000 + 3600,
+                refreshToken = "refresh-b",
+                user = GoTrueUser(id = "user-2", email = "b@b.c"),
+            ),
+        )
+
+        // S-1: the hash is namespaced by userId:profileId, so A's accept cannot satisfy B.
+        assertNull(
+            tokenStorage.getSessionSentHash("user-2", profileId, GROUP),
+            "another account's accept must not satisfy this account's sent-hash lookup",
+        )
+
+        // And behaviourally: with no hash to match, the LWW-rejected row is re-sent,
+        // never short-circuit-stamped as "unchanged content" (which would mark a
+        // never-accepted row under this account as synced).
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        database.phoenixDatabaseQueries.markWorkoutComponentDirty("set-1")
+        apiClient.pushPayloads.clear()
+
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.size >= 2,
+            "a row never accepted under this account must be re-sent, not stamped as unchanged " +
+                "(payloads=${apiClient.pushPayloads.size})",
+        )
+    }
+
+    @Test
+    fun `an edit made after the last sync is pushed even when the device clock runs behind the server`() = runTest {
+        // Close the one-time repair so repairFrom = pushWatermark (a device clock).
+        // Left open, repairFrom would be 0 and every row would match regardless of skew.
+        tokenStorage.markRoutineCyclePrRepairPushDone("user-1")
+        // The device clock at the last push. The server runs 10 minutes ahead (A-010).
+        tokenStorage.setPushWatermark("user-1", profileId, baseTime)
+        serverSkewMs = 10 * 60_000L
+
+        // A routine edited AFTER the last sync: device clock +5s (server clock +10min5s).
+        // The gather is `updatedAt > pushWatermark`; pushWatermark stays a device clock,
+        // so the edit is selected even though it lags the server's now.
+        database.phoenixDatabaseQueries.insertRoutineIgnore(
+            id = LATE_ROUTINE,
+            name = "Late",
+            description = "",
+            createdAt = baseTime + 5_000,
+            lastUsed = null,
+            useCount = 0L,
+            updatedAt = baseTime + 5_000,
+            profile_id = profileId,
+            groupId = null,
+        )
+
+        manager.sync()
+
+        val pushedRoutines = apiClient.pushPayloads.flatMap { it.routines }.map { it.id }
+        assertTrue(
+            LATE_ROUTINE in pushedRoutines,
+            "an edit made after the last sync must be pushed even when the device clock is 10 min behind " +
+                "the server (pushWatermark is a device clock; saw $pushedRoutines)",
+        )
     }
 
     // ===== Step 12: a pulled row is stamped with the push watermark =====
@@ -868,5 +979,8 @@ class RoutineGroupPushTest {
 
     private companion object {
         const val GROUP = "routine-session-1"
+
+        /** Canonical UUID: SyncManager strips non-UUID routine ids from every push. */
+        const val LATE_ROUTINE = "44444444-4444-4444-8444-444444444444"
     }
 }
