@@ -14,6 +14,7 @@ import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
+import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutDeletionRepository
@@ -29,6 +30,7 @@ import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
 import com.devil.phoenixproject.getPlatform
 import com.devil.phoenixproject.isIosPlatform
 import kotlin.coroutines.cancellation.CancellationException
+import kotlin.math.absoluteValue
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
@@ -395,6 +397,12 @@ class SyncManager(
          */
         const val MAX_FULL_BATCH_RETRIES = 3
 
+        /** PR 10 step 6 (R-18): fixed overlap subtracted from the first page's `syncTime`. */
+        const val PULL_CURSOR_OVERLAP_MS = 5 * 60 * 1000L
+
+        /** PR 10 step 6 (R-22): UUID-valid id that matches nothing, for empty known-id lists. */
+        const val NIL_UUID_SENTINEL = "00000000-0000-0000-0000-000000000000"
+
         private const val COMPLETED_SET_IDENTITY_CHUNK = 500
 
         /**
@@ -436,7 +444,7 @@ class SyncManager(
     /**
      * Routine ids whose push the server rejected under LWW (server copy is newer).
      * The next completed pull applies the server version for these even though the
-     * local row was edited after lastSync; otherwise the "local wins" routine merge
+     * local row was edited after the push watermark; otherwise the "local wins" routine merge
      * would keep the stale local copy and delta pulls would never re-send the server
      * row. Entries are account/profile scoped and cleared only when that scope's
      * pull completes. Guarded by [syncMutex].
@@ -447,7 +455,10 @@ class SyncManager(
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
     val syncState: StateFlow<SyncState> = _syncState.asStateFlow()
 
-    /** Account-scoped cursor published atomically with token identity transitions. */
+    /**
+     * Minimum successful pull time across profiles (PR 10 step 9). Republished after
+     * every profile loop; 0 while any profile has never completed a pull.
+     */
     val lastSyncTime: StateFlow<Long> = tokenStorage.lastSyncTimestamp
 
     private val _serverDeletionNotice = MutableStateFlow<ServerDeletionNotice?>(null)
@@ -627,7 +638,7 @@ class SyncManager(
     // === Sync Operations ===
 
     /**
-     * Forces a complete re-sync by resetting the lastSync timestamp to 0.
+     * Forces a complete re-sync by resetting every profile's pull cursor to 0.
      *
      * Use this when:
      * - Previous syncs failed but advanced the timestamp (data was missed)
@@ -649,8 +660,8 @@ class SyncManager(
             // Keep the reset and the following sync in one critical section. Otherwise an
             // already-running sync can complete after this reset, restore a non-zero checkpoint,
             // and make the queued "full" pull a delta pull.
-            Logger.i("SyncManager") { "Forcing full resync - resetting lastSyncTimestamp to 0" }
-            tokenStorage.setLastSyncTimestamp(0L)
+            Logger.i("SyncManager") { "Forcing full resync - resetting every profile's pull cursor to 0" }
+            tokenStorage.currentUser.value?.id?.let { userId -> tokenStorage.resetAllPullCursors(userId) }
             syncLocked()
         }
     }
@@ -669,6 +680,13 @@ class SyncManager(
         withProfileMutationBarrier { syncLocked() }
     }
 
+    /**
+     * PR 10 step 2: every local profile gets its own push + pull, pending-deletion
+     * profiles first (forward-compatible hook for PR 20 — none exist yet), then the
+     * active profile, then the rest. A failure for one profile is recorded and the
+     * loop continues; the overall [SyncState] reflects the worst outcome. An auth
+     * failure (401) aborts the loop — the token is gone for every profile.
+     */
     private suspend fun syncLocked(): Result<Long> {
         if (!tokenStorage.hasToken()) {
             _syncState.value = SyncState.NotAuthenticated
@@ -676,27 +694,186 @@ class SyncManager(
         }
 
         _syncState.value = SyncState.Syncing
-
-        // Push local changes (no status check -- Railway backend abandoned)
         Logger.d("SyncManager") { "Sync starting: hasToken=${tokenStorage.hasToken()}" }
-        val pushResult = pushLocalChanges()
+
+        val userId = tokenStorage.currentUser.value?.id
+        if (userId == null) {
+            _syncState.value = SyncState.NotAuthenticated
+            return Result.failure(PortalApiException("Not authenticated"))
+        }
+
+        // Upgrade seeding (step 8) runs once, before any per-profile work, so the first
+        // PR 10 sync sees the seeded cursors rather than inventing fresh ones.
+        val profiles = syncProfileOrder()
+        val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
+        val seeded = tokenStorage.migrateLegacyCursors(
+            userId = userId,
+            activeProfileId = activeProfileId,
+            allProfileIds = profiles.map { it.id },
+        )
+        if (seeded) {
+            Logger.i("SyncManager") {
+                "Upgrade seeding: legacy global cursor split across ${profiles.size} profile(s); " +
+                    "active profile keeps its pull cursor, others start at 0"
+            }
+        }
+        // One-time routines/cycles/PRs repair push for every profile (step 8). Survives
+        // across syncs until every profile has contributed its batch in one sync.
+        val repairPushActive = tokenStorage.needsRoutineCyclePrRepairPush(userId)
+
+        val outcomes = mutableListOf<ProfileSyncOutcome>()
+        for (profile in profiles) {
+            val includeUserScoped = profile.id == activeProfileId
+            val outcome = syncProfileLocked(
+                userId = userId,
+                profile = profile,
+                includeUserScoped = includeUserScoped,
+                repairPushActive = repairPushActive,
+            )
+            outcomes += outcome
+            if (outcome.authFailure) {
+                Logger.w("SyncManager") {
+                    "Auth failure while syncing profile ${profile.id}; aborting the remaining profiles"
+                }
+                break
+            }
+        }
+        if (repairPushActive && outcomes.none { it.repairPushFailed }) {
+            tokenStorage.markRoutineCyclePrRepairPushDone(userId)
+            Logger.i("SyncManager") {
+                "One-time routines/cycles/PRs repair push completed for every profile"
+            }
+        }
+
+        // Step 9: the UI's lastSyncTime is the minimum successful pull time across profiles.
+        val minPull = profiles
+            .map { tokenStorage.getPullCursor(userId, it.id) }
+            .minOrNull() ?: 0L
+        tokenStorage.publishMinPullCursor(minPull)
+
+        return combineProfileOutcomes(outcomes)
+    }
+
+    /** Pending-deletion profiles first (PR 20 hook), then the active profile, then the rest. */
+    private suspend fun syncProfileOrder(): List<UserProfile> {
+        // Seed the default profile only when the table is empty. Calling ensureDefaultProfile
+        // on every sync republishes the active context as a side effect, which would leak
+        // unpublished local-safety state into the UI on each sync.
+        if (userProfileRepository.allProfiles.value.isEmpty()) {
+            userProfileRepository.ensureDefaultProfile()
+        }
+        val all = userProfileRepository.allProfiles.value
+        val activeId = userProfileRepository.activeProfile.value?.id
+        // UserProfile has no pending-deletion field yet (PR 20). Keep the hook so PR 20
+        // only has to filter here; today nothing is pending-deletion.
+        val pendingDeletion = all.filter { isPendingDeletionProfile(it) }
+        val rest = all.filterNot { it in pendingDeletion }
+        val (active, others) = rest.partition { it.id == activeId }
+        return pendingDeletion + active + others
+    }
+
+    /** PR 20 hook: no profile is pending-deletion until that PR adds the field. */
+    private fun isPendingDeletionProfile(@Suppress("UNUSED_PARAMETER") profile: UserProfile): Boolean = false
+
+    /** What one profile's push+pull contributed to the overall sync. */
+    private data class ProfileSyncOutcome(
+        val profileId: String,
+        /** Push or pull failed with 401 — the token is gone; abort the remaining profiles. */
+        val authFailure: Boolean = false,
+        val repairPushFailed: Boolean = false,
+        val pushSucceeded: Boolean = false,
+        val pullSucceeded: Boolean = false,
+        val syncTimeEpoch: Long = 0L,
+        val pullSyncTime: Long? = null,
+        val error: Throwable? = null,
+    )
+
+    private fun combineProfileOutcomes(outcomes: List<ProfileSyncOutcome>): Result<Long> {
+        val authFailure = outcomes.firstOrNull { it.authFailure }
+        if (authFailure != null) {
+            _syncState.value = SyncState.NotAuthenticated
+            return Result.failure(authFailure.error ?: PortalApiException("Not authenticated"))
+        }
+        val notPremium = outcomes.firstOrNull {
+            it.error is PortalApiException &&
+                ((it.error as PortalApiException).statusCode == 402 ||
+                    (it.error as PortalApiException).statusCode == 403)
+        }
+        if (notPremium != null && outcomes.none { it.pushSucceeded }) {
+            _syncState.value = SyncState.NotPremium
+            return Result.failure(notPremium.error ?: PortalApiException("Not premium"))
+        }
+
+        val anyPush = outcomes.any { it.pushSucceeded }
+        val allPull = outcomes.isNotEmpty() && outcomes.all { it.pullSucceeded }
+        val anyPull = outcomes.any { it.pullSucceeded }
+        val firstError = outcomes.firstOrNull { it.error != null }?.error
+        val reportTime = outcomes.maxOfOrNull { it.syncTimeEpoch }?.takeIf { it > 0 } ?: currentTimeMillis()
+
+        return when {
+            outcomes.isEmpty() -> {
+                _syncState.value = SyncState.Error("No local profiles to sync")
+                Result.failure(Exception("No local profiles to sync"))
+            }
+            !anyPush -> {
+                _syncState.value = SyncState.Error(firstError?.message ?: "Push failed")
+                Result.failure(firstError ?: Exception("Push failed"))
+            }
+            anyPush && allPull -> {
+                val minPull = outcomes.mapNotNull { it.pullSyncTime }.minOrNull() ?: reportTime
+                _syncState.value = SyncState.Success(minPull)
+                Result.success(minPull)
+            }
+            anyPush && anyPull -> {
+                _syncState.value = SyncState.PartialSuccess(
+                    pushSucceeded = true,
+                    pullSucceeded = false,
+                    lastSyncTime = reportTime,
+                    pullError = firstError?.message ?: "Pull failed for at least one profile",
+                )
+                Result.success(reportTime)
+            }
+            else -> {
+                val pullErrorMsg = firstError?.message ?: "Pull failed"
+                _syncState.value = SyncState.PartialSuccess(
+                    pushSucceeded = true,
+                    pullSucceeded = false,
+                    lastSyncTime = reportTime,
+                    pullError = pullErrorMsg,
+                )
+                Result.success(reportTime)
+            }
+        }
+    }
+
+    /** One profile's push + pull. The body of the pre-PR-10 [syncLocked], now profile-scoped. */
+    private suspend fun syncProfileLocked(
+        userId: String,
+        profile: UserProfile,
+        includeUserScoped: Boolean,
+        repairPushActive: Boolean,
+    ): ProfileSyncOutcome {
+        // Push local changes (no status check -- Railway backend abandoned)
+        val pushResult = pushLocalChanges(
+            userId = userId,
+            profile = profile,
+            includeUserScoped = includeUserScoped,
+            repairPushActive = repairPushActive,
+        )
         if (pushResult.isFailure) {
             val error = pushResult.exceptionOrNull()
             Logger.e("SyncManager") {
-                "Push FAILED: status=${(error as? PortalApiException)?.statusCode}, msg=${error?.message}"
+                "Push FAILED for profile ${profile.id}: status=${(error as? PortalApiException)?.statusCode}, msg=${error?.message}"
             }
-            if (error is PortalApiException && error.statusCode == 401) {
-                _syncState.value = SyncState.NotAuthenticated
-            } else if (error is PortalApiException &&
-                (error.statusCode == 402 || error.statusCode == 403)
-            ) {
-                _syncState.value = SyncState.NotPremium
-            } else {
-                _syncState.value = SyncState.Error(error?.message ?: "Push failed")
-            }
-            return Result.failure(error ?: Exception("Push failed"))
+            val authFailure = error is PortalApiException && error.statusCode == 401
+            return ProfileSyncOutcome(
+                profileId = profile.id,
+                authFailure = authFailure,
+                repairPushFailed = repairPushActive,
+                error = error,
+            )
         }
-        Logger.i("SyncManager") { "Push succeeded" }
+        Logger.i("SyncManager") { "Push succeeded for profile ${profile.id}" }
 
         // Inspect per-entity LWW rejections (Phase 3.2 contract: the server
         // rejects an incoming row when it already holds a newer updated_at,
@@ -708,13 +885,10 @@ class SyncManager(
         val rejections = pushOutcome.rejections
         val rejectedRoutineIds = rejections.routines.mapTo(mutableSetOf()) { it.id }
         if (rejectedRoutineIds.isNotEmpty()) {
-            tokenStorage.currentUser.value?.id?.let { userId ->
-                val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
-                val rejectionScopeKey = "$userId:$activeProfileId"
-                pendingServerWinsRoutineIdsByScope
-                    .getOrPut(rejectionScopeKey) { mutableSetOf() }
-                    .addAll(rejectedRoutineIds)
-            }
+            val rejectionScopeKey = "$userId:${profile.id}"
+            pendingServerWinsRoutineIdsByScope
+                .getOrPut(rejectionScopeKey) { mutableSetOf() }
+                .addAll(rejectedRoutineIds)
         }
         val rejectedSessionIds = rejections.sessions.mapTo(mutableSetOf()) { it.id }
         val totalRejections = rejections.sessions.size + rejections.routines.size +
@@ -722,7 +896,7 @@ class SyncManager(
             rejections.rpgAttributes.size + rejections.gamificationStats.size
         if (totalRejections > 0) {
             Logger.w("SyncManager") {
-                "Push LWW rejections ($totalRejections): " +
+                "Push LWW rejections for profile ${profile.id} ($totalRejections): " +
                     "sessions=${rejections.sessions.size}, routines=${rejections.routines.size}, " +
                     "cycles=${rejections.cycles.size}, externalActivities=${rejections.externalActivities.size}, " +
                     "rpgAttributes=${rejections.rpgAttributes.size}, gamificationStats=${rejections.gamificationStats.size}. " +
@@ -770,6 +944,15 @@ class SyncManager(
                     (if (rejectedRowCount > 0) "; left $rejectedRowCount LWW-rejected session row(s) unstamped" else "")
             }
         }
+        // Record what was sent so a rejected row with unchanged content can be stamped
+        // instead of re-pushed forever (step 11). Only accepted rows get a hash: a
+        // rejected row whose content is unchanged must still match the hash of what was
+        // actually uploaded, and a never-accepted row must have no hash at all.
+        pushOutcome.sentSessionsById
+            .filterKeys { it !in rejectedSessionIds }
+            .forEach { (portalSessionId, dto) ->
+                tokenStorage.setSessionSentHash(portalSessionId, sessionContentFingerprint(dto))
+            }
 
         // Parse syncTime from ISO 8601 to epoch millis
         val syncTimeEpoch = try {
@@ -781,17 +964,21 @@ class SyncManager(
             currentTimeMillis()
         }
 
-        // Pull remote changes using parity-based sync (entity IDs plus the stored lastSync).
+        // Pull remote changes using parity-based sync (entity IDs plus the profile's pull cursor).
         // Entity IDs are collected inside pullRemoteChangesWithResult to ensure we send
         // the current state of local storage after the push has completed.
-        val pullResult = pullRemoteChangesWithResult()
+        val pullResult = pullRemoteChangesWithResult(
+            userId = userId,
+            profile = profile,
+            includeUserScoped = includeUserScoped,
+        )
 
         // One retry for sessions the portal's LWW gate turned away. The pull has just
         // run, so any note written on the website is now in SessionNotes and will be
         // sent back rather than erased. Ordering matters: pull first, re-push second.
         if (rejections.sessions.isNotEmpty()) {
             if (pullResult.isSuccess) {
-                runCatching { rePushRejectedSessions(pushOutcome, rejections.sessions) }
+                runCatching { rePushRejectedSessions(userId, profile.id, pushOutcome, rejections.sessions) }
                     .onFailure { error ->
                         Logger.w("SyncManager") {
                             "LWW re-push threw; rejected rows stay pending for the next sync: ${error.message}"
@@ -813,35 +1000,34 @@ class SyncManager(
         }
 
         return if (pullResult.isSuccess) {
-            // Full success: both push and pull succeeded
             val completedPull = pullResult.getOrThrow()
-            val finalSyncTime = completedPull.syncTime
             recordCompletedPull(completedPull)
-            _syncState.value = SyncState.Success(finalSyncTime)
-            Result.success(finalSyncTime)
+            ProfileSyncOutcome(
+                profileId = profile.id,
+                pushSucceeded = true,
+                pullSucceeded = true,
+                syncTimeEpoch = syncTimeEpoch,
+                pullSyncTime = completedPull.syncTime,
+            )
         } else {
             // Partial success: push succeeded but pull failed
-            // CRITICAL: Do NOT advance lastSyncTimestamp on pull failure.
+            // CRITICAL: Do NOT advance this profile's pull cursor on pull failure.
             // This ensures:
             // 1. The same sessions won't be pushed again (they're already stamped)
             // 2. The next pull will still retrieve remote changes from the correct checkpoint
             // 3. The user is notified that sync is incomplete
             val pullError = pullResult.exceptionOrNull()
-            val pullErrorMsg = pullError?.message ?: "Pull failed"
             Logger.w("SyncManager") {
-                "Partial sync: push succeeded but pull failed. Not advancing lastSyncTimestamp. Error: $pullErrorMsg"
+                "Partial sync for profile ${profile.id}: push succeeded but pull failed. " +
+                    "Not advancing the pull cursor. Error: ${pullError?.message}"
             }
-
-            // Use push syncTime for state reporting but don't persist it
-            _syncState.value = SyncState.PartialSuccess(
+            ProfileSyncOutcome(
+                profileId = profile.id,
                 pushSucceeded = true,
                 pullSucceeded = false,
-                lastSyncTime = syncTimeEpoch,
-                pullError = pullErrorMsg,
+                syncTimeEpoch = syncTimeEpoch,
+                error = pullError,
             )
-            // Return success with push timestamp (data was pushed successfully)
-            // But state is PartialSuccess to indicate pull needs retry
-            Result.success(syncTimeEpoch)
         }
     }
 
@@ -860,29 +1046,61 @@ class SyncManager(
         }
 
         _syncState.value = SyncState.Syncing
-        val lastSync = tokenStorage.getLastSyncTimestamp()
+        val userId = tokenStorage.currentUser.value?.id
+            ?: return Result.failure<Long>(PortalApiException("Not authenticated")).also {
+                _syncState.value = SyncState.NotAuthenticated
+            }
+        val profiles = syncProfileOrder()
+        val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
 
-        val pullResult = pullRemoteChangesWithResult()
-
-        return if (pullResult.isSuccess) {
-            val completedPull = pullResult.getOrThrow()
-            val finalSyncTime = completedPull.syncTime
-            recordCompletedPull(completedPull)
-            _syncState.value = SyncState.Success(finalSyncTime)
-            Logger.i("SyncManager") { "Pull retry succeeded, updated timestamp to $finalSyncTime" }
-            Result.success(finalSyncTime)
-        } else {
-            val pullError = pullResult.exceptionOrNull()
-            val pullErrorMsg = pullError?.message ?: "Pull retry failed"
-            Logger.w("SyncManager") { "Pull retry failed: $pullErrorMsg" }
-
-            _syncState.value = SyncState.PartialSuccess(
-                pushSucceeded = true,
-                pullSucceeded = false,
-                lastSyncTime = lastSync,
-                pullError = pullErrorMsg,
+        val outcomes = mutableListOf<ProfileSyncOutcome>()
+        for (profile in profiles) {
+            val includeUserScoped = profile.id == activeProfileId
+            val lastSync = tokenStorage.getPullCursor(userId, profile.id)
+            val pullResult = pullRemoteChangesWithResult(
+                userId = userId,
+                profile = profile,
+                includeUserScoped = includeUserScoped,
             )
-            Result.failure(pullError ?: PortalApiException("Pull retry failed"))
+            if (pullResult.isSuccess) {
+                val completedPull = pullResult.getOrThrow()
+                recordCompletedPull(completedPull)
+                outcomes += ProfileSyncOutcome(
+                    profileId = profile.id,
+                    pushSucceeded = true,
+                    pullSucceeded = true,
+                    syncTimeEpoch = completedPull.syncTime,
+                    pullSyncTime = completedPull.syncTime,
+                )
+            } else {
+                val pullError = pullResult.exceptionOrNull()
+                Logger.w("SyncManager") {
+                    "Pull retry failed for profile ${profile.id}: ${pullError?.message}"
+                }
+                outcomes += ProfileSyncOutcome(
+                    profileId = profile.id,
+                    pushSucceeded = true,
+                    pullSucceeded = false,
+                    syncTimeEpoch = lastSync,
+                    error = pullError,
+                )
+                if (pullError is PortalApiException && pullError.statusCode == 401) {
+                    break
+                }
+            }
+        }
+        val minPull = profiles
+            .map { tokenStorage.getPullCursor(userId, it.id) }
+            .minOrNull() ?: 0L
+        tokenStorage.publishMinPullCursor(minPull)
+        val combined = combineProfileOutcomes(outcomes)
+        // retryPull is pull-only: "pushSucceeded = true" above is a placeholder, so
+        // combineProfileOutcomes' PartialSuccess branch would report success even when
+        // every pull failed. The caller asked for a pull retry — surface the failure.
+        return if (outcomes.any { it.pullSucceeded }) {
+            combined
+        } else {
+            Result.failure(outcomes.firstOrNull { it.error != null }?.error ?: Exception("Pull retry failed"))
         }
     }
 
@@ -890,23 +1108,36 @@ class SyncManager(
 
     /** Result of a pull whose every page merged (loop ended with `hasMore=false`). */
     private data class CompletedPull(
-        /** Earliest server `syncTime` across the pull's pages; the next pull's lastSync. */
+        /** Portal user whose profile this pull belongs to. */
+        val userId: String,
+        /** Local profile id the pull was scoped to. */
+        val profileId: String,
+        /** First page's server `syncTime` minus the overlap; the next pull's cursor. */
         val syncTime: Long,
-        /** Delta-pull marker to store with [syncTime], or null to force a full pull next time. */
-        val deltaPullKey: String?,
-        /** Account/profile scope whose pending LWW rejections this pull consumed. */
-        val serverWinsRoutineScopeKey: String?,
+        /** When true the next pull must be a full pull (external-activity truncation). */
+        val forceFullPull: Boolean = false,
     )
 
     /**
-     * Persists lastSync and the delta-pull marker together (lastSync first), and clears
-     * only the account/profile-scoped LWW server-wins routine set this pull applied.
+     * Persists one profile's pull cursor and clears only that account/profile-scoped
+     * LWW server-wins routine set this pull applied.
      */
     private fun recordCompletedPull(completedPull: CompletedPull) {
-        tokenStorage.recordCompletedPull(completedPull.syncTime, completedPull.deltaPullKey)
-        completedPull.serverWinsRoutineScopeKey?.let { scopeKey ->
-            pendingServerWinsRoutineIdsByScope.remove(scopeKey)
+        if (completedPull.forceFullPull) {
+            Logger.w("SyncManager") {
+                "Pull: server truncated external activities (externalActivitiesHasMore=true); " +
+                    "next pull for profile ${completedPull.profileId} will be a full pull. " +
+                    "Activities beyond the server cap are not delivered."
+            }
+            tokenStorage.resetPullCursor(completedPull.userId, completedPull.profileId)
+        } else {
+            tokenStorage.recordCompletedPull(
+                completedPull.userId,
+                completedPull.profileId,
+                completedPull.syncTime,
+            )
         }
+        pendingServerWinsRoutineIdsByScope.remove("${completedPull.userId}:${completedPull.profileId}")
     }
 
     private suspend fun <T> withProfileMutationBarrier(block: suspend () -> T): T =
@@ -953,24 +1184,182 @@ class SyncManager(
         val repairGroupIds: Set<String>,
     )
 
-    private suspend fun pushLocalChanges(): Result<PushOutcome> {
-        val userId = tokenStorage.currentUser.value?.id
-            ?: return Result.failure(PortalApiException("Not authenticated", null, 401))
+    /** PR 10 step 3 (R-14): user-scoped singletons, gathered only for the active profile. */
+    private data class UserScopedDtos(
+        val rpgDto: PortalRpgAttributesSyncDto?,
+        val badgeDtos: List<PortalEarnedBadgeSyncDto>,
+        val gamStatsDto: PortalGamificationStatsSyncDto?,
+    )
 
+    private suspend fun gatherUserScopedDtos(
+        userId: String,
+        profileId: String,
+        includeUserScoped: Boolean,
+    ): UserScopedDtos {
+        if (!includeUserScoped) return UserScopedDtos(null, emptyList(), null)
+        val rpgDto = gamificationRepository.getRpgInput(profileId)?.let { input ->
+            val rpgProfile = RpgAttributeEngine.computeProfile(input)
+            PortalRpgAttributesSyncDto(
+                userId = userId,
+                strength = rpgProfile.strength,
+                power = rpgProfile.power,
+                stamina = rpgProfile.stamina,
+                consistency = rpgProfile.consistency,
+                mastery = rpgProfile.mastery,
+                characterClass = rpgProfile.characterClass.name,
+                level = 1,
+                experiencePoints = 0,
+            )
+        }
+        val badgeDtos = gamificationRepository.getEarnedBadges(profileId).first().map { earned ->
+            val badgeDef = BadgeDefinitions.getBadgeById(earned.badgeId)
+            PortalEarnedBadgeSyncDto(
+                userId = userId,
+                badgeId = earned.badgeId,
+                badgeName = badgeDef?.name ?: earned.badgeId,
+                badgeDescription = badgeDef?.description,
+                badgeTier = badgeDef?.tier?.name?.lowercase() ?: "bronze",
+                earnedAt = kotlin.time.Instant.fromEpochMilliseconds(earned.earnedAt).toString(),
+            )
+        }
+        val gamStatsDto = syncRepository.getGamificationStatsForSync(profileId)?.let { stats ->
+            PortalGamificationStatsSyncDto(
+                userId = userId,
+                totalWorkouts = stats.totalWorkouts,
+                totalReps = stats.totalReps,
+                totalVolumeKg = stats.totalVolumeKg,
+                longestStreak = stats.longestStreak,
+                currentStreak = stats.currentStreak,
+                totalTimeSeconds = 0,
+            )
+        }
+        return UserScopedDtos(rpgDto, badgeDtos, gamStatsDto)
+    }
+
+    /** External activities, phase stats, assessments, custom exercises and VBT estimates. */
+    private data class PushEnrichment(
+        val externalActivityDtos: List<ExternalActivitySyncDto>,
+        val phaseStatsBySessionId: Map<String, List<PortalPhaseStatisticsDto>>,
+        val assessmentDtos: List<PortalAssessmentResultDto>,
+        val customExerciseDtos: List<CustomExerciseSyncDto>,
+        val velocityEstimatesByExerciseId: Map<String, List<PortalSyncAdapter.VelocityOneRepMaxPoint>>,
+    )
+
+    private suspend fun gatherPushEnrichment(
+        profileId: String,
+        activeProfile: UserProfile?,
+        workoutSnapshot: WorkoutSyncSnapshot,
+    ): PushEnrichment {
+        // 5b. External activities (paid users only)
+        val localPaid = activeProfile?.subscriptionStatus == SubscriptionStatus.ACTIVE
+        val portalPaid = tokenStorage.currentUser.value?.isPremium == true
+        val isPremium = localPaid || portalPaid
+        val externalActivityDtos = if (isPremium) {
+            // F018 (deferred): getUnsyncedActivities intentionally excludes deletion
+            // tombstones (deletedAt set). Neither ExternalActivitySyncDto nor the
+            // portal mobile-sync-push handler carries a deletion field today, so
+            // including tombstones here would make the server re-create the deleted
+            // activity. Syncing external-activity deletions requires a coordinated
+            // wire + Edge Function change before the query can return tombstones.
+            externalActivityRepository.getUnsyncedActivities(profileId).map { activity ->
+                ExternalActivitySyncDto(
+                    id = activity.id,
+                    externalId = activity.externalId,
+                    provider = activity.provider.key,
+                    name = activity.name,
+                    activityType = activity.activityType,
+                    startedAt = kotlin.time.Instant.fromEpochMilliseconds(
+                        activity.startedAt,
+                    ).toString(),
+                    durationSeconds = activity.durationSeconds,
+                    distanceMeters = activity.distanceMeters,
+                    calories = activity.calories,
+                    avgHeartRate = activity.avgHeartRate,
+                    maxHeartRate = activity.maxHeartRate,
+                    elevationGainMeters = activity.elevationGainMeters,
+                    rawData = activity.rawData,
+                    syncedAt = kotlin.time.Instant.fromEpochMilliseconds(
+                        activity.syncedAt,
+                    ).toString(),
+                )
+            }
+        } else {
+            emptyList()
+        }
+
+        // 6. Phase 3 extended metrics (GAPs 7-9)
+        val phaseStatsBySessionId = workoutSnapshot.phaseStatisticsByComponentId.values.flatten()
+            .map { PortalSyncAdapter.toPortalPhaseStatistics(it) }
+            .groupBy { it.sessionId }
+        val assessmentDtos = syncRepository.getAllAssessments(profileId)
+            .map { PortalSyncAdapter.toPortalAssessmentResult(it) }
+        // Send all custom catalog rows, not just rows modified since the push watermark.
+        // Older portal-sync builds never sent this field, so existing custom
+        // exercise IDs may be missing remotely even after a successful sync.
+        val customExerciseDtos = syncRepository.getCustomExercisesModifiedSince(0L)
+
+        // 7. Build the velocity-based 1RM map (catalog exerciseId → its passing
+        // per-cable estimates, oldest first). Looked up here (suspend context with
+        // repo + profile) so the pure adapter just attaches the value. Distinct from
+        // the rep-based estimate the adapter computes inline.
+        //
+        // Single query for the whole profile (getAllPassing) instead of one
+        // getLatestPassing per distinct exercise — avoids an N+1 during full sync.
+        // The whole passing history is kept, ordered the same way getLatestPassing
+        // orders it (computedAt, then id as the tie-break), so the adapter can attach
+        // the estimate that was current when each session was recorded instead of
+        // stamping today's number onto last year's workout. The adapter only reads
+        // keys for exercises actually in this push, so a superset map is harmless.
+        val velocityEstimatesByExerciseId = velocityOneRepMaxRepository
+            .getAllPassing(profileId)
+            .sortedWith(compareBy({ it.computedAt }, { it.id }))
+            .groupBy { it.exerciseId }
+            .mapValues { (_, estimates) ->
+                estimates.map {
+                    PortalSyncAdapter.VelocityOneRepMaxPoint(it.computedAt, it.estimatedPerCableKg)
+                }
+            }
+            .toMap()
+
+        return PushEnrichment(
+            externalActivityDtos = externalActivityDtos,
+            phaseStatsBySessionId = phaseStatsBySessionId,
+            assessmentDtos = assessmentDtos,
+            customExerciseDtos = customExerciseDtos,
+            velocityEstimatesByExerciseId = velocityEstimatesByExerciseId,
+        )
+    }
+
+    /**
+     * Push one profile's local changes. PR 10 steps 1/3/4/8/10/11: the profile is
+     * passed in (never read from `userProfileRepository.activeProfile`), user-scoped
+     * singletons (RPG/gamification/badges) go out only when [includeUserScoped], and
+     * [repairPushActive] re-sends routines/cycles/PRs + tombstones from 0. The delta
+     * watermark is this profile's device-clock `pushWatermark`, captured before gather.
+     */
+    private suspend fun pushLocalChanges(
+        userId: String,
+        profile: UserProfile,
+        includeUserScoped: Boolean,
+        repairPushActive: Boolean,
+    ): Result<PushOutcome> {
         // Device time taken BEFORE anything is gathered. Two things key off it: the
         // post-push stamp skips rows edited after it (they hold data the portal never
         // saw), and a routine group with unsent rows is sent with at least this
         // timestamp so the portal's server-clock LWW gate accepts it.
         val gatherStartedAt = currentTimeMillis()
         val deviceId = tokenStorage.getDeviceId()
-        val lastSync = tokenStorage.getLastSyncTimestamp()
+        // PR 10 step 4: this profile's device-clock push watermark, not a global lastSync.
+        // Rows stamped after it stay in the next delta; routines/cycles/PRs modified
+        // after it are the only ones the ordinary delta sends.
+        val pushWatermark = tokenStorage.getPushWatermark(userId, profile.id)
+        // Step 8 repair push: gather routines/cycles/PRs + tombstones from 0 once per user.
+        val repairFrom = if (repairPushActive) 0L else pushWatermark
         val platform = getPlatformName()
         userProfileRepository.ensureDefaultProfile()
         val allProfiles = userProfileRepository.allProfiles.value
-        val activeProfile = userProfileRepository.activeProfile.value
-            ?: allProfiles.firstOrNull { it.isActive }
-            ?: allProfiles.firstOrNull { it.id == "default" }
-        val activeProfileId = activeProfile?.id ?: "default"
+        val activeProfile = profile
+        val activeProfileId = profile.id
 
         val phaseBackfillCheckpoint = tokenStorage.getPhasePRBackfillCheckpoint(activeProfileId)
         val phaseBackfillResult = syncRepository.backfillPhaseSpecificPRs(
@@ -1054,7 +1443,7 @@ class SyncManager(
         // sent incomplete — and that deletes the sibling's exercise, sets and telemetry
         // on the portal. Hold the whole group instead: the portal keeps what it has and
         // the rows are not stamped this sync. A held row is retried on a later sync only
-        // while its `updatedAt IS NULL` (or is newer than lastSync) — a previously
+        // while its `updatedAt IS NULL` (or is newer than the push watermark) — a previously
         // stamped sibling of a permanently held group is not. In normal use this cannot
         // lose an upload, because every workout gets a fresh routineSessionId.
         val blockedSiblingsByGroup = syncRepository.getBlockedRoutineGroupSiblings(groupIds, activeProfileId)
@@ -1080,7 +1469,7 @@ class SyncManager(
         if (heldDeltaRowCount > 0) {
             Logger.w("SyncManager") {
                 "Push payload: $heldDeltaRowCount local row(s) are not stamped because their routine group is held " +
-                    "(retried on a later sync only while their updatedAt is NULL or newer than lastSync)"
+                    "(retried on a later sync only while their updatedAt is NULL or newer than the push watermark)"
             }
         }
         val sessions = dedupeWorkoutSessionsById(
@@ -1097,7 +1486,7 @@ class SyncManager(
         // Dedicated PR rows need the full snapshot so stable UUID, updatedAt, and
         // deletedAt all reach the portal. Reuse that same projection for legacy
         // set-level PR hints rather than reading a lossy second delta.
-        val recentPRs = syncRepository.getFullPRsModifiedSince(lastSync, activeProfileId)
+        val recentPRs = syncRepository.getFullPRsModifiedSince(repairFrom, activeProfileId)
         val prBySessionKey = recentPRs.groupBy { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp)
         }
@@ -1188,7 +1577,7 @@ class SyncManager(
         // 4. Gather routines as full domain objects, but only ship canonical UUID IDs.
         // Local template-derived cycle routines use "cycle_routine_<uuid>" and must never
         // reach the server's UUID ownership checks.
-        val rawRoutines = syncRepository.getFullRoutinesModifiedSince(lastSync, activeProfileId)
+        val rawRoutines = syncRepository.getFullRoutinesModifiedSince(repairFrom, activeProfileId)
         val routines = rawRoutines.filter { routine -> CANONICAL_UUID_REGEX.matches(routine.id) }
         val droppedRoutineCount = rawRoutines.size - routines.size
         if (droppedRoutineCount > 0) {
@@ -1198,7 +1587,7 @@ class SyncManager(
         }
 
         // 4a. Gather soft-deleted routine IDs for server-side deletion propagation.
-        val deletedRoutineIds = syncRepository.getDeletedRoutineIdsSince(lastSync, activeProfileId)
+        val deletedRoutineIds = syncRepository.getDeletedRoutineIdsSince(repairFrom, activeProfileId)
             .filter { CANONICAL_UUID_REGEX.matches(it) }
         if (deletedRoutineIds.isNotEmpty()) {
             Logger.d("SyncManager") {
@@ -1217,7 +1606,11 @@ class SyncManager(
         // Cycle days may still point at local-only template routines that are hidden from
         // the main routines list via the "cycle_routine_<uuid>" prefix. Null those
         // references for server push so one bad local ID cannot fail the entire sync.
-        val cycleSnapshot = syncRepository.getDirtyCycleSnapshot(activeProfileId)
+        val cycleSnapshot = if (repairPushActive) {
+            syncRepository.getAllCyclesForRepair(activeProfileId)
+        } else {
+            syncRepository.getDirtyCycleSnapshot(activeProfileId)
+        }
         val rawCyclesWithContext = cycleSnapshot.cycles
         var droppedCycleRoutineRefs = 0
         val cyclesWithContext = rawCyclesWithContext.map { ctx ->
@@ -1242,120 +1635,19 @@ class SyncManager(
             }
         }
 
-        // 5. Gather gamification data (profile-scoped)
-        val rpgInput = gamificationRepository.getRpgInput(activeProfileId)
-        val rpgProfile = RpgAttributeEngine.computeProfile(rpgInput)
-        val rpgDto = PortalRpgAttributesSyncDto(
-            userId = userId,
-            strength = rpgProfile.strength,
-            power = rpgProfile.power,
-            stamina = rpgProfile.stamina,
-            consistency = rpgProfile.consistency,
-            mastery = rpgProfile.mastery,
-            characterClass = rpgProfile.characterClass.name,
-            level = 1,
-            experiencePoints = 0,
-        )
+        // 5. Gather gamification data. PR 10 step 3 (R-14): RPG/gamification/badges are
+        // one row per portal user, so they go out only with the active profile's push.
+        val userScoped = gatherUserScopedDtos(userId, activeProfileId, includeUserScoped)
+        val rpgDto = userScoped.rpgDto
+        val badgeDtos = userScoped.badgeDtos
+        val gamStatsDto = userScoped.gamStatsDto
 
-        val earnedBadges = gamificationRepository.getEarnedBadges(activeProfileId).first()
-        val badgeDtos = earnedBadges.map { earned ->
-            val badgeDef = BadgeDefinitions.getBadgeById(earned.badgeId)
-            PortalEarnedBadgeSyncDto(
-                userId = userId,
-                badgeId = earned.badgeId,
-                badgeName = badgeDef?.name ?: earned.badgeId,
-                badgeDescription = badgeDef?.description,
-                badgeTier = badgeDef?.tier?.name?.lowercase() ?: "bronze",
-                earnedAt = kotlin.time.Instant.fromEpochMilliseconds(earned.earnedAt).toString(),
-            )
-        }
-
-        val legacyStats = syncRepository.getGamificationStatsForSync(activeProfileId)
-        val gamStatsDto = legacyStats?.let { stats ->
-            PortalGamificationStatsSyncDto(
-                userId = userId,
-                totalWorkouts = stats.totalWorkouts,
-                totalReps = stats.totalReps,
-                totalVolumeKg = stats.totalVolumeKg,
-                longestStreak = stats.longestStreak,
-                currentStreak = stats.currentStreak,
-                totalTimeSeconds = 0,
-            )
-        }
-
-        // 5b. External activities (paid users only)
-        val localPaid = activeProfile?.subscriptionStatus == SubscriptionStatus.ACTIVE
-        val portalPaid = tokenStorage.currentUser.value?.isPremium == true
-        val isPremium = localPaid || portalPaid
-        val externalActivityDtos = if (isPremium) {
-            // F018 (deferred): getUnsyncedActivities intentionally excludes deletion
-            // tombstones (deletedAt set). Neither ExternalActivitySyncDto nor the
-            // portal mobile-sync-push handler carries a deletion field today, so
-            // including tombstones here would make the server re-create the deleted
-            // activity. Syncing external-activity deletions requires a coordinated
-            // wire + Edge Function change before the query can return tombstones.
-            val unsyncedActivities = externalActivityRepository.getUnsyncedActivities(
-                activeProfileId,
-            )
-            unsyncedActivities.map { activity ->
-                ExternalActivitySyncDto(
-                    id = activity.id,
-                    externalId = activity.externalId,
-                    provider = activity.provider.key,
-                    name = activity.name,
-                    activityType = activity.activityType,
-                    startedAt = kotlin.time.Instant.fromEpochMilliseconds(
-                        activity.startedAt,
-                    ).toString(),
-                    durationSeconds = activity.durationSeconds,
-                    distanceMeters = activity.distanceMeters,
-                    calories = activity.calories,
-                    avgHeartRate = activity.avgHeartRate,
-                    maxHeartRate = activity.maxHeartRate,
-                    elevationGainMeters = activity.elevationGainMeters,
-                    rawData = activity.rawData,
-                    syncedAt = kotlin.time.Instant.fromEpochMilliseconds(
-                        activity.syncedAt,
-                    ).toString(),
-                )
-            }
-        } else {
-            emptyList()
-        }
-
-        // 6. Phase 3 extended metrics (GAPs 7-9)
-        val phaseStatsBySessionId = workoutSnapshot.phaseStatisticsByComponentId.values.flatten()
-            .map { PortalSyncAdapter.toPortalPhaseStatistics(it) }
-            .groupBy { it.sessionId }
-        val assessmentDtos = syncRepository.getAllAssessments(activeProfileId)
-            .map { PortalSyncAdapter.toPortalAssessmentResult(it) }
-        // Send all custom catalog rows, not just rows modified since lastSync.
-        // Older portal-sync builds never sent this field, so existing custom
-        // exercise IDs may be missing remotely even after a successful sync.
-        val customExerciseDtos = syncRepository.getCustomExercisesModifiedSince(0L)
-
-        // 7. Build the velocity-based 1RM map (catalog exerciseId → its passing
-        // per-cable estimates, oldest first). Looked up here (suspend context with
-        // repo + profile) so the pure adapter just attaches the value. Distinct from
-        // the rep-based estimate the adapter computes inline.
-        //
-        // Single query for the whole profile (getAllPassing) instead of one
-        // getLatestPassing per distinct exercise — avoids an N+1 during full sync.
-        // The whole passing history is kept, ordered the same way getLatestPassing
-        // orders it (computedAt, then id as the tie-break), so the adapter can attach
-        // the estimate that was current when each session was recorded instead of
-        // stamping today's number onto last year's workout. The adapter only reads
-        // keys for exercises actually in this push, so a superset map is harmless.
-        val velocityEstimatesByExerciseId = velocityOneRepMaxRepository
-            .getAllPassing(activeProfileId)
-            .sortedWith(compareBy({ it.computedAt }, { it.id }))
-            .groupBy { it.exerciseId }
-            .mapValues { (_, estimates) ->
-                estimates.map {
-                    PortalSyncAdapter.VelocityOneRepMaxPoint(it.computedAt, it.estimatedPerCableKg)
-                }
-            }
-            .toMap()
+        val enrichment = gatherPushEnrichment(activeProfileId, activeProfile, workoutSnapshot)
+        val externalActivityDtos = enrichment.externalActivityDtos
+        val phaseStatsBySessionId = enrichment.phaseStatsBySessionId
+        val assessmentDtos = enrichment.assessmentDtos
+        val customExerciseDtos = enrichment.customExerciseDtos
+        val velocityEstimatesByExerciseId = enrichment.velocityEstimatesByExerciseId
 
         // Gate telemetry push behind the Inferno tier (decided above, before the rep
         // load and the DTO build). Force-curve / 50 Hz session replay is an Inferno-only
@@ -1447,7 +1739,7 @@ class SyncManager(
             val payload = PortalSyncPayload(
                 deviceId = deviceId,
                 platform = platform,
-                lastSync = lastSync,
+                lastSync = pushWatermark,
                 profileId = payloadProfileId,
                 profileName = payloadProfileName,
                 allProfiles = profileDtos,
@@ -1504,7 +1796,7 @@ class SyncManager(
             val payload = PortalSyncPayload(
                 deviceId = deviceId,
                 platform = platform,
-                lastSync = lastSync,
+                lastSync = pushWatermark,
                 profileId = routingProfileId,
                 profileName = routingProfileName,
                 allProfiles = profileDtos,
@@ -1552,7 +1844,7 @@ class SyncManager(
             val payload = PortalSyncPayload(
                 deviceId = deviceId,
                 platform = platform,
-                lastSync = lastSync,
+                lastSync = pushWatermark,
                 profileId = payloadProfileId,
                 profileName = payloadProfileName,
                 allProfiles = profileDtos,
@@ -1583,7 +1875,7 @@ class SyncManager(
         //    AND under the server-side rep_telemetry array cap (MAX_TELEMETRY_PER_BATCH).
         //    Non-session data (routines, cycles, custom exercises, badges, RPG, gamification, assessments)
         //    is included only in the final batch to avoid duplicate upserts.
-        //    IMPORTANT: We do NOT update lastSync until ALL batches succeed. This prevents
+        //    IMPORTANT: We do NOT advance the push watermark until ALL batches succeed. This prevents
         //    data consistency gaps where a partial batch sequence leaves the timestamp
         //    advanced but later batches uncommitted (audit 4.1 fix).
         val allSessions = portalSessions
@@ -1614,7 +1906,7 @@ class SyncManager(
             val payload = PortalSyncPayload(
                 deviceId = deviceId,
                 platform = platform,
-                lastSync = lastSync,
+                lastSync = pushWatermark,
                 sessions = allSessions,
                 telemetry = effectiveTelemetry,
                 routines = routineDtos,
@@ -1675,7 +1967,7 @@ class SyncManager(
                 val payload = PortalSyncPayload(
                     deviceId = deviceId,
                     platform = platform,
-                    lastSync = lastSync,
+                    lastSync = pushWatermark,
                     sessions = batchSessions,
                     telemetry = batchTelemetry,
                     // Non-session data only on last batch to avoid duplicate upserts
@@ -1736,7 +2028,7 @@ class SyncManager(
                         lastFailedBatchHash = batchHash
                     }
 
-                    // CRITICAL: Do NOT update lastSync timestamp on failure.
+                    // CRITICAL: Do NOT advance the push watermark on failure.
                     // All batches must succeed before we advance the timestamp.
                     // On next retry, the full batch sequence will be re-sent.
                     return Result.failure(result.pushError())
@@ -1774,14 +2066,16 @@ class SyncManager(
         pushDirtyProfilePreferences(
             deviceId = deviceId,
             platform = platform,
-            lastSync = lastSync,
+            lastSync = pushWatermark,
             sentMetadataProfileIds = sentMetadataProfileIds,
         )
 
         // Mark external activities as synced based on server acknowledgement.
         // Only mark activities the server confirmed it persisted — prevents silently
         // dropping activities that the server soft-failed on.
-        val finalResponse = lastResponse
+        val finalResponse = lastResponse ?: return Result.failure(
+            PortalApiException("Push produced no response", null, 500),
+        )
         if (externalActivityDtos.isNotEmpty() && finalResponse != null) {
             val acknowledgedSyncKeys = finalResponse.externalActivityKeys.mapNotNull { ack ->
                 IntegrationProvider.fromKey(ack.provider)?.let { provider ->
@@ -1826,7 +2120,7 @@ class SyncManager(
                     syncProfileId = activeProfile?.id,
                     routineIds = skipped.routines,
                     cycleIds = skipped.cycles,
-                    lastSync = lastSync,
+                    lastSync = pushWatermark,
                     source = "push skippedDeleted",
                 )
             } catch (e: Exception) {
@@ -1867,7 +2161,7 @@ class SyncManager(
 
         return Result.success(
             PushOutcome(
-                response = lastResponse!!,
+                response = finalResponse,
                 gatherStartedAt = gatherStartedAt,
                 localRowIdsByPortalSessionId = sessions.groupBy(
                     keySelector = { it.routineSessionId ?: it.id },
@@ -1882,7 +2176,7 @@ class SyncManager(
                 rePushContext = RePushContext(
                     deviceId = deviceId,
                     platform = platform,
-                    lastSync = lastSync,
+                    lastSync = pushWatermark,
                     profileId = payloadProfileId,
                     profileName = payloadProfileName,
                     personalRecords = personalRecordDtos,
@@ -1965,15 +2259,27 @@ class SyncManager(
      *
      * Bounded on purpose: one attempt per sync. Anything still rejected is not stamped;
      * it is retried on a later sync only while `updatedAt IS NULL` (or newer than
-     * lastSync) — repair-group rows additionally get their stamp cleared below so the
+     * the push watermark) — repair-group rows additionally get their stamp cleared below so the
      * already-walked-past cursor cannot strand them.
      */
     private suspend fun rePushRejectedSessions(
+        userId: String,
+        profileId: String,
         outcome: PushOutcome,
         sessionRejections: List<SyncRejectionDto>,
     ) {
+        val unchangedContent = mutableListOf<String>()
         val retryable = sessionRejections.mapNotNull { rejection ->
             val dto = outcome.sentSessionsById[rejection.id] ?: return@mapNotNull null
+            // Step 11: a rejected row whose content is unchanged from what was last sent
+            // is stamped, not re-pushed. Never stamp a row that was never uploaded — the
+            // hash lookup below only matches rows this push actually sent.
+            val sentHash = tokenStorage.getSessionSentHash(rejection.id)
+            val currentHash = sessionContentFingerprint(dto)
+            if (sentHash != null && sentHash == currentHash) {
+                unchangedContent += rejection.id
+                return@mapNotNull null
+            }
             // M2: grouped sessions only. See the KDoc above for why a standalone
             // re-push erases its web note.
             if (dto.routineSessionId.isNullOrBlank()) return@mapNotNull null
@@ -1982,6 +2288,25 @@ class SyncManager(
                 ?: return@mapNotNull null
             dto to serverMillis
         }
+        if (unchangedContent.isNotEmpty()) {
+            val unchangedRows = unchangedContent
+                .flatMap { outcome.localRowIdsByPortalSessionId[it].orEmpty() }
+                .distinct()
+            if (unchangedRows.isNotEmpty()) {
+                // Step 11: content unchanged from what was uploaded → stamp so the row
+                // stops matching every delta query. Never stamps a never-uploaded row
+                // (those never enter this branch: their hash lookup is empty).
+                syncRepository.updateSessionTimestamps(
+                    sessionIds = unchangedRows,
+                    timestamp = outcome.gatherStartedAt,
+                    gatherStartedAt = outcome.gatherStartedAt,
+                )
+                Logger.i("SyncManager") {
+                    "LWW re-push: ${unchangedRows.size} rejected session row(s) had unchanged content " +
+                        "and were stamped instead of re-sent"
+                }
+            }
+        }
         // Repair-group rows the portal rejected are re-armed whether or not we can
         // re-push them this sync: the repair cursor has already walked past their group.
         val repairRowsToClear = repairRowIdsFor(outcome, sessionRejections.map { it.id })
@@ -1989,7 +2314,7 @@ class SyncManager(
             Logger.w("SyncManager") {
                 "Push LWW: ${sessionRejections.size} rejected session(s) cannot be re-pushed this sync " +
                     "(standalone, no server timestamp, or not part of this payload); they are not stamped " +
-                    "and retry only while updatedAt is NULL or newer than lastSync."
+                    "and retry only while updatedAt is NULL or newer than the push watermark."
             }
             if (repairRowsToClear.isNotEmpty()) {
                 syncRepository.updateSessionTimestamps(
@@ -2045,7 +2370,7 @@ class SyncManager(
                 anyFailure = true
                 Logger.w("SyncManager") {
                     "LWW re-push failed for ${batch.size} session(s): ${result.exceptionOrNull()?.message}. " +
-                        "Their rows are not stamped and retry only while updatedAt is NULL or newer than lastSync."
+                        "Their rows are not stamped and retry only while updatedAt is NULL or newer than the push watermark."
                 }
                 stillRejected += batchIds
                 continue
@@ -2125,6 +2450,55 @@ class SyncManager(
             rpgAttributes = merge { it.rpgAttributes },
             gamificationStats = merge { it.gamificationStats },
         )
+    }
+
+    /**
+     * Step 11: a content fingerprint of what was uploaded, so a rejected row whose
+     * content is unchanged can be stamped instead of re-pushed forever. Timestamps are
+     * deliberately excluded — they change every stamp and would make every row look
+     * modified. Exercises (name, muscle group, sets, per-cable weights, reps) and notes
+     * are the content the portal's LWW gate is actually arbitrating.
+     */
+    private fun sessionContentFingerprint(dto: PortalWorkoutSessionDto): String {
+        val content = buildString {
+            append(dto.name ?: "")
+            append('|')
+            append(dto.notes ?: "")
+            append('|')
+            append(dto.workoutMode ?: "")
+            append('|')
+            append(dto.durationSeconds)
+            append('|')
+            append(dto.totalVolume)
+            append('|')
+            append(dto.setCount)
+            append('|')
+            append(dto.exerciseCount)
+            append('|')
+            dto.exercises.sortedBy { it.orderIndex }.forEach { ex ->
+                append(ex.name)
+                append('~')
+                append(ex.muscleGroup)
+                append('~')
+                append(ex.estimatedOneRepMaxKg ?: 0f)
+                append('~')
+                ex.sets.sortedBy { it.setNumber }.forEach { set ->
+                    append(set.actualReps)
+                    append(',')
+                    append(set.weightKg)
+                    append(',')
+                    append(set.isPr)
+                    append(';')
+                }
+                append('|')
+            }
+        }
+        var hash = 0x811c9dc5.toInt()
+        for (ch in content) {
+            hash = hash xor ch.code
+            hash *= 0x01000193
+        }
+        return hash.toUInt().toString(16)
     }
 
     /**
@@ -2299,34 +2673,30 @@ class SyncManager(
      * a list of entity IDs we already have. The server returns entities
      * that exist server-side but not in our list.
      *
-     * Delta pulls: the request carries the stored server `syncTime` of the last completed
-     * pull as `lastSync`, captured once before the page loop so every page of this pull
-     * sends the same value. The server then skips known entities unchanged since then
-     * (minus a small overlap). The caller persists the new value only after the final
-     * page (`hasMore=false`). The new value is the EARLIEST page `syncTime` of this pull:
-     * a known row edited while later pages were being fetched is then re-sent by the
-     * next pull instead of being skipped for good.
+     * PR 10 step 6 (R-18): the request carries this profile's stored `pullCursor`
+     * (server clock) as `lastSync`, captured once before the page loop so every page
+     * of this pull sends the same value. The caller persists the new value only after
+     * the final page (`hasMore=false`). The new value is the FIRST page's `syncTime`
+     * minus a fixed 5-minute overlap — a known row edited while later pages were being
+     * fetched is then re-sent by the next pull instead of being skipped for good.
      *
-     * `lastSync=0` (full pull) is sent instead when the stored value is not known to
-     * belong to this user + profile (delta-pull marker absent or different):
-     *  - no pull has completed since upgrading from builds that always sent 0 (one-time
-     *    full pull, so server-side fixes made before the upgrade reach this device);
-     *  - the stored lastSync was produced by a pull of a different profile or account
-     *    (the stored timestamp is global, but known ids and server filtering are per
-     *    user and profile);
-     *  - the previous pull's external activities were truncated by the server cap.
-     * [forceFullResync] resets the stored value to 0 and so also sends 0.
+     * `lastSync=0` (full pull) is sent when the profile has no stored cursor, or while
+     * a duration backfill is still pending. [forceFullResync] resets every profile's
+     * cursor to 0 and so also sends 0.
+     *
+     * PR 10 step 6 (R-22): never send an empty known-id list with a non-zero cursor.
+     * Each empty list is replaced by the sentinel nil UUID.
      *
      * @return Result with the completed pull on success, or failure with classified error
      */
-    private suspend fun pullRemoteChangesWithResult(): Result<CompletedPull> {
+    private suspend fun pullRemoteChangesWithResult(
+        userId: String,
+        profile: UserProfile,
+        includeUserScoped: Boolean,
+    ): Result<CompletedPull> {
         val deviceId = tokenStorage.getDeviceId()
-        val activeProfileId = userProfileRepository.activeProfile.value?.id
-        val mergeProfileId = activeProfileId ?: "default"
-        val lastSync = tokenStorage.getLastSyncTimestamp()
-        val deltaPullKey = tokenStorage.currentUser.value?.id?.let { userId -> "$userId:$mergeProfileId" }
-        val storedDeltaPullKey = tokenStorage.getDeltaPullKey()
-        val deltaMarkerMatches = deltaPullKey != null && storedDeltaPullKey == deltaPullKey
+        val mergeProfileId = profile.id
+        val pullCursor = tokenStorage.getPullCursor(userId, mergeProfileId)
         val durationBackfillRoutineIds = syncRepository
             .getRoutineIdsNeedingDurationBackfill(mergeProfileId)
             // Template-derived cycle routines are local-only and cannot converge through
@@ -2338,30 +2708,23 @@ class SyncManager(
         // so tombstones still converge, but bypass the delta timestamp until backfill completes.
         val requestLastSync = if (durationBackfillRoutineIds.isNotEmpty()) {
             0L
-        } else if (deltaMarkerMatches) {
-            lastSync
         } else {
-            0L
+            pullCursor
         }
-        // An explicit key mismatch means [lastSync] belongs to another profile and cannot
-        // safely participate in this profile's routine LWW comparison. An absent marker is
-        // different: it represents upgrade/truncation recovery, where the stored boundary still
-        // protects local edits while the wire request deliberately performs a full pull.
-        val mergeLastSync = if (storedDeltaPullKey != null && storedDeltaPullKey != deltaPullKey) {
-            0L
-        } else {
-            lastSync
-        }
-        val serverWinsRoutineIds = deltaPullKey
-            ?.let { pendingServerWinsRoutineIdsByScope[it]?.toSet() }
+        val mergeLastSync = pullCursor
+        val serverWinsRoutineIds = pendingServerWinsRoutineIdsByScope["$userId:$mergeProfileId"]
+            ?.toSet()
             .orEmpty()
         Logger.i("SyncManager") {
-            "Pull mode: requestLastSync=$requestLastSync (stored=$lastSync, deltaMarkerMatches=$deltaMarkerMatches, " +
+            "Pull mode: requestLastSync=$requestLastSync (stored=$pullCursor, " +
                 "mergeLastSync=$mergeLastSync, profile=$mergeProfileId, " +
-                "serverWinsRoutines=${serverWinsRoutineIds.size})"
+                "serverWinsRoutines=${serverWinsRoutineIds.size}, includeUserScoped=$includeUserScoped)"
         }
 
-        // Collect local entity IDs for parity comparison.
+        // Collect local entity IDs for parity comparison. PR 10 step 7 (R-19): the
+        // session list is the profile's known *portal* session ids — distinct
+        // `routineSessionId`s (grouped) plus standalone session ids, plus tombstone
+        // portal ids from soft-deleted rows — newest-first so the cap drops the oldest.
         //
         // fix(audit #7): cap each list at MAX_PARITY_IDS to stay within the
         // server's enforced HTTP 413 threshold. If a user has more than
@@ -2369,10 +2732,16 @@ class SyncManager(
         // the mobile-side dedupe against local DB to handle the tail. This is
         // strictly better than the prior server behavior which silently
         // returned empty for over-cap lists.
-        val rawSessionIds = syncRepository.getAllSessionIds(mergeProfileId)
+        val rawSessionIds = syncRepository.getKnownPortalSessionIds(mergeProfileId)
         val rawRoutineIds = syncRepository.getAllRoutineIds(mergeProfileId)
         val rawCycleIds = syncRepository.getAllCycleIds(mergeProfileId)
-        val rawBadgeIds = syncRepository.getAllBadgeIds(mergeProfileId)
+        // PR 10 step 3 (R-14): badges are user-scoped singletons — only the active
+        // profile's pull sends and merges them.
+        val rawBadgeIds = if (includeUserScoped) {
+            syncRepository.getAllBadgeIds(mergeProfileId)
+        } else {
+            emptyList()
+        }
         val rawPersonalRecordIds = syncRepository.getAllPersonalRecordIds(mergeProfileId)
 
         // fix(pull 400): TemplateConverter mints cycle-derived routine IDs as
@@ -2396,15 +2765,34 @@ class SyncManager(
         val filteredCycleIds = filterUuids(rawCycleIds, "cycleIds")
         val filteredBadgeIds = filterUuids(rawBadgeIds, "badgeIds")
 
+        // PR 10 step 7: lists are newest-first, so `take` drops the oldest. (The pre-PR-10
+        // `takeLast` on an oldest-first list did the same thing; on a newest-first list it
+        // would have dropped the newest.)
         fun <T> capParity(list: List<T>, label: String): List<T> = if (list.size <= SyncConfig.MAX_PARITY_IDS) {
             list
         } else {
             Logger.w("SyncManager") {
-                "Parity list '$label' has ${list.size} entries; truncating to last " +
-                    "${SyncConfig.MAX_PARITY_IDS} to stay within server cap. " +
+                "Parity list '$label' has ${list.size} entries; truncating to first " +
+                    "${SyncConfig.MAX_PARITY_IDS} (newest-first) to stay within server cap. " +
                     "Local dedupe will handle the older tail."
             }
-            list.takeLast(SyncConfig.MAX_PARITY_IDS)
+            list.take(SyncConfig.MAX_PARITY_IDS)
+        }
+
+        // PR 10 step 6 (R-22): never send an empty known-id list with a non-zero cursor.
+        // The portal's `get_*_excluding_ids` RPCs treat an empty list as "exclude nothing"
+        // and can return every known row again, or loop. The sentinel nil UUID is a
+        // UUID-valid id that matches nothing, so the exclusion set is non-empty and the
+        // cursor does the real filtering.
+        fun <T> nonEmptyOrSentinel(list: List<T>, label: String): List<T> = if (list.isNotEmpty()) {
+            list
+        } else {
+            Logger.d("SyncManager") {
+                "Parity list '$label' is empty; substituting the nil-UUID sentinel so the " +
+                    "request never carries an empty known-id list with a non-zero cursor"
+            }
+            @Suppress("UNCHECKED_CAST")
+            listOf(NIL_UUID_SENTINEL as T)
         }
 
         val knownPersonalRecordIds = capParity(
@@ -2413,22 +2801,26 @@ class SyncManager(
         ).toMutableList()
 
         fun currentKnownEntityIds(): KnownEntityIds = KnownEntityIds(
-            sessionIds = capParity(filteredSessionIds, "sessionIds"),
-            routineIds = capParity(filteredRoutineIds, "routineIds"),
-            cycleIds = capParity(filteredCycleIds, "cycleIds"),
-            badgeIds = capParity(filteredBadgeIds, "badgeIds"),
+            sessionIds = nonEmptyOrSentinel(capParity(filteredSessionIds, "sessionIds"), "sessionIds"),
+            routineIds = nonEmptyOrSentinel(capParity(filteredRoutineIds, "routineIds"), "routineIds"),
+            cycleIds = nonEmptyOrSentinel(capParity(filteredCycleIds, "cycleIds"), "cycleIds"),
+            badgeIds = nonEmptyOrSentinel(capParity(filteredBadgeIds, "badgeIds"), "badgeIds"),
             // Send known PR UUIDs so the portal can page with
             // get_personal_records_excluding_ids and still return tombstones
             // via get_personal_record_tombstones. Empty lists force the server
             // to rely only on the cursor, which loops when many PRs share one
             // microsecond timestamp.
-            personalRecordIds = capParity(knownPersonalRecordIds.toList(), "personalRecordIds"),
+            personalRecordIds = nonEmptyOrSentinel(
+                capParity(knownPersonalRecordIds.toList(), "personalRecordIds"),
+                "personalRecordIds",
+            ),
         )
 
         val entityIds = currentKnownEntityIds()
         Logger.i("SyncManager") {
             "Parity sync: sending ${entityIds.sessionIds.size} session IDs, " +
                 "${entityIds.routineIds.size} routine IDs, ${entityIds.cycleIds.size} cycle IDs, " +
+                "${entityIds.badgeIds.size} badge IDs, " +
                 "${entityIds.personalRecordIds.size} personal record IDs; " +
                 "${durationBackfillRoutineIds.size} routines pending duration backfill"
         }
@@ -2436,8 +2828,9 @@ class SyncManager(
         var pagesProcessed = 0
         var totalEntitiesFetched = 0
         var currentCursor: String? = null
-        // Earliest server syncTime across pages: the snapshot boundary the whole pull is safe from.
-        var pullSyncTime: Long? = null
+        // PR 10 step 6 (R-18): first page's server syncTime is the snapshot start;
+        // stored cursor = that minus PULL_CURSOR_OVERLAP_MS.
+        var firstPageSyncTime: Long? = null
         var externalActivitiesTruncated = false
         val seenCursors = mutableSetOf<String>() // cursor-repetition detection (issue #679)
 
@@ -2494,7 +2887,7 @@ class SyncManager(
             // Fetch next page
             // DIAGNOSTIC: Log pull request parameters to trace sync issues
             Logger.d("SyncManager") {
-                "PULL REQUEST: deviceId=$deviceId, profileId=$activeProfileId, " +
+                "PULL REQUEST: deviceId=$deviceId, profileId=$mergeProfileId, " +
                     "knownSessions=${knownEntityIds.sessionIds.size}, knownRoutines=${knownEntityIds.routineIds.size}, " +
                     "knownPersonalRecords=${knownEntityIds.personalRecordIds.size}, " +
                     "cursor=$currentCursor"
@@ -2600,9 +2993,11 @@ class SyncManager(
                 pullResponse = pullResponse,
                 lastSync = mergeLastSync,
                 mergeProfileId = mergeProfileId,
-                activeSyncProfileId = activeProfileId,
+                activeSyncProfileId = profile.id,
                 isFirstPage = pagesProcessed == 1,
                 serverWinsRoutineIds = serverWinsRoutineIds,
+                includeUserScoped = includeUserScoped,
+                pushWatermark = tokenStorage.getPushWatermark(userId, mergeProfileId),
             )
             if (mergeResult.isFailure) {
                 // Map Result<Unit> to Result<Long> for consistent return type
@@ -2616,8 +3011,12 @@ class SyncManager(
                 }
             }
 
-            // Update pagination state
-            pullSyncTime = pullSyncTime?.let { minOf(it, pullResponse.syncTime) } ?: pullResponse.syncTime
+            // Update pagination state. PR 10 step 6: keep the FIRST page's syncTime, not
+            // the minimum across pages — the first page's value plus the overlap is the
+            // boundary the whole pull is safe from.
+            if (firstPageSyncTime == null) {
+                firstPageSyncTime = pullResponse.syncTime
+            }
             if (pullResponse.externalActivitiesHasMore) {
                 externalActivitiesTruncated = true
             }
@@ -2646,31 +3045,27 @@ class SyncManager(
         }
 
         // The portal pull response is a delta: it returns entities that are new
-        // to the client or updated since lastSync. Missing known IDs therefore
+        // to the client or updated since the pull cursor. Missing known IDs therefore
         // do not prove deletion. Server-side routine/cycle deletes arrive only
         // through the explicit tombstone keys (pull deletedRoutineIds /
         // deletedCycleIds, push skippedDeleted), applied by applyServerDeletions
         // in mergePullPage and in the push skippedDeleted handling.
 
-        // The server caps external activities at 500 per pull (oldest synced_at first)
-        // and has no cursor for the rest. A delta lastSync would skip the truncated tail
-        // for good, so drop the delta-pull marker: the next pull is a full lastSync=0
-        // pull (the pre-delta behaviour). Delivering the tail needs a server cursor.
-        val completedDeltaPullKey = if (externalActivitiesTruncated) {
-            Logger.w("SyncManager") {
-                "Pull: server truncated external activities (externalActivitiesHasMore=true); " +
-                    "next pull will be a full pull. Activities beyond the server cap are not delivered."
-            }
-            null
-        } else {
-            deltaPullKey
-        }
+        // PR 10 step 6: the next pull cursor is the FIRST page's syncTime minus a fixed
+        // 5-minute overlap. Fall back to the stored cursor if no page produced one.
+        val pullSyncTime = (firstPageSyncTime ?: pullCursor)
+            .let { if (it > PULL_CURSOR_OVERLAP_MS) it - PULL_CURSOR_OVERLAP_MS else 0L }
 
         return Result.success(
             CompletedPull(
-                syncTime = pullSyncTime ?: lastSync,
-                deltaPullKey = completedDeltaPullKey,
-                serverWinsRoutineScopeKey = deltaPullKey,
+                userId = userId,
+                profileId = mergeProfileId,
+                syncTime = pullSyncTime,
+                // The server caps external activities at 500 per pull (oldest synced_at
+                // first) and has no cursor for the rest. A delta cursor would skip the
+                // truncated tail for good, so force a full pull next time. Delivering the
+                // tail needs a server cursor.
+                forceFullPull = externalActivitiesTruncated,
             ),
         )
     }
@@ -2754,7 +3149,7 @@ class SyncManager(
      * entities. SyncRepository's ordinary merge owns its own transaction, while session LWW,
      * preferences, notes, RPG, and external activities may use separate repository transactions.
      * A later ordinary failure therefore does not roll back an earlier preference commit.
-     * The caller leaves lastSync unchanged and retries the page; revision guards make replay
+     * The caller leaves the pull cursor unchanged and retries the page; revision guards make replay
      * idempotent and dirty-section predicates preserve concurrent local edits.
      */
     private suspend fun mergePullPage(
@@ -2764,6 +3159,8 @@ class SyncManager(
         activeSyncProfileId: String?,
         isFirstPage: Boolean,
         serverWinsRoutineIds: Set<String>,
+        includeUserScoped: Boolean,
+        pushWatermark: Long,
     ): Result<Unit> {
         val ownerUserId = tokenStorage.currentUser.value?.id
             ?: return Result.failure(PortalApiException("Not authenticated", null, 401))
@@ -2818,7 +3215,12 @@ class SyncManager(
         }
 
         // 2. Prepare badge and PR DTOs
-        val badgeDtos = pullResponse.badges.map { PortalPullAdapter.toBadgeSyncDto(it) }
+        // PR 10 step 3 (R-14): badges follow the active profile only.
+        val badgeDtos = if (includeUserScoped) {
+            pullResponse.badges.map { PortalPullAdapter.toBadgeSyncDto(it) }
+        } else {
+            emptyList()
+        }
         // Resolve the catalog exercise id by name/muscle group; the portal PR
         // projection carries no exercise_id (audit F021). Cache lookups by
         // (name, muscleGroup) so a pull with many PRs for the same exercise does
@@ -2895,6 +3297,7 @@ class SyncManager(
                 gamificationStats = gamificationStatsDto,
                 personalRecords = prDtos,
                 lastSync = lastSync,
+                pushWatermark = pushWatermark,
                 profileId = mergeProfileId,
                 serverWinsRoutineIds = serverWinsRoutineIds,
                 sessionNotes = sessionNotesMap,
@@ -2922,7 +3325,7 @@ class SyncManager(
             }
         } catch (e: Exception) {
             Logger.e(e) {
-                "Ordinary pull merge failed; lastSync will not advance and earlier per-repository " +
+                "Ordinary pull merge failed; the pull cursor will not advance and earlier per-repository " +
                     "merges may remain for idempotent retry."
             }
             return Result.failure(PortalApiException("Pull merge failed: ${e.message}"))
@@ -2931,9 +3334,11 @@ class SyncManager(
         // RPG attributes are checkpoint-critical because the server filters them by lastSync.
         // A failure does not roll back earlier repository commits, but it must fail the page so
         // the checkpoint stays unchanged and the idempotent retry receives the RPG row again.
+        // PR 10 step 3 (R-14): RPG is one row per portal user; merge it only for the active
+        // profile's pull so a non-active profile cannot clobber the active one's stats.
         try {
             // RPG attributes — server wins (overwrite local)
-            pullResponse.rpgAttributes?.let { rpg ->
+            pullResponse.rpgAttributes?.takeIf { includeUserScoped }?.let { rpg ->
                 val characterClass = try {
                     CharacterClass.valueOf(rpg.characterClass ?: "PHOENIX")
                 } catch (_: IllegalArgumentException) {
@@ -2959,7 +3364,7 @@ class SyncManager(
         }
 
         // External activities are checkpoint-critical. If this write fails, fail the page so
-        // lastSync and the delta marker stay unchanged and the activity is fetched again.
+        // the pull cursor stays unchanged and the activity is fetched again.
         if (pullResponse.externalActivities.isNotEmpty()) {
             try {
                 val activities = pullResponse.externalActivities.map { dto ->

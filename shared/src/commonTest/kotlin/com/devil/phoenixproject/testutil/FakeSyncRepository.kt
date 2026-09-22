@@ -344,10 +344,12 @@ class FakeSyncRepository : SyncRepository {
 
     var mergedPortalSessions: List<WorkoutSession> = emptyList()
     var mergePortalSessionsCallCount = 0
+    var lastMergePortalSessionsPushWatermark: Long = 0L
 
-    override suspend fun mergePortalSessions(sessions: List<WorkoutSession>) {
+    override suspend fun mergePortalSessions(sessions: List<WorkoutSession>, pushWatermark: Long) {
         mergePortalSessionsCallCount++
         mergedPortalSessions = sessions
+        lastMergePortalSessionsPushWatermark = pushWatermark
     }
 
     var mergedPersonalRecords: List<PersonalRecordSyncDto> = emptyList()
@@ -408,6 +410,7 @@ class FakeSyncRepository : SyncRepository {
     var lastAtomicMergeWorkoutDeletions: List<PulledWorkoutDeletionDto> = emptyList()
     var lastAtomicMergeLastSync: Long = 0L
     var lastAtomicMergeProfileId: String = ""
+    var lastAtomicMergePushWatermark: Long = 0L
     var mergeSessionNotesCallCount = 0
     var lastMergedSessionNotes: Map<String, SessionNotesEntry> = emptyMap()
     var lastAtomicMergeSessionUpdatedAtById: Map<String, Long> = emptyMap()
@@ -431,6 +434,7 @@ class FakeSyncRepository : SyncRepository {
         serverWinsRoutineIds: Set<String>,
         sessionNotes: Map<String, SessionNotesEntry>,
         sessionUpdatedAtById: Map<String, Long>,
+        pushWatermark: Long,
     ) {
         mergeServerWinsRoutineIdsHistory += serverWinsRoutineIds
         if (atomicMergeShouldFail) {
@@ -452,6 +456,7 @@ class FakeSyncRepository : SyncRepository {
         lastAtomicMergeProfileId = profileId
         lastMergedSessionNotes = sessionNotes
         lastAtomicMergeSessionUpdatedAtById = sessionUpdatedAtById
+        lastAtomicMergePushWatermark = pushWatermark
 
         // Also update the individual merge trackers for backward compatibility with existing tests
         // that check the individual merge call counts and captured data.

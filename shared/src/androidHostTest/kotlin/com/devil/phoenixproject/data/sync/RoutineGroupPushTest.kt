@@ -106,7 +106,7 @@ class RoutineGroupPushTest {
         // the delta window. Set 2 is new.
         insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, stampedAt = baseTime + 1_000)
         insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 60_000)
-        tokenStorage.setLastSyncTimestamp(baseTime + 30_000)
+        tokenStorage.setPushWatermark("user-1", "active-profile", baseTime + 30_000)
 
         manager.sync()
 
@@ -320,7 +320,7 @@ class RoutineGroupPushTest {
         )
 
         tokenStorage.setRoutineGroupRepairCursor(profileId, Long.MAX_VALUE)
-        tokenStorage.setLastSyncTimestamp(baseTime + 100_000_000L)
+        tokenStorage.setPushWatermark("user-1", "active-profile", baseTime + 100_000_000L)
         manager.sync()
 
         val firstBatchIds = apiClient.pushPayloads.flatMap { it.sessions }.map { it.id }.toSet()
@@ -379,7 +379,7 @@ class RoutineGroupPushTest {
 
         apiClient.onPush = null
         apiClient.pushPayloads.clear()
-        tokenStorage.setLastSyncTimestamp(editTime - 1)
+        tokenStorage.setPushWatermark("user-1", "active-profile", editTime - 1)
         manager.sync()
         assertTrue(
             apiClient.pushPayloads.flatMap { it.sessions }.any { it.id == "set-1" },
@@ -448,7 +448,7 @@ class RoutineGroupPushTest {
         insertRoutineSet("healthy-2", groupId = healthy, timestamp = healthyTime + 1, stampedAt = healthyTime + 11, withLocalData = true)
 
         tokenStorage.setRoutineGroupRepairCursor(profileId, Long.MAX_VALUE)
-        tokenStorage.setLastSyncTimestamp(baseTime + 100_000_000L)
+        tokenStorage.setPushWatermark("user-1", "active-profile", baseTime + 100_000_000L)
         manager.sync()
 
         val pushed = apiClient.pushPayloads.flatMap { it.sessions }.map { it.id }.toSet()
@@ -565,7 +565,7 @@ class RoutineGroupPushTest {
         insertRoutineSet("stranded-2", groupId = stranded, timestamp = t + 1, stampedAt = t + 11, withLocalData = true)
 
         tokenStorage.setRoutineGroupRepairCursor(profileId, Long.MAX_VALUE)
-        tokenStorage.setLastSyncTimestamp(baseTime + 100_000_000L)
+        tokenStorage.setPushWatermark("user-1", "active-profile", baseTime + 100_000_000L)
         apiClient.stripRejectionTimestamps = true
         manager.sync()
 
@@ -621,6 +621,134 @@ class RoutineGroupPushTest {
 
         assertEquals(0, repMetricRepository.getRepMetricsCalls, "non-INFERNO must not load the curve arrays")
         assertTrue(repMetricRepository.getRepMetricSummariesCalls >= 1, "the scalar summaries must still ship")
+    }
+
+    // ===== Step 11: the LWW content-hash gate =====
+
+    @Test
+    fun `an LWW-rejected session with unchanged content is stamped and not re-sent`() = runTest {
+        // First sync uploads and is accepted, so the content hash of what actually
+        // reached the portal is stored. Then the website edits the row (bumping its
+        // updated_at ahead of us) and the row is dirtied again without any content
+        // change — the exact "rejected forever" loop the gate exists to break.
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        assertStamped("set-1")
+        assertTrue(apiClient.pushPayloads.flatMap { it.sessions }.any { it.id == GROUP })
+        val uploadedHash = tokenStorage.getSessionSentHash(GROUP)
+        assertNotNull(uploadedHash, "an accepted push must record the content hash")
+
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        // Dirty again with byte-identical content: the gather re-sends the same DTO.
+        database.phoenixDatabaseQueries.markWorkoutComponentDirty("set-1")
+        apiClient.pushPayloads.clear()
+
+        manager.sync()
+
+        assertEquals(1, apiClient.pushPayloads.size, "unchanged content must not trigger a second (re-push) payload")
+        assertEquals(
+            "typed on the website",
+            server.session(GROUP)?.notes,
+            "the gate must not re-send and erase the website's note",
+        )
+        assertStamped("set-1")
+    }
+
+    @Test
+    fun `an LWW-rejected session with changed content is re-sent`() = runTest {
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        val uploadedHash = tokenStorage.getSessionSentHash(GROUP)
+        assertNotNull(uploadedHash)
+
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        // A real local edit: another set lands, so the DTO fingerprint changes.
+        insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 1_000, withLocalData = true)
+        apiClient.pushPayloads.clear()
+
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.size >= 2,
+            "changed content must be re-sent after the LWW rejection (original push + re-push)",
+        )
+        assertTrue(
+            apiClient.pushPayloads.drop(1).flatMap { it.sessions }.any { it.id == GROUP },
+            "the re-push payload must carry the group",
+        )
+        assertStamped("set-2")
+        // The re-push is stamped serverUpdatedAt+1ms, so the portal accepts it and
+        // keeps the note the website wrote (PR 8 sends notes on every push).
+        assertEquals("typed on the website", server.session(GROUP)?.notes)
+    }
+
+    @Test
+    fun `a never-accepted grouped row is not stamped when the portal rejects it`() = runTest {
+        // The portal already holds a newer copy, and this row was never uploaded, so
+        // there is no sent hash. The unchanged-content branch must not claim it —
+        // stamping here would mark a never-uploaded row as synced and drop its data.
+        server.seedSession(
+            id = GROUP,
+            exercises = listOf(
+                FakePortalServer.StoredExercise(
+                    id = "portal-copy",
+                    name = "Squat",
+                    sets = listOf(FakePortalServer.StoredSet("portal-set", 60f, 5)),
+                ),
+            ),
+            updatedAt = baseTime + 60 * 60_000L,
+        )
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        apiClient.stripRejectionTimestamps = true
+
+        manager.sync()
+
+        assertNull(tokenStorage.getSessionSentHash(GROUP), "a never-accepted row must have no sent hash")
+        assertNotStamped("set-1")
+    }
+
+    // ===== Step 12: a pulled row is stamped with the push watermark =====
+
+    @Test
+    fun `a pulled row is stamped with the push watermark and not re-selected by the next push`() = runTest {
+        // A row this device previously pulled (portalOrigin = 1) and already synced clean.
+        insertRoutineSet("pulled-row", groupId = null, timestamp = baseTime, stampedAt = baseTime + 1_000)
+        database.phoenixDatabaseQueries.markSessionPulled("pulled-row")
+        val pushWatermark = baseTime + 50_000
+        tokenStorage.setPushWatermark("user-1", profileId, pushWatermark)
+        // The server clock is 10 minutes ahead; its updated_at must NOT be written
+        // into the local updatedAt column (that is what used to re-select the row).
+        val serverTs = baseTime + 10 * 60_000L
+
+        syncRepository.mergePulledSessions(
+            sessions = listOf(
+                com.devil.phoenixproject.domain.model.WorkoutSession(
+                    id = "pulled-row",
+                    timestamp = serverTs,
+                    mode = "OldSchool",
+                    reps = 8,
+                    weightPerCableKg = 40f,
+                    duration = 45_000L,
+                    totalReps = 8,
+                    exerciseId = "bench",
+                    exerciseName = "Bench Press",
+                    routineSessionId = null,
+                    profileId = profileId,
+                ),
+            ),
+            updatedAtBySessionId = mapOf("pulled-row" to serverTs),
+            pushWatermark = pushWatermark,
+        )
+
+        assertEquals(
+            pushWatermark,
+            stampOf("pulled-row"),
+            "the pull must stamp with the device push watermark, not the server clock",
+        )
+        assertTrue(
+            syncRepository.getDirtyWorkoutSnapshot(profileId).sessions.none { it.id == "pulled-row" },
+            "a pulled row must not come back in the next push",
+        )
     }
 
     // ===== Helpers =====

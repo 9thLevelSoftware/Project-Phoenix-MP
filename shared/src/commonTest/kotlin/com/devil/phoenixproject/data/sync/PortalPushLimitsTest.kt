@@ -357,10 +357,10 @@ class PortalPushLimitsTest {
     // ==================== Failure Handling ====================
 
     @Test
-    fun failedBatchAbortsSyncWithoutAdvancingTimestamp() = runTest {
+    fun failedBatchAbortsSyncWithoutAdvancingPushWatermark() = runTest {
         authenticate()
         val initial = 9999L
-        tokenStorage.setLastSyncTimestamp(initial)
+        tokenStorage.setPushWatermark("user-123", "default", initial)
         fakeSyncRepo.workoutSessionsToReturn = buildSessions(120) // 3 batches
 
         var callIndex = 0
@@ -392,8 +392,8 @@ class PortalPushLimitsTest {
         assertTrue(result.isFailure, "Batch failure propagates up as overall failure")
         assertEquals(
             initial,
-            tokenStorage.getLastSyncTimestamp(),
-            "lastSync must NOT advance when any batch fails (prevents data consistency gap)",
+            tokenStorage.getPushWatermark("user-123", "default"),
+            "push watermark must NOT advance when any batch fails (prevents data consistency gap)",
         )
     }
 

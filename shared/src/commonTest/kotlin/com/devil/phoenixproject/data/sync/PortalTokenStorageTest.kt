@@ -84,14 +84,16 @@ class PortalTokenStorageTest {
     // ===== clearAuth Tests =====
 
     @Test
-    fun clearAuthPreservesDeviceIdAndResetsLastSync() {
+    fun clearAuthPreservesDeviceIdAndCursors() {
         val storage = createStorage()
 
-        // Setup: save auth and set device ID / lastSync
+        // Setup: save auth and set device ID / cursors
         val nowSec = currentTimeMillis() / 1000
         saveAuthWithExpiry(storage, nowSec + 3600)
         val deviceId = storage.getDeviceId() // Triggers generation
-        storage.setLastSyncTimestamp(1234567890L)
+        val userId = requireNotNull(storage.currentUser.value).id
+        storage.setPushWatermark(userId, "default", 1234567890L)
+        storage.setPullCursor(userId, "default", 9876543210L)
 
         // Verify auth is present before clearing
         assertTrue(storage.hasToken(), "Should have token before clearAuth")
@@ -112,11 +114,17 @@ class PortalTokenStorageTest {
             storage.getDeviceId(),
             "DeviceId should be preserved after clearAuth",
         )
-        // lastSync should be reset so a re-link triggers a full pull
+        // PR 10 step 8: cursors are namespaced by user id, so a re-link resumes
+        // instead of re-pulling everything.
         assertEquals(
-            0L,
-            storage.getLastSyncTimestamp(),
-            "lastSyncTimestamp should be reset after clearAuth",
+            1234567890L,
+            storage.getPushWatermark(userId, "default"),
+            "push watermark must survive clearAuth so a re-link resumes",
+        )
+        assertEquals(
+            9876543210L,
+            storage.getPullCursor(userId, "default"),
+            "pull cursor must survive clearAuth so a re-link resumes",
         )
     }
 
@@ -347,19 +355,18 @@ class PortalTokenStorageTest {
     }
 
     @Test
-    fun recordCompletedPullStoresLastSyncAndDeltaMarkerTogether() {
+    fun recordCompletedPullStoresPerProfileCursor() {
         val storage = PortalTokenStorage(MapSettings())
-        storage.recordCompletedPull(1234L, "u1:default")
-        assertEquals(1234L, storage.getLastSyncTimestamp())
-        assertEquals("u1:default", storage.getDeltaPullKey())
+        storage.recordCompletedPull("u1", "default", 1234L)
+        assertEquals(1234L, storage.getPullCursor("u1", "default"))
 
-        storage.recordCompletedPull(5678L, null)
-        assertEquals(5678L, storage.getLastSyncTimestamp())
-        assertNull(storage.getDeltaPullKey(), "null key drops the marker so the next pull is full")
+        storage.recordCompletedPull("u1", "other", 5678L)
+        assertEquals(5678L, storage.getPullCursor("u1", "other"))
+        assertEquals(1234L, storage.getPullCursor("u1", "default"), "profiles are independent")
     }
 
     @Test
-    fun signInAsDifferentUserDropsDeltaMarkerButSameUserKeepsIt() {
+    fun cursorsAreNamespacedByUserId() {
         val storage = PortalTokenStorage(MapSettings())
         fun auth(userId: String) = storage.saveGoTrueAuth(
             GoTrueAuthResponse(
@@ -371,18 +378,19 @@ class PortalTokenStorageTest {
             ),
         )
         auth("u1")
-        storage.recordCompletedPull(1234L, "u1:default")
+        storage.recordCompletedPull("u1", "default", 1234L)
 
         auth("u1")
-        assertEquals("u1:default", storage.getDeltaPullKey(), "token refresh for the same user keeps the marker")
+        assertEquals(1234L, storage.getPullCursor("u1", "default"), "token refresh for the same user keeps its cursors")
 
         auth("u2")
-        assertNull(storage.getDeltaPullKey(), "account switch drops the marker")
-        assertEquals(0L, storage.getLastSyncTimestamp(), "account switch resets the sync checkpoint")
+        assertEquals(0L, storage.getPullCursor("u2", "default"), "a different user starts with no cursor")
+        assertEquals(1234L, storage.getPullCursor("u1", "default"), "the other user's cursor is untouched")
 
-        storage.recordCompletedPull(2000L, "u2:default")
+        storage.recordCompletedPull("u2", "default", 2000L)
         storage.clearAuth()
-        assertNull(storage.getDeltaPullKey())
+        assertEquals(2000L, storage.getPullCursor("u2", "default"), "clearAuth keeps cursors")
+        assertEquals(1234L, storage.getPullCursor("u1", "default"), "clearAuth keeps cursors")
     }
 
     // ===== Auth generation (stale refresh writes) =====

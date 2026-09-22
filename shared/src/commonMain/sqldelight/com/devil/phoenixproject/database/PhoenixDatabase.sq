@@ -4503,6 +4503,23 @@ INSERT OR REPLACE INTO IntegrationStatus(provider, status, lastSyncAt, errorMess
 VALUES (?, ?, ?, ?, ?);
 
 -- Parity Sync: Get all entity IDs for comparison with server
+-- PR 10 step 7 (R-19): distinct portal session ids (grouped routineSessionId,
+-- standalone row id) including soft-deleted tombstones, newest-first.
+selectKnownPortalSessionIdsByProfile:
+SELECT
+    CASE
+        WHEN routineSessionId IS NULL OR TRIM(routineSessionId) = '' THEN id
+        ELSE routineSessionId
+    END AS portal_session_id
+FROM WorkoutSession
+WHERE profile_id = :profileId
+GROUP BY
+    CASE
+        WHEN routineSessionId IS NULL OR TRIM(routineSessionId) = '' THEN id
+        ELSE routineSessionId
+    END
+ORDER BY MAX(timestamp) DESC;
+
 selectAllSessionIdsByProfile:
 SELECT id FROM WorkoutSession WHERE profile_id = :profileId;
 

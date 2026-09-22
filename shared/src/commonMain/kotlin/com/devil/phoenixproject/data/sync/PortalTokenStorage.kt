@@ -61,8 +61,6 @@ class PortalTokenStorage(private val settings: Settings) {
         val userName: String?,
         val isPremium: Boolean,
         val subscriptionTier: String?,
-        val lastSync: Long,
-        val deltaPullKey: String?,
     )
 
     companion object {
@@ -74,15 +72,38 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_SUBSCRIPTION_TIER = "portal_user_subscription_tier"
         private const val KEY_REFRESH_TOKEN = "portal_refresh_token"
         private const val KEY_EXPIRES_AT = "portal_token_expires_at"
-        private const val KEY_LAST_SYNC = "portal_last_sync_timestamp"
 
         /**
-         * "userId:profileId" of the completed pull that produced the stored [KEY_LAST_SYNC].
-         * Absent on the first sync after upgrading from builds that always pulled with
-         * lastSync=0, so sync sends one full lastSync=0 pull before switching to delta pulls.
-         * A pull for another user or profile also sends lastSync=0.
+         * Legacy global cursor written by builds before PR 10. Read once by
+         * [migrateLegacyCursors] to seed the per-profile cursors, then removed.
          */
-        private const val KEY_DELTA_PULL_KEY = "portal_delta_pull_key"
+        private const val KEY_LEGACY_LAST_SYNC = "portal_last_sync_timestamp"
+
+        /**
+         * Device-clock watermark of the last completed push for one (portal userId, profileId).
+         * Post-push stamps use it; push gather selects `updatedAt > pushWatermark`.
+         */
+        private const val KEY_PUSH_WATERMARK_PREFIX = "portal_push_watermark_"
+
+        /**
+         * Server-clock cursor of the last completed pull for one (portal userId, profileId).
+         * Sent as `PortalSyncPullRequest.lastSync`. 0 / absent means "full pull".
+         */
+        private const val KEY_PULL_CURSOR_PREFIX = "portal_pull_cursor_"
+
+        /**
+         * One-time upgrade repair: routines, cycles and PRs for every profile re-push from 0.
+         * Absent = still owed; present = done.
+         */
+        private const val KEY_ROUTINE_CYCLE_PR_REPAIR_DONE_PREFIX = "portal_rcp_repair_done_"
+
+        /**
+         * Content fingerprint of the session DTO last sent to the portal, keyed by portal
+         * session id. Lets an LWW-rejected row with unchanged content be stamped instead
+         * of re-pushed forever (PR 10 step 11).
+         */
+        private const val KEY_SESSION_SENT_HASH_PREFIX = "portal_session_sent_hash_"
+
         private const val KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX = "portal_phase_pr_backfill_checkpoint_"
         private const val KEY_ROUTINE_GROUP_REPAIR_CURSOR_PREFIX = "portal_routine_group_repair_cursor_"
         private const val KEY_DEVICE_ID = "portal_device_id"
@@ -139,7 +160,7 @@ class PortalTokenStorage(private val settings: Settings) {
     private val _currentUser = MutableStateFlow(loadUser())
     val currentUser: StateFlow<PortalUser?> = _currentUser.asStateFlow()
 
-    private val _lastSyncTimestamp = MutableStateFlow(settings[KEY_LAST_SYNC, 0L])
+    private val _lastSyncTimestamp = MutableStateFlow(0L)
     val lastSyncTimestamp: StateFlow<Long> = _lastSyncTimestamp.asStateFlow()
 
     /**
@@ -171,8 +192,6 @@ class PortalTokenStorage(private val settings: Settings) {
             userName = settings.getStringOrNull(KEY_USER_NAME),
             isPremium = settings[KEY_IS_PREMIUM, false],
             subscriptionTier = settings.getStringOrNull(KEY_SUBSCRIPTION_TIER),
-            lastSync = settings[KEY_LAST_SYNC, 0L],
-            deltaPullKey = settings.getStringOrNull(KEY_DELTA_PULL_KEY),
         )
     }
 
@@ -189,9 +208,9 @@ class PortalTokenStorage(private val settings: Settings) {
         restoreString(KEY_USER_NAME, snapshot.userName)
         settings[KEY_IS_PREMIUM] = snapshot.isPremium
         restoreString(KEY_SUBSCRIPTION_TIER, snapshot.subscriptionTier)
-        settings.putLong(KEY_LAST_SYNC, snapshot.lastSync)
-        restoreString(KEY_DELTA_PULL_KEY, snapshot.deltaPullKey)
-        _lastSyncTimestamp.value = snapshot.lastSync
+        // Per-(userId, profileId) cursors are not part of the identity snapshot: they are
+        // written during sync, not during an identity commit, and are namespaced by user id
+        // so a rolled-back account switch cannot corrupt them.
         _isAuthenticated.value = snapshot.accessToken != null
         _currentUser.value = loadUser()
     }
@@ -232,12 +251,6 @@ class PortalTokenStorage(private val settings: Settings) {
         val previousUserId: String? = settings.getStringOrNull(KEY_USER_ID)
         val sameUser = previousUserId != null && previousUserId == response.user.id
         val existingPremium: Boolean = if (sameUser) settings[KEY_IS_PREMIUM, false] else false
-        if (!sameUser) {
-            // A different account must not reuse the previous account's delta-pull state:
-            // clear the user-keyed marker here. KEY_LAST_SYNC is reset below with the
-            // rest of the account-scoped sync and entitlement state.
-            settings.remove(KEY_DELTA_PULL_KEY)
-        }
 
         settings[KEY_TOKEN] = response.accessToken
         settings[KEY_REFRESH_TOKEN] = response.refreshToken
@@ -249,10 +262,13 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_USER_NAME] = response.user.displayName ?: ""
         settings[KEY_IS_PREMIUM] = existingPremium
         if (!sameUser) {
-            // Account-scoped sync and entitlement state must never cross an identity switch.
-            settings.putLong(KEY_LAST_SYNC, 0L)
-            _lastSyncTimestamp.value = 0L
+            // Account-scoped entitlement state must never cross an identity switch.
+            // Sync cursors are namespaced by (userId, profileId) and survive the switch
+            // so returning to the previous account resumes where it left off.
             settings.remove(KEY_SUBSCRIPTION_TIER)
+            // The UI's lastSyncTime is a cache of this user's min pull cursor; it must
+            // never keep showing the previous account's "last successful pull".
+            publishPullCursorFloor(response.user.id)
         }
         _isAuthenticated.value = true
         _currentUser.value = loadUser()
@@ -282,31 +298,135 @@ class PortalTokenStorage(private val settings: Settings) {
         newId
     }
 
-    fun getLastSyncTimestamp(): Long = _lastSyncTimestamp.value
+    // === Per-profile sync cursors (PR 10) ===
+    //
+    // Two cursors per (portal userId, profileId):
+    //   pushWatermark — device clock, captured before gather; post-push stamps use it.
+    //   pullCursor    — server clock, sent as PortalSyncPullRequest.lastSync.
+    // Both are namespaced by user id so a sign-out / account switch cannot corrupt them,
+    // and clearAuth deliberately leaves them in place.
 
-    fun setLastSyncTimestamp(timestamp: Long) {
+    /** Device-clock watermark of the last completed push for this profile. 0 = never pushed. */
+    fun getPushWatermark(userId: String, profileId: String): Long =
+        settings[cursorKey(KEY_PUSH_WATERMARK_PREFIX, userId, profileId), 0L]
+
+    fun setPushWatermark(userId: String, profileId: String, timestamp: Long) {
         withPlatformLock(authLock) {
-            settings[KEY_LAST_SYNC] = timestamp
-            _lastSyncTimestamp.value = timestamp
+            settings[cursorKey(KEY_PUSH_WATERMARK_PREFIX, userId, profileId)] = timestamp
         }
     }
 
-    /** "userId:profileId" of the pull that produced the stored lastSync, or null if unknown. */
-    fun getDeltaPullKey(): String? = settings.getStringOrNull(KEY_DELTA_PULL_KEY)
+    /** Server-clock cursor of the last completed pull. 0 / absent = next pull is a full pull. */
+    fun getPullCursor(userId: String, profileId: String): Long =
+        settings[cursorKey(KEY_PULL_CURSOR_PREFIX, userId, profileId), 0L]
+
+    fun setPullCursor(userId: String, profileId: String, timestamp: Long) {
+        withPlatformLock(authLock) {
+            settings[cursorKey(KEY_PULL_CURSOR_PREFIX, userId, profileId)] = timestamp
+        }
+    }
 
     /**
-     * Records a completed pull: the new lastSync first, then the delta-pull marker, so an
-     * interruption between the two writes leaves an absent/stale marker (next pull is a
-     * safe full pull) rather than a marker vouching for an older lastSync. A null
-     * [deltaPullKey] removes the marker so the next pull is a full pull.
+     * Records a completed pull for one profile. The caller passes the first page's
+     * `syncTime` minus the overlap (see SyncManager); this only persists it.
      */
-    fun recordCompletedPull(syncTime: Long, deltaPullKey: String?) {
+    fun recordCompletedPull(userId: String, profileId: String, syncTime: Long) {
+        setPullCursor(userId, profileId, syncTime)
+    }
+
+    /**
+     * Resets one profile's pull cursor to 0 so its next pull is a full pull. Used by any
+     * bulk removal of that profile's local rows (Delete All, backup restore, account-switch
+     * choices) — otherwise the cursor would skip the rows the bulk removal just cleared.
+     */
+    fun resetPullCursor(userId: String, profileId: String) {
+        setPullCursor(userId, profileId, 0L)
+    }
+
+    /** Resets every profile's pull cursor for [userId] (force-full-resync). */
+    fun resetAllPullCursors(userId: String) {
         withPlatformLock(authLock) {
-            settings.remove(KEY_DELTA_PULL_KEY)
-            settings[KEY_LAST_SYNC] = syncTime
-            _lastSyncTimestamp.value = syncTime
-            if (deltaPullKey != null) {
-                settings[KEY_DELTA_PULL_KEY] = deltaPullKey
+            val prefix = "$KEY_PULL_CURSOR_PREFIX$userId:"
+            settings.keys
+                .filter { it.startsWith(prefix) }
+                .forEach { settings.remove(it) }
+            _lastSyncTimestamp.value = 0L
+        }
+    }
+
+    /**
+     * Publishes the UI-facing "last successful pull" value (minimum across profiles).
+     * Called by SyncManager after each profile loop.
+     */
+    fun publishMinPullCursor(minAcrossProfiles: Long) {
+        _lastSyncTimestamp.value = minAcrossProfiles
+    }
+
+    /** Recomputes and publishes the UI cursor floor from this user's stored pull cursors. */
+    private fun publishPullCursorFloor(userId: String) {
+        val prefix = "$KEY_PULL_CURSOR_PREFIX$userId:"
+        val values = settings.keys
+            .filter { it.startsWith(prefix) }
+            .map { settings[it, 0L] }
+        _lastSyncTimestamp.value = values.minOrNull() ?: 0L
+    }
+
+    /**
+     * One-time upgrade seeding (PR 10 step 8). Reads the legacy global cursor and writes:
+     *  - every profile's `pushWatermark` = the legacy value (same sessions boundary as
+     *    today, so pulled sessions are not re-selected);
+     *  - the active profile's `pullCursor` = the legacy value, every other profile's = 0
+     *    (full pull for profiles the old global cursor never covered).
+     * The legacy key is then removed. Returns true when a migration actually ran.
+     */
+    fun migrateLegacyCursors(
+        userId: String,
+        activeProfileId: String,
+        allProfileIds: List<String>,
+    ): Boolean = withPlatformLock(authLock) {
+        val legacy: Long = settings[KEY_LEGACY_LAST_SYNC, 0L]
+        if (KEY_LEGACY_LAST_SYNC !in settings.keys) return@withPlatformLock false
+
+        val normalizedActive = activeProfileId.trim().ifBlank { "default" }
+        for (profileId in allProfileIds) {
+            val normalized = profileId.trim().ifBlank { "default" }
+            settings[cursorKey(KEY_PUSH_WATERMARK_PREFIX, userId, normalized)] = legacy
+            settings[cursorKey(KEY_PULL_CURSOR_PREFIX, userId, normalized)] =
+                if (normalized == normalizedActive) legacy else 0L
+        }
+        settings.remove(KEY_LEGACY_LAST_SYNC)
+        _lastSyncTimestamp.value = if (normalizedActive in allProfileIds.map { it.trim().ifBlank { "default" } }) {
+            legacy
+        } else {
+            0L
+        }
+        true
+    }
+
+    /**
+     * True while the one-time routines/cycles/PRs repair push is still owed for this user.
+     * That push re-sends routines, cycles, PRs and their tombstones for every profile from
+     * timestamp 0, which is non-destructive under portal LWW and holds no session children.
+     */
+    fun needsRoutineCyclePrRepairPush(userId: String): Boolean =
+        settings.getStringOrNull(routineCyclePrRepairKey(userId)) == null
+
+    fun markRoutineCyclePrRepairPushDone(userId: String) {
+        withPlatformLock(authLock) {
+            settings[routineCyclePrRepairKey(userId)] = "1"
+        }
+    }
+
+    /** Content fingerprint of the session DTO last sent under this portal session id. */
+    fun getSessionSentHash(portalSessionId: String): String? =
+        settings[sessionSentHashKey(portalSessionId)]
+
+    fun setSessionSentHash(portalSessionId: String, hash: String?) {
+        withPlatformLock(authLock) {
+            if (hash == null) {
+                settings.remove(sessionSentHashKey(portalSessionId))
+            } else {
+                settings[sessionSentHashKey(portalSessionId)] = hash
             }
         }
     }
@@ -409,9 +529,9 @@ class PortalTokenStorage(private val settings: Settings) {
         settings.remove(KEY_USER_NAME)
         settings.remove(KEY_IS_PREMIUM)
         settings.remove(KEY_SUBSCRIPTION_TIER)
-        settings.remove(KEY_LAST_SYNC) // Reset so re-link does a full pull
-        settings.remove(KEY_DELTA_PULL_KEY)
-        _lastSyncTimestamp.value = 0L
+        // Per-(userId, profileId) sync cursors are deliberately KEPT: they are namespaced
+        // by user id, so re-linking the same account resumes where it left off and a
+        // different account's cursors cannot be read through this one's keys.
         // Keep device ID for stable identity
 
         _isAuthenticated.value = false
@@ -445,6 +565,17 @@ class PortalTokenStorage(private val settings: Settings) {
         val normalizedProfileId = profileId.trim().ifBlank { "default" }
         return "$KEY_ROUTINE_GROUP_REPAIR_CURSOR_PREFIX$normalizedProfileId"
     }
+
+    private fun cursorKey(prefix: String, userId: String, profileId: String): String {
+        val normalizedProfileId = profileId.trim().ifBlank { "default" }
+        return "$prefix$userId:$normalizedProfileId"
+    }
+
+    private fun routineCyclePrRepairKey(userId: String): String =
+        "$KEY_ROUTINE_CYCLE_PR_REPAIR_DONE_PREFIX$userId"
+
+    private fun sessionSentHashKey(portalSessionId: String): String =
+        "$KEY_SESSION_SENT_HASH_PREFIX$portalSessionId"
 }
 
 /**
