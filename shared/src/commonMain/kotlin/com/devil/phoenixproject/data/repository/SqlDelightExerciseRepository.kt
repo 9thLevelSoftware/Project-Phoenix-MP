@@ -91,7 +91,6 @@ class SqlDelightExerciseRepository(
 
             else -> when (defaultCableConfig.trim().uppercase()) {
                 "SINGLE" -> ExerciseCableIntent.SINGLE
-                "DOUBLE" -> ExerciseCableIntent.DUAL
                 "EITHER" -> ExerciseCableIntent.EITHER
                 else -> null
             }
