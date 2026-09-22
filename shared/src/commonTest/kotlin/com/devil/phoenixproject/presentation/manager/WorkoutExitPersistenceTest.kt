@@ -1128,15 +1128,18 @@ class WorkoutExitPersistenceTest {
      * request above the hardware maximum is refused before the set can start,
      * so it must not appear in the session row, the CompletedSet or the volume
      * PR input — all three read the same commanded figure.
+     *
+     * The out-of-range request is the set's own start load. An active-set edit
+     * of `_workoutParameters` is for the NEXT set and must not rewrite this
+     * completion (`withExecutedCommand` freezes the start metadata), so a
+     * mid-set mutation would not reach the recorder at all.
      */
     @Test
     fun `a set records the commanded load, not an out-of-range request`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
-            startTrackedCableSet(harness)
+            startTrackedCableSet(harness, weightPerCableKg = 500f)
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
-            harness.coordinator._workoutParameters.value =
-                harness.coordinator._workoutParameters.value.copy(weightPerCableKg = 500f)
 
             harness.dwsm.stopWorkout(exitingWorkout = true)
             advanceUntilIdle()
@@ -1159,17 +1162,16 @@ class WorkoutExitPersistenceTest {
      * A non-finite request is the validator's to reject. The clamp must not
      * invent a plausible number for one: coerceIn would snap an infinity to a
      * band end and the recorded history would claim the machine held 110 kg.
+     *
+     * As above, the non-finite figure is the set's own start load — an
+     * active-set edit cannot rewrite a frozen completion.
      */
     @Test
     fun `a non-finite requested load is recorded as-is, not clamped to a band end`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
-            startTrackedCableSet(harness)
+            startTrackedCableSet(harness, weightPerCableKg = Float.POSITIVE_INFINITY)
             val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
-            harness.coordinator._workoutParameters.value =
-                harness.coordinator._workoutParameters.value.copy(
-                    weightPerCableKg = Float.POSITIVE_INFINITY,
-                )
 
             harness.dwsm.stopWorkout(exitingWorkout = true)
             advanceUntilIdle()
@@ -1264,7 +1266,10 @@ class WorkoutExitPersistenceTest {
         }
     }
 
-    private fun startTrackedCableSet(harness: DWSMTestHarness) {
+    private fun startTrackedCableSet(
+        harness: DWSMTestHarness,
+        weightPerCableKg: Float = 25f,
+    ) {
         harness.fakeExerciseRepo.addExercise(TestFixtures.benchPress)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.dwsm.updateWorkoutParameters(
@@ -1272,7 +1277,7 @@ class WorkoutExitPersistenceTest {
                 programMode = ProgramMode.OldSchool,
                 reps = 3,
                 warmupReps = 0,
-                weightPerCableKg = 25f,
+                weightPerCableKg = weightPerCableKg,
                 selectedExerciseId = TestFixtures.benchPress.id,
             ),
         )
