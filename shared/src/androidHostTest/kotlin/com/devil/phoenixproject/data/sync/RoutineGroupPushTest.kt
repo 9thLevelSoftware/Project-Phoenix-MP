@@ -411,7 +411,7 @@ class RoutineGroupPushTest {
     fun `the repair push skips a group that holds a row with no local measurements`() = runTest {
         // Group A is the security R-1 population: a locally created row whose children
         // are gone (F-001's cascade, or a pre-migration set saved without metrics). It
-        // is NOT in PulledWorkoutSession, so the ordinary hold guard does not see it —
+        // is NOT portal-pulled (portalOrigin != 1), so the ordinary hold guard does not see it —
         // but the repair would rebuild it as an empty exercise and destroy the portal's
         // copy of that set's rep summaries, which is the last surviving copy.
         val atRisk = "repair-childless"
@@ -645,7 +645,7 @@ class RoutineGroupPushTest {
     /**
      * One completed set. [stampedAt] models a row an earlier sync already pushed (and
      * therefore stamped out of the delta window). A row only counts as "pulled from
-     * another device" once it is also in PulledWorkoutSession with no local children.
+     * another device" once it is also portal-pulled (portalOrigin = 1) with no local children.
      *
      * [withLocalData] attaches a CompletedSet so the row is not "childless" — the
      * three-table local-data predicate (MetricSample / RepMetric / CompletedSet) that

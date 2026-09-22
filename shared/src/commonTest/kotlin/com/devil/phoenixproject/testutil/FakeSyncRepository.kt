@@ -122,7 +122,7 @@ class FakeSyncRepository : SyncRepository {
      */
     var routineGroupSiblings: List<WorkoutSession> = emptyList()
 
-    /** Ids that carry the PulledWorkoutSession marker and have no local children. */
+    /** Ids that carry the pulled-origin marker (portalOrigin = 1) and have no local children. */
     var pulledSessionIdsWithoutLocalData: Set<String> = emptySet()
 
     var getWorkoutSessionsByRoutineSessionIdsCalls: MutableList<List<String>> = mutableListOf()

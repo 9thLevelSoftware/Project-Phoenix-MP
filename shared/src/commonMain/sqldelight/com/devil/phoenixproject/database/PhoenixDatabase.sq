@@ -3560,14 +3560,17 @@ ORDER BY timestamp ASC;
 -- holds the whole group instead and leaves it unstamped.
 --
 -- Same three-table "this device has local data" predicate as
--- selectSessionsModifiedSince, updatePulledSessionTag and the migration 48 backfill
--- (MetricSample / RepMetric / CompletedSet) — keep the four in step.
+-- selectSessionsModifiedSince and the migration 48 backfill
+-- (MetricSample / RepMetric / CompletedSet) — keep them in step. Pulled-origin
+-- marking is WorkoutSession.portalOrigin (migration 48 on main); an earlier draft
+-- of this query used a separate PulledWorkoutSession marker table that this
+-- schema does not carry.
 selectBlockedRoutineGroupSiblings:
 SELECT id, routineSessionId FROM WorkoutSession
 WHERE profile_id = :profileId
 AND routineSessionId IN :ids
 AND deletedAt IS NULL
-AND EXISTS (SELECT 1 FROM PulledWorkoutSession WHERE PulledWorkoutSession.id = WorkoutSession.id)
+AND WorkoutSession.portalOrigin = 1
 AND NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = WorkoutSession.id)
 AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
 AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id);
