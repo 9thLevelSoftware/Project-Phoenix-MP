@@ -1,9 +1,11 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.TrainingCycle
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.testutil.FakeExternalActivityRepository
 import com.devil.phoenixproject.testutil.FakeGamificationRepository
@@ -251,6 +253,28 @@ class PortalPushLimitsTest {
     fun nonSessionDataAttachedOnlyToLastBatch() = runTest {
         authenticate()
         fakeSyncRepo.workoutSessionsToReturn = buildSessions(120) // 3 batches
+        // One dedicated personal_records row matching sess-0/ex-0 so that session is
+        // also flagged isPr. The portal derives an id-less personal_records row from
+        // every set.isPr whenever a payload's `personalRecords` is empty (PORTAL
+        // ROW-DUPLICATION HAZARD) — so every batch must carry the dedicated rows,
+        // not just the last one.
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            PersonalRecord(
+                id = 1,
+                exerciseId = "ex-0",
+                exerciseName = "Squat",
+                weightPerCableKg = 25f,
+                reps = 10,
+                oneRepMax = 25f,
+                timestamp = 1_740_000_000_000L,
+                workoutMode = "OldSchool",
+                volume = 250f,
+                phase = WorkoutPhase.COMBINED,
+                profileId = "default",
+                cableCount = 2,
+                uuid = "pr-uuid-0",
+            ),
+        )
 
         val capturedPayloads = mutableListOf<PortalSyncPayload>()
         val capturingApi = object : FakePortalApiClient() {
@@ -277,6 +301,23 @@ class PortalPushLimitsTest {
         mgr.sync()
 
         assertEquals(3, capturedPayloads.size)
+
+        // Every batch, not just the last: an empty `personalRecords` re-arms the
+        // portal's id-less derived personal_records rows for that batch's isPr sets.
+        for ((index, payload) in capturedPayloads.withIndex()) {
+            assertTrue(
+                payload.personalRecords.isNotEmpty(),
+                "Batch $index must carry personalRecords (empty arms the portal " +
+                    "row-duplication hazard for this batch's isPr sets)",
+            )
+        }
+        assertTrue(
+            capturedPayloads.first().sessions
+                .flatMap { it.exercises }
+                .flatMap { it.sets }
+                .any { it.isPr },
+            "Precondition: the seeded PR must flag its set isPr (that is the hazard source)",
+        )
 
         // Batches 0 and 1 (non-final) must have empty non-session collections.
         for ((index, payload) in capturedPayloads.withIndex().take(2)) {
