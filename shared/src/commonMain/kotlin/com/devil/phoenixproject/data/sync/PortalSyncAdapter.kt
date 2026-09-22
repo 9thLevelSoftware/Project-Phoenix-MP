@@ -6,6 +6,7 @@ import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.RepMetricSummary
 import com.devil.phoenixproject.domain.model.Routine
 import com.devil.phoenixproject.domain.model.RoutineExercise
 import com.devil.phoenixproject.domain.model.SupersetColors
@@ -68,7 +69,15 @@ object PortalSyncAdapter {
 
     data class SessionWithReps(
         val session: WorkoutSession,
+        /** Full per-rep rows including 50 Hz curves. Only filled when telemetry ships. */
         val repMetrics: List<RepMetricData> = emptyList(),
+        /**
+         * Scalar summaries for `buildRepSummaries`. Always populated by the push so a
+         * non-Inferno sync never has to deserialize the curve arrays on [repMetrics].
+         * When empty (older call sites / tests that only fill [repMetrics]), the
+         * adapter falls back to projecting [RepMetricData.toSummary].
+         */
+        val repSummaries: List<RepMetricSummary> = emptyList(),
         val repBiomechanics: List<RepBiomechanicsData> = emptyList(),
         val muscleGroup: String = "General",
         val isPr: Boolean = false,
@@ -505,8 +514,12 @@ object PortalSyncAdapter {
 
     private fun buildRepSummaries(swr: SessionWithReps, setId: String): List<PortalRepSummaryDto> {
         val biomechanicsMap = swr.repBiomechanics.associateBy { it.repNumber }
+        val summaries = swr.repSummaries.ifEmpty {
+            // Call sites that only filled full RepMetricData (tests, older callers).
+            swr.repMetrics.map { it.toSummary() }
+        }
 
-        return swr.repMetrics.map { rep ->
+        return summaries.map { rep ->
             val bio = biomechanicsMap[rep.repNumber]
 
             PortalRepSummaryDto(

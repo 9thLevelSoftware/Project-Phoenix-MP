@@ -2,6 +2,7 @@ package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.RepMetricData
+import com.devil.phoenixproject.domain.model.RepMetricSummary
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.IO
 import kotlinx.coroutines.withContext
@@ -14,6 +15,13 @@ import kotlinx.coroutines.withContext
 interface RepMetricRepository {
     suspend fun saveRepMetrics(sessionId: String, metrics: List<RepMetricData>)
     suspend fun getRepMetrics(sessionId: String): List<RepMetricData>
+
+    /**
+     * Scalar-only projection of [getRepMetrics]: the fields the portal push's rep
+     * summaries read, without deserializing the 50 Hz curve arrays. Used whenever the
+     * push will not ship telemetry (anything below the Inferno tier).
+     */
+    suspend fun getRepMetricSummaries(sessionId: String): List<RepMetricSummary> = emptyList()
     suspend fun deleteRepMetrics(sessionId: String)
     suspend fun getRepMetricCount(sessionId: String): Long
 }
@@ -110,6 +118,30 @@ class SqlDelightRepMetricRepository(private val db: PhoenixDatabase) : RepMetric
         } catch (e: Exception) {
             // Defensive: return empty if table is missing due to migration gap.
             // The reconciler should have created it, but we never crash-loop over this.
+            emptyList()
+        }
+    }
+
+    override suspend fun getRepMetricSummaries(sessionId: String): List<RepMetricSummary> = withContext(Dispatchers.IO) {
+        try {
+            queries.selectRepMetricSummariesBySession(sessionId).executeAsList().map { row ->
+                RepMetricSummary(
+                    repNumber = row.repNumber.toInt(),
+                    peakForceA = row.peakForceA.toFloat(),
+                    peakForceB = row.peakForceB.toFloat(),
+                    avgForceConcentricA = row.avgForceConcentricA.toFloat(),
+                    avgForceConcentricB = row.avgForceConcentricB.toFloat(),
+                    peakVelocity = row.peakVelocity.toFloat(),
+                    avgVelocityConcentric = row.avgVelocityConcentric.toFloat(),
+                    rangeOfMotionMm = row.rangeOfMotionMm.toFloat(),
+                    peakPowerWatts = row.peakPowerWatts.toFloat(),
+                    avgPowerWatts = row.avgPowerWatts.toFloat(),
+                    concentricDurationMs = row.concentricDurationMs,
+                    eccentricDurationMs = row.eccentricDurationMs,
+                )
+            }
+        } catch (e: Exception) {
+            // Defensive: return empty if table is missing due to migration gap.
             emptyList()
         }
     }

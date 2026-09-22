@@ -81,6 +81,22 @@ data class RepMetricData(
             avgPowerWatts == other.avgPowerWatts
     }
 
+    /** Scalar summary of this rep — the fields the portal push's rep summaries read. */
+    fun toSummary(): RepMetricSummary = RepMetricSummary(
+        repNumber = repNumber,
+        peakForceA = peakForceA,
+        peakForceB = peakForceB,
+        avgForceConcentricA = avgForceConcentricA,
+        avgForceConcentricB = avgForceConcentricB,
+        peakVelocity = peakVelocity,
+        avgVelocityConcentric = avgVelocityConcentric,
+        rangeOfMotionMm = rangeOfMotionMm,
+        peakPowerWatts = peakPowerWatts,
+        avgPowerWatts = avgPowerWatts,
+        concentricDurationMs = concentricDurationMs,
+        eccentricDurationMs = eccentricDurationMs,
+    )
+
     override fun hashCode(): Int {
         var result = repNumber
         result = 31 * result + isWarmup.hashCode()
@@ -102,3 +118,24 @@ data class RepMetricData(
         return result
     }
 }
+
+/**
+ * Scalar summary of one rep: exactly the fields `PortalSyncAdapter.buildRepSummaries`
+ * reads. The 50 Hz curve arrays on [RepMetricData] are the bulk of a persisted row and
+ * are only needed for the Inferno telemetry path, so a non-Inferno push loads these
+ * instead of deserializing curves it will throw away.
+ */
+data class RepMetricSummary(
+    val repNumber: Int,
+    val peakForceA: Float,
+    val peakForceB: Float,
+    val avgForceConcentricA: Float,
+    val avgForceConcentricB: Float,
+    val peakVelocity: Float,
+    val avgVelocityConcentric: Float,
+    val rangeOfMotionMm: Float,
+    val peakPowerWatts: Float,
+    val avgPowerWatts: Float,
+    val concentricDurationMs: Long,
+    val eccentricDurationMs: Long,
+)

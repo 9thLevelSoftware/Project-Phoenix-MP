@@ -1510,6 +1510,16 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 
 selectRepMetricsBySession:
 SELECT * FROM RepMetric WHERE sessionId = ? ORDER BY repNumber ASC;
 
+-- Scalar-only projection of RepMetric for the portal push's rep summaries. The 50 Hz
+-- curve TEXT columns are the bulk of a RepMetric row and buildRepSummaries never
+-- reads them -- only the INFERNO telemetry path does. Below that tier the push must
+-- not deserialize them at all.
+selectRepMetricSummariesBySession:
+SELECT repNumber, peakForceA, peakForceB, avgForceConcentricA, avgForceConcentricB,
+       peakVelocity, avgVelocityConcentric, rangeOfMotionMm, peakPowerWatts,
+       avgPowerWatts, concentricDurationMs, eccentricDurationMs
+FROM RepMetric WHERE sessionId = ? ORDER BY repNumber ASC;
+
 deleteRepMetricsBySession:
 DELETE FROM RepMetric WHERE sessionId = ?;
 
@@ -3562,6 +3572,22 @@ AND NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = Workou
 AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
 AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id);
 
+-- Repair-path companion to selectBlockedRoutineGroupSiblings: groups holding ANY
+-- childless row, whether or not it was pulled. The repair re-sends history the portal
+-- already holds, so a childless row would be rebuilt as an empty exercise and destroy
+-- the portal's copy of that set's rep summaries and telemetry (the last surviving
+-- copy, for rows F-001's cascade stripped locally). Deliberately NOT applied to the
+-- ordinary delta push: a manual or 0-rep set has no children and must still upload.
+selectRoutineGroupsWithChildlessRows:
+SELECT DISTINCT routineSessionId FROM WorkoutSession
+WHERE profile_id = :profileId
+AND routineSessionId IN :ids
+AND deletedAt IS NULL
+AND routineSessionId IS NOT NULL
+AND NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = WorkoutSession.id)
+AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
+AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id);
+
 -- One-time routine-group repair: routine workouts whose portal copy was truncated
 -- to the last-synced set by the pre-fix per-set push. A group qualifies when it has
 -- at least two live rows and at least one already-stamped row (so it did reach the
@@ -3751,6 +3777,13 @@ updateSessionTimestampsByIds:
 UPDATE WorkoutSession SET updatedAt = :timestamp
 WHERE id IN :ids
 AND (updatedAt IS NULL OR updatedAt <= :gatherStartedAt);
+
+-- Re-arm a row the portal still rejected: clear its stamp so the next sync's ordinary
+-- delta (`updatedAt IS NULL OR updatedAt > lastSync`) picks it up again. Needed for
+-- repair-group rows, whose group the one-time repair cursor may already have walked
+-- past -- without this they have no retry path at all.
+clearSessionTimestamps:
+UPDATE WorkoutSession SET updatedAt = NULL WHERE id IN :ids;
 
 -- ==================== SMART SUGGESTIONS QUERIES ====================
 

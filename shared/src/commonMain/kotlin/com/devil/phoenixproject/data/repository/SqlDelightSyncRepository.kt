@@ -244,11 +244,17 @@ class SqlDelightSyncRepository(
         sessionIds: Collection<String>,
         timestamp: Long,
         gatherStartedAt: Long,
+        clearIds: Collection<String>,
     ): Int {
-        if (sessionIds.isEmpty()) return 0
+        if (sessionIds.isEmpty() && clearIds.isEmpty()) return 0
         return withContext(Dispatchers.IO) {
             var stamped = 0
             db.transaction {
+                if (clearIds.isNotEmpty()) {
+                    clearIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE).forEach { chunk ->
+                        queries.clearSessionTimestamps(chunk)
+                    }
+                }
                 sessionIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE).forEach { chunk ->
                     queries.updateSessionTimestampsByIds(
                         timestamp = timestamp,
@@ -1134,6 +1140,20 @@ class SqlDelightSyncRepository(
                 }
         }
         blocked
+    }
+
+    override suspend fun getRoutineGroupsWithChildlessRows(
+        routineSessionIds: Collection<String>,
+        profileId: String,
+    ): Set<String> = withContext(Dispatchers.IO) {
+        if (routineSessionIds.isEmpty()) return@withContext emptySet()
+        val childless = mutableSetOf<String>()
+        routineSessionIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE).forEach { chunk ->
+            queries.selectRoutineGroupsWithChildlessRows(profileId = profileId, ids = chunk)
+                .executeAsList()
+                .forEach { childless += it }
+        }
+        childless
     }
 
     override suspend fun getRoutineGroupRepairCandidates(

@@ -40,6 +40,7 @@ class RoutineGroupPushTest {
     private lateinit var server: FakePortalServer
     private lateinit var apiClient: PortalServerApiClient
     private lateinit var tokenStorage: PortalTokenStorage
+    private lateinit var repMetricRepository: FakeRepMetricRepository
     private lateinit var manager: SyncManager
 
     private val profileId = "active-profile"
@@ -81,12 +82,13 @@ class RoutineGroupPushTest {
         // The repair push is a one-time history rebuild; the ordinary-push tests must
         // not have it dragging extra groups into their payloads.
         tokenStorage.setRoutineGroupRepairCursor(profileId, 0L)
+        repMetricRepository = FakeRepMetricRepository()
         manager = SyncManager(
             apiClient = apiClient,
             tokenStorage = tokenStorage,
             syncRepository = syncRepository,
             gamificationRepository = FakeGamificationRepository(),
-            repMetricRepository = FakeRepMetricRepository(),
+            repMetricRepository = repMetricRepository,
             userProfileRepository = userProfileRepository,
             profilePreferenceSyncRepository = FakeProfilePreferenceSyncRepository(),
             externalActivityRepository = FakeExternalActivityRepository(),
@@ -275,8 +277,20 @@ class RoutineGroupPushTest {
                 ),
                 updatedAt = baseTime,
             )
-            insertRoutineSet("$groupId-set-1", groupId = groupId, timestamp = timestamp, stampedAt = timestamp + 10)
-            insertRoutineSet("$groupId-set-2", groupId = groupId, timestamp = timestamp + 1, stampedAt = timestamp + 11)
+            insertRoutineSet(
+                "$groupId-set-1",
+                groupId = groupId,
+                timestamp = timestamp,
+                stampedAt = timestamp + 10,
+                withLocalData = true,
+            )
+            insertRoutineSet(
+                "$groupId-set-2",
+                groupId = groupId,
+                timestamp = timestamp + 1,
+                stampedAt = timestamp + 11,
+                withLocalData = true,
+            )
             groupId
         }
         // One group carries a pulled sibling with no local data: the repair must leave
@@ -297,7 +311,13 @@ class RoutineGroupPushTest {
         val heldTimestamp = baseTime - 150_000L
         insertRoutineSet("held-remote-set", groupId = heldGroup, timestamp = heldTimestamp, stampedAt = heldTimestamp + 10)
         database.phoenixDatabaseQueries.markSessionPulled("held-remote-set")
-        insertRoutineSet("held-local-set", groupId = heldGroup, timestamp = heldTimestamp + 1, stampedAt = heldTimestamp + 11)
+        insertRoutineSet(
+            "held-local-set",
+            groupId = heldGroup,
+            timestamp = heldTimestamp + 1,
+            stampedAt = heldTimestamp + 11,
+            withLocalData = true,
+        )
 
         tokenStorage.setRoutineGroupRepairCursor(profileId, Long.MAX_VALUE)
         tokenStorage.setLastSyncTimestamp(baseTime + 100_000_000L)
@@ -385,6 +405,224 @@ class RoutineGroupPushTest {
         assertNotStamped("solo-session")
     }
 
+    // ===== Review fix round (round 2) =====
+
+    @Test
+    fun `the repair push skips a group that holds a row with no local measurements`() = runTest {
+        // Group A is the security R-1 population: a locally created row whose children
+        // are gone (F-001's cascade, or a pre-migration set saved without metrics). It
+        // is NOT in PulledWorkoutSession, so the ordinary hold guard does not see it —
+        // but the repair would rebuild it as an empty exercise and destroy the portal's
+        // copy of that set's rep summaries, which is the last surviving copy.
+        val atRisk = "repair-childless"
+        server.seedSession(
+            id = atRisk,
+            exercises = listOf(
+                FakePortalServer.StoredExercise(
+                    id = "at-risk-portal-set",
+                    name = "Squat",
+                    sets = listOf(FakePortalServer.StoredSet("portal-rep-summaries-here", 60f, 5)),
+                ),
+            ),
+            updatedAt = baseTime,
+        )
+        val atRiskTime = baseTime - 300_000L
+        insertRoutineSet("at-risk-1", groupId = atRisk, timestamp = atRiskTime, stampedAt = atRiskTime + 10, withLocalData = true)
+        insertRoutineSet("at-risk-2", groupId = atRisk, timestamp = atRiskTime + 1, stampedAt = atRiskTime + 11)
+
+        // Group B is healthy: both rows have local data, so the repair rebuilds it.
+        val healthy = "repair-healthy"
+        server.seedSession(
+            id = healthy,
+            exercises = listOf(
+                FakePortalServer.StoredExercise(
+                    id = "healthy-stale",
+                    name = "Bench",
+                    sets = listOf(FakePortalServer.StoredSet("stale", 40f, 5)),
+                ),
+            ),
+            updatedAt = baseTime,
+        )
+        val healthyTime = baseTime - 200_000L
+        insertRoutineSet("healthy-1", groupId = healthy, timestamp = healthyTime, stampedAt = healthyTime + 10, withLocalData = true)
+        insertRoutineSet("healthy-2", groupId = healthy, timestamp = healthyTime + 1, stampedAt = healthyTime + 11, withLocalData = true)
+
+        tokenStorage.setRoutineGroupRepairCursor(profileId, Long.MAX_VALUE)
+        tokenStorage.setLastSyncTimestamp(baseTime + 100_000_000L)
+        manager.sync()
+
+        val pushed = apiClient.pushPayloads.flatMap { it.sessions }.map { it.id }.toSet()
+        assertTrue(atRisk !in pushed, "a repair group holding a childless row must not be re-sent")
+        assertEquals(listOf("at-risk-portal-set"), server.exerciseIds(atRisk), "the portal keeps its last surviving copy")
+        assertEquals(listOf("healthy-1", "healthy-2"), server.exerciseIds(healthy).sorted())
+
+        // The cursor still walks past the skipped group, so a second sync does not
+        // re-attempt it (and with only these two candidates, the repair completes).
+        apiClient.pushPayloads.clear()
+        manager.sync()
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.sessions }.none { it.id == atRisk },
+            "the cursor must walk past a skipped childless group so the repair terminates",
+        )
+    }
+
+    @Test
+    fun `a standalone LWW-rejected session is not re-pushed and keeps its web note`() = runTest {
+        // A standalone session's portal id IS its local row id. The re-push used to run
+        // for these too, and `notes = freshNotes[dto.id]` would send back whatever
+        // (usually nothing) this device has under that id — erasing the website's note.
+        server.seedSession(
+            id = "solo-keep-note",
+            exercises = listOf(
+                FakePortalServer.StoredExercise(
+                    id = "solo-ex",
+                    name = "Curl",
+                    sets = listOf(FakePortalServer.StoredSet("solo-set", 20f, 10)),
+                ),
+            ),
+            notes = "typed on the website",
+            updatedAt = baseTime + 60 * 60_000L,
+            routineSessionId = null,
+        )
+        insertRoutineSet("solo-keep-note", groupId = null, timestamp = baseTime, withLocalData = true)
+
+        manager.sync()
+
+        assertTrue("solo-keep-note" in server.rejectedIds, "the LWW gate should have turned it away")
+        assertEquals(1, apiClient.pushPayloads.size, "a standalone rejection must not trigger a re-push")
+        assertEquals(
+            "typed on the website",
+            server.session("solo-keep-note")?.notes,
+            "the re-push must not null out a note the website wrote",
+        )
+        assertNotStamped("solo-keep-note")
+    }
+
+    @Test
+    fun `the LWW re-push carries personalRecords so the portal cannot derive id-less rows`() = runTest {
+        // PORTAL ROW-DUPLICATION HAZARD: an empty `personalRecords` makes the portal
+        // derive id-less rows from every `set.isPr` and INSERT them (no upsert).
+        database.phoenixDatabaseQueries.insertRecord(
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            weight = 40.0,
+            reps = 8L,
+            oneRepMax = 45.0,
+            achievedAt = baseTime,
+            workoutMode = "OldSchool",
+            prType = "MAX_WEIGHT",
+            volume = 320.0,
+            phase = "COMBINED",
+            profile_id = profileId,
+            cable_count = 2L,
+            uuid = "pr-uuid-1",
+        )
+        server.seedSession(
+            id = GROUP,
+            exercises = listOf(
+                FakePortalServer.StoredExercise(
+                    id = "stale",
+                    name = "Bench",
+                    sets = listOf(FakePortalServer.StoredSet("stale-set", 40f, 5)),
+                ),
+            ),
+            updatedAt = baseTime + 60 * 60_000L,
+        )
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+
+        manager.sync()
+
+        assertTrue(apiClient.pushPayloads.size >= 2, "the grouped rejection should have produced a re-push")
+        apiClient.pushPayloads.forEachIndexed { index, payload ->
+            assertTrue(
+                payload.personalRecords.isNotEmpty(),
+                "push #$index must carry personalRecords (empty arms the portal row-duplication hazard)",
+            )
+        }
+    }
+
+    @Test
+    fun `a still-rejected repair-group row is re-armed by clearing its stamp`() = runTest {
+        // Repair candidates are already-stamped rows. If the portal rejects them and
+        // the re-push cannot run (no server timestamp here), those stamps would
+        // otherwise keep them out of the next delta while the repair cursor has
+        // already walked past the group — permanently stranded. Clearing `updatedAt`
+        // puts them back in the ordinary delta.
+        val stranded = "repair-stranded"
+        server.seedSession(
+            id = stranded,
+            exercises = listOf(
+                FakePortalServer.StoredExercise(
+                    id = "portal-copy",
+                    name = "Squat",
+                    sets = listOf(FakePortalServer.StoredSet("portal-set", 60f, 5)),
+                ),
+            ),
+            updatedAt = baseTime + 60 * 60_000L,
+        )
+        val t = baseTime - 400_000L
+        insertRoutineSet("stranded-1", groupId = stranded, timestamp = t, stampedAt = t + 10, withLocalData = true)
+        insertRoutineSet("stranded-2", groupId = stranded, timestamp = t + 1, stampedAt = t + 11, withLocalData = true)
+
+        tokenStorage.setRoutineGroupRepairCursor(profileId, Long.MAX_VALUE)
+        tokenStorage.setLastSyncTimestamp(baseTime + 100_000_000L)
+        apiClient.stripRejectionTimestamps = true
+        manager.sync()
+
+        assertTrue(stranded in server.rejectedIds, "the LWW gate should have turned the repair away")
+        assertNotStamped("stranded-1")
+        assertNotStamped("stranded-2")
+    }
+
+    @Test
+    fun `a non-INFERNO push never loads the 50 Hz rep metrics`() = runTest {
+        // Default tier is not Inferno, so telemetry is gated off. The push still needs
+        // the scalar rep summaries, but it must not deserialize the force-curve arrays
+        // to get them (plan step 2 / acceptance line 42).
+        repMetricRepository.saveRepMetrics(
+            "set-1",
+            listOf(
+                com.devil.phoenixproject.domain.model.RepMetricData(
+                    repNumber = 1,
+                    isWarmup = false,
+                    startTimestamp = baseTime,
+                    endTimestamp = baseTime + 800,
+                    durationMs = 800,
+                    concentricDurationMs = 400,
+                    concentricPositions = floatArrayOf(0f, 100f),
+                    concentricLoadsA = floatArrayOf(20f, 20f),
+                    concentricLoadsB = floatArrayOf(20f, 20f),
+                    concentricVelocities = floatArrayOf(500f, 500f),
+                    concentricTimestamps = longArrayOf(0L, 100L),
+                    eccentricDurationMs = 400,
+                    eccentricPositions = floatArrayOf(100f, 0f),
+                    eccentricLoadsA = floatArrayOf(20f, 20f),
+                    eccentricLoadsB = floatArrayOf(20f, 20f),
+                    eccentricVelocities = floatArrayOf(-500f, -500f),
+                    eccentricTimestamps = longArrayOf(400L, 500L),
+                    peakForceA = 20f,
+                    peakForceB = 20f,
+                    avgForceConcentricA = 18f,
+                    avgForceConcentricB = 18f,
+                    avgForceEccentricA = 17f,
+                    avgForceEccentricB = 17f,
+                    peakVelocity = 600f,
+                    avgVelocityConcentric = 500f,
+                    avgVelocityEccentric = 500f,
+                    rangeOfMotionMm = 400f,
+                    peakPowerWatts = 250f,
+                    avgPowerWatts = 200f,
+                ),
+            ),
+        )
+        insertRoutineSet("set-1", groupId = null, timestamp = baseTime)
+
+        manager.sync()
+
+        assertEquals(0, repMetricRepository.getRepMetricsCalls, "non-INFERNO must not load the curve arrays")
+        assertTrue(repMetricRepository.getRepMetricSummariesCalls >= 1, "the scalar summaries must still ship")
+    }
+
     // ===== Helpers =====
 
     private fun lastSessionPayload(portalSessionId: String): PortalWorkoutSessionDto = apiClient.pushPayloads
@@ -408,12 +646,17 @@ class RoutineGroupPushTest {
      * One completed set. [stampedAt] models a row an earlier sync already pushed (and
      * therefore stamped out of the delta window). A row only counts as "pulled from
      * another device" once it is also in PulledWorkoutSession with no local children.
+     *
+     * [withLocalData] attaches a CompletedSet so the row is not "childless" — the
+     * three-table local-data predicate (MetricSample / RepMetric / CompletedSet) that
+     * both the hold guard and the repair's childless skip look at.
      */
     private fun insertRoutineSet(
         id: String,
         groupId: String? = GROUP,
         timestamp: Long,
         stampedAt: Long? = null,
+        withLocalData: Boolean = false,
     ) {
         val q = database.phoenixDatabaseQueries
         q.insertSession(
@@ -470,6 +713,23 @@ class RoutineGroupPushTest {
             rackItemsJson = "[]",
         )
         stampedAt?.let { q.updateSessionTimestamp(it, id) }
+        if (withLocalData) {
+            q.insertCompletedSet(
+                id = "cs-$id",
+                session_id = id,
+                planned_set_id = null,
+                routine_exercise_id = null,
+                set_number = 1L,
+                set_type = "STANDARD",
+                attempt_number = 1L,
+                actual_reps = 8L,
+                actual_weight_kg = 40.0,
+                logged_rpe = null,
+                is_pr = 0L,
+                completed_at = timestamp,
+                set_end_reason = "UNKNOWN",
+            )
+        }
     }
 
     private companion object {

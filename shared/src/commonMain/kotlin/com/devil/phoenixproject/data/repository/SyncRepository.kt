@@ -154,6 +154,19 @@ interface SyncRepository {
     ): Map<String, List<String>> = emptyMap()
 
     /**
+     * Repair-path companion to [getBlockedRoutineGroupSiblings]: groups holding ANY
+     * childless row (no MetricSample / RepMetric / CompletedSet), whether or not it
+     * was pulled. The repair re-sends history the portal already holds, so a childless
+     * row would be rebuilt as an empty exercise and destroy the portal's copy of that
+     * set's rep summaries. Never apply this to the ordinary delta push — a manual or
+     * 0-rep set has no children and must still upload.
+     */
+    suspend fun getRoutineGroupsWithChildlessRows(
+        routineSessionIds: Collection<String>,
+        profileId: String = "default",
+    ): Set<String> = emptySet()
+
+    /**
      * Routine groups whose portal copy the pre-fix per-set push truncated: at least two
      * live rows and at least one already-stamped row. Newest first, walked backwards
      * with [beforeTimestamp] (the previous batch's oldest group timestamp).
@@ -314,12 +327,17 @@ interface SyncRepository {
      * before the push gathered its payload) keeps its newer `updatedAt` and is left
      * for the next sync: the portal never saw that edit.
      *
+     * [clearIds] are rows the portal still rejected and that must re-enter the next
+     * sync's ordinary delta (`updatedAt IS NULL OR updatedAt > lastSync`). Cleared in
+     * the same transaction so a crash cannot leave a repair-group row half re-armed.
+     *
      * @return the number of rows actually stamped.
      */
     suspend fun updateSessionTimestamps(
         sessionIds: Collection<String>,
         timestamp: Long,
         gatherStartedAt: Long,
+        clearIds: Collection<String> = emptyList(),
     ): Int = 0
 
     /**

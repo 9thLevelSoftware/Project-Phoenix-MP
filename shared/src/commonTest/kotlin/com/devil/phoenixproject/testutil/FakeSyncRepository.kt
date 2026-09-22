@@ -235,11 +235,19 @@ class FakeSyncRepository : SyncRepository {
      */
     var sessionEditedAtById: MutableMap<String, Long> = mutableMapOf()
 
+    /** Rows whose `updatedAt` was cleared back to NULL so the next delta retries them. */
+    val clearedSessionTimestampIds: MutableSet<String> = mutableSetOf()
+
     override suspend fun updateSessionTimestamps(
         sessionIds: Collection<String>,
         timestamp: Long,
         gatherStartedAt: Long,
+        clearIds: Collection<String>,
     ): Int {
+        clearIds.distinct().forEach { id ->
+            updatedSessionTimestamps.remove(id)
+            clearedSessionTimestampIds += id
+        }
         var stamped = 0
         sessionIds.distinct().forEach { id ->
             val existing = sessionEditedAtById[id] ?: updatedSessionTimestamps[id]
