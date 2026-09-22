@@ -9046,8 +9046,13 @@ class ActiveSessionEngine(
      * Non-finite values pass through untouched: they are the validator's to
      * reject, and a clamp must not invent a plausible number for one.
      */
-    private fun commandedWeightPerCableKg(params: WorkoutParameters): Float = params.weightPerCableKg
-        .coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG)
+    private fun commandedWeightPerCableKg(params: WorkoutParameters): Float {
+        val requested = params.weightPerCableKg
+        // coerceIn would clamp an infinity to a band end, inventing exactly the
+        // plausible number this contract promises not to invent.
+        if (requested.isNaN() || requested.isInfinite()) return requested
+        return requested.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG)
+    }
 
     private fun buildExitSnapshot(
         completion: SetExecutionCompletion,
@@ -9374,6 +9379,11 @@ class ActiveSessionEngine(
                 executionGuard.markPersistenceSucceeded(sessionId)
                 exitSnapshotStore.remove(snapshot)
                 executionGuard.prunePersistedClaims(retainNewest = 32)
+                // The retained snapshot is auto-retried on the next startWorkout, so a
+                // failure raised earlier is usually resolved with no UI involved. Withdraw
+                // the offer here or the screen shows "couldn't be saved" for a set that is.
+                // compareAndSet: a DIFFERENT session's pending failure must survive.
+                coordinator._workoutSaveFailureSessionId.compareAndSet(sessionId, null)
             }
             persistenceSucceeded = true
         } catch (error: CancellationException) {

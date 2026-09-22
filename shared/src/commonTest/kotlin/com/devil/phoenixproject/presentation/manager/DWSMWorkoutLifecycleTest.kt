@@ -4835,7 +4835,16 @@ class DWSMWorkoutLifecycleTest {
         assertEquals(30f, completedSet.actualWeightKg)
         assertEquals(8, completedSet.loggedRpe)
         assertEquals(SetType.AMRAP, completedSet.setType)
-        assertFalse(completedSet.isPr)
+        // F-058: tagging is the ONLY path that creates a PR for a Just Lift session
+        // (GamificationManager skips Just Lift), and this is the first record for
+        // this exercise, so it breaks a COMBINED weight PR and must mark the set.
+        assertTrue(completedSet.isPr)
+        assertEquals(
+            listOf(session.timestamp),
+            harness.fakePRRepo.updateCalls.map { it.timestamp }.distinct(),
+            "F-021: the PR must carry the session's timestamp, or the portal push " +
+                "key \"\$exerciseId:\$timestamp\" can never match it back to the session",
+        )
 
         val summary = assertIs<WorkoutState.SetSummary>(harness.dwsm.coordinator.workoutState.value)
         assertEquals(TestFixtures.deadlift.id, summary.taggedExerciseId)

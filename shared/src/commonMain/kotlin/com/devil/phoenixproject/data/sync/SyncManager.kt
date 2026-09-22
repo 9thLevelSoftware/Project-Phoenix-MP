@@ -23,6 +23,7 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.RpgProfile
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
@@ -921,7 +922,16 @@ class SyncManager(
             val sessionKey = session.exerciseId
                 ?.takeIf { it.isNotBlank() }
                 ?.let { exerciseId -> personalRecordSessionKey(exerciseId, session.timestamp) }
-            val prRecords = sessionKey?.let { prBySessionKey[it] } ?: emptyList()
+            // Set-level PR flags mirror `CompletedSet.is_pr` exactly (F-058): the
+            // COMBINED weight/volume records only. A phase (peak-force) break is a
+            // different metric; letting it set `isPr` made the portal's legacy
+            // set-derived row land as MAX_WEIGHT/CONCENTRIC valued at the commanded
+            // load rather than the peak force. The phase records still reach the
+            // portal in full through the dedicated `personalRecords` array below.
+            val prRecords = sessionKey
+                ?.let { prBySessionKey[it] }
+                ?.filter { it.phase == WorkoutPhase.COMBINED }
+                ?: emptyList()
 
             // Resolve the real muscle group from the exercise catalog instead of
             // hardcoding "General". Sessions don't carry a muscle group, so look it
@@ -943,17 +953,28 @@ class SyncManager(
                 ),
             )
         }
-        val personalRecordDtos = recentPRs.map { pr ->
+        // Each PR is paired with the session key it belongs to so the batched push can
+        // ship it in the SAME request as its session. See `personalRecordsForBatch`.
+        val personalRecordDtosByPrKey = recentPRs.map { pr ->
             val sessionKey = personalRecordSessionKey(pr.exerciseId, pr.timestamp)
             val muscleGroup =
                 syncRepository.getExerciseMuscleGroup(pr.exerciseId, pr.exerciseName)
                     ?: "General"
-            PortalSyncAdapter.toPortalPersonalRecord(
+            sessionKey to PortalSyncAdapter.toPortalPersonalRecord(
                 record = pr,
                 sessionId = sessionIdByPrKey[sessionKey],
                 muscleGroup = muscleGroup,
             )
         }
+        val personalRecordDtos = personalRecordDtosByPrKey.map { it.second }
+        // A portal exercise id IS the local session id it was built from
+        // (PortalSyncAdapter.buildPortalExerciseWithTelemetry), which is how a batch of
+        // portal sessions is mapped back to the PR keys it carries.
+        val prKeyByLocalSessionId = sessions.mapNotNull { session ->
+            session.exerciseId
+                ?.takeIf { it.isNotBlank() }
+                ?.let { exerciseId -> session.id to personalRecordSessionKey(exerciseId, session.timestamp) }
+        }.toMap()
 
         // 4. Gather routines as full domain objects, but only ship canonical UUID IDs.
         // Local template-derived cycle routines use "cycle_routine_<uuid>" and must never
@@ -1409,8 +1430,31 @@ class SyncManager(
         } else {
             // --- Batched push for large history syncs ---
             val batches = batchPlan
+            // PORTAL ROW-DUPLICATION HAZARD: the portal derives a `personal_records`
+            // row from every `set.isPr` and INSERTs it with no id whenever a request
+            // carries no dedicated `personalRecords` (personalRecordRow.ts
+            // buildPersonalRecordRowsForPush). That derived row can never dedupe
+            // against the real one, which is keyed on its id. Holding every PR to the
+            // final batch therefore duplicates a PR whose session rides an earlier
+            // one. So a PR travels WITH its session, and only PRs that match no
+            // session in this push fall through to the final batch.
+            val prKeysCoveredByBatches = batches
+                .flatMap { batchSessions -> batchSessions.flatMap { it.exercises } }
+                .mapNotNull { prKeyByLocalSessionId[it.id] }
+                .toSet()
+            val unroutedPersonalRecords = personalRecordDtosByPrKey
+                .filterNot { (prKey, _) -> prKey in prKeysCoveredByBatches }
+                .map { it.second }
             batches.forEachIndexed { index, batchSessions ->
                 val isLastBatch = index == batches.lastIndex
+                val batchPrKeys = batchSessions
+                    .flatMap { it.exercises }
+                    .mapNotNull { prKeyByLocalSessionId[it.id] }
+                    .toSet()
+                val batchPersonalRecords = personalRecordDtosByPrKey
+                    .filter { (prKey, _) -> prKey in batchPrKeys }
+                    .map { it.second }
+                    .plus(if (isLastBatch) unroutedPersonalRecords else emptyList())
                 Logger.i("SyncManager") {
                     "Sync batch ${index + 1}/$totalBatches: ${batchSessions.size} sessions" +
                         if (isLastBatch) " (+ non-session data)" else ""
@@ -1447,7 +1491,7 @@ class SyncManager(
                     profileName = payloadProfileName,
                     allProfiles = if (isLastBatch) profileDtos else null,
                     externalActivities = if (isLastBatch) externalActivityDtos else emptyList(),
-                    personalRecords = if (isLastBatch) personalRecordDtos else emptyList(),
+                    personalRecords = batchPersonalRecords,
                 )
 
                 rejectDuplicatePushPayloadKeys(payload)?.let { return it }

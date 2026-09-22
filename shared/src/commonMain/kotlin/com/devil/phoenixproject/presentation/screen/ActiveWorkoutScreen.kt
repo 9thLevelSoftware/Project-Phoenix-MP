@@ -236,11 +236,16 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
             duration = SnackbarDuration.Indefinite,
         )
         if (action == SnackbarResult.ActionPerformed) {
+            // retryWorkoutSave drains the flow, which changes this effect's key and
+            // cancels it on the next recomposition — so the follow-up message has to
+            // outlive the effect, as the userFeedbackEvents snackbar above does.
             if (!viewModel.retryWorkoutSave(failedSessionId)) {
-                snackbarHostState.showSnackbar(
-                    message = saveRetryUnavailable,
-                    duration = SnackbarDuration.Short,
-                )
+                snackbarScope.launch {
+                    snackbarHostState.showSnackbar(
+                        message = saveRetryUnavailable,
+                        duration = SnackbarDuration.Short,
+                    )
+                }
             }
         } else {
             viewModel.dismissWorkoutSaveFailure(failedSessionId)

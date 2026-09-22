@@ -1099,11 +1099,15 @@ class SyncManagerTest {
             payload.personalRecords.map { it.workoutPhase to it.recordType }.toSet(),
             "Dedicated PR payload rows should preserve phase and PR type instead of collapsing by timestamp",
         )
-        assertEquals(
-            WorkoutPhase.CONCENTRIC.name,
-            payload.sessions.single().exercises.single().sets.single().prPhase,
-            "Legacy set-level hint should prefer the normal concentric weight PR when present",
+        val pushedSet = payload.sessions.single().exercises.single().sets.single()
+        assertFalse(
+            pushedSet.isPr,
+            "A phase (peak-force) break is a different metric from a COMBINED weight/volume PR: " +
+                "it must not flag the set, so it matches CompletedSet.is_pr on the phone (F-058) " +
+                "and cannot make the portal derive a MAX_WEIGHT row valued at the commanded load",
         )
+        assertNull(pushedSet.prPhase, "No COMBINED record, so there is no set-level hint")
+        assertNull(pushedSet.prType, "No COMBINED record, so there is no set-level hint")
     }
 
     @Test

@@ -632,10 +632,24 @@ class DefaultWorkoutSessionManager(
                 volumePRWeightPerCableKg = taggedSession.weightPerCableKg,
                 reps = completedSet.actualReps,
                 workoutMode = taggedSession.mode,
-                timestamp = currentTimeMillis(),
+                // F-021: GamificationManager skips Just Lift, so this is the ONLY
+                // path that creates a PR for a Just Lift session. It must stamp the
+                // PR with the session's own timestamp like every other completion
+                // site, or the portal push key "$exerciseId:$timestamp" can never
+                // match it back. Backdating cannot drop the row from a delta push:
+                // upsertPR leaves updatedAt NULL and selectPRsModifiedSince matches
+                // "updatedAt IS NULL".
+                timestamp = taggedSession.timestamp,
                 profileId = taggedSession.profileId,
                 cableCount = taggedSession.displayMultiplier,
-            ).onFailure { error ->
+            ).onSuccess { brokenPRs ->
+                // F-058: is_pr follows the broken COMBINED weight/volume records.
+                // updatePRsIfBetter only reports those, so a non-empty list IS the
+                // condition. Without this a Just Lift PR never marked its set.
+                if (brokenPRs.isNotEmpty()) {
+                    completedSetRepository.markAsPr(completedSet.id)
+                }
+            }.onFailure { error ->
                 Logger.e(error) { "Failed to update PRs while tagging Just Lift session $sessionId" }
             }
         } else if (completedSet != null && completedSet.actualReps > 0) {
