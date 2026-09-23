@@ -1153,6 +1153,63 @@ class PortalPushLimitsTest {
     }
 
     @Test
+    fun accountSwitchExclusionsHoldForCustomExercisesAndAssessmentsInTrailingRequests() = runTest {
+        // PR 11 x PR 10's planner: custom exercises and assessments now ride their own
+        // trailing requests. Exclusions are applied where both lists are gathered, so an
+        // excluded row reaches none of those requests.
+        authenticate()
+        tokenStorage.setPushWatermark("user-123", "default", 1_000L)
+        val customs = List(30) { i ->
+            CustomExerciseSyncDto(
+                clientId = "custom_${1_740_000_000_000L + i}",
+                name = "Custom exercise $i",
+                muscleGroup = "Chest",
+                equipment = "Cable",
+                defaultCableConfig = "DOUBLE",
+                createdAt = 1_740_000_000_000L + i,
+                updatedAt = 1_740_000_000_000L + i,
+            )
+        }
+        val assessments = List(30) { i ->
+            com.devil.phoenixproject.database.AssessmentResult(
+                id = (i + 1).toLong(),
+                exerciseId = "ex-$i",
+                estimatedOneRepMaxKg = 60.0,
+                loadVelocityData = "[]",
+                assessmentSessionId = null,
+                userOverrideKg = null,
+                createdAt = 1_740_000_000_000L + i,
+                profile_id = "default",
+            )
+        }
+        fakeSyncRepo.customExercisesToReturn = customs
+        fakeSyncRepo.assessmentsToReturn = assessments
+        val excludedCustoms = customs.filterIndexed { i, _ -> i % 2 == 0 }.map { it.clientId }
+        val excludedAssessments = assessments.filterIndexed { i, _ -> i % 2 == 0 }.map { it.id.toString() }
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.CUSTOM_EXERCISE, excludedCustoms)
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.ASSESSMENT, excludedAssessments)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        val single = PushPlanner.byteSize(
+            PortalSyncPayload(deviceId = "d", platform = "p", lastSync = 0L, customExercises = listOf(customs[0])),
+        )
+
+        withByteCap(single * 5) {
+            assertTrue(createManager().sync().isSuccess)
+            assertTrue(fakeApi.pushPayloads.size > 2, "the push must be split (saw ${fakeApi.pushPayloads.size})")
+
+            val sentCustoms = fakeApi.pushPayloads.flatMap { it.customExercises }.map { it.clientId }
+            val sentAssessments = fakeApi.pushPayloads.flatMap { it.assessments }.map { it.id }
+            assertTrue(sentCustoms.none { it in excludedCustoms }, "excluded custom exercise planned: $sentCustoms")
+            assertTrue(sentAssessments.none { it in excludedAssessments }, "excluded assessment planned: $sentAssessments")
+            assertEquals((customs.map { it.clientId } - excludedCustoms.toSet()).toSet(), sentCustoms.toSet())
+            assertEquals(
+                (assessments.map { it.id.toString() } - excludedAssessments.toSet()).toSet(),
+                sentAssessments.toSet(),
+            )
+        }
+    }
+
+    @Test
     fun aSingleItemTooLargeForAnyRequestIsSkippedAndDoesNotWedgeSync() = runTest {
         authenticate()
         tokenStorage.setPushWatermark("user-123", "default", 1_000L)

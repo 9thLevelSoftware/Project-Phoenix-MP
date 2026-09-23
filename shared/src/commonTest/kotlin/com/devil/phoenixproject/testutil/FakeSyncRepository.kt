@@ -428,7 +428,10 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<PhaseStatistics> = emptyList()
 
-    override suspend fun getAllAssessments(profileId: String): List<AssessmentResult> = emptyList()
+    var assessmentsToReturn: List<AssessmentResult> = emptyList()
+
+    override suspend fun getAllAssessments(profileId: String): List<AssessmentResult> =
+        assessmentsToReturn.filter { it.profile_id == profileId }
 
     override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String) {
         // no-op for tests
