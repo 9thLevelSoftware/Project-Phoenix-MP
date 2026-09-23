@@ -445,8 +445,12 @@ class SqlDelightUserProfileRepository(
                 // Cycles deleted earlier while the profile was unbound kept a NULL account;
                 // getPendingCycleDeletions matches the account, so bind any still-pending one
                 // to this owner or it is never pushed before the profile is finalized.
+                // The same holds for workouts deleted earlier while unbound: their rows are gone,
+                // so only the retained NULL-owner WorkoutDeletion can still reach the portal.
+                // Routine and PR tombstones carry no owner; they are gathered per profile.
                 ownerUserId?.let { owner ->
                     queries.bindPendingCycleDeletionsForProfile(accountId = owner, profileId = id)
+                    queries.bindPendingWorkoutDeletionsForProfile(ownerUserId = owner, profileId = id)
                 }
                 queries.selectAllRecords(id).executeAsList().forEach { record ->
                     queries.softDeletePRById(

@@ -592,6 +592,35 @@ class ProfileDeletionPropagationTest {
     }
 
     @Test
+    fun aWorkoutDeletedWhileTheProfileWasUnboundIsTombstonedBeforeFinalizing() = runTest {
+        val p = createProfileWithData()
+        // A workout already on the portal under P (synced by an older, unbinding build) and
+        // deleted locally while P was unbound: rows gone, tombstone kept with no owner.
+        val earlier = "abababab-0000-4000-8000-000000000003"
+        api.liveRowsByProfile.getOrPut(p) { mutableSetOf() } += earlier
+        database.phoenixDatabaseQueries.insertWorkoutDeletion(
+            mutationId = "m-unbound",
+            ownerUserId = null,
+            profileId = p,
+            scope = "WORKOUT",
+            portalSessionId = earlier,
+            componentSessionId = null,
+            deletedAt = baseTime,
+            source = "LOCAL",
+        )
+
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+        assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
+
+        assertTrue(
+            api.pushPayloads.filter { it.profileId == p }.flatMap { it.workoutDeletions }.any { it.portalSessionId == earlier },
+            "the earlier workout tombstone must ride P's push",
+        )
+        assertTrue(api.reScopedToDefault.isEmpty(), "rows re-scoped to Default: ${api.reScopedToDefault}")
+        assertNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull())
+    }
+
+    @Test
     fun aPermanentDeleteIsRefusedDuringALiveWorkout() = runTest {
         val p = createProfileWithData()
 
