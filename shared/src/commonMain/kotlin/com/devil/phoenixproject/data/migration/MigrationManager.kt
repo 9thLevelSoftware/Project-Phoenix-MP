@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.migration
 import app.cash.sqldelight.db.QueryResult
 import app.cash.sqldelight.db.SqlDriver
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
 import com.devil.phoenixproject.data.preferences.LegacyProfilePreferencesReader
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesCodec
@@ -219,6 +220,9 @@ class MigrationManager(
     private suspend fun runMigrations() {
         refreshProfilesIfAvailable()
         runNonCriticalPersonalRecordRepair()
+        // Data-gated, so a no-op in the steady state; catches legacy catalogue ids that
+        // arrived while the app was last running (pull, restore) before any UI entry point.
+        LegacyCatalogueRemapper.healAfterBulkWrite(database, source = "startup")
     }
 
     private fun runRequiredDataRepairs() {

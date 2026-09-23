@@ -266,6 +266,47 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `restoring a pre-remap backup re-points legacy catalogue ids onto their replacements`() = runTest {
+        database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        val backup = BackupData(
+            version = 1,
+            exportedAt = "2026-02-21T12:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-pre-remap",
+                        timestamp = 1_700_000_000_000,
+                        mode = "Old School",
+                        targetReps = 5,
+                        weightPerCableKg = 40f,
+                        progressionKg = 0f,
+                        duration = 0L,
+                        totalReps = 5,
+                        warmupReps = 0,
+                        workingReps = 5,
+                        isJustLift = false,
+                        stopAtTop = false,
+                        exerciseId = "ZZ92N8QsBdp6HCh3",
+                        exerciseName = "Bench Press",
+                        routineSessionId = null,
+                        routineName = null,
+                        routineId = null,
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(backupManager.importFromJson(testJson.encodeToString(backup)).isSuccess)
+
+        assertEquals(
+            "Barbell_Bench_Press_-_Medium_Grip",
+            database.phoenixDatabaseQueries.selectSessionById("session-pre-remap").executeAsOne().exerciseId,
+        )
+    }
+
+    @Test
     fun `importFromJson restores routine name from routineId when present`() = runTest {
         val backup = BackupData(
             version = 1,
