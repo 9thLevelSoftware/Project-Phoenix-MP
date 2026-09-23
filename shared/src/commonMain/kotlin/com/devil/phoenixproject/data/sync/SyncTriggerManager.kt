@@ -292,6 +292,8 @@ class SyncTriggerManager(
         val user = syncManager.currentUser.value
         if (user?.isPremium == false && syncManager.lastSyncTime.value > 0) {
             Logger.d { "SyncTrigger: Skipping sync - not premium" }
+            // Show "Sync paused — subscription required" instead of a stale "Last synced".
+            syncManager.markPausedNotPremium()
             return
         }
 

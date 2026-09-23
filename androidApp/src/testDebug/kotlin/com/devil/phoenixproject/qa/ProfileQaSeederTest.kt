@@ -287,6 +287,10 @@ class ProfileQaSeederTest {
                 deletedProfiles += firstArg<String>()
                 true
             }
+            coEvery { profiles.deleteActiveProfilePermanently(any(), any()) } coAnswers {
+                deletedProfiles += firstArg<String>()
+                true
+            }
             coEvery { profiles.updateCore(any(), any()) } coAnswers { core[firstArg()] = secondArg() }
             coEvery { profiles.updateRack(any(), any()) } coAnswers { rack[firstArg()] = secondArg() }
             coEvery { profiles.updateWorkout(any(), any()) } coAnswers { workout[firstArg()] = secondArg() }
