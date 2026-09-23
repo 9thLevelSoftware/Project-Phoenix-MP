@@ -545,7 +545,7 @@ class MigrationManagerTest {
         )
         val targetVolume = queries.selectAllRecords("default").executeAsList().single()
         queries.updatePRServerId("target-volume-server", targetVolume.id)
-        queries.updatePRTimestamp(10, listOf(targetVolume.id))
+        queries.updatePRTimestamp(10, listOf(targetVolume.id), Long.MAX_VALUE)
         queries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "",
@@ -564,7 +564,7 @@ class MigrationManagerTest {
         val sourceVolume = queries.selectAllRecords("default").executeAsList()
             .single { it.workoutMode == "OldSchool" }
         queries.updatePRServerId("source-volume-server", sourceVolume.id)
-        queries.updatePRTimestamp(20, listOf(sourceVolume.id))
+        queries.updatePRTimestamp(20, listOf(sourceVolume.id), Long.MAX_VALUE)
 
         queries.insertRecord(
             exerciseId = "bench",
@@ -650,7 +650,7 @@ class MigrationManagerTest {
         )
         val targetVolume = queries.selectAllRecords("target-profile").executeAsList().single()
         queries.updatePRServerId("target-volume-server", targetVolume.id)
-        queries.updatePRTimestamp(10, listOf(targetVolume.id))
+        queries.updatePRTimestamp(10, listOf(targetVolume.id), Long.MAX_VALUE)
         queries.insertRecord(
             exerciseId = "deadlift",
             exerciseName = "",
@@ -668,7 +668,7 @@ class MigrationManagerTest {
         )
         val sourceVolume = queries.selectAllRecords("orphan-profile").executeAsList().single()
         queries.updatePRServerId("source-volume-server", sourceVolume.id)
-        queries.updatePRTimestamp(20, listOf(sourceVolume.id))
+        queries.updatePRTimestamp(20, listOf(sourceVolume.id), Long.MAX_VALUE)
 
         queries.insertRecord(
             exerciseId = "bench",

@@ -728,6 +728,90 @@ class RoutineGroupPushTest {
         )
     }
 
+    // ===== codex #856 P2: accepted PRs/routines are stamped at the watermark =====
+
+    @Test
+    fun `a pushed PR and a pushed untimestamped routine are not re-sent by the next sync`() = runTest {
+        // The ack stamp must not be newer than the push watermark (gatherStartedAt), or the
+        // next gather's `updatedAt > watermark` re-selects and re-stamps them forever.
+        insertLivePr(PR_UUID)
+        insertUntimestampedRoutine(ACCEPTED_ROUTINE)
+
+        manager.sync()
+        assertTrue(apiClient.pushPayloads.flatMap { it.personalRecords }.any { it.id == PR_UUID })
+        assertTrue(apiClient.pushPayloads.flatMap { it.routines }.any { it.id == ACCEPTED_ROUTINE })
+
+        apiClient.pushPayloads.clear()
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.personalRecords }.none { it.id == PR_UUID },
+            "an already-accepted PR must not be pushed again",
+        )
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.routines }.none { it.id == ACCEPTED_ROUTINE },
+            "an already-accepted routine must not be pushed again",
+        )
+    }
+
+    @Test
+    fun `a PR edited between the gather and the ack keeps its newer stamp and is re-sent`() = runTest {
+        insertLivePr(PR_UUID)
+        val editTime = com.devil.phoenixproject.domain.model.currentTimeMillis() + 60_000
+        val prRowId = database.phoenixDatabaseQueries
+            .selectPRsModifiedSince(0L, profileId).executeAsList().single { it.uuid == PR_UUID }.id
+        apiClient.onPush = {
+            // A local edit that lands while the push is in flight.
+            database.phoenixDatabaseQueries.updatePRTimestamp(editTime, listOf(prRowId), Long.MAX_VALUE)
+        }
+
+        manager.sync()
+
+        val stamp = database.phoenixDatabaseQueries
+            .selectPRsModifiedSince(0L, profileId).executeAsList().single { it.uuid == PR_UUID }.updatedAt
+        assertEquals(editTime, stamp, "the ack stamp must not overwrite an edit the portal never saw")
+
+        apiClient.pushPayloads.clear()
+        manager.sync()
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.personalRecords }.any { it.id == PR_UUID },
+            "the edited PR must come back in the next delta",
+        )
+    }
+
+    private fun insertLivePr(uuid: String) {
+        database.phoenixDatabaseQueries.insertRecord(
+            exerciseId = "bench",
+            exerciseName = "Bench Press",
+            weight = 40.0,
+            reps = 8L,
+            oneRepMax = 45.0,
+            achievedAt = baseTime,
+            workoutMode = "OldSchool",
+            prType = "MAX_WEIGHT",
+            volume = 320.0,
+            phase = "COMBINED",
+            profile_id = profileId,
+            cable_count = 2L,
+            uuid = uuid,
+        )
+    }
+
+    /** Backup-restored / legacy shape: `updatedAt` NULL. */
+    private fun insertUntimestampedRoutine(id: String) {
+        database.phoenixDatabaseQueries.insertRoutine(
+            id = id,
+            name = "Split",
+            description = "",
+            createdAt = baseTime,
+            lastUsed = null,
+            useCount = 0L,
+            profile_id = profileId,
+            groupId = null,
+            deletedAt = null,
+        )
+    }
+
     // ===== Review fix round: G-2 / S-1 / T-3 =====
 
     @Test
@@ -1003,6 +1087,8 @@ class RoutineGroupPushTest {
 
     private companion object {
         const val GROUP = "routine-session-1"
+        const val PR_UUID = "77777777-7777-4777-8777-777777777777"
+        const val ACCEPTED_ROUTINE = "88888888-8888-4888-8888-888888888888"
 
         /** Canonical UUID: SyncManager strips non-UUID routine ids from every push. */
         const val LATE_ROUTINE = "44444444-4444-4444-8444-444444444444"

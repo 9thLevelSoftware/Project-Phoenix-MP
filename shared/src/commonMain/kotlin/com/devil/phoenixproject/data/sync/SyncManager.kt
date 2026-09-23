@@ -2448,11 +2448,29 @@ class SyncManager(
             .map { it.id }
             .distinct()
         if (pushedPrIds.isNotEmpty()) {
-            val prStampTime = currentTimeMillis()
-            syncRepository.updatePersonalRecordTimestamp(pushedPrIds, prStampTime)
+            // Stamp with gatherStartedAt, the value that becomes this profile's push
+            // watermark: the next gather selects `updatedAt > watermark`, so a `now` stamp
+            // would re-select and re-stamp the same PR on every sync (codex #856 P2). The
+            // query skips rows edited after the gather, so those are re-sent.
+            syncRepository.updatePersonalRecordTimestamp(
+                prIds = pushedPrIds,
+                timestamp = gatherStartedAt,
+                gatherStartedAt = gatherStartedAt,
+            )
             Logger.d("SyncManager") {
-                "Stamped ${pushedPrIds.size} pushed personal records with updatedAt=$prStampTime"
+                "Stamped ${pushedPrIds.size} pushed personal records with updatedAt=$gatherStartedAt"
             }
+        }
+
+        // Routines with no updatedAt (backup-restored / legacy) match `updatedAt IS NULL`
+        // on every gather. Stamp the ones this push delivered and the portal did not turn
+        // away (LWW-rejected, or skipped because it deleted them) so they stop re-sending.
+        val unacceptedRoutineIds = collectedRejections.flatMapTo(mutableSetOf()) { rejections ->
+            rejections.routines.map { it.id }
+        } + finalResponse.skippedDeleted.routines
+        val deliveredRoutineIds = routineDtos.map { it.id }.filter { it !in unacceptedRoutineIds }
+        if (deliveredRoutineIds.isNotEmpty()) {
+            syncRepository.stampPushedRoutinesWithoutTimestamp(deliveredRoutineIds, gatherStartedAt)
         }
 
         // Walk the repair cursor past the groups this push handled — including ones it

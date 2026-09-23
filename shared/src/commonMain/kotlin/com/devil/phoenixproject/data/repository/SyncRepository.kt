@@ -405,7 +405,14 @@ interface SyncRepository {
      * portal are re-shipped on every sync because the push path only
      * stamped WorkoutSession rows.
      */
-    suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long)
+    suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long, gatherStartedAt: Long)
+
+    /**
+     * Stamp pushed routines that have no `updatedAt` with [timestamp] (the push's
+     * gatherStartedAt), so `updatedAt IS NULL` stops re-selecting them every sync.
+     * Routines that already carry an edit time are left alone.
+     */
+    suspend fun stampPushedRoutinesWithoutTimestamp(routineIds: List<String>, timestamp: Long)
 
     // === ID Mapping (after push) ===
 

@@ -275,10 +275,16 @@ class FakeSyncRepository : SyncRepository {
     var updatePersonalRecordTimestampCalls: MutableList<List<Long>> = mutableListOf()
     var lastUpdatePersonalRecordTimestamp: Long? = null
 
-    override suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long) {
+    override suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long, gatherStartedAt: Long) {
         updatePersonalRecordTimestampCalls += prIds
         lastUpdatePersonalRecordTimestamp = timestamp
         prIds.forEach { id -> updatedPersonalRecordTimestamps[id] = timestamp }
+    }
+
+    val stampedRoutineIdCalls: MutableList<List<String>> = mutableListOf()
+
+    override suspend fun stampPushedRoutinesWithoutTimestamp(routineIds: List<String>, timestamp: Long) {
+        stampedRoutineIdCalls += routineIds
     }
 
     // === Parity Sync: Entity ID lists (simulate local database content) ===
