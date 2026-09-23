@@ -1222,6 +1222,12 @@ class SyncManager(
         val telemetryByPortalSessionId: Map<String, List<PortalRepTelemetryDto>>,
         /** Portal session ids the portal explicitly acknowledged as applied, across EVERY batch. */
         val acknowledgedPortalSessionIds: Set<String>,
+        /**
+         * The gather's generation snapshot. A parent settled later (the LWW re-push, or an
+         * unchanged-content stamp) is acknowledged against THIS snapshot, so a row edited
+         * after the gather keeps a newer generation and stays dirty.
+         */
+        val workoutSnapshot: WorkoutSyncSnapshot,
         /** Rejections from EVERY batch, not just the last response. */
         val rejections: SyncRejectionsDto,
         val rePushContext: RePushContext,
@@ -2259,6 +2265,7 @@ class SyncManager(
                     session.id to setIds.flatMap { setId -> telemetryBySetId[setId] ?: emptyList() }
                 },
                 acknowledgedPortalSessionIds = acknowledgedPortalSessionIds,
+                workoutSnapshot = workoutSnapshot,
                 rejections = mergeRejections(collectedRejections),
                 rePushContext = RePushContext(
                     deviceId = deviceId,
@@ -2392,6 +2399,9 @@ class SyncManager(
                     timestamp = outcome.gatherStartedAt,
                     gatherStartedAt = outcome.gatherStartedAt,
                 )
+                // The gather is generation-based: without the snapshot ack these parents
+                // stay dirty and are pushed (and rejected) again on every sync.
+                syncRepository.acknowledgeWorkoutSnapshot(outcome.workoutSnapshot, unchangedContent.toSet())
                 Logger.i("SyncManager") {
                     "LWW re-push: ${unchangedRows.size} rejected session row(s) had unchanged content " +
                         "and were stamped instead of re-sent"
@@ -2491,6 +2501,15 @@ class SyncManager(
                     sessionContentFingerprint(dto, outcome.telemetryByPortalSessionId[dto.id].orEmpty()),
                 )
             }
+        // Parents the retry landed are acknowledged against the gather snapshot, exactly
+        // like the first push's ack. Otherwise local_sync_generation stays ahead of
+        // synced_sync_generation and the next sync re-pushes the group before pulling,
+        // which can overwrite a web note written after this retry (codex #856 P1). Rows
+        // edited after the gather carry a newer generation and stay dirty.
+        val retryAccepted = retryAcknowledged - stillRejected
+        if (retryAccepted.isNotEmpty()) {
+            syncRepository.acknowledgeWorkoutSnapshot(outcome.workoutSnapshot, retryAccepted)
+        }
         // Only rows still rejected (or whose batch failed) get re-armed; accepted ones
         // are stamped in the same transaction.
         val stillRejectedRepairRows = repairRowIdsFor(outcome, stillRejected)
