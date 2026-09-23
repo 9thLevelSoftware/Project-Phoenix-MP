@@ -282,9 +282,8 @@ class ProfileDeletionPropagationTest {
     }
 
     @Test
-    fun resolvingTheAccountSwitchAlsoMovesAPendingProfileSoTheDeletionCompletes() = runTest {
-        profiles.reconcileActiveProfileContext()
-        val p = profiles.createAndActivateProfile("Guest", 1).id
+    fun aPendingProfileOfAnotherAccountWaitsForThatAccountAndDoesNotLoopTheSwitchDialog() = runTest {
+        val p = createProfileWithData()
         database.phoenixDatabaseQueries.linkProfileToSupabase("owner-a", baseTime, p)
         profiles.refreshProfiles()
         assertTrue(profiles.deleteActiveProfilePermanently(p))
@@ -293,8 +292,58 @@ class ProfileDeletionPropagationTest {
 
         assertTrue(manager.resolveAccountMismatch(AccountSwitchChoice.UPLOAD_NEVER_SYNCED).isSuccess)
         assertTrue(manager.sync().isSuccess, "the choice must end the pause: ${manager.syncState.value}")
+        assertEquals(listOf(p), profiles.pendingDeletionProfiles.value.map { it.id }, "waits for its own account")
+        assertEquals("owner-a", database.phoenixDatabaseQueries.getProfileById(p).executeAsOne().supabase_user_id)
+        assertTrue(api.pushPayloads.none { it.profileId == p }, "another account must not push or finalize it")
 
-        assertNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull(), "the deletion completes")
+        // Owner A signs in again: A's own sync pushes the tombstones and finalizes.
+        signIn("owner-a")
+        manager.sync()
+        assertTrue(manager.resolveAccountMismatch(AccountSwitchChoice.UPLOAD_NEVER_SYNCED).isSuccess)
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
+        assertTrue(
+            api.pushPayloads.filter { it.profileId == p }.flatMap { it.workoutDeletions }.any { it.portalSessionId == sessionP },
+            "A's workout tombstone goes out under A",
+        )
+        assertNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull())
+    }
+
+    @Test
+    fun aSignedOutDeleteIsNotFinalizedByADifferentAccountThatSignsInFirst() = runTest {
+        val p = createProfileWithData()
+        assertTrue(manager.sync().isSuccess, "seed sync failed: ${manager.syncState.value}")
+        tokenStorage.clearAuth()
+        Thread.sleep(5)
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+
+        signIn("owner-b")
+        manager.sync()
+        assertTrue(manager.resolveAccountMismatch(AccountSwitchChoice.UPLOAD_NEVER_SYNCED).isSuccess)
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
+
+        assertTrue(api.pushPayloads.none { it.profileId == p }, "owner-b must not push or finalize user-123's deletion")
+        assertEquals(listOf(p), profiles.pendingDeletionProfiles.value.map { it.id })
+    }
+
+    @Test
+    fun anIdLessLegacyPrTombstoneThePortalDroppedKeepsTheProfilePending() = runTest {
+        val p = createProfileWithData()
+        insertRecord(profileId = p, exerciseId = "deadlift", uuid = null, weight = 120.0)
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+        api.dropIdLessPrTombstones = true
+
+        manager.sync()
+        assertTrue(
+            api.pushPayloads.filter { it.profileId == p }.flatMap { it.personalRecords }.any { it.id == null && it.deletedAt != null },
+            "the legacy tombstone goes out without an id",
+        )
+        assertEquals(listOf(p), profiles.pendingDeletionProfiles.value.map { it.id }, "kept while it was dropped")
+
+        api.dropIdLessPrTombstones = false
+        assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
+        assertNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull(), "finalized once written")
     }
 
     @Test
@@ -713,7 +762,7 @@ class ProfileDeletionPropagationTest {
         return count
     }
 
-    private fun signIn() {
+    private fun signIn(asUser: String = userId) {
         tokenStorage.saveGoTrueAuth(
             GoTrueAuthResponse(
                 accessToken = "token",
@@ -721,7 +770,7 @@ class ProfileDeletionPropagationTest {
                 expiresIn = 3600,
                 expiresAt = currentTimeMillis() / 1000 + 3600,
                 refreshToken = "refresh",
-                user = GoTrueUser(id = userId, email = "a@b.c"),
+                user = GoTrueUser(id = asUser, email = "$asUser@b.c"),
             ),
         )
     }
@@ -846,6 +895,8 @@ class ProfileDeletionPropagationTest {
         val liveRowsByProfile = mutableMapOf<String, MutableSet<String>>()
         /** Stored dedicated PR rows: id -> (LWW clock, is tombstone). Models the portal's PR gate. */
         val storedPrs = mutableMapOf<String, Pair<Long, Boolean>>()
+        /** Drops id-less (legacy, uuid-less) PR tombstones, e.g. to an identity collision. */
+        var dropIdLessPrTombstones = false
         val reScopedToDefault = mutableListOf<String>()
 
         override suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> {
@@ -878,7 +929,11 @@ class ProfileDeletionPropagationTest {
             // that pass are written and counted in `personalRecordsInserted`.
             var prsWritten = 0
             payload.personalRecords.forEach { pr ->
-                val id = pr.id ?: return@forEach
+                val id = pr.id
+                if (id == null) {
+                    if (!(pr.deletedAt != null && dropIdLessPrTombstones)) prsWritten++
+                    return@forEach
+                }
                 val incoming = kotlin.time.Instant.parse(pr.updatedAt ?: pr.deletedAt ?: pr.achievedAt)
                     .toEpochMilliseconds()
                 val deleted = pr.deletedAt != null

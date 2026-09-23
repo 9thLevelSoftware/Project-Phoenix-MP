@@ -691,7 +691,13 @@ class SyncManager(
             lastSyncedPortalUserLabel = tokenStorage.getLastSyncedPortalUserLabel(),
             profileOwners = (
                 userProfileRepository.allProfiles.value +
+                    // A hidden pending-deletion profile keeps its original owner until that
+                    // account pushes its tombstones. It is evidence of a previous account only
+                    // while the device has no last-synced account; afterwards it must not re-open
+                    // the dialog on every sync.
                     userProfileRepository.pendingDeletionProfiles.value
+                        .takeIf { tokenStorage.getLastSyncedPortalUserId() == null }
+                        .orEmpty()
                 ).mapNotNull { profile ->
                 profile.supabaseUserId?.takeIf { it.isNotBlank() }?.let { owner -> profile.id to owner }
             },
@@ -723,11 +729,9 @@ class SyncManager(
         }
         try {
             withProfileMutationBarrier {
-                // Pending-deletion profiles (PR 20) are hidden but still count as owners in
-                // detection; leaving them on the old account would re-detect the mismatch
-                // on every sync and the switch (and the deletion) could never complete.
-                val profiles = userProfileRepository.allProfiles.value +
-                    userProfileRepository.pendingDeletionProfiles.value
+                // Pending-deletion profiles (PR 20) are left out: they keep their original
+                // owner, whose account alone can push their tombstones and finalize them.
+                val profiles = userProfileRepository.allProfiles.value
                 // Exclusions first, relink second: if the relink fails part-way, the profiles
                 // and the last-synced id still name the old account, so the pause gate
                 // re-detects the mismatch and the (idempotent) choice can be applied again.
@@ -781,8 +785,7 @@ class SyncManager(
             ?: return@withLock Result.failure(IllegalStateException("Not authenticated"))
         try {
             withProfileMutationBarrier {
-                val profiles = userProfileRepository.allProfiles.value +
-                    userProfileRepository.pendingDeletionProfiles.value
+                val profiles = userProfileRepository.allProfiles.value
                 syncRepository.recordAccountSwitchExclusions(
                     portalUserId = userId,
                     profileIds = profiles.map { it.id },
@@ -1190,12 +1193,12 @@ class SyncManager(
             // that passed its LWW gate. Every PR row a pending profile sends is a tombstone
             // (re-stamped just before this push, so each should pass); fewer written than sent
             // means the portal kept a live copy, and finalizing would re-scope it to Default.
-            val prTombstonesDropped = pushOutcome.personalRecordTombstoneIdsSent.size >
+            val prTombstonesDropped = pushOutcome.personalRecordTombstonesSent >
                 pushOutcome.personalRecordsWritten
             if (prTombstonesDropped) {
                 Logger.w("SyncManager") {
                     "Pending-deletion profile ${profile.id}: portal wrote ${pushOutcome.personalRecordsWritten} of " +
-                        "${pushOutcome.personalRecordTombstoneIdsSent.size} PR tombstone(s); kept pending for the next sync"
+                        "${pushOutcome.personalRecordTombstonesSent} PR tombstone(s); kept pending for the next sync"
                 }
                 return ProfileSyncOutcome(profileId = profile.id, pushSucceeded = true, pullSucceeded = true)
             }
@@ -1585,8 +1588,8 @@ class SyncManager(
         /** Rejections from EVERY batch, not just the last response. */
         val rejections: SyncRejectionsDto,
         val rePushContext: RePushContext,
-        /** Ids of dedicated PR tombstones this push carried, across every request (PR 20). */
-        val personalRecordTombstoneIdsSent: Set<String> = emptySet(),
+        /** PR tombstones this push carried across every request, id-less legacy rows included (PR 20). */
+        val personalRecordTombstonesSent: Int = 0,
         /** Sum of the portal's `personalRecordsInserted` across every request. */
         val personalRecordsWritten: Int = 0,
     )
@@ -2463,7 +2466,7 @@ class SyncManager(
         // Rejections from EVERY request. Reading only the last response's list would
         // silently stamp rows an earlier batch's rejection covered.
         val collectedRejections = mutableListOf<SyncRejectionsDto>()
-        val personalRecordTombstoneIdsSent = linkedSetOf<String>()
+        var personalRecordTombstonesSent = 0
         var personalRecordsWritten = 0
         val skippedDeletedRoutines = linkedSetOf<String>()
         val skippedDeletedCycles = linkedSetOf<String>()
@@ -2520,8 +2523,9 @@ class SyncManager(
             val response = result.getOrThrow()
             lastResponse = response
             collectedRejections += response.rejections
-            payload.personalRecords.filter { it.deletedAt != null }
-                .mapNotNullTo(personalRecordTombstoneIdsSent) { it.id }
+            // Counted, not collected by id: a legacy PR without a uuid is sent with a null id.
+            // A pending profile's PR rows ride disjoint trailing requests, so a count is exact.
+            personalRecordTombstonesSent += payload.personalRecords.count { it.deletedAt != null }
             personalRecordsWritten += response.personalRecordsInserted
             skippedDeletedRoutines += response.skippedDeleted.routines
             skippedDeletedCycles += response.skippedDeleted.cycles
@@ -2696,7 +2700,7 @@ class SyncManager(
                 acknowledgedPortalSessionIds = acknowledgedPortalSessionIds,
                 workoutSnapshot = workoutSnapshot,
                 rejections = mergeRejections(collectedRejections),
-                personalRecordTombstoneIdsSent = personalRecordTombstoneIdsSent,
+                personalRecordTombstonesSent = personalRecordTombstonesSent,
                 personalRecordsWritten = personalRecordsWritten,
                 rePushContext = RePushContext(
                     deviceId = deviceId,

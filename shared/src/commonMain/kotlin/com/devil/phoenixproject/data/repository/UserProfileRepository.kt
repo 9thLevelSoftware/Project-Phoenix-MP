@@ -431,6 +431,11 @@ class SqlDelightUserProfileRepository(
                 // of the profile survives locally for recovery discovery or backups to find.
                 queries.purgeProfileOwnedRows(id)
                 queries.setActiveProfile(DEFAULT_PROFILE_ID)
+                if (propagate && sourceProfile.supabase_user_id.isNullOrBlank()) {
+                    // Bind the hidden profile to the account its tombstones belong to: only that
+                    // account may push and finalize it, even if another one signs in first.
+                    queries.linkProfileToSupabase(ownerUserId, deletedAt, id)
+                }
                 if (!propagate) {
                     // Nothing to propagate: the row goes now. Preferences and
                     // training-max baselines CASCADE with it (carryover: do not flip).
