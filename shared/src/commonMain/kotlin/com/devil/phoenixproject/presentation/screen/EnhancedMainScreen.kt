@@ -577,10 +577,14 @@ fun EnhancedMainScreen(
                 ProfileAddDialog(
                     existingProfileCount = profiles.size,
                     isSubmitting = switchingInFlight,
-                    errorMessage = createFailedMessage.takeIf {
-                        switcherState.error == ProfileOverlayError.CREATE_FAILED
+                    errorMessage = when (switcherState.error) {
+                        ProfileOverlayError.CREATE_FAILED -> createFailedMessage
+                        ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT -> switchBlockedDuringWorkoutMessage
+                        else -> null
                     },
-                    onConfirm = profileSwitcherViewModel::createAndActivateProfile,
+                    onConfirm = { name, colorIndex ->
+                        profileSwitcherViewModel.createAndActivateProfile(name, colorIndex, workoutState)
+                    },
                     onDismiss = profileSwitcherViewModel::dismissAddDialog,
                 )
             }

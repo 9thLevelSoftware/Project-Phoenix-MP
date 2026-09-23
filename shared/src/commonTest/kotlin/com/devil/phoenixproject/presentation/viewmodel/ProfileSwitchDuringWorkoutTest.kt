@@ -40,6 +40,24 @@ class ProfileSwitchDuringWorkoutTest {
         assertTrue(profiles.setActiveProfileRequests.isEmpty(), "the repository must not be asked to switch")
     }
 
+    /**
+     * GitHub #854 (codex 4078341739): Add Profile activates the new profile, so
+     * it is a switch too and must not bypass the mid-workout refusal.
+     */
+    @Test
+    fun createAndActivateIsRefusedWithAVisibleMessageWhileASetIsActive() {
+        val (viewModel, profiles) = viewModelWithOpenSwitcher()
+        viewModel.openAddDialog()
+
+        viewModel.createAndActivateProfile("New", 3, WorkoutState.Active)
+
+        val state = viewModel.uiState.value
+        assertEquals(ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT, state.error)
+        assertTrue(state.showAddDialog, "the add dialog must stay open so the user sees the refusal")
+        assertNull(state.operation, "no create operation may start")
+        assertTrue(profiles.createAndActivateRequests.isEmpty(), "the repository must not be asked to create")
+    }
+
     @Test
     fun switchIsRefusedForEveryNonIdleWorkoutState() {
         listOf(

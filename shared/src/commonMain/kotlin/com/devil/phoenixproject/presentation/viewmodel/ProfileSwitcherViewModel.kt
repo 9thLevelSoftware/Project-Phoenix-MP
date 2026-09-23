@@ -127,11 +127,20 @@ class ProfileSwitcherViewModel(
         }
     }
 
-    fun createAndActivateProfile(name: String, colorIndex: Int) {
+    /**
+     * Creating a profile also ACTIVATES it, so it is a profile switch and gets the
+     * same FP-6 mid-workout refusal as [switchProfile]: the add dialog stays open
+     * carrying [ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT].
+     */
+    fun createAndActivateProfile(name: String, colorIndex: Int, workoutState: WorkoutState) {
         val trimmedName = name.trim()
         if (trimmedName.isEmpty()) return
         if (profiles.activeProfileContext.value !is ActiveProfileContext.Ready) return
         if (!_uiState.value.showAddDialog) return
+        if (workoutState != WorkoutState.Idle) {
+            _uiState.update { it.copy(error = ProfileOverlayError.SWITCH_BLOCKED_DURING_WORKOUT) }
+            return
+        }
         val operation = beginOperation(RootProfileOperationKind.CREATE) ?: return
         launchOwned(operation) {
             try {

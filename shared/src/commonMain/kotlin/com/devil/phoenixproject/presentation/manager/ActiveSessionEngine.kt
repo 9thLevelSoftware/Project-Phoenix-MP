@@ -10462,10 +10462,12 @@ class ActiveSessionEngine(
                 }
 
                 // FP-6: attribute this save to the profile that OWNED the set, never to
-                // whichever profile happens to be active when Stop is pressed. `lease` is
-                // always null in this branch — a non-null lease always produces a
-                // completion, which takes the snapshot path above — so the owning profile
-                // comes from the execution context installed by startWorkout(), the same
+                // whichever profile happens to be active when Stop is pressed. The outer
+                // `lease` parameter of this function is always null in this branch — a
+                // non-null lease always produces a completion, which takes the snapshot
+                // path above. `executionContext?.lease` below is a DIFFERENT lease (the one
+                // startWorkout() installed) and is the first source, so do not delete it
+                // as dead code. The owning profile comes from that execution context, the same
                 // start that set the coordinator state being written here; then from the
                 // active runtime document (routine rest transitions publish one); and only
                 // as a last resort from the live active profile, which is all this path

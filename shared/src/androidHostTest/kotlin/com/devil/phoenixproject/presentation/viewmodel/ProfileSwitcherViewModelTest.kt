@@ -213,7 +213,7 @@ class ProfileSwitcherViewModelTest {
         val viewModel = createViewModel()
         openAddDialog(viewModel)
 
-        viewModel.createAndActivateProfile("  New  ", 3)
+        viewModel.createAndActivateProfile("  New  ", 3, WorkoutState.Idle)
         assertEquals(
             RootProfileOperation(1L, RootProfileOperationKind.CREATE),
             viewModel.uiState.value.operation,
@@ -235,7 +235,7 @@ class ProfileSwitcherViewModelTest {
         val viewModel = createViewModel()
         openAddDialog(viewModel)
 
-        viewModel.createAndActivateProfile("New", 3)
+        viewModel.createAndActivateProfile("New", 3, WorkoutState.Idle)
         assertEquals(
             RootProfileOperation(1L, RootProfileOperationKind.CREATE),
             viewModel.uiState.value.operation,
@@ -262,7 +262,7 @@ class ProfileSwitcherViewModelTest {
         val viewModel = createViewModel()
         openAddDialog(viewModel)
 
-        viewModel.createAndActivateProfile("New", 3)
+        viewModel.createAndActivateProfile("New", 3, WorkoutState.Idle)
         assertEquals(
             RootProfileOperation(1L, RootProfileOperationKind.CREATE),
             viewModel.uiState.value.operation,
@@ -286,8 +286,8 @@ class ProfileSwitcherViewModelTest {
         val viewModel = createViewModel()
         openAddDialog(viewModel)
 
-        viewModel.createAndActivateProfile("First", 2)
-        viewModel.createAndActivateProfile("Second", 6)
+        viewModel.createAndActivateProfile("First", 2, WorkoutState.Idle)
+        viewModel.createAndActivateProfile("Second", 6, WorkoutState.Idle)
         assertEquals(
             RootProfileOperation(1L, RootProfileOperationKind.CREATE),
             viewModel.uiState.value.operation,
@@ -308,7 +308,7 @@ class ProfileSwitcherViewModelTest {
         profiles.beforeCreateAndActivateProfile = { _, _ -> awaitCancellation() }
         val viewModel = createViewModel()
         openAddDialog(viewModel)
-        viewModel.createAndActivateProfile("New", 3)
+        viewModel.createAndActivateProfile("New", 3, WorkoutState.Idle)
         runCurrent()
         assertEquals(
             listOf(FakeUserProfileRepository.CreateAndActivateRequest("New", 3)),

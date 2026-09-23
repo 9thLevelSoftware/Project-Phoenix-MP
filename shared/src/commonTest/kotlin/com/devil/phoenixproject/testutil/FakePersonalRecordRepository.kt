@@ -87,7 +87,8 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
             it.exerciseId == exerciseId && it.profileId == profileId &&
                 it.prType == PRType.MAX_WEIGHT && it.phase == WorkoutPhase.COMBINED
         }
-        .maxByOrNull { it.volume }
+        // Production ranks the max-weight PR by weight, not volume.
+        .maxByOrNull { it.weightPerCableKg }
 
     override fun getAllPRs(profileId: String): Flow<List<PersonalRecord>> = _recordsFlow.map { list ->
         list.filter { it.profileId == profileId }
@@ -99,7 +100,7 @@ class FakePersonalRecordRepository : PersonalRecordRepository {
                 it.prType == PRType.MAX_WEIGHT && it.phase == WorkoutPhase.COMBINED
         }
             .groupBy { it.exerciseId }
-            .mapNotNull { (_, records) -> records.maxByOrNull { it.volume } }
+            .mapNotNull { (_, records) -> records.maxByOrNull { it.weightPerCableKg } }
     }
 
     override suspend fun deletePR(prId: Long, profileId: String) {
