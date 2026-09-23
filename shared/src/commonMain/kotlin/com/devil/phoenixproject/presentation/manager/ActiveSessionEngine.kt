@@ -8659,11 +8659,22 @@ class ActiveSessionEngine(
                                 )
                             } else {
                                 // History stores the programmed cable weight together with rack
-                                // metadata. Apply only the command-resolution delta so that an
-                                // ordinary rack adjustment retains that representation while a
-                                // firmware-limit clamp records the equivalent load that ran.
-                                val executedWeight = warmupOverrideParams.weightPerCableKg +
-                                    (commandParams.weightPerCableKg - bleParams.weightPerCableKg)
+                                // metadata. The only rack delta on the machine weight is the
+                                // counterweight, so the programmed figure that actually ran is
+                                // the command plus that counterweight, capped at the request.
+                                // (`programmed + (command - ble)` leaked an out-of-range request
+                                // whenever the rack step had already clamped `ble` to 110 kg:
+                                // a 500 kg request on a 100 kg V-Form recorded 490 kg.)
+                                val counterweightPerCableKg =
+                                    bleParams.counterweightKg / rackPhysicalCableCount.coerceIn(1, 2)
+                                val programmedWeight = warmupOverrideParams.weightPerCableKg
+                                // A non-finite request stays as-is for the validator/recorder
+                                // contract (commandedWeightPerCableKg never invents a number).
+                                val executedWeight = if (programmedWeight.isNaN() || programmedWeight.isInfinite()) {
+                                    programmedWeight
+                                } else {
+                                    minOf(programmedWeight, commandParams.weightPerCableKg + counterweightPerCableKg)
+                                }
                                 context.copy(
                                     completionFacts = context.completionFacts.copy(
                                         executedWeightPerCableKg = executedWeight,
@@ -9029,6 +9040,51 @@ class ActiveSessionEngine(
         return facts.complete(lease, reason, actualReps)
     }
 
+    /**
+     * The per-cable load a completed set is recorded with: what the machine was
+     * **commanded** to hold, not what the user asked for.
+     *
+     * `_workoutParameters` carries the request. A request above the hardware
+     * maximum is refused by `WorkoutCommandValidator` before the set can start,
+     * so the machine can never have held it and a completed set must not claim
+     * it did. Everything a set records about its load reads this one value —
+     * `WorkoutSession.weightPerCableKg` (which is History, the portal's
+     * rep-based `estimatedOneRepMaxKg` and, for a non-Echo set, the
+     * velocity-point load axis), `CompletedSet.actualWeightKg` and the
+     * MAX_VOLUME PR — so they can never disagree, and a tighter command-side
+     * bound has one place to land.
+     *
+     * Non-finite values pass through untouched: they are the validator's to
+     * reject, and a clamp must not invent a plausible number for one.
+     */
+    private fun commandedWeightPerCableKg(params: WorkoutParameters): Float {
+        val requested = params.weightPerCableKg
+        // coerceIn would clamp an infinity to a band end, inventing exactly the
+        // plausible number this contract promises not to invent.
+        if (requested.isNaN() || requested.isInfinite()) return requested
+        return requested.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG)
+    }
+
+    /**
+     * The per-cable load a completed set records.
+     *
+     * When a frame reached the trainer, the start path froze what it ran as
+     * `executedWeightPerCableKg`, already resolved against the CONNECTED model's
+     * ceiling by `CommandLimits`. That value is recorded verbatim. Re-clamping it
+     * here would corrupt two legitimate cases:
+     * - a counterweight rack, where the programmed figure (machine command plus
+     *   counterweight) can exceed 110 kg while the machine holds far less, and
+     * - Echo, whose packets carry a level rather than a weight, so the frozen
+     *   start metadata is the only honest figure.
+     *
+     * Only when nothing was frozen (no frame ever reached the trainer) does the
+     * requested figure fall back through [commandedWeightPerCableKg]'s band.
+     */
+    private fun recordedWeightPerCableKg(
+        params: WorkoutParameters,
+        executedWeightPerCableKg: Float?,
+    ): Float = executedWeightPerCableKg ?: commandedWeightPerCableKg(params)
+
     private fun buildExitSnapshot(
         completion: SetExecutionCompletion,
         terminalPath: TerminalPath,
@@ -9036,6 +9092,13 @@ class ActiveSessionEngine(
         val lease = completion.lease
         val params = coordinator._workoutParameters.value
         val executedParams = params.withExecutedCommand(completion)
+        // What the machine was COMMANDED with, which is what a completed set
+        // records. Read once, because all three consumers share it: the session
+        // row (History, the portal's rep-based `estimatedOneRepMaxKg` and — for
+        // a non-Echo set, where `workingAvgWeightKg` is null — the
+        // velocity-point load axis), the CompletedSet, and the MAX_VOLUME PR.
+        // The frozen executed figure when a frame ran; the banded request otherwise.
+        val recordedWeightPerCableKg = recordedWeightPerCableKg(params, completion.executedWeightPerCableKg)
         val repCount = coordinator._repCount.value
         val metrics = coordinator.collectedMetrics.snapshot()
         val exerciseIndex = coordinator._currentExerciseIndex.value
@@ -9079,8 +9142,8 @@ class ActiveSessionEngine(
         val summary = calculateSetSummaryMetrics(
             metrics = metrics,
             repCount = repCount.workingReps,
-            fallbackWeightKg = executedParams.weightPerCableKg,
-            configuredWeightKgPerCable = executedParams.weightPerCableKg,
+            fallbackWeightKg = recordedWeightPerCableKg,
+            configuredWeightKgPerCable = recordedWeightPerCableKg,
             isEchoMode = params.isEchoMode,
             warmupRepsCount = repCount.warmupReps,
             workingRepsCount = repCount.workingReps,
@@ -9109,16 +9172,18 @@ class ActiveSessionEngine(
             coordinator.workoutStartTime
         }
         val savedWeightKg = if (lease.isBodyweight) {
-            summary.heaviestLiftKgPerCable.takeIf { it > 0f } ?: params.weightPerCableKg
+            summary.heaviestLiftKgPerCable.takeIf { it > 0f } ?: recordedWeightPerCableKg
         } else {
-            executedParams.weightPerCableKg
+            recordedWeightPerCableKg
         }
         val session = WorkoutSession(
             id = lease.sessionId,
             timestamp = coordinator.workoutStartTime,
             mode = params.programMode.displayName,
             reps = params.reps,
-            weightPerCableKg = executedParams.weightPerCableKg,
+            weightPerCableKg = recordedWeightPerCableKg,
+            // The program frame carries progression verbatim (BlePacketFactory
+            // 0x5C) and nothing bounds it, so the request IS the command here.
             progressionKg = executedParams.progressionRegressionKg,
             duration = (wallClockMillisProvider() - effectiveStart).coerceAtLeast(0L),
             totalReps = repCount.totalReps,
@@ -9304,27 +9369,17 @@ class ActiveSessionEngine(
         }
         var persistenceSucceeded = false
         try {
-            if (workoutRepository.getSession(sessionId) == null) {
-                workoutRepository.saveSession(snapshot.session)
-            }
-            if (snapshot.metrics.isNotEmpty()) {
-                workoutRepository.saveMetrics(sessionId, snapshot.metrics)
-            }
-            snapshot.completedSet?.let { completedSet ->
-                val alreadySaved = completedSetRepository.getCompletedSets(sessionId)
-                    .any { it.id == completedSet.id }
-                if (!alreadySaved) {
-                    completedSetRepository.saveCompletedSet(completedSet)
-                }
-            }
-            repMetricRepository.deleteRepMetrics(sessionId)
-            if (snapshot.repMetrics.isNotEmpty()) {
-                repMetricRepository.saveRepMetrics(sessionId, snapshot.repMetrics)
-            }
-            biomechanicsRepository.deleteRepBiomechanics(sessionId)
-            if (snapshot.biomechanicsRepResults.isNotEmpty()) {
-                biomechanicsRepository.saveRepBiomechanics(sessionId, snapshot.biomechanicsRepResults)
-            }
+            // F-012: the session, its samples, its CompletedSet and both rep
+            // tables land in ONE transaction. Nothing below this line can leave
+            // a half-written set behind, and a sync that runs during the
+            // completion can no longer push a session without its sets.
+            workoutRepository.commitCompletedSet(
+                session = snapshot.session,
+                metrics = snapshot.metrics,
+                completedSet = snapshot.completedSet,
+                repMetrics = snapshot.repMetrics,
+                repBiomechanics = snapshot.biomechanicsRepResults,
+            )
             snapshot.singleExerciseDefaults?.let { defaults ->
                 settingsManager.mutateWorkout(snapshot.lease.profileId) { workoutPreferences ->
                     workoutPreferences.copy(
@@ -9337,39 +9392,29 @@ class ActiveSessionEngine(
             // execution gate as the synchronous completion write.
             persistCapturedJustLiftDefaultsSnapshot(snapshot)
 
-            val postSave = snapshot.postSaveInput
-            val hasPR = gamificationManager.processPostSaveEvents(
-                exerciseId = postSave.exerciseId,
-                workingReps = postSave.workingReps,
-                achievedWeightKg = postSave.achievedWeightKg,
-                volumeWeightKg = postSave.volumeWeightKg,
-                programMode = postSave.programMode,
-                isJustLift = postSave.isJustLift,
-                isEchoMode = postSave.isEchoMode,
-                peakConcentricForceKg = postSave.peakConcentricForceKg,
-                peakEccentricForceKg = postSave.peakEccentricForceKg,
-                profileId = postSave.profileId,
-                sessionMcvMmS = postSave.sessionMcvMmS,
-            )
-            if (hasPR) {
-                snapshot.completedSet?.let { completedSetRepository.markAsPr(it.id) }
+            // F-012/F-040: everything from here on is bookkeeping ON TOP of a
+            // workout that is already durable, so its failures are logged and
+            // never reported as "couldn't be saved". Cancellation still
+            // propagates: it reopens the claim and retains the snapshot, which
+            // is how a torn-down scope resumes this work on the next start.
+            try {
+                runPostCommitEffects(snapshot)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Logger.e(error) { "Post-save processing failed for session $sessionId (the workout itself is saved)" }
             }
-            if (snapshot.shouldExportIndividualHealthSession) {
-                enqueueWorkoutHealthPush(snapshot.session)
-            }
-            if (snapshot.shouldExportIndividualBackup) {
-                scope.launch {
-                    dataBackupManager?.exportSession(sessionId)
-                        ?.onFailure { error -> Logger.w(error) { "Auto-backup failed for session $sessionId" } }
-                }
-            }
-            updateCycleProgressFromSnapshot(snapshot)
-            scope.launch { syncTriggerManager?.onWorkoutCompleted() }
+
             currentCoroutineContext().ensureActive()
             withContext(NonCancellable) {
                 executionGuard.markPersistenceSucceeded(sessionId)
                 exitSnapshotStore.remove(snapshot)
                 executionGuard.prunePersistedClaims(retainNewest = 32)
+                // The retained snapshot is auto-retried on the next startWorkout, so a
+                // failure raised earlier is usually resolved with no UI involved. Withdraw
+                // the offer here or the screen shows "couldn't be saved" for a set that is.
+                // compareAndSet: a DIFFERENT session's pending failure must survive.
+                coordinator.withdrawWorkoutSaveFailure(sessionId)
             }
             persistenceSucceeded = true
         } catch (error: CancellationException) {
@@ -9378,7 +9423,11 @@ class ActiveSessionEngine(
         } catch (error: Exception) {
             executionGuard.markPersistenceFailed(sessionId)
             Logger.e(error) { "Failed to persist workout snapshot for session $sessionId" }
-            coordinator._userFeedbackEvents.tryEmit("Workout data couldn't be saved. Please try again.")
+            // F-040: raise a failure the UI can attach a working Retry to.
+            // compareAndSet, like the success path: an earlier session's still-pending
+            // offer must not be overwritten. This session stays retained, so the next
+            // set start auto-retries it even while the screen names the earlier one.
+            coordinator.offerWorkoutSaveFailure(sessionId)
         }
         if (!persistenceSucceeded) return
         try {
@@ -9413,6 +9462,73 @@ class ActiveSessionEngine(
             )
         } ?: return
         failAcceptedRetryClosed(authority.first, authority.second, authority.third)
+    }
+
+    /**
+     * PR evaluation, gamification, cycle progress, health export, auto-backup
+     * and the sync trigger — everything that reacts to a set that is ALREADY
+     * committed. Separated from the commit so that a failure in here cannot
+     * tell the user their workout was not saved (F-040).
+     */
+    private suspend fun runPostCommitEffects(snapshot: WorkoutExitSnapshot) {
+        val sessionId = snapshot.session.id
+        val postSave = snapshot.postSaveInput
+        val postSaveResult = gamificationManager.processPostSaveEvents(
+            exerciseId = postSave.exerciseId,
+            workingReps = postSave.workingReps,
+            achievedWeightKg = postSave.achievedWeightKg,
+            volumeWeightKg = postSave.volumeWeightKg,
+            programMode = postSave.programMode,
+            isJustLift = postSave.isJustLift,
+            isEchoMode = postSave.isEchoMode,
+            peakConcentricForceKg = postSave.peakConcentricForceKg,
+            peakEccentricForceKg = postSave.peakEccentricForceKg,
+            profileId = postSave.profileId,
+            sessionMcvMmS = postSave.sessionMcvMmS,
+            // F-021: the PR must carry the session's own timestamp, or the
+            // portal push can never match it back to this session.
+            achievedAtMs = snapshot.session.timestamp,
+        )
+        // F-058: the flag follows the broken COMBINED weight/volume records, not
+        // whether a celebration was shown, so turning gamification off no longer
+        // erases History's PR marker. Phase (peak-force) breaks are a different
+        // metric and deliberately do not set it.
+        if (postSaveResult.brokenCombinedWeightOrVolumePRs.isNotEmpty()) {
+            snapshot.completedSet?.let { completedSet ->
+                isolatedPostCommitEffect(sessionId, "mark PR") { completedSetRepository.markAsPr(completedSet.id) }
+            }
+        }
+        if (snapshot.shouldExportIndividualHealthSession) {
+            isolatedPostCommitEffect(sessionId, "health export") { enqueueWorkoutHealthPush(snapshot.session) }
+        }
+        if (snapshot.shouldExportIndividualBackup) {
+            scope.launch {
+                dataBackupManager?.exportSession(sessionId)
+                    ?.onFailure { error -> Logger.w(error) { "Auto-backup failed for session $sessionId" } }
+            }
+        }
+        isolatedPostCommitEffect(sessionId, "cycle progress") { updateCycleProgressFromSnapshot(snapshot) }
+        scope.launch { syncTriggerManager?.onWorkoutCompleted() }
+    }
+
+    /**
+     * One post-commit effect failing must not abandon the ones after it: a
+     * transient markAsPr error used to skip health export, cycle progress and
+     * the sync trigger for an already-saved set. Cancellation still propagates
+     * so a torn-down scope reopens the claim and retains the snapshot.
+     */
+    private inline fun isolatedPostCommitEffect(
+        sessionId: String,
+        name: String,
+        effect: () -> Unit,
+    ) {
+        try {
+            effect()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Logger.e(error) { "Post-save $name failed for session $sessionId (the workout itself is saved)" }
+        }
     }
 
     private suspend fun updateCycleProgressFromSnapshot(snapshot: WorkoutExitSnapshot) {
@@ -10355,6 +10471,10 @@ class ActiveSessionEngine(
 
                 // Re-read params after stop-time state updates.
                 val params = coordinator._workoutParameters.value
+                val recordedWeightPerCableKg = recordedWeightPerCableKg(
+                    params,
+                    legacyContext?.completionFacts?.executedWeightPerCableKg,
+                )
                 val legacyLogicalSetKey = legacyContext?.completionFacts?.routineIdentity?.logicalSetKey
                     ?: coordinator.currentRoutineSessionId?.let { routineSessionId ->
                         currentExercise?.let { exercise ->
@@ -10375,8 +10495,8 @@ class ActiveSessionEngine(
                 val summary = calculateSetSummaryMetrics(
                     metrics = metrics,
                     repCount = repCount.totalReps,
-                    fallbackWeightKg = params.weightPerCableKg,
-                    configuredWeightKgPerCable = params.weightPerCableKg,
+                    fallbackWeightKg = recordedWeightPerCableKg,
+                    configuredWeightKgPerCable = recordedWeightPerCableKg,
                     isEchoMode = params.isEchoMode,
                     warmupRepsCount = repCount.warmupReps,
                     workingRepsCount = repCount.workingReps,
@@ -10399,7 +10519,7 @@ class ActiveSessionEngine(
                     timestamp = coordinator.workoutStartTime,
                     mode = params.programMode.displayName,
                     reps = params.reps,
-                    weightPerCableKg = params.weightPerCableKg,
+                    weightPerCableKg = recordedWeightPerCableKg,
                     totalReps = repCount.totalReps,
                     workingReps = repCount.workingReps,
                     warmupReps = repCount.warmupReps,
@@ -10469,7 +10589,7 @@ class ActiveSessionEngine(
                         setNumber = setIndex,
                         setType = legacyLogicalSetKey?.setKind ?: if (params.isAMRAP) SetType.AMRAP else SetType.STANDARD,
                         actualReps = repCount.workingReps,
-                        actualWeightKg = params.weightPerCableKg,
+                        actualWeightKg = recordedWeightPerCableKg,
                         loggedRpe = coordinator._currentSetRpe.value,
                         isPr = false,
                         completedAt = currentTimeMillis(),
@@ -10481,11 +10601,11 @@ class ActiveSessionEngine(
                     Logger.d("Saved CompletedSet (manual stop): set #$setIndex, ${repCount.workingReps} reps${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
                 }
 
-                val hasPR = gamificationManager.processPostSaveEvents(
+                val postSaveResult = gamificationManager.processPostSaveEvents(
                     exerciseId = params.selectedExerciseId,
                     workingReps = repCount.workingReps,
                     achievedWeightKg = summary.heaviestLiftKgPerCable,
-                    volumeWeightKg = params.weightPerCableKg,
+                    volumeWeightKg = recordedWeightPerCableKg,
                     programMode = params.programMode,
                     isJustLift = isJustLift,
                     isEchoMode = params.isEchoMode,
@@ -10493,6 +10613,8 @@ class ActiveSessionEngine(
                     peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB),
                     profileId = userProfileRepository.activeProfile.value?.id ?: "default",
                     sessionMcvMmS = session.avgMcvMmS,
+                    // F-021: same session/PR timestamp as the snapshot path.
+                    achievedAtMs = session.timestamp,
                 )
 
                 // Reset biomechanics engine after manual-stop — mirrors handleSetCompletion (~line 3821).
@@ -10500,7 +10622,9 @@ class ActiveSessionEngine(
                 // nothing below this point reads bioSummary or calls getSetSummary().
                 lease?.let(::resetBiomechanicsContext)
 
-                if (hasPR && completedSetId != null) {
+                // F-058: driven by the broken COMBINED records, not by whether a
+                // celebration was shown.
+                if (postSaveResult.brokenCombinedWeightOrVolumePRs.isNotEmpty() && completedSetId != null) {
                     completedSetRepository.markAsPr(completedSetId)
                     Logger.d("Marked CompletedSet $completedSetId as PR (manual stop)")
                 }
@@ -11010,12 +11134,13 @@ class ActiveSessionEngine(
                 }
             }
         val bodyweightVariant = coordinator.bodyweightCompletionVariantOverride
+        val recordedWeightPerCableKg = recordedWeightPerCableKg(params, completion.executedWeightPerCableKg)
 
         val summary = calculateSetSummaryMetrics(
             metrics = metricsSnapshot,
             repCount = working,
-            fallbackWeightKg = executedParams.weightPerCableKg,
-            configuredWeightKgPerCable = executedParams.weightPerCableKg,
+            fallbackWeightKg = recordedWeightPerCableKg,
+            configuredWeightKgPerCable = recordedWeightPerCableKg,
             isEchoMode = params.isEchoMode,
             warmupRepsCount = warmup,
             workingRepsCount = working,
@@ -11028,9 +11153,9 @@ class ActiveSessionEngine(
             applyBodyweightVolume(baseSummary, currentExercise, bodyWeightKg, bodyweightVariant)
         }
         val savedWeightKg = if (isBodyweightExercise(currentExercise)) {
-            summary.heaviestLiftKgPerCable.takeIf { it > 0f } ?: params.weightPerCableKg
+            summary.heaviestLiftKgPerCable.takeIf { it > 0f } ?: recordedWeightPerCableKg
         } else {
-            executedParams.weightPerCableKg
+            recordedWeightPerCableKg
         }
         val rackAdjustment = coordinator._currentRackLoadAdjustment.value
 
@@ -11044,7 +11169,7 @@ class ActiveSessionEngine(
             timestamp = coordinator.workoutStartTime,
             mode = params.programMode.displayName,
             reps = params.reps,
-            weightPerCableKg = executedParams.weightPerCableKg,
+            weightPerCableKg = recordedWeightPerCableKg,
             progressionKg = executedParams.progressionRegressionKg,
             duration = duration,
             totalReps = working,
@@ -11146,7 +11271,7 @@ class ActiveSessionEngine(
             Logger.d("Saved CompletedSet: set #$setIndex, $working reps @ ${savedWeightKg}kg${if (matchedPlannedSetId != null) " (linked to PlannedSet)" else ""}")
         }
 
-        val hasPR = gamificationManager.processPostSaveEvents(
+        val postSaveResult = gamificationManager.processPostSaveEvents(
             exerciseId = params.selectedExerciseId,
             workingReps = working,
             achievedWeightKg = summary.heaviestLiftKgPerCable,
@@ -11158,9 +11283,12 @@ class ActiveSessionEngine(
             peakEccentricForceKg = maxOf(summary.peakForceEccentricA, summary.peakForceEccentricB),
             profileId = userProfileRepository.activeProfile.value?.id ?: "default",
             sessionMcvMmS = session.avgMcvMmS,
+            // F-021: the PR carries the session's own timestamp.
+            achievedAtMs = session.timestamp,
         )
 
-        if (hasPR && completedSetId != null) {
+        // F-058: driven by the broken COMBINED records, not by a celebration.
+        if (postSaveResult.brokenCombinedWeightOrVolumePRs.isNotEmpty() && completedSetId != null) {
             completedSetRepository.markAsPr(completedSetId)
             Logger.d("Marked CompletedSet $completedSetId as PR")
         }

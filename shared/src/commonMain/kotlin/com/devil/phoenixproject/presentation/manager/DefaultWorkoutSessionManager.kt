@@ -42,6 +42,7 @@ import com.devil.phoenixproject.domain.model.SessionBodyweightState
 import com.devil.phoenixproject.domain.model.SetEndReason
 import com.devil.phoenixproject.domain.model.Superset
 import com.devil.phoenixproject.domain.model.WorkoutParameters
+import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.WorkoutState
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.model.elapsedRealtimeMillis
@@ -632,13 +633,44 @@ class DefaultWorkoutSessionManager(
                 volumePRWeightPerCableKg = taggedSession.weightPerCableKg,
                 reps = completedSet.actualReps,
                 workoutMode = taggedSession.mode,
-                timestamp = currentTimeMillis(),
+                // F-021: GamificationManager skips Just Lift, so this is the ONLY
+                // path that creates a PR for a Just Lift session. It must stamp the
+                // PR with the session's own timestamp like every other completion
+                // site, or the portal push key "$exerciseId:$timestamp" can never
+                // match it back. Backdating cannot drop the row from a delta push:
+                // upsertPR leaves updatedAt NULL and selectPRsModifiedSince matches
+                // "updatedAt IS NULL".
+                timestamp = taggedSession.timestamp,
                 profileId = taggedSession.profileId,
                 cableCount = taggedSession.displayMultiplier,
             ).onFailure { error ->
                 Logger.e(error) { "Failed to update PRs while tagging Just Lift session $sessionId" }
             }
+            // F-058: is_pr follows the COMBINED weight/volume records. It is DERIVED from
+            // the stored records (one set by this session's own timestamp), not from
+            // updatePRsIfBetter's "broken" list: after a failed mark, a retried tag finds
+            // the PR already stored, reports nothing broken, and would never repair the
+            // flag (codex 4081634368). Isolated like the post-commit effects (8e6ca7d3):
+            // a failed flag write must not skip the sync trigger and feedback below.
+            try {
+                if (!completedSet.isPr && isSessionOwnPr(taggedSession, exerciseId)) {
+                    completedSetRepository.markAsPr(completedSet.id)
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Logger.e(error) { "Failed to mark the PR flag while tagging Just Lift session $sessionId" }
+            }
         } else if (completedSet != null && completedSet.actualReps > 0) {
+            // codex 4080812739: a retag skips PR evaluation for the new exercise, so a
+            // flag set by the previous exercise's PR is now false. Clear it, or history
+            // shows a PR for this exercise with no record behind it. The previous
+            // exercise's PR row itself stays: it was genuinely achieved, and sync links
+            // a PR to its session by exerciseId + timestamp, which no longer matches
+            // this retagged session, so the portal row loses its session link.
+            if (isRetaggingDifferentExercise && completedSet.isPr) {
+                completedSetRepository.clearPr(completedSet.id)
+            }
             Logger.i {
                 "Skipping PR update for Just Lift session $sessionId retag from $previousExerciseId to $exerciseId"
             }
@@ -655,6 +687,13 @@ class DefaultWorkoutSessionManager(
         syncTriggerManager?.onWorkoutCompleted()
         coordinator._userFeedbackEvents.emit("Tagged ${exercise.name}")
     }
+
+    /** True when a stored COMBINED weight or volume PR was set by [session] itself. */
+    private suspend fun isSessionOwnPr(session: WorkoutSession, exerciseId: String): Boolean =
+        listOfNotNull(
+            personalRecordRepository.getWeightPR(exerciseId, session.mode, session.profileId),
+            personalRecordRepository.getVolumePR(exerciseId, session.mode, session.profileId),
+        ).any { it.timestamp == session.timestamp }
 
     fun clearCycleDayCompletionEvent() {
         coordinator._cycleDayCompletionEvent.value = null

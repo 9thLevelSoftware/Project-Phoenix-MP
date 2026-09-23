@@ -69,6 +69,7 @@ import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.components.exercisepicker.CompletedExerciseIdsState
 import com.devil.phoenixproject.presentation.components.exercisepicker.completedExerciseIdsFromHistory
+import com.devil.phoenixproject.presentation.manager.WorkoutSaveFailureOffer
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.manager.GamificationManager
@@ -724,6 +725,35 @@ class MainViewModel(
     val commandLimitNotice: StateFlow<String?> get() = workoutSessionManager.coordinator.commandLimitNotice
 
     fun consumeCommandLimitNotice() = workoutSessionManager.coordinator.consumeCommandLimitNotice()
+
+    /**
+     * F-040: the session id of a completion whose commit failed, or null. The
+     * screen that shows it offers Retry and then drains it, so the offer is
+     * made exactly once even though the failure can outlive the screen.
+     */
+    val workoutSaveFailureSessionId: StateFlow<String?> get() = workoutSessionManager.coordinator.workoutSaveFailureSessionId
+
+    /**
+     * The offer as a distinct value per publication, so a Retry that fails again is
+     * shown again. The Retry snackbar keys on this.
+     */
+    val workoutSaveFailureOffer: StateFlow<WorkoutSaveFailureOffer?> get() = workoutSessionManager.coordinator.workoutSaveFailureOffer
+
+    /**
+     * Retry the failed commit of [sessionId]. Returns false when the retained
+     * snapshot is gone or another attempt already owns it — there is then
+     * nothing left to retry. The offer is dropped either way.
+     */
+    fun retryWorkoutSave(sessionId: String): Boolean {
+        dismissWorkoutSaveFailure(sessionId)
+        return workoutSessionManager.activeSessionEngine.retryWorkoutExitPersistence(sessionId)
+    }
+
+    /** Drop the save-failure offer for [sessionId] without retrying. */
+    fun dismissWorkoutSaveFailure(sessionId: String) {
+        workoutSessionManager.coordinator.withdrawWorkoutSaveFailure(sessionId)
+    }
+
     val routines: StateFlow<List<Routine>> get() = workoutSessionManager.coordinator.routines
     val routineGroups: StateFlow<List<RoutineGroup>> get() = workoutSessionManager.coordinator.routineGroups
     val loadedRoutine: StateFlow<Routine?> get() = workoutSessionManager.coordinator.loadedRoutine
