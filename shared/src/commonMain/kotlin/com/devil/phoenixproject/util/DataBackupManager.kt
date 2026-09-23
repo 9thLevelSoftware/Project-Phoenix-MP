@@ -785,8 +785,17 @@ abstract class BaseDataBackupManager(
         // must not turn the row into a destructive re-push. Without that proof (v6 file, pending
         // row) restored children reopen the parent so the portal receives them.
         val matchedCleanSessionIds = mutableListOf<String>()
-        // Routine groups this restore inserted rows into, per profile; held out of the repair.
+        // Routine groups the restore could make repair-eligible, per profile; held out of the
+        // repair. A group qualifies once any of its rows was inserted, or an existing row gained
+        // a restored MetricSample / CompletedSet (the repair's non-childless test); restored
+        // rows never carry the rep summaries a repair re-push would need.
         val restoredRoutineGroupIds = mutableMapOf<String, MutableSet<String>>()
+        // Matched existing sessions in a routine group: session id -> (profile id, group id).
+        val matchedSessionGroups = mutableMapOf<String, Pair<String, String>>()
+        fun holdGroupOfRestoredChild(sessionId: String) {
+            val (profileId, groupId) = matchedSessionGroups[sessionId] ?: return
+            restoredRoutineGroupIds.getOrPut(profileId) { linkedSetOf() } += groupId
+        }
         fun applyRestoredSessionSyncMarkers() {
             if (restoredSessionSyncMarkers.isEmpty() && matchedCleanSessionIds.isEmpty()) return
             database.transaction {
@@ -1022,6 +1031,7 @@ abstract class BaseDataBackupManager(
                         status = metric.status.toLong(),
                     )
                     queries.markWorkoutComponentDirty(metric.sessionId)
+                    holdGroupOfRestoredChild(metric.sessionId)
                     metricsImported++
                     return
                 }
@@ -1052,6 +1062,7 @@ abstract class BaseDataBackupManager(
                     status = metric.status.toLong(),
                 )
                 queries.markWorkoutComponentDirty(metric.sessionId)
+                holdGroupOfRestoredChild(metric.sessionId)
                 metricsImported++
             }
 
@@ -1599,6 +1610,9 @@ abstract class BaseDataBackupManager(
                                                     existingSession.synced_sync_generation >= existingSession.local_sync_generation
                                                 ) {
                                                     matchedCleanSessionIds += session.id
+                                                }
+                                                existingSession.routineSessionId?.let { groupId ->
+                                                    matchedSessionGroups[session.id] = sessionProfileId to groupId
                                                 }
                                                 sessionsSkipped++
                                                 recordParent("session", session.id, BackupParentStatus.MATCHING)
@@ -2458,6 +2472,7 @@ abstract class BaseDataBackupManager(
                                                     set_end_reason = SetEndReason.fromPersisted(completedSet.setEndReason).name,
                                                 )
                                                 queries.markWorkoutComponentDirty(completedSet.sessionId)
+                                                holdGroupOfRestoredChild(completedSet.sessionId)
                                                 completedSetsImported++
                                             }
                                         }

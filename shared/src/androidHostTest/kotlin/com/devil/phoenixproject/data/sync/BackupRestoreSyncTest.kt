@@ -26,6 +26,9 @@ import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import org.junit.Test
 
 /**
@@ -124,6 +127,37 @@ class BackupRestoreSyncTest {
         syncManager(newPhone, apiClient, tokenStorage).sync()
 
         assertEquals(0L, apiClient.pullCallLastSyncs.first(), "the first pull after the restore must be a full pull")
+    }
+
+    @Test
+    fun `a restore that gives existing routine rows their sets holds the group out of the repair`() = runTest {
+        val oldPhone = createTestDatabase()
+        oldPhone.seedProfile()
+        oldPhone.insertSession("g-1", groupId = GROUP, timestamp = stamp, stampedAt = stamp + 1_000)
+        oldPhone.insertSession("g-2", groupId = GROUP, timestamp = stamp + 60_000, stampedAt = stamp + 61_000)
+        val backup = backupManager(oldPhone, tokenStorage = null).exportToJson()
+        val server = FakePortalServer(serverNow = { currentTimeMillis() })
+        server.seedSession(id = GROUP, exercises = listOf(repData()), updatedAt = stamp + 2_000, routineSessionId = GROUP)
+
+        // The new phone already holds the group, synced but without its completed sets, so the
+        // repair's childless check skips it (restored without a token store: no holds yet).
+        val newPhone = createTestDatabase()
+        val parsed = Json { ignoreUnknownKeys = true; encodeDefaults = true }
+        val decoded = parsed.decodeFromString<BackupData>(backup)
+        val withoutSets = parsed.encodeToString(decoded.copy(data = decoded.data.copy(completedSets = emptyList())))
+        backupManager(newPhone, tokenStorage = null).importFromJson(withoutSets).getOrThrow()
+
+        // Restoring the full backup matches both rows and adds their sets: now repair-eligible.
+        val tokenStorage = signedInTokenStorage()
+        val result = backupManager(newPhone, tokenStorage).importFromJson(backup).getOrThrow()
+        assertEquals(2, result.completedSetsImported)
+        assertEquals(setOf(GROUP), tokenStorage.getRoutineGroupRepairHolds(profileId))
+
+        val apiClient = PortalServerApiClient(server)
+        syncManager(newPhone, apiClient, tokenStorage).sync()
+        val pushedIds = apiClient.pushPayloads.flatMap { payload -> payload.sessions.map { it.id } }
+        assertTrue(GROUP !in pushedIds, "the matched group must not be re-pushed: $pushedIds")
+        assertEquals(listOf("rep-data"), server.exerciseIds(GROUP), "the portal's rep data must survive")
     }
 
     // ---- fixtures ----
