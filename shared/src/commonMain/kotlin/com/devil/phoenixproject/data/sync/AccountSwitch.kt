@@ -93,25 +93,29 @@ internal sealed class PortalIdentityCommitOutcome {
 }
 
 /**
- * Holder for a mismatch detected on a path that cannot reach [SyncManager]
- * directly (OAuth via [com.devil.phoenixproject.data.repository.PortalAuthRepository]).
+ * Hand-off slot for a mismatch detected by [com.devil.phoenixproject.data.repository.PortalAuthRepository]
+ * (email and OAuth sign-in), which cannot reach [SyncManager] directly.
  * [SyncManager.adoptPendingAccountMismatch] drains it into [SyncState.AccountMismatch].
+ *
+ * One instance is shared by the two through Koin (`SyncModule`). It is deliberately not
+ * a process-wide `object`: two independent [SyncManager]s (a second DI graph, or tests)
+ * must never adopt each other's mismatch.
  */
-internal object PendingAccountMismatch {
+class PendingAccountMismatch {
     private val lock = Any()
     private var candidate: AccountMismatchCandidate? = null
 
-    fun publish(value: AccountMismatchCandidate) {
+    internal fun publish(value: AccountMismatchCandidate) {
         withPlatformLock(lock) { candidate = value }
     }
 
-    fun take(): AccountMismatchCandidate? = withPlatformLock(lock) {
+    internal fun take(): AccountMismatchCandidate? = withPlatformLock(lock) {
         val current = candidate
         candidate = null
         current
     }
 
-    fun peek(): AccountMismatchCandidate? = withPlatformLock(lock) { candidate }
+    internal fun peek(): AccountMismatchCandidate? = withPlatformLock(lock) { candidate }
 }
 
 /**

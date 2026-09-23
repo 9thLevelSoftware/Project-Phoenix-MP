@@ -463,7 +463,7 @@ class SyncManagerTest {
     }
 
     @Test
-    fun `email login rejects a different profile owner and preserves prior identity`() = runTest {
+    fun `email login as a different profile owner pauses sync and preserves the prior owner's data`() = runTest {
         setupAuthenticated(userId = "owner-a")
         tokenStorage.setPullCursor("owner-a", "default", 42L)
         tokenStorage.setPushWatermark("owner-a", "default", 42L)
@@ -474,11 +474,15 @@ class SyncManagerTest {
 
         val result = manager.login("owner-b@example.com", "password")
 
-        assertTrue(result.isFailure)
+        assertTrue(result.isSuccess)
+        val mismatch = assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+        assertEquals("owner-a", mismatch.previousUserId)
+        assertEquals("owner-b", mismatch.newUserId)
+        // No relink until the user answers the account-switch dialog.
         assertEquals("owner-a", fakeUserProfileRepo.activeProfile.value?.supabaseUserId)
-        assertEquals("owner-a", tokenStorage.currentUser.value?.id)
+        assertEquals("owner-b", tokenStorage.currentUser.value?.id)
         assertEquals(42L, tokenStorage.getPullCursor("owner-a", "default"))
-        assertEquals(42L, manager.lastSyncTime.value)
+        assertEquals(42L, tokenStorage.getPushWatermark("owner-a", "default"))
     }
 
     @Test

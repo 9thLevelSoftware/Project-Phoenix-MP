@@ -7,9 +7,10 @@ import com.devil.phoenixproject.data.sync.SupabaseConfig
 import com.devil.phoenixproject.testutil.FakePortalApiClient
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.russhwolf.settings.MapSettings
+import com.devil.phoenixproject.data.sync.PendingAccountMismatch
 import kotlin.test.Test
 import kotlin.test.assertEquals
-import kotlin.test.assertIs
+import kotlin.test.assertNotNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -20,6 +21,8 @@ import kotlinx.coroutines.test.setMain
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class PortalAuthRepositoryIdentityTest {
+    private val pending = PendingAccountMismatch()
+
     @Test
     fun `email sign in binds an unowned active profile`() = runTest {
         val response = authResponse("owner-a", "token-a")
@@ -75,7 +78,7 @@ class PortalAuthRepositoryIdentityTest {
     }
 
     @Test
-    fun `email account switch rejects and preserves prior profile and token`() = runTest {
+    fun `email account switch signs in, keeps the prior owner's profile and hands the choice to sync`() = runTest {
         val api = FakePortalApiClient().apply {
             signInResult = Result.success(authResponse("owner-b", "token-b"))
         }
@@ -91,12 +94,16 @@ class PortalAuthRepositoryIdentityTest {
         try {
             val result = repository.signInWithEmail("owner-b@example.com", "password")
 
-            assertTrue(result.isFailure)
-            assertIs<ProfileAccountBindingException>(result.exceptionOrNull())
+            assertTrue(result.isSuccess)
+            // No relink: the account-switch dialog owns that decision.
             assertEquals("owner-a", profiles.activeProfile.value?.supabaseUserId)
-            assertEquals("owner-a", storage.currentUser.value?.id)
-            assertEquals("token-a", storage.getToken())
+            // Signed in as the new account so the dialog can be answered.
+            assertEquals("owner-b", storage.currentUser.value?.id)
+            assertEquals("token-b", storage.getToken())
             assertEquals(42L, storage.getPullCursor("owner-a", "default"))
+            val handedOff = assertNotNull(pending.peek(), "SyncManager must be able to adopt the mismatch")
+            assertEquals("owner-a", handedOff.previousUserId)
+            assertEquals("owner-b", handedOff.newUserId)
         } finally {
             repository.close()
             Dispatchers.resetMain()
@@ -119,6 +126,7 @@ class PortalAuthRepositoryIdentityTest {
             supabaseConfig = SupabaseConfig("https://fake.supabase.co", "anon"),
             profileMutationBarrier = ProfileMutationBarrier(),
             launchOAuth = launchOAuth,
+            pendingAccountMismatch = pending,
         )
     }
 

@@ -3,6 +3,8 @@ package com.devil.phoenixproject.data.sync
 import co.touchlab.kermit.LogWriter
 import co.touchlab.kermit.Logger
 import co.touchlab.kermit.Severity
+import com.devil.phoenixproject.data.repository.PortalAuthRepository
+import com.devil.phoenixproject.data.repository.ProfileMutationBarrier
 import com.devil.phoenixproject.data.repository.SqlDelightGamificationRepository
 import com.devil.phoenixproject.data.repository.SqlDelightSyncRepository
 import com.devil.phoenixproject.database.PhoenixDatabase
@@ -20,7 +22,11 @@ import com.russhwolf.settings.MapSettings
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertTrue
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.test.setMain
 import org.junit.Before
 import org.junit.Test
 
@@ -38,6 +44,7 @@ class AccountSwitchSyncTest {
     private lateinit var tokenStorage: PortalTokenStorage
     private lateinit var api: OwnershipEnforcingPortalApi
     private lateinit var manager: SyncManager
+    private val pendingAccountMismatch = PendingAccountMismatch()
 
     private val userA = "user-a"
     private val userB = "user-b"
@@ -54,7 +61,6 @@ class AccountSwitchSyncTest {
 
     @Before
     fun setup() {
-        PendingAccountMismatch.take()
         database = createTestDatabase()
         userProfileRepository = FakeUserProfileRepository().apply {
             setActiveProfileForTest(id = profileId, supabaseUserId = null)
@@ -80,6 +86,7 @@ class AccountSwitchSyncTest {
             velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
             isProfilePreferenceMigrationReady = { true },
             completedSetRepository = FakeCompletedSetRepository(),
+            pendingAccountMismatch = pendingAccountMismatch,
         )
         database.seedExercise("bench", name = "Bench Press")
     }
@@ -283,13 +290,11 @@ class AccountSwitchSyncTest {
             api.currentPushUser = userB
             api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
             assertTrue(manager.login(emailB, "pw").isSuccess)
-            // The mismatch path is the one this PR adds; also cover signup's log line.
+            // The mismatch path is the one this PR adds; cover signup's log line too.
             api.signUpResult = Result.success(authResponse(userB, emailB, "token-b2"))
-            // Force a fresh commit path: clear lastSynced so signup commits normally
-            // would run — but signup after a mismatch still short-circuits on the
-            // pending/committed mismatch, which is exactly the F-076 surface.
-            PendingAccountMismatch.take()
-            tokenStorage.setLastSyncedPortalUserId(userA)
+            assertTrue(manager.signup(emailB, "pw", "B").isSuccess)
+            assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+            assertTrue(recording.lines.any { it.contains("different portal account") })
 
             assertTrue(
                 recording.lines.none { it.contains(emailB) },
@@ -304,6 +309,47 @@ class AccountSwitchSyncTest {
         }
     }
 
+    // ===== 7. The sign-in -> sync hand-off is scoped to the injected holder =====
+
+    @Test
+    fun signInMismatchReachesOnlyTheSyncManagerSharingItsHolder() = runTest {
+        tokenStorage.setLastSyncedPortalUserId(userA)
+        api.currentPushUser = userB
+        api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
+        val otherManager = newManager(PendingAccountMismatch())
+        val auth = newAuthRepository()
+        try {
+            assertTrue(auth.signInWithEmail(emailB, "pw").isSuccess)
+            val pushes = api.pushCallCount
+
+            // A manager wired to a different holder never sees this sign-in's mismatch.
+            assertFalse(otherManager.adoptPendingAccountMismatch())
+            // The manager sharing the holder adopts it and refuses to push.
+            assertTrue(manager.sync().isFailure)
+            val state = assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+            assertTrue(state.previousUserId == userA && state.newUserId == userB)
+            assertTrue(api.pushCallCount == pushes)
+        } finally {
+            auth.close()
+            Dispatchers.resetMain()
+        }
+    }
+
+    @Test
+    fun logoutDropsAnUnansweredSignInMismatch() = runTest {
+        tokenStorage.setLastSyncedPortalUserId(userA)
+        api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
+        val auth = newAuthRepository()
+        try {
+            assertTrue(auth.signInWithEmail(emailB, "pw").isSuccess)
+            manager.logout()
+            assertFalse(manager.adoptPendingAccountMismatch())
+        } finally {
+            auth.close()
+            Dispatchers.resetMain()
+        }
+    }
+
     // ===== Helpers =====
 
     private data class PreSwitchRows(
@@ -313,6 +359,35 @@ class AccountSwitchSyncTest {
         val customId: String,
         val assessmentId: String,
     )
+
+    private fun newManager(holder: PendingAccountMismatch) = SyncManager(
+        apiClient = api,
+        tokenStorage = tokenStorage,
+        syncRepository = syncRepository,
+        gamificationRepository = SqlDelightGamificationRepository(database),
+        repMetricRepository = FakeRepMetricRepository(),
+        userProfileRepository = userProfileRepository,
+        profilePreferenceSyncRepository = FakeProfilePreferenceSyncRepository(),
+        externalActivityRepository = FakeExternalActivityRepository(),
+        velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+        isProfilePreferenceMigrationReady = { true },
+        completedSetRepository = FakeCompletedSetRepository(),
+        pendingAccountMismatch = holder,
+    )
+
+    /** Sign-in path that cannot reach [manager]; shares [pendingAccountMismatch] like Koin does. */
+    private fun newAuthRepository(): PortalAuthRepository {
+        Dispatchers.setMain(StandardTestDispatcher())
+        return PortalAuthRepository(
+            apiClient = api,
+            tokenStorage = tokenStorage,
+            userProfileRepository = userProfileRepository,
+            supabaseConfig = SupabaseConfig("https://fake.supabase.co", "anon"),
+            profileMutationBarrier = ProfileMutationBarrier(),
+            launchOAuth = { _, _ -> Result.failure(IllegalStateException("OAuth was not expected")) },
+            pendingAccountMismatch = pendingAccountMismatch,
+        )
+    }
 
     /** Rows created and uploaded as user A, before any account switch. */
     private fun seedPreSwitchRows(): PreSwitchRows {

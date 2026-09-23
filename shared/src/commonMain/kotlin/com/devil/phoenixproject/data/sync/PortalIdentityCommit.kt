@@ -12,12 +12,15 @@ import kotlinx.coroutines.withContext
  * PR 11: when the just-signed-in user is a *different* portal account than the one
  * this device's rows already belong to, no profile is relinked. The token is still
  * saved so the user is authenticated and can answer the account-switch dialog, and
- * [PortalIdentityCommitOutcome.AccountMismatchDetected] is returned.
+ * [PortalIdentityCommitOutcome.AccountMismatchDetected] is returned. A caller that cannot
+ * act on the outcome itself passes [pendingAccountMismatch] so [SyncManager] can adopt it;
+ * [SyncManager]'s own login/signup pass `null` and apply the outcome directly.
  */
 internal suspend fun commitPortalIdentityUnderProfileMutationBarrier(
     response: GoTrueAuthResponse,
     tokenStorage: PortalTokenStorage,
     userProfileRepository: UserProfileRepository,
+    pendingAccountMismatch: PendingAccountMismatch?,
 ): PortalIdentityCommitOutcome {
     val activeProfile = requireNotNull(userProfileRepository.activeProfile.value) {
         "An active profile is required before signing in"
@@ -34,7 +37,7 @@ internal suspend fun commitPortalIdentityUnderProfileMutationBarrier(
     if (mismatch != null) {
         // Authenticate without relinking: the relink is the dialog's explicit choice.
         check(tokenStorage.saveGoTrueAuth(response)) { "Authenticated identity commit was rejected" }
-        PendingAccountMismatch.publish(mismatch)
+        pendingAccountMismatch?.publish(mismatch)
         return PortalIdentityCommitOutcome.AccountMismatchDetected(mismatch)
     }
 

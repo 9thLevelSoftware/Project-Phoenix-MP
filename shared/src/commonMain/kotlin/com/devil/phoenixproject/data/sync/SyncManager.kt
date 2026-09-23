@@ -406,6 +406,7 @@ class SyncManager(
     private val ownershipEventApplier: OwnershipEventApplier? = null,
     private val profileMutationBarrier: ProfileMutationBarrier? = null,
     private val trainingCycleRepository: TrainingCycleRepository? = null,
+    private val pendingAccountMismatch: PendingAccountMismatch = PendingAccountMismatch(),
 ) {
     companion object {
         /**
@@ -521,6 +522,8 @@ class SyncManager(
                         response = goTrueResponse,
                         tokenStorage = tokenStorage,
                         userProfileRepository = userProfileRepository,
+                        // Applied to _syncState right here; nothing to hand off.
+                        pendingAccountMismatch = null,
                     )
                     if (commitOutcome is PortalIdentityCommitOutcome.AccountMismatchDetected) {
                         // Do not relink and do not clear the hold: the dialog decides.
@@ -570,6 +573,8 @@ class SyncManager(
                         response = goTrueResponse,
                         tokenStorage = tokenStorage,
                         userProfileRepository = userProfileRepository,
+                        // Applied to _syncState right here; nothing to hand off.
+                        pendingAccountMismatch = null,
                     )
                     if (commitOutcome is PortalIdentityCommitOutcome.AccountMismatchDetected) {
                         _syncState.value = commitOutcome.mismatch.toSyncState()
@@ -614,26 +619,20 @@ class SyncManager(
                 tokenStorage.updateSubscriptionTier(null)
                 tokenStorage.clearAuth()
                 tokenStorage.emitLogoutEvent()
+                // A mismatch the signed-out account never answered must not pause the next sign-in.
+                pendingAccountMismatch.take()
                 _syncState.value = SyncState.NotAuthenticated
             }
         }
     }
 
     /**
-     * Resets [_syncState] to [SyncState.Idle] without performing a sync.
-     *
-     * Use this after an out-of-band sign-in (OAuth, deep-link, etc.) that
-     * bypasses [login] but still needs to clear a stale
-     * [SyncState.NotAuthenticated] left over from a prior [logout]. Otherwise
-     * the UI continues to show "Authentication failed — please sign out and
-     * sign back in" even though the new session is valid.
-     */
-    /**
-     * Drains a mismatch published by the OAuth identity commit (PR 11). That path
-     * cannot reach this class directly, so [PendingAccountMismatch] carries it here.
+     * Drains a mismatch published by [com.devil.phoenixproject.data.repository.PortalAuthRepository]'s
+     * identity commit (PR 11). That path cannot reach this class directly, so the shared
+     * [PendingAccountMismatch] carries it here.
      */
     fun adoptPendingAccountMismatch(): Boolean {
-        val pending = PendingAccountMismatch.take() ?: return false
+        val pending = pendingAccountMismatch.take() ?: return false
         _syncState.value = pending.toSyncState()
         return true
     }
@@ -725,6 +724,15 @@ class SyncManager(
         }
     }
 
+    /**
+     * Resets [_syncState] to [SyncState.Idle] without performing a sync.
+     *
+     * Use this after an out-of-band sign-in (OAuth, deep-link, etc.) that
+     * bypasses [login] but still needs to clear a stale
+     * [SyncState.NotAuthenticated] left over from a prior [logout]. Otherwise
+     * the UI continues to show "Authentication failed — please sign out and
+     * sign back in" even though the new session is valid.
+     */
     suspend fun resetSyncStateToIdle() {
         if (adoptPendingAccountMismatch()) return
 

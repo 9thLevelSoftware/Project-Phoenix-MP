@@ -4,7 +4,6 @@ import com.devil.phoenixproject.data.repository.ProfileMutationBarrier
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
-import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
@@ -14,11 +13,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 
 class PortalIdentityCommitTest {
-    @BeforeTest
-    fun drainPendingAccountMismatch() {
-        // PendingAccountMismatch is process-wide; never leak one test's candidate into the next.
-        PendingAccountMismatch.take()
-    }
+    // Injected per test instance; the commit path never reaches a process-wide holder.
+    private val pending = PendingAccountMismatch()
 
     @Test
     fun `new identity binds the unowned profile and starts with its own cursors`() = runTest {
@@ -35,6 +31,7 @@ class PortalIdentityCommitTest {
                 response = authResponse("owner-b", "token-b"),
                 tokenStorage = storage,
                 userProfileRepository = profiles,
+                pendingAccountMismatch = pending,
             )
         }
 
@@ -60,6 +57,7 @@ class PortalIdentityCommitTest {
                 response = authResponse("owner-b", "token-b"),
                 tokenStorage = storage,
                 userProfileRepository = profiles,
+                pendingAccountMismatch = pending,
             )
         }
 
@@ -72,7 +70,7 @@ class PortalIdentityCommitTest {
         assertEquals("owner-b", storage.currentUser.value?.id)
         assertEquals("token-b", storage.getToken())
         assertEquals(42L, storage.getPullCursor("owner-a", "default"))
-        assertEquals("owner-a", PendingAccountMismatch.peek()?.previousUserId)
+        assertEquals("owner-a", pending.peek()?.previousUserId)
     }
 
     @Test
@@ -90,6 +88,7 @@ class PortalIdentityCommitTest {
                 response = authResponse("owner-b", "token-b"),
                 tokenStorage = storage,
                 userProfileRepository = profiles,
+                pendingAccountMismatch = pending,
             )
         }
 
@@ -118,6 +117,7 @@ class PortalIdentityCommitTest {
                     response = authResponse("owner-b", "token-b"),
                     tokenStorage = storage,
                     userProfileRepository = profiles,
+                    pendingAccountMismatch = pending,
                 )
             }
         }
@@ -146,6 +146,7 @@ class PortalIdentityCommitTest {
                     response = authResponse("owner-b", "token-b"),
                     tokenStorage = storage,
                     userProfileRepository = profiles,
+                    pendingAccountMismatch = pending,
                 )
             }
         }
