@@ -741,6 +741,7 @@ class SyncManager(
                     profileIds = profiles.map { it.id },
                     excludeAllExisting = choice == AccountSwitchChoice.EXCLUDE_ALL_EXISTING,
                     previousPushWatermarks = boundaries,
+                    previousPortalUserId = previousUserId,
                 )
                 for (profile in profiles) {
                     // Force-relink: the normal link path throws ProfileAccountBindingException
@@ -783,11 +784,21 @@ class SyncManager(
         try {
             withProfileMutationBarrier {
                 val profiles = userProfileRepository.allProfiles.value
-                syncRepository.recordAccountSwitchExclusions(
+                // Only data that predates this account on the device can belong to another
+                // account; rows made for this account since then keep syncing (codex #859).
+                // The catalog-collision refusal concerns custom exercises only.
+                val entityTypes = if (conflict.message.contains(CATALOG_COLLISION_MARKER, ignoreCase = true)) {
+                    setOf(SyncExcludedEntityTypes.CUSTOM_EXERCISE)
+                } else {
+                    SyncExcludedEntityTypes.ALL.toSet()
+                }
+                syncRepository.recordOwnershipRecoveryExclusions(
                     portalUserId = userId,
                     profileIds = profiles.map { it.id },
-                    excludeAllExisting = true,
-                    previousPushWatermarks = profiles.associate { it.id to 0L },
+                    // Unknown first-seen time (an install signed in before this build):
+                    // everything on disk counts as pre-existing, as before.
+                    createdAtOrBefore = tokenStorage.getAccountFirstSeenAt(userId) ?: Long.MAX_VALUE,
+                    entityTypes = entityTypes,
                 )
             }
             _syncState.value = SyncState.Idle
@@ -3836,6 +3847,25 @@ class SyncManager(
      * The caller leaves the pull cursor unchanged and retries the page; revision guards make replay
      * idempotent and dirty-section predicates preserve concurrent local edits.
      */
+    /** See the call site in [mergePullPage]. */
+    private suspend fun recordPulledProvenance(
+        ownerUserId: String,
+        pullResponse: PortalSyncPullResponse,
+        mobileSessions: List<com.devil.phoenixproject.domain.model.WorkoutSession>,
+    ) {
+        val types = SyncExcludedEntityTypes
+        val sessionIds = mobileSessions.flatMap { listOfNotNull(it.id, it.routineSessionId?.takeIf { id -> id.isNotBlank() }) }
+        val byType = mapOf(
+            types.WORKOUT to sessionIds + pullResponse.sessions.map { it.id },
+            types.ROUTINE to pullResponse.routines.map { it.id },
+            types.CYCLE to pullResponse.cycles.map { it.id },
+            types.PERSONAL_RECORD to pullResponse.personalRecords.map { it.id },
+        )
+        for ((type, ids) in byType) {
+            if (ids.isNotEmpty()) syncRepository.insertSyncExcludedEntities(ownerUserId, types.reached(type), ids.distinct())
+        }
+    }
+
     private suspend fun mergePullPage(
         pullResponse: PortalSyncPullResponse,
         lastSync: Long,
@@ -3996,6 +4026,11 @@ class SyncManager(
                 sessionNotes = sessionNotesMap,
                 sessionUpdatedAtById = sessionUpdatedAtById,
             )
+            // PR 11: every row this merge committed came from this portal account. Record
+            // that provenance for any pull (including a pull-only retry, which does not
+            // advance the pull-merge stamp below), so an account switch never classifies a
+            // pulled row as never-synced local data (codex #859).
+            recordPulledProvenance(ownerUserId, pullResponse, mobileSessions)
             // PR 11: a pulled routine / cycle gets its local createdAt at merge time, later
             // than the push watermark. Record when this account's rows landed so an account
             // switch does not mistake them for never-synced local rows. Stamped only once the

@@ -326,6 +326,7 @@ class FakeSyncRepository : SyncRepository {
         profileIds: List<String>,
         excludeAllExisting: Boolean,
         previousPushWatermarks: Map<String, Long>,
+        previousPortalUserId: String?,
     ) {
         recordAccountSwitchExclusionsCalls += Triple(portalUserId, excludeAllExisting, previousPushWatermarks)
         val byType = syncExcludedEntities.getOrPut(portalUserId) { mutableMapOf() }
@@ -372,6 +373,17 @@ class FakeSyncRepository : SyncRepository {
                 }
             }
         }
+    }
+
+    val recordOwnershipRecoveryExclusionsCalls: MutableList<Pair<Long, Set<String>>> = mutableListOf()
+
+    override suspend fun recordOwnershipRecoveryExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        createdAtOrBefore: Long,
+        entityTypes: Set<String>,
+    ) {
+        recordOwnershipRecoveryExclusionsCalls += createdAtOrBefore to entityTypes
     }
 
     var hardDeletedRoutineIds: List<String> = emptyList()

@@ -34,6 +34,15 @@ object SyncExcludedEntityTypes {
         ASSESSMENT,
         EXERCISE_SIGNATURE,
     )
+
+    /**
+     * Provenance rows in the same table: `(portal_user_id, reached(type), id)` records that
+     * the row reached that portal account (it was pulled from it, or it was already on it
+     * when the device switched away). Never read by [SyncExclusionFilter]; only the
+     * account-switch classification uses them, so a row that belongs to the account being
+     * switched BACK to is never excluded from it (codex #859).
+     */
+    fun reached(entityType: String): String = "REACHED_$entityType"
 }
 
 /**

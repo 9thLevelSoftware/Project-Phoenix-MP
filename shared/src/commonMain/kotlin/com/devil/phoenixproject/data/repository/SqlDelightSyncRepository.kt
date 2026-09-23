@@ -2466,79 +2466,137 @@ class SqlDelightSyncRepository(
         profileIds: List<String>,
         excludeAllExisting: Boolean,
         previousPushWatermarks: Map<String, Long>,
+        previousPortalUserId: String?,
     ) = withContext(Dispatchers.IO) {
-        fun exclude(entityType: String, entityId: String) {
-            queries.insertSyncExcludedEntity(
-                portalUserId = portalUserId,
-                entityType = entityType,
-                entityId = entityId,
-            )
+        val types = SyncExcludedEntityTypes
+        fun ids(user: String?, type: String): Set<String> =
+            if (user.isNullOrBlank()) emptySet()
+            else queries.selectSyncExcludedEntityIds(portalUserId = user, entityType = type).executeAsList().toHashSet()
+        // Loaded before any write below, so this call's own inserts cannot feed back into it.
+        val targetReached = types.ALL.associateWith { ids(portalUserId, types.reached(it)) }
+        val previousReached = types.ALL.associateWith { ids(previousPortalUserId, types.reached(it)) }
+        val previousExcluded = types.ALL.associateWith { ids(previousPortalUserId, it) }
+
+        /**
+         * One local entity (all its ids, e.g. a session and its portal group id).
+         * - It reached the previous account when the classification says so or the
+         *   previous account's provenance names it; if the previous account had not
+         *   excluded it, record that provenance (it is that account's row).
+         * - It is excluded from the target unless the target's own provenance names it:
+         *   a row that already belongs to the account being switched back to must keep
+         *   syncing there (codex #859).
+         */
+        fun decide(type: String, entityIds: List<String>, classifiedReached: Boolean) {
+            val reached = classifiedReached || entityIds.any { it in previousReached.getValue(type) }
+            if (previousPortalUserId != null && reached && entityIds.none { it in previousExcluded.getValue(type) }) {
+                entityIds.forEach {
+                    queries.insertSyncExcludedEntity(previousPortalUserId, types.reached(type), it)
+                }
+            }
+            val ownedByTarget = entityIds.any { it in targetReached.getValue(type) }
+            if ((excludeAllExisting || reached) && !ownedByTarget) {
+                entityIds.forEach { queries.insertSyncExcludedEntity(portalUserId, type, it) }
+            }
         }
 
-        for (profileId in profileIds) {
-            val watermark = previousPushWatermarks[profileId] ?: 0L
+        db.transaction {
+            for (profileId in profileIds) {
+                val watermark = previousPushWatermarks[profileId] ?: 0L
 
-            // Sessions: classified by origin and acknowledged sync generation, not by
-            // updatedAt alone (a Just Lift tag writes it locally; a repair re-arm nulls
-            // it on rows that already reached the old account). See isNeverSyncedSession.
-            queries.selectAccountSwitchSessionRows(profileId).executeAsList().forEach { row ->
-                val neverSynced = isNeverSyncedSession(
-                    portalOrigin = row.portalOrigin,
-                    syncedSyncGeneration = row.synced_sync_generation,
-                    updatedAt = row.updatedAt,
-                    boundary = watermark,
-                )
-                if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.WORKOUT, row.id)
-                    row.routineSessionId?.takeIf { it.isNotBlank() }
-                        ?.let { exclude(SyncExcludedEntityTypes.WORKOUT, it) }
+                // Sessions: classified by origin and acknowledged sync generation, not by
+                // updatedAt alone (a Just Lift tag writes it locally; a repair re-arm nulls
+                // it on rows that already reached the old account). See isNeverSyncedSession.
+                queries.selectAccountSwitchSessionRows(profileId).executeAsList().forEach { row ->
+                    val neverSynced = isNeverSyncedSession(
+                        portalOrigin = row.portalOrigin,
+                        syncedSyncGeneration = row.synced_sync_generation,
+                        updatedAt = row.updatedAt,
+                        boundary = watermark,
+                    )
+                    decide(types.WORKOUT, listOfNotNull(row.id, row.routineSessionId?.takeIf { it.isNotBlank() }), !neverSynced)
+                }
+
+                queries.selectRoutinesForAccountSwitch(profileId).executeAsList().forEach { routine ->
+                    decide(types.ROUTINE, listOf(routine.id), !(routine.createdAt > 0L && routine.createdAt > watermark))
+                }
+
+                queries.selectAllTrainingCyclesForAccountSwitch(profileId).executeAsList().forEach { cycle ->
+                    decide(types.CYCLE, listOf(cycle.id), !(cycle.created_at > 0L && cycle.created_at > watermark))
+                }
+
+                queries.selectPersonalRecordsForAccountSwitch(profileId).executeAsList().forEach { record ->
+                    // achievedAt is when the PR was achieved.
+                    decide(
+                        types.PERSONAL_RECORD,
+                        listOfNotNull(record.id.toString(), record.uuid),
+                        !(record.achievedAt > 0L && record.achievedAt > watermark),
+                    )
+                }
+
+                queries.selectAllAssessments(profileId).executeAsList().forEach { assessment ->
+                    decide(
+                        types.ASSESSMENT,
+                        listOf(assessment.id.toString()),
+                        !(assessment.createdAt > 0L && assessment.createdAt > watermark),
+                    )
                 }
             }
 
-            getFullRoutinesModifiedSince(0L, profileId).forEach { routine ->
-                val neverSynced = routine.createdAt > 0L && routine.createdAt > watermark
-                if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.ROUTINE, routine.id)
-                }
-            }
-
-            getFullCyclesForSync(profileId).forEach { cycleWithContext ->
-                val cycle = cycleWithContext.cycle
-                val neverSynced = cycle.createdAt > 0L && cycle.createdAt > watermark
-                if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.CYCLE, cycle.id)
-                }
-            }
-
-            getFullPRsModifiedSince(0L, profileId).forEach { record ->
-                // PersonalRecord.timestamp is when the PR was achieved.
-                val neverSynced = record.timestamp > 0L && record.timestamp > watermark
-                if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.PERSONAL_RECORD, record.id.toString())
-                    record.uuid?.let { exclude(SyncExcludedEntityTypes.PERSONAL_RECORD, it) }
-                }
-            }
-
-            getCustomExercisesModifiedSince(0L).forEach { exercise ->
-                val idTime = customExerciseIdTimestamp(exercise.clientId)
+            // Custom exercises are account-wide. The highest per-profile boundary decides
+            // (a custom exercise reached the old account if any profile's sync sent it).
+            val customBoundary = profileIds.maxOfOrNull { previousPushWatermarks[it] ?: 0L } ?: 0L
+            queries.selectCustomExerciseIdsForAccountSwitch().executeAsList().forEach { clientId ->
+                val idTime = customExerciseIdTimestamp(clientId)
                 // No parseable id time is treated as already synced (conservative).
-                val neverSynced = idTime != null && idTime > watermark
-                if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.CUSTOM_EXERCISE, exercise.clientId)
-                }
-            }
-
-            getAllAssessments(profileId).forEach { assessment ->
-                val createdAt = assessment.createdAt
-                val neverSynced = createdAt > 0L && createdAt > watermark
-                if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.ASSESSMENT, assessment.id.toString())
-                }
+                decide(types.CUSTOM_EXERCISE, listOf(clientId), !(idTime != null && idTime > customBoundary))
             }
 
             // Exercise signatures are not pushed today (PortalSyncPayload.exerciseSignatures
             // is left empty by SyncManager), so there is nothing to enumerate here. The
             // push-side filter still covers the entity type when a later push fills it.
+        }
+    }
+
+    override suspend fun recordOwnershipRecoveryExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        createdAtOrBefore: Long,
+        entityTypes: Set<String>,
+    ) = withContext(Dispatchers.IO) {
+        val types = SyncExcludedEntityTypes
+        val targetReached = types.ALL.associateWith {
+            queries.selectSyncExcludedEntityIds(portalUserId = portalUserId, entityType = types.reached(it))
+                .executeAsList().toHashSet()
+        }
+        fun exclude(type: String, entityIds: List<String>, createdAt: Long?) {
+            if (type !in entityTypes) return
+            // Unknown creation time is treated as pre-boundary (conservative: the refusal
+            // proves some pre-existing row belongs elsewhere).
+            if (createdAt != null && createdAt > createdAtOrBefore) return
+            if (entityIds.any { it in targetReached.getValue(type) }) return
+            entityIds.forEach { queries.insertSyncExcludedEntity(portalUserId, type, it) }
+        }
+        db.transaction {
+            for (profileId in profileIds) {
+                queries.selectAccountSwitchSessionRows(profileId).executeAsList().forEach { row ->
+                    exclude(types.WORKOUT, listOfNotNull(row.id, row.routineSessionId?.takeIf { it.isNotBlank() }), row.timestamp)
+                }
+                queries.selectRoutinesForAccountSwitch(profileId).executeAsList().forEach {
+                    exclude(types.ROUTINE, listOf(it.id), it.createdAt)
+                }
+                queries.selectAllTrainingCyclesForAccountSwitch(profileId).executeAsList().forEach {
+                    exclude(types.CYCLE, listOf(it.id), it.created_at)
+                }
+                queries.selectPersonalRecordsForAccountSwitch(profileId).executeAsList().forEach {
+                    exclude(types.PERSONAL_RECORD, listOfNotNull(it.id.toString(), it.uuid), it.achievedAt)
+                }
+                queries.selectAllAssessments(profileId).executeAsList().forEach {
+                    exclude(types.ASSESSMENT, listOf(it.id.toString()), it.createdAt)
+                }
+            }
+            queries.selectCustomExerciseIdsForAccountSwitch().executeAsList().forEach { clientId ->
+                exclude(types.CUSTOM_EXERCISE, listOf(clientId), customExerciseIdTimestamp(clientId))
+            }
         }
     }
 

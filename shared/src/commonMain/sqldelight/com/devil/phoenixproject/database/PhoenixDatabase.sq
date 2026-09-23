@@ -2873,9 +2873,23 @@ DELETE FROM SyncExcludedEntity WHERE portal_user_id = :portalUserId;
 -- (synced_sync_generation > 0); updatedAt is only the legacy (pre-migration-49) signal
 -- because local edits such as a Just Lift tag also write it.
 selectAccountSwitchSessionRows:
-SELECT id, routineSessionId, portalOrigin, synced_sync_generation, updatedAt
+SELECT id, routineSessionId, portalOrigin, synced_sync_generation, updatedAt, timestamp
 FROM WorkoutSession
 WHERE profile_id = :profileId;
+
+-- PR 11 account-switch / ownership-recovery enumeration. Includes soft-deleted rows:
+-- their tombstones are pushed too, so they must be classifiable.
+selectRoutinesForAccountSwitch:
+SELECT id, createdAt FROM Routine WHERE profile_id = :profileId;
+
+selectAllTrainingCyclesForAccountSwitch:
+SELECT id, created_at FROM TrainingCycle WHERE profile_id = :profileId;
+
+selectPersonalRecordsForAccountSwitch:
+SELECT id, uuid, achievedAt FROM PersonalRecord WHERE profile_id = :profileId;
+
+selectCustomExerciseIdsForAccountSwitch:
+SELECT id FROM Exercise WHERE isCustom = 1;
 
 selectAppliedOwnershipEvent:
 SELECT * FROM AppliedOwnershipEvent

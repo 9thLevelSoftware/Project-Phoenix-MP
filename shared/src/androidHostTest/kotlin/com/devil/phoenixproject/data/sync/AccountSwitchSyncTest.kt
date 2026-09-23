@@ -560,6 +560,135 @@ class AccountSwitchSyncTest {
         assertFalse(manager.syncState.value is SyncState.OwnershipConflict)
     }
 
+    // ===== codex #859: switching back, pull-only retries, bounded recovery =====
+
+    private suspend fun switchTo(userId: String, email: String, token: String, choice: AccountSwitchChoice) {
+        api.currentPushUser = userId
+        api.signInResult = Result.success(authResponse(userId, email, token))
+        assertTrue(manager.login(email, "pw").isSuccess)
+        assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+        assertTrue(manager.resolveAccountMismatch(choice).isSuccess)
+    }
+
+    @Test
+    fun switchingBackToTheOriginalAccountKeepsItsOwnRowsSyncing() = runTest {
+        // A owns a session and a routine; the device switches to B, B records its own
+        // session, then the device switches back to A. A's rows must not be excluded from A.
+        insertSession("a-session", groupId = null, timestamp = baseTime, profileId = profileId)
+        insertRoutine(routinePre, profileId = profileId, createdAt = baseTime)
+        assertTrue(manager.sync().isSuccess)
+
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+        insertSession("b-session", groupId = null, timestamp = currentTimeMillis(), profileId = profileId)
+        assertTrue(manager.sync().isSuccess)
+        assertTrue("b-session" in api.pushPayloads.flatMap { it.sessions }.map { it.id })
+
+        switchTo(userA, emailA, "token-a2", AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+        assertFalse(
+            "a-session" in syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.WORKOUT),
+            "A's own session must not be excluded from A",
+        )
+        assertFalse(routinePre in syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.ROUTINE))
+        assertTrue(
+            "b-session" in syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.WORKOUT),
+            "B's session still belongs to B",
+        )
+
+        // A's rows edited after returning to A upload to A; B's stays out.
+        val q = database.phoenixDatabaseQueries
+        q.markWorkoutComponentDirty("a-session")
+        q.markWorkoutComponentDirty("b-session")
+        q.updateRoutineFields(
+            name = "Edited", description = "", createdAt = baseTime, lastUsed = null, useCount = 0L,
+            updatedAt = currentTimeMillis(), profile_id = profileId, groupId = null, id = routinePre,
+        )
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        val sessionIds = api.pushPayloads.flatMap { it.sessions }.map { it.id }
+        assertTrue("a-session" in sessionIds, "A's edited session must upload to A: $sessionIds")
+        assertTrue("b-session" !in sessionIds, "B's session must not upload to A: $sessionIds")
+        assertTrue(routinePre in api.pushPayloads.flatMap { it.routines }.map { it.id })
+        assertFalse(manager.syncState.value is SyncState.OwnershipConflict)
+    }
+
+    @Test
+    fun rowsImportedByAPullOnlyRetryAreNotUploadedToTheNextAccount() = runTest {
+        val pulledRoutine = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        api.claim(userA, pulledRoutine)
+        // A's push lands but its pull fails; a later pull-only retry imports A's routine.
+        api.pullResult = Result.failure(PortalApiException("server", null, 500))
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        manager.sync()
+        api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = currentTimeMillis(),
+                sessions = emptyList(),
+                routines = listOf(PullRoutineDto(id = pulledRoutine, userId = userA, name = "Pulled split")),
+                rpgAttributes = null,
+                badges = emptyList(),
+                gamificationStats = null,
+            ),
+        )
+        assertTrue(manager.retryPull().isSuccess)
+        assertTrue(database.phoenixDatabaseQueries.selectRoutineById(pulledRoutine).executeAsOneOrNull() != null)
+        api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = currentTimeMillis(), sessions = emptyList(), routines = emptyList(),
+                rpgAttributes = null, badges = emptyList(), gamificationStats = null,
+            ),
+        )
+
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess, "the new account's sync must not hit an ownership refusal")
+        assertTrue(api.pushPayloads.flatMap { it.routines }.none { it.id == pulledRoutine })
+        assertFalse(manager.syncState.value is SyncState.OwnershipConflict)
+    }
+
+    @Test
+    fun ownershipRecoveryKeepsRowsMadeForThisAccountAfterItSignedIn() = runTest {
+        // A pre-existing row (before A was first seen on the device) triggers the refusal;
+        // a workout and routine made for A afterwards, before the user presses recovery,
+        // must keep syncing.
+        val firstSeen = tokenStorage.getAccountFirstSeenAt(userA)!!
+        insertSession("pre-existing", groupId = null, timestamp = firstSeen - 60_000, profileId = profileId)
+        api.forcedRejectBody = "Refused: existing workout_sessions row belongs to another user"
+        assertTrue(manager.sync().isFailure)
+        assertIs<SyncState.OwnershipConflict>(manager.syncState.value)
+        insertSession("made-for-a", groupId = null, timestamp = firstSeen + 60_000, profileId = profileId)
+        insertRoutine(routineNew, profileId = profileId, createdAt = firstSeen + 60_000)
+
+        assertTrue(manager.applyOwnershipConflictRecovery().isSuccess)
+        api.forcedRejectBody = null
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        val sessionIds = api.pushPayloads.flatMap { it.sessions }.map { it.id }
+        assertTrue("made-for-a" in sessionIds, "a workout made for this account must still upload: $sessionIds")
+        assertTrue("pre-existing" !in sessionIds, "the pre-existing row stays out: $sessionIds")
+        assertTrue(routineNew in api.pushPayloads.flatMap { it.routines }.map { it.id })
+    }
+
+    @Test
+    fun catalogCollisionRecoveryExcludesOnlyCustomExercises() = runTest {
+        val firstSeen = tokenStorage.getAccountFirstSeenAt(userA)!!
+        val customId = "custom_${firstSeen - 60_000}"
+        database.seedExercise(customId, name = "Old Fly", isCustom = true)
+        insertSession("old-session", groupId = null, timestamp = firstSeen - 60_000, profileId = profileId)
+        api.forcedRejectBody = "Custom exercise id conflicts with an existing catalog exercise."
+        assertTrue(manager.sync().isFailure)
+
+        assertTrue(manager.applyOwnershipConflictRecovery().isSuccess)
+        assertTrue(customId in syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.CUSTOM_EXERCISE))
+        assertTrue(
+            syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.WORKOUT).isEmpty(),
+            "a catalog collision must not exclude workouts",
+        )
+        api.forcedRejectBody = null
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        assertTrue("old-session" in api.pushPayloads.flatMap { it.sessions }.map { it.id })
+    }
+
     // ===== 4. "Don't upload existing data" =====
 
     @Test

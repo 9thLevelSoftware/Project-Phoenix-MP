@@ -387,6 +387,20 @@ interface SyncRepository {
         profileIds: List<String>,
         excludeAllExisting: Boolean,
         previousPushWatermarks: Map<String, Long>,
+        previousPortalUserId: String? = null,
+    )
+
+    /**
+     * Ownership-conflict recovery (PR 11): exclude from [portalUserId] only rows of
+     * [entityTypes] created at or before [createdAtOrBefore] (the moment this account was
+     * first seen on the device), never a row known to have reached [portalUserId] itself.
+     * Rows made for this account afterwards keep syncing (codex #859).
+     */
+    suspend fun recordOwnershipRecoveryExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        createdAtOrBefore: Long,
+        entityTypes: Set<String>,
     )
 
     // === Post-Push Stamping ===

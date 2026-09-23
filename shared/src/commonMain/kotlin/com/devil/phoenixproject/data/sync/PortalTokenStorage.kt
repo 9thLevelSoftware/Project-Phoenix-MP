@@ -92,6 +92,7 @@ class PortalTokenStorage(private val settings: Settings) {
          */
         private const val KEY_PUSH_WATERMARK_PREFIX = "portal_push_watermark_"
         private const val KEY_PULL_MERGE_WATERMARK_PREFIX = "portal_pull_merge_watermark_"
+        private const val KEY_ACCOUNT_FIRST_SEEN_PREFIX = "portal_account_first_seen_"
 
         /**
          * Server-clock cursor of the last completed pull for one (portal userId, profileId).
@@ -297,6 +298,11 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_USER_EMAIL] = response.user.email ?: ""
         settings[KEY_USER_NAME] = response.user.displayName ?: ""
         settings[KEY_IS_PREMIUM] = existingPremium
+        // PR 11: when this account first appeared on the device (kept across sign-outs).
+        // Ownership-conflict recovery excludes only rows that predate it.
+        if (settings.getLongOrNull(KEY_ACCOUNT_FIRST_SEEN_PREFIX + response.user.id) == null) {
+            settings.putLong(KEY_ACCOUNT_FIRST_SEEN_PREFIX + response.user.id, currentTimeMillis())
+        }
         if (!sameUser) {
             // Account-scoped entitlement state must never cross an identity switch.
             // Sync cursors are namespaced by (userId, profileId) and survive the switch
@@ -331,6 +337,14 @@ class PortalTokenStorage(private val settings: Settings) {
      * dialog can name both accounts. Never logged (F-076).
      */
     fun getLastSyncedPortalUserLabel(): String? = settings.getStringOrNull(KEY_LAST_SYNCED_PORTAL_USER_LABEL)
+
+    /**
+     * Device time at which [userId] first signed in on this device, or null for an account
+     * that was already signed in before this build (PR 11 ownership-conflict recovery).
+     * Not cleared by [clearAuth].
+     */
+    fun getAccountFirstSeenAt(userId: String): Long? =
+        settings.getLongOrNull(KEY_ACCOUNT_FIRST_SEEN_PREFIX + userId)
 
     /** Records which portal user the last successful push landed in. Not cleared by [clearAuth]. */
     fun setLastSyncedPortalUserId(userId: String) {
