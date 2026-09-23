@@ -291,6 +291,38 @@ class DataBackupCompletenessTest {
         assertTrue(unexpected.manager.importFromJson(exported).isFailure, "an unknown failure aborts, never silently skips")
     }
 
+    @Test
+    fun `a restore that aborts after sessions committed leaves pulled rows pulled and clean and still resets sync state`() = runTest {
+        val source = Fixture(includeRawTelemetry = true)
+        source.seedProfiles()
+        source.saveSession("pulled-1")
+        source.insertMetric("pulled-1") // restoring this re-dirties the pulled row
+        source.queries.insertStreakHistory(1_700_000_000_000L, 1_700_000_100_000L, 2L, profileId = "default")
+        source.queries.restoreSessionSyncMarkers(portalOrigin = 1L, updatedAt = 1_700_000_500_000L, id = "pulled-1")
+        val storage = PortalTokenStorage(MapSettings())
+        storage.saveGoTrueAuth(
+            GoTrueAuthResponse(
+                accessToken = "access", tokenType = "bearer", expiresIn = 3600,
+                expiresAt = currentTimeMillis() / 1000 + 3600, refreshToken = "refresh",
+                user = GoTrueUser(id = "user-1", email = "user-1@example.com"),
+            ),
+        )
+        storage.setPullCursor("user-1", "default", 5_000L)
+
+        // The disk fills in a late section, after sessions and their samples committed.
+        val target = Fixture(
+            portalTokenStorage = storage,
+            failSessionInsertsWith = "database or disk is full (code 13 SQLITE_FULL)",
+            failInsertsInto = "StreakHistory",
+        )
+        assertTrue(target.manager.importFromJson(source.manager.exportToJson()).isFailure)
+
+        val pulled = target.queries.selectSessionById("pulled-1").executeAsOne()
+        assertEquals(1L, pulled.portalOrigin, "an aborted restore must not leave a pulled row looking local")
+        assertFalse(pulled.local_sync_generation > pulled.synced_sync_generation, "nor dirty")
+        assertEquals(0L, storage.getPullCursor("user-1", "default"), "committed rows still reset the pull cursor")
+    }
+
     // ---- v1-v6 single-object gamification stats (the shipping app's format) ----
 
     @Test
@@ -340,10 +372,14 @@ class DataBackupCompletenessTest {
 
     // ---- fixtures ----
 
-    /** Fails every WorkoutSession insert with [message], the way a platform SQLite driver reports it. */
+    /**
+     * Fails every insert into [table] with [message], mirroring how a platform SQLite driver
+     * reports it (Android: "database or disk is full (code 13 SQLITE_FULL)").
+     */
     private class FailingSessionInsertDriver(
         private val delegate: SqlDriver,
         private val message: String?,
+        private val table: String = "WorkoutSession",
     ) : SqlDriver by delegate {
         override fun execute(
             identifier: Int?,
@@ -351,7 +387,7 @@ class DataBackupCompletenessTest {
             parameters: Int,
             binders: (SqlPreparedStatement.() -> Unit)?,
         ): QueryResult<Long> {
-            if (message != null && sql.contains("INTO WorkoutSession")) throw IllegalStateException(message)
+            if (message != null && sql.contains("INTO $table")) throw IllegalStateException(message)
             return delegate.execute(identifier, sql, parameters, binders)
         }
     }
@@ -361,11 +397,12 @@ class DataBackupCompletenessTest {
         portalTokenStorage: PortalTokenStorage? = null,
         preferencesManager: FakePreferencesManager? = null,
         failSessionInsertsWith: String? = null,
+        failInsertsInto: String = "WorkoutSession",
     ) {
         val driver: SqlDriver = if (failSessionInsertsWith == null) {
             createTestDriver()
         } else {
-            FailingSessionInsertDriver(JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY), failSessionInsertsWith)
+            FailingSessionInsertDriver(JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY), failSessionInsertsWith, failInsertsInto)
                 .also(::createTestSchema)
         }
         val database = PhoenixDatabase(driver)
