@@ -1594,9 +1594,36 @@ SELECT * FROM AssessmentResult WHERE profile_id = :profileId ORDER BY createdAt 
 deleteAssessmentResult:
 DELETE FROM AssessmentResult WHERE id = ?;
 
--- PR 20: a permanently deleted profile's assessments go with it (no FK cascade from UserProfile).
-deleteAssessmentsByProfile:
-DELETE FROM AssessmentResult WHERE profile_id = :profileId;
+-- PR 20: every profile-owned table without a cascade from UserProfile, for "Delete
+-- permanently". Kept on purpose, and NOT listed here:
+--   WorkoutSession (hard-deleted with a WorkoutDeletion tombstone), Routine / TrainingCycle /
+--   PersonalRecord (soft-deleted tombstones that block pull resurrection), WorkoutDeletion and
+--   CycleSyncState (the pending tombstones themselves), UserProfilePreferences (CASCADEs with
+--   the row at finalize), PendingProfileLocalCleanup (drained by the local-cleanup retry),
+--   and the ownership / recovery bookkeeping tables.
+purgeProfileOwnedRows {
+    DELETE FROM AssessmentResult WHERE profile_id = :profileId;
+    DELETE FROM VelocityOneRepMaxEstimate WHERE profile_id = :profileId;
+    DELETE FROM ExerciseMvt WHERE profile_id = :profileId;
+    DELETE FROM EarnedBadge WHERE profile_id = :profileId;
+    DELETE FROM StreakHistory WHERE profile_id = :profileId;
+    DELETE FROM GamificationStats WHERE profile_id = :profileId;
+    DELETE FROM RpgAttributes WHERE profile_id = :profileId;
+    DELETE FROM ProgressionEvent WHERE profile_id = :profileId;
+    DELETE FROM ProfileExerciseBaseline WHERE profile_id = :profileId;
+    DELETE FROM CycleConflictDraft WHERE original_profile_id = :profileId;
+    DELETE FROM RoutineGroup WHERE profile_id = :profileId;
+    DELETE FROM ActiveWorkoutRuntime WHERE profile_id = :profileId;
+    DELETE FROM ExternalActivity WHERE profileId = :profileId;
+    DELETE FROM ExternalBodyMeasurement WHERE profileId = :profileId;
+    DELETE FROM ExternalExerciseTemplateMapping WHERE profileId = :profileId;
+    DELETE FROM ExternalExerciseTemplate WHERE profileId = :profileId;
+    DELETE FROM ExternalRoutine WHERE profileId = :profileId;
+    DELETE FROM ExternalRoutineFolder WHERE profileId = :profileId;
+    DELETE FROM ExternalProgram WHERE profileId = :profileId;
+    DELETE FROM IntegrationStatus WHERE profileId = :profileId;
+    DELETE FROM IntegrationSyncCursor WHERE profileId = :profileId;
+}
 
 deleteAssessmentsByExercise:
 DELETE FROM AssessmentResult WHERE exerciseId = ?;

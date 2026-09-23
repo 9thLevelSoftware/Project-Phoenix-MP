@@ -2530,7 +2530,12 @@ class SyncManager(
             }
         }
 
-        val sentMetadataProfileIds = profileDtos.mapTo(linkedSetOf()) { it.id }
+        // A pending-deletion profile (PR 20) stays in the metadata for tombstone routing, but
+        // its live preference sections must not be uploaded on its way out.
+        val pendingDeletionIds = userProfileRepository.pendingDeletionProfiles.value.mapTo(hashSetOf()) { it.id }
+        val sentMetadataProfileIds = profileDtos.mapNotNullTo(linkedSetOf()) { dto ->
+            dto.id.takeUnless { it in pendingDeletionIds }
+        }
         pushDirtyProfilePreferences(
             deviceId = deviceId,
             platform = platform,

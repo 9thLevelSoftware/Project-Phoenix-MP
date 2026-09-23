@@ -14,7 +14,7 @@ import com.devil.phoenixproject.testutil.FakePortalApiClient
 import com.devil.phoenixproject.testutil.FakeProfilePreferenceSyncRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
-import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
 import com.devil.phoenixproject.testutil.seedExercise
 import com.russhwolf.settings.MapSettings
 import kotlin.test.assertEquals
@@ -32,8 +32,26 @@ import org.junit.Test
  * deletions and then re-scopes whatever it still holds for the deleted profile to Default
  * (the portal's SET NULL once the profile leaves `allProfiles`).
  */
+private val PROFILE_OWNER_COLUMNS = setOf("profile_id", "profileId", "original_profile_id")
+
+/**
+ * Tables that legitimately keep rows under a permanently deleted profile: the pending
+ * tombstones (WorkoutDeletion, CycleSyncState), the local-cleanup queue, and the ownership /
+ * recovery bookkeeping, none of which is profile content.
+ */
+private val KEPT_AFTER_PERMANENT_DELETE = setOf(
+    "WorkoutDeletion",
+    "CycleSyncState",
+    "PendingProfileLocalCleanup",
+    "OwnershipTransferOutbox",
+    "LocalOwnershipClaim",
+    "PendingProfileRecovery",
+    "PendingProfileContextRecovery",
+)
+
 class ProfileDeletionPropagationTest {
 
+    private lateinit var driver: app.cash.sqldelight.db.SqlDriver
     private lateinit var database: PhoenixDatabase
     private lateinit var settings: MapSettings
     private lateinit var tokenStorage: PortalTokenStorage
@@ -41,6 +59,7 @@ class ProfileDeletionPropagationTest {
     private lateinit var syncRepository: SqlDelightSyncRepository
     private lateinit var api: DeletionAwarePortalApi
     private lateinit var externalActivities: FakeExternalActivityRepository
+    private lateinit var preferenceSync: FakeProfilePreferenceSyncRepository
     private lateinit var manager: SyncManager
 
     private val userId = "user-123"
@@ -56,7 +75,8 @@ class ProfileDeletionPropagationTest {
 
     @Before
     fun setup() {
-        database = createTestDatabase()
+        driver = createTestDriver()
+        database = PhoenixDatabase(driver)
         settings = MapSettings()
         tokenStorage = PortalTokenStorage(MapSettings())
         signIn()
@@ -81,7 +101,7 @@ class ProfileDeletionPropagationTest {
             gamificationRepository = SqlDelightGamificationRepository(database),
             repMetricRepository = FakeRepMetricRepository(),
             userProfileRepository = profiles,
-            profilePreferenceSyncRepository = FakeProfilePreferenceSyncRepository(),
+            profilePreferenceSyncRepository = FakeProfilePreferenceSyncRepository().also { preferenceSync = it },
             externalActivityRepository = FakeExternalActivityRepository().also { externalActivities = it },
             velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
             isProfilePreferenceMigrationReady = { true },
@@ -372,6 +392,75 @@ class ProfileDeletionPropagationTest {
         assertTrue(q.selectAllRecords("default").executeAsList().none { it.exerciseId == "deadlift" })
     }
 
+    /**
+     * Closes the class of "a table the delete forgot" (codex #861 round 3): every table with a
+     * profile column is seeded for P, then P is permanently deleted and finalized. No live row
+     * may remain under P in any table, except the tombstone and bookkeeping tables listed in
+     * [KEPT_AFTER_PERMANENT_DELETE], and recovery discovery must not resurface P.
+     */
+    @Test
+    fun noProfileOwnedRowSurvivesAPermanentDelete() = runTest {
+        val p = createProfileWithData()
+        database.seedExercise("squat")
+        val seeded = profileOwnedColumns().keys.filter { table -> seedRow(table, p) }
+        assertTrue(
+            seeded.containsAll(
+                listOf(
+                    "AssessmentResult", "EarnedBadge", "StreakHistory", "VelocityOneRepMaxEstimate",
+                    "ExerciseMvt", "ProgressionEvent", "RoutineGroup", "ExternalActivity",
+                    "IntegrationStatus", "ProfileExerciseBaseline",
+                ),
+            ),
+            "fixture must cover the tables the review named (seeded=$seeded)",
+        )
+
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+        assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
+        assertNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull())
+
+        val survivors = profileOwnedColumns()
+            .filterKeys { it !in KEPT_AFTER_PERMANENT_DELETE }
+            .mapValues { (table, column) -> liveRowCount(table, column, p) }
+            .filterValues { it > 0L }
+        assertTrue(survivors.isEmpty(), "live rows of the deleted profile survived: $survivors")
+
+        com.devil.phoenixproject.data.repository.ProfileRecoveryDiscovery(database, driver)
+            .discoverProfileData(profiles.allProfiles.value)
+        assertTrue(
+            database.phoenixDatabaseQueries.selectAllPendingProfileRecoveries().executeAsList()
+                .none { it.source_profile_id == p },
+            "a permanently deleted profile must not reappear in recovery",
+        )
+    }
+
+    @Test
+    fun aPendingProfilesDirtyPreferencesAreNotUploadedOnItsWayOut() = runTest {
+        val p = createProfileWithData()
+        preferenceSync.dirtySnapshot = ProfilePreferenceDirtySnapshot(
+            valid = listOf(
+                ProfilePreferenceSectionSyncDto(
+                    key = ProfilePreferenceSectionKey(p, com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName.CORE),
+                    documentVersion = 1,
+                    baseRevision = 0,
+                    clientModifiedAtEpochMs = baseTime,
+                    localGeneration = 1,
+                    payload = kotlinx.serialization.json.buildJsonObject {
+                        put("bodyWeightKg", kotlinx.serialization.json.JsonPrimitive(80.0))
+                        put("weightUnit", kotlinx.serialization.json.JsonPrimitive("KG"))
+                        put("weightIncrement", kotlinx.serialization.json.JsonPrimitive(0.5))
+                    },
+                ),
+            ),
+            unsyncable = emptyList(),
+        )
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+
+        assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
+
+        val uploaded = api.pushPayloads.flatMap { it.profilePreferenceSections.orEmpty() }.map { it.localProfileId }
+        assertFalse(p in uploaded, "the deleted profile's preferences were uploaded: $uploaded")
+    }
+
     @Test
     fun retryPullNeverPullsIntoAPendingDeletionProfile() = runTest {
         val p = createProfileWithData()
@@ -480,6 +569,84 @@ class ProfileDeletionPropagationTest {
     }
 
     // ===== Helpers =====
+
+    /** Every table with a profile-owner column, and that column (from the live schema). */
+    private fun profileOwnedColumns(): Map<String, String> {
+        val tables = mutableListOf<String>()
+        driver.executeQuery(null, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'", { c ->
+            while (c.next().value) c.getString(0)?.let(tables::add)
+            app.cash.sqldelight.db.QueryResult.Value(Unit)
+        }, 0)
+        return tables.mapNotNull { table ->
+            columnsOf(table).map { it.name }
+                .firstOrNull { it in PROFILE_OWNER_COLUMNS }
+                ?.let { table to it }
+        }.toMap()
+    }
+
+    private data class Column(val name: String, val type: String, val notNull: Boolean, val hasDefault: Boolean, val pk: Boolean)
+
+    private fun columnsOf(table: String): List<Column> {
+        val columns = mutableListOf<Column>()
+        driver.executeQuery(null, "PRAGMA table_info($table)", { c ->
+            while (c.next().value) {
+                columns += Column(
+                    name = c.getString(1)!!,
+                    type = c.getString(2).orEmpty().uppercase(),
+                    notNull = c.getLong(3) == 1L,
+                    hasDefault = c.getString(4) != null,
+                    pk = c.getLong(5)!! > 0L,
+                )
+            }
+            app.cash.sqldelight.db.QueryResult.Value(Unit)
+        }, 0)
+        return columns
+    }
+
+    /** Inserts one minimal row owned by [profileId]; false when the table's constraints refuse it. */
+    private fun seedRow(table: String, profileId: String): Boolean {
+        val columns = columnsOf(table)
+        val owner = columns.first { it.name in PROFILE_OWNER_COLUMNS }.name
+        val fill = columns.filter {
+            it.name == owner || it.name == "exerciseId" || it.name == "exercise_id" ||
+                (it.notNull && !it.hasDefault && !(it.pk && it.type == "INTEGER"))
+        }
+        val values = fill.map { column ->
+            when {
+                column.name == owner -> profileId
+                column.name == "exerciseId" || column.name == "exercise_id" -> "squat"
+                column.type.contains("INT") -> 1L
+                column.type.contains("REAL") -> 1.0
+                column.pk -> "seed-$table"
+                else -> if (column.name.endsWith("Json", ignoreCase = true) || column.name.endsWith("_json")) "{}" else "seed"
+            }
+        }
+        return runCatching {
+            driver.execute(
+                null,
+                "INSERT INTO $table (${fill.joinToString { it.name }}) VALUES (${fill.joinToString { "?" }})",
+                fill.size,
+            ) {
+                values.forEachIndexed { i, v ->
+                    when (v) {
+                        is Long -> bindLong(i, v)
+                        is Double -> bindDouble(i, v)
+                        else -> bindString(i, v as String)
+                    }
+                }
+            }
+        }.isSuccess
+    }
+
+    private fun liveRowCount(table: String, column: String, profileId: String): Long {
+        val live = if (columnsOf(table).any { it.name == "deletedAt" }) " AND deletedAt IS NULL" else ""
+        var count = 0L
+        driver.executeQuery(null, "SELECT COUNT(*) FROM $table WHERE $column = ?$live", { c ->
+            if (c.next().value) count = c.getLong(0) ?: 0L
+            app.cash.sqldelight.db.QueryResult.Value(Unit)
+        }, 1) { bindString(0, profileId) }
+        return count
+    }
 
     private fun signIn() {
         tokenStorage.saveGoTrueAuth(

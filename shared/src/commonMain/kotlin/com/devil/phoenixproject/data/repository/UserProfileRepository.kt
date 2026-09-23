@@ -424,11 +424,10 @@ class SqlDelightUserProfileRepository(
                         profileId = id,
                     )
                 }
-                queries.deleteAssessmentsByProfile(id)
-                queries.deleteGamificationStatsByProfile(id)
-                queries.deleteRpgAttributesByProfile(id)
-                queries.deleteIntegrationStatusByProfile(id)
-                queries.deleteIntegrationSyncCursorByProfile(id)
+                // Every other profile-owned row (badges, streaks, velocity estimates, MVT,
+                // progression, baselines, integrations, routine groups...): purged, so nothing
+                // of the profile survives locally for recovery discovery or backups to find.
+                queries.purgeProfileOwnedRows(id)
                 queries.setActiveProfile(DEFAULT_PROFILE_ID)
                 if (!propagate) {
                     // Nothing to propagate: the row goes now. Preferences and
