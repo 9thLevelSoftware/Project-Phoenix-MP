@@ -123,6 +123,30 @@ class SqlDelightProfileExerciseBaselineRepositoryTest {
     }
 
     @Test
+    fun `batch baseline write rolls back earlier rows when a later write fails`() = runTest {
+        repository.set("profile-a", "bench", 40f, updatedAt = 1L)
+        repository.set("profile-a", "squat", 60f, updatedAt = 1L)
+
+        assertFailsWith<IllegalArgumentException> {
+            repository.setBatch(
+                profileId = "profile-a",
+                updates = listOf(
+                    ProfileExerciseBaselineUpdate("bench", 50f),
+                    ProfileExerciseBaselineUpdate("squat", Float.NaN),
+                ),
+                updatedAt = 2L,
+            )
+        }
+
+        assertEquals(40f, repository.get("profile-a", "bench")?.oneRepMaxPerCableKg)
+        assertEquals(1L, repository.get("profile-a", "bench")?.updatedAt)
+        assertEquals(1L, repository.get("profile-a", "bench")?.revision)
+        assertEquals(60f, repository.get("profile-a", "squat")?.oneRepMaxPerCableKg)
+        assertEquals(1L, repository.get("profile-a", "squat")?.updatedAt)
+        assertEquals(1L, repository.get("profile-a", "squat")?.revision)
+    }
+
+    @Test
     fun `sole profile repair copies and consumes legacy values transactionally`() = runTest {
         database.phoenixDatabaseQueries.deleteProfile("profile-b")
         val exactLegacyValue = 90.123456789

@@ -67,8 +67,6 @@ class SqlDelightSyncRepository(
     private val queries = db.phoenixDatabaseQueries
     private val json = Json { ignoreUnknownKeys = true }
 
-    private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String = "$exerciseId:$timestamp"
-
     /**
      * Issue #591 follow-up (chatgpt-codex-connector P2): SQLite host
      * parameter limit is implementation-defined (999 on Android,
@@ -86,6 +84,8 @@ class SqlDelightSyncRepository(
         /** Local-only routines generated for template cycles (never synced). */
         const val CYCLE_TEMPLATE_ROUTINE_PREFIX = "cycle_routine_"
     }
+
+    private fun personalRecordSessionKey(exerciseId: String, timestamp: Long): String = "$exerciseId:$timestamp"
 
     /**
      * Preserve a local template-cycle association when the portal cannot represent it.
@@ -229,6 +229,34 @@ class SqlDelightSyncRepository(
     override suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long) {
         withContext(Dispatchers.IO) {
             queries.updateSessionTimestamp(timestamp, sessionId)
+        }
+    }
+
+    override suspend fun updateSessionTimestamps(
+        sessionIds: Collection<String>,
+        timestamp: Long,
+        gatherStartedAt: Long,
+        clearIds: Collection<String>,
+    ): Int {
+        if (sessionIds.isEmpty() && clearIds.isEmpty()) return 0
+        return withContext(Dispatchers.IO) {
+            var stamped = 0
+            db.transaction {
+                if (clearIds.isNotEmpty()) {
+                    clearIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE).forEach { chunk ->
+                        queries.clearSessionTimestamps(chunk)
+                    }
+                }
+                sessionIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE).forEach { chunk ->
+                    queries.updateSessionTimestampsByIds(
+                        timestamp = timestamp,
+                        ids = chunk,
+                        gatherStartedAt = gatherStartedAt,
+                    )
+                    stamped += queries.selectChangedRowCount().executeAsOne().toInt()
+                }
+            }
+            stamped
         }
     }
 
@@ -1073,6 +1101,78 @@ class SqlDelightSyncRepository(
                     )
                 }
         }
+    }
+
+    override suspend fun getWorkoutSessionsByRoutineSessionIds(
+        routineSessionIds: Collection<String>,
+        profileId: String,
+    ): List<WorkoutSession> = withContext(Dispatchers.IO) {
+        if (routineSessionIds.isEmpty()) return@withContext emptyList()
+        routineSessionIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE).flatMap { chunk ->
+            queries.selectSessionsByRoutineSessionIds(
+                profileId = profileId,
+                ids = chunk,
+                mapper = ::mapToWorkoutSession,
+            ).executeAsList()
+        }
+    }
+
+    override suspend fun getBlockedRoutineGroupSiblings(
+        routineSessionIds: Collection<String>,
+        profileId: String,
+    ): Map<String, List<String>> = withContext(Dispatchers.IO) {
+        if (routineSessionIds.isEmpty()) return@withContext emptyMap()
+        val blocked = mutableMapOf<String, MutableList<String>>()
+        routineSessionIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE).forEach { chunk ->
+            queries.selectBlockedRoutineGroupSiblings(profileId = profileId, ids = chunk)
+                .executeAsList()
+                .forEach { row ->
+                    val groupId = row.routineSessionId ?: return@forEach
+                    blocked.getOrPut(groupId) { mutableListOf() } += row.id
+                }
+        }
+        blocked
+    }
+
+    override suspend fun getRoutineGroupsWithChildlessRows(
+        routineSessionIds: Collection<String>,
+        profileId: String,
+    ): Set<String> = withContext(Dispatchers.IO) {
+        if (routineSessionIds.isEmpty()) return@withContext emptySet()
+        val childless = mutableSetOf<String>()
+        routineSessionIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE).forEach { chunk ->
+            queries.selectRoutineGroupsWithChildlessRows(profileId = profileId, ids = chunk)
+                .executeAsList()
+                .forEach { childless += it }
+        }
+        childless
+    }
+
+    override suspend fun getRoutineGroupRepairCandidates(
+        beforeTimestamp: Long,
+        limit: Int,
+        profileId: String,
+    ): List<Pair<String, Long>> = withContext(Dispatchers.IO) {
+        if (limit <= 0) return@withContext emptyList()
+        queries.selectRoutineGroupRepairCandidates(
+            profileId = profileId,
+            beforeTimestamp = beforeTimestamp,
+            limit = limit.toLong(),
+        ).executeAsList().mapNotNull { row ->
+            val groupId = row.routineSessionId ?: return@mapNotNull null
+            groupId to (row.newestTimestamp ?: 0L)
+        }
+    }
+
+    override suspend fun getSessionNotesForIds(portalSessionIds: Collection<String>): Map<String, String?> = withContext(Dispatchers.IO) {
+        if (portalSessionIds.isEmpty()) return@withContext emptyMap()
+        val notes = mutableMapOf<String, String?>()
+        portalSessionIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE).forEach { chunk ->
+            queries.selectSessionNotesForIds(chunk).executeAsList().forEach { row ->
+                notes[row.routineSessionId] = row.notes
+            }
+        }
+        notes
     }
 
     override suspend fun getDeletedRoutineIdsSince(timestamp: Long, profileId: String): List<String> = withContext(Dispatchers.IO) {
@@ -3326,10 +3426,15 @@ class SqlDelightSyncRepository(
 
     private fun mergeSessionNotesInTransaction(notes: Map<String, SessionNotesEntry>) {
         for ((routineSessionId, entry) in notes) {
-            val existingUpdatedAt = queries
-                .selectSessionNotesUpdatedAt(routineSessionId)
-                .executeAsOneOrNull()
-                ?.updatedAt
+            val existing = queries.getSessionNotes(routineSessionId).executeAsOneOrNull()
+            // A note cleared on the web arrives as null/blank. Treat it as a
+            // timestamp-ordered deletion of a note we already hold, so the push
+            // stops re-sending the stale text (the push fills the session DTO's
+            // `notes` from this table). A blank note for an id we never had is
+            // nothing to record.
+            if (entry.notes.isNullOrBlank() && existing == null) continue
+            val existingUpdatedAt = existing?.updatedAt
+                ?: queries.selectSessionNotesUpdatedAt(routineSessionId).executeAsOneOrNull()?.updatedAt
             val incomingMillis = entry.updatedAtMillis
             val accept = existingUpdatedAt == null || incomingMillis >= existingUpdatedAt
             if (accept) {
