@@ -1859,6 +1859,11 @@ FROM WorkoutSession
 WHERE profile_id = :profileId AND deletedAt IS NULL AND workingReps > 0
 ORDER BY epochDay ASC;
 
+-- Start of the current local week (Monday 00:00 local) in epoch ms. Computed with SQLite's
+-- 'localtime' so the weekly badge uses the same zone source as the hour/day buckets above.
+selectLocalWeekStartMs:
+SELECT CAST(strftime('%s', date('now', 'localtime', '-6 days', 'weekday 1'), 'utc') AS INTEGER) * 1000;
+
 -- Workouts at or after :sinceMs (workouts-this-week badge).
 countWorkoutsSince:
 SELECT COUNT(*) FROM WorkoutSession

@@ -7,10 +7,13 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
+import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Clock
 import kotlin.time.Instant
 import org.junit.Before
 import org.junit.Test
@@ -201,6 +204,9 @@ class SqlDelightGamificationRepositoryTest {
                 insertWorkoutSession(id = "zero$index-$i", totalReps = 0, weightPerCableKg = 20.0, timestamp = ts + 2)
                 insertWorkoutSession(id = "del$index-$i", totalReps = 5, weightPerCableKg = 20.0, timestamp = ts + 3, routineSessionId = "del-run-$index")
             }
+            // Another profile's workout inside every fixture's gaps (day 4, noon): a leaked profile
+            // filter would split the 7-day comeback gap and add a lunch-hour workout.
+            insertWorkoutSession(id = "other$index-gap", totalReps = 5, weightPerCableKg = 20.0, timestamp = local(4, 12, 0), profileId = "someone-else")
             // A deleted early-morning row must not create an early_bird / comeback it lacks.
             insertWorkoutSession(id = "del$index-extra", totalReps = 5, weightPerCableKg = 20.0, timestamp = local(28, 3, 0), routineSessionId = "del-run-$index")
             database.phoenixDatabaseQueries.softDeleteSessionsByRoutineSessionId(1L, 1L, "del-run-$index")
@@ -227,16 +233,47 @@ class SqlDelightGamificationRepositoryTest {
     }
 
     @Test
+    fun `weekly workouts badge counts only this profile from the local week start`() = runTest {
+        // Old rule: this profile's visible workouts with timestamp >= Monday 00:00 local.
+        val zone = TimeZone.currentSystemDefault()
+        val today = Clock.System.now().toLocalDateTime(zone).date
+        val weekStart = LocalDate.fromEpochDays(today.toEpochDays() - today.dayOfWeek.ordinal)
+            .atStartOfDayIn(zone).toEpochMilliseconds()
+
+        insertWorkoutSession(id = "before-week", totalReps = 5, weightPerCableKg = 20.0, timestamp = weekStart - 1)
+        insertWorkoutSession(id = "at-week-start", totalReps = 5, weightPerCableKg = 20.0, timestamp = weekStart)
+        insertWorkoutSession(id = "after-week-start", totalReps = 5, weightPerCableKg = 20.0, timestamp = weekStart + 1)
+        insertWorkoutSession(id = "in-week", totalReps = 5, weightPerCableKg = 20.0, timestamp = weekStart + 60_000)
+        // Rows the rule never counts.
+        insertWorkoutSession(id = "zero-rep", totalReps = 0, weightPerCableKg = 20.0, timestamp = weekStart + 2)
+        insertWorkoutSession(id = "deleted", totalReps = 5, weightPerCableKg = 20.0, timestamp = weekStart + 3, routineSessionId = "deleted-run")
+        database.phoenixDatabaseQueries.softDeleteSessionsByRoutineSessionId(1L, 1L, "deleted-run")
+        // Another household member trained all week.
+        repeat(6) { i ->
+            insertWorkoutSession(id = "other-$i", totalReps = 5, weightPerCableKg = 20.0, timestamp = weekStart + 10 + i, profileId = "someone-else")
+        }
+        repository.updateStats(profileId)
+        repository.updateStats("someone-else")
+
+        assertEquals(3 to 5, repository.getBadgeProgress("weekend_warrior", profileId))
+        assertFalse("weekend_warrior" in repository.checkAndAwardBadges(profileId).map { it.id })
+
+        // The other profile earns it from its own six, independently.
+        assertEquals(6 to 5, repository.getBadgeProgress("weekend_warrior", "someone-else"))
+        assertTrue("weekend_warrior" in repository.checkAndAwardBadges("someone-else").map { it.id })
+    }
+
+    @Test
     fun `single-session volume badge matches the old per-session formula`() = runTest {
         // measured volume wins; else reps x per-cable weight x cable count (null -> 1 cable)
-        insertWorkoutSession(id = "measured", totalReps = 10, weightPerCableKg = 100.0, totalVolumeKg = 1_234.9)
+        insertWorkoutSession(id = "measured", totalReps = 10, weightPerCableKg = 100.0, totalVolumeKg = 2_000.9) // winner, truncated
         insertWorkoutSession(id = "two-cable", totalReps = 10, weightPerCableKg = 90.5, cableCount = 2L) // 1810
         insertWorkoutSession(id = "legacy", totalReps = 10, weightPerCableKg = 150.0) // 1500
         insertWorkoutSession(id = "zero-rep", totalReps = 0, weightPerCableKg = 999.0, totalVolumeKg = 99_999.0)
         insertWorkoutSession(id = "other", totalReps = 10, weightPerCableKg = 999.0, profileId = "someone-else")
         repository.updateStats(profileId)
 
-        assertEquals(1_810 to 5_000, repository.getBadgeProgress("marathon_session", profileId))
+        assertEquals(2_000 to 5_000, repository.getBadgeProgress("marathon_session", profileId))
     }
 
     @Test

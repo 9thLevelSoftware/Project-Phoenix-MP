@@ -72,6 +72,25 @@ class FiveThreeOneTrainingMaxGapsTest {
         assertEquals(listOf(MissingFiveThreeOneTrainingMax(BENCH, "Bench Press")), missing)
     }
 
+    @Test
+    fun a_routine_with_an_ambiguous_main_lift_is_skipped_like_regeneration_skips_it() {
+        // Two bench rows on the bench day: regeneration throws for that routine, so no bump target.
+        val routines = routines().map { routine ->
+            if (routine.id == "routine-bench") {
+                routine.copy(exercises = routine.exercises + mainLift(BENCH, "Bench Press").copy(id = "re-bench-2", orderIndex = 2))
+            } else {
+                routine
+            }
+        }
+        val cycle = fiveThreeOneCycle(templateId = "template_531")
+        assertEquals(
+            FiveThreeOneRoutineDetector.MainLiftResolution.DuplicateLift(BENCH, listOf(0, 2)),
+            FiveThreeOneRoutineDetector.resolveMainLift(routines.first { it.id == "routine-bench" }.exercises),
+        )
+        val missing = missingFiveThreeOneTrainingMaxes(cycle, routines) { null }
+        assertEquals(listOf(SQUAT, PRESS, DEADLIFT), missing.map { it.exerciseId })
+    }
+
     private fun fiveThreeOneCycle(templateId: String? = null): TrainingCycle = TrainingCycle(
         id = "cycle",
         name = "5/3/1",

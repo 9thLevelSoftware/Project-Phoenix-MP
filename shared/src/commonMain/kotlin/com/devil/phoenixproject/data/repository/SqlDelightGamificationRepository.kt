@@ -308,8 +308,15 @@ class SqlDelightGamificationRepository(db: PhoenixDatabase) : GamificationReposi
         val peakPowerWatts: Int by lazy { peakRepPowerWatts(profileId) }
     }
 
-    /** Start of the current local week (Monday 00:00) in epoch ms. */
-    private fun currentWeekStartMs(): Long {
+    /**
+     * Start of the current local week (Monday 00:00) in epoch ms, from SQLite's 'localtime'
+     * so it agrees with the hour/day buckets of the other badge queries (review R-1).
+     */
+    private fun currentWeekStartMs(): Long = queries.selectLocalWeekStartMs().executeAsOne()
+        ?: kotlinWeekStartMs()
+
+    /** Fallback week start from kotlinx's zone; only used if SQLite returns no value. */
+    private fun kotlinWeekStartMs(): Long {
         val zone = TimeZone.currentSystemDefault()
         val today = Clock.System.now().toLocalDateTime(zone).date
         val dayOfWeek = today.dayOfWeek.ordinal // Monday = 0, Sunday = 6
