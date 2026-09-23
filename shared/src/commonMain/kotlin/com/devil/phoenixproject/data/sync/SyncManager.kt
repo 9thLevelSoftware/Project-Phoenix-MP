@@ -1743,12 +1743,9 @@ class SyncManager(
         userProfileRepository.ensureDefaultProfile()
         // Profile metadata for another portal account's profiles must not be published
         // into this account either (same rule as syncProfileOrder).
-        val allProfiles = (
-            userProfileRepository.allProfiles.value +
-                // PR 20: a pending-deletion profile stays listed until its own push lands.
-                userProfileRepository.pendingDeletionProfiles.value
-            )
-            .distinctBy { it.id }
+        // A pending-deletion profile (PR 20) is hidden from allProfiles; the profile being
+        // pushed is appended to the payload's list below, so its own push still names it.
+        val allProfiles = userProfileRepository.allProfiles.value
             .filter { isSyncableByPortalUser(it, userId) }
         val activeProfile = profile
         val activeProfileId = profile.id
