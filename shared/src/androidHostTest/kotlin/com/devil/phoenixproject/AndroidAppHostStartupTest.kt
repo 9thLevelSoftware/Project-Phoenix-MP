@@ -3,6 +3,7 @@ package com.devil.phoenixproject
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertIs
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.runTest
 
 class AndroidAppHostStartupTest {
@@ -20,6 +21,7 @@ class AndroidAppHostStartupTest {
                 featureConstructions++
                 "main-view-model-graph"
             },
+            blockingDispatcher = StandardTestDispatcher(testScheduler),
         )
 
         assertIs<StartupDependencyResolution.Failed>(launchAttempt())

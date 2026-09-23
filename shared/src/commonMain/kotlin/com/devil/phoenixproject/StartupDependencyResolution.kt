@@ -2,6 +2,8 @@ package com.devil.phoenixproject
 
 import com.devil.phoenixproject.data.local.DatabasePresenceSnapshot
 import kotlin.coroutines.cancellation.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.withContext
 
 /** A startup failure that is safe to classify without exposing its message. */
 internal interface StartupDiagnosticFailure {
@@ -45,19 +47,27 @@ internal inline fun <T> resolveStartupDependencies(
 )
 
 /**
- * Suspended startup boundary used by platform hosts. The initial implementation
- * intentionally keeps behavior minimal while ordering is specified by tests.
+ * Suspended startup boundary used by platform hosts.
+ *
+ * [resolveStartupOnly] opens the database (driver creation runs the schema heal) and
+ * [prepareRequired] runs the required migrations. Both are blocking database work, so
+ * they run on [blockingDispatcher] while the caller (the host's composition, i.e. Main)
+ * keeps drawing the splash. Ordering is unchanged: features are only resolved after
+ * both succeeded. [resolveFeatures] stays on the calling dispatcher because feature
+ * constructors (view models, lifecycle observers) may require the main thread; the
+ * database is already open and migrated by then.
  */
 internal suspend fun <S, T> prepareStartupDependencies(
     resolveStartupOnly: () -> S,
     prepareRequired: suspend (S) -> Unit,
     resolveFeatures: (S) -> T,
+    blockingDispatcher: CoroutineDispatcher,
 ): StartupDependencyResolution<T> {
-    val startup = resolveStartupDependencies(resolveStartupOnly)
+    val startup = withContext(blockingDispatcher) { resolveStartupDependencies(resolveStartupOnly) }
     if (startup is StartupDependencyResolution.Failed) return startup
     startup as StartupDependencyResolution.Ready
     return try {
-        prepareRequired(startup.dependencies)
+        withContext(blockingDispatcher) { prepareRequired(startup.dependencies) }
         resolveStartupDependencies { resolveFeatures(startup.dependencies) }
     } catch (failure: CancellationException) {
         throw failure
@@ -71,10 +81,12 @@ internal suspend fun <S, T> prepareAppHostDependencies(
     resolveStartupOnly: () -> S,
     prepareRequired: suspend (S) -> Unit,
     resolveFeatures: (S) -> T,
+    blockingDispatcher: CoroutineDispatcher,
 ): StartupDependencyResolution<T> = prepareStartupDependencies(
     resolveStartupOnly = resolveStartupOnly,
     prepareRequired = prepareRequired,
     resolveFeatures = resolveFeatures,
+    blockingDispatcher = blockingDispatcher,
 )
 
 internal fun DatabasePresenceSnapshot.safeSummary(): String = listOf(

@@ -139,9 +139,107 @@ internal fun applyColumnHeal(driver: SqlDriver, op: SchemaHealOperation): Reconc
     }
 }
 
+/** Table, uniqueness and ordered plain-column list of an index. */
+internal data class IndexShape(val table: String, val unique: Boolean, val columns: List<String>)
+
+private val CREATE_INDEX_SHAPE = Regex(
+    """^\s*CREATE\s+(UNIQUE\s+)?INDEX\s+(?:IF\s+NOT\s+EXISTS\s+)?"?\w+"?\s+ON\s+"?(\w+)"?\s*\(([^()]*)\)\s*;?\s*$""",
+    RegexOption.IGNORE_CASE,
+)
+private val PLAIN_INDEX_COLUMN = Regex("""^"?(\w+)"?$""")
+
+/**
+ * Shape declared by a `CREATE [UNIQUE] INDEX ... ON Table(col, ...)` statement, or null when
+ * the statement uses anything this check cannot compare (expressions, collations, sort order,
+ * a WHERE clause). A null shape means "unverifiable", and callers must treat that as a mismatch.
+ */
+internal fun parseIndexShape(createSql: String): IndexShape? {
+    val match = CREATE_INDEX_SHAPE.matchEntire(createSql.trim()) ?: return null
+    val columns = match.groupValues[3].split(',').map { part ->
+        PLAIN_INDEX_COLUMN.matchEntire(part.trim())?.groupValues?.get(1) ?: return null
+    }
+    if (columns.isEmpty()) return null
+    return IndexShape(
+        table = match.groupValues[2],
+        unique = match.groupValues[1].isNotBlank(),
+        columns = columns,
+    )
+}
+
+/** Shape of the index as it exists in the database, or null if it is absent, partial or has expression columns. */
+internal fun liveIndexShape(driver: SqlDriver, indexName: String): IndexShape? {
+    var table: String? = null
+    driver.executeQuery(
+        identifier = null,
+        sql = "SELECT tbl_name FROM sqlite_master WHERE type = 'index' AND name = '$indexName'",
+        mapper = { cursor ->
+            if (cursor.next().value) table = cursor.getString(0)
+            QueryResult.Value(Unit)
+        },
+        parameters = 0,
+    )
+    val tableName = table ?: return null
+    var unique: Boolean? = null
+    var partial = false
+    driver.executeQuery(
+        identifier = null,
+        sql = "PRAGMA index_list(\"$tableName\")",
+        mapper = { cursor ->
+            // index_list columns: seq, name, unique, origin, partial
+            while (cursor.next().value) {
+                if (cursor.getString(1) == indexName) {
+                    unique = cursor.getLong(2) == 1L
+                    partial = cursor.getLong(4) == 1L
+                }
+            }
+            QueryResult.Value(Unit)
+        },
+        parameters = 0,
+    )
+    val isUnique = unique ?: return null
+    if (partial) return null
+    val columns = mutableListOf<Pair<Long, String?>>()
+    driver.executeQuery(
+        identifier = null,
+        sql = "PRAGMA index_info(\"$indexName\")",
+        mapper = { cursor ->
+            // index_info columns: seqno, cid, name (null for an expression column)
+            while (cursor.next().value) {
+                columns += (cursor.getLong(0) ?: 0L) to cursor.getString(2)
+            }
+            QueryResult.Value(Unit)
+        },
+        parameters = 0,
+    )
+    val names = columns.sortedBy { it.first }.map { it.second ?: return null }
+    if (names.isEmpty()) return null
+    return IndexShape(table = tableName, unique = isUnique, columns = names)
+}
+
+/**
+ * True only when the live index provably has the canonical shape of [op]: same table, same
+ * uniqueness, same columns in the same order, and not partial. Anything unverifiable is false,
+ * so the caller falls back to the old drop-and-rebuild.
+ */
+internal fun indexHasCanonicalShape(driver: SqlDriver, op: SchemaIndexOperation): Boolean {
+    val expected = parseIndexShape(op.createSql) ?: return false
+    val live = liveIndexShape(driver, op.name) ?: return false
+    return live.table.equals(expected.table, ignoreCase = true) &&
+        live.unique == expected.unique &&
+        live.columns.map { it.lowercase() } == expected.columns.map { it.lowercase() }
+}
+
 internal fun applyIndexCreate(driver: SqlDriver, op: SchemaIndexOperation): ReconciliationResult {
     val alreadyExists = indexExists(driver, op.name)
     if (alreadyExists && op.preDropSql == null) {
+        return ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
+    }
+    // A preDropSql op replaces a stale shape. When the index already has the canonical
+    // shape there is nothing to replace: skip the dedupe + drop + rebuild that would
+    // otherwise run on every database open. The check reads the live index structure
+    // (not a "done once" flag), so a stale or hand-made index is still rebuilt, and a
+    // missing one (upgrade, restore) is still created below.
+    if (alreadyExists && indexHasCanonicalShape(driver, op)) {
         return ReconciliationResult("index", op.name, ReconciliationStatus.ALREADY_PRESENT)
     }
 

@@ -630,6 +630,133 @@ class SchemaManifestTest {
         assertTrue(indexExists(driver, "idx_external_activity_dedup"))
     }
 
+    private val replacedIndexNames = listOf(
+        "idx_pr_unique",
+        "idx_gamification_stats_profile",
+        "idx_external_activity_dedup",
+    )
+
+    @Test
+    fun `every preDropSql index declares a shape the canonical check can verify`() {
+        // If one of these stops parsing, the open-time skip silently degrades back to a
+        // rebuild on every open. Keep the create statements to plain column lists.
+        val replaced = manifestIndexes.filter { it.preDropSql != null }
+        assertEquals(replacedIndexNames.sorted(), replaced.map { it.name }.sorted())
+        replaced.forEach { op ->
+            assertTrue(parseIndexShape(op.createSql) != null, "${op.name} shape must be parseable")
+        }
+    }
+
+    @Test
+    fun `an up-to-date database does not drop or rebuild the replaceable unique indexes`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        PhoenixDatabase.Schema.create(driver)
+        reconcileFullSchema(driver)
+        val sqlBefore = replacedIndexNames.associateWith { indexSql(driver, it) }
+        val schemaVersionBefore = queryScalar(driver, "SELECT CAST(schema_version AS TEXT) FROM pragma_schema_version")
+
+        replacedIndexNames.forEach { name ->
+            val result = applyIndexCreate(driver, manifestIndexes.first { it.name == name })
+            assertEquals(ReconciliationStatus.ALREADY_PRESENT, result.status, "$name must not be rebuilt")
+        }
+        reconcileFullSchema(driver)
+
+        // Any DROP/CREATE INDEX bumps the schema cookie; an unchanged cookie proves no rebuild ran.
+        assertEquals(
+            schemaVersionBefore,
+            queryScalar(driver, "SELECT CAST(schema_version AS TEXT) FROM pragma_schema_version"),
+        )
+        assertEquals(sqlBefore, replacedIndexNames.associateWith { indexSql(driver, it) })
+    }
+
+    @Test
+    fun `a stale-shape idx_pr_unique is still deduped and rebuilt to the canonical shape`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            """
+            CREATE TABLE PersonalRecord (
+                id INTEGER PRIMARY KEY,
+                exerciseId TEXT NOT NULL,
+                workoutMode TEXT NOT NULL,
+                prType TEXT NOT NULL,
+                phase TEXT NOT NULL,
+                profile_id TEXT NOT NULL,
+                achievedAt INTEGER NOT NULL
+            )
+            """.trimIndent(),
+            0,
+        )
+        // Pre-profile shape (migration 19): unique without profile_id.
+        driver.execute(null, "CREATE UNIQUE INDEX idx_pr_unique ON PersonalRecord(exerciseId, workoutMode, prType, phase)", 0)
+        driver.execute(
+            null,
+            """
+            INSERT INTO PersonalRecord(id, exerciseId, workoutMode, prType, phase, profile_id, achievedAt)
+            VALUES
+                (1, 'bench', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'default', 100),
+                (2, 'squat', 'Old School', 'MAX_WEIGHT', 'COMBINED', 'other', 200)
+            """.trimIndent(),
+            0,
+        )
+        val op = manifestIndexes.first { it.name == "idx_pr_unique" }
+        assertFalse(indexHasCanonicalShape(driver, op))
+
+        val result = applyIndexCreate(driver, op)
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertTrue(indexHasCanonicalShape(driver, op))
+        assertTrue(indexSql(driver, "idx_pr_unique").orEmpty().contains("profile_id"))
+        assertEquals("2", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM PersonalRecord"))
+    }
+
+    @Test
+    fun `a non-unique index with the canonical columns is still rebuilt as unique and deduped`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        driver.execute(
+            null,
+            "CREATE TABLE GamificationStats (id INTEGER PRIMARY KEY, lastUpdated INTEGER NOT NULL, updatedAt INTEGER, profile_id TEXT NOT NULL)",
+            0,
+        )
+        driver.execute(null, "CREATE INDEX idx_gamification_stats_profile ON GamificationStats(profile_id)", 0)
+        driver.execute(
+            null,
+            "INSERT INTO GamificationStats(id, lastUpdated, updatedAt, profile_id) VALUES (1, 100, 1000, 'default'), (2, 200, 10, 'default')",
+            0,
+        )
+        val op = manifestIndexes.first { it.name == "idx_gamification_stats_profile" }
+        assertFalse(indexHasCanonicalShape(driver, op))
+
+        val result = applyIndexCreate(driver, op)
+
+        assertEquals(ReconciliationStatus.CREATED, result.status)
+        assertTrue(indexHasCanonicalShape(driver, op))
+        assertEquals("1", queryScalar(driver, "SELECT CAST(COUNT(*) AS TEXT) FROM GamificationStats"))
+    }
+
+    @Test
+    fun `a replaceable index missing after an upgrade or restore is still created`() {
+        val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)
+        PhoenixDatabase.Schema.create(driver)
+        driver.execute(null, "DROP INDEX idx_external_activity_dedup", 0)
+
+        reconcileFullSchema(driver)
+
+        assertTrue(indexExists(driver, "idx_external_activity_dedup"))
+        assertTrue(indexHasCanonicalShape(driver, manifestIndexes.first { it.name == "idx_external_activity_dedup" }))
+    }
+
+    @Test
+    fun `parseIndexShape refuses statements it cannot compare`() {
+        assertEquals(null, parseIndexShape("CREATE INDEX i ON T(a DESC)"))
+        assertEquals(null, parseIndexShape("CREATE INDEX i ON T(lower(a))"))
+        assertEquals(null, parseIndexShape("CREATE UNIQUE INDEX i ON T(a) WHERE a IS NOT NULL"))
+        assertEquals(
+            IndexShape(table = "T", unique = true, columns = listOf("a", "b")),
+            parseIndexShape("CREATE UNIQUE INDEX IF NOT EXISTS i ON T(a, b)"),
+        )
+    }
+
     @Test
     fun `applyIndexCreate rolls back drop when unique replacement fails on duplicates (F012)`() {
         val driver = JdbcSqliteDriver(JdbcSqliteDriver.IN_MEMORY)

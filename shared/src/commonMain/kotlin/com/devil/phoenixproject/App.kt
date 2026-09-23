@@ -55,6 +55,7 @@ import com.devil.phoenixproject.util.shareDatabaseFiles
 import kotlin.time.Clock
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -338,7 +339,7 @@ fun AppContent(
                 StartupSurface.MIGRATION_RETRY -> MigrationRetryScreen(
                     message = (migrationState as RequiredMigrationState.Failed).message,
                     onRetry = {
-                        scope.launch { migrationManager.retryRequiredMigrations() }
+                        scope.launch(Dispatchers.IO) { migrationManager.retryRequiredMigrations() }
                     },
                 )
 
