@@ -53,8 +53,9 @@ class PortalPushLimitsTest {
 
     private fun createManager(
         rateLimiter: ClientRateLimiter = ClientRateLimiter(),
+        apiClient: PortalApiClient = fakeApi,
     ) = SyncManager(
-        apiClient = fakeApi,
+        apiClient = apiClient,
         tokenStorage = tokenStorage,
         syncRepository = fakeSyncRepo,
         gamificationRepository = fakeGamificationRepo,
@@ -1146,5 +1147,121 @@ class PortalPushLimitsTest {
             fakeApi.pushPayloads.flatMap { it.personalRecords }.map { it.id }.toSet().size,
             "every PR is delivered exactly across the requests",
         )
+    }
+
+    // ==================== codex #856 P1: list-shaped final fields are split too ====================
+
+    @Test
+    fun listShapedFinalFieldsAreSplitAndEachExternalActivityAckReadsItsOwnRequest() = runTest {
+        authenticate()
+        fakeUserProfileRepo.setActiveProfileForTest(
+            subscriptionStatus = com.devil.phoenixproject.data.repository.SubscriptionStatus.ACTIVE,
+        )
+        fakeSyncRepo.customExercisesToReturn = List(30) { i ->
+            CustomExerciseSyncDto(
+                clientId = "custom_$i",
+                name = "Custom exercise number $i with a long descriptive name",
+                muscleGroup = "Back",
+                equipment = "Cable",
+                defaultCableConfig = "DOUBLE",
+                createdAt = 1L,
+                updatedAt = 1L,
+            )
+        }
+        repeat(30) { i ->
+            fakeExternalActivityRepo.activities += com.devil.phoenixproject.domain.model.ExternalActivity(
+                externalId = "hevy-$i",
+                provider = com.devil.phoenixproject.domain.model.IntegrationProvider.HEVY,
+                name = "Imported activity $i with a long descriptive name",
+                startedAt = 1_000L + i,
+                profileId = "default",
+                needsSync = true,
+            )
+        }
+        // Echo, for each request, exactly the external activities THAT request carried.
+        val echoingApi = object : FakePortalApiClient() {
+            override suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> {
+                super.pushPortalPayload(payload)
+                return Result.success(
+                    PortalSyncPushResponse(
+                        syncTime = "2026-03-02T12:00:00Z",
+                        externalActivityKeys = payload.externalActivities.map {
+                            ExternalActivityAckDto(externalId = it.externalId, provider = it.provider)
+                        },
+                    ),
+                )
+            }
+        }
+        val single = PushPlanner.byteSize(
+            PortalSyncPayload(
+                deviceId = "d",
+                platform = "p",
+                lastSync = 0L,
+                customExercises = listOf(fakeSyncRepo.customExercisesToReturn.first()),
+            ),
+        )
+
+        withByteCap(single * 6) {
+            assertTrue(createManager(apiClient = echoingApi).sync().isSuccess)
+
+            val payloads = echoingApi.pushPayloads
+            assertTrue(payloads.size > 2, "the final fields must be split (saw ${payloads.size})")
+            payloads.forEachIndexed { i, payload ->
+                assertTrue(PushPlanner.byteSize(payload) <= PushPlanner.maxBytes, "request $i is over the cap")
+            }
+            assertEquals(30, payloads.flatMap { it.customExercises }.map { it.clientId }.toSet().size)
+            assertEquals(30, payloads.flatMap { it.externalActivities }.map { it.externalId }.toSet().size)
+            assertTrue(
+                payloads.filter { it.externalActivities.isNotEmpty() }.size > 1,
+                "external activities must span several requests for this test to mean anything",
+            )
+            // allProfiles travels only on the last request.
+            assertEquals(listOf(payloads.lastIndex), payloads.indices.filter { payloads[it].allProfiles != null })
+            // Every activity is acknowledged from the response of the request that carried it.
+            assertEquals(
+                (0 until 30).map { "hevy-$it" }.toSet(),
+                fakeExternalActivityRepo.markedSyncedKeys.map { it.externalId }.toSet(),
+            )
+        }
+    }
+
+    @Test
+    fun assessmentsAreSplitUnderTheCapAndAnAssessmentTooLargeForAnyRequestIsSkippedWithItsId() {
+        val envelope = PortalSyncPayload(deviceId = "d", platform = "p", lastSync = 0L)
+        fun assessment(i: Int, data: String = "[]") = PortalAssessmentResultDto(
+            id = "assessment-$i",
+            exerciseId = "ex-$i",
+            estimatedOneRepMaxKg = 50f,
+            loadVelocityData = data,
+            createdAt = "2026-03-02T12:00:00Z",
+        )
+        val normal = List(25) { assessment(it) }
+        val huge = assessment(99, data = "[" + "1".repeat(5_000) + "]")
+        val single = PushPlanner.byteSize(envelope.copy(assessments = listOf(normal.first())))
+        val skipped = mutableListOf<Pair<String, String>>()
+
+        val envelopeBytes = PushPlanner.byteSize(envelope)
+        // Room for about six assessments per request on top of the envelope.
+        withByteCap(envelopeBytes + (single - envelopeBytes + 1) * 6) {
+            val requests = PushPlanner.planTailRequests(
+                envelope = envelope,
+                routines = emptyList(),
+                deletedRoutineIds = emptyList(),
+                cycles = emptyList(),
+                personalRecords = emptyList(),
+                customExercises = emptyList(),
+                assessments = normal + huge,
+                badges = emptyList(),
+                externalActivities = emptyList(),
+                finalFields = envelope.copy(allProfiles = listOf(LocalProfileDto("default", "Default", 0))),
+                onSkip = { type, id -> skipped += type to id },
+            )
+
+            assertTrue(requests.size > 2)
+            requests.forEach { assertTrue(PushPlanner.byteSize(it) <= PushPlanner.maxBytes) }
+            assertEquals(normal.map { it.id }.toSet(), requests.flatMap { it.assessments }.map { it.id }.toSet())
+            assertEquals(listOf("assessment" to "assessment-99"), skipped)
+            assertEquals(listOf(requests.lastIndex), requests.indices.filter { requests[it].allProfiles != null })
+        }
     }
 }
