@@ -337,6 +337,34 @@ interface SyncRepository {
      */
     suspend fun getAllPersonalRecordIds(profileId: String = "default"): List<String>
 
+    /**
+     * Rows [portalUserId] must never upload (PR 11 account-switch exclusions).
+     * Scoped by portal user so one account's exclusion set cannot hide rows from
+     * another account that later signs in on the same install.
+     */
+    suspend fun insertSyncExcludedEntities(
+        portalUserId: String,
+        entityType: String,
+        entityIds: Collection<String>,
+    )
+
+    suspend fun getSyncExcludedEntityIds(portalUserId: String, entityType: String): Set<String>
+
+    /**
+     * Records which pre-switch rows the chosen account-switch policy excludes from
+     * upload to [portalUserId].
+     *
+     * @param excludeAllExisting true for "Don't upload existing data": every pre-switch row.
+     *   false for "Upload workouts not yet synced": only rows that already reached another account.
+     * @param previousPushWatermarks device-clock watermark of the old account, per profile.
+     */
+    suspend fun recordAccountSwitchExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        excludeAllExisting: Boolean,
+        previousPushWatermarks: Map<String, Long>,
+    )
+
     // === Post-Push Stamping ===
 
     /**

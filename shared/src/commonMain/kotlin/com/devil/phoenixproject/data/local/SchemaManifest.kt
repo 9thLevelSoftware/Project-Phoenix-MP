@@ -1458,6 +1458,20 @@ internal val manifestTables: List<SchemaTableOperation> = listOf(
             )
         """.trimIndent(),
     ),
+
+    // SyncExcludedEntity -- migration 54, account-switch upload exclusions.
+    // Full shape: all columns present from creation (no later migrations add columns).
+    SchemaTableOperation(
+        table = "SyncExcludedEntity",
+        createSql = """
+            CREATE TABLE IF NOT EXISTS SyncExcludedEntity (
+                portal_user_id TEXT NOT NULL,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                PRIMARY KEY (portal_user_id, entity_type, entity_id)
+            )
+        """.trimIndent(),
+    ),
 )
 
 // ============================================================

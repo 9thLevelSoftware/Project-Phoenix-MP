@@ -1,18 +1,25 @@
 package com.devil.phoenixproject.data.sync
 
-import com.devil.phoenixproject.data.repository.ProfileAccountBindingException
 import com.devil.phoenixproject.data.repository.ProfileMutationBarrier
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.russhwolf.settings.MapSettings
 import com.russhwolf.settings.Settings
+import kotlin.test.BeforeTest
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
+import kotlin.test.assertIs
 import kotlin.test.assertNull
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 
 class PortalIdentityCommitTest {
+    @BeforeTest
+    fun drainPendingAccountMismatch() {
+        // PendingAccountMismatch is process-wide; never leak one test's candidate into the next.
+        PendingAccountMismatch.take()
+    }
+
     @Test
     fun `new identity binds the unowned profile and starts with its own cursors`() = runTest {
         val profiles = FakeUserProfileRepository().apply {
@@ -39,7 +46,7 @@ class PortalIdentityCommitTest {
     }
 
     @Test
-    fun `different profile owner rejects identity and preserves prior auth`() = runTest {
+    fun `different profile owner is detected as an account switch and is not relinked`() = runTest {
         val profiles = FakeUserProfileRepository().apply {
             setActiveProfileForTest(id = "default", supabaseUserId = "owner-a")
         }
@@ -48,20 +55,49 @@ class PortalIdentityCommitTest {
             setPullCursor("owner-a", "default", 42L)
         }
 
-        assertFailsWith<ProfileAccountBindingException> {
-            ProfileMutationBarrier().withExclusive {
-                commitPortalIdentityUnderProfileMutationBarrier(
-                    response = authResponse("owner-b", "token-b"),
-                    tokenStorage = storage,
-                    userProfileRepository = profiles,
-                )
-            }
+        val outcome = ProfileMutationBarrier().withExclusive {
+            commitPortalIdentityUnderProfileMutationBarrier(
+                response = authResponse("owner-b", "token-b"),
+                tokenStorage = storage,
+                userProfileRepository = profiles,
+            )
         }
 
+        assertIs<PortalIdentityCommitOutcome.AccountMismatchDetected>(outcome)
+        assertEquals("owner-a", outcome.mismatch.previousUserId)
+        assertEquals("owner-b", outcome.mismatch.newUserId)
+        // No relink: the dialog's choice owns that decision.
         assertEquals("owner-a", profiles.activeProfile.value?.supabaseUserId)
-        assertEquals("owner-a", storage.currentUser.value?.id)
-        assertEquals("token-a", storage.getToken())
+        // The token is still saved so the user can answer the dialog while signed in.
+        assertEquals("owner-b", storage.currentUser.value?.id)
+        assertEquals("token-b", storage.getToken())
         assertEquals(42L, storage.getPullCursor("owner-a", "default"))
+        assertEquals("owner-a", PendingAccountMismatch.peek()?.previousUserId)
+    }
+
+    @Test
+    fun `lastSynced-only mismatch is detected even when profiles were never linked`() = runTest {
+        val profiles = FakeUserProfileRepository().apply {
+            setActiveProfileForTest(id = "default", supabaseUserId = null)
+        }
+        val storage = PortalTokenStorage(MapSettings()).apply {
+            setLastSyncedPortalUserId("owner-a")
+            setLastSyncedPortalUserLabel("owner-a@example.com")
+        }
+
+        val outcome = ProfileMutationBarrier().withExclusive {
+            commitPortalIdentityUnderProfileMutationBarrier(
+                response = authResponse("owner-b", "token-b"),
+                tokenStorage = storage,
+                userProfileRepository = profiles,
+            )
+        }
+
+        assertIs<PortalIdentityCommitOutcome.AccountMismatchDetected>(outcome)
+        assertEquals("owner-a", outcome.mismatch.previousUserId)
+        assertEquals("owner-a@example.com", outcome.mismatch.previousUserLabel)
+        assertNull(profiles.activeProfile.value?.supabaseUserId)
+        assertEquals("owner-b", storage.currentUser.value?.id)
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.devil.phoenixproject.data.sync
 
+import com.devil.phoenixproject.data.repository.ProfileAccountLinkReceipt
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
@@ -7,17 +8,38 @@ import kotlinx.coroutines.withContext
 /**
  * Commits one authenticated identity while the caller holds [com.devil.phoenixproject.data.repository.ProfileMutationBarrier].
  * Profile ownership is validated and persisted before the token becomes visible to sync.
+ *
+ * PR 11: when the just-signed-in user is a *different* portal account than the one
+ * this device's rows already belong to, no profile is relinked. The token is still
+ * saved so the user is authenticated and can answer the account-switch dialog, and
+ * [PortalIdentityCommitOutcome.AccountMismatchDetected] is returned.
  */
 internal suspend fun commitPortalIdentityUnderProfileMutationBarrier(
     response: GoTrueAuthResponse,
     tokenStorage: PortalTokenStorage,
     userProfileRepository: UserProfileRepository,
-) {
+): PortalIdentityCommitOutcome {
     val activeProfile = requireNotNull(userProfileRepository.activeProfile.value) {
         "An active profile is required before signing in"
     }
+    val mismatch = detectAccountMismatch(
+        newUserId = response.user.id,
+        newUserLabel = response.user.email?.takeIf { it.isNotBlank() } ?: response.user.id,
+        lastSyncedPortalUserId = tokenStorage.getLastSyncedPortalUserId(),
+        lastSyncedPortalUserLabel = tokenStorage.getLastSyncedPortalUserLabel(),
+        profileOwners = userProfileRepository.allProfiles.value.mapNotNull { profile ->
+            profile.supabaseUserId?.takeIf { it.isNotBlank() }?.let { owner -> profile.id to owner }
+        },
+    )
+    if (mismatch != null) {
+        // Authenticate without relinking: the relink is the dialog's explicit choice.
+        check(tokenStorage.saveGoTrueAuth(response)) { "Authenticated identity commit was rejected" }
+        PendingAccountMismatch.publish(mismatch)
+        return PortalIdentityCommitOutcome.AccountMismatchDetected(mismatch)
+    }
+
     val previousAuth = tokenStorage.snapshotAuthState()
-    val receipt = userProfileRepository.linkToSupabaseUnderProfileMutationBarrier(
+    val receipt: ProfileAccountLinkReceipt = userProfileRepository.linkToSupabaseUnderProfileMutationBarrier(
         profileId = activeProfile.id,
         supabaseUserId = response.user.id,
     )
@@ -38,4 +60,5 @@ internal suspend fun commitPortalIdentityUnderProfileMutationBarrier(
         }
         throw commitFailure
     }
+    return PortalIdentityCommitOutcome.Committed(receipt)
 }

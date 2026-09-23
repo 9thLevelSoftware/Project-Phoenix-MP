@@ -870,4 +870,12 @@
     <string name="voice_stop_reason_permission">microphone permission denied</string>
     <string name="voice_stop_reason_audio_focus_lost">another app took the microphone</string>
     <string name="voice_stop_reason_start_failed">speech recognition could not start</string>
+    <!-- PR 11: account-switch dialog and ownership-conflict recovery -->
+    <string name="account_switch_title">This phone\'s data belongs to another account</string>
+    <string name="account_switch_message">You signed in as %1$s, but this phone\'s data belongs to %2$s. Workouts already synced to %2$s stay on this phone and in that account; they won\'t be uploaded to %1$s.</string>
+    <string name="account_switch_upload_never_synced">Upload workouts not yet synced</string>
+    <string name="account_switch_exclude_all">Don\'t upload existing data</string>
+    <string name="ownership_conflict_title">Upload refused</string>
+    <string name="ownership_conflict_message">The portal refused data that belongs to another account: %1$s</string>
+    <string name="ownership_conflict_action">Stop uploading data from before the account switch</string>
 </resources>

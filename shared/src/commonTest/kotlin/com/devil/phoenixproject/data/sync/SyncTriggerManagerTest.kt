@@ -251,6 +251,7 @@ class SyncTriggerManagerTest {
                     }
                 }
 
+                SyncErrorCategory.OWNERSHIP_CONFLICT,
                 SyncErrorCategory.PERMANENT -> {
                     currentBackoffIndex = 0
                     _hasPersistentError.value = true

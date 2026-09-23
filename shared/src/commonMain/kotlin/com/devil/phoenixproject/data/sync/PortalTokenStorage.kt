@@ -108,6 +108,16 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_ROUTINE_GROUP_REPAIR_CURSOR_PREFIX = "portal_routine_group_repair_cursor_"
         private const val KEY_DEVICE_ID = "portal_device_id"
         private const val KEY_STORAGE_VERIFIED = "portal_storage_verified"
+
+        /**
+         * Portal user id of the account the last successful push landed in (PR 11).
+         * Deliberately NOT cleared by [clearAuth]: sign-out must not forget which
+         * account the local rows already live in, or the next sign-in cannot tell
+         * "same account" from "different account" and would re-upload rows the new
+         * account does not own.
+         */
+        private const val KEY_LAST_SYNCED_PORTAL_USER_ID = "portal_last_synced_user_id"
+    private const val KEY_LAST_SYNCED_PORTAL_USER_LABEL = "portal_last_synced_user_label"
     }
 
     init {
@@ -276,6 +286,28 @@ class PortalTokenStorage(private val settings: Settings) {
     }
 
     fun getRefreshToken(): String? = settings.getStringOrNull(KEY_REFRESH_TOKEN)
+
+    /**
+     * Portal user id of the account the last successful push landed in (PR 11).
+     * Survives [clearAuth] so a later sign-in can detect a different account.
+     */
+    fun getLastSyncedPortalUserId(): String? = settings.getStringOrNull(KEY_LAST_SYNCED_PORTAL_USER_ID)
+
+    /**
+     * Display label (email or id) for [getLastSyncedPortalUserId], so the account-switch
+     * dialog can name both accounts. Never logged (F-076).
+     */
+    fun getLastSyncedPortalUserLabel(): String? = settings.getStringOrNull(KEY_LAST_SYNCED_PORTAL_USER_LABEL)
+
+    /** Records which portal user the last successful push landed in. Not cleared by [clearAuth]. */
+    fun setLastSyncedPortalUserId(userId: String) {
+        settings[KEY_LAST_SYNCED_PORTAL_USER_ID] = userId
+    }
+
+    /** Records the display label for [setLastSyncedPortalUserId]. Not cleared by [clearAuth]. */
+    fun setLastSyncedPortalUserLabel(label: String) {
+        settings[KEY_LAST_SYNCED_PORTAL_USER_LABEL] = label
+    }
 
     fun getExpiresAt(): Long = settings.getLong(KEY_EXPIRES_AT, 0L)
 

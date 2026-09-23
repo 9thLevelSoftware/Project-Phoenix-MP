@@ -1215,7 +1215,7 @@ class SchemaParityTest {
     // ==================== HELPERS ====================
 
     companion object {
-        private const val EXPECTED_SCHEMA_VERSION = 54L
+        private const val EXPECTED_SCHEMA_VERSION = 55L
 
         /** Pre-existing gaps (v5 predates MigrationStatements parity). Do not add to this list. */
         private val GRANDFATHERED_UNMIRRORED_SQM_COLUMNS = setOf(

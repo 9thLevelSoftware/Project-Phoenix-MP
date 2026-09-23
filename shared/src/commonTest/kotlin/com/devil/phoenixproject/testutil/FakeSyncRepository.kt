@@ -299,6 +299,75 @@ class FakeSyncRepository : SyncRepository {
     override suspend fun getAllBadgeIds(profileId: String): List<String> = badgeIds
     override suspend fun getAllPersonalRecordIds(profileId: String): List<String> = personalRecordIds
 
+    val syncExcludedEntities: MutableMap<String, MutableMap<String, MutableSet<String>>> = mutableMapOf()
+    val recordAccountSwitchExclusionsCalls: MutableList<Triple<String, Boolean, Map<String, Long>>> = mutableListOf()
+
+    override suspend fun insertSyncExcludedEntities(
+        portalUserId: String,
+        entityType: String,
+        entityIds: Collection<String>,
+    ) {
+        val byType = syncExcludedEntities.getOrPut(portalUserId) { mutableMapOf() }
+        val ids = byType.getOrPut(entityType) { mutableSetOf() }
+        ids += entityIds
+    }
+
+    override suspend fun getSyncExcludedEntityIds(portalUserId: String, entityType: String): Set<String> =
+        syncExcludedEntities[portalUserId]?.get(entityType)?.toSet() ?: emptySet()
+
+    override suspend fun recordAccountSwitchExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        excludeAllExisting: Boolean,
+        previousPushWatermarks: Map<String, Long>,
+    ) {
+        recordAccountSwitchExclusionsCalls += Triple(portalUserId, excludeAllExisting, previousPushWatermarks)
+        val byType = syncExcludedEntities.getOrPut(portalUserId) { mutableMapOf() }
+        fun exclude(entityType: String, entityId: String) {
+            byType.getOrPut(entityType) { mutableSetOf() } += entityId
+        }
+        val types = com.devil.phoenixproject.data.sync.SyncExcludedEntityTypes
+        for (profileId in profileIds) {
+            val watermark = previousPushWatermarks[profileId] ?: 0L
+            for (session in workoutSessionsToReturn) {
+                if (session.profileId != profileId) continue
+                val neverSynced = session.updatedAt == null
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(types.WORKOUT, session.id)
+                    session.routineSessionId?.let { exclude(types.WORKOUT, it) }
+                }
+            }
+            for (routine in routinesToReturn) {
+                if (routine.profileId != profileId) continue
+                val neverSynced = routine.createdAt > 0L && routine.createdAt > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(types.ROUTINE, routine.id)
+                }
+            }
+            for (ctx in cyclesToReturn) {
+                val cycle = ctx.cycle
+                val neverSynced = cycle.createdAt > 0L && cycle.createdAt > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(types.CYCLE, cycle.id)
+                }
+            }
+            for (record in fullPRsToReturn) {
+                val neverSynced = record.timestamp > 0L && record.timestamp > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(types.PERSONAL_RECORD, record.id.toString())
+                    record.uuid?.let { exclude(types.PERSONAL_RECORD, it) }
+                }
+            }
+            for (exercise in customExercisesToReturn) {
+                val idTime = com.devil.phoenixproject.data.sync.customExerciseIdTimestamp(exercise.clientId)
+                val neverSynced = idTime != null && idTime > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(types.CUSTOM_EXERCISE, exercise.clientId)
+                }
+            }
+        }
+    }
+
     var hardDeletedRoutineIds: List<String> = emptyList()
     var hardDeletedCycleIds: List<String> = emptyList()
 

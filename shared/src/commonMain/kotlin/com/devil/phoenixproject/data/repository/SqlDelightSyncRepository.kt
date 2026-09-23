@@ -15,6 +15,8 @@ import com.devil.phoenixproject.data.sync.PullTrainingCycleDto
 import com.devil.phoenixproject.data.sync.PulledWorkoutDeletionDto
 import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
+import com.devil.phoenixproject.data.sync.SyncExcludedEntityTypes
+import com.devil.phoenixproject.data.sync.customExerciseIdTimestamp
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.RoutineExercise as RoutineExerciseRow
 import com.devil.phoenixproject.database.Superset as SupersetRow
@@ -2399,6 +2401,103 @@ class SqlDelightSyncRepository(
 
     override suspend fun getAllBadgeIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
         queries.selectAllBadgeIdsByProfile(profileId).executeAsList()
+    }
+
+    override suspend fun insertSyncExcludedEntities(
+        portalUserId: String,
+        entityType: String,
+        entityIds: Collection<String>,
+    ) = withContext(Dispatchers.IO) {
+        entityIds.forEach { entityId ->
+            queries.insertSyncExcludedEntity(
+                portalUserId = portalUserId,
+                entityType = entityType,
+                entityId = entityId,
+            )
+        }
+    }
+
+    override suspend fun getSyncExcludedEntityIds(
+        portalUserId: String,
+        entityType: String,
+    ): Set<String> = withContext(Dispatchers.IO) {
+        queries.selectSyncExcludedEntityIds(portalUserId = portalUserId, entityType = entityType)
+            .executeAsList()
+            .toSet()
+    }
+
+    override suspend fun recordAccountSwitchExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        excludeAllExisting: Boolean,
+        previousPushWatermarks: Map<String, Long>,
+    ) = withContext(Dispatchers.IO) {
+        fun exclude(entityType: String, entityId: String) {
+            queries.insertSyncExcludedEntity(
+                portalUserId = portalUserId,
+                entityType = entityType,
+                entityId = entityId,
+            )
+        }
+
+        for (profileId in profileIds) {
+            val watermark = previousPushWatermarks[profileId] ?: 0L
+
+            // Sessions: "never synced" means never stamped (updatedAt IS NULL). Every
+            // other session already reached another account and must not be uploaded.
+            getWorkoutSessionsModifiedSince(0L, profileId).forEach { session ->
+                val neverSynced = session.updatedAt == null
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(SyncExcludedEntityTypes.WORKOUT, session.id)
+                    session.routineSessionId?.let { exclude(SyncExcludedEntityTypes.WORKOUT, it) }
+                }
+            }
+
+            getFullRoutinesModifiedSince(0L, profileId).forEach { routine ->
+                val neverSynced = routine.createdAt > 0L && routine.createdAt > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(SyncExcludedEntityTypes.ROUTINE, routine.id)
+                }
+            }
+
+            getFullCyclesForSync(profileId).forEach { cycleWithContext ->
+                val cycle = cycleWithContext.cycle
+                val neverSynced = cycle.createdAt > 0L && cycle.createdAt > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(SyncExcludedEntityTypes.CYCLE, cycle.id)
+                }
+            }
+
+            getFullPRsModifiedSince(0L, profileId).forEach { record ->
+                // PersonalRecord.timestamp is when the PR was achieved.
+                val neverSynced = record.timestamp > 0L && record.timestamp > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(SyncExcludedEntityTypes.PERSONAL_RECORD, record.id.toString())
+                    record.uuid?.let { exclude(SyncExcludedEntityTypes.PERSONAL_RECORD, it) }
+                }
+            }
+
+            getCustomExercisesModifiedSince(0L).forEach { exercise ->
+                val idTime = customExerciseIdTimestamp(exercise.clientId)
+                // No parseable id time is treated as already synced (conservative).
+                val neverSynced = idTime != null && idTime > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(SyncExcludedEntityTypes.CUSTOM_EXERCISE, exercise.clientId)
+                }
+            }
+
+            getAllAssessments(profileId).forEach { assessment ->
+                val createdAt = assessment.createdAt
+                val neverSynced = createdAt > 0L && createdAt > watermark
+                if (excludeAllExisting || !neverSynced) {
+                    exclude(SyncExcludedEntityTypes.ASSESSMENT, assessment.id.toString())
+                }
+            }
+
+            // Exercise signatures are not pushed today (PortalSyncPayload.exerciseSignatures
+            // is left empty by SyncManager), so there is nothing to enumerate here. The
+            // push-side filter still covers the entity type when a later push fills it.
+        }
     }
 
     override suspend fun getAllPersonalRecordIds(profileId: String): List<String> = withContext(Dispatchers.IO) {
