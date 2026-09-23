@@ -1657,12 +1657,15 @@ class SyncManager(
         profileId: String,
         activeProfile: UserProfile?,
         workoutSnapshot: WorkoutSyncSnapshot,
+        pendingDeletion: Boolean,
     ): PushEnrichment {
         // 5b. External activities (paid users only)
         val localPaid = activeProfile?.subscriptionStatus == SubscriptionStatus.ACTIVE
         val portalPaid = tokenStorage.currentUser.value?.isPremium == true
         val isPremium = localPaid || portalPaid
-        val externalActivityDtos = if (isPremium) {
+        // A pending-deletion profile (PR 20) only sends its tombstones: none of its
+        // remaining live profile data may be uploaded on its way out.
+        val externalActivityDtos = if (isPremium && !pendingDeletion) {
             // F018 (deferred): getUnsyncedActivities intentionally excludes deletion
             // tombstones (deletedAt set). Neither ExternalActivitySyncDto nor the
             // portal mobile-sync-push handler carries a deletion field today, so
@@ -1699,8 +1702,12 @@ class SyncManager(
         val phaseStatsBySessionId = workoutSnapshot.phaseStatisticsByComponentId.values.flatten()
             .map { PortalSyncAdapter.toPortalPhaseStatistics(it) }
             .groupBy { it.sessionId }
-        val assessmentDtos = syncRepository.getAllAssessments(profileId)
-            .map { PortalSyncAdapter.toPortalAssessmentResult(it) }
+        val assessmentDtos = if (pendingDeletion) {
+            emptyList()
+        } else {
+            syncRepository.getAllAssessments(profileId)
+                .map { PortalSyncAdapter.toPortalAssessmentResult(it) }
+        }
         // Send all custom catalog rows, not just rows modified since the push watermark.
         // Older portal-sync builds never sent this field, so existing custom
         // exercise IDs may be missing remotely even after a successful sync.
@@ -2078,7 +2085,7 @@ class SyncManager(
         val badgeDtos = userScoped.badgeDtos
         val gamStatsDto = userScoped.gamStatsDto
 
-        val enrichment = gatherPushEnrichment(activeProfileId, activeProfile, workoutSnapshot)
+        val enrichment = gatherPushEnrichment(activeProfileId, activeProfile, workoutSnapshot, pendingDeletion)
         val externalActivityDtos = enrichment.externalActivityDtos
         val phaseStatsBySessionId = enrichment.phaseStatsBySessionId
         val assessmentDtos = enrichment.assessmentDtos.filter { assessment ->

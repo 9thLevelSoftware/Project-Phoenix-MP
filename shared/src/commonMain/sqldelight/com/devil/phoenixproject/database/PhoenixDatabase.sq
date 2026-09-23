@@ -1270,7 +1270,11 @@ countDeletedPersonalRecordInOtherProfile:
 SELECT COUNT(*) FROM PersonalRecord
 WHERE profile_id != :profileId
   AND deletedAt IS NOT NULL
-  AND (uuid = :clientId OR (uuid IS NULL AND CAST(id AS TEXT) = :clientId));
+  AND (
+    uuid = :clientId OR
+    serverId = :clientId OR
+    (uuid IS NULL AND CAST(id AS TEXT) = :clientId)
+  );
 
 -- Apply a pulled PR's deletion state with tombstone-aware LWW. A newer active
 -- update may restore a deleted row; an equal-time tombstone wins.
@@ -1589,6 +1593,10 @@ SELECT * FROM AssessmentResult WHERE profile_id = :profileId ORDER BY createdAt 
 
 deleteAssessmentResult:
 DELETE FROM AssessmentResult WHERE id = ?;
+
+-- PR 20: a permanently deleted profile's assessments go with it (no FK cascade from UserProfile).
+deleteAssessmentsByProfile:
+DELETE FROM AssessmentResult WHERE profile_id = :profileId;
 
 deleteAssessmentsByExercise:
 DELETE FROM AssessmentResult WHERE exerciseId = ?;

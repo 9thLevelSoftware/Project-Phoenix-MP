@@ -15,6 +15,7 @@ import com.devil.phoenixproject.testutil.FakeProfilePreferenceSyncRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
 import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.seedExercise
 import com.russhwolf.settings.MapSettings
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -39,6 +40,7 @@ class ProfileDeletionPropagationTest {
     private lateinit var profiles: SqlDelightUserProfileRepository
     private lateinit var syncRepository: SqlDelightSyncRepository
     private lateinit var api: DeletionAwarePortalApi
+    private lateinit var externalActivities: FakeExternalActivityRepository
     private lateinit var manager: SyncManager
 
     private val userId = "user-123"
@@ -80,7 +82,7 @@ class ProfileDeletionPropagationTest {
             repMetricRepository = FakeRepMetricRepository(),
             userProfileRepository = profiles,
             profilePreferenceSyncRepository = FakeProfilePreferenceSyncRepository(),
-            externalActivityRepository = FakeExternalActivityRepository(),
+            externalActivityRepository = FakeExternalActivityRepository().also { externalActivities = it },
             velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
             isProfilePreferenceMigrationReady = { true },
             completedSetRepository = FakeCompletedSetRepository(),
@@ -305,6 +307,69 @@ class ProfileDeletionPropagationTest {
         val fromP = api.pushPayloads.filter { it.profileId == p }
         assertTrue(fromP.flatMap { it.deletedRoutineIds }.contains(routineP), "routine tombstone")
         assertTrue(fromP.flatMap { it.personalRecords }.any { it.id == prUuidP && it.deletedAt != null }, "PR tombstone")
+    }
+
+    @Test
+    fun aPermanentDeleteRemovesAssessmentsAndItsFinalPushUploadsNoLiveProfileData() = runTest {
+        val p = createProfileWithData()
+        val q = database.phoenixDatabaseQueries
+        database.seedExercise("squat")
+        q.insertAssessmentResult("squat", 90.0, "[]", null, null, baseTime, p)
+        // Paid, with a not-yet-uploaded external activity: both would normally ride P's push.
+        q.updateSubscriptionStatus("active", null, p)
+        profiles.refreshProfiles()
+        externalActivities.activities += com.devil.phoenixproject.domain.model.ExternalActivity(
+            externalId = "hevy-activity-p",
+            provider = com.devil.phoenixproject.domain.model.IntegrationProvider.HEVY,
+            name = "Push Day",
+            startedAt = baseTime,
+            profileId = p,
+            needsSync = true,
+        )
+
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+        assertTrue(q.selectAllAssessments(p).executeAsList().isEmpty(), "assessments are deleted locally")
+        assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
+
+        val fromP = api.pushPayloads.filter { it.profileId == p }
+        assertTrue(fromP.isNotEmpty())
+        assertTrue(fromP.all { it.assessments.isEmpty() }, "P's final push must not upload assessments")
+        assertTrue(fromP.all { it.externalActivities.isEmpty() }, "P's final push must not upload live activities")
+    }
+
+    @Test
+    fun aLegacyPrTombstoneIsMatchedByItsPortalServerId() = runTest {
+        val q = database.phoenixDatabaseQueries
+        insertRecord(profileId = "gone", exerciseId = "deadlift", uuid = null, weight = 90.0)
+        val legacy = q.selectAllRecords("gone").executeAsList().single()
+        val portalId = "abababab-1234-4abc-8def-1234567890ab"
+        q.updatePRServerId(portalId, legacy.id)
+        q.softDeletePRById(deletedAt = baseTime, updatedAt = baseTime, id = legacy.id, profileId = "gone")
+
+        syncRepository.mergePersonalRecords(
+            listOf(
+                PersonalRecordSyncDto(
+                    clientId = portalId,
+                    serverId = portalId,
+                    exerciseId = "deadlift",
+                    exerciseName = "Deadlift",
+                    weight = 90f,
+                    reps = 5,
+                    oneRepMax = 0f,
+                    achievedAt = baseTime,
+                    workoutMode = "OldSchool",
+                    prType = "MAX_WEIGHT",
+                    phase = "COMBINED",
+                    volume = 450f,
+                    deletedAt = null,
+                    createdAt = baseTime,
+                    updatedAt = baseTime + 1,
+                ),
+            ),
+            profileId = "default",
+        )
+
+        assertTrue(q.selectAllRecords("default").executeAsList().none { it.exerciseId == "deadlift" })
     }
 
     @Test

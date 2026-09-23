@@ -424,6 +424,7 @@ class SqlDelightUserProfileRepository(
                         profileId = id,
                     )
                 }
+                queries.deleteAssessmentsByProfile(id)
                 queries.deleteGamificationStatsByProfile(id)
                 queries.deleteRpgAttributesByProfile(id)
                 queries.deleteIntegrationStatusByProfile(id)
