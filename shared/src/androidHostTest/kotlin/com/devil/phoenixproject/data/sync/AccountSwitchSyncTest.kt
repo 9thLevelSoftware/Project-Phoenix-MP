@@ -646,6 +646,53 @@ class AccountSwitchSyncTest {
     }
 
     @Test
+    fun anOwnershipRefusalStopsTheProfileLoopBeforeLaterProfilesPush() = runTest {
+        val second = userProfileRepository.createProfile("Second", 1)
+        insertSession("p1-row", groupId = null, timestamp = baseTime, profileId = profileId)
+        insertSession("p2-row", groupId = null, timestamp = baseTime, profileId = second.id)
+        api.forcedRejectBody = "Refused: existing workout_sessions row belongs to another user"
+
+        assertTrue(manager.sync().isFailure)
+        assertTrue(api.pushCallCount == 1, "no later profile may push after a refusal (pushes=${api.pushCallCount})")
+        assertIs<SyncState.OwnershipConflict>(manager.syncState.value)
+        assertTrue(tokenStorage.getOwnershipConflict(userA) != null, "the terminal state is persisted")
+    }
+
+    @Test
+    fun rowsAcceptedBeforeALaterRefusalSurviveOwnershipRecovery() = runTest {
+        // The active profile's push lands; the next profile's push is refused. Recovery must
+        // not exclude the rows that already landed in this account, though they predate it.
+        val firstSeen = tokenStorage.getAccountFirstSeenAt(userA)!!
+        val second = userProfileRepository.createProfile("Second", 1)
+        insertSession("landed", groupId = null, timestamp = firstSeen - 60_000, profileId = profileId)
+        insertSession("refused", groupId = null, timestamp = firstSeen - 60_000, profileId = second.id)
+        api.forcedRejectBody = "Refused: existing workout_sessions row belongs to another user"
+        api.refuseFromPushNumber = 2
+
+        assertTrue(manager.sync().isFailure)
+        assertTrue(manager.applyOwnershipConflictRecovery().isSuccess)
+        val excluded = syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.WORKOUT)
+        assertTrue("landed" !in excluded, "an accepted row must not be excluded by recovery: $excluded")
+        assertTrue("refused" in excluded, "the pre-existing refused row is excluded: $excluded")
+    }
+
+    @Test
+    fun ownershipRecoveryExcludesBadgesEarnedBeforeThisAccountSignedIn() = runTest {
+        val firstSeen = tokenStorage.getAccountFirstSeenAt(userA)!!
+        val q = database.phoenixDatabaseQueries
+        q.insertEarnedBadge("old_badge", firstSeen - 60_000, profileId)
+        q.insertEarnedBadge("new_badge", firstSeen + 60_000, profileId)
+        insertSession("pre-1", groupId = null, timestamp = firstSeen - 60_000, profileId = profileId)
+        api.forcedRejectBody = "Refused: existing workout_sessions row belongs to another user"
+        assertTrue(manager.sync().isFailure)
+
+        assertTrue(manager.applyOwnershipConflictRecovery().isSuccess)
+        val excluded = syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.EARNED_BADGE)
+        assertTrue("old_badge" in excluded, "a badge that predates this account is excluded: $excluded")
+        assertTrue("new_badge" !in excluded, "a badge earned for this account still syncs: $excluded")
+    }
+
+    @Test
     fun ownershipRecoveryKeepsRowsMadeForThisAccountAfterItSignedIn() = runTest {
         // A pre-existing row (before A was first seen on the device) triggers the refusal;
         // a workout and routine made for A afterwards, before the user presses recovery,
@@ -1210,6 +1257,8 @@ class OwnershipEnforcingPortalApi : FakePortalApiClient() {
     var currentPushUser: String = "user-a"
     /** When set, every push is refused with this exact ownership-400 body. */
     var forcedRejectBody: String? = null
+    /** When set, pushes numbered >= this (1-based) are refused with [forcedRejectBody]. */
+    var refuseFromPushNumber: Int? = null
 
     private val ownedIds = mutableMapOf<String, String>()
 
@@ -1218,7 +1267,7 @@ class OwnershipEnforcingPortalApi : FakePortalApiClient() {
     }
 
     override suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> {
-        forcedRejectBody?.let { body ->
+        forcedRejectBody?.takeIf { refuseFromPushNumber == null || pushCallCount + 1 >= refuseFromPushNumber!! }?.let { body ->
             pushCallCount++
             lastPushPayload = payload
             pushPayloads += payload

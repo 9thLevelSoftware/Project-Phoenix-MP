@@ -1018,6 +1018,15 @@ class SyncManager(
                 }
                 break
             }
+            // An ownership refusal is definitive evidence of another account's rows on this
+            // device: no later profile may push before the user chooses (codex #859).
+            // combineProfileOutcomes publishes and persists the terminal state.
+            if (outcome.ownershipConflict) {
+                Logger.w("SyncManager") {
+                    "Ownership refusal while syncing profile ${profile.id}; aborting the remaining profiles"
+                }
+                break
+            }
         }
         // The repair is account-wide and one-time: complete it only when EVERY profile in
         // this loop delivered its repair push. An aborted loop (a 401 on any push or pull,
@@ -2755,6 +2764,17 @@ class SyncManager(
         val acceptedPortalSessionIds = response.acknowledgedWorkoutSessionIds
             .filterTo(linkedSetOf()) { it in sentPortalSessionIds }
         syncRepository.acknowledgeWorkoutSnapshot(workoutSnapshot, acceptedPortalSessionIds)
+        // PR 11 (codex #859): an accepted workout now belongs to this account. Record that,
+        // so an ownership-400 on a LATER request of the same push cannot make recovery
+        // exclude rows that already landed here.
+        val accountId = tokenStorage.currentUser.value?.id
+        if (accountId != null && acceptedPortalSessionIds.isNotEmpty()) {
+            syncRepository.insertSyncExcludedEntities(
+                accountId,
+                SyncExcludedEntityTypes.reached(SyncExcludedEntityTypes.WORKOUT),
+                acceptedPortalSessionIds,
+            )
+        }
         return acceptedPortalSessionIds
     }
 

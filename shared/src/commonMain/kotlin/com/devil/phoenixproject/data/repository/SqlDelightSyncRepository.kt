@@ -2628,6 +2628,9 @@ class SqlDelightSyncRepository(
                 queries.selectExternalActivitiesForAccountSwitch(profileId).executeAsList().forEach {
                     exclude(types.EXTERNAL_ACTIVITY, listOf(it.id), it.syncedAt)
                 }
+                queries.selectAllEarnedBadges(profileId).executeAsList().forEach {
+                    exclude(types.EARNED_BADGE, listOf(it.badgeId), it.earnedAt)
+                }
             }
             queries.selectCustomExerciseIdsForAccountSwitch().executeAsList().forEach { clientId ->
                 exclude(types.CUSTOM_EXERCISE, listOf(clientId), customExerciseIdTimestamp(clientId))
