@@ -32,8 +32,8 @@ class WorkoutSaveFailureCollectorGuardTest {
         val source = screen("EnhancedMainScreen.kt")
         assertEquals(
             1,
-            Regex("""workoutSaveFailureSessionId\.collectAsState\(\)""").findAll(source).count(),
-            "EnhancedMainScreen must collect workoutSaveFailureSessionId exactly once.",
+            Regex("""workoutSaveFailureOffer\.collectAsState\(\)""").findAll(source).count(),
+            "EnhancedMainScreen must collect workoutSaveFailureOffer exactly once (keyed on the distinct offer).",
         )
         assertTrue(
             source.contains("retryWorkoutSave(") && source.contains("dismissWorkoutSaveFailure("),
@@ -44,7 +44,7 @@ class WorkoutSaveFailureCollectorGuardTest {
     @Test
     fun theActiveWorkoutRouteDoesNotCollectTheSaveFailureOffer() {
         assertFalse(
-            screen("ActiveWorkoutScreen.kt").contains("workoutSaveFailureSessionId"),
+            screen("ActiveWorkoutScreen.kt").contains("workoutSaveFailure"),
             "ActiveWorkoutScreen is disposed before an exit save can fail; a collector there " +
                 "would hide the Retry offer or show it twice.",
         )

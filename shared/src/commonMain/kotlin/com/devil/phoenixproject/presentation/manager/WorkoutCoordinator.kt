@@ -207,26 +207,45 @@ class WorkoutCoordinator(
     internal val _workoutSaveFailureSessionId = MutableStateFlow<String?>(null)
     val workoutSaveFailureSessionId: StateFlow<String?> = _workoutSaveFailureSessionId.asStateFlow()
 
+    /**
+     * The same offer as [workoutSaveFailureSessionId], but every publication is a
+     * DISTINCT value (the attempt number increases). A Retry that fails again
+     * re-offers the same session id; a StateFlow of just the id conflates that
+     * into "unchanged" and a collector keyed on it never re-runs, so the second
+     * failure is never shown (codex 4081208485). The UI keys on this instead.
+     */
+    val workoutSaveFailureOffer: StateFlow<WorkoutSaveFailureOffer?> get() = _workoutSaveFailureOffer.asStateFlow()
+    private val _workoutSaveFailureOffer = MutableStateFlow<WorkoutSaveFailureOffer?>(null)
+
     // Every failed commit still waiting for the user, oldest first. Only the head is
     // published; draining it publishes the next, so a second failure raised while the
     // first offer is on screen is never lost (codex 4080104672).
     private val saveFailureLock = Any()
     private val pendingSaveFailures = LinkedHashSet<String>()
+    private var saveFailureOfferAttempt = 0L
 
     /** Queue [sessionId]'s failed commit and publish it if no other offer is showing. */
     internal fun offerWorkoutSaveFailure(sessionId: String) = withPlatformLock(saveFailureLock) {
         pendingSaveFailures.add(sessionId)
-        _workoutSaveFailureSessionId.compareAndSet(null, pendingSaveFailures.first())
+        if (_workoutSaveFailureSessionId.value == null) publishSaveFailure(pendingSaveFailures.first())
     }
 
     /**
      * Drop [sessionId]'s offer (its save succeeded, was retried, or was dismissed) and,
-     * if it was the one on screen, publish the next queued failure. compareAndSet keeps
-     * a different session's visible offer intact.
+     * if it was the one on screen, publish the next queued failure. A different
+     * session's visible offer is left intact.
      */
     internal fun withdrawWorkoutSaveFailure(sessionId: String) = withPlatformLock(saveFailureLock) {
         pendingSaveFailures.remove(sessionId)
-        _workoutSaveFailureSessionId.compareAndSet(sessionId, pendingSaveFailures.firstOrNull())
+        if (_workoutSaveFailureSessionId.value == sessionId) publishSaveFailure(pendingSaveFailures.firstOrNull())
+    }
+
+    // Caller holds saveFailureLock.
+    private fun publishSaveFailure(sessionId: String?) {
+        _workoutSaveFailureSessionId.value = sessionId
+        _workoutSaveFailureOffer.value = sessionId?.let {
+            WorkoutSaveFailureOffer(sessionId = it, attempt = ++saveFailureOfferAttempt)
+        }
     }
 
     // ===== Workout State =====
@@ -797,3 +816,6 @@ class WorkoutCoordinator(
     val latestBiomechanicsResult: StateFlow<BiomechanicsRepResult?> =
         _latestBiomechanicsResult.asStateFlow()
 }
+
+/** One published save-failure offer; [attempt] makes every publication distinct. */
+data class WorkoutSaveFailureOffer(val sessionId: String, val attempt: Long)

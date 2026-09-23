@@ -248,8 +248,10 @@ interface SyncRepository {
     ): PhasePRBackfillResult = PhasePRBackfillResult(changedRows = 0)
 
     /**
-     * Resolve local workout session IDs for dedicated PR rows whose source
-     * sessions may not be included in the current modified-since push batch.
+     * Resolve the PORTAL workout id (`routineSessionId ?: id`) for dedicated PR rows
+     * whose source sessions may not be included in the current modified-since push
+     * batch. A routine set is published under its parent routineSessionId, so the
+     * component id would reference no pushed workout.
      */
     suspend fun findSessionIdsForPersonalRecords(
         records: List<PersonalRecord>,

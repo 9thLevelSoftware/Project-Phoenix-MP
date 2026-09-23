@@ -225,13 +225,15 @@ fun EnhancedMainScreen(
     // away from ActiveWorkoutScreen — a collector there would be disposed before
     // the failure is raised. This is the only collector, so the offer is shown once;
     // retry/dismiss drain it with compareAndSet, leaving another session's offer intact.
-    val saveFailureSessionId by viewModel.workoutSaveFailureSessionId.collectAsState()
+    // Keyed on the OFFER, not the id: a Retry that fails again re-offers the same id
+    // with a new attempt, and only a distinct value restarts the effect.
+    val saveFailureOffer by viewModel.workoutSaveFailureOffer.collectAsState()
     val saveFailedMessage = stringResource(Res.string.workout_save_failed)
     val saveRetryLabel = stringResource(Res.string.action_retry)
     val saveRetryUnavailable = stringResource(Res.string.workout_save_retry_failed)
     val saveFailureScope = rememberCoroutineScope()
-    LaunchedEffect(saveFailureSessionId) {
-        val failedSessionId = saveFailureSessionId ?: return@LaunchedEffect
+    LaunchedEffect(saveFailureOffer) {
+        val failedSessionId = saveFailureOffer?.sessionId ?: return@LaunchedEffect
         // Indefinite: losing a set is not a message to miss.
         val action = serverDeletionNoticeSnackbarHostState.showSnackbar(
             message = saveFailedMessage,
