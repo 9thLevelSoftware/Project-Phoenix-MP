@@ -103,6 +103,29 @@ class BackupRestoreSyncTest {
         assertTrue(server.session("fresh") != null)
     }
 
+    @Test
+    fun `a restore done while signed out still makes the next sign-in pull everything`() = runTest {
+        val oldPhone = createTestDatabase()
+        oldPhone.seedProfile()
+        oldPhone.insertSession("fresh", groupId = null, timestamp = stamp, stampedAt = null)
+        val backup = backupManager(oldPhone, tokenStorage = null).exportToJson()
+
+        // The account synced on this phone before: its per-user cursor survives sign-out.
+        val tokenStorage = signedInTokenStorage()
+        tokenStorage.setPullCursor("user-1", profileId, currentTimeMillis())
+        tokenStorage.clearAuth()
+
+        val newPhone = createTestDatabase()
+        backupManager(newPhone, tokenStorage).importFromJson(backup).getOrThrow()
+
+        // Sign back into the same account and sync.
+        tokenStorage.saveGoTrueAuth(goTrue())
+        val apiClient = PortalServerApiClient(FakePortalServer(serverNow = { currentTimeMillis() }))
+        syncManager(newPhone, apiClient, tokenStorage).sync()
+
+        assertEquals(0L, apiClient.pullCallLastSyncs.first(), "the first pull after the restore must be a full pull")
+    }
+
     // ---- fixtures ----
 
     private fun repData() = FakePortalServer.StoredExercise(
@@ -111,18 +134,16 @@ class BackupRestoreSyncTest {
         sets = listOf(FakePortalServer.StoredSet(id = "rep-summary", weightKg = 40f, actualReps = 8)),
     )
 
-    private fun signedInTokenStorage() = PortalTokenStorage(MapSettings()).apply {
-        saveGoTrueAuth(
-            GoTrueAuthResponse(
-                accessToken = "token",
-                tokenType = "bearer",
-                expiresIn = 3600,
-                expiresAt = currentTimeMillis() / 1000 + 3600,
-                refreshToken = "refresh",
-                user = GoTrueUser(id = "user-1", email = "a@b.c"),
-            ),
-        )
-    }
+    private fun goTrue() = GoTrueAuthResponse(
+        accessToken = "token",
+        tokenType = "bearer",
+        expiresIn = 3600,
+        expiresAt = currentTimeMillis() / 1000 + 3600,
+        refreshToken = "refresh",
+        user = GoTrueUser(id = "user-1", email = "a@b.c"),
+    )
+
+    private fun signedInTokenStorage() = PortalTokenStorage(MapSettings()).apply { saveGoTrueAuth(goTrue()) }
 
     private fun syncManager(
         database: PhoenixDatabase,

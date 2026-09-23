@@ -437,9 +437,11 @@ class PortalTokenStorage(private val settings: Settings) {
     }
 
     /**
-     * A backup restore bulk-replaces the restored profiles' local rows. For each of them the
-     * signed-in user's pull cursor restarts at 0 (the next pull reconciles everything against
-     * the portal). The one-time routine-group repair keeps its progress for this device's own
+     * A backup restore bulk-replaces the restored profiles' local rows. For each of them every
+     * stored pull cursor restarts at 0, whichever portal user it belongs to and whether or not
+     * anyone is signed in: cursors survive sign-out (they are user-namespaced), so a restore
+     * done while signed out must not leave the next sign-in resuming a delta pull that skips
+     * everything older than the old cursor. The one-time routine-group repair keeps its progress for this device's own
      * workouts, but every restored routine group is held out of it: restored rows carry no
      * rep summaries, so a repair re-push would make the portal's replace_session_children
      * delete the rep data it holds for them. All of this lives in settings, which a backup
@@ -449,10 +451,13 @@ class PortalTokenStorage(private val settings: Settings) {
         profileIds: Collection<String>,
         restoredRoutineGroupIds: Map<String, Set<String>> = emptyMap(),
     ) {
-        val userId = currentUser.value?.id
-        profileIds.forEach { profileId ->
-            if (userId != null) resetPullCursor(userId, profileId)
+        withPlatformLock(authLock) {
+            val suffixes = profileIds.map { ":" + (it.trim().ifBlank { "default" }) }
+            settings.keys
+                .filter { key -> key.startsWith(KEY_PULL_CURSOR_PREFIX) && suffixes.any(key::endsWith) }
+                .forEach { settings.remove(it) }
         }
+        currentUser.value?.id?.let { userId -> profileIds.forEach { resetPullCursor(userId, it) } }
         restoredRoutineGroupIds.forEach { (profileId, groupIds) ->
             holdRoutineGroupsFromRepair(profileId, groupIds)
         }
