@@ -2269,9 +2269,14 @@ class SyncManager(
             profileName = payloadProfileName,
             personalRecords = prsForSessionBatch(sessions),
         )
+        // Items too large for any request are skipped (logged at warn with type and id by
+        // PushPlanner) and counted here so the push summary makes them discoverable.
+        val skippedOversized = mutableListOf<String>()
+        val onSkip = PushPlanner.SkipListener { type, id -> skippedOversized += "$type $id" }
         val sessionBatches = PushPlanner.splitSessionBatchesByBytes(
             planSessionBatches(allSessions, telemetryCountBySessionId).filter { it.isNotEmpty() },
             ::sessionBatchPayload,
+            onSkip,
         )
         val deliverableSessions = sessionBatches.flatten()
         val deliverableSessionIds = deliverableSessions.mapTo(hashSetOf()) { it.id }
@@ -2322,7 +2327,12 @@ class SyncManager(
                 deletedRoutineIds = deletedRoutineIds,
                 cycles = cycleDtos,
                 personalRecords = if (prsAlreadyOnSessionBatches) emptyList() else personalRecordDtos,
-                finalRequest = { finalFields(emptyEnvelope, emptyList(), emptyList(), emptyList(), emptyList(), true) },
+                customExercises = customExerciseDtos,
+                assessments = assessmentDtos,
+                badges = badgeDtos,
+                externalActivities = externalActivityDtos,
+                finalFields = finalFields(emptyEnvelope, emptyList(), emptyList(), emptyList(), emptyList(), true),
+                onSkip = onSkip,
             )
             sessionBatches.map(::sessionBatchPayload) + tails
         }
@@ -2413,6 +2423,11 @@ class SyncManager(
                     response = response,
                 )
             }
+            // External activities are acknowledged from the response of the request that
+            // carried them (they may be split across requests).
+            if (payload.externalActivities.isNotEmpty()) {
+                acknowledgeExternalActivities(payload.externalActivities, response, activeProfileId)
+            }
             Logger.d("SyncManager") {
                 "Request ${index + 1}/$totalBatches pushed successfully (timestamp deferred)"
             }
@@ -2424,10 +2439,10 @@ class SyncManager(
             routines = skippedDeletedRoutines.toList(),
             cycles = skippedDeletedCycles.toList(),
         )
-        if (deliverableSessions.size < allSessions.size) {
+        if (skippedOversized.isNotEmpty()) {
             Logger.w("SyncManager") {
-                "${allSessions.size - deliverableSessions.size} session(s) exceed the push size cap on their " +
-                    "own and were not sent; they stay pending"
+                "Push summary: ${skippedOversized.size} oversized item(s) skipped (too large for any request): " +
+                    skippedOversized.take(20).joinToString() + if (skippedOversized.size > 20) ", ..." else ""
             }
         }
 
@@ -2445,40 +2460,6 @@ class SyncManager(
         val finalResponse = lastResponse ?: return Result.failure(
             PortalApiException("Push produced no response", null, 500),
         )
-        if (externalActivityDtos.isNotEmpty() && finalResponse != null) {
-            val acknowledgedSyncKeys = finalResponse.externalActivityKeys.mapNotNull { ack ->
-                IntegrationProvider.fromKey(ack.provider)?.let { provider ->
-                    ExternalActivitySyncKey(externalId = ack.externalId, provider = provider)
-                }
-            }
-            if (acknowledgedSyncKeys.isNotEmpty()) {
-                // Server confirmed exact provider-scoped keys — mark only those.
-                externalActivityRepository.markSyncedBySyncKeys(
-                    syncKeys = acknowledgedSyncKeys,
-                    profileId = activeProfileId,
-                )
-                Logger.d("SyncManager") {
-                    "Marked ${acknowledgedSyncKeys.size} external activities as synced (by server-confirmed provider/externalId keys)"
-                }
-            } else if (finalResponse.externalActivityIds.isNotEmpty()) {
-                Logger.w("SyncManager") {
-                    "Server returned legacy externalActivityIds without provider scoping; skipping optimistic sync stamping"
-                }
-            } else if (finalResponse.externalActivitiesUpserted > 0) {
-                // Backward compat: server confirmed a count but no IDs list
-                val syncedIds = externalActivityDtos.map { it.id }
-                externalActivityRepository.markSynced(syncedIds)
-                Logger.d("SyncManager") {
-                    "Marked ${syncedIds.size} external activities as synced (backward compat, server confirmed ${finalResponse.externalActivitiesUpserted})"
-                }
-            } else {
-                // Server did not confirm any activities were persisted — do NOT mark as synced
-                Logger.w("SyncManager") {
-                    "Pushed ${externalActivityDtos.size} external activities but server confirmed 0 — will retry on next sync"
-                }
-            }
-        }
-
         // Routines/cycles the server skipped because they were deleted there
         // (PR 16 `skippedDeleted`). Delete the local copy so they stop being pushed.
         // Non-fatal: the next pull reports the same ids via deletedRoutineIds/deletedCycleIds.
@@ -2592,6 +2573,45 @@ class SyncManager(
             .filterTo(linkedSetOf()) { it in sentPortalSessionIds }
         syncRepository.acknowledgeWorkoutSnapshot(workoutSnapshot, acceptedPortalSessionIds)
         return acceptedPortalSessionIds
+    }
+
+    /** Marks exactly the external activities [response] confirmed for the request that carried [sent]. */
+    private suspend fun acknowledgeExternalActivities(
+        sent: List<ExternalActivitySyncDto>,
+        response: PortalSyncPushResponse,
+        profileId: String,
+    ) {
+        val acknowledgedSyncKeys = response.externalActivityKeys.mapNotNull { ack ->
+            IntegrationProvider.fromKey(ack.provider)?.let { provider ->
+                ExternalActivitySyncKey(externalId = ack.externalId, provider = provider)
+            }
+        }
+        if (acknowledgedSyncKeys.isNotEmpty()) {
+            // Server confirmed exact provider-scoped keys — mark only those.
+            externalActivityRepository.markSyncedBySyncKeys(
+                syncKeys = acknowledgedSyncKeys,
+                profileId = profileId,
+            )
+            Logger.d("SyncManager") {
+                "Marked ${acknowledgedSyncKeys.size} external activities as synced (by server-confirmed provider/externalId keys)"
+            }
+        } else if (response.externalActivityIds.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                "Server returned legacy externalActivityIds without provider scoping; skipping optimistic sync stamping"
+            }
+        } else if (response.externalActivitiesUpserted > 0) {
+            // Backward compat: server confirmed a count but no IDs list — only for THIS request.
+            val syncedIds = sent.map { it.id }
+            externalActivityRepository.markSynced(syncedIds)
+            Logger.d("SyncManager") {
+                "Marked ${syncedIds.size} external activities as synced (backward compat, server confirmed ${response.externalActivitiesUpserted})"
+            }
+        } else {
+            // Server did not confirm any activities were persisted — do NOT mark as synced
+            Logger.w("SyncManager") {
+                "Pushed ${sent.size} external activities but server confirmed 0 — will retry on next sync"
+            }
+        }
     }
 
     private suspend fun acknowledgeAcceptedCycles(
@@ -4252,13 +4272,33 @@ internal object PushPlanner {
             payload.deletedRoutineIds.size <= MAX_ITEMS_PER_ARRAY &&
             payload.cycles.size <= MAX_ITEMS_PER_ARRAY &&
             payload.personalRecords.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.assessments.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.customExercises.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.badges.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.externalActivities.size <= MAX_ITEMS_PER_ARRAY &&
             payload.telemetry.size <= SyncConfig.MAX_TELEMETRY_PER_BATCH &&
             byteSize(payload) <= maxBytes
+
+    /**
+     * Called once per item that cannot fit in any request on its own. Logged at warn with
+     * the entity type and id; the caller also counts them into its sync summary.
+     */
+    fun interface SkipListener {
+        fun skipped(entityType: String, id: String)
+    }
+
+    private fun warnSkip(onSkip: SkipListener, entityType: String, id: String) {
+        Logger.w("SyncManager") {
+            "Push skipped $entityType $id: it exceeds the push size cap on its own and can never be accepted"
+        }
+        onSkip.skipped(entityType, id)
+    }
 
     /** Splits any session batch whose request would be oversized; drops a session that can never fit. */
     fun splitSessionBatchesByBytes(
         batches: List<List<PortalWorkoutSessionDto>>,
         toPayload: (List<PortalWorkoutSessionDto>) -> PortalSyncPayload,
+        onSkip: SkipListener = SkipListener { _, _ -> },
     ): List<List<PortalWorkoutSessionDto>> {
         val out = mutableListOf<List<PortalWorkoutSessionDto>>()
         fun place(batch: List<PortalWorkoutSessionDto>) {
@@ -4266,9 +4306,7 @@ internal object PushPlanner {
             if (fits(toPayload(batch))) {
                 out += batch
             } else if (batch.size == 1) {
-                Logger.w("SyncManager") {
-                    "Session ${batch.single().id} exceeds the push size cap on its own; skipped this sync"
-                }
+                warnSkip(onSkip, "session", batch.single().id)
             } else {
                 val mid = batch.size / 2
                 place(batch.subList(0, mid))
@@ -4281,8 +4319,12 @@ internal object PushPlanner {
 
     /**
      * Packs non-session entities into requests after the session batches, in dependency
-     * order: routines, deleted-routine ids, cycles, PRs. [finalRequest] (the single-valued
-     * fields) is merged into the last request when it fits there, else sent on its own.
+     * order: routines, deleted-routine ids, cycles, PRs, then custom exercises (catalog
+     * rows first), assessments, badges and external activities. Each is upserted on its
+     * own by mobile-sync-push, so none has to travel with another. [finalFields] carries
+     * the truly singular fields — RPG attributes, gamification stats and `allProfiles` —
+     * which stay together on the last request (merged into the last packed request when
+     * it fits there, else sent on their own).
      */
     fun planTailRequests(
         envelope: PortalSyncPayload,
@@ -4290,7 +4332,12 @@ internal object PushPlanner {
         deletedRoutineIds: List<String>,
         cycles: List<PortalTrainingCycleSyncDto>,
         personalRecords: List<PortalPersonalRecordDto>,
-        finalRequest: () -> PortalSyncPayload,
+        customExercises: List<CustomExerciseSyncDto>,
+        assessments: List<PortalAssessmentResultDto>,
+        badges: List<PortalEarnedBadgeSyncDto>,
+        externalActivities: List<ExternalActivitySyncDto>,
+        finalFields: PortalSyncPayload,
+        onSkip: SkipListener = SkipListener { _, _ -> },
     ): List<PortalSyncPayload> {
         val requests = mutableListOf<PortalSyncPayload>()
         val envelopeBytes = byteSize(envelope)
@@ -4298,6 +4345,11 @@ internal object PushPlanner {
         val curDeleted = mutableListOf<String>()
         val curCycles = mutableListOf<PortalTrainingCycleSyncDto>()
         val curPrs = mutableListOf<PortalPersonalRecordDto>()
+        val curCustom = mutableListOf<CustomExerciseSyncDto>()
+        val curAssessments = mutableListOf<PortalAssessmentResultDto>()
+        val curBadges = mutableListOf<PortalEarnedBadgeSyncDto>()
+        val curExternal = mutableListOf<ExternalActivitySyncDto>()
+        val all = listOf(curRoutines, curDeleted, curCycles, curPrs, curCustom, curAssessments, curBadges, curExternal)
         // Bytes are summed per item (each measured once against the small envelope, plus a
         // separating comma) instead of re-encoding the growing request for every item.
         var currentBytes = envelopeBytes
@@ -4306,19 +4358,28 @@ internal object PushPlanner {
             deletedRoutineIds = curDeleted.toList(),
             cycles = curCycles.toList(),
             personalRecords = curPrs.toList(),
+            customExercises = curCustom.toList(),
+            assessments = curAssessments.toList(),
+            badges = curBadges.toList(),
+            externalActivities = curExternal.toList(),
         )
-        fun hasItems() = curRoutines.isNotEmpty() || curDeleted.isNotEmpty() ||
-            curCycles.isNotEmpty() || curPrs.isNotEmpty()
+        fun hasItems() = all.any { it.isNotEmpty() }
         fun close() {
             if (hasItems()) requests += build()
-            curRoutines.clear(); curDeleted.clear(); curCycles.clear(); curPrs.clear()
+            all.forEach { it.clear() }
             currentBytes = envelopeBytes
         }
-        fun <T> pack(items: List<T>, label: String, into: MutableList<T>, alone: (T) -> PortalSyncPayload) {
+        fun <T> pack(
+            items: List<T>,
+            entityType: String,
+            into: MutableList<T>,
+            idOf: (T) -> String,
+            alone: (T) -> PortalSyncPayload,
+        ) {
             for (item in items) {
                 val itemBytes = byteSize(alone(item)) - envelopeBytes + 1
                 if (envelopeBytes + itemBytes > maxBytes) {
-                    Logger.w("SyncManager") { "A $label exceeds the push size cap on its own; skipped this sync" }
+                    warnSkip(onSkip, entityType, idOf(item))
                     continue
                 }
                 if (currentBytes + itemBytes > maxBytes || into.size >= MAX_ITEMS_PER_ARRAY) close()
@@ -4326,27 +4387,31 @@ internal object PushPlanner {
                 currentBytes += itemBytes
             }
         }
-        pack(routines, "routine", curRoutines) { envelope.copy(routines = listOf(it)) }
-        pack(deletedRoutineIds, "deleted-routine id", curDeleted) { envelope.copy(deletedRoutineIds = listOf(it)) }
-        pack(cycles, "cycle", curCycles) { envelope.copy(cycles = listOf(it)) }
-        pack(personalRecords, "personal record", curPrs) { envelope.copy(personalRecords = listOf(it)) }
+        pack(routines, "routine", curRoutines, { it.id }) { envelope.copy(routines = listOf(it)) }
+        pack(deletedRoutineIds, "deleted routine", curDeleted, { it }) { envelope.copy(deletedRoutineIds = listOf(it)) }
+        pack(cycles, "cycle", curCycles, { it.id }) { envelope.copy(cycles = listOf(it)) }
+        pack(personalRecords, "personal record", curPrs, { it.id.orEmpty() }) { envelope.copy(personalRecords = listOf(it)) }
+        pack(customExercises, "custom exercise", curCustom, { it.clientId }) { envelope.copy(customExercises = listOf(it)) }
+        pack(assessments, "assessment", curAssessments, { it.id }) { envelope.copy(assessments = listOf(it)) }
+        pack(badges, "badge", curBadges, { it.badgeId }) { envelope.copy(badges = listOf(it)) }
+        pack(externalActivities, "external activity", curExternal, { it.id }) { envelope.copy(externalActivities = listOf(it)) }
         val current = build()
 
-        val singletons = finalRequest()
+        val singular = envelope.copy(
+            rpgAttributes = finalFields.rpgAttributes,
+            gamificationStats = finalFields.gamificationStats,
+            allProfiles = finalFields.allProfiles,
+        )
         val merged = current.copy(
-            rpgAttributes = singletons.rpgAttributes,
-            badges = singletons.badges,
-            gamificationStats = singletons.gamificationStats,
-            assessments = singletons.assessments,
-            customExercises = singletons.customExercises,
-            allProfiles = singletons.allProfiles,
-            externalActivities = singletons.externalActivities,
+            rpgAttributes = finalFields.rpgAttributes,
+            gamificationStats = finalFields.gamificationStats,
+            allProfiles = finalFields.allProfiles,
         )
         if (fits(merged)) {
             requests += merged
         } else {
             close()
-            requests += singletons
+            requests += singular
         }
         return requests
     }
