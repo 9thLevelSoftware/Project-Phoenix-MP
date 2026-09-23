@@ -684,10 +684,13 @@ AND (
     OR EXISTS (SELECT 1 FROM ProfileExerciseBaseline WHERE ProfileExerciseBaseline.exercise_id = e.id)
 );
 
+-- A locally recorded row becomes dirty so the corrected id reaches the portal. A pulled
+-- (portalOrigin = 1) row is server-owned and must never be pushed back, so its local
+-- projection is corrected without advancing its generation.
 reassignWorkoutSessionExerciseId:
 UPDATE WorkoutSession
 SET exerciseId = :newId,
-    local_sync_generation = local_sync_generation + 1
+    local_sync_generation = local_sync_generation + CASE WHEN portalOrigin = 1 THEN 0 ELSE 1 END
 WHERE exerciseId = :oldId;
 
 reassignRoutineExerciseId:

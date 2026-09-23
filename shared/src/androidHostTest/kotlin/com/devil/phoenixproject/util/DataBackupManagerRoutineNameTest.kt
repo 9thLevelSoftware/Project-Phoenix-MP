@@ -307,6 +307,62 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `restoring a pre-remap backup onto a fresh install translates legacy catalogue ids`() = runTest {
+        // Fresh install: only the current catalogue, no archived legacy row to hang a remap on.
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        val backup = BackupData(
+            version = 1,
+            exportedAt = "2026-02-21T12:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-fresh-install",
+                        timestamp = 1_700_000_000_000,
+                        mode = "Old School",
+                        targetReps = 5,
+                        weightPerCableKg = 40f,
+                        progressionKg = 0f,
+                        duration = 0L,
+                        totalReps = 5,
+                        warmupReps = 0,
+                        workingReps = 5,
+                        isJustLift = false,
+                        stopAtTop = false,
+                        exerciseId = "ZZ92N8QsBdp6HCh3",
+                        exerciseName = "Bench Press",
+                        routineSessionId = null,
+                        routineName = null,
+                        routineId = null,
+                    ),
+                ),
+                personalRecords = listOf(
+                    PersonalRecordBackup(
+                        exerciseId = "ZZ92N8QsBdp6HCh3",
+                        exerciseName = "Bench Press",
+                        weight = 80f,
+                        reps = 5,
+                        oneRepMax = 90f,
+                        achievedAt = 1_700_000_000_000,
+                        workoutMode = "OldSchool",
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(backupManager.importFromJson(testJson.encodeToString(backup)).isSuccess)
+
+        assertEquals(
+            "Barbell_Bench_Press_-_Medium_Grip",
+            database.phoenixDatabaseQueries.selectSessionById("session-fresh-install").executeAsOne().exerciseId,
+        )
+        val prs = database.phoenixDatabaseQueries
+            .selectPersonalRecordsByExerciseId("Barbell_Bench_Press_-_Medium_Grip")
+            .executeAsList()
+        assertEquals(listOf(80.0), prs.map { it.weight })
+    }
+
+    @Test
     fun `importFromJson restores routine name from routineId when present`() = runTest {
         val backup = BackupData(
             version = 1,

@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.local.LegacyCatalogueIdMap
 import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesValidator
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
@@ -1069,6 +1070,7 @@ abstract class BaseDataBackupManager(
                                         nav.beginArray()
                                         while (nav.hasNextInArray()) {
                                             val baseline = json.decodeFromString<ProfileExerciseBaselineBackup>(nav.nextValueAsString())
+                                                .let { it.copy(exerciseId = translateLegacyCatalogueId(it.exerciseId)) }
                                             if (baseline.revision <= 0L ||
                                                 !profileParentAvailable(baseline.profileId) ||
                                                 queries.selectExerciseById(baseline.exerciseId).executeAsOneOrNull() == null
@@ -1303,7 +1305,7 @@ abstract class BaseDataBackupManager(
                                             val sessionProfileId = session.profileId?.takeIf {
                                                 profileParentAvailable(it)
                                             } ?: legacyFallbackProfileId()
-                                            val sessionExerciseId = session.exerciseId?.takeIf {
+                                            val sessionExerciseId = session.exerciseId?.let(::translateLegacyCatalogueId)?.takeIf {
                                                 queries.selectExerciseById(it).executeAsOneOrNull() != null
                                             }.also { if (session.exerciseId != null && it == null) repairedReferences++ }
                                             val sessionRoutineId = session.routineId?.takeIf {
@@ -1676,7 +1678,7 @@ abstract class BaseDataBackupManager(
                                                     Logger.w { "Streaming import: routine exercise ${exercise.exerciseName} eccentricLoad ${exercise.eccentricLoad}% clamped to $safeExerciseEccentricLoad% (hardware limit)" }
                                                 }
 
-                                                val resolvedExerciseId = exercise.exerciseId?.takeIf {
+                                                val resolvedExerciseId = exercise.exerciseId?.let(::translateLegacyCatalogueId)?.takeIf {
                                                     queries.selectExerciseById(it).executeAsOneOrNull() != null
                                                 }.also {
                                                     if (exercise.exerciseId != null && it == null) repairedReferences++
@@ -1774,7 +1776,7 @@ abstract class BaseDataBackupManager(
                                             val rawJson = nav.nextValueAsString()
                                             val pr = tryImport("pr-parse", null) {
                                                 json.decodeFromString<PersonalRecordBackup>(rawJson)
-                                            } ?: continue
+                                            }?.let { it.copy(exerciseId = translateLegacyCatalogueId(it.exerciseId)) } ?: continue
                                             val profileId = pr.profileId ?: legacyFallbackProfileId()
                                             if (backupVersion >= 6 && pr.profileId != null &&
                                                 !profileParentAvailable(profileId)
@@ -2300,7 +2302,7 @@ abstract class BaseDataBackupManager(
                                             val rawJson = nav.nextValueAsString()
                                             val event = tryImport("progressionEvent-parse", null) {
                                                 json.decodeFromString<ProgressionEventBackup>(rawJson)
-                                            } ?: continue
+                                            }?.let { it.copy(exerciseId = translateLegacyCatalogueId(it.exerciseId)) } ?: continue
 
                                             if (queries.selectExerciseById(event.exerciseId).executeAsOneOrNull() == null) {
                                                 entitiesWithErrors++
@@ -3895,6 +3897,21 @@ abstract class BaseDataBackupManager(
         profileIds.filterNotNull().distinct().mapNotNull { profileId ->
             queries.getProfileById(profileId).executeAsOneOrNull()?.let(::mapUserProfileToBackup)
         }
+
+    /**
+     * A pre-remap backup names retired catalogue ids. Backups carry only custom exercises, so on a
+     * device without the archived legacy row (a fresh install) those references would fail
+     * validation and be dropped before the post-restore remap could see them. Translate them
+     * through [LegacyCatalogueIdMap] first, and only to a target this catalogue actually has. An id
+     * the device still holds (an archived legacy row on an upgraded install) is kept as-is so
+     * [LegacyCatalogueRemapper] merges its user fields as usual.
+     */
+    private fun translateLegacyCatalogueId(exerciseId: String): String {
+        if (queries.selectExerciseById(exerciseId).executeAsOneOrNull() != null) return exerciseId
+        return LegacyCatalogueIdMap.explicit[exerciseId]
+            ?.takeIf { queries.selectExerciseById(it).executeAsOneOrNull() != null }
+            ?: exerciseId
+    }
 
     private fun referencedCustomExercises(exerciseIds: Collection<String?>): List<CustomExerciseBackup> =
         exerciseIds.filterNotNull().distinct().mapNotNull { exerciseId ->

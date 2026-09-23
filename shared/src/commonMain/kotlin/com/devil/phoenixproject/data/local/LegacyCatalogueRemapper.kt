@@ -3,6 +3,7 @@ package com.devil.phoenixproject.data.local
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.database.PersonalRecord
 import com.devil.phoenixproject.database.PhoenixDatabase
+import kotlin.coroutines.cancellation.CancellationException
 
 /**
  * Re-points history, PRs, routines and every other per-exercise row from archived legacy
@@ -150,6 +151,8 @@ class LegacyCatalogueRemapper(database: PhoenixDatabase) {
         fun healAfterBulkWrite(database: PhoenixDatabase, source: String) {
             try {
                 LegacyCatalogueRemapper(database).remapIfNeeded()
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Logger.w(e) { "Legacy catalogue remap after $source failed; it will retry on the next entry point" }
             }

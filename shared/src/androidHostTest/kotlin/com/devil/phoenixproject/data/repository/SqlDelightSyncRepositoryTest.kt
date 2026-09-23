@@ -159,6 +159,39 @@ class SqlDelightSyncRepositoryTest {
             database.phoenixDatabaseQueries.selectSessionById("pulled-legacy").executeAsOne().exerciseId,
         )
         assertTrue(database.phoenixDatabaseQueries.selectArchivedStockExerciseIdsNeedingRemap().executeAsList().isEmpty())
+        // The corrected projection is local only: a pulled, server-owned row is never pushed back.
+        assertTrue(
+            repository.getDirtyWorkoutSnapshot("active-profile").sessions.none { it.id == "pulled-legacy" },
+            "remapping a pulled session must not queue it for push",
+        )
+    }
+
+    @Test
+    fun `remapping a locally recorded session queues the corrected id for push`() = runTest {
+        database.seedExercise("ZZ92N8QsBdp6HCh3", name = "Bench Press", archived = true)
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        insertHistoricalSession(
+            id = "local-legacy",
+            timestamp = 100L,
+            exerciseId = "ZZ92N8QsBdp6HCh3",
+            exerciseName = "Bench Press",
+            workingReps = 5L,
+            peakConcentricA = null,
+            peakConcentricB = null,
+            peakEccentricA = null,
+            peakEccentricB = null,
+            profileId = "active-profile",
+            routineSessionId = null,
+        )
+        repository.acknowledgeWorkoutSnapshot(repository.getDirtyWorkoutSnapshot("active-profile"), setOf("local-legacy"))
+        assertTrue(repository.getDirtyWorkoutSnapshot("active-profile").sessions.isEmpty())
+
+        com.devil.phoenixproject.data.local.LegacyCatalogueRemapper(database).remapIfNeeded()
+
+        assertEquals(
+            listOf("Barbell_Bench_Press_-_Medium_Grip"),
+            repository.getDirtyWorkoutSnapshot("active-profile").sessions.map { it.exerciseId },
+        )
     }
 
     @Test
