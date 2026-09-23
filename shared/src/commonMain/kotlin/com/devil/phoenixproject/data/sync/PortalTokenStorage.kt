@@ -93,6 +93,9 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_PUSH_WATERMARK_PREFIX = "portal_push_watermark_"
         private const val KEY_PULL_MERGE_WATERMARK_PREFIX = "portal_pull_merge_watermark_"
         private const val KEY_ACCOUNT_FIRST_SEEN_PREFIX = "portal_account_first_seen_"
+        private const val KEY_LEGACY_ACCOUNT_BOUNDARY_PREFIX = "portal_legacy_account_boundary_"
+        private const val KEY_OWNERSHIP_CONFLICT_PREFIX = "portal_ownership_conflict_"
+        private const val LEGACY_BOUNDARY_ALL_PROFILES = "*"
 
         /**
          * Server-clock cursor of the last completed pull for one (portal userId, profileId).
@@ -372,13 +375,29 @@ class PortalTokenStorage(private val settings: Settings) {
     }
 
     private fun preserveLegacySyncOwnerLocked(fallbackOwner: String?) {
-        if (settings.getStringOrNull(KEY_LAST_SYNCED_PORTAL_USER_ID) != null) return
-        if (settings[KEY_LEGACY_LAST_SYNC, 0L] <= 0L) return
+        val legacy: Long = settings[KEY_LEGACY_LAST_SYNC, 0L]
+        if (legacy <= 0L) return
         val markerOwner = settings.getStringOrNull(KEY_LEGACY_DELTA_PULL_KEY)
             ?.substringBefore(':', missingDelimiterValue = "")
             ?.takeIf { it.isNotBlank() }
         val owner = markerOwner ?: fallbackOwner?.takeIf { it.isNotBlank() } ?: return
-        settings[KEY_LAST_SYNCED_PORTAL_USER_ID] = owner
+        // The legacy value is also the old account's "already synced" boundary (the old
+        // client stamped only rows it pushed or pulled). Keep it for that account, so an
+        // account switch that drops the key still classifies those rows as synced (codex
+        // #859). Scoped like PR 10's seeding: to the profile the marker names. Without a
+        // marker it covers every profile of that account: for an account switch the safe
+        // error is treating a row as synced (it stays out of the NEW account and remains
+        // where it already is), the opposite of the same-account re-push case. Never lowered.
+        val markerProfile = settings.getStringOrNull(KEY_LEGACY_DELTA_PULL_KEY)
+            ?.takeIf { markerOwner != null }
+            ?.substringAfter(':', missingDelimiterValue = "")
+            ?.trim()
+            ?.ifBlank { "default" }
+        val boundaryKey = legacyBoundaryKey(owner, markerProfile ?: LEGACY_BOUNDARY_ALL_PROFILES)
+        if (legacy > settings[boundaryKey, 0L]) settings[boundaryKey] = legacy
+        if (settings.getStringOrNull(KEY_LAST_SYNCED_PORTAL_USER_ID) == null) {
+            settings[KEY_LAST_SYNCED_PORTAL_USER_ID] = owner
+        }
     }
 
     /** Records the display label for [setLastSyncedPortalUserId]. Not cleared by [clearAuth]. */
@@ -446,7 +465,31 @@ class PortalTokenStorage(private val settings: Settings) {
      * last acknowledged push gather and the last post-push pull merge.
      */
     fun getAccountSyncBoundary(userId: String, profileId: String): Long =
-        maxOf(getPushWatermark(userId, profileId), getPullMergeWatermark(userId, profileId))
+        maxOf(
+            getPushWatermark(userId, profileId),
+            getPullMergeWatermark(userId, profileId),
+            maxOf(
+                settings[legacyBoundaryKey(userId, profileId.trim().ifBlank { "default" }), 0L],
+                settings[legacyBoundaryKey(userId, LEGACY_BOUNDARY_ALL_PROFILES), 0L],
+            ),
+        )
+
+    private fun legacyBoundaryKey(userId: String, profileScope: String): String =
+        "$KEY_LEGACY_ACCOUNT_BOUNDARY_PREFIX$userId:$profileScope"
+
+    /**
+     * PR 11: the portal's ownership refusal for [userId], kept until the user applies the
+     * recovery or signs out, so a restart cannot resume pushing the refused payload.
+     */
+    fun getOwnershipConflict(userId: String): String? =
+        settings.getStringOrNull(KEY_OWNERSHIP_CONFLICT_PREFIX + userId)
+
+    fun setOwnershipConflict(userId: String, message: String?) {
+        withPlatformLock(authLock) {
+            if (message == null) settings.remove(KEY_OWNERSHIP_CONFLICT_PREFIX + userId)
+            else settings[KEY_OWNERSHIP_CONFLICT_PREFIX + userId] = message
+        }
+    }
 
     /** Server-clock cursor of the last completed pull. 0 / absent = next pull is a full pull. */
     fun getPullCursor(userId: String, profileId: String): Long =

@@ -689,6 +689,68 @@ class AccountSwitchSyncTest {
         assertTrue("old-session" in api.pushPayloads.flatMap { it.sessions }.map { it.id })
     }
 
+    @Test
+    fun anUpgradeSwitchKeepsTheLegacyBoundaryForTheOldAccount() = runTest {
+        // Upgraded with only the legacy cursor, then signed straight into B before the
+        // upgraded build ever synced as A. Rows the old client synced to A must stay out of B.
+        val legacy = baseTime + 1_000
+        insertSession("legacy-pushed", groupId = null, timestamp = baseTime, profileId = profileId)
+        database.phoenixDatabaseQueries.updateSessionTimestampsByIds(timestamp = baseTime, ids = listOf("legacy-pushed"), gatherStartedAt = baseTime)
+        insertRoutine(routinePre, profileId = profileId, createdAt = baseTime)
+        plantLegacyCursor(userA, lastSync = legacy)
+        insertSession("never-pushed", groupId = null, timestamp = legacy + 60_000, profileId = profileId)
+
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        val sessionIds = api.pushPayloads.flatMap { it.sessions }.map { it.id }
+        assertTrue("legacy-pushed" !in sessionIds, "a row the old client synced to A must not go to B: $sessionIds")
+        assertTrue(routinePre !in api.pushPayloads.flatMap { it.routines }.map { it.id })
+        assertTrue("never-pushed" in sessionIds, "a never-synced row still uploads: $sessionIds")
+    }
+
+    @Test
+    fun theLegacyBoundaryCoversOnlyTheProfileTheMarkerNames() = runTest {
+        // Like PR 10's seeding, the preserved legacy boundary belongs to the marker's profile.
+        val other = userProfileRepository.createProfile("Other", 1)
+        plantLegacyCursor(userA, lastSync = baseTime + 1_000)
+        tokenStorage.saveGoTrueAuth(authResponse(userB, emailB, "token-b"))
+        assertTrue(tokenStorage.getAccountSyncBoundary(userA, profileId) == baseTime + 1_000)
+        assertTrue(tokenStorage.getAccountSyncBoundary(userA, other.id) == 0L)
+        assertTrue(tokenStorage.getAccountSyncBoundary(userB, profileId) == 0L)
+    }
+
+    @Test
+    fun anOwnershipRefusalHoldsAcrossAProcessRestartUntilRecovery() = runTest {
+        api.forcedRejectBody = "Refused: existing workout_sessions row belongs to another user"
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        assertTrue(manager.sync().isFailure)
+        assertIs<SyncState.OwnershipConflict>(manager.syncState.value)
+        val pushes = api.pushCallCount
+
+        // The process dies before recovery. A fresh manager must not push again.
+        val restarted = newManager(PendingAccountMismatch())
+        assertTrue(restarted.sync().isFailure)
+        assertIs<SyncState.OwnershipConflict>(restarted.syncState.value)
+        assertTrue(api.pushCallCount == pushes, "a restart must not resend the refused payload")
+
+        // Recovery clears the durable hold too.
+        assertTrue(restarted.applyOwnershipConflictRecovery().isSuccess)
+        api.forcedRejectBody = null
+        val again = newManager(PendingAccountMismatch())
+        assertTrue(again.sync().isSuccess)
+        assertFalse(again.syncState.value is SyncState.OwnershipConflict)
+    }
+
+    @Test
+    fun signingOutDropsAnUnansweredOwnershipRefusal() = runTest {
+        api.forcedRejectBody = "Refused: existing workout_sessions row belongs to another user"
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        assertTrue(manager.sync().isFailure)
+        manager.logout()
+        assertTrue(tokenStorage.getOwnershipConflict(userA) == null)
+    }
+
     // ===== 4. "Don't upload existing data" =====
 
     @Test

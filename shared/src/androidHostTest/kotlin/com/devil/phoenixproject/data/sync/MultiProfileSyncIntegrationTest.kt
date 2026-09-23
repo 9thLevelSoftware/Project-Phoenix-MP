@@ -776,6 +776,7 @@ class MultiProfileSyncIntegrationTest {
         syncRepository.seedLegacySyncedGenerationsOnce(
             accountId = userId,
             legacyLastSync = legacy,
+            cursorProfileId = profileA,
             profileIds = listOf(profileA, profileB),
         )
 

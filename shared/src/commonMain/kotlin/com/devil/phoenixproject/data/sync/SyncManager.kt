@@ -628,6 +628,9 @@ class SyncManager(
             withProfileMutationBarrier {
                 tokenStorage.updatePremiumStatus(false)
                 tokenStorage.updateSubscriptionTier(null)
+                // An unanswered ownership refusal is dropped with the session (the user can
+                // sign back in and be refused again, which re-records it).
+                tokenStorage.currentUser.value?.id?.let { tokenStorage.setOwnershipConflict(it, null) }
                 tokenStorage.clearAuth()
                 tokenStorage.emitLogoutEvent()
                 // A mismatch the signed-out account never answered must not pause the next sign-in.
@@ -666,11 +669,18 @@ class SyncManager(
         adoptPendingAccountMismatch()
         val current = _syncState.value
         if (current !is SyncState.AccountMismatch && current !is SyncState.OwnershipConflict) {
-            detectPersistedAccountMismatch()?.let { mismatch ->
+            val mismatch = detectPersistedAccountMismatch()
+            if (mismatch != null) {
                 Logger.w("SyncManager") {
                     "Signed-in portal account differs from this device's data; sync paused pending user choice"
                 }
                 _syncState.value = mismatch.toSyncState()
+            } else {
+                // A refusal recorded before a restart still holds until recovery or sign-out.
+                tokenStorage.currentUser.value?.id
+                    ?.takeIf { tokenStorage.hasToken() }
+                    ?.let { tokenStorage.getOwnershipConflict(it) }
+                    ?.let { _syncState.value = SyncState.OwnershipConflict(it) }
             }
         }
         return when (val state = _syncState.value) {
@@ -800,6 +810,7 @@ class SyncManager(
                     entityTypes = entityTypes,
                 )
             }
+            tokenStorage.setOwnershipConflict(userId, null)
             _syncState.value = SyncState.Idle
             Logger.i("SyncManager") {
                 "Ownership conflict resolved: pre-switch rows excluded from upload (${conflict.message})"
@@ -1117,6 +1128,8 @@ class SyncManager(
             // by the UI via applyOwnershipConflictRecovery().
             val message = ownership.error?.message ?: "Portal refused an entity owned by another user"
             _syncState.value = SyncState.OwnershipConflict(message)
+            // Durable, per account: a restart must not resume pushing into the refusal.
+            tokenStorage.currentUser.value?.id?.let { tokenStorage.setOwnershipConflict(it, message) }
             return Result.failure(ownership.error ?: PortalApiException(message))
         }
         val notPremium = outcomes.firstOrNull {
