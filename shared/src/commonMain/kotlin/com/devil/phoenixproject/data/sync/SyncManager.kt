@@ -684,6 +684,10 @@ class SyncManager(
     private fun detectPersistedAccountMismatch(): AccountMismatchCandidate? {
         if (!tokenStorage.hasToken()) return null
         val user = tokenStorage.currentUser.value ?: return null
+        // A device upgraded from a pre-PR-11 build: the legacy cursor's owner is the
+        // account its rows already reached. Record it before comparing, and before the
+        // legacy generation seeding / cursor migration further down syncLocked consume it.
+        tokenStorage.adoptLegacySyncOwner(user.id)
         return detectAccountMismatch(
             newUserId = user.id,
             newUserLabel = user.email.takeIf { it.isNotBlank() } ?: user.id,

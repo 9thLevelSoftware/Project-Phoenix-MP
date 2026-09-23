@@ -42,6 +42,7 @@ class AccountSwitchSyncTest {
     private lateinit var userProfileRepository: FakeUserProfileRepository
     private lateinit var syncRepository: SqlDelightSyncRepository
     private lateinit var tokenStorage: PortalTokenStorage
+    private lateinit var settings: MapSettings
     private lateinit var api: OwnershipEnforcingPortalApi
     private lateinit var manager: SyncManager
     private val pendingAccountMismatch = PendingAccountMismatch()
@@ -66,7 +67,8 @@ class AccountSwitchSyncTest {
             setActiveProfileForTest(id = profileId, supabaseUserId = null)
         }
         syncRepository = SqlDelightSyncRepository(database, userProfileRepository)
-        tokenStorage = PortalTokenStorage(MapSettings())
+        settings = MapSettings()
+        tokenStorage = PortalTokenStorage(settings)
         tokenStorage.saveGoTrueAuth(authResponse(userA, emailA, "token-a"))
         // Suppress both one-time repair pushes; they gather from 0 and would re-send
         // pre-switch rows regardless of the exclusion filter.
@@ -365,6 +367,96 @@ class AccountSwitchSyncTest {
             tokenStorage.getPullMergeWatermark(userA, profileId) == 0L,
             "a pull that merged nothing must not advance the pull-merge stamp",
         )
+    }
+
+    // ===== 2d. Devices upgraded from a pre-PR-11 build (legacy global cursor) =====
+
+    private fun plantLegacyCursor(ownerUserId: String?, lastSync: Long) {
+        settings.putLong("portal_last_sync_timestamp", lastSync)
+        if (ownerUserId != null) settings.putString("portal_delta_pull_key", "$ownerUserId:$profileId")
+    }
+
+    private fun legacySeedingRan(): Boolean =
+        database.phoenixDatabaseQueries.selectAppliedDataRepair("legacy-sync-generations-v1").executeAsOneOrNull() != null
+
+    @Test
+    fun anUpgradedDeviceSignedInAsTheLegacyOwnerSeedsAndSyncsWithoutPausing() = runTest {
+        // A workout the old client pushed: stamped at the legacy cursor, generations 1/0.
+        insertSession("legacy-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        database.phoenixDatabaseQueries.updateSessionTimestampsByIds(timestamp = baseTime, ids = listOf("legacy-1"), gatherStartedAt = baseTime)
+        plantLegacyCursor(userA, lastSync = baseTime + 1_000)
+
+        assertTrue(manager.sync().isSuccess)
+        assertFalse(manager.syncState.value is SyncState.AccountMismatch)
+        assertTrue(legacySeedingRan(), "the legacy generation seeding runs for the legacy owner")
+        assertTrue(tokenStorage.getLastSyncedPortalUserId() == userA)
+        assertTrue(
+            api.pushPayloads.flatMap { it.sessions }.none { it.id == "legacy-1" },
+            "a row the old client synced is seeded as synced, not re-pushed",
+        )
+    }
+
+    @Test
+    fun anUpgradedDeviceSigningInAsAnotherAccountIsDetectedFromTheLegacyCursor() = runTest {
+        // No PR 11 record yet: only the legacy cursor says which account the rows reached.
+        insertSession("legacy-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        plantLegacyCursor(userA, lastSync = baseTime + 1_000)
+        assertTrue(tokenStorage.getLastSyncedPortalUserId() == null)
+
+        api.currentPushUser = userB
+        api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
+        assertTrue(manager.login(emailB, "pw").isSuccess)
+
+        val state = assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+        assertTrue(state.previousUserId == userA && state.newUserId == userB)
+        // saveGoTrueAuth dropped the legacy key on the switch; the evidence survived it.
+        assertTrue(tokenStorage.getLastSyncedPortalUserId() == userA)
+        assertTrue(manager.sync().isFailure)
+        assertTrue(api.pushCallCount == 0, "nothing may be pushed before the choice")
+    }
+
+    @Test
+    fun changingAccountInTokenStorageKeepsTheLegacyOwnerAsLastSynced() = runTest {
+        // saveGoTrueAuth drops the un-namespaced legacy cursor on an account change; the
+        // fact it carried (which account the old client synced into) must survive it.
+        plantLegacyCursor(userA, lastSync = baseTime)
+        tokenStorage.saveGoTrueAuth(authResponse(userB, emailB, "token-b"))
+        assertTrue(tokenStorage.getLastSyncedPortalUserId() == userA)
+    }
+
+    @Test
+    fun signingOutKeepsTheLegacyOwnerSoALaterSignInAsAnotherAccountIsDetected() = runTest {
+        // No delta-pull marker: the legacy cursor belongs to whoever was signed in.
+        insertSession("legacy-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        plantLegacyCursor(ownerUserId = null, lastSync = baseTime)
+        manager.logout()
+        assertTrue(tokenStorage.getLastSyncedPortalUserId() == userA, "sign-out must keep the legacy owner")
+
+        api.currentPushUser = userB
+        api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
+        assertTrue(manager.login(emailB, "pw").isSuccess)
+        val state = assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+        assertTrue(state.previousUserId == userA)
+        assertTrue(api.pushCallCount == 0)
+    }
+
+    @Test
+    fun legacySeedingNeverRunsUnderAMismatchedAccount() = runTest {
+        // The token already names B (e.g. a restart after an older sign-in) while the legacy
+        // cursor is attributed to A: the pause gate must stop the sync before the one-shot
+        // seeding acks rows on B's behalf.
+        tokenStorage.saveGoTrueAuth(authResponse(userB, emailB, "token-b"))
+        insertSession("legacy-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        database.phoenixDatabaseQueries.updateSessionTimestampsByIds(timestamp = baseTime, ids = listOf("legacy-1"), gatherStartedAt = baseTime)
+        plantLegacyCursor(userA, lastSync = baseTime + 1_000)
+        api.currentPushUser = userB
+
+        val restarted = newManager(PendingAccountMismatch())
+        assertTrue(restarted.sync().isFailure)
+        val state = assertIs<SyncState.AccountMismatch>(restarted.syncState.value)
+        assertTrue(state.previousUserId == userA && state.newUserId == userB)
+        assertFalse(legacySeedingRan(), "the one-shot seeding must not run under a mismatched account")
+        assertTrue(api.pushCallCount == 0)
     }
 
     // ===== 3. Rows pulled from the old account are not "never synced" =====

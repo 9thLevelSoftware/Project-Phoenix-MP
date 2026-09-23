@@ -25,6 +25,9 @@ internal suspend fun commitPortalIdentityUnderProfileMutationBarrier(
     val activeProfile = requireNotNull(userProfileRepository.activeProfile.value) {
         "An active profile is required before signing in"
     }
+    // A pre-PR-11 device's only record of the account its rows reached is the legacy
+    // cursor, which saveGoTrueAuth drops on an account change. Keep it first.
+    tokenStorage.adoptLegacySyncOwner(tokenStorage.currentUser.value?.id)
     val mismatch = detectAccountMismatch(
         newUserId = response.user.id,
         newUserLabel = response.user.email?.takeIf { it.isNotBlank() } ?: response.user.id,

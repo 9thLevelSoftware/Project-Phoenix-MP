@@ -303,7 +303,10 @@ class PortalTokenStorage(private val settings: Settings) {
             // so returning to the previous account resumes where it left off.
             settings.remove(KEY_SUBSCRIPTION_TIER)
             // The un-namespaced legacy cursor belongs to the previous account (the old
-            // build zeroed it on every switch). It must never seed this account's cursors.
+            // build zeroed it on every switch). It must never seed this account's cursors,
+            // but it is PR 11's only evidence that the old client synced into that account,
+            // so keep that fact before dropping the key.
+            preserveLegacySyncOwnerLocked(fallbackOwner = previousUserId)
             settings.remove(KEY_LEGACY_LAST_SYNC)
             settings.remove(KEY_LEGACY_DELTA_PULL_KEY)
             // The UI's lastSyncTime is a cache of this user's min pull cursor; it must
@@ -332,6 +335,28 @@ class PortalTokenStorage(private val settings: Settings) {
     /** Records which portal user the last successful push landed in. Not cleared by [clearAuth]. */
     fun setLastSyncedPortalUserId(userId: String) {
         settings[KEY_LAST_SYNCED_PORTAL_USER_ID] = userId
+    }
+
+    /**
+     * PR 11 upgrade path: a device last synced by a pre-PR-11 build has no
+     * [getLastSyncedPortalUserId], but a positive legacy cursor proves the old client synced
+     * into one account: the one its delta-pull marker names, or else [currentUserId] (the
+     * old build zeroed the cursor on every account switch). Records that account as the
+     * last-synced one when nothing newer is recorded, so account-switch detection sees it.
+     * Does not consume the legacy key.
+     */
+    fun adoptLegacySyncOwner(currentUserId: String?) {
+        withPlatformLock(authLock) { preserveLegacySyncOwnerLocked(fallbackOwner = currentUserId) }
+    }
+
+    private fun preserveLegacySyncOwnerLocked(fallbackOwner: String?) {
+        if (settings.getStringOrNull(KEY_LAST_SYNCED_PORTAL_USER_ID) != null) return
+        if (settings[KEY_LEGACY_LAST_SYNC, 0L] <= 0L) return
+        val markerOwner = settings.getStringOrNull(KEY_LEGACY_DELTA_PULL_KEY)
+            ?.substringBefore(':', missingDelimiterValue = "")
+            ?.takeIf { it.isNotBlank() }
+        val owner = markerOwner ?: fallbackOwner?.takeIf { it.isNotBlank() } ?: return
+        settings[KEY_LAST_SYNCED_PORTAL_USER_ID] = owner
     }
 
     /** Records the display label for [setLastSyncedPortalUserId]. Not cleared by [clearAuth]. */
@@ -683,6 +708,7 @@ class PortalTokenStorage(private val settings: Settings) {
     }
 
     private fun clearAuthInternal() = withPlatformLock(authLock) {
+        val signedOutUserId: String? = settings.getStringOrNull(KEY_USER_ID)
         authGeneration++
         settings.remove(KEY_TOKEN)
         settings.remove(KEY_REFRESH_TOKEN)
@@ -696,7 +722,9 @@ class PortalTokenStorage(private val settings: Settings) {
         // by user id, so re-linking the same account resumes where it left off and a
         // different account's cursors cannot be read through this one's keys.
         // The un-namespaced legacy cursor is NOT: its owner is unknown once the user id
-        // is gone (the old build removed it on sign-out too).
+        // is gone (the old build removed it on sign-out too). Its owner is kept first as
+        // PR 11 account-switch evidence (read before KEY_USER_ID was removed above).
+        preserveLegacySyncOwnerLocked(fallbackOwner = signedOutUserId)
         settings.remove(KEY_LEGACY_LAST_SYNC)
         settings.remove(KEY_LEGACY_DELTA_PULL_KEY)
         // Keep device ID for stable identity
