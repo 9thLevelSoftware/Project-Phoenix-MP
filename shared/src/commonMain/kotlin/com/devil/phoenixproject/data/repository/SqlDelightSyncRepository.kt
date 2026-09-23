@@ -895,18 +895,20 @@ class SqlDelightSyncRepository(
      *
      * Lookup strategy (in order):
      * 0. Direct ID lookup (unambiguous, O(1)) — added for #404
-     * 1. Exact match on name + muscle group (active rows only; if muscle group provided)
+     * 1. Active match on name + muscle group (case-insensitive; if muscle group provided)
      * 2. Pre-rename alias match (#857) compatible with the supplied muscle group (if provided)
-     * 3. Exact match on name only (active rows only)
+     * 3. Active match on name only (case-insensitive)
      * 4. Pre-rename alias match (#857) with the muscle constraint dropped
      * 5. Archived fallback for 1 (nothing active and nothing aliased matched)
-     * 6. Case-insensitive match on name (fallback for portal name variations)
+     * 6. Case-insensitive match on name (last-resort fallback for portal name variations)
      *
      * Two precedence rules hold throughout (#857 review follow-ups): an active exact-name match
      * outranks the alias when nothing else disambiguates (custom creation permits duplicate
      * names), and a muscle-compatible alias outranks the muscle-dropping name-only fallback (so
      * stock history cannot reassociate with a custom row in a different muscle group). The alias
-     * always outranks archived rows still carrying the pre-rename name.
+     * always outranks archived rows still carrying the pre-rename name. Every name and muscle
+     * comparison in tiers 1-4 is case-insensitive, so a portal casing variation resolves through
+     * the same tier as the exact-cased lookup instead of leaking to a later one.
      *
      * @param name Exercise name from portal
      * @param muscleGroup Optional muscle group for disambiguation

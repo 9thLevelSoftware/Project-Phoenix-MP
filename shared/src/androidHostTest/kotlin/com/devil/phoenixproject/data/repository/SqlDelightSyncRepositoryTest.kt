@@ -1204,6 +1204,24 @@ class SqlDelightSyncRepositoryTest {
         assertEquals("custom-1", repository.findExerciseId("One Leg Barbell Squat", null, null))
     }
 
+    @Test
+    fun `case variation of an active custom name beats the alias fallback`() = runTest {
+        // #857 review follow-up: the active name queries were case-sensitive while the alias query
+        // is case-insensitive, so a portal casing variation leaked past an active custom row to the
+        // stock row's alias and reassociated its workouts and PRs.
+        insertCatalogRow(id = "One_Leg_Barbell_Squat", name = "Bulgarian Split Squat", muscleGroup = "Legs", aliases = "One Leg Barbell Squat")
+        insertCatalogRow(id = "custom-1", name = "One Leg Barbell Squat", muscleGroup = "Back", isCustom = 1L)
+
+        // Casing variation with no muscle group: the active custom row wins over the alias.
+        assertEquals("custom-1", repository.findExerciseId("one leg barbell squat", null, null))
+        // With the custom row's muscle group, the active name + muscle strategy handles it.
+        assertEquals("custom-1", repository.findExerciseId("ONE LEG BARBELL SQUAT", "back", null))
+        // With the stock muscle group the muscle-compatible alias still honors the constraint.
+        assertEquals("One_Leg_Barbell_Squat", repository.findExerciseId("one leg barbell squat", "legs", null))
+        // Push-side lookup keeps the custom row's muscle group for the casing variation.
+        assertEquals("Back", repository.getExerciseMuscleGroup(null, "one leg barbell squat"))
+    }
+
     private fun insertCatalogRow(
         id: String,
         name: String,

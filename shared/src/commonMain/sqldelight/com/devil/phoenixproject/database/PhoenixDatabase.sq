@@ -2357,18 +2357,19 @@ SELECT * FROM Exercise WHERE TRIM(name) = TRIM(?) ORDER BY archived ASC LIMIT 1;
 -- #857 review follow-up: active-only exact-name lookup. A custom exercise may legally share a
 -- stock row's pre-rename name while that row carries the old name as its alias, so active
 -- exact-name matches are resolved before alias matches and archived rows. Ties prefer the user's
--- custom row.
+-- custom row. Matching is case-insensitive (like findExerciseByAlias) so a portal casing variation
+-- cannot fall through to the alias while an active row claims the name.
 findExerciseByNameActive:
-SELECT * FROM Exercise WHERE TRIM(name) = TRIM(:name) AND archived = 0 ORDER BY isCustom DESC, id ASC LIMIT 1;
+SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND archived = 0 ORDER BY isCustom DESC, id ASC LIMIT 1;
 
 -- Exercise lookup for sync pull: exact match on name and muscle group
 findExerciseByNameAndMuscle:
 SELECT * FROM Exercise WHERE TRIM(name) = TRIM(:name) AND TRIM(muscleGroup) = TRIM(:muscleGroup) ORDER BY archived ASC LIMIT 1;
 
--- #857 review follow-up: active-only name + muscle group lookup, same ordering contract as
--- findExerciseByNameActive.
+-- #857 review follow-up: active-only name + muscle group lookup, same ordering and case-insensitive
+-- matching contract as findExerciseByNameActive.
 findExerciseByNameAndMuscleActive:
-SELECT * FROM Exercise WHERE TRIM(name) = TRIM(:name) AND TRIM(muscleGroup) = TRIM(:muscleGroup) AND archived = 0 ORDER BY isCustom DESC, id ASC LIMIT 1;
+SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) AND LOWER(TRIM(muscleGroup)) = LOWER(TRIM(:muscleGroup)) AND archived = 0 ORDER BY isCustom DESC, id ASC LIMIT 1;
 
 -- Exercise lookup for sync pull: case-insensitive fallback by name only
 findExerciseByNameCaseInsensitive:
