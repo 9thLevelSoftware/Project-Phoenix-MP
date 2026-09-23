@@ -967,7 +967,9 @@ ORDER BY timestamp DESC
 LIMIT 1;
 
 selectSessionIdForPersonalRecord:
-SELECT id FROM WorkoutSession
+-- The PORTAL workout id (a routine set's parent routineSessionId), which is
+-- what a pushed personalRecords.sessionId must reference.
+SELECT COALESCE(NULLIF(routineSessionId, ''), id) FROM WorkoutSession
 WHERE exerciseId = :exerciseId
 AND timestamp = :timestamp
 AND profile_id = :profileId
@@ -2337,6 +2339,9 @@ UPDATE CompletedSet SET logged_rpe = ? WHERE id = ?;
 
 markCompletedSetAsPr:
 UPDATE CompletedSet SET is_pr = 1 WHERE id = ?;
+
+clearCompletedSetPr:
+UPDATE CompletedSet SET is_pr = 0 WHERE id = ?;
 
 updateCompletedSetForTaggedJustLift:
 UPDATE CompletedSet

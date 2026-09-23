@@ -283,7 +283,7 @@ class ProfileQaSeederTest {
                     if (it.id == id) it.copy(name = secondArg(), colorIndex = thirdArg()) else it
                 }
             }
-            coEvery { profiles.deleteProfile(any()) } coAnswers {
+            coEvery { profiles.deleteProfile(any(), any()) } coAnswers {
                 deletedProfiles += firstArg<String>()
                 true
             }

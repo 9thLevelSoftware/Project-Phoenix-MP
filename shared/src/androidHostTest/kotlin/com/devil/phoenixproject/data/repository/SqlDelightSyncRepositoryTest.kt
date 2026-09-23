@@ -1213,11 +1213,19 @@ class SqlDelightSyncRepositoryTest {
         assertEquals(336.0, eccentricVolume.volume)
     }
 
+    /**
+     * F-021: the lookup keys on the SESSION's start timestamp. The two fixture
+     * sessions deliberately SHARE a start time, so only the profile filter can
+     * exclude the other profile's row. The second lookup supplies the timestamp
+     * the old code produced — the instant the set ENDED, 60 s later — and shows
+     * it resolves to nothing, which is why a PR must carry its session's stamp.
+     */
     @Test
     fun `findSessionIdsForPersonalRecords resolves sessions outside delta batch`() = runTest {
+        val sessionStart = 1_700_000_000_000L
         insertHistoricalSession(
             id = "historical-bicep-curl",
-            timestamp = 1_700_000_000_000L,
+            timestamp = sessionStart,
             exerciseId = "bicep-curl",
             exerciseName = "Bicep Curl",
             workingReps = 8,
@@ -1229,7 +1237,7 @@ class SqlDelightSyncRepositoryTest {
         )
         insertHistoricalSession(
             id = "other-profile-session",
-            timestamp = 1_700_000_000_000L,
+            timestamp = sessionStart,
             exerciseId = "bicep-curl",
             exerciseName = "Bicep Curl",
             workingReps = 8,
@@ -1239,13 +1247,13 @@ class SqlDelightSyncRepositoryTest {
             peakEccentricB = 41.0,
             profileId = "other-profile",
         )
-        val record = PersonalRecord(
+        fun record(timestamp: Long) = PersonalRecord(
             exerciseId = "bicep-curl",
             exerciseName = "Bicep Curl",
             weightPerCableKg = 42f,
             reps = 8,
             oneRepMax = 42f,
-            timestamp = 1_700_000_000_000L,
+            timestamp = timestamp,
             workoutMode = "OldSchool",
             prType = PRType.MAX_WEIGHT,
             volume = 336f,
@@ -1253,14 +1261,89 @@ class SqlDelightSyncRepositoryTest {
             profileId = "active-profile",
         )
 
-        val sessionIds = repository.findSessionIdsForPersonalRecords(listOf(record), "active-profile")
+        val sessionIds = repository.findSessionIdsForPersonalRecords(
+            listOf(record(sessionStart)),
+            "active-profile",
+        )
 
         assertEquals(
-            mapOf("bicep-curl:1700000000000" to "historical-bicep-curl"),
+            mapOf("bicep-curl:$sessionStart" to "historical-bicep-curl"),
             sessionIds,
+            "A PR carrying its session's start timestamp resolves to that session, and never to another profile's",
+        )
+        assertEquals(
+            emptyMap(),
+            repository.findSessionIdsForPersonalRecords(
+                listOf(record(sessionStart + 60_000L)),
+                "active-profile",
+            ),
+            "A PR stamped when the set ENDED matches nothing — which is why the PR must carry the session's timestamp",
         )
     }
 
+
+    /**
+     * GitHub #853 (codex 4081208473, kilo 4081854459): a routine set is published
+     * under its parent routineSessionId, so a historical PR earned in a routine must
+     * resolve to that parent, not the local component id, or the pushed link
+     * references no portal workout.
+     */
+    @Test
+    fun `findSessionIdsForPersonalRecords resolves a routine set to its parent workout id`() = runTest {
+        val sessionStart = 1_700_000_500_000L
+        insertHistoricalSession(
+            id = "routine-component-row",
+            timestamp = sessionStart,
+            exerciseId = "row",
+            exerciseName = "Row",
+            workingReps = 8,
+            peakConcentricA = 20.0,
+            peakConcentricB = 18.0,
+            peakEccentricA = 42.0,
+            peakEccentricB = 39.0,
+            profileId = "active-profile",
+            routineSessionId = "22222222-2222-4222-a222-222222222222",
+        )
+        insertHistoricalSession(
+            id = "standalone-press",
+            timestamp = sessionStart,
+            exerciseId = "press",
+            exerciseName = "Press",
+            workingReps = 8,
+            peakConcentricA = 20.0,
+            peakConcentricB = 18.0,
+            peakEccentricA = 42.0,
+            peakEccentricB = 39.0,
+            profileId = "active-profile",
+        )
+        fun record(exerciseId: String) = PersonalRecord(
+            exerciseId = exerciseId,
+            exerciseName = exerciseId,
+            weightPerCableKg = 42f,
+            reps = 8,
+            oneRepMax = 42f,
+            timestamp = sessionStart,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_WEIGHT,
+            volume = 336f,
+            phase = WorkoutPhase.COMBINED,
+            profileId = "active-profile",
+        )
+
+        val sessionIds = repository.findSessionIdsForPersonalRecords(
+            listOf(record("row"), record("press")),
+            "active-profile",
+        )
+
+        assertEquals(
+            mapOf(
+                "row:$sessionStart" to "22222222-2222-4222-a222-222222222222",
+                "press:$sessionStart" to "standalone-press",
+            ),
+            sessionIds,
+            "A routine PR links to the parent workout id; a standalone PR to its own id",
+        )
+    }
     @Test
     fun `backfillPhaseSpecificPRs checkpoints even when no sessions have phase metrics`() = runTest {
         insertHistoricalSession(

@@ -21,6 +21,7 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     val saved = mutableListOf<CompletedSet>()
     val saveCompletedSetAttempts = mutableListOf<CompletedSet>()
     var beforeSaveCompletedSet: suspend (CompletedSet) -> Unit = {}
+    var beforeMarkAsPr: suspend (String) -> Unit = {}
     var afterSaveCompletedSet: suspend (CompletedSet) -> Unit = {}
 
     private val plannedSets = mutableMapOf<String, PlannedSet>()
@@ -53,6 +54,7 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
         saved.clear()
         saveCompletedSetAttempts.clear()
         beforeSaveCompletedSet = {}
+        beforeMarkAsPr = {}
         afterSaveCompletedSet = {}
         plannedSets.clear()
         completedSets.clear()
@@ -211,8 +213,15 @@ open class FakeCompletedSetRepository : CompletedSetRepository {
     }
 
     override suspend fun markAsPr(setId: String) {
+        beforeMarkAsPr(setId)
         val current = completedSets[setId] ?: return
         completedSets[setId] = current.copy(isPr = true)
+        updateCompletedFlow(current.sessionId)
+    }
+
+    override suspend fun clearPr(setId: String) {
+        val current = completedSets[setId] ?: return
+        completedSets[setId] = current.copy(isPr = false)
         updateCompletedFlow(current.sessionId)
     }
 

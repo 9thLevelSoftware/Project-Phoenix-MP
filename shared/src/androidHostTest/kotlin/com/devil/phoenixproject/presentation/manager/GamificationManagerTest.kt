@@ -87,7 +87,7 @@ class GamificationManagerTest {
             )
             advanceUntilIdle()
 
-            assertTrue(hasCelebrationSound)
+            assertTrue(hasCelebrationSound.celebrate)
             assertEquals(1, fakePersonalRecordRepository.updateCalls.size)
             assertEquals(1, prEvents.size)
             assertEquals(1, badgeEvents.size)
@@ -144,7 +144,7 @@ class GamificationManagerTest {
             )
             advanceUntilIdle()
 
-            assertFalse(hasCelebrationSound)
+            assertFalse(hasCelebrationSound.celebrate)
             assertEquals(0, fakePersonalRecordRepository.updateCalls.size)
             assertTrue(prEvents.isEmpty())
             assertEquals(1, badgeEvents.size)
@@ -186,7 +186,7 @@ class GamificationManagerTest {
             )
             advanceUntilIdle()
 
-            assertFalse(hasCelebrationSound)
+            assertFalse(hasCelebrationSound.celebrate)
             assertEquals(0, fakePersonalRecordRepository.updateCalls.size)
             assertEquals(1, fakeGamificationRepository.updateStatsCallCount)
             assertEquals(1, fakeGamificationRepository.checkAndAwardBadgesCallCount)

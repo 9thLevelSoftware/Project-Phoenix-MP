@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.sync
 
 import com.devil.phoenixproject.domain.model.CycleDay
+import com.devil.phoenixproject.domain.model.PRType
 import com.devil.phoenixproject.domain.model.PersonalRecord
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
@@ -100,6 +101,228 @@ class PortalPushLimitsTest {
             routineSessionId = null, // standalone → 1 portal session per mobile session
             profileId = "default",
         )
+    }
+
+    /**
+     * PORTAL ROW-DUPLICATION HAZARD (PR 15 review R-8).
+     *
+     * The portal derives a `personal_records` row from every `set.isPr` and
+     * INSERTs it with no id whenever a request carries no dedicated
+     * `personalRecords` (`personalRecordRow.ts buildPersonalRecordRowsForPush`).
+     * A derived id-less row can never dedupe against the real one, which is keyed
+     * on its id, so holding every PR to the final batch duplicated any PR whose
+     * session rode an earlier batch. Every batch now carries the full dedicated
+     * list (the portal upserts dedicated rows on id, so a re-send is a no-op):
+     *   1. no payload carries a PR-flagged set without dedicated PR rows,
+     *   2. each batch carries the PRs of the sessions it contains, and
+     *   3. every PR is sent.
+     */
+    @Test
+    fun everyBatchCarryingAPrSetAlsoCarriesItsDedicatedPersonalRecords() = runTest {
+        authenticate()
+        val sessions = buildSessions(60)
+        fakeSyncRepo.workoutSessionsToReturn = sessions
+        fakeSyncRepo.fullPRsToReturn = sessions.map { session ->
+            PersonalRecord(
+                exerciseId = session.exerciseId!!,
+                exerciseName = "Squat",
+                weightPerCableKg = session.weightPerCableKg,
+                reps = session.totalReps,
+                oneRepMax = session.weightPerCableKg,
+                // F-021: a live PR carries its session's timestamp, which is what
+                // makes `set.isPr` true on the pushed set for the first time.
+                timestamp = session.timestamp,
+                workoutMode = "OldSchool",
+                prType = PRType.MAX_WEIGHT,
+                volume = session.weightPerCableKg * session.totalReps,
+                phase = WorkoutPhase.COMBINED,
+                profileId = "default",
+                uuid = "pr-uuid-${session.id}",
+            )
+        }
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payloads = fakeApi.pushPayloads
+        assertEquals(2, payloads.size, "60 sessions → [50, 10]")
+        payloads.forEachIndexed { index, payload ->
+            val prFlaggedSets = payload.sessions
+                .flatMap { it.exercises }
+                .flatMap { it.sets }
+                .count { it.isPr }
+            if (prFlaggedSets > 0) {
+                assertTrue(
+                    payload.personalRecords.isNotEmpty(),
+                    "Batch ${index + 1} flags $prFlaggedSets PR set(s) but ships no dedicated " +
+                        "personalRecords, so the portal would derive id-less duplicates",
+                )
+            }
+            val carried = payload.personalRecords.mapNotNull { it.id }.toSet()
+            val ownPrIds = payload.sessions.map { "pr-uuid-${it.id}" }
+            assertTrue(
+                carried.containsAll(ownPrIds),
+                "Batch ${index + 1} must carry the PRs of the sessions it contains",
+            )
+        }
+        val sentPrIds = payloads.flatMap { it.personalRecords }.mapNotNull { it.id }.toSet()
+        assertEquals(60, sentPrIds.size, "Every PR must be sent")
+    }
+
+    /**
+     * GitHub #853 (codex 4080812739): a Just Lift session tagged to A broke a PR, then
+     * was retagged to B. A's record is genuine and still ships, but it must not flag
+     * the retagged set as a PR: set-level `isPr` follows the record whose
+     * exerciseId + timestamp matches the session, and none matches B.
+     */
+    @Test
+    fun aRetaggedJustLiftSessionShipsNoPrSetForItsNewExercise() = runTest {
+        authenticate()
+        val session = WorkoutSession(
+            id = "just-lift-retagged",
+            timestamp = 1_740_000_000_000L,
+            mode = "OldSchool",
+            reps = 5,
+            weightPerCableKg = 25f,
+            totalReps = 5,
+            exerciseId = "exercise-b",
+            exerciseName = "Deadlift",
+            isJustLift = true,
+            profileId = "default",
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(session)
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            PersonalRecord(
+                exerciseId = "exercise-a",
+                exerciseName = "Squat",
+                weightPerCableKg = 25f,
+                reps = 5,
+                oneRepMax = 25f,
+                timestamp = session.timestamp,
+                workoutMode = "OldSchool",
+                prType = PRType.MAX_WEIGHT,
+                volume = 125f,
+                phase = WorkoutPhase.COMBINED,
+                profileId = "default",
+                uuid = "pr-uuid-exercise-a",
+            ),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payload = fakeApi.pushPayloads.single()
+        assertTrue(
+            payload.sessions.flatMap { it.exercises }.flatMap { it.sets }.none { it.isPr },
+            "The retagged set must not claim a PR for exercise B",
+        )
+        assertEquals(
+            listOf("pr-uuid-exercise-a"),
+            payload.personalRecords.mapNotNull { it.id },
+            "A's genuine record still ships",
+        )
+    }
+
+    /**
+     * GitHub #853 (codex 4081208473): buildPortalSession publishes a routine set under
+     * its parent routineSessionId (the component id becomes an exercise id), so a PR
+     * earned in a routine must link to that parent. A standalone PR links to its own id.
+     */
+    @Test
+    fun aRoutinePrLinksToTheParentWorkoutAndAStandalonePrToItself() = runTest {
+        authenticate()
+        val routineSet = WorkoutSession(
+            id = "routine-component",
+            timestamp = 1_740_000_000_000L,
+            mode = "OldSchool",
+            reps = 5,
+            weightPerCableKg = 30f,
+            totalReps = 5,
+            exerciseId = "ex-routine",
+            exerciseName = "Row",
+            routineSessionId = "11111111-1111-4111-a111-111111111111",
+            profileId = "default",
+        )
+        val standalone = WorkoutSession(
+            id = "standalone-session",
+            timestamp = 1_740_000_100_000L,
+            mode = "OldSchool",
+            reps = 5,
+            weightPerCableKg = 30f,
+            totalReps = 5,
+            exerciseId = "ex-standalone",
+            exerciseName = "Press",
+            profileId = "default",
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(routineSet, standalone)
+        fun prFor(session: WorkoutSession) = PersonalRecord(
+            exerciseId = session.exerciseId!!,
+            exerciseName = session.exerciseName!!,
+            weightPerCableKg = 30f,
+            reps = 5,
+            oneRepMax = 30f,
+            timestamp = session.timestamp,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_WEIGHT,
+            volume = 150f,
+            phase = WorkoutPhase.COMBINED,
+            profileId = "default",
+            uuid = "pr-uuid-${session.id}",
+        )
+        fakeSyncRepo.fullPRsToReturn = listOf(prFor(routineSet), prFor(standalone))
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val sessionIdByPr = fakeApi.pushPayloads.flatMap { it.personalRecords }
+            .associate { it.id to it.sessionId }
+        assertEquals(routineSet.routineSessionId, sessionIdByPr["pr-uuid-routine-component"])
+        assertEquals(standalone.id, sessionIdByPr["pr-uuid-standalone-session"])
+        val pushedWorkoutIds = fakeApi.pushPayloads.flatMap { it.sessions }.map { it.id }.toSet()
+        assertTrue(
+            sessionIdByPr.values.all { it in pushedWorkoutIds },
+            "Every PR must reference a pushed portal workout",
+        )
+    }
+
+    /**
+     * A PR that matches no session in this push (a historical PR resolved through
+     * `findSessionIdsForPersonalRecords`) still has to be sent — it rides every
+     * batch, including the final one.
+     */
+    @Test
+    fun aPersonalRecordMatchingNoPushedSessionRidesTheFinalBatch() = runTest {
+        authenticate()
+        fakeSyncRepo.workoutSessionsToReturn = buildSessions(60)
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            PersonalRecord(
+                exerciseId = "historical-lift",
+                exerciseName = "Historical Lift",
+                weightPerCableKg = 80f,
+                reps = 3,
+                oneRepMax = 88f,
+                timestamp = 1_700_000_000_000L,
+                workoutMode = "OldSchool",
+                prType = PRType.MAX_WEIGHT,
+                volume = 240f,
+                phase = WorkoutPhase.COMBINED,
+                profileId = "default",
+                uuid = "pr-uuid-historical",
+            ),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payloads = fakeApi.pushPayloads
+        assertEquals(2, payloads.size)
+        payloads.forEachIndexed { index, payload ->
+            assertEquals(
+                listOf("pr-uuid-historical"),
+                payload.personalRecords.mapNotNull { it.id },
+                "Batch ${index + 1} must carry the dedicated list, including the final batch",
+            )
+        }
     }
 
     // ==================== Batch-Size Constant Contract ====================
