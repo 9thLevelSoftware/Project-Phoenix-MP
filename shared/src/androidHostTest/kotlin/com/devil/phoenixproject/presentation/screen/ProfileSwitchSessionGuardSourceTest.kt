@@ -12,16 +12,18 @@ import kotlin.test.assertTrue
  * let a switch split one workout across two profiles.
  */
 class ProfileSwitchSessionGuardSourceTest {
-    private val source: String by lazy {
+    private val root: File by lazy {
         var dir = File(System.getProperty("user.dir") ?: ".")
         while (!File(dir, "shared/src/commonMain").exists()) {
             dir = dir.parentFile ?: break
         }
-        File(
-            dir,
-            "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/screen/EnhancedMainScreen.kt",
-        ).readText()
+        dir
     }
+
+    private fun read(path: String) =
+        File(root, "shared/src/commonMain/kotlin/com/devil/phoenixproject/presentation/$path").readText()
+
+    private val source: String by lazy { read("screen/EnhancedMainScreen.kt") }
 
     @Test
     fun bothSwitchEntryPointsPassTheSessionScopedSignal() {
@@ -39,5 +41,12 @@ class ProfileSwitchSessionGuardSourceTest {
     fun neitherSwitchEntryPointIsGatedOnWorkoutStateAlone() {
         assertFalse(Regex("""switchProfile\([^)]*workoutState""").containsMatchIn(source))
         assertFalse(Regex("""createAndActivateProfile\([^)]*workoutState""").containsMatchIn(source))
+    }
+
+    /** GitHub #854 (codex 4082092571): active-profile deletion gets the same live guard. */
+    @Test
+    fun theActiveProfileDeleteIsGatedOnTheLiveSessionSignal() {
+        assertTrue(read("navigation/NavGraph.kt").contains("isInWorkoutSession = viewModel::isInWorkoutSessionNow"))
+        assertTrue(read("screen/ProfileScreen.kt").contains("viewModel.deleteActiveProfile(isInWorkoutSession)"))
     }
 }

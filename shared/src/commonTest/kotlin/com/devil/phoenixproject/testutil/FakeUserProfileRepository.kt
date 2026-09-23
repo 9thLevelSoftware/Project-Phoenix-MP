@@ -235,7 +235,10 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
     }
 
-    override suspend fun deleteActiveProfile(expectedProfileId: String): Boolean {
+    override suspend fun deleteActiveProfile(
+        expectedProfileId: String,
+        blockedByLiveSession: () -> Boolean,
+    ): Boolean {
         deleteActiveProfileRequests += expectedProfileId
         deleteProfileFailure?.let { throw it }
         beforeDeleteActiveProfileMutation?.invoke(expectedProfileId)
@@ -246,15 +249,19 @@ class FakeUserProfileRepository : UserProfileRepository {
             if (ready.profile.id != expectedProfileId) {
                 throw StaleProfileContextException(expectedProfileId, ready.profile.id)
             }
-            deleteProfileLocked(expectedProfileId, requireActive = true)
+            deleteProfileLocked(expectedProfileId, requireActive = true, blockedByLiveSession)
         }
     }
 
-    override suspend fun deleteProfile(id: String): Boolean = mutex.withLock {
-        deleteProfileLocked(id, requireActive = false)
+    override suspend fun deleteProfile(id: String, blockedByLiveSession: () -> Boolean): Boolean = mutex.withLock {
+        deleteProfileLocked(id, requireActive = false, blockedByLiveSession)
     }
 
-    private fun deleteProfileLocked(id: String, requireActive: Boolean): Boolean {
+    private fun deleteProfileLocked(
+        id: String,
+        requireActive: Boolean,
+        blockedByLiveSession: () -> Boolean = { false },
+    ): Boolean {
         if (id == DEFAULT_PROFILE_ID) return false
         val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
             ?: throw ProfileContextUnavailableException()
@@ -263,6 +270,7 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
         profiles[id] ?: return false
         val wasActive = previous.profile.id == id
+        if (wasActive && blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
         val targetProfileId = if (requireActive || wasActive) DEFAULT_PROFILE_ID else previous.profile.id
         require(profiles.containsKey(targetProfileId)) { "Profile deletion target missing: $targetProfileId" }
         if (wasActive) {

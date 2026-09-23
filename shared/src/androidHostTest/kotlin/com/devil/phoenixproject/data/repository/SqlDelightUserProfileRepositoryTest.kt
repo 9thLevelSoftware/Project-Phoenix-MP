@@ -236,6 +236,45 @@ class SqlDelightUserProfileRepositoryTest {
         assertTrue(repository.allProfiles.value.none { it.name == "New" }, "No profile may be created")
     }
 
+    /**
+     * GitHub #854 (codex 4082092571): deleting the ACTIVE profile moves the running
+     * workout's lease onto a deleted id. A delete queued behind the barrier must re-check
+     * the live session once it holds the barrier, like switch and create do.
+     */
+    @Test
+    fun anActiveProfileDeleteQueuedBehindTheBarrierIsRefusedIfAWorkoutStartsMeanwhile() = runTest {
+        val barrier = ProfileMutationBarrier()
+        repository = SqlDelightUserProfileRepository(
+            database = database,
+            profilePreferencesRepository = preferenceStore,
+            profileLocalSafetyStore = safetyStore,
+            gamificationRepository = SqlDelightGamificationRepository(database),
+            profileMutationBarrier = barrier,
+        )
+        ready()
+        val active = repository.createAndActivateProfile("Lifter", 2)
+        var sessionLive = false
+        val release = CompletableDeferred<Unit>()
+        val holder = launch { barrier.withExclusive { release.await() } }
+        testScheduler.runCurrent()
+
+        val deleteActive = async {
+            runCatching { repository.deleteActiveProfile(active.id, blockedByLiveSession = { sessionLive }) }
+        }
+        val deleteById = async {
+            runCatching { repository.deleteProfile(active.id, blockedByLiveSession = { sessionLive }) }
+        }
+        testScheduler.runCurrent()
+        sessionLive = true // a Just Lift set auto-starts while both deletes wait for the barrier
+        release.complete(Unit)
+        holder.join()
+
+        assertIs<ProfileSwitchBlockedDuringWorkoutException>(deleteActive.await().exceptionOrNull())
+        assertIs<ProfileSwitchBlockedDuringWorkoutException>(deleteById.await().exceptionOrNull())
+        assertEquals(active.id, repository.activeProfile.value?.id, "The active profile must not change")
+        assertTrue(repository.allProfiles.value.any { it.id == active.id }, "The profile must be left intact")
+    }
+
     @Test
     fun switchingNeverEmitsMixedProfileContext() = runTest {
         ready()
