@@ -397,6 +397,14 @@ class SyncManager(
          */
         const val MAX_FULL_BATCH_RETRIES = 3
 
+        /**
+         * Up to this many PRs, every session batch carries the full `personalRecords` list
+         * (the historical behaviour). Beyond it a batch carries only its own sessions' PRs
+         * and the rest ride the trailing requests, so no request can exceed the portal's
+         * 10,000-item cap on `personalRecords`.
+         */
+        const val PR_FULL_LIST_PER_BATCH = 500
+
         /** PR 10 step 6 (R-18): fixed overlap subtracted from the first page's `syncTime`. */
         const val PULL_CURSOR_OVERLAP_MS = 5 * 60 * 1000L
 
@@ -1946,12 +1954,18 @@ class SyncManager(
         }
 
         // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB)
-        //    AND under the server-side rep_telemetry array cap (MAX_TELEMETRY_PER_BATCH).
-        //    Non-session data (routines, cycles, custom exercises, badges, RPG, gamification, assessments)
-        //    is included only in the final batch to avoid duplicate upserts.
-        //    IMPORTANT: We do NOT advance the push watermark until ALL batches succeed. This prevents
-        //    data consistency gaps where a partial batch sequence leaves the timestamp
-        //    advanced but later batches uncommitted (audit 4.1 fix).
+        //    AND under the server-side rep_telemetry array cap (MAX_TELEMETRY_PER_BATCH),
+        //    and every request under SyncConfig.MAX_PAYLOAD_BYTES and the 10,000-item
+        //    per-array cap (codex #856: a large one-time repair must not become one
+        //    permanently oversized request).
+        //    Non-session data rides on the final session batch when it fits (the common
+        //    case). Otherwise it moves to trailing requests AFTER every session batch —
+        //    routines, then deleted-routine ids, then cycles (whose days reference
+        //    routines), then PRs (whose session_id must already exist on the portal) —
+        //    each packed under both caps; the single-valued fields go on the last one.
+        //    An item that cannot fit in any request is skipped and logged: it is never
+        //    sent, never stamped and never acknowledged (see PushPlanner).
+        //    IMPORTANT: We do NOT advance the push watermark until ALL requests succeed.
         val allSessions = portalSessions
         val telemetryCountBySessionId = allSessions.associate { session ->
             val count = (sessionSetIds[session.id] ?: emptySet()).sumOf { setId ->
@@ -1959,11 +1973,99 @@ class SyncManager(
             }
             session.id to count
         }
-        val batchPlan = planSessionBatches(allSessions, telemetryCountBySessionId)
-        val totalBatches = batchPlan.size.coerceAtLeast(1)
+        fun telemetryFor(sessions: List<PortalWorkoutSessionDto>) = sessions.flatMap { session ->
+            (sessionSetIds[session.id] ?: emptySet()).flatMap { setId -> telemetryBySetId[setId] ?: emptyList() }
+        }
+        fun phaseStatsFor(sessions: List<PortalWorkoutSessionDto>) = sessions.flatMap { session ->
+            phaseStatsBySessionId[session.id] ?: emptyList()
+        }
+        // Every session batch carries a non-empty `personalRecords` when any exist (PORTAL
+        // ROW-DUPLICATION HAZARD: an empty list makes the portal derive id-less rows from
+        // every set.isPr and INSERT them). Up to PR_FULL_LIST_PER_BATCH the whole list goes
+        // on every batch, as before. Beyond that, a batch carries the PRs of its own
+        // sessions (or one PR as the suppressor); the rest ride the trailing requests.
+        // The portal upserts dedicated PR rows on id, so a re-send is a no-op.
+        fun prsForSessionBatch(sessions: List<PortalWorkoutSessionDto>): List<PortalPersonalRecordDto> {
+            if (personalRecordDtos.size <= PR_FULL_LIST_PER_BATCH) return personalRecordDtos
+            val ids = sessions.mapTo(hashSetOf()) { it.id }
+            return personalRecordDtos.filter { it.sessionId in ids }
+                .ifEmpty { personalRecordDtos.take(1) }
+        }
+        fun sessionBatchPayload(sessions: List<PortalWorkoutSessionDto>) = PortalSyncPayload(
+            deviceId = deviceId,
+            platform = platform,
+            lastSync = pushWatermark,
+            sessions = sessions,
+            telemetry = telemetryFor(sessions),
+            phaseStatistics = phaseStatsFor(sessions),
+            profileId = payloadProfileId,
+            profileName = payloadProfileName,
+            personalRecords = prsForSessionBatch(sessions),
+        )
+        val sessionBatches = PushPlanner.splitSessionBatchesByBytes(
+            planSessionBatches(allSessions, telemetryCountBySessionId).filter { it.isNotEmpty() },
+            ::sessionBatchPayload,
+        )
+        val deliverableSessions = sessionBatches.flatten()
+        val deliverableSessionIds = deliverableSessions.mapTo(hashSetOf()) { it.id }
+
+        // Everything that is not a session, as the final request would carry it.
+        fun finalFields(
+            base: PortalSyncPayload,
+            routines: List<PortalRoutineSyncDto>,
+            deletedRoutines: List<String>,
+            cycles: List<PortalTrainingCycleSyncDto>,
+            prs: List<PortalPersonalRecordDto>,
+            includeSingletons: Boolean,
+        ) = base.copy(
+            routines = routines,
+            deletedRoutineIds = deletedRoutines,
+            cycles = cycles,
+            personalRecords = prs,
+            rpgAttributes = if (includeSingletons) rpgDto else null,
+            badges = if (includeSingletons) badgeDtos else emptyList(),
+            gamificationStats = if (includeSingletons) gamStatsDto else null,
+            assessments = if (includeSingletons) assessmentDtos else emptyList(),
+            customExercises = if (includeSingletons) customExerciseDtos else emptyList(),
+            allProfiles = if (includeSingletons) profileDtos else null,
+            externalActivities = if (includeSingletons) externalActivityDtos else emptyList(),
+        )
+        val emptyEnvelope = sessionBatchPayload(emptyList()).copy(personalRecords = emptyList())
+        val lastSessions = sessionBatches.lastOrNull().orEmpty()
+        val lastSessionBase = sessionBatchPayload(lastSessions)
+        val combinedFinal = finalFields(
+            base = lastSessionBase,
+            routines = routineDtos,
+            deletedRoutines = deletedRoutineIds,
+            cycles = cycleDtos,
+            prs = personalRecordDtos,
+            includeSingletons = true,
+        )
+        val requests: List<PortalSyncPayload> = if (PushPlanner.fits(combinedFinal)) {
+            sessionBatches.dropLast(1).map(::sessionBatchPayload) + combinedFinal
+        } else {
+            val prsAlreadyOnSessionBatches = if (personalRecordDtos.size <= PR_FULL_LIST_PER_BATCH) {
+                sessionBatches.isNotEmpty()
+            } else {
+                false
+            }
+            val tails = PushPlanner.planTailRequests(
+                envelope = emptyEnvelope,
+                routines = routineDtos,
+                deletedRoutineIds = deletedRoutineIds,
+                cycles = cycleDtos,
+                personalRecords = if (prsAlreadyOnSessionBatches) emptyList() else personalRecordDtos,
+                finalRequest = { finalFields(emptyEnvelope, emptyList(), emptyList(), emptyList(), emptyList(), true) },
+            )
+            sessionBatches.map(::sessionBatchPayload) + tails
+        }
+        val totalBatches = requests.size.coerceAtLeast(1)
+        // What actually goes out: anything the planner skipped is never stamped or acked.
+        val sentPrDtos = requests.flatMapTo(hashSetOf()) { it.personalRecords }
+        val sentRoutineIds = requests.flatMapTo(hashSetOf()) { r -> r.routines.map { it.id } }
 
         Logger.d("SyncManager") {
-            "Pushing portal payload: ${allSessions.size} sessions ($totalBatches batch(es)), " +
+            "Pushing portal payload: ${allSessions.size} sessions ($totalBatches request(s)), " +
                 "${effectiveTelemetry.size} telemetry points, " +
                 "${routineDtos.size} routines, ${cycleDtos.size} cycles, " +
                 "${customExerciseDtos.size} custom exercises, " +
@@ -1972,115 +2074,35 @@ class SyncManager(
                 "${assessmentDtos.size} assessments"
         }
 
-        // Rejections from EVERY batch. Reading only the last response's list would
+        // Rejections from EVERY request. Reading only the last response's list would
         // silently stamp rows an earlier batch's rejection covered.
         val collectedRejections = mutableListOf<SyncRejectionsDto>()
-        if (batchPlan.size <= 1) {
-            // --- Single-push fast path (most common case) ---
-            val payload = PortalSyncPayload(
-                deviceId = deviceId,
-                platform = platform,
-                lastSync = pushWatermark,
-                sessions = allSessions,
-                telemetry = effectiveTelemetry,
-                routines = routineDtos,
-                deletedRoutineIds = deletedRoutineIds,
-                cycles = cycleDtos,
-                rpgAttributes = rpgDto,
-                badges = badgeDtos,
-                gamificationStats = gamStatsDto,
-                phaseStatistics = phaseStatsBySessionId.values.flatten(),
-                assessments = assessmentDtos,
-                customExercises = customExerciseDtos,
-                profileId = payloadProfileId,
-                profileName = payloadProfileName,
-                allProfiles = profileDtos,
-                externalActivities = externalActivityDtos,
-                personalRecords = personalRecordDtos,
-            )
+        val skippedDeletedRoutines = linkedSetOf<String>()
+        val skippedDeletedCycles = linkedSetOf<String>()
+        requests.forEachIndexed { index, payload ->
+            Logger.i("SyncManager") {
+                "Sync request ${index + 1}/$totalBatches: ${payload.sessions.size} sessions, " +
+                    "${payload.routines.size} routines, ${payload.cycles.size} cycles, " +
+                    "${payload.personalRecords.size} personal records"
+            }
             rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
             val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
-            if (result.isFailure) return Result.failure(result.pushError())
-            val singleResponse = result.getOrThrow()
-            lastResponse = singleResponse
-            collectedRejections += singleResponse.rejections
-            acknowledgedPortalSessionIds += acknowledgeAcceptedWorkoutParents(
-                workoutSnapshot = workoutSnapshot,
-                sentPortalSessionIds = allSessions.mapTo(linkedSetOf()) { it.id },
-                response = singleResponse,
-            )
-            acknowledgeAcceptedCycles(
-                cycleSnapshot = cycleSnapshot,
-                sentCycleIds = cycleDtos.mapTo(linkedSetOf()) { it.id },
-                response = singleResponse,
-            )
-            // Single-batch success - reset retry tracking
-            consecutiveFullRetries = 0
-            lastFailedBatchHash = null
-        } else {
-            // --- Batched push for large history syncs ---
-            val batches = batchPlan
-            batches.forEachIndexed { index, batchSessions ->
-                val isLastBatch = index == batches.lastIndex
-                Logger.i("SyncManager") {
-                    "Sync batch ${index + 1}/$totalBatches: ${batchSessions.size} sessions" +
-                        if (isLastBatch) " (+ non-session data)" else ""
+            if (result.isFailure) {
+                val error = result.exceptionOrNull()
+                val batchSessionIds = payload.sessions.map { it.id }.take(3)
+                val batchSummary = "sessions=${payload.sessions.size}, " +
+                    "ids=[${batchSessionIds.joinToString()}${if (payload.sessions.size > 3) "..." else ""}]"
+
+                Logger.e("SyncManager") {
+                    "Request ${index + 1}/$totalBatches failed: ${error?.message} | $batchSummary"
                 }
 
-                // Slice telemetry to only rows belonging to this batch's sessions
-                val batchTelemetry = batchSessions.flatMap { session ->
-                    val setIds = sessionSetIds[session.id] ?: emptySet()
-                    setIds.flatMap { setId -> telemetryBySetId[setId] ?: emptyList() }
-                }
-
-                // Slice phase stats to this batch's sessions
-                val batchPhaseStats = batchSessions.flatMap { session ->
-                    phaseStatsBySessionId[session.id] ?: emptyList()
-                }
-
-                val payload = PortalSyncPayload(
-                    deviceId = deviceId,
-                    platform = platform,
-                    lastSync = pushWatermark,
-                    sessions = batchSessions,
-                    telemetry = batchTelemetry,
-                    // Non-session data only on last batch to avoid duplicate upserts
-                    routines = if (isLastBatch) routineDtos else emptyList(),
-                    deletedRoutineIds = if (isLastBatch) deletedRoutineIds else emptyList(),
-                    cycles = if (isLastBatch) cycleDtos else emptyList(),
-                    rpgAttributes = if (isLastBatch) rpgDto else null,
-                    badges = if (isLastBatch) badgeDtos else emptyList(),
-                    gamificationStats = if (isLastBatch) gamStatsDto else null,
-                    phaseStatistics = batchPhaseStats,
-                    assessments = if (isLastBatch) assessmentDtos else emptyList(),
-                    customExercises = if (isLastBatch) customExerciseDtos else emptyList(),
-                    profileId = payloadProfileId,
-                    profileName = payloadProfileName,
-                    allProfiles = if (isLastBatch) profileDtos else null,
-                    externalActivities = if (isLastBatch) externalActivityDtos else emptyList(),
-                    // Every batch, not just the last: an empty `personalRecords` makes
-                    // the portal derive id-less rows from every `set.isPr` and INSERT
-                    // them (no upsert) — the PORTAL ROW-DUPLICATION HAZARD. Any
-                    // non-empty list suppresses derivation for the whole payload, and
-                    // the portal upserts dedicated rows on id so a re-send is a no-op.
-                    personalRecords = personalRecordDtos,
-                )
-
-                rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-                val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
-                if (result.isFailure) {
-                    val error = result.exceptionOrNull()
-                    val batchSessionIds = batchSessions.map { it.id }.take(3)
-                    val batchSummary = "sessions=${batchSessions.size}, " +
-                        "ids=[${batchSessionIds.joinToString()}${if (batchSessions.size > 3) "..." else ""}]"
-
-                    Logger.e("SyncManager") {
-                        "Batch ${index + 1}/$totalBatches failed: ${error?.message} | $batchSummary"
-                    }
-
-                    // Track retry attempts for this specific batch payload to prevent retry storms.
-                    // Use a hash of session IDs to detect if the same batch is failing repeatedly.
-                    val batchHash = batchSessions.map { it.id }.hashCode()
+                // Track retry attempts for this specific request to prevent retry storms.
+                if (totalBatches > 1) {
+                    val batchHash = (
+                        payload.sessions.map { it.id } + payload.routines.map { it.id } +
+                            payload.cycles.map { it.id } + payload.personalRecords.map { it.id }
+                        ).hashCode()
                     if (lastFailedBatchHash == batchHash) {
                         consecutiveFullRetries++
                         Logger.w("SyncManager") {
@@ -2097,43 +2119,49 @@ class SyncManager(
                             return Result.failure(exhaustedError)
                         }
                     } else {
-                        // Different batch or first failure - reset counter and record hash
                         consecutiveFullRetries = 1
                         lastFailedBatchHash = batchHash
                     }
-
-                    // CRITICAL: Do NOT advance the push watermark on failure.
-                    // All batches must succeed before we advance the timestamp.
-                    // On next retry, the full batch sequence will be re-sent.
-                    return Result.failure(result.pushError())
                 }
 
-                val batchResponse = result.getOrThrow()
-                lastResponse = batchResponse
-                collectedRejections += batchResponse.rejections
-                acknowledgedPortalSessionIds += acknowledgeAcceptedWorkoutParents(
-                    workoutSnapshot = workoutSnapshot,
-                    sentPortalSessionIds = batchSessions.mapTo(linkedSetOf()) { it.id },
-                    response = batchResponse,
-                )
-                if (isLastBatch) {
-                    acknowledgeAcceptedCycles(
-                        cycleSnapshot = cycleSnapshot,
-                        sentCycleIds = cycleDtos.mapTo(linkedSetOf()) { it.id },
-                        response = batchResponse,
-                    )
-                }
-
-                // Log batch success but do NOT update timestamp yet.
-                // Timestamp is deferred until ALL batches complete successfully.
-                Logger.d("SyncManager") {
-                    "Batch ${index + 1}/$totalBatches pushed successfully (timestamp deferred)"
-                }
+                // CRITICAL: Do NOT advance the push watermark on failure.
+                // All requests must succeed before we advance the timestamp.
+                return Result.failure(result.pushError())
             }
 
-            // All batches succeeded - reset retry tracking
-            consecutiveFullRetries = 0
-            lastFailedBatchHash = null
+            val response = result.getOrThrow()
+            lastResponse = response
+            collectedRejections += response.rejections
+            skippedDeletedRoutines += response.skippedDeleted.routines
+            skippedDeletedCycles += response.skippedDeleted.cycles
+            acknowledgedPortalSessionIds += acknowledgeAcceptedWorkoutParents(
+                workoutSnapshot = workoutSnapshot,
+                sentPortalSessionIds = payload.sessions.mapTo(linkedSetOf()) { it.id },
+                response = response,
+            )
+            if (payload.cycles.isNotEmpty()) {
+                acknowledgeAcceptedCycles(
+                    cycleSnapshot = cycleSnapshot,
+                    sentCycleIds = payload.cycles.mapTo(linkedSetOf()) { it.id },
+                    response = response,
+                )
+            }
+            Logger.d("SyncManager") {
+                "Request ${index + 1}/$totalBatches pushed successfully (timestamp deferred)"
+            }
+        }
+        // Every request succeeded - reset retry tracking
+        consecutiveFullRetries = 0
+        lastFailedBatchHash = null
+        val skippedDeleted = SkippedDeletedDto(
+            routines = skippedDeletedRoutines.toList(),
+            cycles = skippedDeletedCycles.toList(),
+        )
+        if (deliverableSessions.size < allSessions.size) {
+            Logger.w("SyncManager") {
+                "${allSessions.size - deliverableSessions.size} session(s) exceed the push size cap on their " +
+                    "own and were not sent; they stay pending"
+            }
         }
 
         val sentMetadataProfileIds = profileDtos.mapTo(linkedSetOf()) { it.id }
@@ -2187,7 +2215,7 @@ class SyncManager(
         // Routines/cycles the server skipped because they were deleted there
         // (PR 16 `skippedDeleted`). Delete the local copy so they stop being pushed.
         // Non-fatal: the next pull reports the same ids via deletedRoutineIds/deletedCycleIds.
-        finalResponse?.skippedDeleted?.let { skipped ->
+        skippedDeleted.let { skipped ->
             try {
                 applyServerDeletions(
                     ownerUserId = userId,
@@ -2209,8 +2237,11 @@ class SyncManager(
         // server confirmed the push. This gives PersonalRecord rows the same
         // post-confirmation resend protection that WorkoutSession rows get from
         // the caller's post-push stamping block.
+        // Only PRs a request actually carried: one skipped as oversized was never sent.
         val pushedPrIds = recentPRs
-            .filter { it.deletedAt == null && it.id >= 0L }
+            .filterIndexed { index, pr ->
+                pr.deletedAt == null && pr.id >= 0L && personalRecordDtos[index] in sentPrDtos
+            }
             .map { it.id }
             .distinct()
         if (pushedPrIds.isNotEmpty()) {
@@ -2233,8 +2264,9 @@ class SyncManager(
         // away (LWW-rejected, or skipped because it deleted them) so they stop re-sending.
         val unacceptedRoutineIds = collectedRejections.flatMapTo(mutableSetOf()) { rejections ->
             rejections.routines.map { it.id }
-        } + finalResponse.skippedDeleted.routines
-        val deliveredRoutineIds = routineDtos.map { it.id }.filter { it !in unacceptedRoutineIds }
+        } + skippedDeleted.routines
+        val deliveredRoutineIds = routineDtos.map { it.id }
+            .filter { it in sentRoutineIds && it !in unacceptedRoutineIds }
         if (deliveredRoutineIds.isNotEmpty()) {
             syncRepository.stampPushedRoutinesWithoutTimestamp(deliveredRoutineIds, gatherStartedAt)
         }
@@ -2255,11 +2287,12 @@ class SyncManager(
             PushOutcome(
                 response = finalResponse,
                 gatherStartedAt = gatherStartedAt,
+                // Only sessions a request carried: one skipped as oversized is never stamped.
                 localRowIdsByPortalSessionId = sessions.groupBy(
                     keySelector = { it.routineSessionId ?: it.id },
                     valueTransform = { it.id },
-                ),
-                sentSessionsById = allSessions.associateBy { it.id },
+                ).filterKeys { it in deliverableSessionIds },
+                sentSessionsById = deliverableSessions.associateBy { it.id },
                 telemetryByPortalSessionId = allSessions.associate { session ->
                     val setIds = sessionSetIds[session.id] ?: emptySet()
                     session.id to setIds.flatMap { setId -> telemetryBySetId[setId] ?: emptyList() }
@@ -2447,10 +2480,10 @@ class SyncManager(
         val stillRejected = mutableSetOf<String>()
         val retryAcknowledged = mutableSetOf<String>()
         var anyFailure = false
-        for (batch in planSessionBatches(retrySessions, retryTelemetryCounts)) {
-            if (batch.isEmpty()) continue
-            val batchIds = batch.mapTo(mutableSetOf()) { it.id }
-            val payload = PortalSyncPayload(
+        val allRetryPrs = outcome.rePushContext.personalRecords
+        fun retryPayload(batch: List<PortalWorkoutSessionDto>): PortalSyncPayload {
+            val ids = batch.mapTo(hashSetOf()) { it.id }
+            return PortalSyncPayload(
                 deviceId = outcome.rePushContext.deviceId,
                 platform = outcome.rePushContext.platform,
                 lastSync = outcome.rePushContext.lastSync,
@@ -2462,11 +2495,27 @@ class SyncManager(
                 },
                 profileId = outcome.rePushContext.profileId,
                 profileName = outcome.rePushContext.profileName,
-                // Same list the original push carried: an empty `personalRecords` makes
-                // the portal derive id-less rows from every `set.isPr` and INSERT them
-                // (PORTAL ROW-DUPLICATION HAZARD). Any non-empty list suppresses that.
-                personalRecords = outcome.rePushContext.personalRecords,
+                // Never empty when PRs exist: an empty `personalRecords` makes the portal
+                // derive id-less rows from every `set.isPr` and INSERT them (PORTAL
+                // ROW-DUPLICATION HAZARD). Over PR_FULL_LIST_PER_BATCH only this batch's
+                // own PRs (or one suppressor) go, so the retry can never exceed the
+                // portal's 10,000-item cap and 400 forever (codex #856 self-review).
+                personalRecords = if (allRetryPrs.size <= PR_FULL_LIST_PER_BATCH) {
+                    allRetryPrs
+                } else {
+                    allRetryPrs.filter { it.sessionId in ids }.ifEmpty { allRetryPrs.take(1) }
+                },
             )
+        }
+        val retryBatches = PushPlanner.splitSessionBatchesByBytes(
+            planSessionBatches(retrySessions, retryTelemetryCounts).filter { it.isNotEmpty() },
+            ::retryPayload,
+        )
+        // A retry session that cannot fit any request on its own stays rejected (pending).
+        stillRejected += retrySessions.map { it.id } - retryBatches.flatten().mapTo(hashSetOf()) { it.id }
+        for (batch in retryBatches) {
+            val batchIds = batch.mapTo(mutableSetOf()) { it.id }
+            val payload = retryPayload(batch)
             val result = pushPayloadWithRateLimit(payload)
             if (result.isFailure) {
                 anyFailure = true
@@ -3896,3 +3945,130 @@ internal fun sessionNotesLwwEpochMillis(
 
 internal fun parseIso8601EpochMillis(iso: String?): Long? =
     iso?.let { runCatching { kotlin.time.Instant.parse(it).toEpochMilliseconds() }.getOrNull() }
+
+/**
+ * Keeps every push request under [SyncConfig.MAX_PAYLOAD_BYTES] (measured with the same
+ * encoder [PortalApiClient.pushPortalPayload] uses) and every array under the portal's
+ * 10,000-item cap (`MAX_ENTITIES_PER_TYPE` in mobile-sync-push).
+ *
+ * An item that does not fit in a request on its own can never be accepted: resending it
+ * would 413 forever and wedge every other row behind it. The planner SKIPS such an item
+ * (logged) instead: it is not sent, so the caller neither stamps nor acknowledges it — a
+ * session stays dirty and is re-evaluated each sync; a routine/PR is re-selected after
+ * its next local edit.
+ */
+internal object PushPlanner {
+    /** Portal `MAX_ENTITIES_PER_TYPE`. */
+    const val MAX_ITEMS_PER_ARRAY = 10_000
+
+    /** Injectable for tests; production uses the wire encoder. */
+    internal var byteSize: (PortalSyncPayload) -> Long = { encodePortalSyncPayload(it).rawBytes.size.toLong() }
+
+    /** Injectable for tests. */
+    internal var maxBytes: Long = SyncConfig.MAX_PAYLOAD_BYTES
+
+    fun fits(payload: PortalSyncPayload): Boolean =
+        payload.sessions.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.routines.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.deletedRoutineIds.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.cycles.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.personalRecords.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.telemetry.size <= SyncConfig.MAX_TELEMETRY_PER_BATCH &&
+            byteSize(payload) <= maxBytes
+
+    /** Splits any session batch whose request would be oversized; drops a session that can never fit. */
+    fun splitSessionBatchesByBytes(
+        batches: List<List<PortalWorkoutSessionDto>>,
+        toPayload: (List<PortalWorkoutSessionDto>) -> PortalSyncPayload,
+    ): List<List<PortalWorkoutSessionDto>> {
+        val out = mutableListOf<List<PortalWorkoutSessionDto>>()
+        fun place(batch: List<PortalWorkoutSessionDto>) {
+            if (batch.isEmpty()) return
+            if (fits(toPayload(batch))) {
+                out += batch
+            } else if (batch.size == 1) {
+                Logger.w("SyncManager") {
+                    "Session ${batch.single().id} exceeds the push size cap on its own; skipped this sync"
+                }
+            } else {
+                val mid = batch.size / 2
+                place(batch.subList(0, mid))
+                place(batch.subList(mid, batch.size))
+            }
+        }
+        batches.forEach(::place)
+        return out
+    }
+
+    /**
+     * Packs non-session entities into requests after the session batches, in dependency
+     * order: routines, deleted-routine ids, cycles, PRs. [finalRequest] (the single-valued
+     * fields) is merged into the last request when it fits there, else sent on its own.
+     */
+    fun planTailRequests(
+        envelope: PortalSyncPayload,
+        routines: List<PortalRoutineSyncDto>,
+        deletedRoutineIds: List<String>,
+        cycles: List<PortalTrainingCycleSyncDto>,
+        personalRecords: List<PortalPersonalRecordDto>,
+        finalRequest: () -> PortalSyncPayload,
+    ): List<PortalSyncPayload> {
+        val requests = mutableListOf<PortalSyncPayload>()
+        val envelopeBytes = byteSize(envelope)
+        val curRoutines = mutableListOf<PortalRoutineSyncDto>()
+        val curDeleted = mutableListOf<String>()
+        val curCycles = mutableListOf<PortalTrainingCycleSyncDto>()
+        val curPrs = mutableListOf<PortalPersonalRecordDto>()
+        // Bytes are summed per item (each measured once against the small envelope, plus a
+        // separating comma) instead of re-encoding the growing request for every item.
+        var currentBytes = envelopeBytes
+        fun build() = envelope.copy(
+            routines = curRoutines.toList(),
+            deletedRoutineIds = curDeleted.toList(),
+            cycles = curCycles.toList(),
+            personalRecords = curPrs.toList(),
+        )
+        fun hasItems() = curRoutines.isNotEmpty() || curDeleted.isNotEmpty() ||
+            curCycles.isNotEmpty() || curPrs.isNotEmpty()
+        fun close() {
+            if (hasItems()) requests += build()
+            curRoutines.clear(); curDeleted.clear(); curCycles.clear(); curPrs.clear()
+            currentBytes = envelopeBytes
+        }
+        fun <T> pack(items: List<T>, label: String, into: MutableList<T>, alone: (T) -> PortalSyncPayload) {
+            for (item in items) {
+                val itemBytes = byteSize(alone(item)) - envelopeBytes + 1
+                if (envelopeBytes + itemBytes > maxBytes) {
+                    Logger.w("SyncManager") { "A $label exceeds the push size cap on its own; skipped this sync" }
+                    continue
+                }
+                if (currentBytes + itemBytes > maxBytes || into.size >= MAX_ITEMS_PER_ARRAY) close()
+                into += item
+                currentBytes += itemBytes
+            }
+        }
+        pack(routines, "routine", curRoutines) { envelope.copy(routines = listOf(it)) }
+        pack(deletedRoutineIds, "deleted-routine id", curDeleted) { envelope.copy(deletedRoutineIds = listOf(it)) }
+        pack(cycles, "cycle", curCycles) { envelope.copy(cycles = listOf(it)) }
+        pack(personalRecords, "personal record", curPrs) { envelope.copy(personalRecords = listOf(it)) }
+        val current = build()
+
+        val singletons = finalRequest()
+        val merged = current.copy(
+            rpgAttributes = singletons.rpgAttributes,
+            badges = singletons.badges,
+            gamificationStats = singletons.gamificationStats,
+            assessments = singletons.assessments,
+            customExercises = singletons.customExercises,
+            allProfiles = singletons.allProfiles,
+            externalActivities = singletons.externalActivities,
+        )
+        if (fits(merged)) {
+            requests += merged
+        } else {
+            close()
+            requests += singletons
+        }
+        return requests
+    }
+}

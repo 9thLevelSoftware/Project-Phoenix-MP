@@ -1032,4 +1032,119 @@ class PortalPushLimitsTest {
             "telemetry added to an otherwise identical session must change the fingerprint",
         )
     }
+
+    // ==================== codex #856 P1: the repair / delta is batched under the caps ====================
+
+    private fun routineWithId(i: Int, name: String = "Routine $i") = com.devil.phoenixproject.domain.model.Routine(
+        id = "00000000-0000-4000-8000-" + i.toString().padStart(12, '0'),
+        name = name,
+        profileId = "default",
+        updatedAt = 100L,
+    )
+
+    private fun prWithId(i: Int) = PersonalRecord(
+        id = i.toLong(),
+        exerciseId = "ex-$i",
+        exerciseName = "Squat",
+        weightPerCableKg = 25f,
+        reps = 10,
+        oneRepMax = 25f,
+        timestamp = 1_740_000_000_000L + i,
+        workoutMode = "OldSchool",
+        volume = 250f,
+        phase = WorkoutPhase.COMBINED,
+        profileId = "default",
+        cableCount = 2,
+        uuid = "10000000-0000-4000-8000-" + i.toString().padStart(12, '0'),
+    )
+
+    private inline fun withByteCap(cap: Long, block: () -> Unit) {
+        val saved = PushPlanner.maxBytes
+        PushPlanner.maxBytes = cap
+        try {
+            block()
+        } finally {
+            PushPlanner.maxBytes = saved
+        }
+    }
+
+    @Test
+    fun aRepairHistoryOverTheByteCapCompletesAcrossSeveralRequests() = runTest {
+        authenticate()
+        // Repair owed; every routine sits below the watermark, so only repairFrom = 0 sends them.
+        tokenStorage.setPushWatermark("user-123", "default", 1_000L)
+        fakeSyncRepo.routinesToReturn = List(40) { routineWithId(it) }
+        fakeSyncRepo.fullPRsToReturn = List(40) { prWithId(it) }
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        val single = PushPlanner.byteSize(
+            PortalSyncPayload(deviceId = "d", platform = "p", lastSync = 0L, routines = listOf(
+                PortalSyncAdapter.toPortalRoutine(routineWithId(0), "user-123"),
+            )),
+        )
+
+        withByteCap(single * 8) {
+            assertTrue(createManager().sync().isSuccess)
+
+            assertTrue(fakeApi.pushPayloads.size > 2, "the history must be split (saw ${fakeApi.pushPayloads.size})")
+            fakeApi.pushPayloads.forEachIndexed { i, payload ->
+                assertTrue(
+                    PushPlanner.byteSize(payload) <= PushPlanner.maxBytes,
+                    "request $i is ${PushPlanner.byteSize(payload)} bytes, over the ${PushPlanner.maxBytes} cap",
+                )
+            }
+            assertEquals(40, fakeApi.pushPayloads.flatMap { it.routines }.map { it.id }.toSet().size)
+            assertEquals(40, fakeApi.pushPayloads.flatMap { it.personalRecords }.map { it.id }.toSet().size)
+            assertFalse(tokenStorage.needsRoutineCyclePrRepairPush("user-123"), "the repair completes")
+        }
+    }
+
+    @Test
+    fun aSingleItemTooLargeForAnyRequestIsSkippedAndDoesNotWedgeSync() = runTest {
+        authenticate()
+        tokenStorage.setPushWatermark("user-123", "default", 1_000L)
+        val small = List(5) { routineWithId(it) }
+        val huge = routineWithId(99, name = "x".repeat(20_000))
+        fakeSyncRepo.routinesToReturn = small + huge
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        withByteCap(10_000L) {
+            assertTrue(createManager().sync().isSuccess, "an oversized item must not fail the whole push")
+            val sent = fakeApi.pushPayloads.flatMap { it.routines }.map { it.id }.toSet()
+            assertEquals(small.map { it.id }.toSet(), sent, "the oversized routine is skipped, the rest are sent")
+            assertTrue(fakeApi.pushPayloads.all { PushPlanner.byteSize(it) <= 10_000L })
+
+            fakeApi.pushPayloads.clear()
+            assertTrue(createManager().sync().isSuccess, "the next sync is not wedged either")
+        }
+    }
+
+    @Test
+    fun moreThanTheArrayCapOfPrsIsSplitAndEverySessionBatchStillCarriesPrs() = runTest {
+        authenticate()
+        fakeSyncRepo.workoutSessionsToReturn = buildSessions(120)
+        fakeSyncRepo.fullPRsToReturn = List(PushPlanner.MAX_ITEMS_PER_ARRAY + 5) { prWithId(it) }
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        assertTrue(createManager().sync().isSuccess)
+
+        assertEquals(
+            120,
+            fakeApi.pushPayloads.flatMap { it.sessions }.map { it.id }.toSet().size,
+            "every session is delivered: a huge PR list must not make session batches unsendable",
+        )
+        fakeApi.pushPayloads.forEach { payload ->
+            assertTrue(payload.personalRecords.size <= PushPlanner.MAX_ITEMS_PER_ARRAY)
+        }
+        fakeApi.pushPayloads.filter { it.sessions.isNotEmpty() }.forEachIndexed { i, payload ->
+            assertTrue(
+                payload.personalRecords.isNotEmpty(),
+                "session batch $i must carry personalRecords (PORTAL ROW-DUPLICATION HAZARD)",
+            )
+        }
+        assertEquals(
+            PushPlanner.MAX_ITEMS_PER_ARRAY + 5,
+            fakeApi.pushPayloads.flatMap { it.personalRecords }.map { it.id }.toSet().size,
+            "every PR is delivered exactly across the requests",
+        )
+    }
 }

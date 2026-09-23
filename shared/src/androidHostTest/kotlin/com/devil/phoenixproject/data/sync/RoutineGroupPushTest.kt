@@ -775,6 +775,31 @@ class RoutineGroupPushTest {
     // ===== codex #856 review 5286893178: the LWW retry acknowledges generations =====
 
     @Test
+    fun `the LWW retry carries a bounded non-empty PR subset when the PR list is large`() = runTest {
+        // Self-review (#856): the retry used to resend the FULL personalRecords list; past
+        // the portal's 10,000-item cap every retry 400s and the group never lands.
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        // New PRs land in the same push as the rejected group, so its retry must carry some.
+        repeat(SyncManager.PR_FULL_LIST_PER_BATCH + 1) { i ->
+            insertLivePr("20000000-0000-4000-8000-" + i.toString().padStart(12, '0'), exerciseId = "bulk-$i")
+        }
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 1_000, withLocalData = true)
+        apiClient.pushPayloads.clear()
+
+        manager.sync()
+
+        val retry = apiClient.pushPayloads.drop(1).firstOrNull { payload -> payload.sessions.any { it.id == GROUP } }
+        assertNotNull(retry, "precondition: the rejected group is retried")
+        assertTrue(retry.personalRecords.isNotEmpty(), "PORTAL ROW-DUPLICATION HAZARD: never empty")
+        assertTrue(
+            retry.personalRecords.size < SyncManager.PR_FULL_LIST_PER_BATCH + 1,
+            "the retry must not resend the full PR list (saw ${retry.personalRecords.size})",
+        )
+    }
+
+    @Test
     fun `a group accepted by the LWW retry is not pushed again by the next sync`() = runTest {
         insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
         manager.sync()
@@ -859,9 +884,9 @@ class RoutineGroupPushTest {
         )
     }
 
-    private fun insertLivePr(uuid: String) {
+    private fun insertLivePr(uuid: String, exerciseId: String = "bench") {
         database.phoenixDatabaseQueries.insertRecord(
-            exerciseId = "bench",
+            exerciseId = exerciseId,
             exerciseName = "Bench Press",
             weight = 40.0,
             reps = 8L,
