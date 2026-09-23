@@ -71,6 +71,8 @@
     <string name="workout_teardown_finishing">Finishing previous workout…</string>
     <string name="workout_teardown_failed">Trainer reset didn\'t complete</string>
     <string name="workout_teardown_retry">Retry</string>
+    <string name="workout_save_failed">Workout data couldn't be saved.</string>
+    <string name="workout_save_retry_failed">That set can no longer be retried.</string>
     <string name="save_set">Save Set</string>
     <string name="bodyweight_reps_title">Enter bodyweight reps</string>
     <string name="bodyweight_set_progress">%1$s • Set %2$d of %3$d</string>
@@ -190,6 +192,9 @@
     <string name="syncing">Syncing…</string>
     <string name="last_synced">Last synced: %1$s</string>
     <string name="never_synced">Never synced</string>
+    <string name="sync_paused_subscription_required">Sync paused — subscription required</string>
+    <string name="delete_portal_account">Delete portal account</string>
+    <string name="delete_portal_account_caption">Opens the portal. Workouts saved on this phone stay on this phone.</string>
     <string name="unlink_account">Unlink Account</string>
     <string name="sync_now">Sync Now</string>
 
@@ -799,10 +804,14 @@
     <string name="profile_update_failed">Could not save this profile preference</string>
     <string name="profile_switch_failed">Could not switch profiles</string>
     <string name="profile_create_failed">Could not create the profile</string>
+    <string name="profile_switch_blocked_during_workout">Finish or end your workout before switching profiles</string>
     <string name="profile_recovery_title">Profile recovery required</string>
     <string name="profile_recovery_message">Phoenix could not confirm which profile is active. Retry before continuing.</string>
     <string name="profile_recovery_retry_failed">Profile recovery is still unavailable</string>
     <string name="profile_delete_reassign_message">Delete &quot;%1$s&quot;? Its workouts, routines, records, badges, assessments, and progression data will move to Default. This cannot be undone.</string>
+    <string name="profile_delete_merge_action">Merge into Default</string>
+    <string name="profile_delete_permanent_action">Delete permanently</string>
+    <string name="profile_delete_permanent_message">Or delete &quot;%1$s&quot; permanently: its workouts, routines, cycles, and records are removed from this device and from your portal account. This cannot be undone.</string>
     <string name="settings_video_behavior">Exercise Demos</string>
     <string name="settings_show_exercise_videos">Show Exercise Demos</string>
     <string name="settings_show_exercise_videos_description">Display exercise demonstration stills; turn this off on slower devices</string>

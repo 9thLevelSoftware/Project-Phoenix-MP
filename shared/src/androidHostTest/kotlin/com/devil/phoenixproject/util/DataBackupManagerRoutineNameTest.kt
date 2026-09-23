@@ -307,6 +307,146 @@ class DataBackupManagerRoutineNameTest {
     }
 
     @Test
+    fun `restoring a pre-remap backup onto a fresh install translates legacy catalogue ids`() = runTest {
+        // Fresh install: only the current catalogue, no archived legacy row to hang a remap on.
+        database.seedExercise("Barbell_Bench_Press_-_Medium_Grip", name = "Barbell Bench Press - Medium Grip")
+        val backup = BackupData(
+            version = 1,
+            exportedAt = "2026-02-21T12:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    WorkoutSessionBackup(
+                        id = "session-fresh-install",
+                        timestamp = 1_700_000_000_000,
+                        mode = "Old School",
+                        targetReps = 5,
+                        weightPerCableKg = 40f,
+                        progressionKg = 0f,
+                        duration = 0L,
+                        totalReps = 5,
+                        warmupReps = 0,
+                        workingReps = 5,
+                        isJustLift = false,
+                        stopAtTop = false,
+                        exerciseId = "ZZ92N8QsBdp6HCh3",
+                        exerciseName = "Bench Press",
+                        routineSessionId = null,
+                        routineName = null,
+                        routineId = null,
+                    ),
+                ),
+                personalRecords = listOf(
+                    PersonalRecordBackup(
+                        exerciseId = "ZZ92N8QsBdp6HCh3",
+                        exerciseName = "Bench Press",
+                        weight = 80f,
+                        reps = 5,
+                        oneRepMax = 90f,
+                        achievedAt = 1_700_000_000_000,
+                        workoutMode = "OldSchool",
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(backupManager.importFromJson(testJson.encodeToString(backup)).isSuccess)
+
+        assertEquals(
+            "Barbell_Bench_Press_-_Medium_Grip",
+            database.phoenixDatabaseQueries.selectSessionById("session-fresh-install").executeAsOne().exerciseId,
+        )
+        val prs = database.phoenixDatabaseQueries
+            .selectPersonalRecordsByExerciseId("Barbell_Bench_Press_-_Medium_Grip")
+            .executeAsList()
+        assertEquals(listOf(80.0), prs.map { it.weight })
+    }
+
+    @Test
+    fun `restoring onto a fresh install translates name-only legacy ids and never links custom ids by name`() = runTest {
+        // "legacy-rack-pull" is not in the explicit id map: only the reviewed name fallback
+        // (Rack Pull -> Rack Pulls) resolves it, exactly as the remapper would.
+        database.seedExercise("Rack_Pulls", name = "Rack Pulls", muscleGroup = "Back")
+        database.phoenixDatabaseQueries.insertProfile("baseline-owner", "Owner", 0, 1_700_000_000_000, 0)
+        fun session(id: String, exerciseId: String, exerciseName: String) = WorkoutSessionBackup(
+            id = id,
+            timestamp = 1_700_000_000_000,
+            mode = "Old School",
+            targetReps = 5,
+            weightPerCableKg = 80f,
+            progressionKg = 0f,
+            duration = 0L,
+            totalReps = 5,
+            warmupReps = 0,
+            workingReps = 5,
+            isJustLift = false,
+            stopAtTop = false,
+            exerciseId = exerciseId,
+            exerciseName = exerciseName,
+            routineSessionId = null,
+            routineName = null,
+            routineId = null,
+        )
+        val backup = BackupData(
+            version = 1,
+            exportedAt = "2026-02-21T12:00:00Z",
+            appVersion = "test",
+            data = BackupContent(
+                workoutSessions = listOf(
+                    session("session-name-only", exerciseId = "legacy-rack-pull", exerciseName = "Rack Pull"),
+                    // A custom exercise whose row is missing must not be re-linked to stock by name.
+                    session("session-custom", exerciseId = "custom_1700000000000", exerciseName = "Rack Pulls"),
+                ),
+                personalRecords = listOf(
+                    PersonalRecordBackup(
+                        exerciseId = "legacy-rack-pull",
+                        exerciseName = "Rack Pull",
+                        weight = 180f,
+                        reps = 3,
+                        oneRepMax = 190f,
+                        achievedAt = 1_700_000_000_000,
+                        workoutMode = "OldSchool",
+                    ),
+                ),
+                profileExerciseBaselines = listOf(
+                    // No name on this row either, and no routine exercise names the id: only the
+                    // session and PR sections (which restore earlier) can teach it the name.
+                    ProfileExerciseBaselineBackup(
+                        profileId = "baseline-owner",
+                        exerciseId = "legacy-rack-pull",
+                        oneRepMaxPerCableKg = 95f,
+                        updatedAt = 1_700_000_000_000,
+                        revision = 1,
+                    ),
+                ),
+                progressionEvents = listOf(
+                    // No name on this row: it reuses the name the session section gave the id.
+                    ProgressionEventBackup(
+                        id = "event-name-only",
+                        exerciseId = "legacy-rack-pull",
+                        suggestedWeightKg = 82.5f,
+                        previousWeightKg = 80f,
+                        reason = "REPS_ACHIEVED",
+                        timestamp = 1_700_000_000_000,
+                    ),
+                ),
+            ),
+        )
+
+        assertTrue(backupManager.importFromJson(testJson.encodeToString(backup)).isSuccess)
+
+        val queries = database.phoenixDatabaseQueries
+        assertEquals("Rack_Pulls", queries.selectSessionById("session-name-only").executeAsOne().exerciseId)
+        assertNull(queries.selectSessionById("session-custom").executeAsOne().exerciseId)
+        assertEquals(listOf(180.0), queries.selectPersonalRecordsByExerciseId("Rack_Pulls").executeAsList().map { it.weight })
+        assertEquals("Rack_Pulls", queries.selectProgressionEventById("event-name-only").executeAsOne().exercise_id)
+        assertEquals(
+            95.0,
+            queries.selectProfileExerciseBaseline("baseline-owner", "Rack_Pulls").executeAsOne().one_rep_max_per_cable_kg,
+        )
+    }
+
+    @Test
     fun `importFromJson restores routine name from routineId when present`() = runTest {
         val backup = BackupData(
             version = 1,
@@ -3191,6 +3331,8 @@ class DataBackupManagerRoutineNameTest {
             profilePreferencesRepository,
         ),
         private val stagingAreaFactory: (() -> BackupImportStagingArea)? = null,
+        // These tests exercise sample export/restore, so they opt in to raw telemetry.
+        override val includeRawTelemetryInBackups: Boolean = true,
     ) : BaseDataBackupManager(
         database,
         profilePreferencesRepository,

@@ -11,10 +11,12 @@ import com.devil.phoenixproject.testutil.FakeProfilePreferenceSyncRepository
 import com.devil.phoenixproject.testutil.FakeRepMetricRepository
 import com.devil.phoenixproject.testutil.FakeUserProfileRepository
 import com.devil.phoenixproject.testutil.FakeVelocityOneRepMaxRepository
-import com.devil.phoenixproject.testutil.createTestDatabase
+import com.devil.phoenixproject.testutil.createTestDriver
+import app.cash.sqldelight.driver.jdbc.sqlite.JdbcSqliteDriver
 import com.russhwolf.settings.MapSettings
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -29,6 +31,7 @@ import org.junit.Test
  */
 class MultiProfileSyncIntegrationTest {
 
+    private lateinit var driver: JdbcSqliteDriver
     private lateinit var database: PhoenixDatabase
     private lateinit var userProfileRepository: FakeUserProfileRepository
     private lateinit var syncRepository: SqlDelightSyncRepository
@@ -51,7 +54,8 @@ class MultiProfileSyncIntegrationTest {
 
     @Before
     fun setup() {
-        database = createTestDatabase()
+        driver = createTestDriver()
+        database = PhoenixDatabase(driver)
         userProfileRepository = FakeUserProfileRepository()
         // Seed both profiles, leave A active: setActiveProfileForTest keeps the others.
         userProfileRepository.setActiveProfileForTest(id = profileA)
@@ -659,6 +663,152 @@ class MultiProfileSyncIntegrationTest {
             q.updateSessionTimestamp(it, id)
             q.markSessionSynced(id)
         }
+    }
+
+    // ===== codex #856 P1: legacy generations are seeded before the all-profile loop =====
+
+    private fun addLocalMeasurement(sessionId: String) {
+        database.phoenixDatabaseQueries.insertCompletedSet(
+            id = "cs-$sessionId",
+            session_id = sessionId,
+            planned_set_id = null,
+            routine_exercise_id = null,
+            set_number = 1L,
+            set_type = "STANDARD",
+            attempt_number = 1L,
+            actual_reps = 8L,
+            actual_weight_kg = 40.0,
+            logged_rpe = null,
+            is_pr = 0L,
+            completed_at = baseTime,
+            set_end_reason = "UNKNOWN",
+        )
+    }
+
+    /**
+     * A local edit after migration 49 (e.g. saveRepMetrics / saveCompletedSet): bumps the
+     * generation past the migration's initial 1 / 0 without touching the parent updatedAt.
+     * Freshly inserted rows already sit at 1 / 0, the shape the migration leaves them in.
+     */
+    private fun editAfterMigration(sessionId: String) {
+        database.phoenixDatabaseQueries.markWorkoutComponentDirty(sessionId)
+    }
+
+    /** Exactly the state migration 49 leaves every pre-existing row in: generation 1 / 0. */
+    private fun atMigrationInitialState(vararg sessionIds: String) {
+        sessionIds.forEach { id ->
+            driver.execute(
+                null,
+                "UPDATE WorkoutSession SET local_sync_generation = 1, synced_sync_generation = 0 WHERE id = ?",
+                1,
+            ) { bindString(0, id) }
+        }
+    }
+
+    @Test
+    fun legacyRowsProvablySyncedByTheOldClientAreNotPushedFromAnInactiveProfile() = runTest {
+        val legacy = baseTime - 60_000L
+        settings.putLong("portal_last_sync_timestamp", legacy)
+        // The old client's active profile was B: the cursor is evidence for B's rows only.
+        settings.putString("portal_delta_pull_key", "$userId:$profileB")
+        // Profile A was NOT synced by the old client: a local tag edit there with an
+        // updatedAt at/before B's cursor is no proof of upload and must still be pushed.
+        insertSession("a-tag-edit", groupId = null, timestamp = baseTime - 210_000L, profileId = profileA, stampedAt = legacy - 5_000L)
+        addLocalMeasurement("a-tag-edit")
+        atMigrationInitialState("a-tag-edit")
+        // Inactive profile B:
+        //  - synced by the old client: stamped at/before the legacy cursor, with local data
+        insertSession("b-synced", groupId = null, timestamp = baseTime - 200_000L, profileId = profileB, stampedAt = legacy - 1_000L)
+        addLocalMeasurement("b-synced")
+        //  - pulled by the old client: portalOrigin = 1, stamped after the cursor, no local data
+        insertSession("b-pulled", groupId = null, timestamp = baseTime - 190_000L, profileId = profileB, stampedAt = legacy + 5_000L)
+        database.phoenixDatabaseQueries.markSessionPulled("b-pulled")
+        //  - never synced: NULL updatedAt, with local data
+        insertSession("b-local", groupId = null, timestamp = baseTime - 180_000L, profileId = profileB)
+        addLocalMeasurement("b-local")
+        //  - a LOCAL childless (manual / zero-rep) session whose tag was edited after the
+        //    cursor: stamped, no children, but not pulled — it must still be pushed
+        insertSession("b-tagged", groupId = null, timestamp = baseTime - 170_000L, profileId = profileB, stampedAt = legacy + 9_000L)
+        //  - synced by the old client, but a child was edited after the migration (the
+        //    parent keeps its old updatedAt): that newer generation must still be pushed
+        insertSession("b-child-edited", groupId = null, timestamp = baseTime - 160_000L, profileId = profileB, stampedAt = legacy - 2_000L)
+        addLocalMeasurement("b-child-edited")
+        atMigrationInitialState("b-synced", "b-pulled", "b-local", "b-tagged", "b-child-edited")
+        editAfterMigration("b-child-edited")
+
+        assertTrue(manager.sync().isSuccess)
+
+        val pushed = api.pushPayloads.filter { it.profileId == profileB }.flatMap { it.sessions }.map { it.id }.toSet()
+        assertFalse("b-synced" in pushed, "a row the old client synced must not be re-pushed (saw $pushed)")
+        assertFalse("b-pulled" in pushed, "a pulled legacy row must not be pushed over the portal's data (saw $pushed)")
+        assertTrue("b-local" in pushed, "a never-synced legacy row must still be pushed (saw $pushed)")
+        assertTrue("b-tagged" in pushed, "a childless local session edited after the cursor must be pushed (saw $pushed)")
+        val pushedA = api.pushPayloads.filter { it.profileId == profileA }.flatMap { it.sessions }.map { it.id }.toSet()
+        assertTrue(
+            "a-tag-edit" in pushedA,
+            "a row in a profile the legacy cursor does not name must not be seeded by it (saw $pushedA)",
+        )
+        assertTrue(
+            "b-child-edited" in pushed,
+            "a post-migration child edit under an old parent timestamp must be pushed (saw $pushed)",
+        )
+    }
+
+    @Test
+    fun legacySeedingUnderOneAccountNeverMarksAnotherAccountsRowsAndRunsAgainForThatAccount() = runTest {
+        // codex #856: B's legacy cursor must not mark A-owned offline edits as synced, and A
+        // still gets its own seeding when it signs in.
+        val legacy = baseTime - 60_000L
+        settings.putLong("portal_last_sync_timestamp", legacy)
+        userProfileRepository.seedReadyProfileForTest("profile-owned-by-a")
+        userProfileRepository.linkToSupabase("profile-owned-by-a", "account-a")
+        userProfileRepository.emitReadyForTest(profileA)
+        insertSession("a-edit", groupId = null, timestamp = baseTime - 200_000L, profileId = "profile-owned-by-a", stampedAt = legacy - 1_000L)
+        addLocalMeasurement("a-edit")
+        atMigrationInitialState("a-edit")
+
+        // PR 11: a profile owned by another account while signed in as userId is an
+        // unanswered account switch, so the sync pauses before any seeding or binding.
+        assertTrue(manager.sync().isFailure)
+        assertTrue(manager.syncState.value is SyncState.AccountMismatch)
+        // PR 10's scoping still holds when this account's seeding does run: it covers only
+        // this account's profiles, so A's row stays dirty.
+        syncRepository.seedLegacySyncedGenerationsOnce(
+            accountId = userId,
+            legacyLastSync = legacy,
+            cursorProfileId = profileA,
+            profileIds = listOf(profileA, profileB),
+        )
+
+        assertTrue(
+            syncRepository.getDirtyWorkoutSnapshot("profile-owned-by-a").sessions.any { it.id == "a-edit" },
+            "another account's row must survive this account's seeding",
+        )
+        val markedForA = syncRepository.seedLegacySyncedGenerationsOnce(
+            accountId = "account-a",
+            legacyLastSync = legacy,
+            cursorProfileId = "profile-owned-by-a",
+            profileIds = listOf("profile-owned-by-a"),
+        )
+        assertEquals(1, markedForA, "account-a's own seeding is not blocked by the other account's ledger entry")
+    }
+
+    @Test
+    fun legacyGenerationSeedingRunsOnlyOnce() = runTest {
+        settings.putLong("portal_last_sync_timestamp", baseTime - 60_000L)
+        assertTrue(manager.sync().isSuccess)
+
+        assertNull(
+            syncRepository.seedLegacySyncedGenerationsOnce(userId, Long.MAX_VALUE, profileA, listOf(profileA, profileB)),
+            "the seeding is one-shot: a second run must be refused by the ledger",
+        )
+        // A row that becomes dirty after the upgrade is never swept up by a re-run.
+        insertSession("late", groupId = null, timestamp = baseTime, profileId = profileA, stampedAt = baseTime - 120_000L)
+        addLocalMeasurement("late")
+        editAfterMigration("late")
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(api.pushPayloads.flatMap { it.sessions }.any { it.id == "late" })
     }
 }
 

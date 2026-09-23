@@ -6,6 +6,9 @@ import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.QualityTrend
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
+import com.devil.phoenixproject.domain.model.RackItemCategory
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RepMetricData
@@ -21,6 +24,8 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures
 import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.util.CommandLimits
+import com.devil.phoenixproject.util.Constants
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
 import kotlin.test.assertEquals
@@ -35,6 +40,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -979,7 +985,542 @@ class WorkoutExitPersistenceTest {
         assertEquals(1, snapshot.qualitySummary?.repScores?.size)
     }
 
-    private fun startTrackedCableSet(harness: DWSMTestHarness) {
+    /**
+     * F-058: `is_pr` is a data fact, not a display preference. With gamification
+     * off nothing celebrates, but the PR rows are still written and History's PR
+     * marker must still appear.
+     */
+    @Test
+    fun `a weight PR still marks the completed set when gamification is off`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.settingsManager.setGamificationEnabled(false)
+            advanceUntilIdle()
+            assertFalse(
+                harness.settingsManager.gamificationEnabled.value,
+                "The fixture must actually turn gamification off",
+            )
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            val savedSet = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId).single()
+            assertTrue(
+                harness.fakePRRepo.updateCalls.isNotEmpty(),
+                "PR evaluation must run regardless of the gamification toggle",
+            )
+            assertTrue(savedSet.isPr, "A broken weight PR must mark the set even with gamification off")
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * F-021: the PR is stamped with the session's own timestamp, not the
+     * post-save wall clock, so the portal push key `"$exerciseId:$timestamp"`
+     * can match it back to the session that set it.
+     */
+    @Test
+    fun `a PR from a completed set carries the session timestamp`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            advanceTimeBy(45_000L)
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            val session = harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId }
+            val prTimestamps = harness.fakePRRepo.updateCalls.map { it.timestamp }.distinct()
+            assertTrue(session.duration > 0L, "The fixture must span real time, or the two stamps cannot differ")
+            assertEquals(
+                listOf(session.timestamp),
+                prTimestamps,
+                "Every PR written for this set must carry the session's timestamp",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * F-040: post-save bookkeeping runs on top of a workout that is already
+     * durable, so its failure must not claim the workout was not saved.
+     */
+    @Test
+    fun `a post save failure does not report that the workout could not be saved`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val feedback = mutableListOf<String>()
+        try {
+            harness.fakeCompletedSetRepo.beforeMarkAsPr = {
+                throw IllegalStateException("post-save bookkeeping failed")
+            }
+            val collector = launch(Dispatchers.Unconfined) {
+                harness.coordinator.userFeedbackEvents.collect(feedback::add)
+            }
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            collector.cancel()
+
+            assertNull(
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "A post-save failure must not raise a save failure",
+            )
+            assertTrue(feedback.isEmpty(), "A post-save failure must not emit a user-facing save error")
+            assertEquals(
+                1,
+                harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId },
+                "The workout itself must be saved",
+            )
+            assertEquals(1, harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId).size)
+            assertFalse(
+                harness.activeSessionEngine.hasRetainedWorkoutExitSnapshotForTest(lease.sessionId),
+                "A committed set must not be retained for retry",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * The other half of F-040: when the COMMIT itself fails the user is told, and
+     * the failure names the session so the UI can offer a Retry that works.
+     */
+    @Test
+    fun `a commit failure raises a retryable save failure`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeWorkoutRepo.beforeSaveSession = {
+                throw IllegalStateException("disk full")
+            }
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertEquals(
+                lease.sessionId,
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "A failed commit must name the session the Retry action needs",
+            )
+            harness.fakeWorkoutRepo.beforeSaveSession = {}
+            assertTrue(
+                harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId),
+                "The named session must still be retryable",
+            )
+            advanceUntilIdle()
+            assertEquals(1, harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId })
+            assertNull(
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "A commit that later succeeds must withdraw its own failure offer, or the " +
+                    "screen tells the user a saved set was lost",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * A completed set records the load the machine was COMMANDED to hold. A
+     * request above the hardware maximum is refused before the set can start,
+     * so it must not appear in the session row, the CompletedSet or the volume
+     * PR input — all three read the same commanded figure.
+     *
+     * The out-of-range request is the set's own start load. An active-set edit
+     * of `_workoutParameters` is for the NEXT set and must not rewrite this
+     * completion (`withExecutedCommand` freezes the start metadata), so a
+     * mid-set mutation would not reach the recorder at all.
+     */
+    @Test
+    fun `a set records the commanded load rather than an out-of-range request`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startTrackedCableSet(harness, weightPerCableKg = 500f)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            // The CONNECTED model's ceiling is what the machine was commanded with
+            // (100 kg on a V-Form), not the Trainer+ 110 kg band.
+            val commanded = CommandLimits.maxWeightPerCableKg(harness.fakeBleRepo.connectedModel)
+            val session = harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId }
+            val savedSet = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId).single()
+            assertEquals(commanded, session.weightPerCableKg)
+            assertEquals(commanded, savedSet.actualWeightKg)
+            assertEquals(
+                commanded,
+                harness.fakePRRepo.updateCalls.map { it.volumePRWeightPerCableKg }.distinct().single(),
+                "The volume PR must be computed from the commanded load too",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * A non-finite request is the validator's to reject. The clamp must not
+     * invent a plausible number for one: coerceIn would snap an infinity to a
+     * band end and the recorded history would claim the machine held 110 kg.
+     *
+     * As above, the non-finite figure is the set's own start load — an
+     * active-set edit cannot rewrite a frozen completion.
+     */
+    @Test
+    fun `a non-finite requested load is recorded as-is rather than clamped to a band end`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startTrackedCableSet(harness, weightPerCableKg = Float.POSITIVE_INFINITY)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            val session = harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId }
+            val savedSet = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId).single()
+            assertTrue(
+                session.weightPerCableKg.isInfinite(),
+                "An infinite request must not be clamped to $Constants.MAX_WEIGHT_PER_CABLE_KG",
+            )
+            assertTrue(
+                savedSet.actualWeightKg.isInfinite(),
+                "CompletedSet must read the same commanded figure as the session row",
+            )
+            assertTrue(
+                harness.fakePRRepo.updateCalls.map { it.volumePRWeightPerCableKg }.distinct().single().isInfinite(),
+                "The volume PR must read the same commanded figure too",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * The common route out of a transient failure is not the UI: the retained
+     * snapshot is auto-retried by `retryRetainedWorkoutExitPersistence()` on the
+     * next `startWorkout`. If that success did not withdraw the offer, the next
+     * time `ActiveWorkoutScreen` composes it would show an Indefinite "Workout
+     * data couldn't be saved." for a set that is saved — and Retry would then
+     * answer "That set can no longer be retried."
+     */
+    @Test
+    fun `the auto retry on the next set start withdraws the save failure offer`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeWorkoutRepo.beforeSaveSession = {
+                throw IllegalStateException("db busy")
+            }
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            assertEquals(lease.sessionId, harness.coordinator.workoutSaveFailureSessionId.value)
+
+            // No UI involved: the next set start replays the retained snapshot.
+            harness.fakeWorkoutRepo.beforeSaveSession = {}
+            startTrackedCableSet(harness)
+            advanceUntilIdle()
+
+            assertEquals(
+                1,
+                harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId },
+                "The retained snapshot must have been committed",
+            )
+            assertNull(
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "The stale offer must be withdrawn by the successful auto-retry",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * The withdrawal is `compareAndSet`, not a blanket clear: one session
+     * succeeding must not swallow a different session's pending offer.
+     */
+    @Test
+    fun `a successful save does not withdraw another session's failure offer`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.coordinator._workoutSaveFailureSessionId.value = "an-earlier-unsaved-session"
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertEquals(
+                1,
+                harness.fakeWorkoutRepo.allSessions().count { it.id == lease.sessionId },
+                "This set must be saved",
+            )
+            assertEquals(
+                "an-earlier-unsaved-session",
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "Another session's success must not swallow a still-pending offer",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * GitHub #853 (codex 4078351397): with a counterweight the PROGRAMMED figure
+     * is the machine command plus the counterweight, so it can legitimately sit
+     * above 110 kg while the machine holds far less. The start path froze that
+     * figure (already resolved against the connected model), and the completion
+     * must record it verbatim rather than re-clamp it to the 110 kg band.
+     */
+    @Test
+    fun `a counterweighted set records its frozen programmed load rather than a band re-clamp`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeEquipmentRackRepo.saveItems(
+                listOf(
+                    RackItem(
+                        id = "assist",
+                        name = "assist",
+                        category = RackItemCategory.OTHER,
+                        weightKg = 40f,
+                        behavior = RackItemBehavior.COUNTERWEIGHT,
+                    ),
+                ),
+            )
+            harness.fakeExerciseRepo.addExercise(TestFixtures.benchPress)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 3,
+                    warmupReps = 0,
+                    weightPerCableKg = 115f,
+                    selectedExerciseId = TestFixtures.benchPress.id,
+                ),
+            )
+            harness.dwsm.updateActiveRackSelection(listOf("assist"))
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.coordinator._repCount.value = RepCount(workingReps = 2)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            val session = harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId }
+            val savedSet = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId).single()
+            assertEquals(115f, session.weightPerCableKg, "The frozen programmed load must not be re-clamped to 110 kg")
+            assertEquals(115f, savedSet.actualWeightKg)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * GitHub #853 (codex 4078351397): an Echo packet carries a level, not a
+     * weight, so the frozen start metadata is recorded as-is.
+     */
+    @Test
+    fun `an Echo set records its frozen start metadata rather than a band re-clamp`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeExerciseRepo.addExercise(TestFixtures.benchPress)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.Echo,
+                    reps = 3,
+                    warmupReps = 0,
+                    weightPerCableKg = 120f,
+                    selectedExerciseId = TestFixtures.benchPress.id,
+                ),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.coordinator._repCount.value = RepCount(workingReps = 2)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            val session = harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId }
+            assertEquals(120f, session.weightPerCableKg, "Echo start metadata must be recorded verbatim")
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * GitHub #853 (codex 4078351400): one post-commit effect failing must not
+     * abandon the ones after it. markAsPr throwing used to skip cycle progress,
+     * health export and the sync trigger for an already-saved set.
+     */
+    @Test
+    fun `a failed PR mark does not skip cycle progress for a saved set`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val cycle = trainingCycle("cycle-isolated")
+            harness.fakeTrainingCycleRepo.addCycle(cycle)
+            harness.fakeTrainingCycleRepo.setActiveCycle(cycle.id, "default")
+            harness.coordinator.activeCycleId = cycle.id
+            harness.coordinator.activeCycleDayNumber = 1
+            var markAttempts = 0
+            harness.fakeCompletedSetRepo.beforeMarkAsPr = {
+                markAttempts++
+                throw IllegalStateException("transient db error")
+            }
+            startTrackedCableSet(harness)
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertEquals(1, markAttempts, "The first set is a PR, so markAsPr must have been attempted")
+            assertEquals(
+                setOf(1),
+                harness.fakeTrainingCycleRepo.getCycleProgress(cycle.id)?.completedDays,
+                "Cycle progress must still be recorded after the PR mark failed",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * GitHub #853 (kilo 4078350468): the failure path must not overwrite a
+     * different session's pending offer, just as the success path does not
+     * withdraw one. The later session stays retained, so it is still retried.
+     */
+    @Test
+    fun `a second failed save does not overwrite an earlier session's failure offer`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeWorkoutRepo.beforeSaveSession = {
+                throw IllegalStateException("disk full")
+            }
+            startTrackedCableSet(harness)
+            val first = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            assertEquals(first.sessionId, harness.coordinator.workoutSaveFailureSessionId.value)
+
+            startTrackedCableSet(harness)
+            val second = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertNotEquals(first.sessionId, second.sessionId)
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertEquals(
+                first.sessionId,
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "The earlier session's Retry offer must survive a later failure",
+            )
+            assertTrue(
+                harness.activeSessionEngine.hasRetainedWorkoutExitSnapshotForTest(second.sessionId),
+                "The later failed set must still be retained for the automatic retry",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * GitHub #853 (codex 4080104672): a second failure raised while the first offer is
+     * on screen is queued, not dropped. Draining the first (dismiss or retry) publishes
+     * the second, and a saved set withdraws its own queued offer.
+     */
+    @Test
+    fun `draining the first failure offer publishes the next queued failure`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeWorkoutRepo.beforeSaveSession = {
+                throw IllegalStateException("disk full")
+            }
+            startTrackedCableSet(harness)
+            val first = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            startTrackedCableSet(harness)
+            val second = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            assertEquals(first.sessionId, harness.coordinator.workoutSaveFailureSessionId.value)
+
+            // The user dismisses the first offer (MainViewModel.dismissWorkoutSaveFailure).
+            harness.coordinator.withdrawWorkoutSaveFailure(first.sessionId)
+
+            assertEquals(
+                second.sessionId,
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "The second failed set must be offered once the first offer is drained",
+            )
+
+            // Retrying the second with storage healthy saves it and empties the queue.
+            harness.fakeWorkoutRepo.beforeSaveSession = {}
+            harness.coordinator.withdrawWorkoutSaveFailure(second.sessionId)
+            assertTrue(harness.activeSessionEngine.retryWorkoutExitPersistence(second.sessionId))
+            advanceUntilIdle()
+            assertEquals(
+                1,
+                harness.fakeWorkoutRepo.allSessions().count { it.id == second.sessionId },
+                "The retried set must be saved",
+            )
+            assertNull(
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "No offer is left once every failure has been drained",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * GitHub #853 (codex 4081208485): Retry drains the offer, and a retry that fails
+     * again re-offers the SAME session id. The published offer must be a new value so
+     * a collector keyed on it re-runs; the bare id conflates to "unchanged".
+     */
+    @Test
+    fun `a retry that fails again publishes a new distinct offer`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeWorkoutRepo.beforeSaveSession = {
+                throw IllegalStateException("disk full")
+            }
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            val firstOffer = harness.coordinator.workoutSaveFailureOffer.value
+            assertEquals(lease.sessionId, firstOffer?.sessionId)
+
+            // What MainViewModel.retryWorkoutSave does: drain, then retry.
+            harness.coordinator.withdrawWorkoutSaveFailure(lease.sessionId)
+            assertTrue(harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId))
+            advanceUntilIdle()
+
+            val secondOffer = harness.coordinator.workoutSaveFailureOffer.value
+            assertEquals(lease.sessionId, secondOffer?.sessionId, "The failed retry is offered again")
+            assertNotEquals(
+                firstOffer,
+                secondOffer,
+                "A re-offer of the same session must be a distinct value, or the snackbar never re-runs",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    private fun startTrackedCableSet(
+        harness: DWSMTestHarness,
+        weightPerCableKg: Float = 25f,
+    ) {
         harness.fakeExerciseRepo.addExercise(TestFixtures.benchPress)
         harness.fakeBleRepo.simulateConnect("Vee_Test")
         harness.dwsm.updateWorkoutParameters(
@@ -987,7 +1528,7 @@ class WorkoutExitPersistenceTest {
                 programMode = ProgramMode.OldSchool,
                 reps = 3,
                 warmupReps = 0,
-                weightPerCableKg = 25f,
+                weightPerCableKg = weightPerCableKg,
                 selectedExerciseId = TestFixtures.benchPress.id,
             ),
         )

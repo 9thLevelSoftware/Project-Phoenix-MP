@@ -2,6 +2,7 @@ package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
 import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
+import com.devil.phoenixproject.data.local.LegacyCatalogueTranslator
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesValidator
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -14,6 +15,9 @@ import com.devil.phoenixproject.database.CycleConflictDraft
 import com.devil.phoenixproject.database.CycleSyncState
 import com.devil.phoenixproject.database.EarnedBadge
 import com.devil.phoenixproject.database.Exercise
+import com.devil.phoenixproject.data.preferences.PendingProfileDeletionStore
+import com.devil.phoenixproject.data.preferences.PreferencesManager
+import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.database.GamificationStats
 import com.devil.phoenixproject.database.MetricSample
 import com.devil.phoenixproject.database.PersonalRecord
@@ -54,12 +58,36 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.decodeFromString
+import kotlinx.serialization.SerializationException
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.decodeFromJsonElement
 import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
+
+/**
+ * Markers of a constraint violation, matched case-insensitively against the exception
+ * chain's messages because each platform driver (Android framework, JDBC, native SQLiter)
+ * reports SQLite result codes through its own exception type and wording.
+ */
+private val CONSTRAINT_VIOLATION_MARKERS = listOf(
+    "sqlite_constraint", "constraint failed", "constraint violation",
+)
+
+/**
+ * Whether a per-row restore failure may be skipped. Allow-list: only a row that does not
+ * parse or that violates a constraint affects that row alone. Everything else (disk full,
+ * I/O, corruption, driver errors, bugs such as a null dereference) and cancellation aborts
+ * the whole restore, so later rows are never written after an unknown failure.
+ */
+internal fun isSkippableRestoreRowFailure(failure: Throwable): Boolean {
+    if (failure is CancellationException) return false
+    val chain = generateSequence(failure) { it.cause }.take(8).toList()
+    if (chain.any { it is SerializationException }) return true
+    val messages = chain.joinToString(" ") { it.message.orEmpty() }.lowercase()
+    return CONSTRAINT_VIOLATION_MARKERS.any { it in messages }
+}
 
 /**
  * Platform-agnostic interface for backup/restore operations.
@@ -147,6 +175,12 @@ abstract class BaseDataBackupManager(
     private val database: PhoenixDatabase,
     private val profilePreferencesRepository: ProfilePreferencesRepository,
     private val userProfileRepository: UserProfileRepository,
+    /** Settings-held sync state a restore must reset (pull cursors, routine-group repair). */
+    private val portalTokenStorage: PortalTokenStorage? = null,
+    /** Settings-held one-shot work markers a restore must clear (see resetOneShotWorkAfterRestore). */
+    private val preferencesManager: PreferencesManager? = null,
+    /** Profiles a permanent delete (PR 20) is still pushing; kept out of backups both ways. */
+    private val pendingProfileDeletionStore: PendingProfileDeletionStore? = null,
 ) : DataBackupManager {
 
     protected val json = Json {
@@ -190,6 +224,45 @@ abstract class BaseDataBackupManager(
      */
     protected abstract fun pruneOldBackups(keepCount: Int)
 
+    /**
+     * Whether full and auto backups include raw per-sample telemetry (MetricSample). Off by
+     * default (F-033): the stream is large and rarely needed. Restore still imports samples
+     * whenever a file contains them. Platform managers read the user's backup preference.
+     */
+    protected open val includeRawTelemetryInBackups: Boolean get() = false
+
+    private fun backupPrivacy(): BackupPrivacyMetadata =
+        BackupPrivacyMetadata(containsRawTelemetry = includeRawTelemetryInBackups)
+
+    /** One stats row per profile (the table holds one per profile; never `executeAsOneOrNull` over all rows). */
+    private fun gamificationStatsByProfile(profileIds: List<String>): List<GamificationStatsBackup> =
+        profileIds.mapNotNull { profileId ->
+            queries.selectGamificationStats(profileId).executeAsOneOrNull()?.let(::mapGamificationStatsToBackup)
+        }
+
+    private fun stockExerciseUserFields(): List<StockExerciseUserFieldsBackup> =
+        queries.selectStockExerciseUserFields().executeAsList().map {
+            StockExerciseUserFieldsBackup(
+                exerciseId = it.id,
+                isFavorite = it.isFavorite == 1L,
+                mvtOverrideMs = it.mvtOverrideMs?.toFloat(),
+                legacyOneRepMaxKg = it.one_rep_max_kg?.toFloat(),
+            )
+        }
+
+    /**
+     * Profiles the user permanently deleted (PR 20): those whose delete is still pushing, and
+     * those already finalized (their tombstones outlive the profile row). No backup writes them
+     * and no restore brings them back.
+     */
+    private fun deletedProfileFilter(): DeletedProfileBackupFilter = DeletedProfileBackupFilter(
+        queries.selectRemovedProfileIds().executeAsList().toSet() +
+            pendingProfileDeletionStore?.read().orEmpty(),
+    )
+
+    /** Set for the duration of one streaming export; every array section passes through it. */
+    private var activeExportFilter: DeletedProfileBackupFilter? = null
+
     /** Test seam for deterministic staging I/O failures; production uses private platform temp storage. */
     internal open fun createImportStagingArea(): BackupImportStagingArea = createBackupImportStagingArea()
 
@@ -214,6 +287,8 @@ abstract class BaseDataBackupManager(
 
         private val ARRAY_BACKUP_SECTIONS = setOf(
             "customExercises",
+            "stockExerciseUserFields",
+            "gamificationStatsByProfile",
             "userProfiles",
             "profilePreferences",
             "routineGroups",
@@ -247,6 +322,7 @@ abstract class BaseDataBackupManager(
         private val RESTORE_SECTION_ORDER = listOf(
             "userProfiles",
             "customExercises",
+            "stockExerciseUserFields",
             "profilePreferences",
             "pendingProfileRecoveries",
             "ownershipTransfers",
@@ -258,7 +334,6 @@ abstract class BaseDataBackupManager(
             "supersets",
             "routineExercises",
             "plannedSets",
-            "profileExerciseBaselines",
             "trainingCycles",
             "cycleDays",
             "cycleProgress",
@@ -269,10 +344,15 @@ abstract class BaseDataBackupManager(
             "metricSamples",
             "completedSets",
             "personalRecords",
+            // After every section that names exercises (routine exercises, sessions, PRs): a
+            // baseline row carries only an id, so a retired catalogue id that maps by name alone
+            // resolves from the name those rows taught the restore's legacy-id translator.
+            "profileExerciseBaselines",
             "progressionEvents",
             "earnedBadges",
             "streakHistory",
             "gamificationStats",
+            "gamificationStatsByProfile",
             "sessionNotes",
             "equipmentRackItems",
         )
@@ -317,6 +397,8 @@ abstract class BaseDataBackupManager(
             val cachePath = exportToCache(onProgress)
             onProgress(BackupProgress(BackupPhase.FINALIZING, 0, 0))
             finalizeExport(cachePath)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(e) { "Streaming export failed" }
             Result.failure(e)
@@ -343,16 +425,26 @@ abstract class BaseDataBackupManager(
 
     // -- Legacy export (kept for backward compatibility) --
 
-    override suspend fun exportAllData(): BackupData = withContext(Dispatchers.IO) {
+    override suspend fun exportAllData(): BackupData {
+        val backup = exportAllDataUnfiltered()
+        val filter = deletedProfileFilter()
+        if (!filter.isActive) return backup
+        val data = filter.filterData(json.encodeToJsonElement(BackupContent.serializer(), backup.data).jsonObject)
+        return backup.copy(data = json.decodeFromJsonElement(BackupContent.serializer(), data))
+    }
+
+    private suspend fun exportAllDataUnfiltered(): BackupData = withContext(Dispatchers.IO) {
         val sessions = queries.selectBackupSessionsSync().executeAsList()
 
         // IMPORTANT: Load metrics per-session to avoid memory exhaustion on iOS.
         // Loading all metrics at once can cause OOM crashes on iOS due to how the
         // native SQLite driver handles large result sets.
         val metrics = mutableListOf<MetricSample>()
-        for (session in sessions) {
-            val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
-            metrics.addAll(sessionMetrics)
+        if (includeRawTelemetryInBackups) {
+            for (session in sessions) {
+                val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
+                metrics.addAll(sessionMetrics)
+            }
         }
 
         // Full backups retain routine tombstones because historical telemetry keeps
@@ -363,16 +455,15 @@ abstract class BaseDataBackupManager(
         val activeRoutineIds = allRoutines.filter { it.deletedAt == null }.mapTo(hashSetOf()) { it.id }
         val routineExercises = allRoutineExercises
         val routineNameResolutionContext = buildRoutineNameResolutionContext(allRoutines, allRoutineExercises)
-        // Supersets table might not exist on older databases
-        val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }
-            .getOrElse { emptyList() }
+        // Every table read below fails the export on error (F-041): a backup that silently
+        // exports an empty section is worse than a retryable failure.
+        val supersets = queries.selectAllSupersetsSync().executeAsList()
         val personalRecords = queries.selectActiveRecordsForBackup().executeAsList().map { pr ->
             mapPersonalRecordToBackup(pr)
         }
-        // Training cycles tables might not exist on older databases
-        val trainingCycles = runCatching { queries.selectAllTrainingCyclesSync().executeAsList() }.getOrElse { emptyList() }
+        val trainingCycles = queries.selectAllTrainingCyclesSync().executeAsList()
         val cycleDays = trainingCycles.flatMap { cycle ->
-            runCatching { queries.selectCycleDaysByCycle(cycle.id).executeAsList() }.getOrElse { emptyList() }
+            queries.selectCycleDaysByCycle(cycle.id).executeAsList()
         }.map { day ->
             if (day.routine_id != null && day.routine_id !in activeRoutineIds) {
                 mapCycleDayToBackup(day).copy(routineId = null)
@@ -381,21 +472,18 @@ abstract class BaseDataBackupManager(
             }
         }
 
-        // New tables for complete backup - wrapped in try-catch because these tables
-        // might not exist on older database versions. If a query fails (table missing,
-        // lock contention, etc.), we return empty list rather than crash.
-        val cycleProgress = runCatching { queries.selectAllCycleProgressSync().executeAsList() }.getOrElse { emptyList() }
-        val cycleProgressions = runCatching { queries.selectAllCycleProgressionsSync().executeAsList() }.getOrElse { emptyList() }
-        val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }.getOrElse { emptyList() }
+        val cycleProgress = queries.selectAllCycleProgressSync().executeAsList()
+        val cycleProgressions = queries.selectAllCycleProgressionsSync().executeAsList()
+        val plannedSets = queries.selectAllPlannedSetsSync().executeAsList()
         val plannedSetIds = plannedSets.mapTo(hashSetOf()) { it.id }
-        val completedSets = runCatching { queries.selectAllCompletedSetsSync().executeAsList() }.getOrElse { emptyList() }
-        val progressionEvents = runCatching { queries.selectAllProgressionEventsSync().executeAsList() }.getOrElse { emptyList() }
-        val earnedBadges = runCatching { queries.selectAllEarnedBadgesSync().executeAsList() }.getOrElse { emptyList() }
-        val streakHistory = runCatching { queries.selectAllStreakHistorySync().executeAsList() }.getOrElse { emptyList() }
-        val gamificationStats = runCatching { queries.selectGamificationStatsSync().executeAsOneOrNull() }.getOrNull()
+        val completedSets = queries.selectAllCompletedSetsSync().executeAsList()
+        val progressionEvents = queries.selectAllProgressionEventsSync().executeAsList()
+        val earnedBadges = queries.selectAllEarnedBadgesSync().executeAsList()
+        val streakHistory = queries.selectAllStreakHistorySync().executeAsList()
         // Profile identities are a required root of a complete backup. Never emit an
         // apparently successful empty identity/preference payload after a query failure.
         val userProfiles = queries.selectAllUserProfilesSync().executeAsList()
+        val gamificationStats = gamificationStatsByProfile(userProfiles.map { it.id })
         val profilePreferences = userProfiles.map { profile ->
             profilePreferencesRepository.get(profile.id).toBackup()
         }
@@ -408,13 +496,9 @@ abstract class BaseDataBackupManager(
         val localOwnershipClaims = queries.selectAllLocalOwnershipClaims().executeAsList()
         val cycleSyncStates = queries.selectAllCycleSyncStates().executeAsList()
         val cycleConflictDrafts = queries.selectAllCycleConflictDrafts().executeAsList()
-        // Migration 26 added SessionNotes. Wrap in runCatching for safety on legacy DBs
-        // where the table does not yet exist (pre-flight create-if-missing covers this
-        // on current builds, but defending against partial upgrade paths is cheap).
-        val sessionNotes = runCatching { queries.selectAllSessionNotesSync().executeAsList() }.getOrElse { emptyList() }
+        val sessionNotes = queries.selectAllSessionNotesSync().executeAsList()
         // Migration 27 added RoutineGroup. Preserve empty groups as legitimate user state.
-        val routineGroups = runCatching { queries.selectAllRoutineGroupsSync().executeAsList() }
-            .getOrElse { emptyList() }
+        val routineGroups = queries.selectAllRoutineGroupsSync().executeAsList()
 
         val nowMs = KmpUtils.currentTimeMillis()
         BackupData(
@@ -422,6 +506,7 @@ abstract class BaseDataBackupManager(
             exportedAt = KmpUtils.formatTimestamp(nowMs, "yyyy-MM-dd") + "T" +
                 KmpUtils.formatTimestamp(nowMs, "HH:mm:ss") + "Z",
             appVersion = Constants.APP_VERSION,
+            privacy = backupPrivacy(),
             data = BackupContent(
                 customExercises = customExercises.map(::mapCustomExerciseToBackup),
                 workoutSessions = sessions.map { session -> mapSessionToBackup(session, routineNameResolutionContext) },
@@ -441,7 +526,8 @@ abstract class BaseDataBackupManager(
                 progressionEvents = progressionEvents.map { mapProgressionEventToBackup(it) },
                 earnedBadges = earnedBadges.map { mapEarnedBadgeToBackup(it) },
                 streakHistory = streakHistory.map { mapStreakHistoryToBackup(it) },
-                gamificationStats = gamificationStats?.let { mapGamificationStatsToBackup(it) },
+                gamificationStatsByProfile = gamificationStats,
+                stockExerciseUserFields = stockExerciseUserFields(),
                 userProfiles = userProfiles.map { mapUserProfileToBackup(it) },
                 profilePreferences = profilePreferences,
                 sessionNotes = sessionNotes.map { mapSessionNotesToBackup(it) },
@@ -499,10 +585,12 @@ abstract class BaseDataBackupManager(
     ): Result<ImportResult> {
         val callerContext = currentCoroutineContext()
         val checkedSource = GuardedBackupStreamSource(source) { callerContext.ensureActive() }
+        legacyCatalogueTranslator = null
         val staging = createImportStagingArea()
+        val deletedProfiles = deletedProfileFilter()
         return try {
             val header = try {
-                stageAndValidateBackup(checkedSource, staging)
+                stageAndValidateBackup(checkedSource, staging, deletedProfiles)
             } catch (failure: CancellationException) {
                 throw failure
             } catch (failure: Exception) {
@@ -525,7 +613,7 @@ abstract class BaseDataBackupManager(
                     GuardedBackupStreamSource(replay) { callerContext.ensureActive() },
                     staging,
                     onProgress,
-                )
+                ).map { result -> result.copy(deletedProfileRowsSkipped = deletedProfiles.dropped) }
             } finally {
                 replay.close()
             }
@@ -551,6 +639,7 @@ abstract class BaseDataBackupManager(
     private fun stageAndValidateBackup(
         source: BackupStreamSource,
         staging: BackupImportStagingArea,
+        filter: DeletedProfileBackupFilter,
     ): StagedBackupHeader {
         val nav = BackupJsonNavigator(source)
         var version: Int? = null
@@ -575,7 +664,7 @@ abstract class BaseDataBackupManager(
                 "data" -> {
                     require(!sawData) { "Backup contains duplicate data objects" }
                     sawData = true
-                    stageDataObject(nav, staging)
+                    stageDataObject(nav, staging, filter)
                 }
                 else -> {
                     Logger.d { "Backup validation: skipping unknown root field '$field'" }
@@ -597,7 +686,11 @@ abstract class BaseDataBackupManager(
         )
     }
 
-    private fun stageDataObject(nav: BackupJsonNavigator, staging: BackupImportStagingArea) {
+    private fun stageDataObject(
+        nav: BackupJsonNavigator,
+        staging: BackupImportStagingArea,
+        filter: DeletedProfileBackupFilter,
+    ) {
         val seenSections = mutableSetOf<String>()
         nav.beginObject()
         while (nav.hasNextInObject()) {
@@ -614,6 +707,8 @@ abstract class BaseDataBackupManager(
                     while (nav.hasNextInArray()) {
                         val raw = nav.nextValueAsString()
                         validateSectionValue(section, raw)
+                        // A profile the user permanently deleted never comes back from a backup.
+                        if (!filter.keep(section, raw)) continue
                         staging.appendArrayValue(section, raw)
                     }
                     nav.endArray()
@@ -622,7 +717,7 @@ abstract class BaseDataBackupManager(
                 section == "gamificationStats" -> {
                     val raw = nav.nextValueAsString()
                     if (raw != "null") json.decodeFromString<GamificationStatsBackup>(raw)
-                    staging.writeValue(section, raw)
+                    staging.writeValue(section, filter.filterScalar(section, raw))
                 }
                 section == "equipmentRackItems" -> {
                     val raw = nav.nextValueAsString()
@@ -641,6 +736,8 @@ abstract class BaseDataBackupManager(
     private fun validateSectionValue(section: String, raw: String) {
         when (section) {
             "customExercises" -> json.decodeFromString<CustomExerciseBackup>(raw)
+            "stockExerciseUserFields" -> json.decodeFromString<StockExerciseUserFieldsBackup>(raw)
+            "gamificationStatsByProfile" -> json.decodeFromString<GamificationStatsBackup>(raw)
             "userProfiles" -> json.decodeFromString<UserProfileBackup>(raw)
             "profilePreferences" -> json.decodeFromString<ProfilePreferencesBackup>(raw)
             "routineGroups" -> json.decodeFromString<RoutineGroupBackup>(raw)
@@ -720,6 +817,50 @@ abstract class BaseDataBackupManager(
                 queries.getProfileById(it).executeAsOneOrNull() != null
             }
             ?: "default"
+        // Restored sessions whose sync markers must be (re)applied once every child section
+        // has restored, because metric/set/note restores re-dirty their session.
+        val restoredSessionSyncMarkers = mutableListOf<WorkoutSessionBackup>()
+        // Sessions that already existed and matched the backup, where both the target row and the
+        // backup show nothing pending. The source's acknowledged push already delivered these
+        // children (and the rep summaries a backup lacks), so restoring the missing children
+        // must not turn the row into a destructive re-push. Without that proof (v6 file, pending
+        // row) restored children reopen the parent so the portal receives them.
+        val matchedCleanSessionIds = mutableListOf<String>()
+        // Routine groups the restore could make repair-eligible, per profile; held out of the
+        // repair. A group qualifies once any of its rows was inserted, or an existing row gained
+        // a restored MetricSample / CompletedSet (the repair's non-childless test); restored
+        // rows never carry the rep summaries a repair re-push would need.
+        val restoredRoutineGroupIds = mutableMapOf<String, MutableSet<String>>()
+        // Matched existing sessions in a routine group: session id -> (profile id, group id).
+        val matchedSessionGroups = mutableMapOf<String, Pair<String, String>>()
+        fun holdGroupOfRestoredChild(sessionId: String) {
+            val (profileId, groupId) = matchedSessionGroups[sessionId] ?: return
+            restoredRoutineGroupIds.getOrPut(profileId) { linkedSetOf() } += groupId
+        }
+        fun applyRestoredSessionSyncMarkers() {
+            if (restoredSessionSyncMarkers.isEmpty() && matchedCleanSessionIds.isEmpty()) return
+            database.transaction {
+                restoredSessionSyncMarkers.forEach { session ->
+                    queries.restoreSessionSyncMarkers(
+                        portalOrigin = if (session.portalOrigin) 1L else 0L,
+                        updatedAt = session.updatedAt,
+                        acknowledged = if (session.syncAcknowledged) 1L else 0L,
+                        id = session.id,
+                    )
+                }
+                // Only rows that were clean before the restore; a pending local edit stays pending.
+                matchedCleanSessionIds.forEach { id -> queries.markSessionSynced(id) }
+            }
+        }
+        suspend fun resetStateABackupCannotCarry() {
+            // State a backup file cannot carry must not describe the pre-restore database
+            // (sync cursors, repair walks, one-shot work markers).
+            portalTokenStorage?.resetAfterBackupRestore(
+                profileIds = representedProfileIds.ifEmpty { setOf(legacyFallbackProfileId()) },
+                restoredRoutineGroupIds = restoredRoutineGroupIds,
+            )
+            preferencesManager?.resetOneShotWorkAfterRestore()
+        }
         try {
             val nav = BackupJsonNavigator(source)
             var legacyRackFieldPresent = false
@@ -758,14 +899,16 @@ abstract class BaseDataBackupManager(
             var earnedBadgesSkipped = 0
             var streakHistoryImported = 0
             var streakHistorySkipped = 0
-            var gamificationStatsImported = false
-            var gamificationStatsSkipped = false
+            var gamificationStatsImported = 0
+            var gamificationStatsSkipped = 0
             var sessionNotesImported = 0
             var sessionNotesSkipped = 0
             var routineGroupsImported = 0
             var routineGroupsSkipped = 0
             var customExercisesImported = 0
             var customExercisesSkipped = 0
+            var stockExerciseUserFieldsImported = 0
+            var stockExerciseUserFieldsSkipped = 0
             var profileExerciseBaselinesImported = 0
             var profileExerciseBaselinesSkipped = 0
             var workoutDeletionsImported = 0
@@ -871,6 +1014,7 @@ abstract class BaseDataBackupManager(
             fun <T> tryImport(label: String, entityId: String?, block: () -> T): T? = try {
                 block()
             } catch (e: Exception) {
+                if (!isSkippableRestoreRowFailure(e)) throw e
                 entitiesWithErrors++
                 Logger.w {
                     "Streaming import skip $label" +
@@ -928,6 +1072,7 @@ abstract class BaseDataBackupManager(
                         status = metric.status.toLong(),
                     )
                     queries.markWorkoutComponentDirty(metric.sessionId)
+                    holdGroupOfRestoredChild(metric.sessionId)
                     metricsImported++
                     return
                 }
@@ -958,12 +1103,60 @@ abstract class BaseDataBackupManager(
                     status = metric.status.toLong(),
                 )
                 queries.markWorkoutComponentDirty(metric.sessionId)
+                holdGroupOfRestoredChild(metric.sessionId)
                 metricsImported++
+            }
+
+            var backupVersion = 1
+
+            fun restoreGamificationStats(stats: GamificationStatsBackup) {
+                committedTransaction {
+                    if (backupVersion >= 6 && !profileParentAvailable(stats.profileId)) {
+                        entitiesWithErrors++
+                        Logger.w { "Backup restore missing required profile ${stats.profileId} for gamificationStats" }
+                        return@committedTransaction
+                    }
+                    val existing = queries.selectGamificationStats(stats.profileId).executeAsOneOrNull()
+                    if (existing != null) {
+                        if (mapGamificationStatsToBackup(existing) == stats) gamificationStatsSkipped++ else {
+                            entitiesWithErrors++
+                            Logger.w { "Backup restore conflict gamificationStats profile=${stats.profileId}" }
+                        }
+                        return@committedTransaction
+                    }
+                    val stableId = stats.profileId.hashCode().toLong()
+                    val inserted = tryImport("gamificationStats", stats.profileId) {
+                        queries.insertGamificationStatsRestoreIfAbsent(
+                            id = stableId,
+                            totalWorkouts = stats.totalWorkouts.toLong(),
+                            totalReps = stats.totalReps.toLong(),
+                            totalVolumeKg = stats.totalVolumeKg.toLong(),
+                            longestStreak = stats.longestStreak.toLong(),
+                            currentStreak = stats.currentStreak.toLong(),
+                            uniqueExercisesUsed = stats.uniqueExercisesUsed.toLong(),
+                            prsAchieved = stats.prsAchieved.toLong(),
+                            lastWorkoutDate = stats.lastWorkoutDate,
+                            streakStartDate = stats.streakStartDate,
+                            lastUpdated = stats.lastUpdated,
+                            updatedAt = stats.updatedAt,
+                            serverId = stats.serverId,
+                            profileId = stats.profileId,
+                        )
+                    }
+                    if (inserted != null) {
+                        val restored = queries.selectGamificationStats(stats.profileId).executeAsOneOrNull()
+                        if (restored != null && mapGamificationStatsToBackup(restored) == stats) {
+                            gamificationStatsImported++
+                        } else {
+                            entitiesWithErrors++
+                            Logger.w { "Backup restore could not insert gamificationStats profile=${stats.profileId}" }
+                        }
+                    }
+                }
             }
 
             // -- Parse top-level JSON structure --
             nav.beginObject()
-            var backupVersion = 1
             while (nav.hasNextInObject()) {
                 when (nav.nextName()) {
                     "version" -> {
@@ -1069,6 +1262,7 @@ abstract class BaseDataBackupManager(
                                         nav.beginArray()
                                         while (nav.hasNextInArray()) {
                                             val baseline = json.decodeFromString<ProfileExerciseBaselineBackup>(nav.nextValueAsString())
+                                                .let { it.copy(exerciseId = translateLegacyCatalogueId(it.exerciseId, exerciseName = null)) }
                                             if (baseline.revision <= 0L ||
                                                 !profileParentAvailable(baseline.profileId) ||
                                                 queries.selectExerciseById(baseline.exerciseId).executeAsOneOrNull() == null
@@ -1303,7 +1497,7 @@ abstract class BaseDataBackupManager(
                                             val sessionProfileId = session.profileId?.takeIf {
                                                 profileParentAvailable(it)
                                             } ?: legacyFallbackProfileId()
-                                            val sessionExerciseId = session.exerciseId?.takeIf {
+                                            val sessionExerciseId = session.exerciseId?.let { translateLegacyCatalogueId(it, session.exerciseName) }?.takeIf {
                                                 queries.selectExerciseById(it).executeAsOneOrNull() != null
                                             }.also { if (session.exerciseId != null && it == null) repairedReferences++ }
                                             val sessionRoutineId = session.routineId?.takeIf {
@@ -1320,8 +1514,10 @@ abstract class BaseDataBackupManager(
                                                 sanitizedRoutineName == null -> inferRoutineName(session)
                                                 else -> sanitizedRoutineName
                                             }
+                                            val safeProgressionKg = session.progressionKg.sanitizeProgressionKg()
                                             val normalizedSession = session.copy(
                                                 eccentricLoad = safeEccentricLoad,
+                                                progressionKg = safeProgressionKg,
                                                 exerciseId = sessionExerciseId,
                                                 routineSessionId = resolvedRoutineSessionId,
                                                 routineName = resolvedRoutineName,
@@ -1363,7 +1559,7 @@ abstract class BaseDataBackupManager(
                                                         mode = session.mode,
                                                         targetReps = session.targetReps.toLong(),
                                                         weightPerCableKg = session.weightPerCableKg.toDouble(),
-                                                        progressionKg = session.progressionKg.toDouble(),
+                                                        progressionKg = safeProgressionKg.toDouble(),
                                                         duration = session.duration,
                                                         totalReps = session.totalReps.toLong(),
                                                         warmupReps = session.warmupReps.toLong(),
@@ -1413,12 +1609,32 @@ abstract class BaseDataBackupManager(
                                                 }
                                                 if (inserted != null) {
                                                     sessionsImported++
+                                                    resolvedRoutineSessionId?.let { groupId ->
+                                                        restoredRoutineGroupIds.getOrPut(sessionProfileId) { linkedSetOf() } += groupId
+                                                    }
+                                                    if (session.portalOrigin || session.updatedAt != null || session.syncAcknowledged) {
+                                                        // Same transaction as the insert, so an aborted
+                                                        // restore never leaves a half-marked row.
+                                                        queries.restoreSessionSyncMarkers(
+                                                            portalOrigin = if (session.portalOrigin) 1L else 0L,
+                                                            updatedAt = session.updatedAt,
+                                                            acknowledged = if (session.syncAcknowledged) 1L else 0L,
+                                                            id = session.id,
+                                                        )
+                                                        restoredSessionSyncMarkers += session
+                                                    }
                                                     recordParent("session", session.id, BackupParentStatus.INSERTED)
                                                 } else {
                                                     recordParent("session", session.id, BackupParentStatus.UNAVAILABLE)
                                                 }
                                             } else {
-                                                val existingBackup = mapSessionToBackup(existingSession)
+                                                // Sync markers are bookkeeping, not content: a v6 file (no markers)
+                                                // still matches a row that has since been synced.
+                                                val existingBackup = mapSessionToBackup(existingSession).copy(
+                                                    updatedAt = normalizedSession.updatedAt,
+                                                    portalOrigin = normalizedSession.portalOrigin,
+                                                    syncAcknowledged = normalizedSession.syncAcknowledged,
+                                                )
                                                 val legacyProfileOnlyAdoption = backupVersion < 6 &&
                                                     existingSession.profile_id != sessionProfileId &&
                                                     queries.getProfileById(existingSession.profile_id).executeAsOneOrNull() == null &&
@@ -1431,6 +1647,14 @@ abstract class BaseDataBackupManager(
                                                 }
                                                 if (legacyProfileOnlyAdoption) {
                                                     queries.adoptSessionProfile(profileId = sessionProfileId, id = session.id)
+                                                }
+                                                if (normalizedSession.syncAcknowledged &&
+                                                    existingSession.synced_sync_generation >= existingSession.local_sync_generation
+                                                ) {
+                                                    matchedCleanSessionIds += session.id
+                                                }
+                                                existingSession.routineSessionId?.let { groupId ->
+                                                    matchedSessionGroups[session.id] = sessionProfileId to groupId
                                                 }
                                                 sessionsSkipped++
                                                 recordParent("session", session.id, BackupParentStatus.MATCHING)
@@ -1676,7 +1900,7 @@ abstract class BaseDataBackupManager(
                                                     Logger.w { "Streaming import: routine exercise ${exercise.exerciseName} eccentricLoad ${exercise.eccentricLoad}% clamped to $safeExerciseEccentricLoad% (hardware limit)" }
                                                 }
 
-                                                val resolvedExerciseId = exercise.exerciseId?.takeIf {
+                                                val resolvedExerciseId = exercise.exerciseId?.let { translateLegacyCatalogueId(it, exercise.exerciseName) }?.takeIf {
                                                     queries.selectExerciseById(it).executeAsOneOrNull() != null
                                                 }.also {
                                                     if (exercise.exerciseId != null && it == null) repairedReferences++
@@ -1686,10 +1910,15 @@ abstract class BaseDataBackupManager(
                                                 }.also {
                                                     if (exercise.supersetId != null && it == null) repairedReferences++
                                                 }
+                                                val safeExerciseProgressionKg = exercise.progressionKg.sanitizeProgressionKg()
+                                                if (exercise.progressionKg != safeExerciseProgressionKg) {
+                                                    Logger.w { "Streaming import: routine exercise ${exercise.id} progressionKg ${exercise.progressionKg} clamped to $safeExerciseProgressionKg" }
+                                                }
                                                 val normalizedExercise = exercise.copy(
                                                     exerciseEquipment = resolveBackupEquipment(exercise),
                                                     exerciseId = resolvedExerciseId,
                                                     eccentricLoad = safeExerciseEccentricLoad,
+                                                    progressionKg = safeExerciseProgressionKg,
                                                     supersetId = resolvedSupersetId,
                                                     defaultRackItemIds = decodeRackItemIds(sanitizeRackItemIds(exercise.defaultRackItemIds)),
                                                     scalingBasis = exercise.scalingBasis?.let {
@@ -1727,7 +1956,7 @@ abstract class BaseDataBackupManager(
                                                         mode = exercise.mode,
                                                         eccentricLoad = safeExerciseEccentricLoad.toLong(),
                                                         echoLevel = exercise.echoLevel.toLong(),
-                                                        progressionKg = exercise.progressionKg.toDouble(),
+                                                        progressionKg = safeExerciseProgressionKg.toDouble(),
                                                         restSeconds = exercise.restSeconds.toLong(),
                                                         duration = exercise.duration?.toLong(),
                                                         setRestSeconds = exercise.setRestSeconds,
@@ -1774,7 +2003,7 @@ abstract class BaseDataBackupManager(
                                             val rawJson = nav.nextValueAsString()
                                             val pr = tryImport("pr-parse", null) {
                                                 json.decodeFromString<PersonalRecordBackup>(rawJson)
-                                            } ?: continue
+                                            }?.let { it.copy(exerciseId = translateLegacyCatalogueId(it.exerciseId, it.exerciseName)) } ?: continue
                                             val profileId = pr.profileId ?: legacyFallbackProfileId()
                                             if (backupVersion >= 6 && pr.profileId != null &&
                                                 !profileParentAvailable(profileId)
@@ -2285,6 +2514,7 @@ abstract class BaseDataBackupManager(
                                                     set_end_reason = SetEndReason.fromPersisted(completedSet.setEndReason).name,
                                                 )
                                                 queries.markWorkoutComponentDirty(completedSet.sessionId)
+                                                holdGroupOfRestoredChild(completedSet.sessionId)
                                                 completedSetsImported++
                                             }
                                         }
@@ -2300,7 +2530,7 @@ abstract class BaseDataBackupManager(
                                             val rawJson = nav.nextValueAsString()
                                             val event = tryImport("progressionEvent-parse", null) {
                                                 json.decodeFromString<ProgressionEventBackup>(rawJson)
-                                            } ?: continue
+                                            }?.let { it.copy(exerciseId = translateLegacyCatalogueId(it.exerciseId, exerciseName = null)) } ?: continue
 
                                             if (queries.selectExerciseById(event.exerciseId).executeAsOneOrNull() == null) {
                                                 entitiesWithErrors++
@@ -2432,61 +2662,64 @@ abstract class BaseDataBackupManager(
                                     }
                                 }
 
-                                // --- gamificationStats (SINGLE OBJECT, not array) ---
+                                // --- stockExerciseUserFields (v7+) ---
+                                // User state on a stock catalogue row. The catalogue ships with the app,
+                                // so a row missing on this install is skipped, not an error.
+                                "stockExerciseUserFields" -> {
+                                    committedTransaction {
+                                        nav.beginArray()
+                                        while (nav.hasNextInArray()) {
+                                            val rawJson = nav.nextValueAsString()
+                                            val fields = tryImport("stockExerciseUserFields-parse", null) {
+                                                json.decodeFromString<StockExerciseUserFieldsBackup>(rawJson)
+                                            } ?: continue
+                                            val existing = queries.selectExerciseById(fields.exerciseId).executeAsOneOrNull()
+                                            if (existing == null || existing.isCustom != 0L) {
+                                                stockExerciseUserFieldsSkipped++
+                                                continue
+                                            }
+                                            val alreadyPresent = (!fields.isFavorite || existing.isFavorite == 1L) &&
+                                                (fields.mvtOverrideMs == null || existing.mvtOverrideMs != null) &&
+                                                (fields.legacyOneRepMaxKg == null || existing.one_rep_max_kg != null)
+                                            if (alreadyPresent) {
+                                                stockExerciseUserFieldsSkipped++
+                                                continue
+                                            }
+                                            tryImport("stockExerciseUserFields", fields.exerciseId) {
+                                                queries.restoreStockExerciseUserFields(
+                                                    isFavorite = if (fields.isFavorite) 1L else 0L,
+                                                    mvtOverrideMs = fields.mvtOverrideMs?.toDouble(),
+                                                    oneRepMaxKg = fields.legacyOneRepMaxKg?.toDouble(),
+                                                    id = fields.exerciseId,
+                                                )
+                                            }?.let { stockExerciseUserFieldsImported++ }
+                                        }
+                                        nav.endArray()
+                                    }
+                                }
+
+                                // --- gamificationStats (v1-v6 SINGLE OBJECT, not array) ---
                                 "gamificationStats" -> {
                                     if (nav.peekIsNull()) {
                                         nav.skipNull()
                                     } else {
                                         val rawJson = nav.nextValueAsString()
-                                        val stats = tryImport("gamificationStats-parse", null) {
+                                        tryImport("gamificationStats-parse", null) {
                                             json.decodeFromString<GamificationStatsBackup>(rawJson)
-                                        }
-                                        if (stats != null) {
-                                            committedTransaction {
-                                                if (backupVersion >= 6 && !profileParentAvailable(stats.profileId)) {
-                                                    entitiesWithErrors++
-                                                    Logger.w { "Backup restore missing required profile ${stats.profileId} for gamificationStats" }
-                                                    return@committedTransaction
-                                                }
-                                                val existing = queries.selectGamificationStats(stats.profileId).executeAsOneOrNull()
-                                                if (existing != null) {
-                                                    if (mapGamificationStatsToBackup(existing) == stats) gamificationStatsSkipped = true else {
-                                                        entitiesWithErrors++
-                                                        Logger.w { "Backup restore conflict gamificationStats profile=${stats.profileId}" }
-                                                    }
-                                                    return@committedTransaction
-                                                }
-                                                val stableId = stats.profileId.hashCode().toLong()
-                                                val inserted = tryImport("gamificationStats", stats.profileId) {
-                                                    queries.insertGamificationStatsRestoreIfAbsent(
-                                                        id = stableId,
-                                                        totalWorkouts = stats.totalWorkouts.toLong(),
-                                                        totalReps = stats.totalReps.toLong(),
-                                                        totalVolumeKg = stats.totalVolumeKg.toLong(),
-                                                        longestStreak = stats.longestStreak.toLong(),
-                                                        currentStreak = stats.currentStreak.toLong(),
-                                                        uniqueExercisesUsed = stats.uniqueExercisesUsed.toLong(),
-                                                        prsAchieved = stats.prsAchieved.toLong(),
-                                                        lastWorkoutDate = stats.lastWorkoutDate,
-                                                        streakStartDate = stats.streakStartDate,
-                                                        lastUpdated = stats.lastUpdated,
-                                                        updatedAt = stats.updatedAt,
-                                                        serverId = stats.serverId,
-                                                        profileId = stats.profileId,
-                                                    )
-                                                }
-                                                if (inserted != null) {
-                                                    val restored = queries.selectGamificationStats(stats.profileId).executeAsOneOrNull()
-                                                    if (restored != null && mapGamificationStatsToBackup(restored) == stats) {
-                                                        gamificationStatsImported = true
-                                                    } else {
-                                                        entitiesWithErrors++
-                                                        Logger.w { "Backup restore could not insert gamificationStats profile=${stats.profileId}" }
-                                                    }
-                                                }
-                                            }
-                                        }
+                                        }?.let(::restoreGamificationStats)
                                     }
+                                }
+
+                                // --- gamificationStatsByProfile (v7+, one row per profile) ---
+                                "gamificationStatsByProfile" -> {
+                                    nav.beginArray()
+                                    while (nav.hasNextInArray()) {
+                                        val rawJson = nav.nextValueAsString()
+                                        tryImport("gamificationStats-parse", null) {
+                                            json.decodeFromString<GamificationStatsBackup>(rawJson)
+                                        }?.let(::restoreGamificationStats)
+                                    }
+                                    nav.endArray()
                                 }
 
                                 // --- sessionNotes ---
@@ -2552,6 +2785,8 @@ abstract class BaseDataBackupManager(
             }
             nav.endObject() // end root
 
+            applyRestoredSessionSyncMarkers()
+
             database.transaction {
                 normalizeImportedActiveIdentity(
                     preImportActiveProfileId,
@@ -2582,69 +2817,79 @@ abstract class BaseDataBackupManager(
 
             onProgress(BackupProgress(BackupPhase.FINALIZING, 0, 0))
 
-            return Result.success(
-                ImportResult(
-                    sessionsImported = sessionsImported,
-                    sessionsSkipped = sessionsSkipped,
-                    metricsImported = metricsImported,
-                    metricsSkipped = metricsSkipped,
-                    routinesImported = routinesImported,
-                    routinesSkipped = routinesSkipped,
-                    routineExercisesImported = routineExercisesImported,
-                    routineExercisesSkipped = routineExercisesSkipped,
-                    supersetsImported = supersetsImported,
-                    supersetsSkipped = supersetsSkipped,
-                    personalRecordsImported = personalRecordsImported,
-                    personalRecordsSkipped = personalRecordsSkipped,
-                    trainingCyclesImported = trainingCyclesImported,
-                    trainingCyclesSkipped = trainingCyclesSkipped,
-                    cycleDaysImported = cycleDaysImported,
-                    cycleDaysSkipped = cycleDaysSkipped,
-                    cycleProgressImported = cycleProgressImported,
-                    cycleProgressSkipped = cycleProgressSkipped,
-                    cycleProgressionsImported = cycleProgressionsImported,
-                    cycleProgressionsSkipped = cycleProgressionsSkipped,
-                    plannedSetsImported = plannedSetsImported,
-                    plannedSetsSkipped = plannedSetsSkipped,
-                    completedSetsImported = completedSetsImported,
-                    completedSetsSkipped = completedSetsSkipped,
-                    progressionEventsImported = progressionEventsImported,
-                    progressionEventsSkipped = progressionEventsSkipped,
-                    earnedBadgesImported = earnedBadgesImported,
-                    earnedBadgesSkipped = earnedBadgesSkipped,
-                    streakHistoryImported = streakHistoryImported,
-                    streakHistorySkipped = streakHistorySkipped,
-                    gamificationStatsImported = gamificationStatsImported,
-                    gamificationStatsSkipped = gamificationStatsSkipped,
-                    userProfilesImported = userProfilesImported,
-                    userProfilesSkipped = userProfilesSkipped,
-                    sessionNotesImported = sessionNotesImported,
-                    sessionNotesSkipped = sessionNotesSkipped,
-                    routineGroupsImported = routineGroupsImported,
-                    routineGroupsSkipped = routineGroupsSkipped,
-                    customExercisesImported = customExercisesImported,
-                    customExercisesSkipped = customExercisesSkipped,
-                    profileExerciseBaselinesImported = profileExerciseBaselinesImported,
-                    profileExerciseBaselinesSkipped = profileExerciseBaselinesSkipped,
-                    workoutDeletionsImported = workoutDeletionsImported,
-                    workoutDeletionsSkipped = workoutDeletionsSkipped,
-                    pendingProfileRecoveriesImported = pendingProfileRecoveriesImported,
-                    pendingProfileRecoveriesSkipped = pendingProfileRecoveriesSkipped,
-                    ownershipTransfersImported = ownershipTransfersImported,
-                    ownershipTransfersSkipped = ownershipTransfersSkipped,
-                    appliedOwnershipEventsImported = appliedOwnershipEventsImported,
-                    appliedOwnershipEventsSkipped = appliedOwnershipEventsSkipped,
-                    localOwnershipClaimsImported = localOwnershipClaimsImported,
-                    localOwnershipClaimsSkipped = localOwnershipClaimsSkipped,
-                    cycleSyncStatesImported = cycleSyncStatesImported,
-                    cycleSyncStatesSkipped = cycleSyncStatesSkipped,
-                    cycleConflictDraftsImported = cycleConflictDraftsImported,
-                    cycleConflictDraftsSkipped = cycleConflictDraftsSkipped,
-                    repairedReferences = repairedReferences,
-                    entitiesWithErrors = entitiesWithErrors,
-                ),
+            val importResult = ImportResult(
+                sessionsImported = sessionsImported,
+                sessionsSkipped = sessionsSkipped,
+                metricsImported = metricsImported,
+                metricsSkipped = metricsSkipped,
+                routinesImported = routinesImported,
+                routinesSkipped = routinesSkipped,
+                routineExercisesImported = routineExercisesImported,
+                routineExercisesSkipped = routineExercisesSkipped,
+                supersetsImported = supersetsImported,
+                supersetsSkipped = supersetsSkipped,
+                personalRecordsImported = personalRecordsImported,
+                personalRecordsSkipped = personalRecordsSkipped,
+                trainingCyclesImported = trainingCyclesImported,
+                trainingCyclesSkipped = trainingCyclesSkipped,
+                cycleDaysImported = cycleDaysImported,
+                cycleDaysSkipped = cycleDaysSkipped,
+                cycleProgressImported = cycleProgressImported,
+                cycleProgressSkipped = cycleProgressSkipped,
+                cycleProgressionsImported = cycleProgressionsImported,
+                cycleProgressionsSkipped = cycleProgressionsSkipped,
+                plannedSetsImported = plannedSetsImported,
+                plannedSetsSkipped = plannedSetsSkipped,
+                completedSetsImported = completedSetsImported,
+                completedSetsSkipped = completedSetsSkipped,
+                progressionEventsImported = progressionEventsImported,
+                progressionEventsSkipped = progressionEventsSkipped,
+                earnedBadgesImported = earnedBadgesImported,
+                earnedBadgesSkipped = earnedBadgesSkipped,
+                streakHistoryImported = streakHistoryImported,
+                streakHistorySkipped = streakHistorySkipped,
+                gamificationStatsImported = gamificationStatsImported,
+                gamificationStatsSkipped = gamificationStatsSkipped,
+                userProfilesImported = userProfilesImported,
+                userProfilesSkipped = userProfilesSkipped,
+                sessionNotesImported = sessionNotesImported,
+                sessionNotesSkipped = sessionNotesSkipped,
+                routineGroupsImported = routineGroupsImported,
+                routineGroupsSkipped = routineGroupsSkipped,
+                customExercisesImported = customExercisesImported,
+                customExercisesSkipped = customExercisesSkipped,
+                stockExerciseUserFieldsImported = stockExerciseUserFieldsImported,
+                stockExerciseUserFieldsSkipped = stockExerciseUserFieldsSkipped,
+                profileExerciseBaselinesImported = profileExerciseBaselinesImported,
+                profileExerciseBaselinesSkipped = profileExerciseBaselinesSkipped,
+                workoutDeletionsImported = workoutDeletionsImported,
+                workoutDeletionsSkipped = workoutDeletionsSkipped,
+                pendingProfileRecoveriesImported = pendingProfileRecoveriesImported,
+                pendingProfileRecoveriesSkipped = pendingProfileRecoveriesSkipped,
+                ownershipTransfersImported = ownershipTransfersImported,
+                ownershipTransfersSkipped = ownershipTransfersSkipped,
+                appliedOwnershipEventsImported = appliedOwnershipEventsImported,
+                appliedOwnershipEventsSkipped = appliedOwnershipEventsSkipped,
+                localOwnershipClaimsImported = localOwnershipClaimsImported,
+                localOwnershipClaimsSkipped = localOwnershipClaimsSkipped,
+                cycleSyncStatesImported = cycleSyncStatesImported,
+                cycleSyncStatesSkipped = cycleSyncStatesSkipped,
+                cycleConflictDraftsImported = cycleConflictDraftsImported,
+                cycleConflictDraftsSkipped = cycleConflictDraftsSkipped,
+                repairedReferences = repairedReferences,
+                entitiesWithErrors = entitiesWithErrors,
             )
+            if (importResult.totalImported > 0) resetStateABackupCannotCarry()
+            return Result.success(importResult)
         } catch (e: Throwable) {
+            if (databaseWorkCommitted) {
+                // An aborted restore still leaves committed rows: finish their sync markers
+                // (children may have re-dirtied them) and reset the state they invalidate.
+                withContext(NonCancellable) {
+                    runCatching { applyRestoredSessionSyncMarkers() }.exceptionOrNull()?.let(e::addSuppressed)
+                    runCatching { resetStateABackupCannotCarry() }.exceptionOrNull()?.let(e::addSuppressed)
+                }
+            }
             if (databaseWorkCommitted && !reconciliationAttempted) {
                 withContext(NonCancellable) {
                     val normalizationFailure = if (activeIdentityNormalized) {
@@ -2682,10 +2927,23 @@ abstract class BaseDataBackupManager(
         writer: BackupJsonWriter,
         onProgress: (BackupProgress) -> Unit,
     ) {
+        val filter = deletedProfileFilter()
+        activeExportFilter = filter.takeIf { it.isActive }
+        try {
+            streamExportToWriterFiltered(writer, onProgress)
+        } finally {
+            activeExportFilter = null
+        }
+    }
+
+    private suspend fun streamExportToWriterFiltered(
+        writer: BackupJsonWriter,
+        onProgress: (BackupProgress) -> Unit,
+    ) {
         // Phase 1: Count
         onProgress(BackupProgress(BackupPhase.COUNTING, 0, 0))
         val sessionCount = queries.countBackupWorkoutSessions().executeAsOne()
-        val metricCount = runCatching { queries.countBackupMetricSamples().executeAsOne() }.getOrElse { 0L }
+        val metricCount = if (includeRawTelemetryInBackups) queries.countBackupMetricSamples().executeAsOne() else 0L
         val allRoutines = queries.selectAllRoutinesSync().executeAsList()
         val allRoutineExercises = queries.selectAllRoutineExercisesSync().executeAsList()
         val routines = allRoutines
@@ -2699,7 +2957,7 @@ abstract class BaseDataBackupManager(
 
         // JSON header
         val exportedAt = kotlin.time.Instant.fromEpochMilliseconds(KmpUtils.currentTimeMillis()).toString()
-        val privacy = json.encodeToString(BackupPrivacyMetadata.serializer(), BackupPrivacyMetadata())
+        val privacy = json.encodeToString(BackupPrivacyMetadata.serializer(), backupPrivacy())
         writer.write("""{"version":$CURRENT_BACKUP_VERSION,"exportedAt":"$exportedAt","appVersion":"${Constants.APP_VERSION}","privacy":$privacy,"data":{""")
 
         val customExercises = queries.selectCustomExercises().executeAsList()
@@ -2709,11 +2967,23 @@ abstract class BaseDataBackupManager(
             customExercises.map { json.encodeToString(CustomExerciseBackup.serializer(), mapCustomExerciseToBackup(it)) },
         )
         writer.write(",")
+        writeJsonArray(
+            writer,
+            "stockExerciseUserFields",
+            stockExerciseUserFields().map { json.encodeToString(StockExerciseUserFieldsBackup.serializer(), it) },
+        )
+        writer.write(",")
 
         // Phase 2: Sessions
         onProgress(BackupProgress(BackupPhase.SESSIONS, 0, sessionCount))
         writer.write("\"workoutSessions\":[")
-        val sessions = queries.selectBackupSessionsSync().executeAsList()
+        // A deleted profile's sessions are hard-deleted by PR 20; filtered anyway so a
+        // half-finished delete can never leak one into a backup.
+        val sessions = queries.selectBackupSessionsSync().executeAsList().filter { session ->
+            activeExportFilter?.keep("workoutSessions", mapSessionToBackup(session).let {
+                json.encodeToJsonElement(WorkoutSessionBackup.serializer(), it).jsonObject
+            }) ?: true
+        }
         sessions.forEachIndexed { index, session ->
             if (index > 0) writer.write(",")
             writer.write(json.encodeToString(WorkoutSessionBackup.serializer(), mapSessionToBackup(session, routineNameResolutionContext)))
@@ -2731,7 +3001,8 @@ abstract class BaseDataBackupManager(
         writer.write("\"metricSamples\":[")
         var metricIndex = 0L
         var firstMetric = true
-        for (session in sessions) {
+        // Raw telemetry is opt-in (F-033); the empty section keeps the file shape stable.
+        for (session in if (includeRawTelemetryInBackups) sessions else emptyList()) {
             val sessionMetrics = queries.selectMetricsBySession(session.id).executeAsList()
             for (metric in sessionMetrics) {
                 if (!firstMetric) writer.write(",")
@@ -2757,8 +3028,7 @@ abstract class BaseDataBackupManager(
         // Phase 5: Remaining tables (small, bulk-load is safe)
         onProgress(BackupProgress(BackupPhase.OTHER, 0, 0))
 
-        val supersets = runCatching { queries.selectAllSupersetsSync().executeAsList() }
-            .getOrElse { emptyList() }
+        val supersets = queries.selectAllSupersetsSync().executeAsList()
         writeJsonArray(writer, "supersets", supersets.map { json.encodeToString(SupersetBackup.serializer(), mapSupersetToBackup(it)) })
         writer.write(",")
 
@@ -2766,12 +3036,12 @@ abstract class BaseDataBackupManager(
         writeJsonArray(writer, "personalRecords", personalRecords.map { json.encodeToString(PersonalRecordBackup.serializer(), mapPersonalRecordToBackup(it)) })
         writer.write(",")
 
-        val trainingCycles = runCatching { queries.selectAllTrainingCyclesSync().executeAsList() }.getOrElse { emptyList() }
+        val trainingCycles = queries.selectAllTrainingCyclesSync().executeAsList()
         writeJsonArray(writer, "trainingCycles", trainingCycles.map { json.encodeToString(TrainingCycleBackup.serializer(), mapTrainingCycleToBackup(it)) })
         writer.write(",")
 
         val cycleDays = trainingCycles.flatMap { cycle ->
-            runCatching { queries.selectCycleDaysByCycle(cycle.id).executeAsList() }.getOrElse { emptyList() }
+            queries.selectCycleDaysByCycle(cycle.id).executeAsList()
         }.map { day ->
             if (day.routine_id != null && day.routine_id !in activeRoutineIds) {
                 mapCycleDayToBackup(day).copy(routineId = null)
@@ -2782,20 +3052,20 @@ abstract class BaseDataBackupManager(
         writeJsonArray(writer, "cycleDays", cycleDays.map { json.encodeToString(CycleDayBackup.serializer(), it) })
         writer.write(",")
 
-        val cycleProgress = runCatching { queries.selectAllCycleProgressSync().executeAsList() }.getOrElse { emptyList() }
+        val cycleProgress = queries.selectAllCycleProgressSync().executeAsList()
         writeJsonArray(writer, "cycleProgress", cycleProgress.map { json.encodeToString(CycleProgressBackup.serializer(), mapCycleProgressToBackup(it)) })
         writer.write(",")
 
-        val cycleProgressions = runCatching { queries.selectAllCycleProgressionsSync().executeAsList() }.getOrElse { emptyList() }
+        val cycleProgressions = queries.selectAllCycleProgressionsSync().executeAsList()
         writeJsonArray(writer, "cycleProgressions", cycleProgressions.map { json.encodeToString(CycleProgressionBackup.serializer(), mapCycleProgressionToBackup(it)) })
         writer.write(",")
 
-        val plannedSets = runCatching { queries.selectAllPlannedSetsSync().executeAsList() }.getOrElse { emptyList() }
+        val plannedSets = queries.selectAllPlannedSetsSync().executeAsList()
         val plannedSetIds = plannedSets.mapTo(hashSetOf()) { it.id }
         writeJsonArray(writer, "plannedSets", plannedSets.map { json.encodeToString(PlannedSetBackup.serializer(), mapPlannedSetToBackup(it)) })
         writer.write(",")
 
-        val completedSets = runCatching { queries.selectAllCompletedSetsSync().executeAsList() }.getOrElse { emptyList() }
+        val completedSets = queries.selectAllCompletedSetsSync().executeAsList()
         writeJsonArray(writer, "completedSets", completedSets.map {
             val backup = mapCompletedSetToBackup(it)
             json.encodeToString(
@@ -2805,26 +3075,26 @@ abstract class BaseDataBackupManager(
         })
         writer.write(",")
 
-        val progressionEvents = runCatching { queries.selectAllProgressionEventsSync().executeAsList() }.getOrElse { emptyList() }
+        val progressionEvents = queries.selectAllProgressionEventsSync().executeAsList()
         writeJsonArray(writer, "progressionEvents", progressionEvents.map { json.encodeToString(ProgressionEventBackup.serializer(), mapProgressionEventToBackup(it)) })
         writer.write(",")
 
-        val earnedBadges = runCatching { queries.selectAllEarnedBadgesSync().executeAsList() }.getOrElse { emptyList() }
+        val earnedBadges = queries.selectAllEarnedBadgesSync().executeAsList()
         writeJsonArray(writer, "earnedBadges", earnedBadges.map { json.encodeToString(EarnedBadgeBackup.serializer(), mapEarnedBadgeToBackup(it)) })
         writer.write(",")
 
-        val streakHistory = runCatching { queries.selectAllStreakHistorySync().executeAsList() }.getOrElse { emptyList() }
+        val streakHistory = queries.selectAllStreakHistorySync().executeAsList()
         writeJsonArray(writer, "streakHistory", streakHistory.map { json.encodeToString(StreakHistoryBackup.serializer(), mapStreakHistoryToBackup(it)) })
         writer.write(",")
 
-        // gamificationStats -- single object or null
-        val gamificationStats = runCatching { queries.selectGamificationStatsSync().executeAsOneOrNull() }.getOrNull()
-        if (gamificationStats != null) {
-            writer.write("\"gamificationStats\":")
-            writer.write(json.encodeToString(GamificationStatsBackup.serializer(), mapGamificationStatsToBackup(gamificationStats)))
-        } else {
-            writer.write("\"gamificationStats\":null")
-        }
+        // One stats row per profile (v7). v1-v6 files carried a single `gamificationStats` object.
+        writeJsonArray(
+            writer,
+            "gamificationStatsByProfile",
+            gamificationStatsByProfile(userProfiles.map { it.id }).map {
+                json.encodeToString(GamificationStatsBackup.serializer(), it)
+            },
+        )
         writer.write(",")
 
         writeJsonArray(writer, "userProfiles", userProfiles.map { json.encodeToString(UserProfileBackup.serializer(), mapUserProfileToBackup(it)) })
@@ -2836,15 +3106,13 @@ abstract class BaseDataBackupManager(
         )
         writer.write(",")
 
-        // Session notes (migration 26). Wrap in runCatching so the export still completes
-        // on legacy DBs where the table is missing; v1 backups simply emit an empty array.
-        val sessionNotes = runCatching { queries.selectAllSessionNotesSync().executeAsList() }.getOrElse { emptyList() }
+        // Session notes (migration 26).
+        val sessionNotes = queries.selectAllSessionNotesSync().executeAsList()
         writeJsonArray(writer, "sessionNotes", sessionNotes.map { json.encodeToString(SessionNotesBackup.serializer(), mapSessionNotesToBackup(it)) })
         writer.write(",")
 
         // Routine groups (migration 27). Preserve empty groups as legitimate user state.
-        val routineGroups = runCatching { queries.selectAllRoutineGroupsSync().executeAsList() }
-            .getOrElse { emptyList() }
+        val routineGroups = queries.selectAllRoutineGroupsSync().executeAsList()
         writeJsonArray(writer, "routineGroups", routineGroups.map { json.encodeToString(RoutineGroupBackup.serializer(), mapRoutineGroupToBackup(it)) })
         writer.write(",")
 
@@ -2896,8 +3164,10 @@ abstract class BaseDataBackupManager(
     }
 
     private fun writeJsonArray(writer: BackupJsonWriter, fieldName: String, jsonStrings: List<String>) {
+        val filter = activeExportFilter
+        val kept = if (filter == null) jsonStrings else jsonStrings.filter { filter.keep(fieldName, it) }
         writer.write("\"$fieldName\":[")
-        jsonStrings.forEachIndexed { index, s ->
+        kept.forEachIndexed { index, s ->
             if (index > 0) writer.write(",")
             writer.write(s)
         }
@@ -3234,6 +3504,12 @@ abstract class BaseDataBackupManager(
             strengthProfile = session.strengthProfile,
             formScore = session.formScore,
             profileId = session.profile_id,
+            updatedAt = session.updatedAt,
+            portalOrigin = session.portalOrigin == 1L,
+            // Nothing pending: every local change reached the portal. A pulled row is clean at
+            // 0/0; a local row needs at least one acknowledged push.
+            syncAcknowledged = session.synced_sync_generation >= session.local_sync_generation &&
+                (session.portalOrigin == 1L || session.synced_sync_generation > 0L),
         )
     }
 
@@ -3896,6 +4172,22 @@ abstract class BaseDataBackupManager(
             queries.getProfileById(profileId).executeAsOneOrNull()?.let(::mapUserProfileToBackup)
         }
 
+    /** One per restore; see [translateLegacyCatalogueId]. */
+    private var legacyCatalogueTranslator: LegacyCatalogueTranslator? = null
+
+    /**
+     * A pre-remap backup names retired catalogue ids. Backups carry only custom exercises, so on a
+     * device without the archived legacy row (a fresh install) those references would fail
+     * validation and be dropped before the post-restore remap could see them. Translate them first
+     * with the remapper's own resolution (explicit ids and the reviewed name fallbacks), and only
+     * to a target this catalogue has. Rows without a name (baselines, progression events) reuse
+     * the name an earlier section gave the same id. An id the device still holds (an archived
+     * legacy row on an upgraded install) is kept so [LegacyCatalogueRemapper] merges it.
+     */
+    private fun translateLegacyCatalogueId(exerciseId: String, exerciseName: String?): String =
+        (legacyCatalogueTranslator ?: LegacyCatalogueTranslator(database).also { legacyCatalogueTranslator = it })
+            .translate(exerciseId, exerciseName)
+
     private fun referencedCustomExercises(exerciseIds: Collection<String?>): List<CustomExerciseBackup> =
         exerciseIds.filterNotNull().distinct().mapNotNull { exerciseId ->
             queries.selectExerciseById(exerciseId).executeAsOneOrNull()
@@ -3918,7 +4210,7 @@ abstract class BaseDataBackupManager(
             val session = queries.selectSessionById(sessionId).executeAsOneOrNull()
                 ?: return@withContext Result.failure(Exception("Session not found: $sessionId"))
 
-            val metrics = queries.selectMetricsBySession(sessionId).executeAsList()
+            val metrics = if (includeRawTelemetryInBackups) queries.selectMetricsBySession(sessionId).executeAsList() else emptyList()
             val completedSets = queries.selectCompletedSetsBySession(sessionId).executeAsList()
             val sessions = listOf(session)
 
@@ -3932,6 +4224,7 @@ abstract class BaseDataBackupManager(
                 exportedAt = KmpUtils.formatTimestamp(sessionBackupNowMs, "yyyy-MM-dd") + "T" +
                     KmpUtils.formatTimestamp(sessionBackupNowMs, "HH:mm:ss") + "Z",
                 appVersion = Constants.APP_VERSION,
+                privacy = backupPrivacy(),
                 data = BackupContent(
                     userProfiles = referencedUserProfiles(sessions.map { it.profile_id }),
                     customExercises = referencedCustomExercises(sessions.map { it.exerciseId }),
@@ -3958,6 +4251,8 @@ abstract class BaseDataBackupManager(
 
             Logger.d { "Auto-backup saved: $filePath (${jsonString.length} bytes)" }
             Result.success(filePath)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(e) { "Auto-backup failed for session $sessionId" }
             Result.failure(e)
@@ -3991,7 +4286,7 @@ abstract class BaseDataBackupManager(
             val allMetrics = mutableListOf<MetricSample>()
             val allCompletedSets = mutableListOf<CompletedSet>()
             for (session in sessions) {
-                allMetrics.addAll(queries.selectMetricsBySession(session.id).executeAsList())
+                if (includeRawTelemetryInBackups) allMetrics.addAll(queries.selectMetricsBySession(session.id).executeAsList())
                 allCompletedSets.addAll(queries.selectCompletedSetsBySession(session.id).executeAsList())
             }
 
@@ -4001,6 +4296,7 @@ abstract class BaseDataBackupManager(
                 exportedAt = KmpUtils.formatTimestamp(routineNowMs, "yyyy-MM-dd") + "T" +
                     KmpUtils.formatTimestamp(routineNowMs, "HH:mm:ss") + "Z",
                 appVersion = Constants.APP_VERSION,
+                privacy = backupPrivacy(),
                 data = BackupContent(
                     userProfiles = referencedUserProfiles(sessions.map { it.profile_id }),
                     customExercises = referencedCustomExercises(sessions.map { it.exerciseId }),
@@ -4028,6 +4324,8 @@ abstract class BaseDataBackupManager(
 
             Logger.d { "Routine auto-backup saved: $filePath (${jsonString.length} bytes, ${sessions.size} sessions)" }
             Result.success(filePath)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             Logger.e(e) { "Routine auto-backup failed for routine $routineSessionId" }
             Result.failure(e)

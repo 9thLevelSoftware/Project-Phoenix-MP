@@ -78,7 +78,7 @@ class PortalAuthRepositoryIdentityTest {
     }
 
     @Test
-    fun `email account switch signs in, keeps the prior owner's profile and hands the choice to sync`() = runTest {
+    fun `email account switch signs in and keeps the prior owner's profile and hands the choice to sync`() = runTest {
         val api = FakePortalApiClient().apply {
             signInResult = Result.success(authResponse("owner-b", "token-b"))
         }

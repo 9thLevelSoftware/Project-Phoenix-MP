@@ -390,6 +390,7 @@ fun NavGraph(
                     onPlayDiscoUnlockSound = viewModel::emitDiscoSound,
                     onPlayDominatrixUnlockSound = viewModel::emitDominatrixUnlockSound,
                     enableVideoPlayback = userPreferences.enableVideoPlayback,
+                    isInWorkoutSession = viewModel::isInWorkoutSessionNow,
                     themeMode = themeMode,
                 )
             }
@@ -490,6 +491,8 @@ fun NavGraph(
                     onBleCompatibilityModeChange = viewModel::setBleCompatibilityMode,
                     autoBackupEnabled = globalSettings.autoBackupEnabled,
                     onAutoBackupEnabledChange = viewModel::setAutoBackupEnabled,
+                    includeRawTelemetryInBackups = globalSettings.includeRawTelemetryInBackups,
+                    onIncludeRawTelemetryInBackupsChange = viewModel::setIncludeRawTelemetryInBackups,
                     backupStats = backupStats,
                     onOpenBackupFolder = viewModel::openBackupFolder,
                     backupDestination = globalSettings.backupDestination,

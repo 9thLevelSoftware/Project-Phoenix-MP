@@ -9,12 +9,15 @@ import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.OwnershipEvent
 import com.devil.phoenixproject.data.repository.OwnershipEventApplier
 import com.devil.phoenixproject.data.repository.OwnershipTransferRepository
+import com.devil.phoenixproject.data.repository.PendingCycleDeletion
+import com.devil.phoenixproject.data.repository.UserProfile
+import com.devil.phoenixproject.data.repository.WorkoutDeletionMutation
+import com.devil.phoenixproject.data.repository.OwnershipTransferMutation
 import com.devil.phoenixproject.data.repository.ProfileMutationBarrier
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
-import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutDeletionRepository
@@ -24,6 +27,7 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.RpgProfile
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
@@ -41,6 +45,20 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+/**
+ * State to show when an automatic sync is skipped because the account is confirmed free.
+ * An in-flight sync and an open account-switch / ownership decision (PR 11) are kept:
+ * the sync will publish its own outcome, and the decision must stay on screen.
+ */
+internal fun pausedNotPremiumState(current: SyncState): SyncState = when (current) {
+    is SyncState.Syncing,
+    is SyncState.SyncingWithProgress,
+    is SyncState.AccountMismatch,
+    is SyncState.OwnershipConflict,
+    -> current
+    else -> SyncState.NotPremium
+}
 
 /**
  * User-visible summary of a destructive server-reported delete (delete wins, KD-4).
@@ -482,7 +500,6 @@ class SyncManager(
      * row. Entries are account/profile scoped and cleared only when that scope's
      * pull completes. Guarded by [syncMutex].
      */
-    private val pendingServerWinsRoutineIdsByScope = mutableMapOf<String, MutableSet<String>>()
 
     private val syncMutex = Mutex()
     private val _syncState = MutableStateFlow<SyncState>(SyncState.Idle)
@@ -625,6 +642,9 @@ class SyncManager(
             withProfileMutationBarrier {
                 tokenStorage.updatePremiumStatus(false)
                 tokenStorage.updateSubscriptionTier(null)
+                // An unanswered ownership refusal is dropped with the session (the user can
+                // sign back in and be refused again, which re-records it).
+                tokenStorage.currentUser.value?.id?.let { tokenStorage.setOwnershipConflict(it, null) }
                 tokenStorage.clearAuth()
                 tokenStorage.emitLogoutEvent()
                 // A mismatch the signed-out account never answered must not pause the next sign-in.
@@ -663,11 +683,18 @@ class SyncManager(
         adoptPendingAccountMismatch()
         val current = _syncState.value
         if (current !is SyncState.AccountMismatch && current !is SyncState.OwnershipConflict) {
-            detectPersistedAccountMismatch()?.let { mismatch ->
+            val mismatch = detectPersistedAccountMismatch()
+            if (mismatch != null) {
                 Logger.w("SyncManager") {
                     "Signed-in portal account differs from this device's data; sync paused pending user choice"
                 }
                 _syncState.value = mismatch.toSyncState()
+            } else {
+                // A refusal recorded before a restart still holds until recovery or sign-out.
+                tokenStorage.currentUser.value?.id
+                    ?.takeIf { tokenStorage.hasToken() }
+                    ?.let { tokenStorage.getOwnershipConflict(it) }
+                    ?.let { _syncState.value = SyncState.OwnershipConflict(it) }
             }
         }
         return when (val state = _syncState.value) {
@@ -684,12 +711,25 @@ class SyncManager(
     private fun detectPersistedAccountMismatch(): AccountMismatchCandidate? {
         if (!tokenStorage.hasToken()) return null
         val user = tokenStorage.currentUser.value ?: return null
+        // A device upgraded from a pre-PR-11 build: the legacy cursor's owner is the
+        // account its rows already reached. Record it before comparing, and before the
+        // legacy generation seeding / cursor migration further down syncLocked consume it.
+        tokenStorage.adoptLegacySyncOwner(user.id)
         return detectAccountMismatch(
             newUserId = user.id,
             newUserLabel = user.email.takeIf { it.isNotBlank() } ?: user.id,
             lastSyncedPortalUserId = tokenStorage.getLastSyncedPortalUserId(),
             lastSyncedPortalUserLabel = tokenStorage.getLastSyncedPortalUserLabel(),
-            profileOwners = userProfileRepository.allProfiles.value.mapNotNull { profile ->
+            profileOwners = (
+                userProfileRepository.allProfiles.value +
+                    // A hidden pending-deletion profile keeps its original owner until that
+                    // account pushes its tombstones. It is evidence of a previous account only
+                    // while the device has no last-synced account; afterwards it must not re-open
+                    // the dialog on every sync.
+                    userProfileRepository.pendingDeletionProfiles.value
+                        .takeIf { tokenStorage.getLastSyncedPortalUserId() == null }
+                        .orEmpty()
+                ).mapNotNull { profile ->
                 profile.supabaseUserId?.takeIf { it.isNotBlank() }?.let { owner -> profile.id to owner }
             },
         )
@@ -720,19 +760,29 @@ class SyncManager(
         }
         try {
             withProfileMutationBarrier {
+                // Pending-deletion profiles (PR 20) are left out: they keep their original
+                // owner, whose account alone can push their tombstones and finalize them.
                 val profiles = userProfileRepository.allProfiles.value
                 // Exclusions first, relink second: if the relink fails part-way, the profiles
                 // and the last-synced id still name the old account, so the pause gate
                 // re-detects the mismatch and the (idempotent) choice can be applied again.
                 // The reverse order could leave rows relinked with no exclusions recorded.
+                // Each profile is classified under its OWN previous owner: a device can hold
+                // profiles synced to different accounts (codex #859). Unlinked profiles fall
+                // back to the account the device last synced into.
+                val ownerByProfile = profiles.associate { profile ->
+                    profile.id to (profile.supabaseUserId?.takeIf { it.isNotBlank() && it != newUserId } ?: previousUserId)
+                }
                 val boundaries = profiles.associate { profile ->
-                    profile.id to tokenStorage.getAccountSyncBoundary(previousUserId, profile.id)
+                    profile.id to tokenStorage.getAccountSyncBoundary(ownerByProfile.getValue(profile.id), profile.id)
                 }
                 syncRepository.recordAccountSwitchExclusions(
                     portalUserId = newUserId,
                     profileIds = profiles.map { it.id },
                     excludeAllExisting = choice == AccountSwitchChoice.EXCLUDE_ALL_EXISTING,
                     previousPushWatermarks = boundaries,
+                    previousPortalUserId = previousUserId,
+                    previousPortalUserIdsByProfile = ownerByProfile,
                 )
                 for (profile in profiles) {
                     // Force-relink: the normal link path throws ProfileAccountBindingException
@@ -775,13 +825,24 @@ class SyncManager(
         try {
             withProfileMutationBarrier {
                 val profiles = userProfileRepository.allProfiles.value
-                syncRepository.recordAccountSwitchExclusions(
+                // Only data that predates this account on the device can belong to another
+                // account; rows made for this account since then keep syncing (codex #859).
+                // The catalog-collision refusal concerns custom exercises only.
+                val entityTypes = if (conflict.message.contains(CATALOG_COLLISION_MARKER, ignoreCase = true)) {
+                    setOf(SyncExcludedEntityTypes.CUSTOM_EXERCISE)
+                } else {
+                    SyncExcludedEntityTypes.ALL.toSet()
+                }
+                syncRepository.recordOwnershipRecoveryExclusions(
                     portalUserId = userId,
                     profileIds = profiles.map { it.id },
-                    excludeAllExisting = true,
-                    previousPushWatermarks = profiles.associate { it.id to 0L },
+                    // Unknown first-seen time (an install signed in before this build):
+                    // everything on disk counts as pre-existing, as before.
+                    createdAtOrBefore = tokenStorage.getAccountFirstSeenAt(userId) ?: Long.MAX_VALUE,
+                    entityTypes = entityTypes,
                 )
             }
+            tokenStorage.setOwnershipConflict(userId, null)
             _syncState.value = SyncState.Idle
             Logger.i("SyncManager") {
                 "Ownership conflict resolved: pre-switch rows excluded from upload (${conflict.message})"
@@ -809,6 +870,21 @@ class SyncManager(
         syncMutex.withLock {
             _syncState.value = SyncState.Idle
         }
+    }
+
+    /**
+     * Publishes [SyncState.NotPremium] when the trigger skips an automatic sync because
+     * the account is confirmed free (F-074). Without this the state only moved on a
+     * 402/403, so a free account kept showing a stale "Last synced" forever.
+     * See [pausedNotPremiumState] for which states are left alone.
+     *
+     * PR 11's account-switch and ownership holds take precedence. After a restart they
+     * live only in durable state until the next sync, and the trigger's premium gate
+     * returns before any sync, so run the same pause gate here first.
+     */
+    fun markPausedNotPremium() {
+        if (accountPauseFailure() != null) return
+        _syncState.update(::pausedNotPremiumState)
     }
 
     /**
@@ -846,6 +922,13 @@ class SyncManager(
                 val resolvedTier = if (tierResult.isSuccess) tierResult.getOrNull() else existingTier
                 tokenStorage.updatePremiumStatus(isPremium)
                 tokenStorage.updateSubscriptionTier(resolvedTier)
+                if (premiumResult.getOrNull() == true) {
+                    // Server-confirmed renewal: drop the "subscription required" banner now
+                    // (the next automatic sync may still be held by throttle/backoff). A failed
+                    // check falls back to the cached flag, which a 402/403 may have left stale,
+                    // so it must never clear the banner.
+                    _syncState.update { if (it is SyncState.NotPremium) SyncState.Idle else it }
+                }
 
                 Logger.d("SyncManager") {
                     "refreshPremiumStatusFromServer: premium=$isPremium, tier=${resolvedTier ?: "none"} " +
@@ -926,7 +1009,31 @@ class SyncManager(
 
         // Upgrade seeding (step 8) runs once, before any per-profile work, so the first
         // PR 10 sync sees the seeded cursors rather than inventing fresh ones.
-        val profiles = syncProfileOrder(userId)
+        //
+        // The profiles this account may sync: bound to it, or unbound (bound below).
+        val candidateProfiles = syncProfileOrder(userId)
+
+        // First (codex #856): migration 49 left every pre-existing workout row dirty
+        // (generation 1/0). Before the all-profile loop can see them, acknowledge the rows
+        // the old client provably synchronized — a non-null updatedAt at or before the
+        // legacy cursor, or a pulled row (portalOrigin = 1). Scoped to THIS account's
+        // profiles and namespaced per account in the ledger, so account B's cursor can never
+        // mark account A's offline edits as synced, and A still gets its own seeding when it
+        // signs in. Unbound profiles are included: this sync binds them to this account, and
+        // the legacy cursor (only used when not attributed to another user) is this
+        // account's. Must run before migrateLegacyCursors consumes the legacy key.
+        // The cursor rule applies only to the profile the legacy marker names (the one the
+        // old client synced); every other profile of this account gets pulled-provenance
+        // only. No marker → no profile gets the cursor rule (its rows re-push, safely).
+        syncRepository.seedLegacySyncedGenerationsOnce(
+            accountId = userId,
+            legacyLastSync = tokenStorage.legacyLastSyncFor(userId),
+            cursorProfileId = tokenStorage.legacyCursorProfileFor(userId),
+            profileIds = candidateProfiles.map { it.id },
+        )?.let { marked ->
+            Logger.i("SyncManager") { "Upgrade seeding: acknowledged $marked legacy workout row(s) already on the portal" }
+        }
+        val profiles = bindUnboundProfiles(userId, candidateProfiles)
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
         val seeded = tokenStorage.migrateLegacyCursors(
             userId = userId,
@@ -950,11 +1057,21 @@ class SyncManager(
                 profile = profile,
                 includeUserScoped = includeUserScoped,
                 repairPushActive = repairPushActive,
+                pendingDeletion = isPendingDeletionProfile(profile),
             )
             outcomes += outcome
             if (outcome.authFailure) {
                 Logger.w("SyncManager") {
                     "Auth failure while syncing profile ${profile.id}; aborting the remaining profiles"
+                }
+                break
+            }
+            // An ownership refusal is definitive evidence of another account's rows on this
+            // device: no later profile may push before the user chooses (codex #859).
+            // combineProfileOutcomes publishes and persists the terminal state.
+            if (outcome.ownershipConflict) {
+                Logger.w("SyncManager") {
+                    "Ownership refusal while syncing profile ${profile.id}; aborting the remaining profiles"
                 }
                 break
             }
@@ -1000,16 +1117,44 @@ class SyncManager(
         if (userProfileRepository.allProfiles.value.isEmpty()) {
             userProfileRepository.ensureDefaultProfile()
         }
-        val all = userProfileRepository.allProfiles.value
-            .filter { isSyncableByPortalUser(it, userId) }
         val activeId = userProfileRepository.activeProfile.value?.id
-        // UserProfile has no pending-deletion field yet (PR 20). Keep the hook so PR 20
-        // only has to filter here; today nothing is pending-deletion.
-        val pendingDeletion = all.filter { isPendingDeletionProfile(it) }
-        val rest = all.filterNot { it in pendingDeletion }
+        // PR 20: permanently deleted profiles are hidden from allProfiles but still owe
+        // the portal their tombstones. They go first, so their own push lands while they
+        // are still listed in allProfiles (R-11); later pushes then omit them.
+        val pendingDeletion = userProfileRepository.pendingDeletionProfiles.value
+            .filter { isSyncableByPortalUser(it, userId) }
+        // allProfiles and pendingDeletionProfiles partition the profile rows, so they never overlap.
+        val rest = userProfileRepository.allProfiles.value
+            .filter { isSyncableByPortalUser(it, userId) }
         val (active, others) = rest.partition { it.id == activeId }
         return pendingDeletion + active + others
     }
+
+    /**
+     * Binds every unbound profile to [userId] before any of its data is pushed or pulled
+     * (codex #856): syncing an unbound profile without an owner let a later account bind
+     * it and receive its data. Runs under the profile-mutation barrier sync already holds,
+     * through the same guarded link the identity commit uses. A profile whose binding fails
+     * (e.g. another account claimed it concurrently) is dropped from this sync.
+     *
+     * PR 11 reads profile owners to detect an account switch; a profile bound here to the
+     * account that is syncing it is exactly the ownership that detection must see.
+     */
+    private suspend fun bindUnboundProfiles(userId: String, profiles: List<UserProfile>): List<UserProfile> =
+        profiles.mapNotNull { profile ->
+            if (!profile.supabaseUserId.isNullOrBlank()) return@mapNotNull profile
+            try {
+                userProfileRepository.linkToSupabaseUnderProfileMutationBarrier(profile.id, userId)
+                profile.copy(supabaseUserId = userId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.w("SyncManager") {
+                    "Could not bind profile ${profile.id} to the signed-in account; skipping it this sync: ${e.message}"
+                }
+                null
+            }
+        }
 
     private fun isSyncableByPortalUser(profile: UserProfile, userId: String): Boolean =
         profile.supabaseUserId.isNullOrBlank() || profile.supabaseUserId == userId
@@ -1018,8 +1163,8 @@ class SyncManager(
     private fun isAuthFailure(error: Throwable?): Boolean =
         error is PortalApiException && error.statusCode == 401
 
-    /** PR 20 hook: no profile is pending-deletion until that PR adds the field. */
-    private fun isPendingDeletionProfile(@Suppress("UNUSED_PARAMETER") profile: UserProfile): Boolean = false
+    private fun isPendingDeletionProfile(profile: UserProfile): Boolean =
+        userProfileRepository.pendingDeletionProfiles.value.any { it.id == profile.id }
 
     /** What one profile's push+pull contributed to the overall sync. */
     private data class ProfileSyncOutcome(
@@ -1049,6 +1194,8 @@ class SyncManager(
             // by the UI via applyOwnershipConflictRecovery().
             val message = ownership.error?.message ?: "Portal refused an entity owned by another user"
             _syncState.value = SyncState.OwnershipConflict(message)
+            // Durable, per account: a restart must not resume pushing into the refusal.
+            tokenStorage.currentUser.value?.id?.let { tokenStorage.setOwnershipConflict(it, message) }
             return Result.failure(ownership.error ?: PortalApiException(message))
         }
         val notPremium = outcomes.firstOrNull {
@@ -1111,13 +1258,18 @@ class SyncManager(
         profile: UserProfile,
         includeUserScoped: Boolean,
         repairPushActive: Boolean,
+        pendingDeletion: Boolean,
     ): ProfileSyncOutcome {
         // Push local changes (no status check -- Railway backend abandoned)
+        if (pendingDeletion) {
+            syncRepository.restampPersonalRecordTombstones(profile.id, currentTimeMillis())
+        }
         val pushResult = pushLocalChanges(
             userId = userId,
             profile = profile,
             includeUserScoped = includeUserScoped,
             repairPushActive = repairPushActive,
+            pendingDeletion = pendingDeletion,
         )
         if (pushResult.isFailure) {
             val error = pushResult.exceptionOrNull()
@@ -1162,15 +1314,46 @@ class SyncManager(
         // delta; a failed push returned above and leaves the watermark untouched.
         // PR 11 also reads it as the account-switch "already synced" boundary.
         tokenStorage.setPushWatermark(userId, profile.id, pushOutcome.gatherStartedAt)
+        if (pendingDeletion) {
+            // Routine and workout tombstones are applied unconditionally or exact-acked; a
+            // cycle deletion can lose the portal's clocked gate to a newer web edit. Finalizing
+            // then would drop this profile from allProfiles and re-scope that cycle to Default.
+            val outstandingCycleDeletions = trainingCycleRepository
+                ?.getPendingCycleDeletions(userId, profile.id)
+                .orEmpty()
+                .filter { CANONICAL_UUID_REGEX.matches(it.id) }
+            // The portal returns no per-PR ack, only `personalRecordsInserted`: dedicated rows
+            // that passed its LWW gate. Every PR row a pending profile sends is a tombstone
+            // (re-stamped just before this push, so each should pass); fewer written than sent
+            // means the portal kept a live copy, and finalizing would re-scope it to Default.
+            val prTombstonesDropped = pushOutcome.personalRecordTombstonesSent >
+                pushOutcome.personalRecordsWritten
+            if (prTombstonesDropped) {
+                Logger.w("SyncManager") {
+                    "Pending-deletion profile ${profile.id}: portal wrote ${pushOutcome.personalRecordsWritten} of " +
+                        "${pushOutcome.personalRecordTombstonesSent} PR tombstone(s); kept pending for the next sync"
+                }
+                return ProfileSyncOutcome(profileId = profile.id, pushSucceeded = true, pullSucceeded = true)
+            }
+            if (outstandingCycleDeletions.isNotEmpty()) {
+                val restampAt = currentTimeMillis()
+                outstandingCycleDeletions.forEach { deletion ->
+                    trainingCycleRepository?.restampPendingCycleDeletion(deletion.id, restampAt)
+                }
+                Logger.w("SyncManager") {
+                    "Pending-deletion profile ${profile.id}: ${outstandingCycleDeletions.size} cycle deletion(s) " +
+                        "not accepted yet; re-stamped and kept pending for the next sync"
+                }
+                return ProfileSyncOutcome(profileId = profile.id, pushSucceeded = true, pullSucceeded = true)
+            }
+            return finishPendingProfileDeletion(userId, profile, pushOutcome.response.syncTime)
+        }
         val pushResponse = pushOutcome.response
         val rejections = pushOutcome.rejections
         val rejectedRoutineIds = rejections.routines.mapTo(mutableSetOf()) { it.id }
-        if (rejectedRoutineIds.isNotEmpty()) {
-            val rejectionScopeKey = "$userId:${profile.id}"
-            pendingServerWinsRoutineIdsByScope
-                .getOrPut(rejectionScopeKey) { mutableSetOf() }
-                .addAll(rejectedRoutineIds)
-        }
+        // Persisted, not in memory (codex #856): the watermark just moved past these
+        // routines, so a restart before the next completed pull must not lose the marker.
+        tokenStorage.addPendingServerWinsRoutineIds(userId, profile.id, rejectedRoutineIds)
         val rejectedSessionIds = rejections.sessions.mapTo(mutableSetOf()) { it.id }
         val totalRejections = rejections.sessions.size + rejections.routines.size +
             rejections.cycles.size + rejections.externalActivities.size +
@@ -1340,6 +1523,54 @@ class SyncManager(
     }
 
     /**
+     * PR 20: a permanently deleted profile's push has landed its tombstones (workout
+     * deletions are exact-acked or the push failed; routine, cycle and PR tombstones rode
+     * the same push). Remove the hidden row now, so every later push omits it from
+     * allProfiles and the portal re-scopes whatever it still holds to Default. No pull:
+     * pulling into a profile that is being removed would only re-create rows in it.
+     * A failed finalize leaves the profile pending; the next sync pushes it again.
+     */
+    private suspend fun finishPendingProfileDeletion(
+        userId: String,
+        profile: UserProfile,
+        rawSyncTime: String,
+    ): ProfileSyncOutcome {
+        val syncTimeEpoch = runCatching {
+            kotlin.time.Instant.parse(rawSyncTime).toEpochMilliseconds()
+        }.getOrElse { currentTimeMillis() }
+        val finalized = runCatching { userProfileRepository.finalizePendingProfileDeletion(profile.id) }
+            .onFailure { error ->
+                if (error is CancellationException) throw error
+                Logger.w("SyncManager") {
+                    "Pending deletion of profile ${profile.id} could not be finalized; retrying next sync: ${error.message}"
+                }
+            }
+            .getOrDefault(false)
+        if (finalized) {
+            // The profile never syncs again: drop its per-profile secure-settings state
+            // rather than leave it behind for good.
+            runCatching {
+                tokenStorage.retainSessionSentHashes(userId, profile.id, emptySet())
+                tokenStorage.resetPullCursor(userId, profile.id)
+            }.onFailure { error ->
+                if (error is CancellationException) throw error
+                Logger.w("SyncManager") { "Cleanup of deleted profile ${profile.id} sync state skipped: ${error.message}" }
+            }
+        }
+        Logger.i("SyncManager") {
+            "Pending-deletion profile ${profile.id} pushed its tombstones (finalized=$finalized)"
+        }
+        return ProfileSyncOutcome(
+            profileId = profile.id,
+            pushSucceeded = true,
+            // Nothing to pull for a profile being removed; count it as complete so it does
+            // not turn an otherwise clean sync into a partial one.
+            pullSucceeded = true,
+            syncTimeEpoch = syncTimeEpoch,
+        )
+    }
+
+    /**
      * Retry just the pull operation after a partial sync.
      * Use when push succeeded but pull failed.
      */
@@ -1359,7 +1590,8 @@ class SyncManager(
             ?: return Result.failure<Long>(PortalApiException("Not authenticated")).also {
                 _syncState.value = SyncState.NotAuthenticated
             }
-        val profiles = syncProfileOrder(userId)
+        // A pending-deletion profile never pulls (PR 20): its rows are being removed.
+        val profiles = bindUnboundProfiles(userId, syncProfileOrder(userId).filterNot { isPendingDeletionProfile(it) })
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
 
         val outcomes = mutableListOf<ProfileSyncOutcome>()
@@ -1454,7 +1686,7 @@ class SyncManager(
                 completedPull.syncTime,
             )
         }
-        pendingServerWinsRoutineIdsByScope.remove("${completedPull.userId}:${completedPull.profileId}")
+        tokenStorage.clearPendingServerWinsRoutineIds(completedPull.userId, completedPull.profileId)
     }
 
     private suspend fun <T> withProfileMutationBarrier(block: suspend () -> T): T =
@@ -1486,6 +1718,10 @@ class SyncManager(
         /** Rejections from EVERY batch, not just the last response. */
         val rejections: SyncRejectionsDto,
         val rePushContext: RePushContext,
+        /** PR tombstones this push carried across every request, id-less legacy rows included (PR 20). */
+        val personalRecordTombstonesSent: Int = 0,
+        /** Sum of the portal's `personalRecordsInserted` across every request. */
+        val personalRecordsWritten: Int = 0,
     )
 
     /** The payload envelope fields a post-rejection re-push has to repeat. */
@@ -1574,12 +1810,15 @@ class SyncManager(
         profileId: String,
         activeProfile: UserProfile?,
         workoutSnapshot: WorkoutSyncSnapshot,
+        pendingDeletion: Boolean,
     ): PushEnrichment {
         // 5b. External activities (paid users only)
         val localPaid = activeProfile?.subscriptionStatus == SubscriptionStatus.ACTIVE
         val portalPaid = tokenStorage.currentUser.value?.isPremium == true
         val isPremium = localPaid || portalPaid
-        val externalActivityDtos = if (isPremium) {
+        // A pending-deletion profile (PR 20) only sends its tombstones: none of its
+        // remaining live profile data may be uploaded on its way out.
+        val externalActivityDtos = if (isPremium && !pendingDeletion) {
             // F018 (deferred): getUnsyncedActivities intentionally excludes deletion
             // tombstones (deletedAt set). Neither ExternalActivitySyncDto nor the
             // portal mobile-sync-push handler carries a deletion field today, so
@@ -1616,8 +1855,12 @@ class SyncManager(
         val phaseStatsBySessionId = workoutSnapshot.phaseStatisticsByComponentId.values.flatten()
             .map { PortalSyncAdapter.toPortalPhaseStatistics(it) }
             .groupBy { it.sessionId }
-        val assessmentDtos = syncRepository.getAllAssessments(profileId)
-            .map { PortalSyncAdapter.toPortalAssessmentResult(it) }
+        val assessmentDtos = if (pendingDeletion) {
+            emptyList()
+        } else {
+            syncRepository.getAllAssessments(profileId)
+                .map { PortalSyncAdapter.toPortalAssessmentResult(it) }
+        }
         // Send all custom catalog rows, not just rows modified since the push watermark.
         // Older portal-sync builds never sent this field, so existing custom
         // exercise IDs may be missing remotely even after a successful sync.
@@ -1667,6 +1910,7 @@ class SyncManager(
         profile: UserProfile,
         includeUserScoped: Boolean,
         repairPushActive: Boolean,
+        pendingDeletion: Boolean,
     ): Result<PushOutcome> {
         // Device time taken BEFORE anything is gathered. Two things key off it: the
         // post-push stamp skips rows edited after it (they hold data the portal never
@@ -1679,12 +1923,20 @@ class SyncManager(
         // after it are the only ones the ordinary delta sends.
         val pushWatermark = tokenStorage.getPushWatermark(userId, profile.id)
         // Step 8 repair push: gather routines/cycles/PRs + tombstones from 0 once per user.
-        val repairFrom = if (repairPushActive) 0L else pushWatermark
+        // A pending-deletion profile (PR 20) is finalized after this push, so every routine
+        // and PR tombstone must ride it even if the device clock moved behind the stored
+        // watermark (a strict `> watermark` gather would otherwise skip them for good).
+        val repairFrom = if (repairPushActive || pendingDeletion) 0L else pushWatermark
         val platform = getPlatformName()
         userProfileRepository.ensureDefaultProfile()
         // Profile metadata for another portal account's profiles must not be published
         // into this account either (same rule as syncProfileOrder).
-        val allProfiles = userProfileRepository.allProfiles.value
+        val allProfiles = (
+            userProfileRepository.allProfiles.value +
+                // PR 20: a pending-deletion profile stays listed until its own push lands.
+                userProfileRepository.pendingDeletionProfiles.value
+            )
+            .distinctBy { it.id }
             .filter { isSyncableByPortalUser(it, userId) }
         val activeProfile = profile
         val activeProfileId = profile.id
@@ -1769,7 +2021,14 @@ class SyncManager(
                     childlessRepairGroupIds.take(10).joinToString()
             }
         }
-        val groupIds = deltaGroupIds + (repairGroupIds.keys - childlessRepairGroupIds)
+        // Groups a backup restore brought in have no rep summaries locally; re-pushing them
+        // would make the portal delete its copy (PR 22). The cursor still walks past them.
+        val restoreHeldGroupIds = if (repairGroupIds.isEmpty()) {
+            emptySet()
+        } else {
+            tokenStorage.getRoutineGroupRepairHolds(activeProfileId)
+        }
+        val groupIds = deltaGroupIds + (repairGroupIds.keys - childlessRepairGroupIds - restoreHeldGroupIds)
 
         // 1b. Hold, never split. A sibling this device only pulled and has no
         // measurements for cannot be rebuilt from local data, so the group can only be
@@ -1831,7 +2090,12 @@ class SyncManager(
         }
         val sessionIdByDeltaPrKey = sessions.mapNotNull { session ->
             val exerciseId = session.exerciseId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            personalRecordSessionKey(exerciseId, session.timestamp) to session.id
+            // The PORTAL workout id: buildPortalSession publishes a routine set under
+            // its parent routineSessionId (the component id becomes an exercise id), so
+            // a PR linked to the component id would reference no pushed workout and the
+            // portal would null its session_id (codex 4081208473).
+            personalRecordSessionKey(exerciseId, session.timestamp) to
+                (session.routineSessionId?.takeIf { it.isNotBlank() } ?: session.id)
         }.toMap()
         val missingSessionRecords = recentPRs.filter { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp) !in sessionIdByDeltaPrKey
@@ -1877,7 +2141,16 @@ class SyncManager(
             val sessionKey = session.exerciseId
                 ?.takeIf { it.isNotBlank() }
                 ?.let { exerciseId -> personalRecordSessionKey(exerciseId, session.timestamp) }
-            val prRecords = sessionKey?.let { prBySessionKey[it] } ?: emptyList()
+            // Set-level PR flags mirror `CompletedSet.is_pr` exactly (F-058): the
+            // COMBINED weight/volume records only. A phase (peak-force) break is a
+            // different metric; letting it set `isPr` made the portal's legacy
+            // set-derived row land as MAX_WEIGHT/CONCENTRIC valued at the commanded
+            // load rather than the peak force. The phase records still reach the
+            // portal in full through the dedicated `personalRecords` array below.
+            val prRecords = sessionKey
+                ?.let { prBySessionKey[it] }
+                ?.filter { it.phase == WorkoutPhase.COMBINED }
+                ?: emptyList()
 
             // Resolve the real muscle group from the exercise catalog instead of
             // hardcoding "General". Sessions don't carry a muscle group, so look it
@@ -1901,17 +2174,20 @@ class SyncManager(
                 isPendingUpload = session.id in deltaIds,
             )
         }
-        val personalRecordDtos = recentPRs.map { pr ->
+        // Each PR is paired with the session key it belongs to so its DTO carries the
+        // portal session id it was set in (PR↔session link).
+        val personalRecordDtosByPrKey = recentPRs.map { pr ->
             val sessionKey = personalRecordSessionKey(pr.exerciseId, pr.timestamp)
             val muscleGroup =
                 syncRepository.getExerciseMuscleGroup(pr.exerciseId, pr.exerciseName)
                     ?: "General"
-            PortalSyncAdapter.toPortalPersonalRecord(
+            sessionKey to PortalSyncAdapter.toPortalPersonalRecord(
                 record = pr,
                 sessionId = sessionIdByPrKey[sessionKey],
                 muscleGroup = muscleGroup,
             )
         }
+        val personalRecordDtos = personalRecordDtosByPrKey.map { it.second }
 
         // 4. Gather routines as full domain objects, but only ship canonical UUID IDs.
         // Local template-derived cycle routines use "cycle_routine_<uuid>" and must never
@@ -1982,12 +2258,22 @@ class SyncManager(
         // 5. Gather gamification data. PR 10 step 3 (R-14): RPG/gamification/badges are
         // one row per portal user, so they go out only with the active profile's push.
         val userScoped = gatherUserScopedDtos(userId, activeProfileId, includeUserScoped)
-        val rpgDto = userScoped.rpgDto
-        val badgeDtos = userScoped.badgeDtos
-        val gamStatsDto = userScoped.gamStatsDto
+        // PR 11 (codex #859): RPG attributes and gamification stats are aggregates of this
+        // device's workout history. While any workout on the device is excluded from this
+        // account (another account's history), those aggregates are not this account's and
+        // are not pushed. Badges earned under another account are excluded one by one.
+        val aggregatesIncludeForeignHistory = exclusions.workouts.isNotEmpty()
+        val rpgDto = userScoped.rpgDto.takeUnless { aggregatesIncludeForeignHistory }
+        val badgeDtos = userScoped.badgeDtos.filter { !exclusions.excludesEarnedBadge(it.badgeId) }
+        val gamStatsDto = userScoped.gamStatsDto.takeUnless { aggregatesIncludeForeignHistory }
 
-        val enrichment = gatherPushEnrichment(activeProfileId, activeProfile, workoutSnapshot)
-        val externalActivityDtos = enrichment.externalActivityDtos
+        // A pending-deletion profile (PR 20) uploads no live enrichment on its way out.
+        val enrichment = gatherPushEnrichment(activeProfileId, activeProfile, workoutSnapshot, pendingDeletion)
+        // External activities (imported health data) follow the same account-switch
+        // exclusions as every other pushed entity (codex #859).
+        val externalActivityDtos = enrichment.externalActivityDtos.filter { activity ->
+            !exclusions.excludesExternalActivity(activity.id)
+        }
         val phaseStatsBySessionId = enrichment.phaseStatsBySessionId
         val assessmentDtos = enrichment.assessmentDtos.filter { assessment ->
             !exclusions.excludesAssessment(assessment.id.toString())
@@ -2061,12 +2347,14 @@ class SyncManager(
             PortalSyncAdapter.toPortalTrainingCycle(it, userId)
         }
         val payloadProfileId = activeProfile?.id ?: "default"
-        val payloadProfileName = activeProfile?.name ?: "Default"
+        // Every profile name on the wire is bounded: an unbounded name in the request
+        // envelope would make even an empty request oversized (codex #856 P2).
+        val payloadProfileName = boundedProfileName(activeProfile?.name ?: "Default")
         val profileDtos = allProfiles
-            .map { LocalProfileDto(it.id, it.name, it.colorIndex) }
+            .map { LocalProfileDto(it.id, boundedProfileName(it.name), it.colorIndex) }
             .let { dtos ->
                 if (activeProfile != null && dtos.none { it.id == activeProfile.id }) {
-                    dtos + LocalProfileDto(activeProfile.id, activeProfile.name, activeProfile.colorIndex)
+                    dtos + LocalProfileDto(activeProfile.id, boundedProfileName(activeProfile.name), activeProfile.colorIndex)
                 } else {
                     dtos
                 }
@@ -2080,145 +2368,50 @@ class SyncManager(
                     ),
                 )
             }
+        // allProfiles is all-or-nothing: the portal deletes every registered profile missing
+        // from it, so it can never be trimmed. When the whole list cannot fit a request it is
+        // omitted everywhere this sync (the portal then upserts each request's profileId and
+        // deletes nothing), instead of wedging every request that carries it.
+        val sendableProfileDtos: List<LocalProfileDto>? = profileDtos.takeIf {
+            PushPlanner.fits(
+                PortalSyncPayload(
+                    deviceId = deviceId,
+                    platform = platform,
+                    lastSync = pushWatermark,
+                    profileId = payloadProfileId,
+                    profileName = payloadProfileName,
+                    allProfiles = it,
+                ),
+            )
+        }
+        if (sendableProfileDtos == null) {
+            Logger.w("SyncManager") {
+                "Push: profile metadata for ${profileDtos.size} profile(s) exceeds the push size cap; " +
+                    "sending without allProfiles this sync"
+            }
+        }
 
         var lastResponse: PortalSyncPushResponse? = null
         val acknowledgedPortalSessionIds = linkedSetOf<String>()
 
-        pendingOwnershipTransfers.chunked(SYNC_BATCH_SIZE).forEach { transferBatch ->
-            val payload = PortalSyncPayload(
-                deviceId = deviceId,
-                platform = platform,
-                lastSync = pushWatermark,
-                profileId = payloadProfileId,
-                profileName = payloadProfileName,
-                allProfiles = profileDtos,
-                ownershipTransfers = transferBatch.map { transfer ->
-                    PortalOwnershipTransferDto(
-                        mutationId = transfer.mutationId,
-                        sourceProfileId = transfer.sourceProfileId,
-                        targetProfileId = transfer.targetProfileId,
-                        workoutSessionIds = transfer.workoutSessionIds,
-                        routineIds = transfer.routineIds,
-                        cycleIds = transfer.cycleIds,
-                        personalRecordIds = transfer.personalRecordIds,
-                    )
-                },
-            )
-            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
-            if (result.isFailure) return Result.failure(result.pushError())
-            val response = result.getOrThrow()
-            val sentTransferIds = transferBatch.mapTo(linkedSetOf()) { it.mutationId }
-            val acknowledgedTransferIds = response.acknowledgedOwnershipTransferIds
-                .filterTo(linkedSetOf()) { it in sentTransferIds }
-            ownershipTransferRepository?.acknowledge(
-                ownerUserId = userId,
-                mutationIds = acknowledgedTransferIds,
-                acknowledgedAt = currentTimeMillis(),
-            )
-            val missingTransferAcks = missingAcknowledgedMutationIds(
-                sent = sentTransferIds,
-                acknowledged = acknowledgedTransferIds,
-            )
-            Logger.i("SyncManager") {
-                "Ownership transfer response missingExactAckCount=${missingTransferAcks.size}"
-            }
-            if (missingTransferAcks.isNotEmpty()) {
-                return Result.failure(
-                    PortalApiException(
-                        "Portal did not acknowledge ownership transfer mutation(s): " +
-                            missingTransferAcks.joinToString(),
-                        statusCode = 409,
-                    ),
-                )
-            }
-            lastResponse = response
-        }
-
-        // Durable operations commit before ordinary uploads. Ack only mutation IDs
-        // returned by the portal; a successful HTTP response without an exact ack
-        // deliberately leaves the local queue pending for retry.
-        pendingWorkoutDeletions.groupBy { it.profileId }.forEach { (routingProfileId, routedDeletions) ->
-            routedDeletions.chunked(SYNC_BATCH_SIZE).forEach { deletionBatch ->
-            val routingProfileName = allProfiles.firstOrNull { it.id == routingProfileId }?.name
-                ?: "Recovered profile"
-            val payload = PortalSyncPayload(
-                deviceId = deviceId,
-                platform = platform,
-                lastSync = pushWatermark,
-                profileId = routingProfileId,
-                profileName = routingProfileName,
-                allProfiles = profileDtos,
-                workoutDeletions = deletionBatch.map { deletion ->
-                    PortalWorkoutDeletionDto(
-                        mutationId = deletion.mutationId,
-                        scope = deletion.scope,
-                        portalSessionId = deletion.portalSessionId,
-                        componentSessionId = deletion.componentSessionId,
-                        deletedAt = kotlin.time.Instant
-                            .fromEpochMilliseconds(deletion.deletedAt)
-                            .toString(),
-                    )
-                },
-            )
-            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
-            if (result.isFailure) return Result.failure(result.pushError())
-            val response = result.getOrThrow()
-            val sentDeletionIds = deletionBatch.mapTo(linkedSetOf()) { it.mutationId }
-            val acknowledgedDeletionIds = response.acknowledgedWorkoutDeletionIds
-                .filterTo(linkedSetOf()) { it in sentDeletionIds }
-            workoutDeletionRepository?.acknowledge(
-                ownerUserId = userId,
-                mutationIds = acknowledgedDeletionIds,
-                acknowledgedAt = currentTimeMillis(),
-            )
-            val missingDeletionAckCount = sentDeletionIds.count { it !in acknowledgedDeletionIds }
-            Logger.i("SyncManager") {
-                "Workout deletion response missingExactAckCount=$missingDeletionAckCount"
-            }
-            if (missingDeletionAckCount > 0) {
-                return Result.failure(
-                    PortalApiException(
-                        "Portal did not acknowledge $missingDeletionAckCount workout deletion mutation(s)",
-                        statusCode = 409,
-                    ),
-                )
-            }
-            lastResponse = response
-            }
-        }
-
-        pendingCycleDeletions.chunked(SYNC_BATCH_SIZE).forEach { deletionBatch ->
-            val payload = PortalSyncPayload(
-                deviceId = deviceId,
-                platform = platform,
-                lastSync = pushWatermark,
-                profileId = payloadProfileId,
-                profileName = payloadProfileName,
-                allProfiles = profileDtos,
-                deletedCycles = deletionBatch.map { deletion ->
-                    PortalDeletedCycleDto(
-                        id = deletion.id,
-                        updatedAt = kotlin.time.Instant.fromEpochMilliseconds(deletion.updatedAt).toString(),
-                    )
-                },
-            )
-            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
-            if (result.isFailure) return Result.failure(result.pushError())
-            val response = result.getOrThrow()
-            val acknowledged = response.acknowledgedDeletedCycleIds.toSet()
-            deletionBatch.filter { it.id in acknowledged }.forEach { deletion ->
-                trainingCycleRepository?.acknowledgeCycleDeletions(
-                    ownerUserId = userId,
-                    sentGenerationsById = mapOf(deletion.id to deletion.generation),
-                    acknowledgedIds = setOf(deletion.id),
-                    at = deletion.updatedAt,
-                )
-            }
-            lastResponse = response
-        }
+        // Durable mutations (ownership transfers, workout and cycle deletions) commit
+        // before ordinary uploads. Extracted to keep pushLocalChanges under the JVM
+        // 64 KB method limit.
+        val durableResult = pushDurableMutations(
+            userId = userId,
+            deviceId = deviceId,
+            platform = platform,
+            lastSync = pushWatermark,
+            payloadProfileId = payloadProfileId,
+            payloadProfileName = payloadProfileName,
+            profileDtos = sendableProfileDtos,
+            allProfiles = allProfiles,
+            pendingOwnershipTransfers = pendingOwnershipTransfers,
+            pendingWorkoutDeletions = pendingWorkoutDeletions,
+            pendingCycleDeletions = pendingCycleDeletions,
+        )
+        if (durableResult.isFailure) return Result.failure(durableResult.exceptionOrNull()!!)
+        durableResult.getOrNull()?.let { lastResponse = it }
 
         // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB)
         //    AND under the server-side rep_telemetry array cap (MAX_TELEMETRY_PER_BATCH),
@@ -2269,9 +2462,14 @@ class SyncManager(
             profileName = payloadProfileName,
             personalRecords = prsForSessionBatch(sessions),
         )
+        // Items too large for any request are skipped (logged at warn with type and id by
+        // PushPlanner) and counted here so the push summary makes them discoverable.
+        val skippedOversized = mutableListOf<String>()
+        val onSkip = PushPlanner.SkipListener { type, id -> skippedOversized += "$type $id" }
         val sessionBatches = PushPlanner.splitSessionBatchesByBytes(
             planSessionBatches(allSessions, telemetryCountBySessionId).filter { it.isNotEmpty() },
             ::sessionBatchPayload,
+            onSkip,
         )
         val deliverableSessions = sessionBatches.flatten()
         val deliverableSessionIds = deliverableSessions.mapTo(hashSetOf()) { it.id }
@@ -2294,7 +2492,7 @@ class SyncManager(
             gamificationStats = if (includeSingletons) gamStatsDto else null,
             assessments = if (includeSingletons) assessmentDtos else emptyList(),
             customExercises = if (includeSingletons) customExerciseDtos else emptyList(),
-            allProfiles = if (includeSingletons) profileDtos else null,
+            allProfiles = if (includeSingletons) sendableProfileDtos else null,
             externalActivities = if (includeSingletons) externalActivityDtos else emptyList(),
         )
         val emptyEnvelope = sessionBatchPayload(emptyList()).copy(personalRecords = emptyList())
@@ -2322,7 +2520,14 @@ class SyncManager(
                 deletedRoutineIds = deletedRoutineIds,
                 cycles = cycleDtos,
                 personalRecords = if (prsAlreadyOnSessionBatches) emptyList() else personalRecordDtos,
-                finalRequest = { finalFields(emptyEnvelope, emptyList(), emptyList(), emptyList(), emptyList(), true) },
+                customExercises = customExerciseDtos,
+                assessments = assessmentDtos,
+                badges = badgeDtos,
+                externalActivities = externalActivityDtos,
+                rpgAttributes = rpgDto,
+                gamificationStats = gamStatsDto,
+                allProfiles = sendableProfileDtos,
+                onSkip = onSkip,
             )
             sessionBatches.map(::sessionBatchPayload) + tails
         }
@@ -2344,6 +2549,8 @@ class SyncManager(
         // Rejections from EVERY request. Reading only the last response's list would
         // silently stamp rows an earlier batch's rejection covered.
         val collectedRejections = mutableListOf<SyncRejectionsDto>()
+        var personalRecordTombstonesSent = 0
+        var personalRecordsWritten = 0
         val skippedDeletedRoutines = linkedSetOf<String>()
         val skippedDeletedCycles = linkedSetOf<String>()
         requests.forEachIndexed { index, payload ->
@@ -2353,7 +2560,7 @@ class SyncManager(
                     "${payload.personalRecords.size} personal records"
             }
             rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
+            val result = pushPayloadWithRateLimit(payload)
             if (result.isFailure) {
                 val error = result.exceptionOrNull()
                 val batchSessionIds = payload.sessions.map { it.id }.take(3)
@@ -2399,6 +2606,10 @@ class SyncManager(
             val response = result.getOrThrow()
             lastResponse = response
             collectedRejections += response.rejections
+            // Counted, not collected by id: a legacy PR without a uuid is sent with a null id.
+            // A pending profile's PR rows ride disjoint trailing requests, so a count is exact.
+            personalRecordTombstonesSent += payload.personalRecords.count { it.deletedAt != null }
+            personalRecordsWritten += response.personalRecordsInserted
             skippedDeletedRoutines += response.skippedDeleted.routines
             skippedDeletedCycles += response.skippedDeleted.cycles
             acknowledgedPortalSessionIds += acknowledgeAcceptedWorkoutParents(
@@ -2413,6 +2624,11 @@ class SyncManager(
                     response = response,
                 )
             }
+            // External activities are acknowledged from the response of the request that
+            // carried them (they may be split across requests).
+            if (payload.externalActivities.isNotEmpty()) {
+                acknowledgeExternalActivities(payload.externalActivities, response, activeProfileId)
+            }
             Logger.d("SyncManager") {
                 "Request ${index + 1}/$totalBatches pushed successfully (timestamp deferred)"
             }
@@ -2424,14 +2640,21 @@ class SyncManager(
             routines = skippedDeletedRoutines.toList(),
             cycles = skippedDeletedCycles.toList(),
         )
-        if (deliverableSessions.size < allSessions.size) {
+        if (skippedOversized.isNotEmpty()) {
             Logger.w("SyncManager") {
-                "${allSessions.size - deliverableSessions.size} session(s) exceed the push size cap on their " +
-                    "own and were not sent; they stay pending"
+                "Push summary: ${skippedOversized.size} oversized item(s) skipped (too large for any request): " +
+                    skippedOversized.take(20).joinToString() + if (skippedOversized.size > 20) ", ..." else ""
             }
         }
 
-        val sentMetadataProfileIds = profileDtos.mapTo(linkedSetOf()) { it.id }
+        // Without allProfiles only this push's profileId was registered on the portal.
+        // A pending-deletion profile (PR 20) stays in the metadata for tombstone routing, but
+        // its live preference sections must not be uploaded on its way out.
+        val pendingDeletionIds = userProfileRepository.pendingDeletionProfiles.value.mapTo(hashSetOf()) { it.id }
+        val sentMetadataProfileIds = (
+            sendableProfileDtos?.mapTo(linkedSetOf()) { it.id }
+                ?: linkedSetOf(payloadProfileId)
+            ).filterTo(linkedSetOf()) { it !in pendingDeletionIds }
         pushDirtyProfilePreferences(
             deviceId = deviceId,
             platform = platform,
@@ -2445,40 +2668,6 @@ class SyncManager(
         val finalResponse = lastResponse ?: return Result.failure(
             PortalApiException("Push produced no response", null, 500),
         )
-        if (externalActivityDtos.isNotEmpty() && finalResponse != null) {
-            val acknowledgedSyncKeys = finalResponse.externalActivityKeys.mapNotNull { ack ->
-                IntegrationProvider.fromKey(ack.provider)?.let { provider ->
-                    ExternalActivitySyncKey(externalId = ack.externalId, provider = provider)
-                }
-            }
-            if (acknowledgedSyncKeys.isNotEmpty()) {
-                // Server confirmed exact provider-scoped keys — mark only those.
-                externalActivityRepository.markSyncedBySyncKeys(
-                    syncKeys = acknowledgedSyncKeys,
-                    profileId = activeProfileId,
-                )
-                Logger.d("SyncManager") {
-                    "Marked ${acknowledgedSyncKeys.size} external activities as synced (by server-confirmed provider/externalId keys)"
-                }
-            } else if (finalResponse.externalActivityIds.isNotEmpty()) {
-                Logger.w("SyncManager") {
-                    "Server returned legacy externalActivityIds without provider scoping; skipping optimistic sync stamping"
-                }
-            } else if (finalResponse.externalActivitiesUpserted > 0) {
-                // Backward compat: server confirmed a count but no IDs list
-                val syncedIds = externalActivityDtos.map { it.id }
-                externalActivityRepository.markSynced(syncedIds)
-                Logger.d("SyncManager") {
-                    "Marked ${syncedIds.size} external activities as synced (backward compat, server confirmed ${finalResponse.externalActivitiesUpserted})"
-                }
-            } else {
-                // Server did not confirm any activities were persisted — do NOT mark as synced
-                Logger.w("SyncManager") {
-                    "Pushed ${externalActivityDtos.size} external activities but server confirmed 0 — will retry on next sync"
-                }
-            }
-        }
-
         // Routines/cycles the server skipped because they were deleted there
         // (PR 16 `skippedDeleted`). Delete the local copy so they stop being pushed.
         // Non-fatal: the next pull reports the same ids via deletedRoutineIds/deletedCycleIds.
@@ -2567,6 +2756,8 @@ class SyncManager(
                 acknowledgedPortalSessionIds = acknowledgedPortalSessionIds,
                 workoutSnapshot = workoutSnapshot,
                 rejections = mergeRejections(collectedRejections),
+                personalRecordTombstonesSent = personalRecordTombstonesSent,
+                personalRecordsWritten = personalRecordsWritten,
                 rePushContext = RePushContext(
                     deviceId = deviceId,
                     platform = platform,
@@ -2581,6 +2772,167 @@ class SyncManager(
         // No updateServerIds() -- portal uses client-provided UUIDs
     }
 
+    /**
+     * Pushes the durable mutation queues (ownership transfers, workout deletions,
+     * cycle deletions) ahead of ordinary uploads. Acks only mutation ids the portal
+     * returns; a successful HTTP response without an exact ack leaves the local queue
+     * pending for retry. Returns the last response received, or null if nothing was sent.
+     */
+    private suspend fun pushDurableMutations(
+        userId: String,
+        deviceId: String,
+        platform: String,
+        lastSync: Long,
+        payloadProfileId: String,
+        payloadProfileName: String,
+        profileDtos: List<LocalProfileDto>?,
+        allProfiles: List<UserProfile>,
+        pendingOwnershipTransfers: List<OwnershipTransferMutation>,
+        pendingWorkoutDeletions: List<WorkoutDeletionMutation>,
+        pendingCycleDeletions: List<PendingCycleDeletion>,
+    ): Result<PortalSyncPushResponse?> {
+        var lastResponse: PortalSyncPushResponse? = null
+
+        pendingOwnershipTransfers.chunked(SYNC_BATCH_SIZE).forEach { transferBatch ->
+            val payload = PortalSyncPayload(
+                deviceId = deviceId,
+                platform = platform,
+                lastSync = lastSync,
+                profileId = payloadProfileId,
+                profileName = payloadProfileName,
+                allProfiles = profileDtos,
+                ownershipTransfers = transferBatch.map { transfer ->
+                    PortalOwnershipTransferDto(
+                        mutationId = transfer.mutationId,
+                        sourceProfileId = transfer.sourceProfileId,
+                        targetProfileId = transfer.targetProfileId,
+                        workoutSessionIds = transfer.workoutSessionIds,
+                        routineIds = transfer.routineIds,
+                        cycleIds = transfer.cycleIds,
+                        personalRecordIds = transfer.personalRecordIds,
+                    )
+                },
+            )
+            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
+            val result = pushPayloadWithRateLimit(payload)
+            if (result.isFailure) return Result.failure(result.pushError())
+            val response = result.getOrThrow()
+            val sentTransferIds = transferBatch.mapTo(linkedSetOf()) { it.mutationId }
+            val acknowledgedTransferIds = response.acknowledgedOwnershipTransferIds
+                .filterTo(linkedSetOf()) { it in sentTransferIds }
+            ownershipTransferRepository?.acknowledge(
+                ownerUserId = userId,
+                mutationIds = acknowledgedTransferIds,
+                acknowledgedAt = currentTimeMillis(),
+            )
+            val missingTransferAcks = missingAcknowledgedMutationIds(
+                sent = sentTransferIds,
+                acknowledged = acknowledgedTransferIds,
+            )
+            Logger.i("SyncManager") {
+                "Ownership transfer response missingExactAckCount=${missingTransferAcks.size}"
+            }
+            if (missingTransferAcks.isNotEmpty()) {
+                return Result.failure(
+                    PortalApiException(
+                        "Portal did not acknowledge ownership transfer mutation(s): " +
+                            missingTransferAcks.joinToString(),
+                        statusCode = 409,
+                    ),
+                )
+            }
+            lastResponse = response
+        }
+
+        // Durable operations commit before ordinary uploads. Ack only mutation IDs
+        // returned by the portal; a successful HTTP response without an exact ack
+        // deliberately leaves the local queue pending for retry.
+        pendingWorkoutDeletions.groupBy { it.profileId }.forEach { (routingProfileId, routedDeletions) ->
+            routedDeletions.chunked(SYNC_BATCH_SIZE).forEach { deletionBatch ->
+            val routingProfileName = boundedProfileName(
+                allProfiles.firstOrNull { it.id == routingProfileId }?.name ?: "Recovered profile",
+            )
+            val payload = PortalSyncPayload(
+                deviceId = deviceId,
+                platform = platform,
+                lastSync = lastSync,
+                profileId = routingProfileId,
+                profileName = routingProfileName,
+                allProfiles = profileDtos,
+                workoutDeletions = deletionBatch.map { deletion ->
+                    PortalWorkoutDeletionDto(
+                        mutationId = deletion.mutationId,
+                        scope = deletion.scope,
+                        portalSessionId = deletion.portalSessionId,
+                        componentSessionId = deletion.componentSessionId,
+                        deletedAt = kotlin.time.Instant
+                            .fromEpochMilliseconds(deletion.deletedAt)
+                            .toString(),
+                    )
+                },
+            )
+            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
+            val result = pushPayloadWithRateLimit(payload)
+            if (result.isFailure) return Result.failure(result.pushError())
+            val response = result.getOrThrow()
+            val sentDeletionIds = deletionBatch.mapTo(linkedSetOf()) { it.mutationId }
+            val acknowledgedDeletionIds = response.acknowledgedWorkoutDeletionIds
+                .filterTo(linkedSetOf()) { it in sentDeletionIds }
+            workoutDeletionRepository?.acknowledge(
+                ownerUserId = userId,
+                mutationIds = acknowledgedDeletionIds,
+                acknowledgedAt = currentTimeMillis(),
+            )
+            val missingDeletionAckCount = sentDeletionIds.count { it !in acknowledgedDeletionIds }
+            Logger.i("SyncManager") {
+                "Workout deletion response missingExactAckCount=$missingDeletionAckCount"
+            }
+            if (missingDeletionAckCount > 0) {
+                return Result.failure(
+                    PortalApiException(
+                        "Portal did not acknowledge $missingDeletionAckCount workout deletion mutation(s)",
+                        statusCode = 409,
+                    ),
+                )
+            }
+            lastResponse = response
+            }
+        }
+
+        pendingCycleDeletions.chunked(SYNC_BATCH_SIZE).forEach { deletionBatch ->
+            val payload = PortalSyncPayload(
+                deviceId = deviceId,
+                platform = platform,
+                lastSync = lastSync,
+                profileId = payloadProfileId,
+                profileName = payloadProfileName,
+                allProfiles = profileDtos,
+                deletedCycles = deletionBatch.map { deletion ->
+                    PortalDeletedCycleDto(
+                        id = deletion.id,
+                        updatedAt = kotlin.time.Instant.fromEpochMilliseconds(deletion.updatedAt).toString(),
+                    )
+                },
+            )
+            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
+            val result = pushPayloadWithRateLimit(payload)
+            if (result.isFailure) return Result.failure(result.pushError())
+            val response = result.getOrThrow()
+            val acknowledged = response.acknowledgedDeletedCycleIds.toSet()
+            deletionBatch.filter { it.id in acknowledged }.forEach { deletion ->
+                trainingCycleRepository?.acknowledgeCycleDeletions(
+                    ownerUserId = userId,
+                    sentGenerationsById = mapOf(deletion.id to deletion.generation),
+                    acknowledgedIds = setOf(deletion.id),
+                    at = deletion.updatedAt,
+                )
+            }
+            lastResponse = response
+        }
+
+        return Result.success(lastResponse)
+    }
+
     /** Acknowledges the parents this response applied; returns exactly those portal session ids. */
     private suspend fun acknowledgeAcceptedWorkoutParents(
         workoutSnapshot: WorkoutSyncSnapshot,
@@ -2591,7 +2943,57 @@ class SyncManager(
         val acceptedPortalSessionIds = response.acknowledgedWorkoutSessionIds
             .filterTo(linkedSetOf()) { it in sentPortalSessionIds }
         syncRepository.acknowledgeWorkoutSnapshot(workoutSnapshot, acceptedPortalSessionIds)
+        // PR 11 (codex #859): an accepted workout now belongs to this account. Record that,
+        // so an ownership-400 on a LATER request of the same push cannot make recovery
+        // exclude rows that already landed here.
+        val accountId = tokenStorage.currentUser.value?.id
+        if (accountId != null && acceptedPortalSessionIds.isNotEmpty()) {
+            syncRepository.insertSyncExcludedEntities(
+                accountId,
+                SyncExcludedEntityTypes.reached(SyncExcludedEntityTypes.WORKOUT),
+                acceptedPortalSessionIds,
+            )
+        }
         return acceptedPortalSessionIds
+    }
+
+    /** Marks exactly the external activities [response] confirmed for the request that carried [sent]. */
+    private suspend fun acknowledgeExternalActivities(
+        sent: List<ExternalActivitySyncDto>,
+        response: PortalSyncPushResponse,
+        profileId: String,
+    ) {
+        val acknowledgedSyncKeys = response.externalActivityKeys.mapNotNull { ack ->
+            IntegrationProvider.fromKey(ack.provider)?.let { provider ->
+                ExternalActivitySyncKey(externalId = ack.externalId, provider = provider)
+            }
+        }
+        if (acknowledgedSyncKeys.isNotEmpty()) {
+            // Server confirmed exact provider-scoped keys — mark only those.
+            externalActivityRepository.markSyncedBySyncKeys(
+                syncKeys = acknowledgedSyncKeys,
+                profileId = profileId,
+            )
+            Logger.d("SyncManager") {
+                "Marked ${acknowledgedSyncKeys.size} external activities as synced (by server-confirmed provider/externalId keys)"
+            }
+        } else if (response.externalActivityIds.isNotEmpty()) {
+            Logger.w("SyncManager") {
+                "Server returned legacy externalActivityIds without provider scoping; skipping optimistic sync stamping"
+            }
+        } else if (response.externalActivitiesUpserted > 0) {
+            // Backward compat: server confirmed a count but no IDs list — only for THIS request.
+            val syncedIds = sent.map { it.id }
+            externalActivityRepository.markSynced(syncedIds)
+            Logger.d("SyncManager") {
+                "Marked ${syncedIds.size} external activities as synced (backward compat, server confirmed ${response.externalActivitiesUpserted})"
+            }
+        } else {
+            // Server did not confirm any activities were persisted — do NOT mark as synced
+            Logger.w("SyncManager") {
+                "Pushed ${sent.size} external activities but server confirmed 0 — will retry on next sync"
+            }
+        }
     }
 
     private suspend fun acknowledgeAcceptedCycles(
@@ -3074,29 +3476,20 @@ class SyncManager(
     }
 
     /**
-     * [waitForCapacity] = true waits for the client window (the same limit the server
-     * enforces) instead of failing fast. The per-profile push path uses it: profiles are
-     * walked in the same order every sync, so failing fast would starve every profile
-     * past the window's capacity forever (codex #856 P1). Local throttling is not a
-     * profile failure.
+     * Every logical push waits for the shared client window (the same limit the server
+     * enforces) — there is no fail-fast path (codex #856). Failing fast let the next
+     * waiting ordinary request take each freed slot, so LWW re-pushes and dirty
+     * preference chunks could get a local 429 on every sync and never reach the portal,
+     * and profiles walked in a fixed order could starve behind one another.
+     *
+     * [ClientRateLimiter.acquireWithWait] releases its mutex before each (cancellable)
+     * delay and records a slot only when it is granted, so a waiting call holds no slot
+     * and the wait is bounded by the window per slot.
      */
     private suspend fun pushPayloadWithRateLimit(
         payload: PortalSyncPayload,
-        waitForCapacity: Boolean = false,
     ): Result<PortalSyncPushResponse> {
-        if (waitForCapacity) {
-            rateLimiter.acquireWithWait("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN)
-            return apiClient.pushPortalPayload(payload)
-        }
-        if (!rateLimiter.tryAcquire("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN)) {
-            return Result.failure(
-                PortalApiException(
-                    "Client rate limit exceeded for push " +
-                        "(${SyncConfig.PUSH_RATE_LIMIT_PER_MIN}/min). Try again shortly.",
-                    statusCode = 429,
-                ),
-            )
-        }
+        rateLimiter.acquireWithWait("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN)
         return apiClient.pushPortalPayload(payload)
     }
 
@@ -3231,9 +3624,7 @@ class SyncManager(
             pullCursor
         }
         val mergeLastSync = pullCursor
-        val serverWinsRoutineIds = pendingServerWinsRoutineIdsByScope["$userId:$mergeProfileId"]
-            ?.toSet()
-            .orEmpty()
+        val serverWinsRoutineIds = tokenStorage.pendingServerWinsRoutineIds(userId, mergeProfileId)
         Logger.i("SyncManager") {
             "Pull mode: requestLastSync=$requestLastSync (stored=$pullCursor, " +
                 "mergeLastSync=$mergeLastSync, profile=$mergeProfileId, " +
@@ -3682,6 +4073,27 @@ class SyncManager(
      * The caller leaves the pull cursor unchanged and retries the page; revision guards make replay
      * idempotent and dirty-section predicates preserve concurrent local edits.
      */
+    /**
+     * PR 11: every row a pull merges came from this portal account. Handed to
+     * [SyncRepository.mergeAllPullData] so the provenance commits in the merge transaction,
+     * for any pull (a pull-only retry included), and an account switch never classifies a
+     * pulled row as never-synced local data (codex #859).
+     */
+    private fun pulledProvenance(
+        pullResponse: PortalSyncPullResponse,
+        mobileSessions: List<com.devil.phoenixproject.domain.model.WorkoutSession>,
+    ): Map<String, Collection<String>> {
+        val types = SyncExcludedEntityTypes
+        val sessionIds = mobileSessions.flatMap { listOfNotNull(it.id, it.routineSessionId?.takeIf { id -> id.isNotBlank() }) }
+        return mapOf(
+            types.WORKOUT to sessionIds + pullResponse.sessions.map { it.id },
+            types.ROUTINE to pullResponse.routines.map { it.id },
+            types.CYCLE to pullResponse.cycles.map { it.id },
+            types.PERSONAL_RECORD to pullResponse.personalRecords.map { it.id },
+            types.EARNED_BADGE to pullResponse.badges.map { it.badgeId },
+        ).filterValues { it.isNotEmpty() }
+    }
+
     private suspend fun mergePullPage(
         pullResponse: PortalSyncPullResponse,
         lastSync: Long,
@@ -3841,7 +4253,12 @@ class SyncManager(
                 serverWinsRoutineIds = serverWinsRoutineIds,
                 sessionNotes = sessionNotesMap,
                 sessionUpdatedAtById = sessionUpdatedAtById,
+                pulledProvenance = pulledProvenance(pullResponse, mobileSessions),
             )
+            // PR 11: every row this merge committed came from this portal account. Record
+            // that provenance for any pull (including a pull-only retry, which does not
+            // advance the pull-merge stamp below), so an account switch never classifies a
+            // pulled row as never-synced local data (codex #859).
             // PR 11: a pulled routine / cycle gets its local createdAt at merge time, later
             // than the push watermark. Record when this account's rows landed so an account
             // switch does not mistake them for never-synced local rows. Stamped only once the
@@ -4236,6 +4653,20 @@ internal fun parseIso8601EpochMillis(iso: String?): Long? =
  * session stays dirty and is re-evaluated each sync; a routine/PR is re-selected after
  * its next local edit.
  */
+/** Longest profile name sent to the portal; local names are unbounded. */
+internal const val MAX_PORTAL_PROFILE_NAME_CHARS = 100
+
+/**
+ * Caps a profile name for the wire so profile metadata cannot grow a push request
+ * without bound. Never splits a surrogate pair.
+ */
+internal fun boundedProfileName(name: String): String {
+    if (name.length <= MAX_PORTAL_PROFILE_NAME_CHARS) return name
+    var end = MAX_PORTAL_PROFILE_NAME_CHARS
+    if (name[end - 1].isHighSurrogate()) end--
+    return name.substring(0, end)
+}
+
 internal object PushPlanner {
     /** Portal `MAX_ENTITIES_PER_TYPE`. */
     const val MAX_ITEMS_PER_ARRAY = 10_000
@@ -4252,13 +4683,33 @@ internal object PushPlanner {
             payload.deletedRoutineIds.size <= MAX_ITEMS_PER_ARRAY &&
             payload.cycles.size <= MAX_ITEMS_PER_ARRAY &&
             payload.personalRecords.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.assessments.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.customExercises.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.badges.size <= MAX_ITEMS_PER_ARRAY &&
+            payload.externalActivities.size <= MAX_ITEMS_PER_ARRAY &&
             payload.telemetry.size <= SyncConfig.MAX_TELEMETRY_PER_BATCH &&
             byteSize(payload) <= maxBytes
+
+    /**
+     * Called once per item that cannot fit in any request on its own. Logged at warn with
+     * the entity type and id; the caller also counts them into its sync summary.
+     */
+    fun interface SkipListener {
+        fun skipped(entityType: String, id: String)
+    }
+
+    private fun warnSkip(onSkip: SkipListener, entityType: String, id: String) {
+        Logger.w("SyncManager") {
+            "Push skipped $entityType $id: it exceeds the push size cap on its own and can never be accepted"
+        }
+        onSkip.skipped(entityType, id)
+    }
 
     /** Splits any session batch whose request would be oversized; drops a session that can never fit. */
     fun splitSessionBatchesByBytes(
         batches: List<List<PortalWorkoutSessionDto>>,
         toPayload: (List<PortalWorkoutSessionDto>) -> PortalSyncPayload,
+        onSkip: SkipListener = SkipListener { _, _ -> },
     ): List<List<PortalWorkoutSessionDto>> {
         val out = mutableListOf<List<PortalWorkoutSessionDto>>()
         fun place(batch: List<PortalWorkoutSessionDto>) {
@@ -4266,9 +4717,7 @@ internal object PushPlanner {
             if (fits(toPayload(batch))) {
                 out += batch
             } else if (batch.size == 1) {
-                Logger.w("SyncManager") {
-                    "Session ${batch.single().id} exceeds the push size cap on its own; skipped this sync"
-                }
+                warnSkip(onSkip, "session", batch.single().id)
             } else {
                 val mid = batch.size / 2
                 place(batch.subList(0, mid))
@@ -4281,8 +4730,13 @@ internal object PushPlanner {
 
     /**
      * Packs non-session entities into requests after the session batches, in dependency
-     * order: routines, deleted-routine ids, cycles, PRs. [finalRequest] (the single-valued
-     * fields) is merged into the last request when it fits there, else sent on its own.
+     * order: routines, deleted-routine ids, cycles, PRs, then custom exercises (catalog
+     * rows first), assessments, badges and external activities. Each is upserted on its
+     * own by mobile-sync-push, so none has to travel with another. The truly singular
+     * fields — [rpgAttributes], [gamificationStats] and [allProfiles] — stay together on
+     * the last request (merged into the last packed request when it fits there, else sent
+     * on their own). No request is ever enqueued oversized: [allProfiles] is dropped from
+     * the singular request when it alone makes it too large (see below).
      */
     fun planTailRequests(
         envelope: PortalSyncPayload,
@@ -4290,7 +4744,14 @@ internal object PushPlanner {
         deletedRoutineIds: List<String>,
         cycles: List<PortalTrainingCycleSyncDto>,
         personalRecords: List<PortalPersonalRecordDto>,
-        finalRequest: () -> PortalSyncPayload,
+        customExercises: List<CustomExerciseSyncDto>,
+        assessments: List<PortalAssessmentResultDto>,
+        badges: List<PortalEarnedBadgeSyncDto>,
+        externalActivities: List<ExternalActivitySyncDto>,
+        rpgAttributes: PortalRpgAttributesSyncDto?,
+        gamificationStats: PortalGamificationStatsSyncDto?,
+        allProfiles: List<LocalProfileDto>?,
+        onSkip: SkipListener = SkipListener { _, _ -> },
     ): List<PortalSyncPayload> {
         val requests = mutableListOf<PortalSyncPayload>()
         val envelopeBytes = byteSize(envelope)
@@ -4298,6 +4759,11 @@ internal object PushPlanner {
         val curDeleted = mutableListOf<String>()
         val curCycles = mutableListOf<PortalTrainingCycleSyncDto>()
         val curPrs = mutableListOf<PortalPersonalRecordDto>()
+        val curCustom = mutableListOf<CustomExerciseSyncDto>()
+        val curAssessments = mutableListOf<PortalAssessmentResultDto>()
+        val curBadges = mutableListOf<PortalEarnedBadgeSyncDto>()
+        val curExternal = mutableListOf<ExternalActivitySyncDto>()
+        val all = listOf(curRoutines, curDeleted, curCycles, curPrs, curCustom, curAssessments, curBadges, curExternal)
         // Bytes are summed per item (each measured once against the small envelope, plus a
         // separating comma) instead of re-encoding the growing request for every item.
         var currentBytes = envelopeBytes
@@ -4306,19 +4772,28 @@ internal object PushPlanner {
             deletedRoutineIds = curDeleted.toList(),
             cycles = curCycles.toList(),
             personalRecords = curPrs.toList(),
+            customExercises = curCustom.toList(),
+            assessments = curAssessments.toList(),
+            badges = curBadges.toList(),
+            externalActivities = curExternal.toList(),
         )
-        fun hasItems() = curRoutines.isNotEmpty() || curDeleted.isNotEmpty() ||
-            curCycles.isNotEmpty() || curPrs.isNotEmpty()
+        fun hasItems() = all.any { it.isNotEmpty() }
         fun close() {
             if (hasItems()) requests += build()
-            curRoutines.clear(); curDeleted.clear(); curCycles.clear(); curPrs.clear()
+            all.forEach { it.clear() }
             currentBytes = envelopeBytes
         }
-        fun <T> pack(items: List<T>, label: String, into: MutableList<T>, alone: (T) -> PortalSyncPayload) {
+        fun <T> pack(
+            items: List<T>,
+            entityType: String,
+            into: MutableList<T>,
+            idOf: (T) -> String,
+            alone: (T) -> PortalSyncPayload,
+        ) {
             for (item in items) {
                 val itemBytes = byteSize(alone(item)) - envelopeBytes + 1
                 if (envelopeBytes + itemBytes > maxBytes) {
-                    Logger.w("SyncManager") { "A $label exceeds the push size cap on its own; skipped this sync" }
+                    warnSkip(onSkip, entityType, idOf(item))
                     continue
                 }
                 if (currentBytes + itemBytes > maxBytes || into.size >= MAX_ITEMS_PER_ARRAY) close()
@@ -4326,27 +4801,47 @@ internal object PushPlanner {
                 currentBytes += itemBytes
             }
         }
-        pack(routines, "routine", curRoutines) { envelope.copy(routines = listOf(it)) }
-        pack(deletedRoutineIds, "deleted-routine id", curDeleted) { envelope.copy(deletedRoutineIds = listOf(it)) }
-        pack(cycles, "cycle", curCycles) { envelope.copy(cycles = listOf(it)) }
-        pack(personalRecords, "personal record", curPrs) { envelope.copy(personalRecords = listOf(it)) }
+        pack(routines, "routine", curRoutines, { it.id }) { envelope.copy(routines = listOf(it)) }
+        pack(deletedRoutineIds, "deleted routine", curDeleted, { it }) { envelope.copy(deletedRoutineIds = listOf(it)) }
+        pack(cycles, "cycle", curCycles, { it.id }) { envelope.copy(cycles = listOf(it)) }
+        pack(personalRecords, "personal record", curPrs, { it.id.orEmpty() }) { envelope.copy(personalRecords = listOf(it)) }
+        pack(customExercises, "custom exercise", curCustom, { it.clientId }) { envelope.copy(customExercises = listOf(it)) }
+        pack(assessments, "assessment", curAssessments, { it.id }) { envelope.copy(assessments = listOf(it)) }
+        pack(badges, "badge", curBadges, { it.badgeId }) { envelope.copy(badges = listOf(it)) }
+        pack(externalActivities, "external activity", curExternal, { it.id }) { envelope.copy(externalActivities = listOf(it)) }
         val current = build()
 
-        val singletons = finalRequest()
-        val merged = current.copy(
-            rpgAttributes = singletons.rpgAttributes,
-            badges = singletons.badges,
-            gamificationStats = singletons.gamificationStats,
-            assessments = singletons.assessments,
-            customExercises = singletons.customExercises,
-            allProfiles = singletons.allProfiles,
-            externalActivities = singletons.externalActivities,
+        // The one place the singular fields are attached, so a new one cannot reach only
+        // one of the two requests below.
+        fun withSingular(p: PortalSyncPayload, profiles: List<LocalProfileDto>? = allProfiles) = p.copy(
+            rpgAttributes = rpgAttributes,
+            gamificationStats = gamificationStats,
+            allProfiles = profiles,
         )
+        val merged = withSingular(current)
         if (fits(merged)) {
             requests += merged
+            return requests
+        }
+        close()
+        var singular = withSingular(envelope)
+        // An oversized singular request would 413 forever (codex #856). allProfiles is the
+        // only unbounded field left (names are already capped); it must never be sent
+        // partially, because the portal deletes every registered profile missing from it.
+        // Omitting it is safe: the portal then upserts just this request's profileId and
+        // deletes nothing. Every profile, pending-deletion ones included, still registers
+        // through its own push's profileId.
+        if (!fits(singular) && allProfiles != null) {
+            Logger.w("SyncManager") {
+                "Push: profile metadata for ${allProfiles.size} profile(s) exceeds the push size cap; " +
+                    "sending without allProfiles this sync"
+            }
+            singular = withSingular(envelope, profiles = null)
+        }
+        if (fits(singular)) {
+            requests += singular
         } else {
-            close()
-            requests += singletons
+            warnSkip(onSkip, "singular sync fields", "rpg/gamification")
         }
         return requests
     }

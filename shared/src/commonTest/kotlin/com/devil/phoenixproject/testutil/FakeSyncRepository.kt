@@ -326,6 +326,8 @@ class FakeSyncRepository : SyncRepository {
         profileIds: List<String>,
         excludeAllExisting: Boolean,
         previousPushWatermarks: Map<String, Long>,
+        previousPortalUserId: String?,
+        previousPortalUserIdsByProfile: Map<String, String>,
     ) {
         recordAccountSwitchExclusionsCalls += Triple(portalUserId, excludeAllExisting, previousPushWatermarks)
         val byType = syncExcludedEntities.getOrPut(portalUserId) { mutableMapOf() }
@@ -372,6 +374,17 @@ class FakeSyncRepository : SyncRepository {
                 }
             }
         }
+    }
+
+    val recordOwnershipRecoveryExclusionsCalls: MutableList<Pair<Long, Set<String>>> = mutableListOf()
+
+    override suspend fun recordOwnershipRecoveryExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        createdAtOrBefore: Long,
+        entityTypes: Set<String>,
+    ) {
+        recordOwnershipRecoveryExclusionsCalls += createdAtOrBefore to entityTypes
     }
 
     var hardDeletedRoutineIds: List<String> = emptyList()
@@ -428,7 +441,10 @@ class FakeSyncRepository : SyncRepository {
 
     override suspend fun getPhaseStatisticsForSessions(sessionIds: List<String>): List<PhaseStatistics> = emptyList()
 
-    override suspend fun getAllAssessments(profileId: String): List<AssessmentResult> = emptyList()
+    var assessmentsToReturn: List<AssessmentResult> = emptyList()
+
+    override suspend fun getAllAssessments(profileId: String): List<AssessmentResult> =
+        assessmentsToReturn.filter { it.profile_id == profileId }
 
     override suspend fun mergePortalCycles(cycles: List<PullTrainingCycleDto>, profileId: String) {
         // no-op for tests
@@ -527,6 +543,7 @@ class FakeSyncRepository : SyncRepository {
         sessionNotes: Map<String, SessionNotesEntry>,
         sessionUpdatedAtById: Map<String, Long>,
         pushWatermark: Long,
+        pulledProvenance: Map<String, Collection<String>>,
     ) {
         mergeServerWinsRoutineIdsHistory += serverWinsRoutineIds
         if (atomicMergeShouldFail) {

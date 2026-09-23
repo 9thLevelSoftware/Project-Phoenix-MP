@@ -665,6 +665,9 @@
     <string name="profile_recovery_message">Phoenix no pudo confirmar qué perfil está activo. Vuelve a intentarlo antes de continuar.</string>
     <string name="profile_recovery_retry_failed">La recuperación del perfil sigue sin estar disponible</string>
     <string name="profile_delete_reassign_message">¿Eliminar &quot;%1$s&quot;? Sus entrenamientos, rutinas, récords, insignias, evaluaciones y datos de progreso pasarán a Default. Esta acción no se puede deshacer.</string>
+    <string name="profile_delete_merge_action">Combinar con Predeterminado</string>
+    <string name="profile_delete_permanent_action">Eliminar definitivamente</string>
+    <string name="profile_delete_permanent_message">O elimina &quot;%1$s&quot; definitivamente: sus entrenamientos, rutinas, ciclos y récords se borran de este dispositivo y de tu cuenta del portal. Esto no se puede deshacer.</string>
     <string name="settings_video_behavior">Demostraciones de ejercicios</string>
     <string name="settings_show_exercise_videos">Mostrar demostraciones de ejercicios</string>
     <string name="settings_show_exercise_videos_description">Mostrar demostraciones; desactívalo en dispositivos más lentos</string>
