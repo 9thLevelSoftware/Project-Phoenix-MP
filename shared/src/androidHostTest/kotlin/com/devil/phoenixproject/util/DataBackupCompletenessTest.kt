@@ -460,13 +460,24 @@ class DataBackupCompletenessTest {
         source.saveSession("session-a")
         source.saveSession("session-b", profileId = PROFILE_B)
         source.saveRoutineOn("custom-row", progressionKg = 1f, profileId = PROFILE_B)
-        val olderBackup = source.manager.exportToJson()
+        // B's standalone-workout note, and B's stats in the v1-v5 single-object shape.
+        val exported = testJson.decodeFromString<BackupData>(source.manager.exportToJson())
+        val olderBackup = testJson.encodeToString(
+            exported.copy(
+                data = exported.data.copy(
+                    sessionNotes = listOf(SessionNotesBackup("session-b", "B's private note", 1L)),
+                    gamificationStats = GamificationStatsBackup(totalWorkouts = 5, lastUpdated = 1L, profileId = PROFILE_B),
+                    gamificationStatsByProfile = emptyList(),
+                ),
+            ),
+        )
 
         // Finalized delete: B's row is gone and only its scrubbed tombstone remains.
         val finalized = Fixture()
         finalized.seedProfiles()
         finalized.saveRoutineOn("custom-row", progressionKg = 1f, profileId = PROFILE_B)
         finalized.queries.softDeleteRoutine(1L, 1L, "routine-1")
+        finalized.queries.scrubProfileTombstones(PROFILE_B) // PR 20's permanent-delete signature
         finalized.driver.execute(null, "DELETE FROM UserProfile WHERE id = '$PROFILE_B'", 0)
         // Still pushing: B's row is hidden and its id sits in the pending store.
         val pending = InMemoryPendingProfileDeletionStore().apply { add(PROFILE_B) }
@@ -479,9 +490,41 @@ class DataBackupCompletenessTest {
             assertTrue(result.deletedProfileRowsSkipped > 0, "$case")
             assertEquals(null, target.queries.selectSessionById("session-b").executeAsOneOrNull(), "$case")
             assertTrue(target.queries.selectSessionById("session-a").executeAsOneOrNull() != null, "$case")
+            assertEquals(null, target.queries.getSessionNotes("session-b").executeAsOneOrNull(), "$case: note dropped")
+            assertEquals(null, target.queries.selectGamificationStats(PROFILE_B).executeAsOneOrNull(), "$case: stats dropped")
         }
         assertEquals(null, finalized.queries.getProfileById(PROFILE_B).executeAsOneOrNull(), "no resurrected profile")
         assertEquals(1L, finalized.queries.selectRoutineById("routine-1").executeAsOne().deletedAt, "tombstone untouched")
+    }
+
+    @Test
+    fun `a merged profile is not mistaken for a deleted one and its ownership transfer survives`() = runTest {
+        // Merge of B into default: B's row goes, its workout deletion ledger stays, and an
+        // ownership transfer tells the portal to move B's entities. Nothing is scrubbed.
+        val source = Fixture()
+        source.seedProfiles()
+        with(source.queries) {
+            insertWorkoutDeletion("mut-del", "user-1", PROFILE_B, "WORKOUT", "portal-b", null, 1L, "LOCAL")
+            insertOwnershipTransferOutbox(
+                "mut-transfer", "user-1", PROFILE_B, "default", "[\"portal-b\"]", "[]", "[]", "[]", 2L,
+            )
+        }
+        source.driver.execute(null, "DELETE FROM UserProfile WHERE id = '$PROFILE_B'", 0)
+
+        listOf(
+            testJson.decodeFromString<BackupData>(source.manager.exportToJson()),
+            testJson.decodeFromString<BackupData>(File(source.manager.exportToCachePublic()).readText()),
+        ).forEach { backup ->
+            assertEquals(listOf("mut-transfer"), backup.data.ownershipTransfers.map { it.mutationId })
+            assertEquals(listOf("mut-del"), backup.data.workoutDeletions.map { it.mutationId })
+        }
+
+        val target = Fixture()
+        target.queries.insertUserProfileIgnore("default", "Default", 0L, 1L, 1L)
+        target.queries.insertDefaultProfilePreferences("default", 1L)
+        val result = target.manager.importFromJson(source.manager.exportToJson()).getOrThrow()
+        assertEquals(0, result.deletedProfileRowsSkipped)
+        assertEquals(1, result.ownershipTransfersImported, "the pending transfer survives the restore")
     }
 
     // ---- v1-v6 single-object gamification stats (the shipping app's format) ----

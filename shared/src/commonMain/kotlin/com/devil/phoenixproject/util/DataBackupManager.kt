@@ -708,7 +708,7 @@ abstract class BaseDataBackupManager(
                 section == "gamificationStats" -> {
                     val raw = nav.nextValueAsString()
                     if (raw != "null") json.decodeFromString<GamificationStatsBackup>(raw)
-                    staging.writeValue(section, raw)
+                    staging.writeValue(section, filter.filterScalar(section, raw))
                 }
                 section == "equipmentRackItems" -> {
                     val raw = nav.nextValueAsString()

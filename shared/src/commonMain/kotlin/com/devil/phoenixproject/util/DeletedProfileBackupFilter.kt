@@ -13,7 +13,8 @@ import kotlinx.serialization.json.jsonObject
  *
  * A row belongs to a deleted profile when any of its profile keys names one. Children of a
  * dropped session, routine or cycle are dropped with it (exports write parents first), so
- * a restore does not report them as orphans.
+ * a restore does not report them as orphans. Ownership transfers are never filtered: they
+ * are how a merged profile's entities move on the portal.
  */
 internal class DeletedProfileBackupFilter(private val deletedProfileIds: Set<String>) {
 
@@ -26,6 +27,7 @@ internal class DeletedProfileBackupFilter(private val deletedProfileIds: Set<Str
         "routine" to mutableSetOf<String>(),
         "routineExercise" to mutableSetOf<String>(),
         "cycle" to mutableSetOf<String>(),
+        "portalWorkout" to mutableSetOf<String>(),
     )
 
     val isActive: Boolean get() = deletedProfileIds.isNotEmpty()
@@ -38,7 +40,7 @@ internal class DeletedProfileBackupFilter(private val deletedProfileIds: Set<Str
     }
 
     fun keep(section: String, row: JsonObject): Boolean {
-        if (!isActive) return true
+        if (!isActive || section in NEVER_FILTERED) return true
         val ownedByDeletedProfile = if (section == "userProfiles") {
             row.string("id") in deletedProfileIds
         } else {
@@ -49,8 +51,22 @@ internal class DeletedProfileBackupFilter(private val deletedProfileIds: Set<Str
         } == true
         if (!ownedByDeletedProfile && !orphaned) return true
         PARENT_OF[section]?.let { namespace -> row.string("id")?.let { droppedParents.getValue(namespace) += it } }
+        if (section == "workoutSessions") {
+            // Notes hang off the portal workout: the group id, or the row id when standalone.
+            (row.string("routineSessionId") ?: row.string("id"))?.let { droppedParents.getValue("portalWorkout") += it }
+        }
         dropped++
         return false
+    }
+
+    /**
+     * A scalar section (v1-v6 single `gamificationStats` object): the JSON to stage in place
+     * of [raw], `null` when it belongs to a deleted profile.
+     */
+    fun filterScalar(section: String, raw: String): String {
+        if (!isActive || raw == "null") return raw
+        val row = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return raw
+        return if (keep(section, row)) raw else "null"
     }
 
     /** Filters every array section of a backup's `data` object. */
@@ -72,6 +88,9 @@ internal class DeletedProfileBackupFilter(private val deletedProfileIds: Set<Str
     private companion object {
         val PROFILE_KEYS = listOf("profileId", "sourceProfileId", "targetProfileId", "originalProfileId")
 
+        /** Merge bookkeeping: must survive even when its source profile is gone. */
+        val NEVER_FILTERED = setOf("ownershipTransfers")
+
         /** Sections whose ids are parents of other sections' rows. */
         val PARENT_OF = mapOf(
             "workoutSessions" to "session",
@@ -90,6 +109,7 @@ internal class DeletedProfileBackupFilter(private val deletedProfileIds: Set<Str
             "cycleDays" to ("cycle" to "cycleId"),
             "cycleProgress" to ("cycle" to "cycleId"),
             "cycleProgressions" to ("cycle" to "cycleId"),
+            "sessionNotes" to ("portalWorkout" to "routineSessionId"),
         )
     }
 }

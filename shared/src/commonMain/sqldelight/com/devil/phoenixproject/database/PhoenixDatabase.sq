@@ -940,16 +940,17 @@ SET portalOrigin = :portalOrigin,
     END
 WHERE id = :id;
 
--- Backup (PR 22 x PR 20): profiles a permanent delete has already finalized. PR 20 keeps
--- their tombstones (reduced to identity + clock) after removing the UserProfile row, so a
--- tombstone whose profile no longer exists is the lasting evidence. 'default' is never
--- inferred: legacy databases can hold default-scoped rows without a profile row.
+-- Backup (PR 22 x PR 20): profiles a permanent delete has already finalized. The lasting
+-- evidence is PR 20's scrub signature (scrubProfileTombstones blanks the name of every
+-- routine / cycle / PR tombstone it keeps) on a profile whose row is gone. A MERGE removes
+-- the source row too but reassigns its routines, cycles and sessions and never scrubs, so
+-- it never matches; WorkoutDeletion rows are not evidence because a merge leaves them.
+-- 'default' is never inferred: legacy databases can hold default-scoped rows without a row.
 selectRemovedProfileIds:
 SELECT DISTINCT profile_id FROM (
-    SELECT profile_id FROM Routine WHERE deletedAt IS NOT NULL
-    UNION SELECT profile_id FROM TrainingCycle WHERE deletedAt IS NOT NULL
-    UNION SELECT profile_id FROM PersonalRecord WHERE deletedAt IS NOT NULL
-    UNION SELECT profile_id FROM WorkoutDeletion
+    SELECT profile_id FROM Routine WHERE deletedAt IS NOT NULL AND name = ''
+    UNION SELECT profile_id FROM TrainingCycle WHERE deletedAt IS NOT NULL AND name = ''
+    UNION SELECT profile_id FROM PersonalRecord WHERE deletedAt IS NOT NULL AND exerciseName = ''
 )
 WHERE profile_id != 'default'
   AND profile_id NOT IN (SELECT id FROM UserProfile);

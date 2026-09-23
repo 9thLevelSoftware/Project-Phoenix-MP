@@ -17,7 +17,7 @@ class SettingsPreferencesManagerTest {
     private val legacyDefaultsJson = Json { encodeDefaults = true }
 
     @Test
-    fun `raw telemetry is out of backups until the user opts in, and a restore re-arms one-shot work`() = runTest {
+    fun `raw telemetry is out of backups until the user opts in and a restore re-arms one-shot work`() = runTest {
         val settings = MapSettings()
         val manager = SettingsPreferencesManager(settings)
         assertFalse(manager.preferencesFlow.value.includeRawTelemetryInBackups, "F-033: off by default")
