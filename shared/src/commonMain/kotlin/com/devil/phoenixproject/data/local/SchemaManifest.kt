@@ -1735,6 +1735,10 @@ internal val manifestIndexes: List<SchemaIndexOperation> = listOf(
         "idx_session_exercise",
         "CREATE INDEX IF NOT EXISTS idx_session_exercise ON WorkoutSession(exerciseId, profile_id)",
     ),
+    SchemaIndexOperation(
+        "idx_session_exercise_profile_ts",
+        "CREATE INDEX IF NOT EXISTS idx_session_exercise_profile_ts ON WorkoutSession(exerciseId, profile_id, timestamp DESC)",
+    ),
     // Migration 55.
     SchemaIndexOperation(
         "idx_session_routine_session",

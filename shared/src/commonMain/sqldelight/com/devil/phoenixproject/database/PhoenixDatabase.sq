@@ -132,6 +132,9 @@ CREATE INDEX idx_session_profile ON WorkoutSession(profile_id);
 -- SchemaManifest.manifestIndexes rather than a numbered migration.
 CREATE INDEX idx_session_profile_ts ON WorkoutSession(profile_id, timestamp DESC);
 CREATE INDEX idx_session_exercise ON WorkoutSession(exerciseId, profile_id);
+-- Last weight for an exercise (exerciseId + profile predicate, newest first): serves the
+-- WHERE and the ORDER BY timestamp DESC LIMIT 1 without a sort. Also heal-only (profile_id).
+CREATE INDEX idx_session_exercise_profile_ts ON WorkoutSession(exerciseId, profile_id, timestamp DESC);
 -- Routine-group lookups and sync repair (migration 55).
 CREATE INDEX idx_session_routine_session ON WorkoutSession(routineSessionId);
 
@@ -967,7 +970,8 @@ ORDER BY timestamp DESC
 LIMIT :limit;
 
 -- F-034: last per-cable weight used for one exercise in this profile (newest
--- user-visible session). Served by idx_session_exercise (exerciseId, profile_id).
+-- user-visible session). Served by idx_session_exercise_profile_ts
+-- (exerciseId, profile_id, timestamp DESC): an index search with no ORDER BY sort.
 selectLastWeightForExercise:
 SELECT weightPerCableKg FROM WorkoutSession
 WHERE profile_id = :profileId

@@ -71,9 +71,12 @@ class IndexQueryPlanTest {
 
     @Test
     fun `last weight lookup and recent history are index searches`() = forEachDatabase { db, driver ->
+        // Codex 4083172359: the exercise/profile predicate AND the timestamp ordering from one
+        // index, so a long history is neither scanned nor sorted.
         val lastWeight = queryPlan(driver, "selectLastWeightForExercise")
-        assertTrue(lastWeight.any { "idx_session_exercise" in it || "idx_session_profile_ts" in it }, "$db: $lastWeight")
+        assertTrue(lastWeight.any { "idx_session_exercise_profile_ts" in it }, "$db: $lastWeight")
         assertFalse(lastWeight.any { it.startsWith("SCAN WorkoutSession") }, "$db: $lastWeight")
+        assertFalse(lastWeight.any { "TEMP B-TREE FOR ORDER BY" in it }, "$db: $lastWeight")
 
         val recent = queryPlan(driver, "selectRecentVisibleSessions")
         assertTrue(recent.any { "idx_session_profile_ts" in it }, "$db: $recent")

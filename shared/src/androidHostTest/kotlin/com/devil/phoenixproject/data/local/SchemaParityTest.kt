@@ -1248,11 +1248,13 @@ class SchemaParityTest {
             assertEquals(true, indexExistsInDriver(driver, "idx_routine_exercise_exercise"), scenario)
             assertEquals(false, indexExistsInDriver(driver, "idx_session_profile_ts"), scenario)
             assertEquals(false, indexExistsInDriver(driver, "idx_session_exercise"), scenario)
+            assertEquals(false, indexExistsInDriver(driver, "idx_session_exercise_profile_ts"), scenario)
 
             reconcileFullSchema(driver)
 
             assertEquals(true, indexExistsInDriver(driver, "idx_session_profile_ts"), scenario)
             assertEquals(true, indexExistsInDriver(driver, "idx_session_exercise"), scenario)
+            assertEquals(true, indexExistsInDriver(driver, "idx_session_exercise_profile_ts"), scenario)
         }
     }
 
