@@ -878,4 +878,7 @@
     <string name="ownership_conflict_title">Upload refused</string>
     <string name="ownership_conflict_message">The portal refused data that belongs to another account: %1$s</string>
     <string name="ownership_conflict_action">Stop uploading data from before the account switch</string>
+    <string name="cycle_training_max_missing_title">Training max not set</string>
+    <string name="cycle_training_max_missing_body">Weekly training-max increases are skipped for %1$s until this profile has a training max for it.</string>
+    <string name="cycle_training_max_missing_action">Set training max</string>
 </resources>

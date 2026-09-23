@@ -80,6 +80,36 @@ class IndexQueryPlanTest {
         assertTrue(attempt.any { "idx_session_routine_session" in it }, "plan: $attempt")
     }
 
+    @Test
+    fun `last weight lookup and recent history are index searches`() {
+        // selectLastWeightForExercise
+        val lastWeight = queryPlan(
+            """
+            SELECT weightPerCableKg FROM WorkoutSession
+            WHERE profile_id = 'p1'
+            AND exerciseId = 'bench'
+            AND deletedAt IS NULL
+            ORDER BY timestamp DESC
+            LIMIT 1
+            """,
+        )
+        assertTrue(lastWeight.any { "idx_session_exercise" in it || "idx_session_profile_ts" in it }, "plan: $lastWeight")
+        assertFalse(lastWeight.any { it.startsWith("SCAN WorkoutSession") }, "plan: $lastWeight")
+
+        // selectRecentVisibleSessions
+        val recent = queryPlan(
+            """
+            SELECT * FROM WorkoutSession
+            WHERE profile_id = 'p1'
+            AND deletedAt IS NULL
+            ORDER BY timestamp DESC
+            LIMIT 20
+            """,
+        )
+        assertTrue(recent.any { "idx_session_profile_ts" in it }, "plan: $recent")
+        assertFalse(recent.any { "TEMP B-TREE FOR ORDER BY" in it }, "plan: $recent")
+    }
+
     private fun queryPlan(sql: String): List<String> {
         val details = mutableListOf<String>()
         driver.executeQuery(

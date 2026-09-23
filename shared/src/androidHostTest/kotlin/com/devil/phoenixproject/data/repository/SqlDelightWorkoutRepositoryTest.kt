@@ -17,6 +17,7 @@ import kotlin.test.assertFailsWith
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
 import org.junit.Test
@@ -640,6 +641,45 @@ class SqlDelightWorkoutRepositoryTest {
         repository.getAllRoutines("default").test {
             val routines = awaitItem()
             assertTrue(routines.any { it.id == "routine-orphan" })
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    // ========== F-034: targeted history queries ==========
+
+    @Test
+    fun `last weight for an exercise is the newest visible session of that exercise and profile`() = runTest {
+        repository.saveSession(workoutSession("a-old", "a", "bench", 10L, workingReps = 5).copy(weightPerCableKg = 30f))
+        repository.saveSession(workoutSession("a-new", "a", "bench", 30L, workingReps = 5).copy(weightPerCableKg = 42.5f))
+        repository.saveSession(workoutSession("a-deleted", "a", "bench", 50L, workingReps = 5).copy(weightPerCableKg = 99f))
+        repository.deleteSession("a-deleted")
+        repository.saveSession(workoutSession("a-squat", "a", "squat", 60L, workingReps = 5).copy(weightPerCableKg = 77f))
+        repository.saveSession(workoutSession("b-bench", "b", "bench", 70L, workingReps = 5).copy(weightPerCableKg = 88f))
+
+        assertEquals(42.5f, repository.getLastWeightForExercise(profileId = "a", exerciseId = "bench"))
+        assertEquals(77f, repository.getLastWeightForExercise(profileId = "a", exerciseId = "squat"))
+        assertEquals(88f, repository.getLastWeightForExercise(profileId = "b", exerciseId = "bench"))
+        assertNull(repository.getLastWeightForExercise(profileId = "a", exerciseId = "deadlift"))
+        assertNull(repository.getLastWeightForExercise(profileId = "c", exerciseId = "bench"))
+    }
+
+    @Test
+    fun `recent sessions are the head of the visible history and update on insert`() = runTest {
+        repeat(25) { i -> repository.saveSession(workoutSession("s$i", "a", "bench", 1_000L + i, workingReps = 5)) }
+        repository.saveSession(workoutSession("deleted-newest", "a", "bench", 9_000L, workingReps = 5))
+        repository.deleteSession("deleted-newest")
+        repository.saveSession(workoutSession("other-profile", "b", "bench", 9_500L, workingReps = 5))
+
+        repository.getRecentSessions("a", 20).test {
+            val first = awaitItem()
+            val fullHistory = repository.getAllSessions("a").first()
+            assertEquals(fullHistory.take(20).map { it.id }, first.map { it.id })
+            assertEquals("s24", first.first().id)
+
+            repository.saveSession(workoutSession("s-newest", "a", "bench", 10_000L, workingReps = 5))
+            val updated = awaitItem()
+            assertEquals(20, updated.size)
+            assertEquals("s-newest", updated.first().id)
             cancelAndIgnoreRemainingEvents()
         }
     }
