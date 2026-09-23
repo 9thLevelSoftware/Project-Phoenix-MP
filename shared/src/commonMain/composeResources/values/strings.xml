@@ -192,6 +192,9 @@
     <string name="syncing">Syncing…</string>
     <string name="last_synced">Last synced: %1$s</string>
     <string name="never_synced">Never synced</string>
+    <string name="sync_paused_subscription_required">Sync paused — subscription required</string>
+    <string name="delete_portal_account">Delete portal account</string>
+    <string name="delete_portal_account_caption">Opens the portal. Workouts saved on this phone stay on this phone.</string>
     <string name="unlink_account">Unlink Account</string>
     <string name="sync_now">Sync Now</string>
 
