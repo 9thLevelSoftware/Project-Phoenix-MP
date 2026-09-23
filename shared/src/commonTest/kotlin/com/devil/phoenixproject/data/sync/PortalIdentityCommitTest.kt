@@ -74,6 +74,31 @@ class PortalIdentityCommitTest {
     }
 
     @Test
+    fun `signing back into the same account commits without a mismatch`() = runTest {
+        val profiles = FakeUserProfileRepository().apply {
+            setActiveProfileForTest(id = "default", supabaseUserId = "owner-a")
+        }
+        val storage = PortalTokenStorage(MapSettings()).apply {
+            setLastSyncedPortalUserId("owner-a")
+            setLastSyncedPortalUserLabel("a@example.com")
+        }
+
+        val outcome = ProfileMutationBarrier().withExclusive {
+            commitPortalIdentityUnderProfileMutationBarrier(
+                response = authResponse("owner-a", "token-a2"),
+                tokenStorage = storage,
+                userProfileRepository = profiles,
+                pendingAccountMismatch = pending,
+            )
+        }
+
+        assertIs<PortalIdentityCommitOutcome.Committed>(outcome)
+        assertNull(pending.peek(), "the same account must not publish a mismatch")
+        assertEquals("owner-a", profiles.activeProfile.value?.supabaseUserId)
+        assertEquals("token-a2", storage.getToken())
+    }
+
+    @Test
     fun `lastSynced-only mismatch is detected even when profiles were never linked`() = runTest {
         val profiles = FakeUserProfileRepository().apply {
             setActiveProfileForTest(id = "default", supabaseUserId = null)

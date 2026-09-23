@@ -2863,6 +2863,15 @@ WHERE portal_user_id = :portalUserId AND entity_type = :entityType AND entity_id
 deleteSyncExcludedEntitiesForUser:
 DELETE FROM SyncExcludedEntity WHERE portal_user_id = :portalUserId;
 
+-- PR 11 account-switch classification for one profile's sessions. A session reached
+-- a portal account when it was pulled (portalOrigin = 1) or a push was acknowledged
+-- (synced_sync_generation > 0); updatedAt is only the legacy (pre-migration-49) signal
+-- because local edits such as a Just Lift tag also write it.
+selectAccountSwitchSessionRows:
+SELECT id, routineSessionId, portalOrigin, synced_sync_generation, updatedAt
+FROM WorkoutSession
+WHERE profile_id = :profileId;
+
 selectAppliedOwnershipEvent:
 SELECT * FROM AppliedOwnershipEvent
 WHERE owner_user_id = :ownerUserId AND mutation_id = :mutationId;

@@ -17,6 +17,7 @@ import com.devil.phoenixproject.data.sync.RoutineSyncDto
 import com.devil.phoenixproject.data.sync.WorkoutSessionSyncDto
 import com.devil.phoenixproject.data.sync.SyncExcludedEntityTypes
 import com.devil.phoenixproject.data.sync.customExerciseIdTimestamp
+import com.devil.phoenixproject.data.sync.isNeverSyncedSession
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.database.RoutineExercise as RoutineExerciseRow
 import com.devil.phoenixproject.database.Superset as SupersetRow
@@ -2443,13 +2444,20 @@ class SqlDelightSyncRepository(
         for (profileId in profileIds) {
             val watermark = previousPushWatermarks[profileId] ?: 0L
 
-            // Sessions: "never synced" means never stamped (updatedAt IS NULL). Every
-            // other session already reached another account and must not be uploaded.
-            getWorkoutSessionsModifiedSince(0L, profileId).forEach { session ->
-                val neverSynced = session.updatedAt == null
+            // Sessions: classified by origin and acknowledged sync generation, not by
+            // updatedAt alone (a Just Lift tag writes it locally; a repair re-arm nulls
+            // it on rows that already reached the old account). See isNeverSyncedSession.
+            queries.selectAccountSwitchSessionRows(profileId).executeAsList().forEach { row ->
+                val neverSynced = isNeverSyncedSession(
+                    portalOrigin = row.portalOrigin,
+                    syncedSyncGeneration = row.synced_sync_generation,
+                    updatedAt = row.updatedAt,
+                    boundary = watermark,
+                )
                 if (excludeAllExisting || !neverSynced) {
-                    exclude(SyncExcludedEntityTypes.WORKOUT, session.id)
-                    session.routineSessionId?.let { exclude(SyncExcludedEntityTypes.WORKOUT, it) }
+                    exclude(SyncExcludedEntityTypes.WORKOUT, row.id)
+                    row.routineSessionId?.takeIf { it.isNotBlank() }
+                        ?.let { exclude(SyncExcludedEntityTypes.WORKOUT, it) }
                 }
             }
 

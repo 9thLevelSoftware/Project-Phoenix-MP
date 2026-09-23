@@ -84,6 +84,7 @@ class PortalTokenStorage(private val settings: Settings) {
          * Post-push stamps use it; push gather selects `updatedAt > pushWatermark`.
          */
         private const val KEY_PUSH_WATERMARK_PREFIX = "portal_push_watermark_"
+        private const val KEY_PULL_MERGE_WATERMARK_PREFIX = "portal_pull_merge_watermark_"
 
         /**
          * Server-clock cursor of the last completed pull for one (portal userId, profileId).
@@ -347,6 +348,29 @@ class PortalTokenStorage(private val settings: Settings) {
             settings[cursorKey(KEY_PUSH_WATERMARK_PREFIX, userId, profileId)] = timestamp
         }
     }
+
+    /**
+     * Device-clock time at which a pull that followed a successful push last merged rows
+     * into this profile. A pulled routine, cycle or custom exercise gets its local
+     * `createdAt` at merge time, so this, together with [getPushWatermark], bounds
+     * which rows reached this portal account (PR 11 account-switch classification).
+     * Namespaced like the cursors and kept by [clearAuth]. 0 = no such pull yet.
+     */
+    fun getPullMergeWatermark(userId: String, profileId: String): Long =
+        settings[cursorKey(KEY_PULL_MERGE_WATERMARK_PREFIX, userId, profileId), 0L]
+
+    fun setPullMergeWatermark(userId: String, profileId: String, timestamp: Long) {
+        withPlatformLock(authLock) {
+            settings[cursorKey(KEY_PULL_MERGE_WATERMARK_PREFIX, userId, profileId)] = timestamp
+        }
+    }
+
+    /**
+     * The PR 11 "already reached this account" boundary for one profile: the later of the
+     * last acknowledged push gather and the last post-push pull merge.
+     */
+    fun getAccountSyncBoundary(userId: String, profileId: String): Long =
+        maxOf(getPushWatermark(userId, profileId), getPullMergeWatermark(userId, profileId))
 
     /** Server-clock cursor of the last completed pull. 0 / absent = next pull is a full pull. */
     fun getPullCursor(userId: String, profileId: String): Long =

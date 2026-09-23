@@ -164,6 +164,25 @@ data class SyncExclusionFilter(
     }
 }
 
+/**
+ * PR 11 / KD-7: whether a local workout session never reached any portal account.
+ *
+ * A session reached a portal account when it was pulled from one ([portalOrigin] = 1) or
+ * a push of it was acknowledged ([syncedSyncGeneration] > 0). [updatedAt] alone is not a
+ * sync marker: a local edit such as a Just Lift exercise tag writes it, and the routine-group
+ * repair re-arm nulls it on rows that already reached the old account. It is kept only as
+ * the legacy signal for rows stamped before migration 49 added the generation columns: such
+ * a row has generation 0 but a stamp at or below the old account's [boundary].
+ */
+internal fun isNeverSyncedSession(
+    portalOrigin: Long,
+    syncedSyncGeneration: Long,
+    updatedAt: Long?,
+    boundary: Long,
+): Boolean = portalOrigin == 0L &&
+    syncedSyncGeneration == 0L &&
+    (updatedAt == null || updatedAt > boundary)
+
 /** UI-facing [SyncState] for this mismatch. */
 internal fun AccountMismatchCandidate.toSyncState(): SyncState.AccountMismatch =
     SyncState.AccountMismatch(

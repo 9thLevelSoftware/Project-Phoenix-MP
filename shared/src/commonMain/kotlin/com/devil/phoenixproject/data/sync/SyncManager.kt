@@ -638,6 +638,56 @@ class SyncManager(
     }
 
     /**
+     * PR 11 pause gate, run before anything that talks to the portal. Returns the failure
+     * to report while sync is paused, or null when it may run.
+     *
+     * The in-memory state alone is not enough: after a process restart it is back to
+     * [SyncState.Idle] while the token already names the new account. So the mismatch is
+     * also re-derived from durable state, the signed-in user against
+     * [PortalTokenStorage.getLastSyncedPortalUserId] and the profiles' owners. Both still
+     * name the old account until [resolveAccountMismatch] relinks them, and after that the
+     * check is a no-op. A push while this holds would also overwrite the last-synced id and
+     * erase the evidence, so it must run before any push.
+     */
+    private fun accountPauseFailure(): Result<Long>? {
+        // OAuth (and any other identity commit outside login/signup) publishes its
+        // mismatch here; drain it before deciding whether sync may run at all.
+        adoptPendingAccountMismatch()
+        val current = _syncState.value
+        if (current !is SyncState.AccountMismatch && current !is SyncState.OwnershipConflict) {
+            detectPersistedAccountMismatch()?.let { mismatch ->
+                Logger.w("SyncManager") {
+                    "Signed-in portal account differs from this device's data; sync paused pending user choice"
+                }
+                _syncState.value = mismatch.toSyncState()
+            }
+        }
+        return when (val state = _syncState.value) {
+            is SyncState.AccountMismatch -> Result.failure(
+                IllegalStateException(
+                    "Sync paused: signed in as a different portal account than this device's data",
+                ),
+            )
+            is SyncState.OwnershipConflict -> Result.failure(PortalApiException(state.message))
+            else -> null
+        }
+    }
+
+    private fun detectPersistedAccountMismatch(): AccountMismatchCandidate? {
+        if (!tokenStorage.hasToken()) return null
+        val user = tokenStorage.currentUser.value ?: return null
+        return detectAccountMismatch(
+            newUserId = user.id,
+            newUserLabel = user.email.takeIf { it.isNotBlank() } ?: user.id,
+            lastSyncedPortalUserId = tokenStorage.getLastSyncedPortalUserId(),
+            lastSyncedPortalUserLabel = tokenStorage.getLastSyncedPortalUserLabel(),
+            profileOwners = userProfileRepository.allProfiles.value.mapNotNull { profile ->
+                profile.supabaseUserId?.takeIf { it.isNotBlank() }?.let { owner -> profile.id to owner }
+            },
+        )
+    }
+
+    /**
      * Applies the user's account-switch choice (PR 11 / KD-7).
      *
      * Both choices relink every profile to the just-signed-in account, reset every
@@ -652,9 +702,30 @@ class SyncManager(
             ?: return@withLock Result.success(Unit)
         val newUserId = mismatch.newUserId
         val previousUserId = mismatch.previousUserId
+        // The choice binds this device's rows to the account that is signed in now. A stale
+        // dialog answered after a sign-out / sign-in as someone else must not bind them to
+        // the account the mismatch named.
+        if (tokenStorage.currentUser.value?.id != newUserId) {
+            return@withLock Result.failure(
+                IllegalStateException("The signed-in account changed before the account-switch choice was applied"),
+            )
+        }
         try {
             withProfileMutationBarrier {
                 val profiles = userProfileRepository.allProfiles.value
+                // Exclusions first, relink second: if the relink fails part-way, the profiles
+                // and the last-synced id still name the old account, so the pause gate
+                // re-detects the mismatch and the (idempotent) choice can be applied again.
+                // The reverse order could leave rows relinked with no exclusions recorded.
+                val boundaries = profiles.associate { profile ->
+                    profile.id to tokenStorage.getAccountSyncBoundary(previousUserId, profile.id)
+                }
+                syncRepository.recordAccountSwitchExclusions(
+                    portalUserId = newUserId,
+                    profileIds = profiles.map { it.id },
+                    excludeAllExisting = choice == AccountSwitchChoice.EXCLUDE_ALL_EXISTING,
+                    previousPushWatermarks = boundaries,
+                )
                 for (profile in profiles) {
                     // Force-relink: the normal link path throws ProfileAccountBindingException
                     // when the profile already names a different owner.
@@ -665,15 +736,6 @@ class SyncManager(
                 }
                 // Cursors are namespaced by user id, so the new account starts clean.
                 tokenStorage.resetAllPullCursors(newUserId)
-                val watermarks = profiles.associate { profile ->
-                    profile.id to tokenStorage.getPushWatermark(previousUserId, profile.id)
-                }
-                syncRepository.recordAccountSwitchExclusions(
-                    portalUserId = newUserId,
-                    profileIds = profiles.map { it.id },
-                    excludeAllExisting = choice == AccountSwitchChoice.EXCLUDE_ALL_EXISTING,
-                    previousPushWatermarks = watermarks,
-                )
             }
             // The device's rows now belong to the new account (or are excluded from it),
             // so a later sign-in as this user must not re-open the dialog.
@@ -838,24 +900,7 @@ class SyncManager(
      * failure (401) aborts the loop — the token is gone for every profile.
      */
     private suspend fun syncLocked(): Result<Long> {
-        // OAuth (and any other identity commit outside login/signup) publishes its
-        // mismatch here; drain it before deciding whether sync may run at all.
-        adoptPendingAccountMismatch()
-        when (val state = _syncState.value) {
-            is SyncState.AccountMismatch -> {
-                return Result.failure(
-                    IllegalStateException(
-                        "Sync paused: signed in as a different portal account than this device's data",
-                    ),
-                )
-            }
-            is SyncState.OwnershipConflict -> {
-                return Result.failure(
-                    PortalApiException(state.message),
-                )
-            }
-            else -> Unit
-        }
+        accountPauseFailure()?.let { return it }
 
         if (!tokenStorage.hasToken()) {
             _syncState.value = SyncState.NotAuthenticated
@@ -1175,6 +1220,7 @@ class SyncManager(
             userId = userId,
             profile = profile,
             includeUserScoped = includeUserScoped,
+            followsSuccessfulPush = true,
         )
 
         // One retry for sessions the portal's LWW gate turned away. The pull has just
@@ -1244,6 +1290,7 @@ class SyncManager(
     }
 
     private suspend fun retryPullLocked(): Result<Long> {
+        accountPauseFailure()?.let { return it }
         if (!tokenStorage.hasToken()) {
             _syncState.value = SyncState.NotAuthenticated
             return Result.failure(PortalApiException("Not authenticated"))
@@ -1265,6 +1312,9 @@ class SyncManager(
                 userId = userId,
                 profile = profile,
                 includeUserScoped = includeUserScoped,
+                // No push ran, so local rows created since the last push are still
+                // unuploaded; they must not fall below the account-switch boundary.
+                followsSuccessfulPush = false,
             )
             if (pullResult.isSuccess) {
                 val completedPull = pullResult.getOrThrow()
@@ -2978,6 +3028,7 @@ class SyncManager(
         userId: String,
         profile: UserProfile,
         includeUserScoped: Boolean,
+        followsSuccessfulPush: Boolean,
     ): Result<CompletedPull> {
         val deviceId = tokenStorage.getDeviceId()
         val mergeProfileId = profile.id
@@ -3274,16 +3325,29 @@ class SyncManager(
             }
 
             // Merge this page in preference-first repository order
-            val mergeResult = mergePullPage(
-                pullResponse = pullResponse,
-                lastSync = mergeLastSync,
-                mergeProfileId = mergeProfileId,
-                activeSyncProfileId = profile.id,
-                isFirstPage = pagesProcessed == 1,
-                serverWinsRoutineIds = serverWinsRoutineIds,
-                includeUserScoped = includeUserScoped,
-                pushWatermark = tokenStorage.getPushWatermark(userId, mergeProfileId),
-            )
+            val mergeResult = try {
+                mergePullPage(
+                    pullResponse = pullResponse,
+                    lastSync = mergeLastSync,
+                    mergeProfileId = mergeProfileId,
+                    activeSyncProfileId = profile.id,
+                    isFirstPage = pagesProcessed == 1,
+                    serverWinsRoutineIds = serverWinsRoutineIds,
+                    includeUserScoped = includeUserScoped,
+                    pushWatermark = tokenStorage.getPushWatermark(userId, mergeProfileId),
+                )
+            } finally {
+                // PR 11: a pulled routine / cycle / custom exercise gets its local createdAt
+                // at merge time, which is later than the push watermark. Record when this
+                // account's rows last landed here so an account switch does not mistake
+                // them for never-synced local rows. Stamped even after a failed merge
+                // (a page may be partly written). Only after a successful push, so no
+                // unpushed local row can fall below the boundary except one created
+                // during this sync.
+                if (followsSuccessfulPush) {
+                    tokenStorage.setPullMergeWatermark(userId, mergeProfileId, currentTimeMillis())
+                }
+            }
             if (mergeResult.isFailure) {
                 // Map Result<Unit> to Result<Long> for consistent return type
                 return Result.failure(mergeResult.exceptionOrNull() ?: PortalApiException("Merge failed"))

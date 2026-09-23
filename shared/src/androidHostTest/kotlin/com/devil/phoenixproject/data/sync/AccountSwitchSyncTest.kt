@@ -136,7 +136,77 @@ class AccountSwitchSyncTest {
         assertIs<SyncState.AccountMismatch>(state)
         assertTrue(state.previousUserId == userA)
         assertTrue(state.previousUserLabel == emailA)
-        assertTrue(api.pushCallCount == 0)
+        // A sync attempt is what could push; login alone never does.
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        assertTrue(manager.sync().isFailure)
+        assertTrue(api.pushCallCount == 0, "sync must not push while AccountMismatch is open")
+
+        // The pull-only retry is gated too, and must not overwrite the pause.
+        val pulls = api.pullCallCount
+        assertTrue(manager.retryPull().isFailure)
+        assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+        assertTrue(api.pullCallCount == pulls, "retryPull must not pull while AccountMismatch is open")
+    }
+
+    // ===== 1b. The pause is durable: a process restart before the choice keeps it =====
+
+    @Test
+    fun accountMismatchSurvivesAProcessRestartBeforeTheUserChooses() = runTest {
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        insertRoutine(routinePre, profileId = profileId, createdAt = baseTime)
+        assertTrue(manager.sync().isSuccess)
+
+        api.currentPushUser = userB
+        api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
+        assertTrue(manager.login(emailB, "pw").isSuccess)
+        assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+        val pushes = api.pushCallCount
+
+        // The process dies before the dialog is answered. A fresh SyncManager and hand-off
+        // holder start over the same token storage and database, with an Idle state.
+        val restarted = newManager(PendingAccountMismatch())
+        assertFalse(restarted.syncState.value is SyncState.AccountMismatch)
+
+        assertTrue(restarted.sync().isFailure)
+        val state = assertIs<SyncState.AccountMismatch>(restarted.syncState.value)
+        assertTrue(state.previousUserId == userA && state.newUserId == userB)
+        assertTrue(api.pushCallCount == pushes, "a restarted sync must not push before the choice")
+        assertTrue(
+            tokenStorage.getLastSyncedPortalUserId() == userA,
+            "the evidence of the switch must not be overwritten",
+        )
+
+        // The choice still resolves from the restarted manager, and sync resumes.
+        assertTrue(
+            restarted.resolveAccountMismatch(AccountSwitchChoice.UPLOAD_NEVER_SYNCED).isSuccess,
+        )
+        api.pushPayloads.clear()
+        assertTrue(restarted.sync().isSuccess)
+        assertTrue(api.pushPayloads.flatMap { it.sessions }.none { it.id == "pre-1" })
+    }
+
+    // ===== 1c. Signing back into the same account is not a switch =====
+
+    @Test
+    fun signingBackIntoTheSameAccountDoesNotPauseSync() = runTest {
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(tokenStorage.getLastSyncedPortalUserId() == userA)
+
+        manager.logout()
+        api.signInResult = Result.success(authResponse(userA, emailA, "token-a2"))
+        assertTrue(manager.login(emailA, "pw").isSuccess)
+        assertFalse(manager.syncState.value is SyncState.AccountMismatch)
+        assertFalse(pendingAccountMismatch.peek() != null, "no mismatch may be published")
+
+        insertSession("after-relogin", groupId = null, timestamp = currentTimeMillis(), profileId = profileId)
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(
+            "after-relogin" in api.pushPayloads.flatMap { it.sessions }.map { it.id },
+            "the same account must keep uploading",
+        )
+        assertTrue(syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.WORKOUT).isEmpty())
     }
 
     // ===== 2. "Upload workouts not yet synced" =====
@@ -144,8 +214,8 @@ class AccountSwitchSyncTest {
     @Test
     fun uploadNeverSyncedPushesOnlyTheRowsThatNeverReachedTheOldAccount() = runTest {
         val pre = seedPreSwitchRows()
-        val watermark = prepareSwitchWithNewRows(pre)
-        val lateCustomId = "custom_${watermark + 10_000}"
+        val boundary = prepareSwitchWithNewRows(pre)
+        val lateCustomId = "custom_${boundary + 70_000}"
 
         api.currentPushUser = userB
         api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
@@ -212,6 +282,130 @@ class AccountSwitchSyncTest {
         assertFalse(manager.syncState.value is SyncState.OwnershipConflict)
     }
 
+    @Test
+    fun eachChoiceRelinksEveryProfileAndALaterSignInShowsNoDialog() = runTest {
+        for (choice in AccountSwitchChoice.entries) {
+            setup()
+            val second = userProfileRepository.createProfile("Second", 1)
+            insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+            assertTrue(manager.sync().isSuccess)
+
+            api.currentPushUser = userB
+            api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
+            assertTrue(manager.login(emailB, "pw").isSuccess)
+            assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+            assertTrue(manager.resolveAccountMismatch(choice).isSuccess)
+
+            val owners = userProfileRepository.allProfiles.value.associate { it.id to it.supabaseUserId }
+            assertTrue(owners.keys.containsAll(listOf(profileId, second.id)), "profiles: $owners")
+            assertTrue(owners.values.all { it == userB }, "$choice must relink every profile: $owners")
+
+            manager.logout()
+            api.signInResult = Result.success(authResponse(userB, emailB, "token-b2"))
+            assertTrue(manager.login(emailB, "pw").isSuccess)
+            assertFalse(
+                manager.syncState.value is SyncState.AccountMismatch,
+                "$choice: signing in again as the new account must not reopen the dialog",
+            )
+            assertTrue(manager.sync().isSuccess)
+        }
+    }
+
+    @Test
+    fun aChoiceAnsweredAfterTheSignedInAccountChangedIsRefused() = runTest {
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        assertTrue(manager.sync().isSuccess)
+        api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
+        assertTrue(manager.login(emailB, "pw").isSuccess)
+        assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+
+        // Someone else is now signed in underneath the still-open dialog.
+        tokenStorage.saveGoTrueAuth(authResponse("user-c", "c@example.com", "token-c"))
+        assertTrue(manager.resolveAccountMismatch(AccountSwitchChoice.UPLOAD_NEVER_SYNCED).isFailure)
+        assertTrue(
+            userProfileRepository.allProfiles.value.none { it.supabaseUserId == userB },
+            "a stale choice must not bind the rows to the account the mismatch named",
+        )
+        assertTrue(syncRepository.getSyncExcludedEntityIds(userB, SyncExcludedEntityTypes.WORKOUT).isEmpty())
+    }
+
+    // ===== 3. Rows pulled from the old account are not "never synced" =====
+
+    @Test
+    fun rowsPulledFromTheOldAccountAreNotUploadedToTheNewOne() = runTest {
+        val pulledRoutine = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        val pulledCycle = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+        api.claim(userA, pulledRoutine, pulledCycle)
+        api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = currentTimeMillis(),
+                sessions = emptyList(),
+                routines = listOf(PullRoutineDto(id = pulledRoutine, userId = userA, name = "Pulled split")),
+                cycles = listOf(PullTrainingCycleDto(id = pulledCycle, userId = userA, name = "Pulled block")),
+                rpgAttributes = null,
+                badges = emptyList(),
+                gamificationStats = null,
+            ),
+        )
+        // A's last sync pushes nothing of these and pulls both in (a fresh-install first sync).
+        assertTrue(manager.sync().isSuccess)
+        val q = database.phoenixDatabaseQueries
+        assertTrue(q.selectRoutineById(pulledRoutine).executeAsOneOrNull() != null, "routine was not pulled")
+        assertTrue(q.selectTrainingCycleById(pulledCycle).executeAsOneOrNull() != null, "cycle was not pulled")
+        api.pullResult = Result.success(
+            PortalSyncPullResponse(
+                syncTime = currentTimeMillis(),
+                sessions = emptyList(),
+                routines = emptyList(),
+                rpgAttributes = null,
+                badges = emptyList(),
+                gamificationStats = null,
+            ),
+        )
+
+        api.currentPushUser = userB
+        api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
+        assertTrue(manager.login(emailB, "pw").isSuccess)
+        assertTrue(
+            manager.resolveAccountMismatch(AccountSwitchChoice.UPLOAD_NEVER_SYNCED).isSuccess,
+        )
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess, "the new account's first sync must not hit an ownership 400")
+        assertFalse(manager.syncState.value is SyncState.OwnershipConflict)
+        assertTrue(api.pushPayloads.flatMap { it.routines }.none { it.id == pulledRoutine })
+        assertTrue(api.pushPayloads.flatMap { it.cycles }.none { it.id == pulledCycle })
+    }
+
+    // ===== 3b. Workouts are classified by origin and acknowledged generation =====
+
+    @Test
+    fun taggedJustLiftSessionUploadsAndAReArmedSyncedSessionStaysExcluded() = runTest {
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        assertTrue(manager.sync().isSuccess)
+        val q = database.phoenixDatabaseQueries
+        // PR 8's repair re-arm nulls updatedAt on a row the old account already holds.
+        q.clearSessionTimestamps(listOf("pre-1"))
+
+        // A Just Lift set recorded after A's last sync and tagged with an exercise:
+        // never pushed, but the tag write gives it a non-null updatedAt.
+        val later = tokenStorage.getAccountSyncBoundary(userA, profileId) + 60_000
+        insertSession("just-lift", groupId = null, timestamp = later, profileId = profileId)
+        q.updateSessionExerciseTag("bench", "Bench Press", later, "just-lift")
+
+        api.currentPushUser = userB
+        api.signInResult = Result.success(authResponse(userB, emailB, "token-b"))
+        assertTrue(manager.login(emailB, "pw").isSuccess)
+        assertTrue(
+            manager.resolveAccountMismatch(AccountSwitchChoice.UPLOAD_NEVER_SYNCED).isSuccess,
+        )
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        val sessionIds = api.pushPayloads.flatMap { it.sessions }.map { it.id }
+        assertTrue("just-lift" in sessionIds, "a tagged, never-synced Just Lift set must upload: $sessionIds")
+        assertTrue("pre-1" !in sessionIds, "a re-armed row the old account holds must stay excluded: $sessionIds")
+        assertFalse(manager.syncState.value is SyncState.OwnershipConflict)
+    }
+
     // ===== 4. "Don't upload existing data" =====
 
     @Test
@@ -263,6 +457,29 @@ class AccountSwitchSyncTest {
             api.pushCallCount == pushes,
             "sync must not push again while OwnershipConflict is open",
         )
+    }
+
+    @Test
+    fun ownershipConflictRecoveryLeavesTheTerminalStateAndUploadsLaterRows() = runTest {
+        api.forcedRejectBody = "Entity pre-1 belongs to another user"
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        assertTrue(manager.sync().isFailure)
+        assertIs<SyncState.OwnershipConflict>(manager.syncState.value)
+
+        assertTrue(manager.applyOwnershipConflictRecovery().isSuccess)
+        assertFalse(manager.syncState.value is SyncState.OwnershipConflict)
+        assertTrue(
+            "pre-1" in syncRepository.getSyncExcludedEntityIds(userA, SyncExcludedEntityTypes.WORKOUT),
+            "recovery must record the pre-existing rows as excluded",
+        )
+
+        api.forcedRejectBody = null
+        insertSession("after-recovery", groupId = null, timestamp = currentTimeMillis(), profileId = profileId)
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        val sessionIds = api.pushPayloads.flatMap { it.sessions }.map { it.id }
+        assertTrue("after-recovery" in sessionIds, "a row created after recovery must upload: $sessionIds")
+        assertTrue("pre-1" !in sessionIds, "the refused row must stay excluded: $sessionIds")
     }
 
     @Test
@@ -422,15 +639,16 @@ class AccountSwitchSyncTest {
         assertTrue(manager.sync().isSuccess)
         val watermark = tokenStorage.getPushWatermark(userA, profileId)
         assertTrue(watermark > 0, "a completed push must persist the profile push watermark")
+        val boundary = tokenStorage.getAccountSyncBoundary(userA, profileId)
 
-        // Never-synced: sessions with NULL updatedAt; routine createdAt > watermark;
-        // custom exercise id time > watermark. All planted AFTER A's push so they
+        // Never-synced: a session that was never pushed; routine createdAt and custom
+        // exercise id time after A's sync boundary. All planted AFTER A's sync so they
         // never reached the old account.
-        insertSession("new-session", groupId = null, timestamp = watermark + 5_000, profileId = profileId)
-        insertRoutine(routineNew, profileId = profileId, createdAt = watermark + 5_000)
-        val lateCustomId = "custom_${watermark + 10_000}"
+        insertSession("new-session", groupId = null, timestamp = boundary + 60_000, profileId = profileId)
+        insertRoutine(routineNew, profileId = profileId, createdAt = boundary + 60_000)
+        val lateCustomId = "custom_${boundary + 70_000}"
         database.seedExercise(lateCustomId, name = "New Fly", isCustom = true)
-        return watermark
+        return boundary
     }
 
     private fun insertRoutine(id: String, profileId: String, createdAt: Long) {
@@ -606,6 +824,8 @@ class OwnershipEnforcingPortalApi : FakePortalApiClient() {
         val result = super.pushPortalPayload(payload)
         if (result.isSuccess) {
             claim(currentPushUser, *sentIds(payload).toTypedArray())
+            val acked = payload.sessions.map { it.id }.distinct()
+            return result.map { it.copy(acknowledgedWorkoutSessionIds = acked) }
         }
         return result
     }

@@ -356,7 +356,9 @@ interface SyncRepository {
      *
      * @param excludeAllExisting true for "Don't upload existing data": every pre-switch row.
      *   false for "Upload workouts not yet synced": only rows that already reached another account.
-     * @param previousPushWatermarks device-clock watermark of the old account, per profile.
+     * @param previousPushWatermarks the old account's sync boundary per profile: the later of its
+     *   push watermark and its last post-push pull merge (PortalTokenStorage.getAccountSyncBoundary).
+     *   Sessions are classified by origin and acknowledged generation instead (isNeverSyncedSession).
      */
     suspend fun recordAccountSwitchExclusions(
         portalUserId: String,

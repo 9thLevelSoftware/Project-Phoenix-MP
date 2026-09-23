@@ -761,6 +761,9 @@ class RoutineGroupPushTest {
                 user = GoTrueUser(id = "user-2", email = "b@b.c"),
             ),
         )
+        // PR 11 pauses sync on an unanswered account switch. Model a switch the user has
+        // already answered without excluding anything, so this test isolates the hash key.
+        tokenStorage.setLastSyncedPortalUserId("user-2")
 
         // S-1: the hash is namespaced by userId:profileId, so A's accept cannot satisfy B.
         assertNull(
