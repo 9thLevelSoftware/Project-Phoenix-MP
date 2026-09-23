@@ -429,16 +429,17 @@ class PortalTokenStorage(private val settings: Settings) {
     }
 
     /**
-     * A backup restore bulk-replaces the restored profiles' local rows, so for each of them the
+     * A backup restore bulk-replaces the restored profiles' local rows. For each of them the
      * signed-in user's pull cursor restarts at 0 (the next pull reconciles everything against
-     * the portal) and the routine-group repair walks the restored history again. Both live in
-     * settings, which a backup file cannot carry.
+     * the portal), and the one-time routine-group repair is marked done: restored rows carry
+     * no rep summaries, so a repair re-push would make the portal's replace_session_children
+     * delete the rep data it holds for them. Both live in settings, which a backup cannot carry.
      */
     fun resetAfterBackupRestore(profileIds: Collection<String>) {
         val userId = currentUser.value?.id
         profileIds.forEach { profileId ->
             if (userId != null) resetPullCursor(userId, profileId)
-            settings.remove(routineGroupRepairCursorKey(profileId))
+            setRoutineGroupRepairCursor(profileId, 0L)
         }
     }
 

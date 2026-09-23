@@ -916,15 +916,23 @@ SELECT * FROM WorkoutSession
 WHERE deletedAt IS NULL;
 
 -- Backup restore (PR 22): carry the session's sync stamp and portal-origin marker.
--- A pulled row (portalOrigin = 1) restores generation-clean (0/0), exactly as a pull
--- inserts it, so it is never re-pushed. A local row keeps insertSession's dirty
--- generation (1/0) and pushes as an ordinary local row.
+-- - Pulled row (portalOrigin = 1): generation-clean 0/0, exactly as a pull inserts it.
+-- - Local row with a stamp: the old device's push stamped it, so the portal already holds
+--   it with its rep summaries, which a backup does not carry. It restores as synced
+--   (synced = local generation); re-pushing it would make replace_session_children
+--   delete the portal's rep data.
+-- - Local row without a stamp: never uploaded, stays dirty and uploads once.
+-- Idempotent: run at insert and again after child sections re-dirty the row.
 restoreSessionSyncMarkers:
 UPDATE WorkoutSession
 SET portalOrigin = :portalOrigin,
     updatedAt = :updatedAt,
     local_sync_generation = CASE WHEN :portalOrigin = 1 THEN 0 ELSE local_sync_generation END,
-    synced_sync_generation = 0
+    synced_sync_generation = CASE
+        WHEN :portalOrigin = 1 THEN 0
+        WHEN :updatedAt IS NOT NULL THEN local_sync_generation
+        ELSE 0
+    END
 WHERE id = :id;
 
 -- Backup (PR 22): user-owned fields on stock catalogue rows. The catalogue itself ships

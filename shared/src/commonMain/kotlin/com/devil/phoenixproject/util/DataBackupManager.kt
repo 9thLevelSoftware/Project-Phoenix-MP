@@ -64,33 +64,26 @@ import kotlinx.serialization.json.encodeToJsonElement
 import kotlinx.serialization.json.jsonObject
 
 /**
- * Failure markers that mean the database or storage itself is broken, not one row.
- * Matched case-insensitively against the exception chain's class names and messages,
- * because each platform driver (Android framework, JDBC, native) reports SQLite codes
- * through its own exception type.
+ * Markers of a constraint violation, matched case-insensitively against the exception
+ * chain's messages because each platform driver (Android framework, JDBC, native SQLiter)
+ * reports SQLite result codes through its own exception type and wording.
  */
-private val FATAL_RESTORE_FAILURE_MARKERS = listOf(
-    "sqlite_full", "database or disk is full", "disk full",
-    "sqlite_ioerr", "disk i/o error", "ioexception",
-    "sqlite_readonly", "readonly database",
-    "sqlite_corrupt", "disk image is malformed",
-    "sqlite_nomem", "out of memory",
-    "sqlite_cantopen",
+private val CONSTRAINT_VIOLATION_MARKERS = listOf(
+    "sqlite_constraint", "constraint failed", "constraint violation",
 )
 
 /**
- * Whether a per-row restore failure may be skipped: a malformed value or a constraint
- * violation affects only that row. Storage failures (disk full, I/O, corruption, memory)
- * and cancellation abort the whole restore instead, so later rows are never written
- * outside the transaction that failed.
+ * Whether a per-row restore failure may be skipped. Allow-list: only a row that does not
+ * parse or that violates a constraint affects that row alone. Everything else (disk full,
+ * I/O, corruption, driver errors, bugs such as a null dereference) and cancellation aborts
+ * the whole restore, so later rows are never written after an unknown failure.
  */
 internal fun isSkippableRestoreRowFailure(failure: Throwable): Boolean {
     if (failure is CancellationException) return false
-    if (failure is SerializationException) return true
-    val chain = generateSequence(failure) { it.cause }.take(8)
-        .joinToString(" ") { "${it::class.simpleName} ${it.message}" }
-        .lowercase()
-    return FATAL_RESTORE_FAILURE_MARKERS.none { it in chain }
+    val chain = generateSequence(failure) { it.cause }.take(8).toList()
+    if (chain.any { it is SerializationException }) return true
+    val messages = chain.joinToString(" ") { it.message.orEmpty() }.lowercase()
+    return CONSTRAINT_VIOLATION_MARKERS.any { it in messages }
 }
 
 /**
@@ -783,6 +776,29 @@ abstract class BaseDataBackupManager(
                 queries.getProfileById(it).executeAsOneOrNull() != null
             }
             ?: "default"
+        // Restored sessions whose sync markers must be (re)applied once every child section
+        // has restored, because metric/set/note restores re-dirty their session.
+        val restoredSessionSyncMarkers = mutableListOf<WorkoutSessionBackup>()
+        fun applyRestoredSessionSyncMarkers() {
+            if (restoredSessionSyncMarkers.isEmpty()) return
+            database.transaction {
+                restoredSessionSyncMarkers.forEach { session ->
+                    queries.restoreSessionSyncMarkers(
+                        portalOrigin = if (session.portalOrigin) 1L else 0L,
+                        updatedAt = session.updatedAt,
+                        id = session.id,
+                    )
+                }
+            }
+        }
+        suspend fun resetStateABackupCannotCarry() {
+            // State a backup file cannot carry must not describe the pre-restore database
+            // (sync cursors, repair walks, one-shot work markers).
+            portalTokenStorage?.resetAfterBackupRestore(
+                representedProfileIds.ifEmpty { setOf(legacyFallbackProfileId()) },
+            )
+            preferencesManager?.resetOneShotWorkAfterRestore()
+        }
         try {
             val nav = BackupJsonNavigator(source)
             var legacyRackFieldPresent = false
@@ -850,9 +866,6 @@ abstract class BaseDataBackupManager(
             var repairedReferences = 0
             var entitiesWithErrors = 0
             var parentIndexFailed = false
-            // v7 session sync markers, applied after every section so child restores
-            // (metrics, sets, notes) cannot re-dirty a restored pulled row.
-            val restoredSessionSyncMarkers = mutableListOf<WorkoutSessionBackup>()
 
             preImportActiveProfileId = queries.getAllProfiles()
                 .executeAsList()
@@ -1532,6 +1545,13 @@ abstract class BaseDataBackupManager(
                                                 if (inserted != null) {
                                                     sessionsImported++
                                                     if (session.portalOrigin || session.updatedAt != null) {
+                                                        // Same transaction as the insert, so an aborted
+                                                        // restore never leaves a half-marked row.
+                                                        queries.restoreSessionSyncMarkers(
+                                                            portalOrigin = if (session.portalOrigin) 1L else 0L,
+                                                            updatedAt = session.updatedAt,
+                                                            id = session.id,
+                                                        )
                                                         restoredSessionSyncMarkers += session
                                                     }
                                                     recordParent("session", session.id, BackupParentStatus.INSERTED)
@@ -2686,17 +2706,7 @@ abstract class BaseDataBackupManager(
             }
             nav.endObject() // end root
 
-            if (restoredSessionSyncMarkers.isNotEmpty()) {
-                committedTransaction {
-                    restoredSessionSyncMarkers.forEach { session ->
-                        queries.restoreSessionSyncMarkers(
-                            portalOrigin = if (session.portalOrigin) 1L else 0L,
-                            updatedAt = session.updatedAt,
-                            id = session.id,
-                        )
-                    }
-                }
-            }
+            applyRestoredSessionSyncMarkers()
 
             database.transaction {
                 normalizeImportedActiveIdentity(
@@ -2790,16 +2800,17 @@ abstract class BaseDataBackupManager(
                 repairedReferences = repairedReferences,
                 entitiesWithErrors = entitiesWithErrors,
             )
-            if (importResult.totalImported > 0) {
-                // Post-restore reset: state a backup file cannot carry must not describe the
-                // pre-restore database (sync cursors, repair walks, one-shot work markers).
-                portalTokenStorage?.resetAfterBackupRestore(
-                    representedProfileIds.ifEmpty { setOf(legacyFallbackProfileId()) },
-                )
-                preferencesManager?.resetOneShotWorkAfterRestore()
-            }
+            if (importResult.totalImported > 0) resetStateABackupCannotCarry()
             return Result.success(importResult)
         } catch (e: Throwable) {
+            if (databaseWorkCommitted) {
+                // An aborted restore still leaves committed rows: finish their sync markers
+                // (children may have re-dirtied them) and reset the state they invalidate.
+                withContext(NonCancellable) {
+                    runCatching { applyRestoredSessionSyncMarkers() }.exceptionOrNull()?.let(e::addSuppressed)
+                    runCatching { resetStateABackupCannotCarry() }.exceptionOrNull()?.let(e::addSuppressed)
+                }
+            }
             if (databaseWorkCommitted && !reconciliationAttempted) {
                 withContext(NonCancellable) {
                     val normalizationFailure = if (activeIdentityNormalized) {

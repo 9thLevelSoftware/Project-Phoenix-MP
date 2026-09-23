@@ -35,6 +35,8 @@ import kotlinx.serialization.SerializationException
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.jsonObject
 import org.junit.Test
 
 /**
@@ -166,14 +168,16 @@ class DataBackupCompletenessTest {
     // ---- session sync markers ----
 
     @Test
-    fun `a restored pulled session stays pulled and clean while a local one keeps its stamp and pushes`() = runTest {
+    fun `restored sessions keep their origin and stamp and only never-uploaded ones push`() = runTest {
         val source = Fixture(includeRawTelemetry = true)
         source.seedProfiles()
         source.saveSession("pulled-1")
-        source.saveSession("local-1")
-        source.insertMetric("pulled-1") // a child restore must not re-dirty the pulled row
+        source.saveSession("synced-1")
+        source.saveSession("unsynced-1")
+        // Child restores re-dirty their session, so every marked row gets a child.
+        listOf("pulled-1", "synced-1", "unsynced-1").forEach(source::insertMetric)
         source.queries.restoreSessionSyncMarkers(portalOrigin = 1L, updatedAt = 1_700_000_500_000L, id = "pulled-1")
-        source.queries.restoreSessionSyncMarkers(portalOrigin = 0L, updatedAt = 1_700_000_600_000L, id = "local-1")
+        source.queries.restoreSessionSyncMarkers(portalOrigin = 0L, updatedAt = 1_700_000_600_000L, id = "synced-1")
 
         val target = Fixture()
         target.manager.importFromJson(source.manager.exportToJson()).getOrThrow()
@@ -183,10 +187,16 @@ class DataBackupCompletenessTest {
         assertEquals(1_700_000_500_000L, pulled.updatedAt)
         assertFalse(pulled.local_sync_generation > pulled.synced_sync_generation, "a pulled row must never be re-pushed")
 
-        val local = target.queries.selectSessionById("local-1").executeAsOne()
-        assertEquals(0L, local.portalOrigin)
-        assertEquals(1_700_000_600_000L, local.updatedAt)
-        assertTrue(local.local_sync_generation > local.synced_sync_generation, "a local row still pushes")
+        // Stamped by the old device's push: the portal holds it with rep data the backup lacks.
+        val synced = target.queries.selectSessionById("synced-1").executeAsOne()
+        assertEquals(0L, synced.portalOrigin)
+        assertEquals(1_700_000_600_000L, synced.updatedAt)
+        assertFalse(synced.local_sync_generation > synced.synced_sync_generation, "a synced row must not be re-pushed")
+        assertTrue(synced.synced_sync_generation > 0L, "and it counts as synced, not never-synced")
+
+        val unsynced = target.queries.selectSessionById("unsynced-1").executeAsOne()
+        assertEquals(null, unsynced.updatedAt)
+        assertTrue(unsynced.local_sync_generation > unsynced.synced_sync_generation, "a never-uploaded row still pushes")
     }
 
     // ---- stock exercise user fields ----
@@ -241,7 +251,7 @@ class DataBackupCompletenessTest {
         target.manager.importFromJson(source.manager.exportToJson()).getOrThrow()
 
         assertEquals(0L, storage.getPullCursor("user-1", PROFILE_B), "next pull must be a full pull")
-        assertEquals(Long.MAX_VALUE, storage.getRoutineGroupRepairCursor(PROFILE_B), "repair walks the restored history")
+        assertEquals(0L, storage.getRoutineGroupRepairCursor(PROFILE_B), "no repair re-push of rep-less restored rows")
         assertEquals(1, preferences.oneShotResetCount)
         assertFalse(preferences.preferencesFlow.value.velocityOneRepMaxBackfillDone, "backfill re-runs over restored sessions")
     }
@@ -249,12 +259,17 @@ class DataBackupCompletenessTest {
     // ---- which row failures a restore may skip ----
 
     @Test
-    fun `only malformed rows and constraint violations are skipped and storage failures abort the restore`() {
+    fun `only malformed rows and constraint violations are skipped and everything else aborts the restore`() {
         assertTrue(isSkippableRestoreRowFailure(SerializationException("bad row")))
+        assertTrue(isSkippableRestoreRowFailure(RuntimeException("wrapped", SerializationException("bad row"))))
         assertTrue(isSkippableRestoreRowFailure(IllegalStateException("[SQLITE_CONSTRAINT_FOREIGNKEY] FOREIGN KEY constraint failed")))
+        // Android framework wording
+        assertTrue(isSkippableRestoreRowFailure(IllegalStateException("UNIQUE constraint failed: Exercise.id (code 2067 SQLITE_CONSTRAINT_UNIQUE)")))
         assertFalse(isSkippableRestoreRowFailure(IllegalStateException("[SQLITE_FULL] database or disk is full")))
         assertFalse(isSkippableRestoreRowFailure(RuntimeException("wrapped", java.io.IOException("disk I/O error"))))
         assertFalse(isSkippableRestoreRowFailure(IllegalStateException("database disk image is malformed")))
+        assertFalse(isSkippableRestoreRowFailure(NullPointerException()), "an unknown failure aborts, never silently skips")
+        assertFalse(isSkippableRestoreRowFailure(IllegalStateException("unexpected driver state")))
         assertFalse(isSkippableRestoreRowFailure(kotlinx.coroutines.CancellationException("cancelled")))
     }
 
@@ -271,6 +286,56 @@ class DataBackupCompletenessTest {
         val constraint = Fixture(failSessionInsertsWith = "[SQLITE_CONSTRAINT_CHECK] CHECK constraint failed")
         val skipped = constraint.manager.importFromJson(exported).getOrThrow()
         assertEquals(1, skipped.entitiesWithErrors, "a constraint failure skips only that row")
+
+        val unexpected = Fixture(failSessionInsertsWith = "unexpected driver state")
+        assertTrue(unexpected.manager.importFromJson(exported).isFailure, "an unknown failure aborts, never silently skips")
+    }
+
+    // ---- v1-v6 single-object gamification stats (the shipping app's format) ----
+
+    @Test
+    fun `a v6 backup restores its single gamification stats row`() = runTest {
+        val target = Fixture()
+        val result = target.manager.importFromJson(v6Backup(statsProfileId = "default", totalWorkouts = 9)).getOrThrow()
+
+        assertTrue(result.gamificationStatsImported)
+        val restored = target.queries.selectGamificationStats("default").executeAsOne()
+        assertEquals(9L, restored.totalWorkouts)
+        assertEquals(1_700_000_000_000L, restored.lastUpdated)
+    }
+
+    @Test
+    fun `a v6 backup whose stats name a profile it does not carry is rejected and counted`() = runTest {
+        val target = Fixture()
+        val result = target.manager.importFromJson(v6Backup(statsProfileId = "ghost", totalWorkouts = 9)).getOrThrow()
+
+        assertFalse(result.gamificationStatsImported)
+        assertEquals(1, result.entitiesWithErrors)
+        assertEquals(null, target.queries.selectGamificationStats("ghost").executeAsOneOrNull())
+    }
+
+    /**
+     * A v6 file as the shipping app writes it: a single `gamificationStats` object, and none
+     * of the v7 sections. Built from a real export, then reshaped to the older wire format.
+     */
+    private suspend fun v6Backup(statsProfileId: String, totalWorkouts: Int): String {
+        val source = Fixture()
+        source.seedProfiles()
+        val v7 = testJson.decodeFromString<BackupData>(source.manager.exportToJson())
+        val v6 = v7.copy(
+            version = 6,
+            data = v7.data.copy(
+                gamificationStats = GamificationStatsBackup(
+                    totalWorkouts = totalWorkouts,
+                    lastUpdated = 1_700_000_000_000L,
+                    profileId = statsProfileId,
+                ),
+            ),
+        )
+        val root = testJson.parseToJsonElement(testJson.encodeToString(v6)).jsonObject
+        val data = root.getValue("data").jsonObject
+        val v6Data = JsonObject(data - "gamificationStatsByProfile" - "stockExerciseUserFields")
+        return JsonObject(root + ("data" to v6Data)).toString()
     }
 
     // ---- fixtures ----
