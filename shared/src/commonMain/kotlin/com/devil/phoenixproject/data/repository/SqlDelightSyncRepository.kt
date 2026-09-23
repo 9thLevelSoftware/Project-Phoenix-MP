@@ -271,11 +271,20 @@ class SqlDelightSyncRepository(
         }
     }
 
-    override suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long) {
+    override suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long, gatherStartedAt: Long) {
         if (prIds.isEmpty()) return
         withContext(Dispatchers.IO) {
             prIds.chunked(900).forEach { chunk ->
-                queries.updatePRTimestamp(timestamp, chunk)
+                queries.updatePRTimestamp(timestamp = timestamp, ids = chunk, gatherStartedAt = gatherStartedAt)
+            }
+        }
+    }
+
+    override suspend fun stampPushedRoutinesWithoutTimestamp(routineIds: List<String>, timestamp: Long) {
+        if (routineIds.isEmpty()) return
+        withContext(Dispatchers.IO) {
+            routineIds.chunked(900).forEach { chunk ->
+                queries.stampPushedRoutinesWithoutTimestamp(timestamp = timestamp, ids = chunk)
             }
         }
     }

@@ -591,7 +591,7 @@ class MultiProfileSyncIntegrationTest {
             uuid = uuid,
         )
         val row = q.selectPRsModifiedSince(0L, profileId).executeAsList().single { it.uuid == uuid }
-        q.updatePRTimestamp(updatedAt, listOf(row.id))
+        q.updatePRTimestamp(updatedAt, listOf(row.id), Long.MAX_VALUE)
     }
 
     private fun insertSession(

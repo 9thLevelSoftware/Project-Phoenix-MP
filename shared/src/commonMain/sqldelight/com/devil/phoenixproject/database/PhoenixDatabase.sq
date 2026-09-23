@@ -3685,10 +3685,23 @@ AND profile_id = :profileId;
 updatePRServerId:
 UPDATE PersonalRecord SET serverId = ? WHERE id = ?;
 
--- Stamp pushed PRs with current updatedAt so they aren't re-sent on next sync
--- (Issue #528). Matches the WorkoutSession.updateSessionTimestamp pattern.
+-- Stamp pushed PRs so they aren't re-sent on next sync (Issue #528). The stamp is the
+-- push's gatherStartedAt, which becomes the profile's push watermark: the next gather
+-- selects `updatedAt > watermark`, so a stamp of `now` would re-select the row forever.
+-- Guarded like updateSessionTimestampsByIds: a row edited after the gather keeps its
+-- newer updatedAt and is re-sent.
 updatePRTimestamp:
-UPDATE PersonalRecord SET updatedAt = ? WHERE id IN ?;
+UPDATE PersonalRecord SET updatedAt = :timestamp
+WHERE id IN :ids
+AND (updatedAt IS NULL OR updatedAt <= :gatherStartedAt);
+
+-- Stamp pushed routines that carry no updatedAt (backup-restored / legacy rows), which
+-- `updatedAt IS NULL` in selectRoutinesModifiedSince would otherwise re-select on every
+-- sync. Rows with a local edit time already fall below the next watermark by themselves.
+stampPushedRoutinesWithoutTimestamp:
+UPDATE Routine SET updatedAt = :timestamp
+WHERE id IN :ids
+AND updatedAt IS NULL;
 
 -- Get routines modified since last sync
 selectRoutinesModifiedSince:
