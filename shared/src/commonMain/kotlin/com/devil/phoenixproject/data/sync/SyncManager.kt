@@ -1108,7 +1108,12 @@ class SyncManager(
         }
         val sessionIdByDeltaPrKey = sessions.mapNotNull { session ->
             val exerciseId = session.exerciseId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            personalRecordSessionKey(exerciseId, session.timestamp) to session.id
+            // The PORTAL workout id: buildPortalSession publishes a routine set under
+            // its parent routineSessionId (the component id becomes an exercise id), so
+            // a PR linked to the component id would reference no pushed workout and the
+            // portal would null its session_id (codex 4081208473).
+            personalRecordSessionKey(exerciseId, session.timestamp) to
+                (session.routineSessionId?.takeIf { it.isNotBlank() } ?: session.id)
         }.toMap()
         val missingSessionRecords = recentPRs.filter { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp) !in sessionIdByDeltaPrKey

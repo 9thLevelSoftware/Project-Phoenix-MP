@@ -69,6 +69,7 @@ import com.devil.phoenixproject.domain.usecase.RepCounterFromMachine
 import com.devil.phoenixproject.domain.usecase.ResolveRoutineWeightsUseCase
 import com.devil.phoenixproject.presentation.components.exercisepicker.CompletedExerciseIdsState
 import com.devil.phoenixproject.presentation.components.exercisepicker.completedExerciseIdsFromHistory
+import com.devil.phoenixproject.presentation.manager.WorkoutSaveFailureOffer
 import com.devil.phoenixproject.presentation.manager.BleConnectionManager
 import com.devil.phoenixproject.presentation.manager.DefaultWorkoutSessionManager
 import com.devil.phoenixproject.presentation.manager.GamificationManager
@@ -731,6 +732,12 @@ class MainViewModel(
      * made exactly once even though the failure can outlive the screen.
      */
     val workoutSaveFailureSessionId: StateFlow<String?> get() = workoutSessionManager.coordinator.workoutSaveFailureSessionId
+
+    /**
+     * The offer as a distinct value per publication, so a Retry that fails again is
+     * shown again. The Retry snackbar keys on this.
+     */
+    val workoutSaveFailureOffer: StateFlow<WorkoutSaveFailureOffer?> get() = workoutSessionManager.coordinator.workoutSaveFailureOffer
 
     /**
      * Retry the failed commit of [sessionId]. Returns false when the retained

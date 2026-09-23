@@ -1481,6 +1481,42 @@ class WorkoutExitPersistenceTest {
         }
     }
 
+    /**
+     * GitHub #853 (codex 4081208485): Retry drains the offer, and a retry that fails
+     * again re-offers the SAME session id. The published offer must be a new value so
+     * a collector keyed on it re-runs; the bare id conflates to "unchanged".
+     */
+    @Test
+    fun `a retry that fails again publishes a new distinct offer`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeWorkoutRepo.beforeSaveSession = {
+                throw IllegalStateException("disk full")
+            }
+            startTrackedCableSet(harness)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            val firstOffer = harness.coordinator.workoutSaveFailureOffer.value
+            assertEquals(lease.sessionId, firstOffer?.sessionId)
+
+            // What MainViewModel.retryWorkoutSave does: drain, then retry.
+            harness.coordinator.withdrawWorkoutSaveFailure(lease.sessionId)
+            assertTrue(harness.activeSessionEngine.retryWorkoutExitPersistence(lease.sessionId))
+            advanceUntilIdle()
+
+            val secondOffer = harness.coordinator.workoutSaveFailureOffer.value
+            assertEquals(lease.sessionId, secondOffer?.sessionId, "The failed retry is offered again")
+            assertNotEquals(
+                firstOffer,
+                secondOffer,
+                "A re-offer of the same session must be a distinct value, or the snackbar never re-runs",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
     private fun startTrackedCableSet(
         harness: DWSMTestHarness,
         weightPerCableKg: Float = 25f,

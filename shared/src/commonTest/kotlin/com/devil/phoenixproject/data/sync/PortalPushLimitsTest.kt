@@ -223,6 +223,68 @@ class PortalPushLimitsTest {
     }
 
     /**
+     * GitHub #853 (codex 4081208473): buildPortalSession publishes a routine set under
+     * its parent routineSessionId (the component id becomes an exercise id), so a PR
+     * earned in a routine must link to that parent. A standalone PR links to its own id.
+     */
+    @Test
+    fun aRoutinePrLinksToTheParentWorkoutAndAStandalonePrToItself() = runTest {
+        authenticate()
+        val routineSet = WorkoutSession(
+            id = "routine-component",
+            timestamp = 1_740_000_000_000L,
+            mode = "OldSchool",
+            reps = 5,
+            weightPerCableKg = 30f,
+            totalReps = 5,
+            exerciseId = "ex-routine",
+            exerciseName = "Row",
+            routineSessionId = "11111111-1111-4111-a111-111111111111",
+            profileId = "default",
+        )
+        val standalone = WorkoutSession(
+            id = "standalone-session",
+            timestamp = 1_740_000_100_000L,
+            mode = "OldSchool",
+            reps = 5,
+            weightPerCableKg = 30f,
+            totalReps = 5,
+            exerciseId = "ex-standalone",
+            exerciseName = "Press",
+            profileId = "default",
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(routineSet, standalone)
+        fun prFor(session: WorkoutSession) = PersonalRecord(
+            exerciseId = session.exerciseId!!,
+            exerciseName = session.exerciseName!!,
+            weightPerCableKg = 30f,
+            reps = 5,
+            oneRepMax = 30f,
+            timestamp = session.timestamp,
+            workoutMode = "OldSchool",
+            prType = PRType.MAX_WEIGHT,
+            volume = 150f,
+            phase = WorkoutPhase.COMBINED,
+            profileId = "default",
+            uuid = "pr-uuid-${session.id}",
+        )
+        fakeSyncRepo.fullPRsToReturn = listOf(prFor(routineSet), prFor(standalone))
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val sessionIdByPr = fakeApi.pushPayloads.flatMap { it.personalRecords }
+            .associate { it.id to it.sessionId }
+        assertEquals(routineSet.routineSessionId, sessionIdByPr["pr-uuid-routine-component"])
+        assertEquals(standalone.id, sessionIdByPr["pr-uuid-standalone-session"])
+        val pushedWorkoutIds = fakeApi.pushPayloads.flatMap { it.sessions }.map { it.id }.toSet()
+        assertTrue(
+            sessionIdByPr.values.all { it in pushedWorkoutIds },
+            "Every PR must reference a pushed portal workout",
+        )
+    }
+
+    /**
      * A PR that matches no session in this push (a historical PR resolved through
      * `findSessionIdsForPersonalRecords`) still has to be sent — it rides every
      * batch, including the final one.
