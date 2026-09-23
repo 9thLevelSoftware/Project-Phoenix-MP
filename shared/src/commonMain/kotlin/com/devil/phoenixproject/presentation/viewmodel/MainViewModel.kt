@@ -700,6 +700,9 @@ class MainViewModel(
 
     /** Issue #348: Session-scoped flag covering active sets AND between-set routine screens */
     val isInWorkoutSession get() = workoutSessionManager.coordinator.isInWorkoutSession
+
+    /** Live, synchronous read of [isInWorkoutSession] for the profile-switch guard. */
+    fun isInWorkoutSessionNow(): Boolean = workoutSessionManager.coordinator.isInWorkoutSessionNow()
     val currentMetric: StateFlow<WorkoutMetric?> get() = workoutSessionManager.coordinator.currentMetric
     val currentHeuristicKgMax: StateFlow<Float> get() = workoutSessionManager.coordinator.currentHeuristicKgMax
     val loadBaselineA: StateFlow<Float> get() = workoutSessionManager.coordinator.loadBaselineA
@@ -1225,7 +1228,6 @@ class MainViewModel(
     fun decrementWeight(amount: Float = 0.5f) = workoutSessionManager.decrementWeight(amount)
     fun setWeightPreset(presetWeightKg: Float) = workoutSessionManager.setWeightPreset(presetWeightKg)
     suspend fun getLastWeightForExercise(exerciseId: String): Float? = workoutSessionManager.getLastWeightForExercise(exerciseId)
-    suspend fun getPrWeightForExercise(exerciseId: String): Float? = workoutSessionManager.getPrWeightForExercise(exerciseId)
 
     // ===== Just Lift / Handle Detection Delegation =====
 

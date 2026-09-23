@@ -65,6 +65,13 @@ sealed interface ActiveProfileContext {
     ) : ActiveProfileContext
 }
 
+/**
+ * A profile switch was refused because a workout session went live while the switch
+ * waited for the profile mutation barrier (FP-6, codex 4081312853).
+ */
+class ProfileSwitchBlockedDuringWorkoutException :
+    IllegalStateException("A workout session is live; the profile cannot change now")
+
 class ProfileContextUnavailableException :
     IllegalStateException(
         "Active profile context is switching",
@@ -118,11 +125,25 @@ interface UserProfileRepository {
 
     fun observePreferences(profileId: String): Flow<UserProfilePreferences>
     suspend fun createProfile(name: String, colorIndex: Int): UserProfile
-    suspend fun createAndActivateProfile(name: String, colorIndex: Int): UserProfile
+    /**
+     * [blockedByLiveSession] is re-checked AFTER the profile mutation barrier is acquired:
+     * a workout can start while the switch waits for sync/auth to release it. A true
+     * result aborts with [ProfileSwitchBlockedDuringWorkoutException] and changes nothing.
+     */
+    suspend fun createAndActivateProfile(
+        name: String,
+        colorIndex: Int,
+        blockedByLiveSession: () -> Boolean = { false },
+    ): UserProfile
     suspend fun updateProfile(id: String, name: String, colorIndex: Int)
-    suspend fun deleteProfile(id: String): Boolean
-    suspend fun deleteActiveProfile(expectedProfileId: String): Boolean
-    suspend fun setActiveProfile(id: String)
+    /** Deleting the ACTIVE profile is refused while [blockedByLiveSession] (see [createAndActivateProfile]). */
+    suspend fun deleteProfile(id: String, blockedByLiveSession: () -> Boolean = { false }): Boolean
+    suspend fun deleteActiveProfile(
+        expectedProfileId: String,
+        blockedByLiveSession: () -> Boolean = { false },
+    ): Boolean
+    /** See [createAndActivateProfile] for [blockedByLiveSession]. */
+    suspend fun setActiveProfile(id: String, blockedByLiveSession: () -> Boolean = { false })
     suspend fun refreshProfiles()
     suspend fun ensureDefaultProfile()
     suspend fun updateCore(profileId: String, value: CoreProfilePreferences)
@@ -221,7 +242,9 @@ class SqlDelightUserProfileRepository(
     override suspend fun createAndActivateProfile(
         name: String,
         colorIndex: Int,
+        blockedByLiveSession: () -> Boolean,
     ): UserProfile = withProfileMutation {
+        requireNoLiveWorkoutSession(blockedByLiveSession)
         val trimmedName = name.trim()
         require(trimmedName.isNotEmpty()) { "Profile name must not be blank" }
         val id = generateUUID()
@@ -255,20 +278,27 @@ class SqlDelightUserProfileRepository(
         }
     }
 
-    override suspend fun deleteProfile(id: String): Boolean = withProfileMutation {
-        deleteProfileLocked(id, requireActive = false)
+    override suspend fun deleteProfile(id: String, blockedByLiveSession: () -> Boolean): Boolean = withProfileMutation {
+        deleteProfileLocked(id, requireActive = false, blockedByLiveSession)
     }
 
-    override suspend fun deleteActiveProfile(expectedProfileId: String): Boolean = withProfileMutation {
+    override suspend fun deleteActiveProfile(
+        expectedProfileId: String,
+        blockedByLiveSession: () -> Boolean,
+    ): Boolean = withProfileMutation {
         val ready = _activeProfileContext.value as? ActiveProfileContext.Ready
             ?: throw ProfileContextUnavailableException()
         if (ready.profile.id != expectedProfileId) {
             throw StaleProfileContextException(expectedProfileId, ready.profile.id)
         }
-        deleteProfileLocked(expectedProfileId, requireActive = true)
+        deleteProfileLocked(expectedProfileId, requireActive = true, blockedByLiveSession)
     }
 
-    private suspend fun deleteProfileLocked(id: String, requireActive: Boolean): Boolean {
+    private suspend fun deleteProfileLocked(
+        id: String,
+        requireActive: Boolean,
+        blockedByLiveSession: () -> Boolean,
+    ): Boolean {
         if (id == DEFAULT_PROFILE_ID) return false
 
         val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
@@ -279,6 +309,9 @@ class SqlDelightUserProfileRepository(
         val sourceProfile = queries.getProfileById(id).executeAsOneOrNull() ?: return false
 
         val wasActive = previous.profile.id == id
+        // Removing the active profile moves the running workout's lease onto a deleted id
+        // (codex 4082092571). Checked here, under the barrier, like switch and create.
+        if (wasActive) requireNoLiveWorkoutSession(blockedByLiveSession)
         val targetProfileId = if (requireActive || wasActive) DEFAULT_PROFILE_ID else previous.profile.id
         val targetProfile = requireNotNull(queries.getProfileById(targetProfileId).executeAsOneOrNull()) {
             "Profile deletion target missing: $targetProfileId"
@@ -407,8 +440,10 @@ class SqlDelightUserProfileRepository(
         return maxOf(now, latest + 1L)
     }
 
-    override suspend fun setActiveProfile(id: String) {
+    override suspend fun setActiveProfile(id: String, blockedByLiveSession: () -> Boolean) {
         withProfileMutation {
+            // Checked under the barrier: a workout may have started while this waited.
+            requireNoLiveWorkoutSession(blockedByLiveSession)
             require(allProfiles.value.any { it.id == id }) { "Unknown profile: $id" }
             withProfileContextTransition(id) { previous ->
                 database.transaction {
@@ -668,6 +703,16 @@ class SqlDelightUserProfileRepository(
             write(context)
             publishReadyContext(expectedProfileId)
         }
+    }
+
+    /**
+     * FP-6 guard for any mutation that changes, removes or reassigns the ACTIVE
+     * profile: switch, create-and-activate, active-profile deletion and (PR 20)
+     * merge/delete. Call it inside [withProfileMutation], after the barrier is held,
+     * because a workout can start while the mutation waits for sync/auth.
+     */
+    private fun requireNoLiveWorkoutSession(blockedByLiveSession: () -> Boolean) {
+        if (blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
     }
 
     /** Lock order is shared barrier first, then the repository context mutex. */

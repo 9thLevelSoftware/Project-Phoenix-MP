@@ -661,7 +661,7 @@ class DWSMEquipmentRackTest {
     @Test
     fun `single exercise completion persists rack defaults`() = runTest {
         // Issue #593: routine-bodyweight exercises now require a rep-entry
-        // confirmation before `saveWorkoutSession()` runs. This test is
+        // confirmation before the set is saved. This test is
         // about rack-default persistence (not rep-entry flow), so we use
         // a real cable equipment ("BAR") to keep the routine on the
         // cable save path.

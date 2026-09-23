@@ -999,7 +999,6 @@ class DefaultWorkoutSessionManager(
     fun decrementWeight(amount: Float = 0.5f) = activeSessionEngine.decrementWeight(amount)
     fun setWeightPreset(presetWeightKg: Float) = activeSessionEngine.setWeightPreset(presetWeightKg)
     suspend fun getLastWeightForExercise(exerciseId: String): Float? = activeSessionEngine.getLastWeightForExercise(exerciseId)
-    suspend fun getPrWeightForExercise(exerciseId: String): Float? = activeSessionEngine.getPrWeightForExercise(exerciseId)
 
     // ===== Just Lift — delegated to ActiveSessionEngine =====
 
