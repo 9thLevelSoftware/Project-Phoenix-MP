@@ -329,6 +329,44 @@ class AccountSwitchSyncTest {
         assertTrue(syncRepository.getSyncExcludedEntityIds(userB, SyncExcludedEntityTypes.WORKOUT).isEmpty())
     }
 
+    // ===== 2c. Account-level markers never advance on an aborted loop =====
+
+    @Test
+    fun anAuthAbortBeforeAnyPushLandsAdvancesNoAccountMarker() = runTest {
+        val second = userProfileRepository.createProfile("Second", 1)
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        insertSession("pre-2", groupId = null, timestamp = baseTime, profileId = second.id)
+        api.pushResult = Result.failure(PortalApiException("expired", null, 401))
+
+        assertTrue(manager.sync().isFailure)
+
+        assertTrue(api.pushCallCount == 1, "a 401 must abort the loop (pushes=${api.pushCallCount})")
+        assertTrue(tokenStorage.getLastSyncedPortalUserId() == null, "no push landed, so no last-synced account")
+        for (id in listOf(profileId, second.id)) {
+            assertTrue(tokenStorage.getPushWatermark(userA, id) == 0L, "push watermark advanced for $id")
+            assertTrue(tokenStorage.getPullMergeWatermark(userA, id) == 0L, "pull-merge stamp advanced for $id")
+        }
+    }
+
+    @Test
+    fun aFailedPullMergeDoesNotAdvanceThePullMergeStamp() = runTest {
+        val routine = "ffffffff-ffff-4fff-8fff-ffffffffffff"
+        // The push lands, then the pull fails before merging anything: the stamp records
+        // pulled rows landing, so it must stay where it was. (A merge that throws is covered
+        // by SyncManagerTest.aRolledBackPullMergeDoesNotAdvanceThePullMergeStamp.)
+        api.pullResult = Result.failure(PortalApiException("server", null, 500))
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = profileId)
+        insertRoutine(routine, profileId = profileId, createdAt = baseTime)
+
+        manager.sync()
+
+        assertTrue(tokenStorage.getPushWatermark(userA, profileId) > 0L, "the push itself landed")
+        assertTrue(
+            tokenStorage.getPullMergeWatermark(userA, profileId) == 0L,
+            "a pull that merged nothing must not advance the pull-merge stamp",
+        )
+    }
+
     // ===== 3. Rows pulled from the old account are not "never synced" =====
 
     @Test

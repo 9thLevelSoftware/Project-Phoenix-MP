@@ -3242,6 +3242,24 @@ class SyncManagerTest {
     }
 
     @Test
+    fun aRolledBackPullMergeDoesNotAdvanceThePullMergeStamp() = runTest {
+        // PR 11: the stamp records that this account's pulled rows landed. A merge that
+        // threw rolled its transaction back, so nothing landed and the stamp must not move.
+        setupAuthenticated()
+        fakeUserProfileRepo.setActiveProfileForTest()
+        fakeSyncRepo.atomicMergeShouldFail = true
+
+        // The push lands; the pull's merge throws (reported as a partial sync).
+        createManager().sync()
+        assertTrue(tokenStorage.getPushWatermark("user-123", "default") > 0L, "the push itself landed")
+        assertEquals(0L, tokenStorage.getPullMergeWatermark("user-123", "default"))
+
+        fakeSyncRepo.atomicMergeShouldFail = false
+        assertTrue(createManager().sync().isSuccess)
+        assertTrue(tokenStorage.getPullMergeWatermark("user-123", "default") > 0L)
+    }
+
+    @Test
     fun aCompletedPushAdvancesThisProfilesPushWatermark() = runTest {
         // codex #856 P2: the watermark read as the routine/PR gather floor must advance
         // after every batch of a push landed, or the same rows are re-sent forever.

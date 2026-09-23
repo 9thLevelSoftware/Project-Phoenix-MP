@@ -1130,7 +1130,11 @@ class SyncManager(
         }
         Logger.i("SyncManager") { "Push succeeded for profile ${profile.id}" }
         // PR 11: remember which portal account the last successful push landed in, so
-        // the next sign-in can tell "same account" from "different account".
+        // the next sign-in can tell "same account" from "different account". The step that
+        // justifies it is "rows of this device landed in this account", which this push
+        // just completed, so it is written here and not deferred to a fully completed loop:
+        // deferring it would leave a later sign-in as a third account blind to the rows
+        // already uploaded here. A loop that aborts before any push landed never writes it.
         tokenStorage.setLastSyncedPortalUserId(userId)
         tokenStorage.currentUser.value?.let { user ->
             tokenStorage.setLastSyncedPortalUserLabel(
@@ -3441,29 +3445,17 @@ class SyncManager(
             }
 
             // Merge this page in preference-first repository order
-            val mergeResult = try {
-                mergePullPage(
-                    pullResponse = pullResponse,
-                    lastSync = mergeLastSync,
-                    mergeProfileId = mergeProfileId,
-                    activeSyncProfileId = profile.id,
-                    isFirstPage = pagesProcessed == 1,
-                    serverWinsRoutineIds = serverWinsRoutineIds,
-                    includeUserScoped = includeUserScoped,
-                    pushWatermark = tokenStorage.getPushWatermark(userId, mergeProfileId),
-                )
-            } finally {
-                // PR 11: a pulled routine / cycle / custom exercise gets its local createdAt
-                // at merge time, which is later than the push watermark. Record when this
-                // account's rows last landed here so an account switch does not mistake
-                // them for never-synced local rows. Stamped even after a failed merge
-                // (a page may be partly written). Only after a successful push, so no
-                // unpushed local row can fall below the boundary except one created
-                // during this sync.
-                if (followsSuccessfulPush) {
-                    tokenStorage.setPullMergeWatermark(userId, mergeProfileId, currentTimeMillis())
-                }
-            }
+            val mergeResult = mergePullPage(
+                pullResponse = pullResponse,
+                lastSync = mergeLastSync,
+                mergeProfileId = mergeProfileId,
+                activeSyncProfileId = profile.id,
+                isFirstPage = pagesProcessed == 1,
+                serverWinsRoutineIds = serverWinsRoutineIds,
+                includeUserScoped = includeUserScoped,
+                pushWatermark = tokenStorage.getPushWatermark(userId, mergeProfileId),
+                stampPullMerge = followsSuccessfulPush,
+            )
             if (mergeResult.isFailure) {
                 // Map Result<Unit> to Result<Long> for consistent return type
                 return Result.failure(mergeResult.exceptionOrNull() ?: PortalApiException("Merge failed"))
@@ -3631,6 +3623,7 @@ class SyncManager(
         serverWinsRoutineIds: Set<String>,
         includeUserScoped: Boolean,
         pushWatermark: Long,
+        stampPullMerge: Boolean = false,
     ): Result<Unit> {
         val ownerUserId = tokenStorage.currentUser.value?.id
             ?: return Result.failure(PortalApiException("Not authenticated", null, 401))
@@ -3781,6 +3774,15 @@ class SyncManager(
                 sessionNotes = sessionNotesMap,
                 sessionUpdatedAtById = sessionUpdatedAtById,
             )
+            // PR 11: a pulled routine / cycle gets its local createdAt at merge time, later
+            // than the push watermark. Record when this account's rows landed so an account
+            // switch does not mistake them for never-synced local rows. Stamped only once the
+            // merge transaction above has committed (a failed merge rolls everything back and
+            // leaves the stamp untouched), and only for a pull that followed a successful push,
+            // so no unpushed local row falls below the boundary except one made during this sync.
+            if (stampPullMerge) {
+                tokenStorage.setPullMergeWatermark(ownerUserId, mergeProfileId, currentTimeMillis())
+            }
 
             // Server-reported deletions (PR 16 keys; first page only, absent on older
             // servers). Apply after the atomic ordinary merge so a page carrying the
