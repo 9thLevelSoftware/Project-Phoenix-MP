@@ -852,7 +852,7 @@ SELECT updatedAt FROM WorkoutSession WHERE id = ?;
 -- LWW gate does not issue one round-trip per incoming pull row. Returns
 -- (id, updatedAt) so the caller can build an in-memory map keyed by id.
 selectSessionsUpdatedAtByIds:
-SELECT id, updatedAt, deletedAt, profile_id, portalOrigin
+SELECT id, updatedAt, deletedAt, profile_id, portalOrigin, local_sync_generation, synced_sync_generation
 FROM WorkoutSession
 WHERE id IN ?;
 
@@ -1008,7 +1008,9 @@ ORDER BY timestamp DESC
 LIMIT 1;
 
 selectSessionIdForPersonalRecord:
-SELECT id FROM WorkoutSession
+-- The PORTAL workout id (a routine set's parent routineSessionId), which is
+-- what a pushed personalRecords.sessionId must reference.
+SELECT COALESCE(NULLIF(routineSessionId, ''), id) FROM WorkoutSession
 WHERE exerciseId = :exerciseId
 AND timestamp = :timestamp
 AND profile_id = :profileId
@@ -2379,6 +2381,9 @@ UPDATE CompletedSet SET logged_rpe = ? WHERE id = ?;
 markCompletedSetAsPr:
 UPDATE CompletedSet SET is_pr = 1 WHERE id = ?;
 
+clearCompletedSetPr:
+UPDATE CompletedSet SET is_pr = 0 WHERE id = ?;
+
 updateCompletedSetForTaggedJustLift:
 UPDATE CompletedSet
 SET set_type = ?,
@@ -2909,9 +2914,27 @@ DELETE FROM SyncExcludedEntity WHERE portal_user_id = :portalUserId;
 -- (synced_sync_generation > 0); updatedAt is only the legacy (pre-migration-49) signal
 -- because local edits such as a Just Lift tag also write it.
 selectAccountSwitchSessionRows:
-SELECT id, routineSessionId, portalOrigin, synced_sync_generation, updatedAt
+SELECT id, routineSessionId, portalOrigin, synced_sync_generation, updatedAt, timestamp
 FROM WorkoutSession
 WHERE profile_id = :profileId;
+
+-- PR 11 account-switch / ownership-recovery enumeration. Includes soft-deleted rows:
+-- their tombstones are pushed too, so they must be classifiable.
+selectRoutinesForAccountSwitch:
+SELECT id, createdAt FROM Routine WHERE profile_id = :profileId;
+
+selectAllTrainingCyclesForAccountSwitch:
+SELECT id, created_at FROM TrainingCycle WHERE profile_id = :profileId;
+
+selectPersonalRecordsForAccountSwitch:
+SELECT id, uuid, achievedAt FROM PersonalRecord WHERE profile_id = :profileId;
+
+selectCustomExerciseIdsForAccountSwitch:
+SELECT id FROM Exercise WHERE isCustom = 1;
+
+-- needsSync = 0 means a push was acknowledged or the row was pulled: it reached an account.
+selectExternalActivitiesForAccountSwitch:
+SELECT id, needsSync, syncedAt FROM ExternalActivity WHERE profileId = :profileId;
 
 selectAppliedOwnershipEvent:
 SELECT * FROM AppliedOwnershipEvent
@@ -3650,6 +3673,39 @@ ORDER BY timestamp ASC;
 -- marking is WorkoutSession.portalOrigin (migration 48 on main); an earlier draft
 -- of this query used a separate PulledWorkoutSession marker table that this
 -- schema does not carry.
+-- One-shot upgrade seeding (PR 10, codex #856): migration 49 gave every existing row
+-- local_sync_generation 1 / synced_sync_generation 0, so the all-profile loop would treat
+-- rows an older client already synchronized as new local captures. Only rows of
+-- :profileIds (the signed-in account's profiles) are touched, and only with real
+-- provenance that the portal already holds them:
+--   * `updatedAt` at or before the legacy cursor: the old client wrote `updatedAt` only
+--     when a row was pushed-and-accepted or pulled, so the row was covered by a
+--     completed sync; OR
+--   * `portalOrigin = 1`: the row was materialized by a pull (pushing it back could let
+--     replace_session_children erase the portal's richer set/rep data).
+-- Everything else stays dirty and is pushed: NULL `updatedAt` (never synced), and any
+-- row edited after the cursor — including a childless manual/zero-rep session whose tag
+-- was edited, which must not be mistaken for a pulled row.
+-- Only rows still at migration 49's initial state (1 / 0) qualify: a child edit after
+-- the migration (saveRepMetrics, saveCompletedSet, ...) bumps local_sync_generation
+-- without touching the parent's updatedAt, so a stale parent timestamp is no proof for
+-- that newer generation.
+seedLegacySyncedGenerations:
+UPDATE WorkoutSession
+SET synced_sync_generation = local_sync_generation
+WHERE deletedAt IS NULL
+  AND profile_id IN :profileIds
+  AND local_sync_generation = 1
+  AND synced_sync_generation = 0
+  AND updatedAt IS NOT NULL
+  AND (
+    -- The old client synced ONLY its active profile against the one global cursor, so
+    -- `updatedAt <= cursor` is proof only for the profile the cursor belongs to (named by
+    -- the legacy delta-pull marker). Every other profile gets the pull-provenance rule.
+    (profile_id = :cursorProfileId AND updatedAt <= :legacyLastSync)
+    OR portalOrigin = 1
+  );
+
 selectBlockedRoutineGroupSiblings:
 SELECT id, routineSessionId FROM WorkoutSession
 WHERE profile_id = :profileId

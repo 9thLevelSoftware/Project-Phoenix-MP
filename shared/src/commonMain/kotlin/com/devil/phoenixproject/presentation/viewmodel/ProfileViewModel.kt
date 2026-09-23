@@ -432,12 +432,18 @@ class ProfileViewModel(
         }
     }
 
-    fun deleteActiveProfile() {
+    /**
+     * [inWorkoutSession] is a live read, re-checked by the repository after it holds the
+     * profile mutation barrier: deleting the active profile mid-workout would move the
+     * running lease onto a deleted id (codex 4082092571). A refusal is a visible delete
+     * failure; the dialog stays open.
+     */
+    fun deleteActiveProfile(inWorkoutSession: () -> Boolean = { false }) {
         val uiReady = uiState.value.context as? ActiveProfileContext.Ready ?: return
         val profileId = currentMutationProfileId() ?: return
         if (!canDeleteProfile(uiReady.profile)) return
         startIdentityMutation(profileId, ProfileIdentityMutationKind.DELETE) {
-            if (profiles.deleteActiveProfile(profileId)) {
+            if (profiles.deleteActiveProfile(profileId, blockedByLiveSession = inWorkoutSession)) {
                 ProfileUiEvent.ProfileDeleted(profileId)
             } else {
                 ProfileUiEvent.IdentityUpdateFailed(

@@ -772,6 +772,46 @@ class RoutineGroupPushTest {
         )
     }
 
+    // ===== codex #856: every follow-up push waits for the shared limiter =====
+
+    @Test
+    fun `an LWW re-push still reaches the portal when ordinary pushes filled the window`() = runTest {
+        var clock = 0L
+        val limiter = ClientRateLimiter(nowMs = { clock }, waitFor = { clock += it })
+        val limited = SyncManager(
+            apiClient = apiClient,
+            tokenStorage = tokenStorage,
+            syncRepository = syncRepository,
+            gamificationRepository = FakeGamificationRepository(),
+            repMetricRepository = repMetricRepository,
+            userProfileRepository = userProfileRepository,
+            profilePreferenceSyncRepository = FakeProfilePreferenceSyncRepository(),
+            externalActivityRepository = FakeExternalActivityRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            isProfilePreferenceMigrationReady = { true },
+            completedSetRepository = FakeCompletedSetRepository(),
+            rateLimiter = limiter,
+        )
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        limited.sync()
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 1_000, withLocalData = true)
+        // Other pushes fill the rest of the window just before it rolls: the ordinary push
+        // waits for only the first sync's slot to expire and takes it, leaving the window full,
+        // so the LWW retry must WAIT for capacity instead of failing with a local 429.
+        clock = 59_000L
+        repeat(SyncConfig.PUSH_RATE_LIMIT_PER_MIN - 1) { limiter.tryAcquire("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN) }
+        apiClient.pushPayloads.clear()
+
+        limited.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.drop(1).flatMap { it.sessions }.any { it.id == GROUP },
+            "the LWW re-push must reach the portal (saw ${apiClient.pushPayloads.size} push(es))",
+        )
+        assertEquals(listOf("set-1", "set-2"), server.exerciseIds(GROUP).sorted())
+    }
+
     // ===== codex #856 review 5286893178: the LWW retry acknowledges generations =====
 
     @Test
@@ -975,6 +1015,11 @@ class RoutineGroupPushTest {
         // already answered without excluding anything, so this test isolates the hash key.
         tokenStorage.setLastSyncedPortalUserId("user-2")
 
+        // The first sync bound the profile to user-1 (codex #856). Model the account-switch
+        // choice that moves this profile's data to user-2 (PR 11 relinks it), so user-2 may
+        // sync the same session id it has never had accepted.
+        userProfileRepository.setActiveProfileForTest(id = profileId, supabaseUserId = "user-2")
+
         // S-1: the hash is namespaced by userId:profileId, so A's accept cannot satisfy B.
         assertNull(
             tokenStorage.getSessionSentHash("user-2", profileId, GROUP),
@@ -1072,6 +1117,42 @@ class RoutineGroupPushTest {
         assertTrue(
             syncRepository.getDirtyWorkoutSnapshot(profileId).sessions.none { it.id == "pulled-row" },
             "a pulled row must not come back in the next push",
+        )
+    }
+
+    @Test
+    fun `a pulled projection never overwrites a local edit the portal has not acknowledged`() = runTest {
+        // codex #856: a portal-origin row, synced clean, then edited locally (a tag edit)
+        // while a push is in flight. The next pull returns the older portal copy.
+        insertRoutineSet("pulled-row", groupId = null, timestamp = baseTime, stampedAt = baseTime + 1_000)
+        database.phoenixDatabaseQueries.markSessionPulled("pulled-row")
+        database.phoenixDatabaseQueries.updateSessionExerciseTag("row", "Row", baseTime + 2_000, "pulled-row")
+
+        syncRepository.mergePulledSessions(
+            sessions = listOf(
+                com.devil.phoenixproject.domain.model.WorkoutSession(
+                    id = "pulled-row",
+                    timestamp = baseTime,
+                    mode = "OldSchool",
+                    reps = 8,
+                    weightPerCableKg = 40f,
+                    duration = 45_000L,
+                    totalReps = 8,
+                    exerciseId = "bench",
+                    exerciseName = "Bench Press",
+                    routineSessionId = null,
+                    profileId = profileId,
+                ),
+            ),
+            updatedAtBySessionId = mapOf("pulled-row" to baseTime + 3_000),
+            pushWatermark = baseTime + 1_500,
+        )
+
+        val row = database.phoenixDatabaseQueries.selectSessionById("pulled-row").executeAsOne()
+        assertEquals("row", row.exerciseId, "the unacknowledged local tag edit must survive the pull")
+        assertTrue(
+            syncRepository.getDirtyWorkoutSnapshot(profileId).sessions.any { it.id == "pulled-row" },
+            "the edit stays dirty so the next push sends it",
         )
     }
 
