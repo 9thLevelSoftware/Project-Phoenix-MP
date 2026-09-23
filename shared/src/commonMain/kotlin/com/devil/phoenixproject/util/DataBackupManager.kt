@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.util
 
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.local.LegacyCatalogueRemapper
 import com.devil.phoenixproject.data.preferences.ProfilePreferencesValidator
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -519,7 +520,7 @@ abstract class BaseDataBackupManager(
                 sections = RESTORE_SECTION_ORDER,
             )
             replay.open()
-            try {
+            val result = try {
                 importValidatedOrderedStream(
                     GuardedBackupStreamSource(replay) { callerContext.ensureActive() },
                     staging,
@@ -528,6 +529,9 @@ abstract class BaseDataBackupManager(
             } finally {
                 replay.close()
             }
+            // A pre-remap backup restores rows that still name archived legacy catalogue ids.
+            if (result.isSuccess) LegacyCatalogueRemapper.healAfterBulkWrite(database, source = "restore")
+            result
         } catch (e: Throwable) {
             if (e is CancellationException) throw e
             Logger.e { "Backup import validation/staging failed category=${e::class.simpleName}" }

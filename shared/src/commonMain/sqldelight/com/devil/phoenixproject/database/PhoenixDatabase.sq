@@ -663,6 +663,27 @@ SELECT COUNT(*) FROM Exercise;
 selectStockExercisesForRemap:
 SELECT id, name, archived FROM Exercise WHERE isCustom = 0;
 
+-- LegacyCatalogueRemapper's gate: archived stock exercises that still carry user fields or
+-- are still referenced by any table the remap rewrites. Every probe is an indexed search
+-- (IndexQueryPlanTest pins it), so the steady state (empty result) costs one pass over the
+-- archived catalogue rows. Keep the table list in step with LegacyCatalogueRemapper.
+selectArchivedStockExerciseIdsNeedingRemap:
+SELECT e.id FROM Exercise e
+WHERE e.archived = 1 AND e.isCustom = 0
+AND (
+    e.isFavorite = 1 OR e.timesPerformed > 0 OR e.lastPerformed IS NOT NULL
+    OR e.one_rep_max_kg IS NOT NULL OR e.mvtOverrideMs IS NOT NULL
+    OR EXISTS (SELECT 1 FROM WorkoutSession WHERE WorkoutSession.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM RoutineExercise WHERE RoutineExercise.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM PersonalRecord WHERE PersonalRecord.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM ExerciseSignature WHERE ExerciseSignature.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM AssessmentResult WHERE AssessmentResult.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM VelocityOneRepMaxEstimate WHERE VelocityOneRepMaxEstimate.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM ExerciseMvt WHERE ExerciseMvt.exerciseId = e.id)
+    OR EXISTS (SELECT 1 FROM ProgressionEvent WHERE ProgressionEvent.exercise_id = e.id)
+    OR EXISTS (SELECT 1 FROM ProfileExerciseBaseline WHERE ProfileExerciseBaseline.exercise_id = e.id)
+);
+
 reassignWorkoutSessionExerciseId:
 UPDATE WorkoutSession
 SET exerciseId = :newId,
