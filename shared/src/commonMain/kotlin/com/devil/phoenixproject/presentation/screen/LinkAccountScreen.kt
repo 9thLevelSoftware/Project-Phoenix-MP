@@ -15,6 +15,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -50,6 +51,7 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import com.devil.phoenixproject.data.auth.OAuthProvider
 import com.devil.phoenixproject.data.sync.AuthEvent
+import com.devil.phoenixproject.data.sync.AccountSwitchChoice
 import com.devil.phoenixproject.data.sync.SyncState
 import com.devil.phoenixproject.presentation.components.AppleIcon
 import com.devil.phoenixproject.presentation.components.GoogleIcon
@@ -59,7 +61,14 @@ import com.devil.phoenixproject.util.KmpUtils
 import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.account_switch_exclude_all
+import projectphoenix.shared.generated.resources.account_switch_message
+import projectphoenix.shared.generated.resources.account_switch_title
+import projectphoenix.shared.generated.resources.account_switch_upload_never_synced
 import projectphoenix.shared.generated.resources.action_login
+import projectphoenix.shared.generated.resources.ownership_conflict_action
+import projectphoenix.shared.generated.resources.ownership_conflict_message
+import projectphoenix.shared.generated.resources.ownership_conflict_title
 import projectphoenix.shared.generated.resources.auth_apple
 import projectphoenix.shared.generated.resources.auth_apple_failed
 import projectphoenix.shared.generated.resources.auth_google
@@ -75,6 +84,51 @@ import projectphoenix.shared.generated.resources.phoenix_portal
 import projectphoenix.shared.generated.resources.sync_now
 import projectphoenix.shared.generated.resources.syncing
 import projectphoenix.shared.generated.resources.unlink_account
+
+@Composable
+private fun AccountSwitchDialog(
+    previousUserLabel: String,
+    newUserLabel: String,
+    onUploadNeverSynced: () -> Unit,
+    onExcludeAllExisting: () -> Unit,
+) {
+    AlertDialog(
+        // Choice is required: sync stays paused until one is picked.
+        onDismissRequest = { },
+        title = { Text(stringResource(Res.string.account_switch_title)) },
+        text = {
+            Text(stringResource(Res.string.account_switch_message, newUserLabel, previousUserLabel))
+        },
+        confirmButton = {
+            TextButton(onClick = onUploadNeverSynced) {
+                Text(stringResource(Res.string.account_switch_upload_never_synced))
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onExcludeAllExisting) {
+                Text(stringResource(Res.string.account_switch_exclude_all))
+            }
+        },
+    )
+}
+
+@Composable
+private fun OwnershipConflictDialog(
+    message: String,
+    onStopUploading: () -> Unit,
+) {
+    AlertDialog(
+        // Terminal until the recovery action is taken.
+        onDismissRequest = { },
+        title = { Text(stringResource(Res.string.ownership_conflict_title)) },
+        text = { Text(stringResource(Res.string.ownership_conflict_message, message)) },
+        confirmButton = {
+            TextButton(onClick = onStopUploading) {
+                Text(stringResource(Res.string.ownership_conflict_action))
+            }
+        },
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -96,6 +150,24 @@ fun LinkAccountScreen(onNavigateBack: () -> Unit) {
     val currentUser by viewModel.currentUser.collectAsState()
     val syncState by viewModel.syncState.collectAsState()
     val lastSyncTime by viewModel.lastSyncTime.collectAsState()
+
+    when (val state = syncState) {
+        is SyncState.AccountMismatch -> AccountSwitchDialog(
+            previousUserLabel = state.previousUserLabel,
+            newUserLabel = state.newUserLabel,
+            onUploadNeverSynced = {
+                viewModel.resolveAccountMismatch(AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+            },
+            onExcludeAllExisting = {
+                viewModel.resolveAccountMismatch(AccountSwitchChoice.EXCLUDE_ALL_EXISTING)
+            },
+        )
+        is SyncState.OwnershipConflict -> OwnershipConflictDialog(
+            message = state.message,
+            onStopUploading = { viewModel.stopUploadingPreSwitchData() },
+        )
+        else -> Unit
+    }
 
     val snackbarHostState = remember { SnackbarHostState() }
 
@@ -272,6 +344,20 @@ private fun LinkedAccountContent(
                     Text(
                         text = "Sync partially complete — pull failed: ${syncState.pullError ?: "unknown error"}",
                         color = MaterialTheme.colorScheme.tertiary,
+                    )
+                }
+
+                is SyncState.AccountMismatch -> {
+                    Text(
+                        text = "Sync paused: this phone's data belongs to another account",
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+
+                is SyncState.OwnershipConflict -> {
+                    Text(
+                        text = "Upload refused: ${syncState.message}",
+                        color = MaterialTheme.colorScheme.error,
                     )
                 }
             }

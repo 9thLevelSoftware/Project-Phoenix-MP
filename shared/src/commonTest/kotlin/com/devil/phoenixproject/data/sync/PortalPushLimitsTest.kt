@@ -1328,6 +1328,139 @@ class PortalPushLimitsTest {
     }
 
     @Test
+    fun accountSwitchExclusionsHoldAcrossEveryPlannedRequest() = runTest {
+        // PR 11: exclusions filter the gathered lists before the planner splits them, so an
+        // excluded routine, deleted-routine id, cycle or PR can reach none of the requests,
+        // including the trailing non-session ones.
+        authenticate()
+        tokenStorage.setPushWatermark("user-123", "default", 1_000L)
+        val routines = List(40) { routineWithId(it) }
+        val prs = List(40) { prWithId(it) }
+        val cycleIds = List(6) { "60000000-0000-4000-8000-" + it.toString().padStart(12, '0') }
+        fakeSyncRepo.routinesToReturn = routines
+        fakeSyncRepo.fullPRsToReturn = prs
+        fakeSyncRepo.cyclesToReturn = cycleIds.map { id ->
+            PortalSyncAdapter.CycleWithContext(cycle = TrainingCycle.create(id = id, name = "Cycle $id", days = emptyList()))
+        }
+        val excludedRoutines = routines.filterIndexed { i, _ -> i % 2 == 0 }.map { it.id }
+        val excludedPrs = prs.filterIndexed { i, _ -> i % 2 == 0 }
+        val excludedCycles = cycleIds.filterIndexed { i, _ -> i % 2 == 0 }
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.ROUTINE, excludedRoutines)
+        fakeSyncRepo.insertSyncExcludedEntities(
+            "user-123",
+            SyncExcludedEntityTypes.PERSONAL_RECORD,
+            excludedPrs.map { it.id.toString() } + excludedPrs.mapNotNull { it.uuid },
+        )
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.CYCLE, excludedCycles)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        val single = PushPlanner.byteSize(
+            PortalSyncPayload(deviceId = "d", platform = "p", lastSync = 0L, routines = listOf(
+                PortalSyncAdapter.toPortalRoutine(routineWithId(0), "user-123"),
+            )),
+        )
+
+        withByteCap(single * 6) {
+            assertTrue(createManager().sync().isSuccess)
+            assertTrue(fakeApi.pushPayloads.size > 2, "the push must be split (saw ${fakeApi.pushPayloads.size})")
+
+            val sentRoutines = fakeApi.pushPayloads.flatMap { it.routines }.map { it.id }
+            val sentDeleted = fakeApi.pushPayloads.flatMap { it.deletedRoutineIds }
+            val sentCycles = fakeApi.pushPayloads.flatMap { it.cycles }.map { it.id }
+            val sentPrs = fakeApi.pushPayloads.flatMap { it.personalRecords }.mapNotNull { it.id }
+            assertTrue(sentRoutines.none { it in excludedRoutines }, "excluded routine planned: $sentRoutines")
+            assertTrue(sentDeleted.none { it in excludedRoutines }, "excluded deleted-routine id planned")
+            assertTrue(sentCycles.none { it in excludedCycles }, "excluded cycle planned: $sentCycles")
+            assertTrue(
+                sentPrs.none { id -> excludedPrs.any { it.uuid == id || it.id.toString() == id } },
+                "excluded PR planned: $sentPrs",
+            )
+            // The allowed half still goes out, so the filter is not simply emptying the push.
+            assertTrue(sentRoutines.toSet() == (routines.map { it.id } - excludedRoutines.toSet()).toSet())
+            assertTrue(sentCycles.toSet() == (cycleIds - excludedCycles.toSet()).toSet())
+        }
+    }
+
+    @Test
+    fun accountSwitchExclusionsHoldForCustomExercisesAndAssessmentsInTrailingRequests() = runTest {
+        // PR 11 x PR 10's planner: custom exercises and assessments now ride their own
+        // trailing requests. Exclusions are applied where both lists are gathered, so an
+        // excluded row reaches none of those requests.
+        authenticate()
+        tokenStorage.setPushWatermark("user-123", "default", 1_000L)
+        val customs = List(30) { i ->
+            CustomExerciseSyncDto(
+                clientId = "custom_${1_740_000_000_000L + i}",
+                name = "Custom exercise $i",
+                muscleGroup = "Chest",
+                equipment = "Cable",
+                defaultCableConfig = "DOUBLE",
+                createdAt = 1_740_000_000_000L + i,
+                updatedAt = 1_740_000_000_000L + i,
+            )
+        }
+        val assessments = List(30) { i ->
+            com.devil.phoenixproject.database.AssessmentResult(
+                id = (i + 1).toLong(),
+                exerciseId = "ex-$i",
+                estimatedOneRepMaxKg = 60.0,
+                loadVelocityData = "[]",
+                assessmentSessionId = null,
+                userOverrideKg = null,
+                createdAt = 1_740_000_000_000L + i,
+                profile_id = "default",
+            )
+        }
+        fakeSyncRepo.customExercisesToReturn = customs
+        fakeSyncRepo.assessmentsToReturn = assessments
+        val excludedCustoms = customs.filterIndexed { i, _ -> i % 2 == 0 }.map { it.clientId }
+        val excludedAssessments = assessments.filterIndexed { i, _ -> i % 2 == 0 }.map { it.id.toString() }
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.CUSTOM_EXERCISE, excludedCustoms)
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.ASSESSMENT, excludedAssessments)
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        val single = PushPlanner.byteSize(
+            PortalSyncPayload(deviceId = "d", platform = "p", lastSync = 0L, customExercises = listOf(customs[0])),
+        )
+
+        withByteCap(single * 5) {
+            assertTrue(createManager().sync().isSuccess)
+            assertTrue(fakeApi.pushPayloads.size > 2, "the push must be split (saw ${fakeApi.pushPayloads.size})")
+
+            val sentCustoms = fakeApi.pushPayloads.flatMap { it.customExercises }.map { it.clientId }
+            val sentAssessments = fakeApi.pushPayloads.flatMap { it.assessments }.map { it.id }
+            assertTrue(sentCustoms.none { it in excludedCustoms }, "excluded custom exercise planned: $sentCustoms")
+            assertTrue(sentAssessments.none { it in excludedAssessments }, "excluded assessment planned: $sentAssessments")
+            assertEquals((customs.map { it.clientId } - excludedCustoms.toSet()).toSet(), sentCustoms.toSet())
+            assertEquals(
+                (assessments.map { it.id.toString() } - excludedAssessments.toSet()).toSet(),
+                sentAssessments.toSet(),
+            )
+        }
+    }
+
+    @Test
+    fun anExcludedExternalActivityIsNeverPushed() = runTest {
+        // PR 11 (codex #859): imported activities follow the account-switch exclusions.
+        authenticate()
+        fakeUserProfileRepo.setActiveProfileForTest(
+            subscriptionStatus = com.devil.phoenixproject.data.repository.SubscriptionStatus.ACTIVE,
+        )
+        val kept = com.devil.phoenixproject.domain.model.ExternalActivity(
+            id = "kept", externalId = "hevy-kept", provider = com.devil.phoenixproject.domain.model.IntegrationProvider.HEVY,
+            name = "Kept", startedAt = 1_000L, profileId = "default", needsSync = true,
+        )
+        val excluded = kept.copy(id = "excluded", externalId = "hevy-excluded", name = "Excluded")
+        fakeExternalActivityRepo.activities += kept
+        fakeExternalActivityRepo.activities += excluded
+        fakeSyncRepo.insertSyncExcludedEntities("user-123", SyncExcludedEntityTypes.EXTERNAL_ACTIVITY, listOf("excluded"))
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+
+        assertTrue(createManager().sync().isSuccess)
+        val sent = fakeApi.pushPayloads.flatMap { it.externalActivities }.map { it.id }
+        assertTrue("excluded" !in sent, "an excluded activity must not be pushed: $sent")
+        assertTrue("kept" in sent, "a non-excluded activity still goes out: $sent")
+    }
+
+    @Test
     fun aSingleItemTooLargeForAnyRequestIsSkippedAndDoesNotWedgeSync() = runTest {
         authenticate()
         tokenStorage.setPushWatermark("user-123", "default", 1_000L)

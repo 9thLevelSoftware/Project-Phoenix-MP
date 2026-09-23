@@ -99,6 +99,30 @@ sealed class SyncState {
     data class Error(val message: String, val errorCategory: SyncErrorCategory? = null) : SyncState()
     object NotAuthenticated : SyncState()
     object NotPremium : SyncState()
+
+    /**
+     * The just-signed-in portal account is not the one this device's rows already
+     * belong to (PR 11 / KD-7). Sync is blocked until the user picks how to treat
+     * the pre-switch rows via [SyncManager.resolveAccountMismatch].
+     *
+     * @param previousUserId last account a push landed in, or a profile's linked id.
+     * @param previousUserLabel display label for [previousUserId] (email or id).
+     * @param newUserId the account just signed in.
+     * @param newUserLabel display label for [newUserId].
+     */
+    data class AccountMismatch(
+        val previousUserId: String,
+        val previousUserLabel: String,
+        val newUserId: String,
+        val newUserLabel: String,
+    ) : SyncState()
+
+    /**
+     * A push was refused because an entity belongs to a different portal user.
+     * Terminal: the upload loop ends and does not auto-retry. The recovery action
+     * ("Stop uploading data from before the account switch") is offered by the UI.
+     */
+    data class OwnershipConflict(val message: String) : SyncState()
 }
 
 /**
@@ -386,6 +410,7 @@ class SyncManager(
     private val ownershipEventApplier: OwnershipEventApplier? = null,
     private val profileMutationBarrier: ProfileMutationBarrier? = null,
     private val trainingCycleRepository: TrainingCycleRepository? = null,
+    private val pendingAccountMismatch: PendingAccountMismatch = PendingAccountMismatch(),
 ) {
     companion object {
         /**
@@ -504,11 +529,23 @@ class SyncManager(
                     val previousTier = tokenStorage.getSubscriptionTier()
                     val sameAccount = previousUserId != null && previousUserId == goTrueResponse.user.id
 
-                    commitPortalIdentityUnderProfileMutationBarrier(
+                    val commitOutcome = commitPortalIdentityUnderProfileMutationBarrier(
                         response = goTrueResponse,
                         tokenStorage = tokenStorage,
                         userProfileRepository = userProfileRepository,
+                        // Applied to _syncState right here; nothing to hand off.
+                        pendingAccountMismatch = null,
                     )
+                    if (commitOutcome is PortalIdentityCommitOutcome.AccountMismatchDetected) {
+                        // Do not relink and do not clear the hold: the dialog decides.
+                        _syncState.value = commitOutcome.mismatch.toSyncState()
+                        Logger.i("SyncManager") {
+                            "Login detected a different portal account; sync paused pending user choice"
+                        }
+                        return@withProfileMutationBarrier Result.success(
+                            tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user,
+                        )
+                    }
                     _syncState.value = SyncState.Idle
 
                     val fallbackPremium = if (sameAccount) previousPremium else false
@@ -543,11 +580,22 @@ class SyncManager(
         return syncMutex.withLock {
             try {
                 withProfileMutationBarrier {
-                    commitPortalIdentityUnderProfileMutationBarrier(
+                    val commitOutcome = commitPortalIdentityUnderProfileMutationBarrier(
                         response = goTrueResponse,
                         tokenStorage = tokenStorage,
                         userProfileRepository = userProfileRepository,
+                        // Applied to _syncState right here; nothing to hand off.
+                        pendingAccountMismatch = null,
                     )
+                    if (commitOutcome is PortalIdentityCommitOutcome.AccountMismatchDetected) {
+                        _syncState.value = commitOutcome.mismatch.toSyncState()
+                        Logger.i("SyncManager") {
+                            "Signup detected a different portal account; sync paused pending user choice"
+                        }
+                        return@withProfileMutationBarrier Result.success(
+                            tokenStorage.currentUser.value ?: goTrueResponse.toPortalAuthResponse().user,
+                        )
+                    }
                     tokenStorage.updatePremiumStatus(false)
                     tokenStorage.updateSubscriptionTier(null)
                     _syncState.value = SyncState.Idle
@@ -580,10 +628,205 @@ class SyncManager(
             withProfileMutationBarrier {
                 tokenStorage.updatePremiumStatus(false)
                 tokenStorage.updateSubscriptionTier(null)
+                // An unanswered ownership refusal is dropped with the session (the user can
+                // sign back in and be refused again, which re-records it).
+                tokenStorage.currentUser.value?.id?.let { tokenStorage.setOwnershipConflict(it, null) }
                 tokenStorage.clearAuth()
                 tokenStorage.emitLogoutEvent()
+                // A mismatch the signed-out account never answered must not pause the next sign-in.
+                pendingAccountMismatch.take()
                 _syncState.value = SyncState.NotAuthenticated
             }
+        }
+    }
+
+    /**
+     * Drains a mismatch published by [com.devil.phoenixproject.data.repository.PortalAuthRepository]'s
+     * identity commit (PR 11). That path cannot reach this class directly, so the shared
+     * [PendingAccountMismatch] carries it here.
+     */
+    fun adoptPendingAccountMismatch(): Boolean {
+        val pending = pendingAccountMismatch.take() ?: return false
+        _syncState.value = pending.toSyncState()
+        return true
+    }
+
+    /**
+     * PR 11 pause gate, run before anything that talks to the portal. Returns the failure
+     * to report while sync is paused, or null when it may run.
+     *
+     * The in-memory state alone is not enough: after a process restart it is back to
+     * [SyncState.Idle] while the token already names the new account. So the mismatch is
+     * also re-derived from durable state, the signed-in user against
+     * [PortalTokenStorage.getLastSyncedPortalUserId] and the profiles' owners. Both still
+     * name the old account until [resolveAccountMismatch] relinks them, and after that the
+     * check is a no-op. A push while this holds would also overwrite the last-synced id and
+     * erase the evidence, so it must run before any push.
+     */
+    private fun accountPauseFailure(): Result<Long>? {
+        // OAuth (and any other identity commit outside login/signup) publishes its
+        // mismatch here; drain it before deciding whether sync may run at all.
+        adoptPendingAccountMismatch()
+        val current = _syncState.value
+        if (current !is SyncState.AccountMismatch && current !is SyncState.OwnershipConflict) {
+            val mismatch = detectPersistedAccountMismatch()
+            if (mismatch != null) {
+                Logger.w("SyncManager") {
+                    "Signed-in portal account differs from this device's data; sync paused pending user choice"
+                }
+                _syncState.value = mismatch.toSyncState()
+            } else {
+                // A refusal recorded before a restart still holds until recovery or sign-out.
+                tokenStorage.currentUser.value?.id
+                    ?.takeIf { tokenStorage.hasToken() }
+                    ?.let { tokenStorage.getOwnershipConflict(it) }
+                    ?.let { _syncState.value = SyncState.OwnershipConflict(it) }
+            }
+        }
+        return when (val state = _syncState.value) {
+            is SyncState.AccountMismatch -> Result.failure(
+                IllegalStateException(
+                    "Sync paused: signed in as a different portal account than this device's data",
+                ),
+            )
+            is SyncState.OwnershipConflict -> Result.failure(PortalApiException(state.message))
+            else -> null
+        }
+    }
+
+    private fun detectPersistedAccountMismatch(): AccountMismatchCandidate? {
+        if (!tokenStorage.hasToken()) return null
+        val user = tokenStorage.currentUser.value ?: return null
+        // A device upgraded from a pre-PR-11 build: the legacy cursor's owner is the
+        // account its rows already reached. Record it before comparing, and before the
+        // legacy generation seeding / cursor migration further down syncLocked consume it.
+        tokenStorage.adoptLegacySyncOwner(user.id)
+        return detectAccountMismatch(
+            newUserId = user.id,
+            newUserLabel = user.email.takeIf { it.isNotBlank() } ?: user.id,
+            lastSyncedPortalUserId = tokenStorage.getLastSyncedPortalUserId(),
+            lastSyncedPortalUserLabel = tokenStorage.getLastSyncedPortalUserLabel(),
+            profileOwners = userProfileRepository.allProfiles.value.mapNotNull { profile ->
+                profile.supabaseUserId?.takeIf { it.isNotBlank() }?.let { owner -> profile.id to owner }
+            },
+        )
+    }
+
+    /**
+     * Applies the user's account-switch choice (PR 11 / KD-7).
+     *
+     * Both choices relink every profile to the just-signed-in account, reset every
+     * profile's pull cursor under that account, and record which pre-switch rows must
+     * never be uploaded to it. [AccountSwitchChoice.UPLOAD_NEVER_SYNCED] keeps rows
+     * that never reached another account; [AccountSwitchChoice.EXCLUDE_ALL_EXISTING]
+     * keeps everything local and uploads nothing that already existed.
+     */
+    suspend fun resolveAccountMismatch(choice: AccountSwitchChoice): Result<Unit> = syncMutex.withLock {
+        adoptPendingAccountMismatch()
+        val mismatch = _syncState.value as? SyncState.AccountMismatch
+            ?: return@withLock Result.success(Unit)
+        val newUserId = mismatch.newUserId
+        val previousUserId = mismatch.previousUserId
+        // The choice binds this device's rows to the account that is signed in now. A stale
+        // dialog answered after a sign-out / sign-in as someone else must not bind them to
+        // the account the mismatch named.
+        if (tokenStorage.currentUser.value?.id != newUserId) {
+            return@withLock Result.failure(
+                IllegalStateException("The signed-in account changed before the account-switch choice was applied"),
+            )
+        }
+        try {
+            withProfileMutationBarrier {
+                val profiles = userProfileRepository.allProfiles.value
+                // Exclusions first, relink second: if the relink fails part-way, the profiles
+                // and the last-synced id still name the old account, so the pause gate
+                // re-detects the mismatch and the (idempotent) choice can be applied again.
+                // The reverse order could leave rows relinked with no exclusions recorded.
+                // Each profile is classified under its OWN previous owner: a device can hold
+                // profiles synced to different accounts (codex #859). Unlinked profiles fall
+                // back to the account the device last synced into.
+                val ownerByProfile = profiles.associate { profile ->
+                    profile.id to (profile.supabaseUserId?.takeIf { it.isNotBlank() && it != newUserId } ?: previousUserId)
+                }
+                val boundaries = profiles.associate { profile ->
+                    profile.id to tokenStorage.getAccountSyncBoundary(ownerByProfile.getValue(profile.id), profile.id)
+                }
+                syncRepository.recordAccountSwitchExclusions(
+                    portalUserId = newUserId,
+                    profileIds = profiles.map { it.id },
+                    excludeAllExisting = choice == AccountSwitchChoice.EXCLUDE_ALL_EXISTING,
+                    previousPushWatermarks = boundaries,
+                    previousPortalUserId = previousUserId,
+                    previousPortalUserIdsByProfile = ownerByProfile,
+                )
+                for (profile in profiles) {
+                    // Force-relink: the normal link path throws ProfileAccountBindingException
+                    // when the profile already names a different owner.
+                    userProfileRepository.reassignToSupabaseUnderProfileMutationBarrier(
+                        profileId = profile.id,
+                        supabaseUserId = newUserId,
+                    )
+                }
+                // Cursors are namespaced by user id, so the new account starts clean.
+                tokenStorage.resetAllPullCursors(newUserId)
+            }
+            // The device's rows now belong to the new account (or are excluded from it),
+            // so a later sign-in as this user must not re-open the dialog.
+            tokenStorage.setLastSyncedPortalUserId(newUserId)
+            tokenStorage.setLastSyncedPortalUserLabel(mismatch.newUserLabel)
+            _syncState.value = SyncState.Idle
+            Logger.i("SyncManager") {
+                "Account switch resolved (choice=$choice); exclusions recorded for the new account"
+            }
+            Result.success(Unit)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Result.failure(error)
+        }
+    }
+
+    /**
+     * Recovery action for [SyncState.OwnershipConflict]: "Stop uploading data from
+     * before the account switch". Applies the same exclusion as
+     * [AccountSwitchChoice.EXCLUDE_ALL_EXISTING] for the current account and clears
+     * the terminal state so only rows created afterwards are uploaded.
+     */
+    suspend fun applyOwnershipConflictRecovery(): Result<Unit> = syncMutex.withLock {
+        val conflict = _syncState.value as? SyncState.OwnershipConflict
+            ?: return@withLock Result.success(Unit)
+        val userId = tokenStorage.currentUser.value?.id
+            ?: return@withLock Result.failure(IllegalStateException("Not authenticated"))
+        try {
+            withProfileMutationBarrier {
+                val profiles = userProfileRepository.allProfiles.value
+                // Only data that predates this account on the device can belong to another
+                // account; rows made for this account since then keep syncing (codex #859).
+                // The catalog-collision refusal concerns custom exercises only.
+                val entityTypes = if (conflict.message.contains(CATALOG_COLLISION_MARKER, ignoreCase = true)) {
+                    setOf(SyncExcludedEntityTypes.CUSTOM_EXERCISE)
+                } else {
+                    SyncExcludedEntityTypes.ALL.toSet()
+                }
+                syncRepository.recordOwnershipRecoveryExclusions(
+                    portalUserId = userId,
+                    profileIds = profiles.map { it.id },
+                    // Unknown first-seen time (an install signed in before this build):
+                    // everything on disk counts as pre-existing, as before.
+                    createdAtOrBefore = tokenStorage.getAccountFirstSeenAt(userId) ?: Long.MAX_VALUE,
+                    entityTypes = entityTypes,
+                )
+            }
+            tokenStorage.setOwnershipConflict(userId, null)
+            _syncState.value = SyncState.Idle
+            Logger.i("SyncManager") {
+                "Ownership conflict resolved: pre-switch rows excluded from upload (${conflict.message})"
+            }
+            Result.success(Unit)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            Result.failure(error)
         }
     }
 
@@ -597,6 +840,8 @@ class SyncManager(
      * sign back in" even though the new session is valid.
      */
     suspend fun resetSyncStateToIdle() {
+        if (adoptPendingAccountMismatch()) return
+
         syncMutex.withLock {
             _syncState.value = SyncState.Idle
         }
@@ -699,6 +944,8 @@ class SyncManager(
      * failure (401) aborts the loop — the token is gone for every profile.
      */
     private suspend fun syncLocked(): Result<Long> {
+        accountPauseFailure()?.let { return it }
+
         if (!tokenStorage.hasToken()) {
             _syncState.value = SyncState.NotAuthenticated
             return Result.failure(PortalApiException("Not authenticated"))
@@ -768,6 +1015,15 @@ class SyncManager(
             if (outcome.authFailure) {
                 Logger.w("SyncManager") {
                     "Auth failure while syncing profile ${profile.id}; aborting the remaining profiles"
+                }
+                break
+            }
+            // An ownership refusal is definitive evidence of another account's rows on this
+            // device: no later profile may push before the user chooses (codex #859).
+            // combineProfileOutcomes publishes and persists the terminal state.
+            if (outcome.ownershipConflict) {
+                Logger.w("SyncManager") {
+                    "Ownership refusal while syncing profile ${profile.id}; aborting the remaining profiles"
                 }
                 break
             }
@@ -865,6 +1121,8 @@ class SyncManager(
         val profileId: String,
         /** Push or pull failed with 401 — the token is gone; abort the remaining profiles. */
         val authFailure: Boolean = false,
+        /** Push was refused because an entity belongs to a different portal user (PR 11). */
+        val ownershipConflict: Boolean = false,
         val repairPushFailed: Boolean = false,
         val pushSucceeded: Boolean = false,
         val pullSucceeded: Boolean = false,
@@ -878,6 +1136,17 @@ class SyncManager(
         if (authFailure != null) {
             _syncState.value = SyncState.NotAuthenticated
             return Result.failure(authFailure.error ?: PortalApiException("Not authenticated"))
+        }
+        val ownership = outcomes.firstOrNull { it.ownershipConflict }
+        if (ownership != null) {
+            // Terminal: the upload loop ends and does not auto-retry. The recovery
+            // action ("Stop uploading data from before the account switch") is offered
+            // by the UI via applyOwnershipConflictRecovery().
+            val message = ownership.error?.message ?: "Portal refused an entity owned by another user"
+            _syncState.value = SyncState.OwnershipConflict(message)
+            // Durable, per account: a restart must not resume pushing into the refusal.
+            tokenStorage.currentUser.value?.id?.let { tokenStorage.setOwnershipConflict(it, message) }
+            return Result.failure(ownership.error ?: PortalApiException(message))
         }
         val notPremium = outcomes.firstOrNull {
             it.error is PortalApiException &&
@@ -953,14 +1222,30 @@ class SyncManager(
                 "Push FAILED for profile ${profile.id}: status=${(error as? PortalApiException)?.statusCode}, msg=${error?.message}"
             }
             val authFailure = isAuthFailure(error)
+            val ownershipConflict = (error as? Exception)
+                ?.let { classifyError(it, "Push").category == SyncErrorCategory.OWNERSHIP_CONFLICT }
+                ?: false
             return ProfileSyncOutcome(
                 profileId = profile.id,
                 authFailure = authFailure,
+                ownershipConflict = ownershipConflict,
                 repairPushFailed = repairPushActive,
                 error = error,
             )
         }
         Logger.i("SyncManager") { "Push succeeded for profile ${profile.id}" }
+        // PR 11: remember which portal account the last successful push landed in, so
+        // the next sign-in can tell "same account" from "different account". The step that
+        // justifies it is "rows of this device landed in this account", which this push
+        // just completed, so it is written here and not deferred to a fully completed loop:
+        // deferring it would leave a later sign-in as a third account blind to the rows
+        // already uploaded here. A loop that aborts before any push landed never writes it.
+        tokenStorage.setLastSyncedPortalUserId(userId)
+        tokenStorage.currentUser.value?.let { user ->
+            tokenStorage.setLastSyncedPortalUserLabel(
+                user.email.takeIf { it.isNotBlank() } ?: user.id,
+            )
+        }
 
         // Inspect per-entity LWW rejections (Phase 3.2 contract: the server
         // rejects an incoming row when it already holds a newer updated_at,
@@ -972,6 +1257,7 @@ class SyncManager(
         // point where the gather's device time becomes this profile's push watermark.
         // Rows edited after gatherStartedAt keep a newer updatedAt and stay in the next
         // delta; a failed push returned above and leaves the watermark untouched.
+        // PR 11 also reads it as the account-switch "already synced" boundary.
         tokenStorage.setPushWatermark(userId, profile.id, pushOutcome.gatherStartedAt)
         val pushResponse = pushOutcome.response
         val rejections = pushOutcome.rejections
@@ -1071,6 +1357,7 @@ class SyncManager(
             userId = userId,
             profile = profile,
             includeUserScoped = includeUserScoped,
+            followsSuccessfulPush = true,
         )
 
         // One retry for sessions the portal's LWW gate turned away. The pull has just
@@ -1155,6 +1442,7 @@ class SyncManager(
     }
 
     private suspend fun retryPullLocked(): Result<Long> {
+        accountPauseFailure()?.let { return it }
         if (!tokenStorage.hasToken()) {
             _syncState.value = SyncState.NotAuthenticated
             return Result.failure(PortalApiException("Not authenticated"))
@@ -1176,6 +1464,9 @@ class SyncManager(
                 userId = userId,
                 profile = profile,
                 includeUserScoped = includeUserScoped,
+                // No push ran, so local rows created since the last push are still
+                // unuploaded; they must not fall below the account-switch boundary.
+                followsSuccessfulPush = false,
             )
             if (pullResult.isSuccess) {
                 val completedPull = pullResult.getOrThrow()
@@ -1506,6 +1797,11 @@ class SyncManager(
             }
         }
 
+        // PR 11: rows this portal user must never upload (account-switch exclusions).
+        // Applied per entity because cycles / custom exercises / assessments push with
+        // no delta, so a cursor alone cannot keep a pre-switch row out of the payload.
+        val exclusions = SyncExclusionFilter.load(syncRepository, userId)
+
         // 1. Freeze the dirty workout generation snapshot, expanding each dirty
         // portal parent to all live component rows before any payload is built.
         // The snapshot is already group-complete (every live row under a dirty portal
@@ -1606,7 +1902,9 @@ class SyncManager(
         val sessions = dedupeWorkoutSessionsById(
             delta.filter { it.routineSessionId !in heldGroupIds } + groupSiblings,
             context = "Push payload (group-complete)",
-        )
+        ).filter { session ->
+            !exclusions.excludesWorkout(session.id, session.routineSessionId)
+        }
         if (sessions.size > delta.size - heldDeltaRowCount) {
             Logger.d("SyncManager") {
                 "Push payload: re-gathered ${sessions.size - (delta.size - heldDeltaRowCount)} routine sibling row(s) " +
@@ -1618,6 +1916,10 @@ class SyncManager(
         // deletedAt all reach the portal. Reuse that same projection for legacy
         // set-level PR hints rather than reading a lossy second delta.
         val recentPRs = syncRepository.getFullPRsModifiedSince(repairFrom, activeProfileId)
+            .filter { record ->
+                !exclusions.excludesPersonalRecord(record.id.toString()) &&
+                    (record.uuid == null || !exclusions.excludesPersonalRecord(record.uuid))
+            }
         val prBySessionKey = recentPRs.groupBy { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp)
         }
@@ -1726,7 +2028,9 @@ class SyncManager(
         // Local template-derived cycle routines use "cycle_routine_<uuid>" and must never
         // reach the server's UUID ownership checks.
         val rawRoutines = syncRepository.getFullRoutinesModifiedSince(repairFrom, activeProfileId)
-        val routines = rawRoutines.filter { routine -> CANONICAL_UUID_REGEX.matches(routine.id) }
+        val routines = rawRoutines.filter { routine ->
+            CANONICAL_UUID_REGEX.matches(routine.id) && !exclusions.excludesRoutine(routine.id)
+        }
         val droppedRoutineCount = rawRoutines.size - routines.size
         if (droppedRoutineCount > 0) {
             Logger.w("SyncManager") {
@@ -1736,7 +2040,7 @@ class SyncManager(
 
         // 4a. Gather soft-deleted routine IDs for server-side deletion propagation.
         val deletedRoutineIds = syncRepository.getDeletedRoutineIdsSince(repairFrom, activeProfileId)
-            .filter { CANONICAL_UUID_REGEX.matches(it) }
+            .filter { CANONICAL_UUID_REGEX.matches(it) && !exclusions.excludesRoutine(it) }
         if (deletedRoutineIds.isNotEmpty()) {
             Logger.d("SyncManager") {
                 "Push payload: ${deletedRoutineIds.size} deleted routine(s) to propagate"
@@ -1760,11 +2064,14 @@ class SyncManager(
             syncRepository.getDirtyCycleSnapshot(activeProfileId)
         }
         val rawCyclesWithContext = cycleSnapshot.cycles
+            .filter { ctx -> !exclusions.excludesCycle(ctx.cycle.id) }
         var droppedCycleRoutineRefs = 0
         val cyclesWithContext = rawCyclesWithContext.map { ctx ->
             val sanitizedDays = ctx.cycle.days.map { day ->
                 val routineId = day.routineId
-                if (routineId != null && !CANONICAL_UUID_REGEX.matches(routineId)) {
+                if (routineId != null &&
+                    (!CANONICAL_UUID_REGEX.matches(routineId) || exclusions.excludesRoutine(routineId))
+                ) {
                     droppedCycleRoutineRefs++
                     day.copy(routineId = null)
                 } else {
@@ -1786,15 +2093,28 @@ class SyncManager(
         // 5. Gather gamification data. PR 10 step 3 (R-14): RPG/gamification/badges are
         // one row per portal user, so they go out only with the active profile's push.
         val userScoped = gatherUserScopedDtos(userId, activeProfileId, includeUserScoped)
-        val rpgDto = userScoped.rpgDto
-        val badgeDtos = userScoped.badgeDtos
-        val gamStatsDto = userScoped.gamStatsDto
+        // PR 11 (codex #859): RPG attributes and gamification stats are aggregates of this
+        // device's workout history. While any workout on the device is excluded from this
+        // account (another account's history), those aggregates are not this account's and
+        // are not pushed. Badges earned under another account are excluded one by one.
+        val aggregatesIncludeForeignHistory = exclusions.workouts.isNotEmpty()
+        val rpgDto = userScoped.rpgDto.takeUnless { aggregatesIncludeForeignHistory }
+        val badgeDtos = userScoped.badgeDtos.filter { !exclusions.excludesEarnedBadge(it.badgeId) }
+        val gamStatsDto = userScoped.gamStatsDto.takeUnless { aggregatesIncludeForeignHistory }
 
         val enrichment = gatherPushEnrichment(activeProfileId, activeProfile, workoutSnapshot)
-        val externalActivityDtos = enrichment.externalActivityDtos
+        // External activities (imported health data) follow the same account-switch
+        // exclusions as every other pushed entity (codex #859).
+        val externalActivityDtos = enrichment.externalActivityDtos.filter { activity ->
+            !exclusions.excludesExternalActivity(activity.id)
+        }
         val phaseStatsBySessionId = enrichment.phaseStatsBySessionId
-        val assessmentDtos = enrichment.assessmentDtos
-        val customExerciseDtos = enrichment.customExerciseDtos
+        val assessmentDtos = enrichment.assessmentDtos.filter { assessment ->
+            !exclusions.excludesAssessment(assessment.id.toString())
+        }
+        val customExerciseDtos = enrichment.customExerciseDtos.filter { exercise ->
+            !exclusions.excludesCustomExercise(exercise.clientId)
+        }
         val velocityEstimatesByExerciseId = enrichment.velocityEstimatesByExerciseId
 
         // Gate telemetry push behind the Inferno tier (decided above, before the rep
@@ -2444,6 +2764,17 @@ class SyncManager(
         val acceptedPortalSessionIds = response.acknowledgedWorkoutSessionIds
             .filterTo(linkedSetOf()) { it in sentPortalSessionIds }
         syncRepository.acknowledgeWorkoutSnapshot(workoutSnapshot, acceptedPortalSessionIds)
+        // PR 11 (codex #859): an accepted workout now belongs to this account. Record that,
+        // so an ownership-400 on a LATER request of the same push cannot make recovery
+        // exclude rows that already landed here.
+        val accountId = tokenStorage.currentUser.value?.id
+        if (accountId != null && acceptedPortalSessionIds.isNotEmpty()) {
+            syncRepository.insertSyncExcludedEntities(
+                accountId,
+                SyncExcludedEntityTypes.reached(SyncExcludedEntityTypes.WORKOUT),
+                acceptedPortalSessionIds,
+            )
+        }
         return acceptedPortalSessionIds
     }
 
@@ -3094,6 +3425,7 @@ class SyncManager(
         userId: String,
         profile: UserProfile,
         includeUserScoped: Boolean,
+        followsSuccessfulPush: Boolean,
     ): Result<CompletedPull> {
         val deviceId = tokenStorage.getDeviceId()
         val mergeProfileId = profile.id
@@ -3402,6 +3734,7 @@ class SyncManager(
                 serverWinsRoutineIds = serverWinsRoutineIds,
                 includeUserScoped = includeUserScoped,
                 pushWatermark = tokenStorage.getPushWatermark(userId, mergeProfileId),
+                stampPullMerge = followsSuccessfulPush,
             )
             if (mergeResult.isFailure) {
                 // Map Result<Unit> to Result<Long> for consistent return type
@@ -3561,6 +3894,27 @@ class SyncManager(
      * The caller leaves the pull cursor unchanged and retries the page; revision guards make replay
      * idempotent and dirty-section predicates preserve concurrent local edits.
      */
+    /**
+     * PR 11: every row a pull merges came from this portal account. Handed to
+     * [SyncRepository.mergeAllPullData] so the provenance commits in the merge transaction,
+     * for any pull (a pull-only retry included), and an account switch never classifies a
+     * pulled row as never-synced local data (codex #859).
+     */
+    private fun pulledProvenance(
+        pullResponse: PortalSyncPullResponse,
+        mobileSessions: List<com.devil.phoenixproject.domain.model.WorkoutSession>,
+    ): Map<String, Collection<String>> {
+        val types = SyncExcludedEntityTypes
+        val sessionIds = mobileSessions.flatMap { listOfNotNull(it.id, it.routineSessionId?.takeIf { id -> id.isNotBlank() }) }
+        return mapOf(
+            types.WORKOUT to sessionIds + pullResponse.sessions.map { it.id },
+            types.ROUTINE to pullResponse.routines.map { it.id },
+            types.CYCLE to pullResponse.cycles.map { it.id },
+            types.PERSONAL_RECORD to pullResponse.personalRecords.map { it.id },
+            types.EARNED_BADGE to pullResponse.badges.map { it.badgeId },
+        ).filterValues { it.isNotEmpty() }
+    }
+
     private suspend fun mergePullPage(
         pullResponse: PortalSyncPullResponse,
         lastSync: Long,
@@ -3570,6 +3924,7 @@ class SyncManager(
         serverWinsRoutineIds: Set<String>,
         includeUserScoped: Boolean,
         pushWatermark: Long,
+        stampPullMerge: Boolean = false,
     ): Result<Unit> {
         val ownerUserId = tokenStorage.currentUser.value?.id
             ?: return Result.failure(PortalApiException("Not authenticated", null, 401))
@@ -3719,7 +4074,21 @@ class SyncManager(
                 serverWinsRoutineIds = serverWinsRoutineIds,
                 sessionNotes = sessionNotesMap,
                 sessionUpdatedAtById = sessionUpdatedAtById,
+                pulledProvenance = pulledProvenance(pullResponse, mobileSessions),
             )
+            // PR 11: every row this merge committed came from this portal account. Record
+            // that provenance for any pull (including a pull-only retry, which does not
+            // advance the pull-merge stamp below), so an account switch never classifies a
+            // pulled row as never-synced local data (codex #859).
+            // PR 11: a pulled routine / cycle gets its local createdAt at merge time, later
+            // than the push watermark. Record when this account's rows landed so an account
+            // switch does not mistake them for never-synced local rows. Stamped only once the
+            // merge transaction above has committed (a failed merge rolls everything back and
+            // leaves the stamp untouched), and only for a pull that followed a successful push,
+            // so no unpushed local row falls below the boundary except one made during this sync.
+            if (stampPullMerge) {
+                tokenStorage.setPullMergeWatermark(ownerUserId, mergeProfileId, currentTimeMillis())
+            }
 
             // Server-reported deletions (PR 16 keys; first page only, absent on older
             // servers). Apply after the atomic ordinary merge so a page carrying the

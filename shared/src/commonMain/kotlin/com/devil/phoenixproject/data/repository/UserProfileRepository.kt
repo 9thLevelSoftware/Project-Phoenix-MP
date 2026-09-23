@@ -181,6 +181,17 @@ interface UserProfileRepository {
         supabaseUserId: String,
     ): ProfileAccountLinkReceipt
 
+    /**
+     * User-approved account switch (PR 11): reassigns [profileId] to [supabaseUserId]
+     * even when it already names a different owner. The normal
+     * [linkToSupabaseUnderProfileMutationBarrier] path throws
+     * [ProfileAccountBindingException] in that case and cannot perform the relink.
+     */
+    suspend fun reassignToSupabaseUnderProfileMutationBarrier(
+        profileId: String,
+        supabaseUserId: String,
+    ): ProfileAccountLinkReceipt
+
     /** Rolls back only the exact link represented by [receipt]; caller must hold the shared barrier. */
     suspend fun rollbackSupabaseLinkUnderProfileMutationBarrier(receipt: ProfileAccountLinkReceipt)
     suspend fun updateSubscriptionStatus(
@@ -590,7 +601,14 @@ class SqlDelightUserProfileRepository(
         profileId: String,
         supabaseUserId: String,
     ): ProfileAccountLinkReceipt = profileContextMutex.withLock {
-        linkToSupabaseLocked(profileId, supabaseUserId)
+        linkToSupabaseLocked(profileId, supabaseUserId, allowOwnerChange = false)
+    }
+
+    override suspend fun reassignToSupabaseUnderProfileMutationBarrier(
+        profileId: String,
+        supabaseUserId: String,
+    ): ProfileAccountLinkReceipt = profileContextMutex.withLock {
+        linkToSupabaseLocked(profileId, supabaseUserId, allowOwnerChange = true)
     }
 
     override suspend fun rollbackSupabaseLinkUnderProfileMutationBarrier(
@@ -615,11 +633,12 @@ class SqlDelightUserProfileRepository(
     private fun linkToSupabaseLocked(
         profileId: String,
         supabaseUserId: String,
+        allowOwnerChange: Boolean = false,
     ): ProfileAccountLinkReceipt {
         val profile = queries.getProfileById(profileId).executeAsOneOrNull()
             ?: error("Profile does not exist: $profileId")
         profile.supabase_user_id?.let { currentOwnerUserId ->
-            if (currentOwnerUserId != supabaseUserId) {
+            if (currentOwnerUserId != supabaseUserId && !allowOwnerChange) {
                 throw ProfileAccountBindingException(
                     profileId = profileId,
                     currentOwnerUserId = currentOwnerUserId,

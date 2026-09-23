@@ -360,6 +360,56 @@ interface SyncRepository {
      */
     suspend fun getAllPersonalRecordIds(profileId: String = "default"): List<String>
 
+    /**
+     * Rows [portalUserId] must never upload (PR 11 account-switch exclusions).
+     * Scoped by portal user so one account's exclusion set cannot hide rows from
+     * another account that later signs in on the same install.
+     */
+    suspend fun insertSyncExcludedEntities(
+        portalUserId: String,
+        entityType: String,
+        entityIds: Collection<String>,
+    )
+
+    suspend fun getSyncExcludedEntityIds(portalUserId: String, entityType: String): Set<String>
+
+    /**
+     * Records which pre-switch rows the chosen account-switch policy excludes from
+     * upload to [portalUserId].
+     *
+     * @param excludeAllExisting true for "Don't upload existing data": every pre-switch row.
+     *   false for "Upload workouts not yet synced": only rows that already reached another account.
+     * @param previousPushWatermarks the old account's sync boundary per profile: the later of its
+     *   push watermark and its last post-push pull merge (PortalTokenStorage.getAccountSyncBoundary).
+     *   Sessions are classified by origin and acknowledged generation instead (isNeverSyncedSession).
+     */
+    suspend fun recordAccountSwitchExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        excludeAllExisting: Boolean,
+        previousPushWatermarks: Map<String, Long>,
+        previousPortalUserId: String? = null,
+        /**
+         * Each profile's own previous owner (its `supabase_user_id` before the switch),
+         * falling back to [previousPortalUserId]. A device can hold profiles synced to
+         * different accounts; each is classified under its own (codex #859).
+         */
+        previousPortalUserIdsByProfile: Map<String, String> = emptyMap(),
+    )
+
+    /**
+     * Ownership-conflict recovery (PR 11): exclude from [portalUserId] only rows of
+     * [entityTypes] created at or before [createdAtOrBefore] (the moment this account was
+     * first seen on the device), never a row known to have reached [portalUserId] itself.
+     * Rows made for this account afterwards keep syncing (codex #859).
+     */
+    suspend fun recordOwnershipRecoveryExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        createdAtOrBefore: Long,
+        entityTypes: Set<String>,
+    )
+
     // === Post-Push Stamping ===
 
     /**
@@ -543,6 +593,8 @@ interface SyncRepository {
         sessionNotes: Map<String, SessionNotesEntry> = emptyMap(),
         sessionUpdatedAtById: Map<String, Long> = emptyMap(),
         pushWatermark: Long = 0L,
+        /** PR 11: `entity type -> ids` pulled from [ownerUserId], recorded in the same transaction. */
+        pulledProvenance: Map<String, Collection<String>> = emptyMap(),
     )
 
     /**

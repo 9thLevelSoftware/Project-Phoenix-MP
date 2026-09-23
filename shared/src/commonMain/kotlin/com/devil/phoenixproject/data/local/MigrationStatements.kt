@@ -1259,5 +1259,16 @@ WHERE gs.rowid = (
         "ALTER TABLE RoutineExercise ADD COLUMN durationSyncKnown INTEGER NOT NULL DEFAULT 0",
     )
 
+    // Migration 54: entities the current portal user must never upload after an
+    // account switch. Mirrors 54.sqm exactly.
+    54 -> listOf(
+        """CREATE TABLE SyncExcludedEntity (
+        portal_user_id TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        PRIMARY KEY (portal_user_id, entity_type, entity_id)
+    )""",
+    )
+
     else -> emptyList()
 }

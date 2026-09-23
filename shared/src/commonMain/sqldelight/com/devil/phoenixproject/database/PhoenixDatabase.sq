@@ -2839,6 +2839,62 @@ WHERE owner_user_id = :ownerUserId
   AND entity_id = :entityId
   AND transferred_at < :transferredAt;
 
+-- Entities the given portal user must never upload (PR 11 account-switch exclusions).
+-- Scoped by portal_user_id so one account's exclusion set cannot hide rows from
+-- another account that later signs in on the same install.
+CREATE TABLE SyncExcludedEntity (
+    portal_user_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    PRIMARY KEY (portal_user_id, entity_type, entity_id)
+);
+
+insertSyncExcludedEntity:
+INSERT OR IGNORE INTO SyncExcludedEntity(portal_user_id, entity_type, entity_id)
+VALUES (:portalUserId, :entityType, :entityId);
+
+selectSyncExcludedEntityIds:
+SELECT entity_id FROM SyncExcludedEntity
+WHERE portal_user_id = :portalUserId AND entity_type = :entityType;
+
+selectAllSyncExcludedEntities:
+SELECT * FROM SyncExcludedEntity
+ORDER BY portal_user_id, entity_type, entity_id;
+
+deleteSyncExcludedEntity:
+DELETE FROM SyncExcludedEntity
+WHERE portal_user_id = :portalUserId AND entity_type = :entityType AND entity_id = :entityId;
+
+deleteSyncExcludedEntitiesForUser:
+DELETE FROM SyncExcludedEntity WHERE portal_user_id = :portalUserId;
+
+-- PR 11 account-switch classification for one profile's sessions. A session reached
+-- a portal account when it was pulled (portalOrigin = 1) or a push was acknowledged
+-- (synced_sync_generation > 0); updatedAt is only the legacy (pre-migration-49) signal
+-- because local edits such as a Just Lift tag also write it.
+selectAccountSwitchSessionRows:
+SELECT id, routineSessionId, portalOrigin, synced_sync_generation, updatedAt, timestamp
+FROM WorkoutSession
+WHERE profile_id = :profileId;
+
+-- PR 11 account-switch / ownership-recovery enumeration. Includes soft-deleted rows:
+-- their tombstones are pushed too, so they must be classifiable.
+selectRoutinesForAccountSwitch:
+SELECT id, createdAt FROM Routine WHERE profile_id = :profileId;
+
+selectAllTrainingCyclesForAccountSwitch:
+SELECT id, created_at FROM TrainingCycle WHERE profile_id = :profileId;
+
+selectPersonalRecordsForAccountSwitch:
+SELECT id, uuid, achievedAt FROM PersonalRecord WHERE profile_id = :profileId;
+
+selectCustomExerciseIdsForAccountSwitch:
+SELECT id FROM Exercise WHERE isCustom = 1;
+
+-- needsSync = 0 means a push was acknowledged or the row was pulled: it reached an account.
+selectExternalActivitiesForAccountSwitch:
+SELECT id, needsSync, syncedAt FROM ExternalActivity WHERE profileId = :profileId;
+
 selectAppliedOwnershipEvent:
 SELECT * FROM AppliedOwnershipEvent
 WHERE owner_user_id = :ownerUserId AND mutation_id = :mutationId;

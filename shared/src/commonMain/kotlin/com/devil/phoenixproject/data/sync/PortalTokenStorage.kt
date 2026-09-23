@@ -91,6 +91,11 @@ class PortalTokenStorage(private val settings: Settings) {
          * Post-push stamps use it; push gather selects `updatedAt > pushWatermark`.
          */
         private const val KEY_PUSH_WATERMARK_PREFIX = "portal_push_watermark_"
+        private const val KEY_PULL_MERGE_WATERMARK_PREFIX = "portal_pull_merge_watermark_"
+        private const val KEY_ACCOUNT_FIRST_SEEN_PREFIX = "portal_account_first_seen_"
+        private const val KEY_LEGACY_ACCOUNT_BOUNDARY_PREFIX = "portal_legacy_account_boundary_"
+        private const val KEY_OWNERSHIP_CONFLICT_PREFIX = "portal_ownership_conflict_"
+        private const val LEGACY_BOUNDARY_ALL_PROFILES = "*"
 
         /**
          * Server-clock cursor of the last completed pull for one (portal userId, profileId).
@@ -137,6 +142,16 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_ROUTINE_GROUP_REPAIR_CURSOR_PREFIX = "portal_routine_group_repair_cursor_"
         private const val KEY_DEVICE_ID = "portal_device_id"
         private const val KEY_STORAGE_VERIFIED = "portal_storage_verified"
+
+        /**
+         * Portal user id of the account the last successful push landed in (PR 11).
+         * Deliberately NOT cleared by [clearAuth]: sign-out must not forget which
+         * account the local rows already live in, or the next sign-in cannot tell
+         * "same account" from "different account" and would re-upload rows the new
+         * account does not own.
+         */
+        private const val KEY_LAST_SYNCED_PORTAL_USER_ID = "portal_last_synced_user_id"
+    private const val KEY_LAST_SYNCED_PORTAL_USER_LABEL = "portal_last_synced_user_label"
     }
 
     init {
@@ -294,13 +309,21 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[KEY_USER_EMAIL] = response.user.email ?: ""
         settings[KEY_USER_NAME] = response.user.displayName ?: ""
         settings[KEY_IS_PREMIUM] = existingPremium
+        // PR 11: when this account first appeared on the device (kept across sign-outs).
+        // Ownership-conflict recovery excludes only rows that predate it.
+        if (settings.getLongOrNull(KEY_ACCOUNT_FIRST_SEEN_PREFIX + response.user.id) == null) {
+            settings.putLong(KEY_ACCOUNT_FIRST_SEEN_PREFIX + response.user.id, currentTimeMillis())
+        }
         if (!sameUser) {
             // Account-scoped entitlement state must never cross an identity switch.
             // Sync cursors are namespaced by (userId, profileId) and survive the switch
             // so returning to the previous account resumes where it left off.
             settings.remove(KEY_SUBSCRIPTION_TIER)
             // The un-namespaced legacy cursor belongs to the previous account (the old
-            // build zeroed it on every switch). It must never seed this account's cursors.
+            // build zeroed it on every switch). It must never seed this account's cursors,
+            // but it is PR 11's only evidence that the old client synced into that account,
+            // so keep that fact before dropping the key.
+            preserveLegacySyncOwnerLocked(fallbackOwner = previousUserId)
             settings.remove(KEY_LEGACY_LAST_SYNC)
             settings.remove(KEY_LEGACY_DELTA_PULL_KEY)
             // The UI's lastSyncTime is a cache of this user's min pull cursor; it must
@@ -313,6 +336,74 @@ class PortalTokenStorage(private val settings: Settings) {
     }
 
     fun getRefreshToken(): String? = settings.getStringOrNull(KEY_REFRESH_TOKEN)
+
+    /**
+     * Portal user id of the account the last successful push landed in (PR 11).
+     * Survives [clearAuth] so a later sign-in can detect a different account.
+     */
+    fun getLastSyncedPortalUserId(): String? = settings.getStringOrNull(KEY_LAST_SYNCED_PORTAL_USER_ID)
+
+    /**
+     * Display label (email or id) for [getLastSyncedPortalUserId], so the account-switch
+     * dialog can name both accounts. Never logged (F-076).
+     */
+    fun getLastSyncedPortalUserLabel(): String? = settings.getStringOrNull(KEY_LAST_SYNCED_PORTAL_USER_LABEL)
+
+    /**
+     * Device time at which [userId] first signed in on this device, or null for an account
+     * that was already signed in before this build (PR 11 ownership-conflict recovery).
+     * Not cleared by [clearAuth].
+     */
+    fun getAccountFirstSeenAt(userId: String): Long? =
+        settings.getLongOrNull(KEY_ACCOUNT_FIRST_SEEN_PREFIX + userId)
+
+    /** Records which portal user the last successful push landed in. Not cleared by [clearAuth]. */
+    fun setLastSyncedPortalUserId(userId: String) {
+        settings[KEY_LAST_SYNCED_PORTAL_USER_ID] = userId
+    }
+
+    /**
+     * PR 11 upgrade path: a device last synced by a pre-PR-11 build has no
+     * [getLastSyncedPortalUserId], but a positive legacy cursor proves the old client synced
+     * into one account: the one its delta-pull marker names, or else [currentUserId] (the
+     * old build zeroed the cursor on every account switch). Records that account as the
+     * last-synced one when nothing newer is recorded, so account-switch detection sees it.
+     * Does not consume the legacy key.
+     */
+    fun adoptLegacySyncOwner(currentUserId: String?) {
+        withPlatformLock(authLock) { preserveLegacySyncOwnerLocked(fallbackOwner = currentUserId) }
+    }
+
+    private fun preserveLegacySyncOwnerLocked(fallbackOwner: String?) {
+        val legacy: Long = settings[KEY_LEGACY_LAST_SYNC, 0L]
+        if (legacy <= 0L) return
+        val markerOwner = settings.getStringOrNull(KEY_LEGACY_DELTA_PULL_KEY)
+            ?.substringBefore(':', missingDelimiterValue = "")
+            ?.takeIf { it.isNotBlank() }
+        val owner = markerOwner ?: fallbackOwner?.takeIf { it.isNotBlank() } ?: return
+        // The legacy value is also the old account's "already synced" boundary (the old
+        // client stamped only rows it pushed or pulled). Keep it for that account, so an
+        // account switch that drops the key still classifies those rows as synced (codex
+        // #859). Scoped like PR 10's seeding: to the profile the marker names. Without a
+        // marker it covers every profile of that account: for an account switch the safe
+        // error is treating a row as synced (it stays out of the NEW account and remains
+        // where it already is), the opposite of the same-account re-push case. Never lowered.
+        val markerProfile = settings.getStringOrNull(KEY_LEGACY_DELTA_PULL_KEY)
+            ?.takeIf { markerOwner != null }
+            ?.substringAfter(':', missingDelimiterValue = "")
+            ?.trim()
+            ?.ifBlank { "default" }
+        val boundaryKey = legacyBoundaryKey(owner, markerProfile ?: LEGACY_BOUNDARY_ALL_PROFILES)
+        if (legacy > settings[boundaryKey, 0L]) settings[boundaryKey] = legacy
+        if (settings.getStringOrNull(KEY_LAST_SYNCED_PORTAL_USER_ID) == null) {
+            settings[KEY_LAST_SYNCED_PORTAL_USER_ID] = owner
+        }
+    }
+
+    /** Records the display label for [setLastSyncedPortalUserId]. Not cleared by [clearAuth]. */
+    fun setLastSyncedPortalUserLabel(label: String) {
+        settings[KEY_LAST_SYNCED_PORTAL_USER_LABEL] = label
+    }
 
     fun getExpiresAt(): Long = settings.getLong(KEY_EXPIRES_AT, 0L)
 
@@ -350,6 +441,53 @@ class PortalTokenStorage(private val settings: Settings) {
     fun setPushWatermark(userId: String, profileId: String, timestamp: Long) {
         withPlatformLock(authLock) {
             settings[cursorKey(KEY_PUSH_WATERMARK_PREFIX, userId, profileId)] = timestamp
+        }
+    }
+
+    /**
+     * Device-clock time at which a pull that followed a successful push last merged rows
+     * into this profile. A pulled routine, cycle or custom exercise gets its local
+     * `createdAt` at merge time, so this, together with [getPushWatermark], bounds
+     * which rows reached this portal account (PR 11 account-switch classification).
+     * Namespaced like the cursors and kept by [clearAuth]. 0 = no such pull yet.
+     */
+    fun getPullMergeWatermark(userId: String, profileId: String): Long =
+        settings[cursorKey(KEY_PULL_MERGE_WATERMARK_PREFIX, userId, profileId), 0L]
+
+    fun setPullMergeWatermark(userId: String, profileId: String, timestamp: Long) {
+        withPlatformLock(authLock) {
+            settings[cursorKey(KEY_PULL_MERGE_WATERMARK_PREFIX, userId, profileId)] = timestamp
+        }
+    }
+
+    /**
+     * The PR 11 "already reached this account" boundary for one profile: the later of the
+     * last acknowledged push gather and the last post-push pull merge.
+     */
+    fun getAccountSyncBoundary(userId: String, profileId: String): Long =
+        maxOf(
+            getPushWatermark(userId, profileId),
+            getPullMergeWatermark(userId, profileId),
+            maxOf(
+                settings[legacyBoundaryKey(userId, profileId.trim().ifBlank { "default" }), 0L],
+                settings[legacyBoundaryKey(userId, LEGACY_BOUNDARY_ALL_PROFILES), 0L],
+            ),
+        )
+
+    private fun legacyBoundaryKey(userId: String, profileScope: String): String =
+        "$KEY_LEGACY_ACCOUNT_BOUNDARY_PREFIX$userId:$profileScope"
+
+    /**
+     * PR 11: the portal's ownership refusal for [userId], kept until the user applies the
+     * recovery or signs out, so a restart cannot resume pushing the refused payload.
+     */
+    fun getOwnershipConflict(userId: String): String? =
+        settings.getStringOrNull(KEY_OWNERSHIP_CONFLICT_PREFIX + userId)
+
+    fun setOwnershipConflict(userId: String, message: String?) {
+        withPlatformLock(authLock) {
+            if (message == null) settings.remove(KEY_OWNERSHIP_CONFLICT_PREFIX + userId)
+            else settings[KEY_OWNERSHIP_CONFLICT_PREFIX + userId] = message
         }
     }
 
@@ -670,6 +808,7 @@ class PortalTokenStorage(private val settings: Settings) {
     }
 
     private fun clearAuthInternal() = withPlatformLock(authLock) {
+        val signedOutUserId: String? = settings.getStringOrNull(KEY_USER_ID)
         authGeneration++
         settings.remove(KEY_TOKEN)
         settings.remove(KEY_REFRESH_TOKEN)
@@ -683,7 +822,9 @@ class PortalTokenStorage(private val settings: Settings) {
         // by user id, so re-linking the same account resumes where it left off and a
         // different account's cursors cannot be read through this one's keys.
         // The un-namespaced legacy cursor is NOT: its owner is unknown once the user id
-        // is gone (the old build removed it on sign-out too).
+        // is gone (the old build removed it on sign-out too). Its owner is kept first as
+        // PR 11 account-switch evidence (read before KEY_USER_ID was removed above).
+        preserveLegacySyncOwnerLocked(fallbackOwner = signedOutUserId)
         settings.remove(KEY_LEGACY_LAST_SYNC)
         settings.remove(KEY_LEGACY_DELTA_PULL_KEY)
         // Keep device ID for stable identity

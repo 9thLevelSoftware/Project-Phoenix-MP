@@ -467,7 +467,7 @@ class SyncManagerTest {
     }
 
     @Test
-    fun `email login rejects a different profile owner and preserves prior identity`() = runTest {
+    fun `email login as a different profile owner pauses sync and preserves the prior owner's data`() = runTest {
         setupAuthenticated(userId = "owner-a")
         tokenStorage.setPullCursor("owner-a", "default", 42L)
         tokenStorage.setPushWatermark("owner-a", "default", 42L)
@@ -478,11 +478,15 @@ class SyncManagerTest {
 
         val result = manager.login("owner-b@example.com", "password")
 
-        assertTrue(result.isFailure)
+        assertTrue(result.isSuccess)
+        val mismatch = assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+        assertEquals("owner-a", mismatch.previousUserId)
+        assertEquals("owner-b", mismatch.newUserId)
+        // No relink until the user answers the account-switch dialog.
         assertEquals("owner-a", fakeUserProfileRepo.activeProfile.value?.supabaseUserId)
-        assertEquals("owner-a", tokenStorage.currentUser.value?.id)
+        assertEquals("owner-b", tokenStorage.currentUser.value?.id)
         assertEquals(42L, tokenStorage.getPullCursor("owner-a", "default"))
-        assertEquals(42L, manager.lastSyncTime.value)
+        assertEquals(42L, tokenStorage.getPushWatermark("owner-a", "default"))
     }
 
     @Test
@@ -3315,9 +3319,14 @@ class SyncManagerTest {
         fakeUserProfileRepo.linkToSupabase("foreign-profile", "owner-a")
         fakeUserProfileRepo.setActiveProfileForTest(id = "default", supabaseUserId = null)
 
-        assertTrue(createManager().sync().isSuccess)
+        // PR 11: a profile still owned by another account is an unanswered account switch,
+        // so the whole sync pauses for the user's choice before anything is sent. The
+        // owner filter in syncProfileOrder stays as defence in depth behind that gate.
+        val manager = createManager()
+        assertTrue(manager.sync().isFailure)
+        assertIs<SyncState.AccountMismatch>(manager.syncState.value)
 
-        assertTrue(fakeApi.pushPayloads.isNotEmpty())
+        assertTrue(fakeApi.pushPayloads.isEmpty(), "nothing may be pushed before the choice")
         assertTrue(
             fakeApi.pushPayloads.none { it.profileId == "foreign-profile" },
             "another account's profile must not be pushed (saw ${fakeApi.pushPayloads.map { it.profileId }})",
@@ -3330,6 +3339,24 @@ class SyncManagerTest {
             fakeApi.pushPayloads.all { payload -> payload.allProfiles.orEmpty().none { it.id == "foreign-profile" } },
             "another account's profile metadata must not be published",
         )
+    }
+
+    @Test
+    fun aRolledBackPullMergeDoesNotAdvanceThePullMergeStamp() = runTest {
+        // PR 11: the stamp records that this account's pulled rows landed. A merge that
+        // threw rolled its transaction back, so nothing landed and the stamp must not move.
+        setupAuthenticated()
+        fakeUserProfileRepo.setActiveProfileForTest()
+        fakeSyncRepo.atomicMergeShouldFail = true
+
+        // The push lands; the pull's merge throws (reported as a partial sync).
+        createManager().sync()
+        assertTrue(tokenStorage.getPushWatermark("user-123", "default") > 0L, "the push itself landed")
+        assertEquals(0L, tokenStorage.getPullMergeWatermark("user-123", "default"))
+
+        fakeSyncRepo.atomicMergeShouldFail = false
+        assertTrue(createManager().sync().isSuccess)
+        assertTrue(tokenStorage.getPullMergeWatermark("user-123", "default") > 0L)
     }
 
     @Test

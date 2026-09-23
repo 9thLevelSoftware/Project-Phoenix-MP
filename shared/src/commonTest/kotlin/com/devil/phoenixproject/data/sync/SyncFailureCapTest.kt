@@ -130,6 +130,7 @@ class SyncFailureCapTest {
                     if (currentBackoffIndex < BACKOFF_SCHEDULE_MINUTES.size) currentBackoffIndex++
                 }
 
+                SyncErrorCategory.OWNERSHIP_CONFLICT,
                 SyncErrorCategory.PERMANENT -> {
                     currentBackoffIndex = 0
                     _hasPersistentError.value = true

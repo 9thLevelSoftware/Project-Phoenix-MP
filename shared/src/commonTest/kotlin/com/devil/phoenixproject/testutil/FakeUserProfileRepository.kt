@@ -557,10 +557,21 @@ class FakeUserProfileRepository : UserProfileRepository {
     override suspend fun linkToSupabaseUnderProfileMutationBarrier(
         profileId: String,
         supabaseUserId: String,
+    ): ProfileAccountLinkReceipt = linkUnderBarrier(profileId, supabaseUserId, allowOwnerChange = false)
+
+    override suspend fun reassignToSupabaseUnderProfileMutationBarrier(
+        profileId: String,
+        supabaseUserId: String,
+    ): ProfileAccountLinkReceipt = linkUnderBarrier(profileId, supabaseUserId, allowOwnerChange = true)
+
+    private suspend fun linkUnderBarrier(
+        profileId: String,
+        supabaseUserId: String,
+        allowOwnerChange: Boolean,
     ): ProfileAccountLinkReceipt = mutex.withLock {
         val profile = profiles[profileId] ?: error("Profile does not exist: $profileId")
         val currentOwnerUserId = profile.supabaseUserId
-        if (currentOwnerUserId != null && currentOwnerUserId != supabaseUserId) {
+        if (currentOwnerUserId != null && currentOwnerUserId != supabaseUserId && !allowOwnerChange) {
             throw ProfileAccountBindingException(profileId, currentOwnerUserId, supabaseUserId)
         }
         val linkedAt = currentTimeMillis()

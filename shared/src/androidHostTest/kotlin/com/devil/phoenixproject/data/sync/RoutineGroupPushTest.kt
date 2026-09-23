@@ -1011,6 +1011,9 @@ class RoutineGroupPushTest {
                 user = GoTrueUser(id = "user-2", email = "b@b.c"),
             ),
         )
+        // PR 11 pauses sync on an unanswered account switch. Model a switch the user has
+        // already answered without excluding anything, so this test isolates the hash key.
+        tokenStorage.setLastSyncedPortalUserId("user-2")
 
         // The first sync bound the profile to user-1 (codex #856). Model the account-switch
         // choice that moves this profile's data to user-2 (PR 11 relinks it), so user-2 may
