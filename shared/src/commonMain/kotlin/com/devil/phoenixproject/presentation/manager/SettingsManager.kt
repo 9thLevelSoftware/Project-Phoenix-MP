@@ -385,6 +385,10 @@ class SettingsManager(
         scope.launch { globalPreferences.setAutoBackupEnabled(enabled) }
     }
 
+    fun setIncludeRawTelemetryInBackups(enabled: Boolean) {
+        scope.launch { globalPreferences.setIncludeRawTelemetryInBackups(enabled) }
+    }
+
     fun setBackupDestination(destination: BackupDestination) {
         scope.launch { globalPreferences.setBackupDestination(destination) }
     }

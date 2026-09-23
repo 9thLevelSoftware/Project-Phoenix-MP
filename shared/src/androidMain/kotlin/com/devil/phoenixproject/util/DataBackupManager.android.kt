@@ -9,6 +9,8 @@ import android.provider.MediaStore
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import co.touchlab.kermit.Logger
+import com.devil.phoenixproject.data.sync.PortalTokenStorage
+import com.devil.phoenixproject.data.preferences.PendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.PreferencesManager
 import com.devil.phoenixproject.data.repository.ProfilePreferencesRepository
 import com.devil.phoenixproject.data.repository.UserProfileRepository
@@ -82,7 +84,19 @@ class AndroidDataBackupManager(
     private val destinationResolver: BackupDestinationResolver,
     profilePreferencesRepository: ProfilePreferencesRepository,
     userProfileRepository: UserProfileRepository,
-) : BaseDataBackupManager(database, profilePreferencesRepository, userProfileRepository) {
+    portalTokenStorage: PortalTokenStorage,
+    pendingProfileDeletionStore: PendingProfileDeletionStore,
+) : BaseDataBackupManager(
+    database,
+    profilePreferencesRepository,
+    userProfileRepository,
+    portalTokenStorage,
+    preferencesManager,
+    pendingProfileDeletionStore,
+) {
+
+    override val includeRawTelemetryInBackups: Boolean
+        get() = preferencesManager.preferencesFlow.value.includeRawTelemetryInBackups
 
     private val cacheDir: File
         get() {

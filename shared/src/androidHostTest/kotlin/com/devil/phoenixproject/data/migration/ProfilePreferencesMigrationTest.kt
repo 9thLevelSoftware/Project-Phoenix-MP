@@ -262,7 +262,7 @@ class ProfilePreferencesMigrationTest {
         val settings: MapSettings,
         val preferenceRepository: ProfilePreferencesRepository,
         val safetyStore: FaultingProfileLocalSafetyStore,
-        val profiles: UserProfileRepository,
+        val profiles: SqlDelightUserProfileRepository,
         val migration: MigrationManager,
     ) {
         val queries = database.phoenixDatabaseQueries

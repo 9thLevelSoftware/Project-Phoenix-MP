@@ -31,6 +31,7 @@ import com.russhwolf.settings.MapSettings
 import java.io.File
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertSame
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
@@ -441,6 +442,8 @@ class StreamingImportRoundTripTest {
             database,
             profilePreferencesRepository,
         ),
+        // These round-trip tests exercise sample restore, so they opt in to raw telemetry.
+        override val includeRawTelemetryInBackups: Boolean = true,
     ) : BaseDataBackupManager(
         database,
         profilePreferencesRepository,
@@ -1229,7 +1232,8 @@ class StreamingImportRoundTripTest {
         )
 
         // Insert a routine with exercises
-        originalDb.seedExercise("rt-exercise-bench", "Bench Press")
+        // A custom exercise: it only exists on the target if the backup carries it.
+        originalDb.seedExercise("rt-exercise-bench", "Bench Press", isCustom = true)
         val exercise = Exercise(
             id = "rt-exercise-bench",
             name = "Bench Press",
@@ -1290,8 +1294,9 @@ class StreamingImportRoundTripTest {
         val freshFixture = preferenceFixture()
         val freshDb = freshFixture.database
         val freshManager = freshFixture.manager
-        // F-017/A-035 (PR 22): restore drops routine exercises whose Exercise row is missing on the target; remove this target-side seed once restore writes Exercise rows first.
-        freshDb.seedExercise("rt-exercise-bench", "Bench Press")
+        // Fresh-device restore (F-017): no Exercise row is seeded on the target; the backup's
+        // customExercises section is restored before the routine exercises that reference it.
+        assertNull(freshDb.phoenixDatabaseQueries.selectExerciseById("rt-exercise-bench").executeAsOneOrNull())
 
         val source = StringBackupStreamSource(exportedJson)
         source.open()
@@ -1350,6 +1355,8 @@ class StreamingImportRoundTripTest {
         // 6. Verify import counts match
         assertEquals(2, result.sessionsImported, "Should import 2 sessions")
         assertEquals(2, result.metricsImported, "Should import 2 metrics")
+        assertEquals(1, result.routineExercisesImported, "The routine exercise on a custom exercise must survive a fresh-device restore")
+        assertTrue(freshDb.phoenixDatabaseQueries.selectExerciseById("rt-exercise-bench").executeAsOneOrNull()?.isCustom == 1L, "custom exercise restored")
         assertEquals(1, result.routinesImported, "Should import 1 routine")
         assertEquals(1, result.routineExercisesImported, "Should import 1 routine exercise")
         assertTrue(result.personalRecordsImported > 0, "Should import personal records")

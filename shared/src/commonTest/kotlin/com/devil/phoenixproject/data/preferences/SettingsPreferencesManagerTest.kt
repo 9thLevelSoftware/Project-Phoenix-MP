@@ -17,6 +17,21 @@ class SettingsPreferencesManagerTest {
     private val legacyDefaultsJson = Json { encodeDefaults = true }
 
     @Test
+    fun `raw telemetry is out of backups until the user opts in and a restore re-arms one-shot work`() = runTest {
+        val settings = MapSettings()
+        val manager = SettingsPreferencesManager(settings)
+        assertFalse(manager.preferencesFlow.value.includeRawTelemetryInBackups, "F-033: off by default")
+
+        manager.setIncludeRawTelemetryInBackups(true)
+        assertTrue(SettingsPreferencesManager(settings).preferencesFlow.value.includeRawTelemetryInBackups, "persists")
+
+        manager.setVelocityOneRepMaxBackfillDone(true)
+        manager.resetOneShotWorkAfterRestore()
+        assertFalse(manager.preferencesFlow.value.velocityOneRepMaxBackfillDone)
+        assertFalse(SettingsPreferencesManager(settings).preferencesFlow.value.velocityOneRepMaxBackfillDone, "cleared on disk")
+    }
+
+    @Test
     fun `loadPreferences removes legacy hud preset key`() {
         val settings = MapSettings().apply {
             putString("hud_preset", "biomechanics")
