@@ -37,6 +37,7 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonArray
 import org.junit.Test
 
 /**
@@ -181,7 +182,7 @@ class DataBackupCompletenessTest {
         source.saveSession("edited-1")
         // Child restores re-dirty their session, so every marked row gets a child.
         listOf("pulled-1", "synced-1", "unsynced-1", "edited-1").forEach(source::insertMetric)
-        source.queries.restoreSessionSyncMarkers(portalOrigin = 1L, updatedAt = 1_700_000_500_000L, acknowledged = 0L, id = "pulled-1")
+        source.queries.restoreSessionSyncMarkers(portalOrigin = 1L, updatedAt = 1_700_000_500_000L, acknowledged = 1L, id = "pulled-1")
         // Pushed and acknowledged, as the old phone's sync leaves it.
         source.queries.updateSessionTimestamp(1_700_000_600_000L, "synced-1")
         source.queries.markSessionSynced("synced-1")
@@ -316,7 +317,7 @@ class DataBackupCompletenessTest {
         source.saveSession("pulled-1")
         source.insertMetric("pulled-1") // restoring this re-dirties the pulled row
         source.queries.insertStreakHistory(1_700_000_000_000L, 1_700_000_100_000L, 2L, profileId = "default")
-        source.queries.restoreSessionSyncMarkers(portalOrigin = 1L, updatedAt = 1_700_000_500_000L, acknowledged = 0L, id = "pulled-1")
+        source.queries.restoreSessionSyncMarkers(portalOrigin = 1L, updatedAt = 1_700_000_500_000L, acknowledged = 1L, id = "pulled-1")
         val storage = PortalTokenStorage(MapSettings())
         storage.saveGoTrueAuth(
             GoTrueAuthResponse(
@@ -339,6 +340,93 @@ class DataBackupCompletenessTest {
         assertEquals(1L, pulled.portalOrigin, "an aborted restore must not leave a pulled row looking local")
         assertFalse(pulled.local_sync_generation > pulled.synced_sync_generation, "nor dirty")
         assertEquals(0L, storage.getPullCursor("user-1", "default"), "committed rows still reset the pull cursor")
+    }
+
+    // ---- restore sync-state model, every path restore can write ----
+
+    private data class SyncState(val portalOrigin: Long, val dirty: Boolean, val acknowledgedPush: Boolean, val updatedAt: Long?)
+
+    private fun Fixture.syncState(id: String): SyncState {
+        val row = queries.selectSessionById(id).executeAsOne()
+        return SyncState(
+            portalOrigin = row.portalOrigin,
+            dirty = row.local_sync_generation > row.synced_sync_generation,
+            acknowledgedPush = row.synced_sync_generation > 0L,
+            updatedAt = row.updatedAt,
+        )
+    }
+
+    @Test
+    fun `every restore path leaves each session in the sync state its backup recorded`() = runTest {
+        val t1 = 1_700_000_600_000L
+        val t2 = 1_700_000_700_000L
+        val source = Fixture(includeRawTelemetry = true)
+        source.seedProfiles()
+        listOf("local-never", "local-synced", "local-edited", "pulled-clean", "pulled-edited").forEach { id ->
+            source.saveSession(id)
+            source.insertMetric(id) // a child restore re-dirties its session; the markers must survive it
+        }
+        with(source.queries) {
+            updateSessionTimestamp(t1, "local-synced"); markSessionSynced("local-synced")
+            updateSessionTimestamp(t1, "local-edited"); markSessionSynced("local-edited")
+            updateSessionExerciseTag(null, "Front Squat", t2, "local-edited")
+            restoreSessionSyncMarkers(portalOrigin = 1L, updatedAt = t1, acknowledged = 1L, id = "pulled-clean")
+            restoreSessionSyncMarkers(portalOrigin = 1L, updatedAt = t1, acknowledged = 1L, id = "pulled-edited")
+            markWorkoutComponentDirty("pulled-edited") // edited on the phone after the pull
+        }
+        val full = source.manager.exportToJson()
+
+        // Inserted rows: the restore reproduces exactly what the backup recorded.
+        val inserted = Fixture()
+        inserted.manager.importFromJson(full).getOrThrow()
+        val expectedInserted = mapOf(
+            "local-never" to SyncState(0L, dirty = true, acknowledgedPush = false, updatedAt = null),
+            "local-synced" to SyncState(0L, dirty = false, acknowledgedPush = true, updatedAt = t1),
+            "local-edited" to SyncState(0L, dirty = true, acknowledgedPush = false, updatedAt = t2),
+            "pulled-clean" to SyncState(1L, dirty = false, acknowledgedPush = false, updatedAt = t1),
+            "pulled-edited" to SyncState(1L, dirty = true, acknowledgedPush = false, updatedAt = t1),
+        )
+        expectedInserted.forEach { (id, expected) ->
+            assertEquals(expected, inserted.syncState(id), "inserted $id")
+        }
+
+        // v6 file: no markers, so nothing is proven synced.
+        val v6 = run {
+            val root = testJson.parseToJsonElement(full).jsonObject
+            val data = root.getValue("data").jsonObject
+            val sessions = kotlinx.serialization.json.JsonArray(
+                data.getValue("workoutSessions").jsonArray.map {
+                    JsonObject(it.jsonObject - "updatedAt" - "portalOrigin" - "syncAcknowledged")
+                },
+            )
+            JsonObject(root + ("version" to kotlinx.serialization.json.JsonPrimitive(6)) + ("data" to JsonObject(data + ("workoutSessions" to sessions)))).toString()
+        }
+        val legacy = Fixture()
+        legacy.manager.importFromJson(v6).getOrThrow()
+        listOf("local-never", "local-synced", "local-edited", "pulled-clean", "pulled-edited").forEach { id ->
+            assertTrue(legacy.syncState(id).dirty, "v6 $id has no proof of sync and must upload")
+        }
+
+        // Matched rows: the target already holds the sessions (without their samples); the
+        // restore adds the missing children. A dirty target row stays dirty. A clean one stays
+        // clean only when the backup proves the portal already has those children
+        // (acknowledged); otherwise the restored children reopen it for one upload.
+        val backup = testJson.decodeFromString<BackupData>(full)
+        val withoutSamples = testJson.encodeToString(backup.copy(data = backup.data.copy(metricSamples = emptyList())))
+        val matched = Fixture()
+        matched.manager.importFromJson(withoutSamples).getOrThrow()
+        matched.queries.markWorkoutComponentDirty("pulled-clean") // edited on the target since: pending
+        matched.queries.markSessionSynced("local-never") // the target uploaded it, parent only
+        val before = expectedInserted.keys.associateWith { matched.syncState(it) }
+        val result = matched.manager.importFromJson(full).getOrThrow()
+        assertEquals(5, result.metricsImported, "every missing child restored")
+        val expectedMatched = before + ("local-never" to before.getValue("local-never").copy(dirty = true))
+        expectedMatched.forEach { (id, state) ->
+            assertEquals(state, matched.syncState(id), "matched $id")
+        }
+        assertFalse(before.getValue("local-never").dirty)
+        assertTrue(before.getValue("local-synced").let { !it.dirty && it.acknowledgedPush })
+        assertTrue(before.getValue("pulled-clean").dirty)
     }
 
     // ---- v1-v6 single-object gamification stats (the shipping app's format) ----

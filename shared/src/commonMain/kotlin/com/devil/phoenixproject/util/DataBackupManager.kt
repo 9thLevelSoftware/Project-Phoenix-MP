@@ -779,10 +779,16 @@ abstract class BaseDataBackupManager(
         // Restored sessions whose sync markers must be (re)applied once every child section
         // has restored, because metric/set/note restores re-dirty their session.
         val restoredSessionSyncMarkers = mutableListOf<WorkoutSessionBackup>()
+        // Sessions that already existed and matched the backup, where both the target row and the
+        // backup show nothing pending. The source's acknowledged push already delivered these
+        // children (and the rep summaries a backup lacks), so restoring the missing children
+        // must not turn the row into a destructive re-push. Without that proof (v6 file, pending
+        // row) restored children reopen the parent so the portal receives them.
+        val matchedCleanSessionIds = mutableListOf<String>()
         // Routine groups this restore inserted rows into, per profile; held out of the repair.
         val restoredRoutineGroupIds = mutableMapOf<String, MutableSet<String>>()
         fun applyRestoredSessionSyncMarkers() {
-            if (restoredSessionSyncMarkers.isEmpty()) return
+            if (restoredSessionSyncMarkers.isEmpty() && matchedCleanSessionIds.isEmpty()) return
             database.transaction {
                 restoredSessionSyncMarkers.forEach { session ->
                     queries.restoreSessionSyncMarkers(
@@ -792,6 +798,8 @@ abstract class BaseDataBackupManager(
                         id = session.id,
                     )
                 }
+                // Only rows that were clean before the restore; a pending local edit stays pending.
+                matchedCleanSessionIds.forEach { id -> queries.markSessionSynced(id) }
             }
         }
         suspend fun resetStateABackupCannotCarry() {
@@ -1586,6 +1594,11 @@ abstract class BaseDataBackupManager(
                                                 }
                                                 if (legacyProfileOnlyAdoption) {
                                                     queries.adoptSessionProfile(profileId = sessionProfileId, id = session.id)
+                                                }
+                                                if (normalizedSession.syncAcknowledged &&
+                                                    existingSession.synced_sync_generation >= existingSession.local_sync_generation
+                                                ) {
+                                                    matchedCleanSessionIds += session.id
                                                 }
                                                 sessionsSkipped++
                                                 recordParent("session", session.id, BackupParentStatus.MATCHING)
@@ -3415,9 +3428,10 @@ abstract class BaseDataBackupManager(
             profileId = session.profile_id,
             updatedAt = session.updatedAt,
             portalOrigin = session.portalOrigin == 1L,
-            syncAcknowledged = session.portalOrigin == 0L &&
-                session.synced_sync_generation > 0L &&
-                session.synced_sync_generation >= session.local_sync_generation,
+            // Nothing pending: every local change reached the portal. A pulled row is clean at
+            // 0/0; a local row needs at least one acknowledged push.
+            syncAcknowledged = session.synced_sync_generation >= session.local_sync_generation &&
+                (session.portalOrigin == 1L || session.synced_sync_generation > 0L),
         )
     }
 

@@ -916,22 +916,26 @@ SELECT * FROM WorkoutSession
 WHERE deletedAt IS NULL;
 
 -- Backup restore (PR 22): carry the session's sync stamp, portal-origin marker and whether
--- the exported generation had been acknowledged by the portal.
--- - Pulled row (portalOrigin = 1): generation-clean 0/0, exactly as a pull inserts it.
--- - Acknowledged local row: the portal already holds exactly this content with its rep
---   summaries, which a backup does not carry. It restores as synced (synced = local
---   generation); re-pushing it would make replace_session_children delete that rep data.
--- - Any other local row (never uploaded, or edited after its last acknowledged push):
---   stays dirty and uploads. A stamp alone is not proof: a post-sync edit keeps it.
+-- the exported generation had nothing pending (acknowledged), for either origin.
+-- - Acknowledged: the portal already holds exactly this content with its rep summaries,
+--   which a backup does not carry, so it restores clean. A pulled row restores 0/0
+--   exactly as a pull inserts it; a local row as synced (synced = local generation).
+--   Re-pushing it would make replace_session_children delete that rep data.
+-- - Not acknowledged (never uploaded, or edited after its last sync or pull, pulled rows
+--   included): stays dirty (local generation >= 1 from the insert, synced 0) and uploads.
+--   Neither a stamp nor portalOrigin is proof: an edit keeps both.
 -- Idempotent: run at insert and again after child sections re-dirty the row.
 restoreSessionSyncMarkers:
 UPDATE WorkoutSession
 SET portalOrigin = :portalOrigin,
     updatedAt = :updatedAt,
-    local_sync_generation = CASE WHEN :portalOrigin = 1 THEN 0 ELSE local_sync_generation END,
+    local_sync_generation = CASE
+        WHEN :acknowledged = 1 AND :portalOrigin = 1 THEN 0
+        ELSE MAX(local_sync_generation, 1)
+    END,
     synced_sync_generation = CASE
-        WHEN :portalOrigin = 1 THEN 0
-        WHEN :acknowledged = 1 THEN local_sync_generation
+        WHEN :acknowledged = 1 AND :portalOrigin = 1 THEN 0
+        WHEN :acknowledged = 1 THEN MAX(local_sync_generation, 1)
         ELSE 0
     END
 WHERE id = :id;
