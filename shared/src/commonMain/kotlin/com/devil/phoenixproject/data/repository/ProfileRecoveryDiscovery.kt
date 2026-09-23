@@ -86,7 +86,10 @@ class ProfileRecoveryDiscovery(
             val columns = tableColumns(table)
             val profileColumn = columns.firstOrNull { it == "profile_id" || it == "profileId" }
                 ?: return@forEach
-            val count = countRows(table, profileColumn, sourceProfileId)
+            // A tombstone (deletedAt set) is not recoverable content: a permanently deleted
+            // profile keeps its routine / cycle / PR tombstones to block pull resurrection.
+            val liveOnly = if ("deletedAt" in columns) "deletedAt IS NULL" else null
+            val count = countRows(table, profileColumn, sourceProfileId, liveOnly)
             counts[table] = count
             if (count > 0L && table in PROFILE_RECOVERY_CLOUD_OWNERSHIP_ROOT_TABLES) {
                 val cloudPredicate = when (table) {
@@ -101,7 +104,7 @@ class ProfileRecoveryDiscovery(
                         table,
                         profileColumn,
                         sourceProfileId,
-                        cloudPredicate,
+                        listOfNotNull(liveOnly, cloudPredicate).joinToString(" AND "),
                     )
                 }
             }

@@ -665,6 +665,9 @@
     <string name="profile_recovery_message">Phoenix n’a pas pu confirmer quel profil est actif. Réessayez avant de continuer.</string>
     <string name="profile_recovery_retry_failed">La récupération du profil est toujours indisponible</string>
     <string name="profile_delete_reassign_message">Supprimer « %1$s » ? Ses entraînements, routines, records, badges, évaluations et données de progression seront transférés vers Default. Cette action est irréversible.</string>
+    <string name="profile_delete_merge_action">Fusionner avec Par défaut</string>
+    <string name="profile_delete_permanent_action">Supprimer définitivement</string>
+    <string name="profile_delete_permanent_message">Ou supprimez &quot;%1$s&quot; définitivement : ses entraînements, routines, cycles et records sont supprimés de cet appareil et de votre compte portail. Cette action est irréversible.</string>
     <string name="settings_video_behavior">Démonstrations d'exercices</string>
     <string name="settings_show_exercise_videos">Afficher les démonstrations d'exercices</string>
     <string name="settings_show_exercise_videos_description">Afficher les démonstrations ; désactivez-les sur les appareils plus lents</string>

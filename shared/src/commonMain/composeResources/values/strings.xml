@@ -809,6 +809,9 @@
     <string name="profile_recovery_message">Phoenix could not confirm which profile is active. Retry before continuing.</string>
     <string name="profile_recovery_retry_failed">Profile recovery is still unavailable</string>
     <string name="profile_delete_reassign_message">Delete &quot;%1$s&quot;? Its workouts, routines, records, badges, assessments, and progression data will move to Default. This cannot be undone.</string>
+    <string name="profile_delete_merge_action">Merge into Default</string>
+    <string name="profile_delete_permanent_action">Delete permanently</string>
+    <string name="profile_delete_permanent_message">Or delete &quot;%1$s&quot; permanently: its workouts, routines, cycles, and records are removed from this device and from your portal account. This cannot be undone.</string>
     <string name="settings_video_behavior">Exercise Demos</string>
     <string name="settings_show_exercise_videos">Show Exercise Demos</string>
     <string name="settings_show_exercise_videos_description">Display exercise demonstration stills; turn this off on slower devices</string>
