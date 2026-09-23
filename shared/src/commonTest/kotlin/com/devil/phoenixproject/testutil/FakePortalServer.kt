@@ -97,6 +97,7 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
     fun push(payload: PortalSyncPayload): PortalSyncPushResponse {
         val rejections = mutableListOf<SyncRejectionDto>()
         var inserted = 0
+        val accepted = mutableListOf<String>()
         for (dto in payload.sessions) {
             val incoming = dto.updatedAt?.let { parseIso(it) } ?: serverNow()
             val existing = sessions[dto.id]
@@ -112,6 +113,7 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
                     sets = ex.sets.map { set -> StoredSet(set.id, set.weightKg, set.actualReps) },
                 )
             }
+            accepted += dto.id
             if (existing == null) {
                 inserted++
                 sessions[dto.id] = StoredSession(
@@ -150,6 +152,8 @@ class FakePortalServer(var serverNow: () -> Long = { 1_700_000_000_000L }) {
             exerciseProgressInserted = 0,
             personalRecordsInserted = 0,
             rejections = SyncRejectionsDto(sessions = rejections),
+            // upsert_workout_session_lww: every accepted row is acknowledged.
+            acknowledgedWorkoutSessionIds = accepted,
         )
     }
 
@@ -215,13 +219,25 @@ class PortalServerApiClient(val server: FakePortalServer) : FakePortalApiClient(
      */
     var stripRejectionTimestamps: Boolean = false
 
+    /**
+     * Returns a success response that acknowledges no session and rejects none: the
+     * portal did not apply them (e.g. a partial/older response shape). Nothing about
+     * those sessions may be treated as accepted.
+     */
+    var stripAcknowledgements: Boolean = false
+
     override suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> {
         onPush?.let {
             onPush = null
             it()
         }
         super.pushPortalPayload(payload)
-        val response = server.push(payload)
+        val served = server.push(payload)
+        val response = if (stripAcknowledgements) {
+            served.copy(acknowledgedWorkoutSessionIds = emptyList())
+        } else {
+            served
+        }
         if (!stripRejectionTimestamps) return Result.success(response)
         return Result.success(
             response.copy(

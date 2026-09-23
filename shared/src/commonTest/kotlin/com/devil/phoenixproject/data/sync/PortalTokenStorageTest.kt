@@ -478,4 +478,113 @@ class PortalTokenStorageTest {
         assertFalse(state.run())
         assertFalse(state.cleared)
     }
+
+
+    // ===== GitHub review round (#856): legacy cursor migration + restart floor =====
+
+    private fun signIn(storage: PortalTokenStorage, userId: String) {
+        storage.saveGoTrueAuth(
+            GoTrueAuthResponse(
+                accessToken = "token-$userId",
+                tokenType = "bearer",
+                expiresIn = 3600,
+                expiresAt = currentTimeMillis() / 1000 + 3600,
+                refreshToken = "refresh-$userId",
+                user = GoTrueUser(id = userId, email = "$userId@example.com"),
+            ),
+        )
+    }
+
+    @Test
+    fun legacyPullCursorSeedsOnlyTheProfileNamedByTheLegacyDeltaMarker() {
+        // codex #856 P1: the old build sent a full pull whenever its delta marker named a
+        // different profile. Seeding any other profile with the value would skip server
+        // rows that profile never received.
+        val settings = MapSettings()
+        val storage = PortalTokenStorage(settings)
+        signIn(storage, "user-1")
+        settings.putLong("portal_last_sync_timestamp", 5_000L)
+        settings.putString("portal_delta_pull_key", "user-1:profile-b")
+
+        assertTrue(storage.migrateLegacyCursors("user-1", listOf("profile-a", "profile-b")))
+
+        assertEquals(0L, storage.getPullCursor("user-1", "profile-a"))
+        assertEquals(5_000L, storage.getPullCursor("user-1", "profile-b"))
+        assertEquals(5_000L, storage.getPushWatermark("user-1", "profile-a"))
+        assertEquals(5_000L, storage.getPushWatermark("user-1", "profile-b"))
+        assertFalse("portal_delta_pull_key" in settings.keys)
+    }
+
+    @Test
+    fun legacyCursorWithoutADeltaMarkerSeedsNoPullCursor() {
+        val settings = MapSettings()
+        val storage = PortalTokenStorage(settings)
+        signIn(storage, "user-1")
+        settings.putLong("portal_last_sync_timestamp", 5_000L)
+
+        assertTrue(storage.migrateLegacyCursors("user-1", listOf("default")))
+
+        assertEquals(0L, storage.getPullCursor("user-1", "default"), "no marker meant a full pull")
+        assertEquals(5_000L, storage.getPushWatermark("user-1", "default"))
+    }
+
+    @Test
+    fun legacyCursorOwnedByAnotherUserSeedsNothing() {
+        val settings = MapSettings()
+        val storage = PortalTokenStorage(settings)
+        signIn(storage, "user-2")
+        settings.putLong("portal_last_sync_timestamp", 5_000L)
+        settings.putString("portal_delta_pull_key", "user-1:default")
+
+        assertFalse(storage.migrateLegacyCursors("user-2", listOf("default")))
+
+        assertEquals(0L, storage.getPullCursor("user-2", "default"))
+        assertEquals(0L, storage.getPushWatermark("user-2", "default"))
+        assertFalse("portal_last_sync_timestamp" in settings.keys)
+    }
+
+    @Test
+    fun aZeroLegacyCursorNeverZeroesAlreadySeededCursors() {
+        val settings = MapSettings()
+        val storage = PortalTokenStorage(settings)
+        signIn(storage, "user-1")
+        storage.setPullCursor("user-1", "default", 9_000L)
+        storage.setPushWatermark("user-1", "default", 9_000L)
+        settings.putLong("portal_last_sync_timestamp", 0L)
+        settings.putString("portal_delta_pull_key", "user-1:default")
+
+        assertFalse(storage.migrateLegacyCursors("user-1", listOf("default")))
+
+        assertEquals(9_000L, storage.getPullCursor("user-1", "default"))
+        assertEquals(9_000L, storage.getPushWatermark("user-1", "default"))
+    }
+
+    @Test
+    fun signingInAsADifferentAccountDropsTheUnnamespacedLegacyCursor() {
+        val settings = MapSettings()
+        val storage = PortalTokenStorage(settings)
+        signIn(storage, "user-1")
+        settings.putLong("portal_last_sync_timestamp", 5_000L)
+
+        signIn(storage, "user-2")
+
+        assertFalse(storage.migrateLegacyCursors("user-2", listOf("default")))
+        assertEquals(0L, storage.getPushWatermark("user-2", "default"))
+    }
+
+    @Test
+    fun aRestartRestoresTheLastSyncFloorFromTheStoredPullCursors() {
+        // codex #856 P2: after a process restart the UI must not report "never synced"
+        // (and the first-sync trigger must not re-arm) until the next sync publishes.
+        val settings = MapSettings()
+        val first = PortalTokenStorage(settings)
+        signIn(first, "user-1")
+        first.setPullCursor("user-1", "profile-a", 7_000L)
+        first.setPullCursor("user-1", "profile-b", 4_000L)
+        first.setPullCursor("user-1", "never-pulled", 0L)
+
+        val restarted = PortalTokenStorage(settings)
+
+        assertEquals(4_000L, restarted.lastSyncTimestamp.value)
+    }
 }

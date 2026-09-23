@@ -370,7 +370,11 @@ class RoutineGroupPushTest {
         insertRoutineSet("set-1", groupId = null, timestamp = baseTime)
         val editTime = com.devil.phoenixproject.domain.model.currentTimeMillis() + 60_000
         apiClient.onPush = {
+            // A real mid-push edit both re-stamps the row and bumps its sync generation
+            // (every content write calls markWorkoutComponentDirty). The ack then clears
+            // only the generation this push gathered, so the edit stays dirty.
             database.phoenixDatabaseQueries.updateSessionTimestamp(editTime, "set-1")
+            database.phoenixDatabaseQueries.markWorkoutComponentDirty("set-1")
         }
 
         manager.sync()
@@ -705,6 +709,23 @@ class RoutineGroupPushTest {
 
         assertNull(tokenStorage.getSessionSentHash("user-1", profileId, GROUP), "a never-accepted row must have no sent hash")
         assertNotStamped("set-1")
+    }
+
+    @Test
+    fun `a session the portal neither acknowledged nor rejected gets no sent hash`() = runTest {
+        // codex #856 P1: a successful response that omits a session from
+        // acknowledgedWorkoutSessionIds did NOT apply it. Recording its hash would let a
+        // later LWW rejection with the same content stamp never-accepted data as synced.
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        apiClient.stripAcknowledgements = true
+
+        manager.sync()
+
+        assertTrue(apiClient.pushPayloads.flatMap { it.sessions }.any { it.id == GROUP })
+        assertNull(
+            tokenStorage.getSessionSentHash("user-1", profileId, GROUP),
+            "an unacknowledged session must have no sent hash",
+        )
     }
 
     // ===== Review fix round: G-2 / S-1 / T-3 =====

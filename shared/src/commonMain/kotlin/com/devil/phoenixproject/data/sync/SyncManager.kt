@@ -704,17 +704,16 @@ class SyncManager(
 
         // Upgrade seeding (step 8) runs once, before any per-profile work, so the first
         // PR 10 sync sees the seeded cursors rather than inventing fresh ones.
-        val profiles = syncProfileOrder()
+        val profiles = syncProfileOrder(userId)
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
         val seeded = tokenStorage.migrateLegacyCursors(
             userId = userId,
-            activeProfileId = activeProfileId,
             allProfileIds = profiles.map { it.id },
         )
         if (seeded) {
             Logger.i("SyncManager") {
                 "Upgrade seeding: legacy global cursor split across ${profiles.size} profile(s); " +
-                    "active profile keeps its pull cursor, others start at 0"
+                    "only the profile named by the legacy delta-pull marker keeps its pull cursor, others start at 0"
             }
         }
         // One-time routines/cycles/PRs repair push for every profile (step 8). Survives
@@ -758,8 +757,15 @@ class SyncManager(
         return combineProfileOutcomes(outcomes)
     }
 
-    /** Pending-deletion profiles first (PR 20 hook), then the active profile, then the rest. */
-    private suspend fun syncProfileOrder(): List<UserProfile> {
+    /**
+     * Pending-deletion profiles first (PR 20 hook), then the active profile, then the rest.
+     *
+     * Only profiles this portal account may speak for: unbound profiles and profiles
+     * already linked to [userId]. A profile linked to a different portal account is
+     * never pushed or pulled through this token; doing so would upload that account's
+     * workouts into this one (codex #856 P1).
+     */
+    private suspend fun syncProfileOrder(userId: String): List<UserProfile> {
         // Seed the default profile only when the table is empty. Calling ensureDefaultProfile
         // on every sync republishes the active context as a side effect, which would leak
         // unpublished local-safety state into the UI on each sync.
@@ -767,6 +773,7 @@ class SyncManager(
             userProfileRepository.ensureDefaultProfile()
         }
         val all = userProfileRepository.allProfiles.value
+            .filter { isSyncableByPortalUser(it, userId) }
         val activeId = userProfileRepository.activeProfile.value?.id
         // UserProfile has no pending-deletion field yet (PR 20). Keep the hook so PR 20
         // only has to filter here; today nothing is pending-deletion.
@@ -775,6 +782,13 @@ class SyncManager(
         val (active, others) = rest.partition { it.id == activeId }
         return pendingDeletion + active + others
     }
+
+    private fun isSyncableByPortalUser(profile: UserProfile, userId: String): Boolean =
+        profile.supabaseUserId.isNullOrBlank() || profile.supabaseUserId == userId
+
+    /** A 401 means the token is gone for every profile: abort the profile loop. */
+    private fun isAuthFailure(error: Throwable?): Boolean =
+        error is PortalApiException && error.statusCode == 401
 
     /** PR 20 hook: no profile is pending-deletion until that PR adds the field. */
     private fun isPendingDeletionProfile(@Suppress("UNUSED_PARAMETER") profile: UserProfile): Boolean = false
@@ -871,7 +885,7 @@ class SyncManager(
             Logger.e("SyncManager") {
                 "Push FAILED for profile ${profile.id}: status=${(error as? PortalApiException)?.statusCode}, msg=${error?.message}"
             }
-            val authFailure = error is PortalApiException && error.statusCode == 401
+            val authFailure = isAuthFailure(error)
             return ProfileSyncOutcome(
                 profileId = profile.id,
                 authFailure = authFailure,
@@ -887,6 +901,11 @@ class SyncManager(
         // repair convergence). Without this, rejections were decoded but never
         // surfaced (audit F025).
         val pushOutcome = pushResult.getOrThrow()
+        // pushLocalChanges returns success only after EVERY batch landed, so this is the
+        // point where the gather's device time becomes this profile's push watermark.
+        // Rows edited after gatherStartedAt keep a newer updatedAt and stay in the next
+        // delta; a failed push returned above and leaves the watermark untouched.
+        tokenStorage.setPushWatermark(userId, profile.id, pushOutcome.gatherStartedAt)
         val pushResponse = pushOutcome.response
         val rejections = pushOutcome.rejections
         val rejectedRoutineIds = rejections.routines.mapTo(mutableSetOf()) { it.id }
@@ -956,10 +975,19 @@ class SyncManager(
         // actually uploaded, and a never-accepted row must have no hash at all.
         // S-1: the hash is namespaced by (userId, profileId) so account A's accept
         // cannot make account B's never-accepted row look accepted.
+        // Only sessions the portal explicitly acknowledged: a session missing from
+        // `acknowledgedWorkoutSessionIds` without an LWW rejection was NOT applied, and a
+        // hash for it would later let rePushRejectedSessions stamp never-accepted
+        // content as synced (codex #856 P1).
         pushOutcome.sentSessionsById
-            .filterKeys { it !in rejectedSessionIds }
+            .filterKeys { it in pushOutcome.acknowledgedPortalSessionIds && it !in rejectedSessionIds }
             .forEach { (portalSessionId, dto) ->
-                tokenStorage.setSessionSentHash(userId, profile.id, portalSessionId, sessionContentFingerprint(dto))
+                tokenStorage.setSessionSentHash(
+                    userId,
+                    profile.id,
+                    portalSessionId,
+                    sessionContentFingerprint(dto, pushOutcome.telemetryByPortalSessionId[portalSessionId].orEmpty()),
+                )
             }
 
         // Parse syncTime from ISO 8601 to epoch millis
@@ -1031,6 +1059,8 @@ class SyncManager(
             }
             ProfileSyncOutcome(
                 profileId = profile.id,
+                // A pull 401 means the token is gone for every profile too.
+                authFailure = isAuthFailure(pullError),
                 pushSucceeded = true,
                 pullSucceeded = false,
                 syncTimeEpoch = syncTimeEpoch,
@@ -1058,7 +1088,7 @@ class SyncManager(
             ?: return Result.failure<Long>(PortalApiException("Not authenticated")).also {
                 _syncState.value = SyncState.NotAuthenticated
             }
-        val profiles = syncProfileOrder()
+        val profiles = syncProfileOrder(userId)
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
 
         val outcomes = mutableListOf<ProfileSyncOutcome>()
@@ -1092,7 +1122,7 @@ class SyncManager(
                     syncTimeEpoch = lastSync,
                     error = pullError,
                 )
-                if (pullError is PortalApiException && pullError.statusCode == 401) {
+                if (isAuthFailure(pullError)) {
                     break
                 }
             }
@@ -1167,6 +1197,8 @@ class SyncManager(
         val localRowIdsByPortalSessionId: Map<String, List<String>>,
         val sentSessionsById: Map<String, PortalWorkoutSessionDto>,
         val telemetryByPortalSessionId: Map<String, List<PortalRepTelemetryDto>>,
+        /** Portal session ids the portal explicitly acknowledged as applied, across EVERY batch. */
+        val acknowledgedPortalSessionIds: Set<String>,
         /** Rejections from EVERY batch, not just the last response. */
         val rejections: SyncRejectionsDto,
         val rePushContext: RePushContext,
@@ -1366,7 +1398,10 @@ class SyncManager(
         val repairFrom = if (repairPushActive) 0L else pushWatermark
         val platform = getPlatformName()
         userProfileRepository.ensureDefaultProfile()
+        // Profile metadata for another portal account's profiles must not be published
+        // into this account either (same rule as syncProfileOrder).
         val allProfiles = userProfileRepository.allProfiles.value
+            .filter { isSyncableByPortalUser(it, userId) }
         val activeProfile = profile
         val activeProfileId = profile.id
 
@@ -1743,6 +1778,7 @@ class SyncManager(
             }
 
         var lastResponse: PortalSyncPushResponse? = null
+        val acknowledgedPortalSessionIds = linkedSetOf<String>()
 
         pendingOwnershipTransfers.chunked(SYNC_BATCH_SIZE).forEach { transferBatch ->
             val payload = PortalSyncPayload(
@@ -1765,7 +1801,7 @@ class SyncManager(
                 },
             )
             rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload)
+            val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
             if (result.isFailure) return Result.failure(result.pushError())
             val response = result.getOrThrow()
             val sentTransferIds = transferBatch.mapTo(linkedSetOf()) { it.mutationId }
@@ -1822,7 +1858,7 @@ class SyncManager(
                 },
             )
             rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload)
+            val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
             if (result.isFailure) return Result.failure(result.pushError())
             val response = result.getOrThrow()
             val sentDeletionIds = deletionBatch.mapTo(linkedSetOf()) { it.mutationId }
@@ -1865,7 +1901,7 @@ class SyncManager(
                 },
             )
             rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload)
+            val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
             if (result.isFailure) return Result.failure(result.pushError())
             val response = result.getOrThrow()
             val acknowledged = response.acknowledgedDeletedCycleIds.toSet()
@@ -1934,12 +1970,12 @@ class SyncManager(
                 personalRecords = personalRecordDtos,
             )
             rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload)
+            val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
             if (result.isFailure) return Result.failure(result.pushError())
             val singleResponse = result.getOrThrow()
             lastResponse = singleResponse
             collectedRejections += singleResponse.rejections
-            acknowledgeAcceptedWorkoutParents(
+            acknowledgedPortalSessionIds += acknowledgeAcceptedWorkoutParents(
                 workoutSnapshot = workoutSnapshot,
                 sentPortalSessionIds = allSessions.mapTo(linkedSetOf()) { it.id },
                 response = singleResponse,
@@ -2002,7 +2038,7 @@ class SyncManager(
                 )
 
                 rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-                val result = pushPayloadWithRateLimit(payload)
+                val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
                 if (result.isFailure) {
                     val error = result.exceptionOrNull()
                     val batchSessionIds = batchSessions.map { it.id }.take(3)
@@ -2046,7 +2082,7 @@ class SyncManager(
                 val batchResponse = result.getOrThrow()
                 lastResponse = batchResponse
                 collectedRejections += batchResponse.rejections
-                acknowledgeAcceptedWorkoutParents(
+                acknowledgedPortalSessionIds += acknowledgeAcceptedWorkoutParents(
                     workoutSnapshot = workoutSnapshot,
                     sentPortalSessionIds = batchSessions.mapTo(linkedSetOf()) { it.id },
                     response = batchResponse,
@@ -2181,6 +2217,7 @@ class SyncManager(
                     val setIds = sessionSetIds[session.id] ?: emptySet()
                     session.id to setIds.flatMap { setId -> telemetryBySetId[setId] ?: emptyList() }
                 },
+                acknowledgedPortalSessionIds = acknowledgedPortalSessionIds,
                 rejections = mergeRejections(collectedRejections),
                 rePushContext = RePushContext(
                     deviceId = deviceId,
@@ -2196,15 +2233,17 @@ class SyncManager(
         // No updateServerIds() -- portal uses client-provided UUIDs
     }
 
+    /** Acknowledges the parents this response applied; returns exactly those portal session ids. */
     private suspend fun acknowledgeAcceptedWorkoutParents(
         workoutSnapshot: WorkoutSyncSnapshot,
         sentPortalSessionIds: Set<String>,
         response: PortalSyncPushResponse,
-    ) {
-        if (sentPortalSessionIds.isEmpty()) return
+    ): Set<String> {
+        if (sentPortalSessionIds.isEmpty()) return emptySet()
         val acceptedPortalSessionIds = response.acknowledgedWorkoutSessionIds
             .filterTo(linkedSetOf()) { it in sentPortalSessionIds }
         syncRepository.acknowledgeWorkoutSnapshot(workoutSnapshot, acceptedPortalSessionIds)
+        return acceptedPortalSessionIds
     }
 
     private suspend fun acknowledgeAcceptedCycles(
@@ -2286,7 +2325,7 @@ class SyncManager(
             // (S-1: namespaced by userId:profileId, so another account's accept cannot
             // satisfy this lookup).
             val sentHash = tokenStorage.getSessionSentHash(userId, profileId, rejection.id)
-            val currentHash = sessionContentFingerprint(dto)
+            val currentHash = sessionContentFingerprint(dto, outcome.telemetryByPortalSessionId[rejection.id].orEmpty())
             if (sentHash != null && sentHash == currentHash) {
                 unchangedContent += rejection.id
                 return@mapNotNull null
@@ -2355,6 +2394,7 @@ class SyncManager(
             it.id to outcome.telemetryByPortalSessionId[it.id].orEmpty().size
         }
         val stillRejected = mutableSetOf<String>()
+        val retryAcknowledged = mutableSetOf<String>()
         var anyFailure = false
         for (batch in planSessionBatches(retrySessions, retryTelemetryCounts)) {
             if (batch.isEmpty()) continue
@@ -2386,7 +2426,9 @@ class SyncManager(
                 stillRejected += batchIds
                 continue
             }
-            stillRejected += result.getOrThrow().rejections.sessions.map { it.id }
+            val retryResponse = result.getOrThrow()
+            stillRejected += retryResponse.rejections.sessions.map { it.id }
+            retryAcknowledged += retryResponse.acknowledgedWorkoutSessionIds.filter { it in batchIds }
         }
 
         val acceptedRowIds = retrySessions
@@ -2399,9 +2441,14 @@ class SyncManager(
         // DTO's fingerprint equals the next gather's for the same content: `updatedAt`
         // is excluded from the hash and `notes` comes from the same SessionNotes table.
         retrySessions
-            .filter { it.id !in stillRejected }
+            .filter { it.id !in stillRejected && it.id in retryAcknowledged }
             .forEach { dto ->
-                tokenStorage.setSessionSentHash(userId, profileId, dto.id, sessionContentFingerprint(dto))
+                tokenStorage.setSessionSentHash(
+                    userId,
+                    profileId,
+                    dto.id,
+                    sessionContentFingerprint(dto, outcome.telemetryByPortalSessionId[dto.id].orEmpty()),
+                )
             }
         // Only rows still rejected (or whose batch failed) get re-armed; accepted ones
         // are stamped in the same transaction.
@@ -2491,7 +2538,10 @@ class SyncManager(
      * 64-bit FNV-1a rather than 32-bit so a collision cannot mark a changed row
      * synced (the gate stamps on equality).
      */
-    private fun sessionContentFingerprint(dto: PortalWorkoutSessionDto): String {
+    internal fun sessionContentFingerprint(
+        dto: PortalWorkoutSessionDto,
+        telemetry: List<PortalRepTelemetryDto>,
+    ): String {
         val content = buildString {
             // Session-level content (PortalWorkoutSessionDto).
             append(dto.name ?: ""); append('|')
@@ -2558,6 +2608,17 @@ class SyncManager(
                     append(';')
                 }
                 append('|')
+            }
+            // Raw telemetry sent with this portal session (Inferno tier). A change to the
+            // force curve alone must not look like already-accepted content (codex #856 P1).
+            telemetry.sortedWith(compareBy({ it.setId }, { it.timestampMs }, { it.id })).forEach { point ->
+                append(point.id); append('^')
+                append(point.setId); append('^')
+                append(point.timestampMs); append('^')
+                append(point.forceN ?: 0f); append('^')
+                append(point.velocityMps ?: 0f); append('^')
+                append(point.positionMm ?: 0f); append('^')
+                append(point.cable ?: ""); append('#')
             }
         }
         // 64-bit FNV-1a. Wider than the previous 32-bit digest so a hash collision
@@ -2636,9 +2697,21 @@ class SyncManager(
         )
     }
 
+    /**
+     * [waitForCapacity] = true waits for the client window (the same limit the server
+     * enforces) instead of failing fast. The per-profile push path uses it: profiles are
+     * walked in the same order every sync, so failing fast would starve every profile
+     * past the window's capacity forever (codex #856 P1). Local throttling is not a
+     * profile failure.
+     */
     private suspend fun pushPayloadWithRateLimit(
         payload: PortalSyncPayload,
+        waitForCapacity: Boolean = false,
     ): Result<PortalSyncPushResponse> {
+        if (waitForCapacity) {
+            rateLimiter.acquireWithWait("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN)
+            return apiClient.pushPortalPayload(payload)
+        }
         if (!rateLimiter.tryAcquire("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN)) {
             return Result.failure(
                 PortalApiException(

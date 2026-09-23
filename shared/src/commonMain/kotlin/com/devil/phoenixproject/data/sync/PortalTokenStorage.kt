@@ -80,6 +80,13 @@ class PortalTokenStorage(private val settings: Settings) {
         private const val KEY_LEGACY_LAST_SYNC = "portal_last_sync_timestamp"
 
         /**
+         * Legacy "userId:profileId" marker of the completed pull that produced
+         * [KEY_LEGACY_LAST_SYNC]. Absent meant the next pull had to be a full pull.
+         * Read once by [migrateLegacyCursors], then removed.
+         */
+        private const val KEY_LEGACY_DELTA_PULL_KEY = "portal_delta_pull_key"
+
+        /**
          * Device-clock watermark of the last completed push for one (portal userId, profileId).
          * Post-push stamps use it; push gather selects `updatedAt > pushWatermark`.
          */
@@ -160,7 +167,11 @@ class PortalTokenStorage(private val settings: Settings) {
     private val _currentUser = MutableStateFlow(loadUser())
     val currentUser: StateFlow<PortalUser?> = _currentUser.asStateFlow()
 
-    private val _lastSyncTimestamp = MutableStateFlow(0L)
+    // Seeded from the stored per-profile cursors so a process restart does not report
+    // "never synced" (or re-arm the first-sync trigger) until the next sync publishes.
+    private val _lastSyncTimestamp = MutableStateFlow(
+        settings.getStringOrNull(KEY_USER_ID)?.let { pullCursorFloor(it) } ?: 0L,
+    )
     val lastSyncTimestamp: StateFlow<Long> = _lastSyncTimestamp.asStateFlow()
 
     /**
@@ -266,6 +277,10 @@ class PortalTokenStorage(private val settings: Settings) {
             // Sync cursors are namespaced by (userId, profileId) and survive the switch
             // so returning to the previous account resumes where it left off.
             settings.remove(KEY_SUBSCRIPTION_TIER)
+            // The un-namespaced legacy cursor belongs to the previous account (the old
+            // build zeroed it on every switch). It must never seed this account's cursors.
+            settings.remove(KEY_LEGACY_LAST_SYNC)
+            settings.remove(KEY_LEGACY_DELTA_PULL_KEY)
             // The UI's lastSyncTime is a cache of this user's min pull cursor; it must
             // never keep showing the previous account's "last successful pull".
             publishPullCursorFloor(response.user.id)
@@ -364,42 +379,65 @@ class PortalTokenStorage(private val settings: Settings) {
 
     /** Recomputes and publishes the UI cursor floor from this user's stored pull cursors. */
     private fun publishPullCursorFloor(userId: String) {
+        _lastSyncTimestamp.value = pullCursorFloor(userId)
+    }
+
+    /**
+     * Minimum non-zero stored pull cursor for [userId] (G-4: never-pulled profiles must not
+     * report "never synced"). Before the one-time migration has run, the legacy global
+     * value stands in, so an upgraded install does not flash "never synced" either.
+     */
+    private fun pullCursorFloor(userId: String): Long {
         val prefix = "$KEY_PULL_CURSOR_PREFIX$userId:"
-        val values = settings.keys
+        val floor = settings.keys
             .filter { it.startsWith(prefix) }
             .map { settings[it, 0L] }
-        // G-4: never-pulled profiles (cursor 0) must not report "never synced".
-        _lastSyncTimestamp.value = values.filter { it > 0L }.minOrNull() ?: 0L
+            .filter { it > 0L }
+            .minOrNull()
+        return floor ?: settings[KEY_LEGACY_LAST_SYNC, 0L]
     }
 
     /**
      * One-time upgrade seeding (PR 10 step 8). Reads the legacy global cursor and writes:
      *  - every profile's `pushWatermark` = the legacy value (same sessions boundary as
      *    today, so pulled sessions are not re-selected);
-     *  - the active profile's `pullCursor` = the legacy value, every other profile's = 0
-     *    (full pull for profiles the old global cursor never covered).
-     * The legacy key is then removed. Returns true when a migration actually ran.
+     *  - `pullCursor` = the legacy value ONLY for the profile named by the legacy
+     *    "userId:profileId" delta-pull marker, 0 for every other profile. The old build
+     *    sent a full pull whenever that marker was absent or named another user/profile,
+     *    so seeding any other profile with the value would skip server rows it never
+     *    received (codex #856 P1).
+     *
+     * The legacy value belongs to [userId]: the old build zeroed it on every account
+     * switch, and [saveGoTrueAuth]/[clearAuth] drop it on a switch or sign-out. A marker
+     * that names a different user is the one remaining way to tell, so it also blocks
+     * the push-watermark seed (a watermark inherited from another account would hide
+     * this account's never-pushed routines/PRs).
+     *
+     * A legacy value of 0 seeds nothing (a restore must never zero cursors already
+     * seeded). Both legacy keys are then removed. Returns true when seeding ran.
      */
     fun migrateLegacyCursors(
         userId: String,
-        activeProfileId: String,
         allProfileIds: List<String>,
     ): Boolean = withPlatformLock(authLock) {
-        val legacy: Long = settings[KEY_LEGACY_LAST_SYNC, 0L]
         if (KEY_LEGACY_LAST_SYNC !in settings.keys) return@withPlatformLock false
+        val legacy: Long = settings[KEY_LEGACY_LAST_SYNC, 0L]
+        val marker: String? = settings.getStringOrNull(KEY_LEGACY_DELTA_PULL_KEY)
+        settings.remove(KEY_LEGACY_LAST_SYNC)
+        settings.remove(KEY_LEGACY_DELTA_PULL_KEY)
+        if (legacy <= 0L) return@withPlatformLock false
+        val markerUserId = marker?.substringBefore(':', missingDelimiterValue = "")
+        if (markerUserId != null && markerUserId != userId) return@withPlatformLock false
+        val markerProfileId = marker
+            ?.substringAfter(':', missingDelimiterValue = "")
+            ?.trim()
+            ?.ifBlank { "default" }
 
-        val normalizedActive = activeProfileId.trim().ifBlank { "default" }
         for (profileId in allProfileIds) {
             val normalized = profileId.trim().ifBlank { "default" }
             settings[cursorKey(KEY_PUSH_WATERMARK_PREFIX, userId, normalized)] = legacy
             settings[cursorKey(KEY_PULL_CURSOR_PREFIX, userId, normalized)] =
-                if (normalized == normalizedActive) legacy else 0L
-        }
-        settings.remove(KEY_LEGACY_LAST_SYNC)
-        _lastSyncTimestamp.value = if (normalizedActive in allProfileIds.map { it.trim().ifBlank { "default" } }) {
-            legacy
-        } else {
-            0L
+                if (normalized == markerProfileId) legacy else 0L
         }
         true
     }
@@ -538,6 +576,10 @@ class PortalTokenStorage(private val settings: Settings) {
         // Per-(userId, profileId) sync cursors are deliberately KEPT: they are namespaced
         // by user id, so re-linking the same account resumes where it left off and a
         // different account's cursors cannot be read through this one's keys.
+        // The un-namespaced legacy cursor is NOT: its owner is unknown once the user id
+        // is gone (the old build removed it on sign-out too).
+        settings.remove(KEY_LEGACY_LAST_SYNC)
+        settings.remove(KEY_LEGACY_DELTA_PULL_KEY)
         // Keep device ID for stable identity
 
         _isAuthenticated.value = false
