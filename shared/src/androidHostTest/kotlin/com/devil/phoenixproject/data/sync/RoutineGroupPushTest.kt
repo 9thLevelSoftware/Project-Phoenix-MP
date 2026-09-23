@@ -1015,6 +1015,11 @@ class RoutineGroupPushTest {
         // already answered without excluding anything, so this test isolates the hash key.
         tokenStorage.setLastSyncedPortalUserId("user-2")
 
+        // The first sync bound the profile to user-1 (codex #856). Model the account-switch
+        // choice that moves this profile's data to user-2 (PR 11 relinks it), so user-2 may
+        // sync the same session id it has never had accepted.
+        userProfileRepository.setActiveProfileForTest(id = profileId, supabaseUserId = "user-2")
+
         // S-1: the hash is namespaced by userId:profileId, so A's accept cannot satisfy B.
         assertNull(
             tokenStorage.getSessionSentHash("user-2", profileId, GROUP),

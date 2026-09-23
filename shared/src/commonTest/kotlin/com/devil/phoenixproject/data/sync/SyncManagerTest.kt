@@ -173,10 +173,14 @@ class SyncManagerTest {
         assertTrue(login.isActive)
         releaseResponse.complete(Unit)
         assertTrue(sync.await().isSuccess)
-        assertTrue(login.await().isSuccess)
+        login.await()
 
+        // The account-bound deletion is acknowledged under the account that queued it,
+        // and only after it landed did the login proceed.
         assertEquals("owner-a", acknowledgedOwner)
-        assertEquals("owner-b", tokenStorage.currentUser.value?.id)
+        // codex #856: the sync bound the previously unbound profile to owner-a before
+        // syncing it, so a switch to owner-b can no longer take that profile's data with it.
+        assertEquals("owner-a", fakeUserProfileRepo.activeProfile.value?.supabaseUserId)
     }
 
     @Test
@@ -1109,11 +1113,15 @@ class SyncManagerTest {
             payload.personalRecords.map { it.workoutPhase to it.recordType }.toSet(),
             "Dedicated PR payload rows should preserve phase and PR type instead of collapsing by timestamp",
         )
-        assertEquals(
-            WorkoutPhase.CONCENTRIC.name,
-            payload.sessions.single().exercises.single().sets.single().prPhase,
-            "Legacy set-level hint should prefer the normal concentric weight PR when present",
+        val pushedSet = payload.sessions.single().exercises.single().sets.single()
+        assertFalse(
+            pushedSet.isPr,
+            "A phase (peak-force) break is a different metric from a COMBINED weight/volume PR: " +
+                "it must not flag the set, so it matches CompletedSet.is_pr on the phone (F-058) " +
+                "and cannot make the portal derive a MAX_WEIGHT row valued at the commanded load",
         )
+        assertNull(pushedSet.prPhase, "No COMBINED record, so there is no set-level hint")
+        assertNull(pushedSet.prType, "No COMBINED record, so there is no set-level hint")
     }
 
     @Test
@@ -1364,6 +1372,98 @@ class SyncManagerTest {
             "The payload must include the local_profiles row required by the portal FK",
         )
         assertEquals("default", payload.personalRecords.single().localProfileId)
+    }
+
+    /**
+     * F-021: a PR broken during a live set reaches its session only when the PR
+     * row carries the SESSION's timestamp. The push key is
+     * `"$exerciseId:$timestamp"`, and the set's own completion time is a
+     * different, later instant (a 45-second set here), so stamping the PR at
+     * post-save wall-clock time left every live PR orphaned.
+     */
+    @Test
+    fun syncLinksPrToItsSessionWhenPrCarriesTheSessionTimestamp() = runTest {
+        setupAuthenticated()
+        val sessionStart = 1_740_916_800_000L
+        val session = makeWorkoutSession(
+            id = "live-pr-session",
+            timestamp = sessionStart,
+            exerciseId = "bicep-curl",
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(session)
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            makePersonalRecord(
+                id = 7,
+                exerciseId = "bicep-curl",
+                exerciseName = "Bicep Curl",
+                weightPerCableKg = 42f,
+                reps = 8,
+                timestamp = sessionStart,
+                prType = PRType.MAX_WEIGHT,
+                phase = WorkoutPhase.COMBINED,
+            ),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Push payload should be captured")
+        assertTrue(
+            payload.sessions.single().exercises.single().sets.single().isPr,
+            "The pushed set must be flagged as a PR set",
+        )
+        assertEquals(
+            "live-pr-session",
+            payload.personalRecords.single().sessionId,
+            "The pushed PR must name the session that set it",
+        )
+    }
+
+    /**
+     * The failure mode the fix removes: a PR stamped when post-save processing
+     * ran (session start + the set's duration) matches no session key at all.
+     */
+    @Test
+    fun syncCannotLinkAPrStampedAtPostSaveWallClockTime() = runTest {
+        setupAuthenticated()
+        val sessionStart = 1_740_916_800_000L
+        val session = makeWorkoutSession(
+            id = "live-pr-session",
+            timestamp = sessionStart,
+            exerciseId = "bicep-curl",
+        )
+        fakeSyncRepo.workoutSessionsToReturn = listOf(session)
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            makePersonalRecord(
+                id = 7,
+                exerciseId = "bicep-curl",
+                exerciseName = "Bicep Curl",
+                weightPerCableKg = 42f,
+                reps = 8,
+                timestamp = sessionStart + session.duration,
+                prType = PRType.MAX_WEIGHT,
+                phase = WorkoutPhase.COMBINED,
+            ),
+        )
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"),
+        )
+
+        val result = createManager().sync()
+
+        assertTrue(result.isSuccess)
+        val payload = assertNotNull(fakeApi.lastPushPayload, "Push payload should be captured")
+        assertFalse(
+            payload.sessions.single().exercises.single().sets.single().isPr,
+            "A PR stamped after the set cannot be matched to it",
+        )
+        assertNull(
+            payload.personalRecords.single().sessionId,
+            "A PR stamped after the set cannot be matched to it",
+        )
     }
 
     @Test
@@ -3446,5 +3546,34 @@ class SyncManagerTest {
         } finally {
             PushPlanner.maxBytes = saved
         }
+    }
+
+    @Test
+    fun aProfileCreatedWhileSignedInIsBoundOnItsFirstSyncAndNeverSyncedUnderAnotherAccount() = runTest {
+        // codex #856: syncing an unbound profile without binding it let a later account bind
+        // it and receive its data.
+        setupAuthenticated(userId = "owner-a")
+        fakeUserProfileRepo.seedReadyProfileForTest("created-signed-in")
+        fakeUserProfileRepo.setActiveProfileForTest()
+
+        assertTrue(createManager().sync().isSuccess)
+
+        assertEquals(
+            "owner-a",
+            fakeUserProfileRepo.allProfiles.value.single { it.id == "created-signed-in" }.supabaseUserId,
+            "the first sync must bind the profile to the account it synced under",
+        )
+        assertTrue(fakeApi.pushPayloads.any { it.profileId == "created-signed-in" })
+
+        // Sign out, sign in as another account: the profile now belongs to owner-a.
+        tokenStorage.clearAuth()
+        setupAuthenticated(userId = "owner-b")
+        fakeApi.pushPayloads.clear()
+        fakeApi.pullCallProfileIds.clear()
+
+        createManager().sync()
+
+        assertTrue(fakeApi.pushPayloads.none { it.profileId == "created-signed-in" })
+        assertFalse("created-signed-in" in fakeApi.pullCallProfileIds)
     }
 }

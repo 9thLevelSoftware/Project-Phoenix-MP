@@ -967,7 +967,9 @@ ORDER BY timestamp DESC
 LIMIT 1;
 
 selectSessionIdForPersonalRecord:
-SELECT id FROM WorkoutSession
+-- The PORTAL workout id (a routine set's parent routineSessionId), which is
+-- what a pushed personalRecords.sessionId must reference.
+SELECT COALESCE(NULLIF(routineSessionId, ''), id) FROM WorkoutSession
 WHERE exerciseId = :exerciseId
 AND timestamp = :timestamp
 AND profile_id = :profileId
@@ -2338,6 +2340,9 @@ UPDATE CompletedSet SET logged_rpe = ? WHERE id = ?;
 markCompletedSetAsPr:
 UPDATE CompletedSet SET is_pr = 1 WHERE id = ?;
 
+clearCompletedSetPr:
+UPDATE CompletedSet SET is_pr = 0 WHERE id = ?;
+
 updateCompletedSetForTaggedJustLift:
 UPDATE CompletedSet
 SET set_type = ?,
@@ -3611,28 +3616,25 @@ ORDER BY timestamp ASC;
 -- schema does not carry.
 -- One-shot upgrade seeding (PR 10, codex #856): migration 49 gave every existing row
 -- local_sync_generation 1 / synced_sync_generation 0, so the all-profile loop would treat
--- rows an older client already synchronized as new local captures. The pre-49 client
--- wrote `updatedAt` only when a row was pushed-and-accepted or pulled, so a non-null
--- `updatedAt` is per-row proof the portal already holds it when EITHER
---   * it is at or before the legacy global cursor (covered by a completed sync), OR
---   * the row has no local measurements at all (a pulled row: pushing it would make the
---     portal's replace_session_children erase the richer set/rep data it holds).
--- Rows with NULL `updatedAt` (never synced) and rows edited after the legacy cursor that
--- carry local measurements stay dirty and are pushed.
+-- rows an older client already synchronized as new local captures. Only rows of
+-- :profileIds (the signed-in account's profiles) are touched, and only with real
+-- provenance that the portal already holds them:
+--   * `updatedAt` at or before the legacy cursor: the old client wrote `updatedAt` only
+--     when a row was pushed-and-accepted or pulled, so the row was covered by a
+--     completed sync; OR
+--   * `portalOrigin = 1`: the row was materialized by a pull (pushing it back could let
+--     replace_session_children erase the portal's richer set/rep data).
+-- Everything else stays dirty and is pushed: NULL `updatedAt` (never synced), and any
+-- row edited after the cursor — including a childless manual/zero-rep session whose tag
+-- was edited, which must not be mistaken for a pulled row.
 seedLegacySyncedGenerations:
 UPDATE WorkoutSession
 SET synced_sync_generation = local_sync_generation
 WHERE deletedAt IS NULL
+  AND profile_id IN :profileIds
   AND synced_sync_generation < local_sync_generation
   AND updatedAt IS NOT NULL
-  AND (
-    updatedAt <= :legacyLastSync
-    OR (
-      NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = WorkoutSession.id)
-      AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
-      AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id)
-    )
-  );
+  AND (updatedAt <= :legacyLastSync OR portalOrigin = 1);
 
 selectBlockedRoutineGroupSiblings:
 SELECT id, routineSessionId FROM WorkoutSession

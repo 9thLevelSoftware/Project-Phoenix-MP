@@ -9,12 +9,15 @@ import com.devil.phoenixproject.data.repository.GamificationRepository
 import com.devil.phoenixproject.data.repository.OwnershipEvent
 import com.devil.phoenixproject.data.repository.OwnershipEventApplier
 import com.devil.phoenixproject.data.repository.OwnershipTransferRepository
+import com.devil.phoenixproject.data.repository.PendingCycleDeletion
+import com.devil.phoenixproject.data.repository.UserProfile
+import com.devil.phoenixproject.data.repository.WorkoutDeletionMutation
+import com.devil.phoenixproject.data.repository.OwnershipTransferMutation
 import com.devil.phoenixproject.data.repository.ProfileMutationBarrier
 import com.devil.phoenixproject.data.repository.RepMetricRepository
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.SyncRepository
 import com.devil.phoenixproject.data.repository.TrainingCycleRepository
-import com.devil.phoenixproject.data.repository.UserProfile
 import com.devil.phoenixproject.data.repository.UserProfileRepository
 import com.devil.phoenixproject.data.repository.VelocityOneRepMaxRepository
 import com.devil.phoenixproject.data.repository.WorkoutDeletionRepository
@@ -24,6 +27,7 @@ import com.devil.phoenixproject.domain.model.CompletedSet
 import com.devil.phoenixproject.domain.model.IntegrationProvider
 import com.devil.phoenixproject.domain.model.ProfilePreferenceSectionName
 import com.devil.phoenixproject.domain.model.RpgProfile
+import com.devil.phoenixproject.domain.model.WorkoutPhase
 import com.devil.phoenixproject.domain.model.WorkoutSession
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import com.devil.phoenixproject.domain.premium.RpgAttributeEngine
@@ -931,18 +935,26 @@ class SyncManager(
         // Upgrade seeding (step 8) runs once, before any per-profile work, so the first
         // PR 10 sync sees the seeded cursors rather than inventing fresh ones.
         //
-        // First (codex #856 P1): migration 49 left every pre-existing workout row dirty
+        // The profiles this account may sync: bound to it, or unbound (bound below).
+        val candidateProfiles = syncProfileOrder(userId)
+
+        // First (codex #856): migration 49 left every pre-existing workout row dirty
         // (generation 1/0). Before the all-profile loop can see them, acknowledge the rows
         // the old client provably synchronized — a non-null updatedAt at or before the
-        // legacy cursor, or a pulled row with no local measurements. The evidence is per
-        // row, not per profile: the old client stamped only rows it pushed or pulled (and
-        // it only ever synced the active profile), so an inactive profile's never-synced
-        // rows still have NULL updatedAt and stay dirty. Runs once per device (ledger key);
-        // must run before migrateLegacyCursors consumes the legacy key.
-        syncRepository.seedLegacySyncedGenerationsOnce(tokenStorage.legacyLastSyncFor(userId))?.let { marked ->
+        // legacy cursor, or a pulled row (portalOrigin = 1). Scoped to THIS account's
+        // profiles and namespaced per account in the ledger, so account B's cursor can never
+        // mark account A's offline edits as synced, and A still gets its own seeding when it
+        // signs in. Unbound profiles are included: this sync binds them to this account, and
+        // the legacy cursor (only used when not attributed to another user) is this
+        // account's. Must run before migrateLegacyCursors consumes the legacy key.
+        syncRepository.seedLegacySyncedGenerationsOnce(
+            accountId = userId,
+            legacyLastSync = tokenStorage.legacyLastSyncFor(userId),
+            profileIds = candidateProfiles.map { it.id },
+        )?.let { marked ->
             Logger.i("SyncManager") { "Upgrade seeding: acknowledged $marked legacy workout row(s) already on the portal" }
         }
-        val profiles = syncProfileOrder(userId)
+        val profiles = bindUnboundProfiles(userId, candidateProfiles)
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
         val seeded = tokenStorage.migrateLegacyCursors(
             userId = userId,
@@ -1026,6 +1038,32 @@ class SyncManager(
         val (active, others) = rest.partition { it.id == activeId }
         return pendingDeletion + active + others
     }
+
+    /**
+     * Binds every unbound profile to [userId] before any of its data is pushed or pulled
+     * (codex #856): syncing an unbound profile without an owner let a later account bind
+     * it and receive its data. Runs under the profile-mutation barrier sync already holds,
+     * through the same guarded link the identity commit uses. A profile whose binding fails
+     * (e.g. another account claimed it concurrently) is dropped from this sync.
+     *
+     * PR 11 reads profile owners to detect an account switch; a profile bound here to the
+     * account that is syncing it is exactly the ownership that detection must see.
+     */
+    private suspend fun bindUnboundProfiles(userId: String, profiles: List<UserProfile>): List<UserProfile> =
+        profiles.mapNotNull { profile ->
+            if (!profile.supabaseUserId.isNullOrBlank()) return@mapNotNull profile
+            try {
+                userProfileRepository.linkToSupabaseUnderProfileMutationBarrier(profile.id, userId)
+                profile.copy(supabaseUserId = userId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Logger.w("SyncManager") {
+                    "Could not bind profile ${profile.id} to the signed-in account; skipping it this sync: ${e.message}"
+                }
+                null
+            }
+        }
 
     private fun isSyncableByPortalUser(profile: UserProfile, userId: String): Boolean =
         profile.supabaseUserId.isNullOrBlank() || profile.supabaseUserId == userId
@@ -1375,7 +1413,7 @@ class SyncManager(
             ?: return Result.failure<Long>(PortalApiException("Not authenticated")).also {
                 _syncState.value = SyncState.NotAuthenticated
             }
-        val profiles = syncProfileOrder(userId)
+        val profiles = bindUnboundProfiles(userId, syncProfileOrder(userId))
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
 
         val outcomes = mutableListOf<ProfileSyncOutcome>()
@@ -1847,7 +1885,12 @@ class SyncManager(
         }
         val sessionIdByDeltaPrKey = sessions.mapNotNull { session ->
             val exerciseId = session.exerciseId?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
-            personalRecordSessionKey(exerciseId, session.timestamp) to session.id
+            // The PORTAL workout id: buildPortalSession publishes a routine set under
+            // its parent routineSessionId (the component id becomes an exercise id), so
+            // a PR linked to the component id would reference no pushed workout and the
+            // portal would null its session_id (codex 4081208473).
+            personalRecordSessionKey(exerciseId, session.timestamp) to
+                (session.routineSessionId?.takeIf { it.isNotBlank() } ?: session.id)
         }.toMap()
         val missingSessionRecords = recentPRs.filter { pr ->
             personalRecordSessionKey(pr.exerciseId, pr.timestamp) !in sessionIdByDeltaPrKey
@@ -1893,7 +1936,16 @@ class SyncManager(
             val sessionKey = session.exerciseId
                 ?.takeIf { it.isNotBlank() }
                 ?.let { exerciseId -> personalRecordSessionKey(exerciseId, session.timestamp) }
-            val prRecords = sessionKey?.let { prBySessionKey[it] } ?: emptyList()
+            // Set-level PR flags mirror `CompletedSet.is_pr` exactly (F-058): the
+            // COMBINED weight/volume records only. A phase (peak-force) break is a
+            // different metric; letting it set `isPr` made the portal's legacy
+            // set-derived row land as MAX_WEIGHT/CONCENTRIC valued at the commanded
+            // load rather than the peak force. The phase records still reach the
+            // portal in full through the dedicated `personalRecords` array below.
+            val prRecords = sessionKey
+                ?.let { prBySessionKey[it] }
+                ?.filter { it.phase == WorkoutPhase.COMBINED }
+                ?: emptyList()
 
             // Resolve the real muscle group from the exercise catalog instead of
             // hardcoding "General". Sessions don't carry a muscle group, so look it
@@ -1917,17 +1969,20 @@ class SyncManager(
                 isPendingUpload = session.id in deltaIds,
             )
         }
-        val personalRecordDtos = recentPRs.map { pr ->
+        // Each PR is paired with the session key it belongs to so its DTO carries the
+        // portal session id it was set in (PR↔session link).
+        val personalRecordDtosByPrKey = recentPRs.map { pr ->
             val sessionKey = personalRecordSessionKey(pr.exerciseId, pr.timestamp)
             val muscleGroup =
                 syncRepository.getExerciseMuscleGroup(pr.exerciseId, pr.exerciseName)
                     ?: "General"
-            PortalSyncAdapter.toPortalPersonalRecord(
+            sessionKey to PortalSyncAdapter.toPortalPersonalRecord(
                 record = pr,
                 sessionId = sessionIdByPrKey[sessionKey],
                 muscleGroup = muscleGroup,
             )
         }
+        val personalRecordDtos = personalRecordDtosByPrKey.map { it.second }
 
         // 4. Gather routines as full domain objects, but only ship canonical UUID IDs.
         // Local template-derived cycle routines use "cycle_routine_<uuid>" and must never
@@ -2124,142 +2179,24 @@ class SyncManager(
         var lastResponse: PortalSyncPushResponse? = null
         val acknowledgedPortalSessionIds = linkedSetOf<String>()
 
-        pendingOwnershipTransfers.chunked(SYNC_BATCH_SIZE).forEach { transferBatch ->
-            val payload = PortalSyncPayload(
-                deviceId = deviceId,
-                platform = platform,
-                lastSync = pushWatermark,
-                profileId = payloadProfileId,
-                profileName = payloadProfileName,
-                allProfiles = sendableProfileDtos,
-                ownershipTransfers = transferBatch.map { transfer ->
-                    PortalOwnershipTransferDto(
-                        mutationId = transfer.mutationId,
-                        sourceProfileId = transfer.sourceProfileId,
-                        targetProfileId = transfer.targetProfileId,
-                        workoutSessionIds = transfer.workoutSessionIds,
-                        routineIds = transfer.routineIds,
-                        cycleIds = transfer.cycleIds,
-                        personalRecordIds = transfer.personalRecordIds,
-                    )
-                },
-            )
-            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload)
-            if (result.isFailure) return Result.failure(result.pushError())
-            val response = result.getOrThrow()
-            val sentTransferIds = transferBatch.mapTo(linkedSetOf()) { it.mutationId }
-            val acknowledgedTransferIds = response.acknowledgedOwnershipTransferIds
-                .filterTo(linkedSetOf()) { it in sentTransferIds }
-            ownershipTransferRepository?.acknowledge(
-                ownerUserId = userId,
-                mutationIds = acknowledgedTransferIds,
-                acknowledgedAt = currentTimeMillis(),
-            )
-            val missingTransferAcks = missingAcknowledgedMutationIds(
-                sent = sentTransferIds,
-                acknowledged = acknowledgedTransferIds,
-            )
-            Logger.i("SyncManager") {
-                "Ownership transfer response missingExactAckCount=${missingTransferAcks.size}"
-            }
-            if (missingTransferAcks.isNotEmpty()) {
-                return Result.failure(
-                    PortalApiException(
-                        "Portal did not acknowledge ownership transfer mutation(s): " +
-                            missingTransferAcks.joinToString(),
-                        statusCode = 409,
-                    ),
-                )
-            }
-            lastResponse = response
-        }
-
-        // Durable operations commit before ordinary uploads. Ack only mutation IDs
-        // returned by the portal; a successful HTTP response without an exact ack
-        // deliberately leaves the local queue pending for retry.
-        pendingWorkoutDeletions.groupBy { it.profileId }.forEach { (routingProfileId, routedDeletions) ->
-            routedDeletions.chunked(SYNC_BATCH_SIZE).forEach { deletionBatch ->
-            val routingProfileName = boundedProfileName(
-                allProfiles.firstOrNull { it.id == routingProfileId }?.name ?: "Recovered profile",
-            )
-            val payload = PortalSyncPayload(
-                deviceId = deviceId,
-                platform = platform,
-                lastSync = pushWatermark,
-                profileId = routingProfileId,
-                profileName = routingProfileName,
-                allProfiles = sendableProfileDtos,
-                workoutDeletions = deletionBatch.map { deletion ->
-                    PortalWorkoutDeletionDto(
-                        mutationId = deletion.mutationId,
-                        scope = deletion.scope,
-                        portalSessionId = deletion.portalSessionId,
-                        componentSessionId = deletion.componentSessionId,
-                        deletedAt = kotlin.time.Instant
-                            .fromEpochMilliseconds(deletion.deletedAt)
-                            .toString(),
-                    )
-                },
-            )
-            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload)
-            if (result.isFailure) return Result.failure(result.pushError())
-            val response = result.getOrThrow()
-            val sentDeletionIds = deletionBatch.mapTo(linkedSetOf()) { it.mutationId }
-            val acknowledgedDeletionIds = response.acknowledgedWorkoutDeletionIds
-                .filterTo(linkedSetOf()) { it in sentDeletionIds }
-            workoutDeletionRepository?.acknowledge(
-                ownerUserId = userId,
-                mutationIds = acknowledgedDeletionIds,
-                acknowledgedAt = currentTimeMillis(),
-            )
-            val missingDeletionAckCount = sentDeletionIds.count { it !in acknowledgedDeletionIds }
-            Logger.i("SyncManager") {
-                "Workout deletion response missingExactAckCount=$missingDeletionAckCount"
-            }
-            if (missingDeletionAckCount > 0) {
-                return Result.failure(
-                    PortalApiException(
-                        "Portal did not acknowledge $missingDeletionAckCount workout deletion mutation(s)",
-                        statusCode = 409,
-                    ),
-                )
-            }
-            lastResponse = response
-            }
-        }
-
-        pendingCycleDeletions.chunked(SYNC_BATCH_SIZE).forEach { deletionBatch ->
-            val payload = PortalSyncPayload(
-                deviceId = deviceId,
-                platform = platform,
-                lastSync = pushWatermark,
-                profileId = payloadProfileId,
-                profileName = payloadProfileName,
-                allProfiles = sendableProfileDtos,
-                deletedCycles = deletionBatch.map { deletion ->
-                    PortalDeletedCycleDto(
-                        id = deletion.id,
-                        updatedAt = kotlin.time.Instant.fromEpochMilliseconds(deletion.updatedAt).toString(),
-                    )
-                },
-            )
-            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload)
-            if (result.isFailure) return Result.failure(result.pushError())
-            val response = result.getOrThrow()
-            val acknowledged = response.acknowledgedDeletedCycleIds.toSet()
-            deletionBatch.filter { it.id in acknowledged }.forEach { deletion ->
-                trainingCycleRepository?.acknowledgeCycleDeletions(
-                    ownerUserId = userId,
-                    sentGenerationsById = mapOf(deletion.id to deletion.generation),
-                    acknowledgedIds = setOf(deletion.id),
-                    at = deletion.updatedAt,
-                )
-            }
-            lastResponse = response
-        }
+        // Durable mutations (ownership transfers, workout and cycle deletions) commit
+        // before ordinary uploads. Extracted to keep pushLocalChanges under the JVM
+        // 64 KB method limit.
+        val durableResult = pushDurableMutations(
+            userId = userId,
+            deviceId = deviceId,
+            platform = platform,
+            lastSync = pushWatermark,
+            payloadProfileId = payloadProfileId,
+            payloadProfileName = payloadProfileName,
+            profileDtos = sendableProfileDtos,
+            allProfiles = allProfiles,
+            pendingOwnershipTransfers = pendingOwnershipTransfers,
+            pendingWorkoutDeletions = pendingWorkoutDeletions,
+            pendingCycleDeletions = pendingCycleDeletions,
+        )
+        if (durableResult.isFailure) return Result.failure(durableResult.exceptionOrNull()!!)
+        durableResult.getOrNull()?.let { lastResponse = it }
 
         // 8. Chunked push -- batch sessions to stay under Edge Function body limit (~1 MB)
         //    AND under the server-side rep_telemetry array cap (MAX_TELEMETRY_PER_BATCH),
@@ -2605,6 +2542,167 @@ class SyncManager(
             ),
         )
         // No updateServerIds() -- portal uses client-provided UUIDs
+    }
+
+    /**
+     * Pushes the durable mutation queues (ownership transfers, workout deletions,
+     * cycle deletions) ahead of ordinary uploads. Acks only mutation ids the portal
+     * returns; a successful HTTP response without an exact ack leaves the local queue
+     * pending for retry. Returns the last response received, or null if nothing was sent.
+     */
+    private suspend fun pushDurableMutations(
+        userId: String,
+        deviceId: String,
+        platform: String,
+        lastSync: Long,
+        payloadProfileId: String,
+        payloadProfileName: String,
+        profileDtos: List<LocalProfileDto>?,
+        allProfiles: List<UserProfile>,
+        pendingOwnershipTransfers: List<OwnershipTransferMutation>,
+        pendingWorkoutDeletions: List<WorkoutDeletionMutation>,
+        pendingCycleDeletions: List<PendingCycleDeletion>,
+    ): Result<PortalSyncPushResponse?> {
+        var lastResponse: PortalSyncPushResponse? = null
+
+        pendingOwnershipTransfers.chunked(SYNC_BATCH_SIZE).forEach { transferBatch ->
+            val payload = PortalSyncPayload(
+                deviceId = deviceId,
+                platform = platform,
+                lastSync = lastSync,
+                profileId = payloadProfileId,
+                profileName = payloadProfileName,
+                allProfiles = profileDtos,
+                ownershipTransfers = transferBatch.map { transfer ->
+                    PortalOwnershipTransferDto(
+                        mutationId = transfer.mutationId,
+                        sourceProfileId = transfer.sourceProfileId,
+                        targetProfileId = transfer.targetProfileId,
+                        workoutSessionIds = transfer.workoutSessionIds,
+                        routineIds = transfer.routineIds,
+                        cycleIds = transfer.cycleIds,
+                        personalRecordIds = transfer.personalRecordIds,
+                    )
+                },
+            )
+            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
+            val result = pushPayloadWithRateLimit(payload)
+            if (result.isFailure) return Result.failure(result.pushError())
+            val response = result.getOrThrow()
+            val sentTransferIds = transferBatch.mapTo(linkedSetOf()) { it.mutationId }
+            val acknowledgedTransferIds = response.acknowledgedOwnershipTransferIds
+                .filterTo(linkedSetOf()) { it in sentTransferIds }
+            ownershipTransferRepository?.acknowledge(
+                ownerUserId = userId,
+                mutationIds = acknowledgedTransferIds,
+                acknowledgedAt = currentTimeMillis(),
+            )
+            val missingTransferAcks = missingAcknowledgedMutationIds(
+                sent = sentTransferIds,
+                acknowledged = acknowledgedTransferIds,
+            )
+            Logger.i("SyncManager") {
+                "Ownership transfer response missingExactAckCount=${missingTransferAcks.size}"
+            }
+            if (missingTransferAcks.isNotEmpty()) {
+                return Result.failure(
+                    PortalApiException(
+                        "Portal did not acknowledge ownership transfer mutation(s): " +
+                            missingTransferAcks.joinToString(),
+                        statusCode = 409,
+                    ),
+                )
+            }
+            lastResponse = response
+        }
+
+        // Durable operations commit before ordinary uploads. Ack only mutation IDs
+        // returned by the portal; a successful HTTP response without an exact ack
+        // deliberately leaves the local queue pending for retry.
+        pendingWorkoutDeletions.groupBy { it.profileId }.forEach { (routingProfileId, routedDeletions) ->
+            routedDeletions.chunked(SYNC_BATCH_SIZE).forEach { deletionBatch ->
+            val routingProfileName = boundedProfileName(
+                allProfiles.firstOrNull { it.id == routingProfileId }?.name ?: "Recovered profile",
+            )
+            val payload = PortalSyncPayload(
+                deviceId = deviceId,
+                platform = platform,
+                lastSync = lastSync,
+                profileId = routingProfileId,
+                profileName = routingProfileName,
+                allProfiles = profileDtos,
+                workoutDeletions = deletionBatch.map { deletion ->
+                    PortalWorkoutDeletionDto(
+                        mutationId = deletion.mutationId,
+                        scope = deletion.scope,
+                        portalSessionId = deletion.portalSessionId,
+                        componentSessionId = deletion.componentSessionId,
+                        deletedAt = kotlin.time.Instant
+                            .fromEpochMilliseconds(deletion.deletedAt)
+                            .toString(),
+                    )
+                },
+            )
+            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
+            val result = pushPayloadWithRateLimit(payload)
+            if (result.isFailure) return Result.failure(result.pushError())
+            val response = result.getOrThrow()
+            val sentDeletionIds = deletionBatch.mapTo(linkedSetOf()) { it.mutationId }
+            val acknowledgedDeletionIds = response.acknowledgedWorkoutDeletionIds
+                .filterTo(linkedSetOf()) { it in sentDeletionIds }
+            workoutDeletionRepository?.acknowledge(
+                ownerUserId = userId,
+                mutationIds = acknowledgedDeletionIds,
+                acknowledgedAt = currentTimeMillis(),
+            )
+            val missingDeletionAckCount = sentDeletionIds.count { it !in acknowledgedDeletionIds }
+            Logger.i("SyncManager") {
+                "Workout deletion response missingExactAckCount=$missingDeletionAckCount"
+            }
+            if (missingDeletionAckCount > 0) {
+                return Result.failure(
+                    PortalApiException(
+                        "Portal did not acknowledge $missingDeletionAckCount workout deletion mutation(s)",
+                        statusCode = 409,
+                    ),
+                )
+            }
+            lastResponse = response
+            }
+        }
+
+        pendingCycleDeletions.chunked(SYNC_BATCH_SIZE).forEach { deletionBatch ->
+            val payload = PortalSyncPayload(
+                deviceId = deviceId,
+                platform = platform,
+                lastSync = lastSync,
+                profileId = payloadProfileId,
+                profileName = payloadProfileName,
+                allProfiles = profileDtos,
+                deletedCycles = deletionBatch.map { deletion ->
+                    PortalDeletedCycleDto(
+                        id = deletion.id,
+                        updatedAt = kotlin.time.Instant.fromEpochMilliseconds(deletion.updatedAt).toString(),
+                    )
+                },
+            )
+            rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
+            val result = pushPayloadWithRateLimit(payload)
+            if (result.isFailure) return Result.failure(result.pushError())
+            val response = result.getOrThrow()
+            val acknowledged = response.acknowledgedDeletedCycleIds.toSet()
+            deletionBatch.filter { it.id in acknowledged }.forEach { deletion ->
+                trainingCycleRepository?.acknowledgeCycleDeletions(
+                    ownerUserId = userId,
+                    sentGenerationsById = mapOf(deletion.id to deletion.generation),
+                    acknowledgedIds = setOf(deletion.id),
+                    at = deletion.updatedAt,
+                )
+            }
+            lastResponse = response
+        }
+
+        return Result.success(lastResponse)
     }
 
     /** Acknowledges the parents this response applied; returns exactly those portal session ids. */

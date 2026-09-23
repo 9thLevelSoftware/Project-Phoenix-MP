@@ -1,6 +1,7 @@
 package com.devil.phoenixproject.data.repository
 
 import com.devil.phoenixproject.database.PhoenixDatabase
+import com.devil.phoenixproject.database.PhoenixDatabaseQueries
 import com.devil.phoenixproject.domain.model.RepMetricData
 import com.devil.phoenixproject.domain.model.RepMetricSummary
 import kotlinx.coroutines.Dispatchers
@@ -39,42 +40,7 @@ class SqlDelightRepMetricRepository(private val db: PhoenixDatabase) : RepMetric
     override suspend fun saveRepMetrics(sessionId: String, metrics: List<RepMetricData>) {
         withContext(Dispatchers.IO) {
             db.transaction {
-                metrics.forEach { metric ->
-                    queries.insertRepMetric(
-                    sessionId = sessionId,
-                    repNumber = metric.repNumber.toLong(),
-                    isWarmup = if (metric.isWarmup) 1L else 0L,
-                    startTimestamp = metric.startTimestamp,
-                    endTimestamp = metric.endTimestamp,
-                    durationMs = metric.durationMs,
-                    concentricDurationMs = metric.concentricDurationMs,
-                    concentricPositions = metric.concentricPositions.toJsonString(),
-                    concentricLoadsA = metric.concentricLoadsA.toJsonString(),
-                    concentricLoadsB = metric.concentricLoadsB.toJsonString(),
-                    concentricVelocities = metric.concentricVelocities.toJsonString(),
-                    concentricTimestamps = metric.concentricTimestamps.toJsonString(),
-                    eccentricDurationMs = metric.eccentricDurationMs,
-                    eccentricPositions = metric.eccentricPositions.toJsonString(),
-                    eccentricLoadsA = metric.eccentricLoadsA.toJsonString(),
-                    eccentricLoadsB = metric.eccentricLoadsB.toJsonString(),
-                    eccentricVelocities = metric.eccentricVelocities.toJsonString(),
-                    eccentricTimestamps = metric.eccentricTimestamps.toJsonString(),
-                    peakForceA = metric.peakForceA.toDouble(),
-                    peakForceB = metric.peakForceB.toDouble(),
-                    avgForceConcentricA = metric.avgForceConcentricA.toDouble(),
-                    avgForceConcentricB = metric.avgForceConcentricB.toDouble(),
-                    avgForceEccentricA = metric.avgForceEccentricA.toDouble(),
-                    avgForceEccentricB = metric.avgForceEccentricB.toDouble(),
-                    peakVelocity = metric.peakVelocity.toDouble(),
-                    avgVelocityConcentric = metric.avgVelocityConcentric.toDouble(),
-                    avgVelocityEccentric = metric.avgVelocityEccentric.toDouble(),
-                    rangeOfMotionMm = metric.rangeOfMotionMm.toDouble(),
-                    peakPowerWatts = metric.peakPowerWatts.toDouble(),
-                    avgPowerWatts = metric.avgPowerWatts.toDouble(),
-                    updatedAt = null,
-                    serverId = null,
-                    )
-                }
+                metrics.forEach { metric -> queries.insertRepMetricRow(sessionId, metric) }
                 queries.markWorkoutComponentDirty(sessionId)
             }
         }
@@ -163,6 +129,48 @@ class SqlDelightRepMetricRepository(private val db: PhoenixDatabase) : RepMetric
             0L
         }
     }
+}
+
+/**
+ * The single RepMetric insert. Shared with
+ * [SqlDelightWorkoutRepository.commitCompletedSet] so the atomic completion
+ * transaction writes exactly the rows this repository would have written.
+ */
+internal fun PhoenixDatabaseQueries.insertRepMetricRow(sessionId: String, metric: RepMetricData) {
+    insertRepMetric(
+        sessionId = sessionId,
+        repNumber = metric.repNumber.toLong(),
+        isWarmup = if (metric.isWarmup) 1L else 0L,
+        startTimestamp = metric.startTimestamp,
+        endTimestamp = metric.endTimestamp,
+        durationMs = metric.durationMs,
+        concentricDurationMs = metric.concentricDurationMs,
+        concentricPositions = metric.concentricPositions.toJsonString(),
+        concentricLoadsA = metric.concentricLoadsA.toJsonString(),
+        concentricLoadsB = metric.concentricLoadsB.toJsonString(),
+        concentricVelocities = metric.concentricVelocities.toJsonString(),
+        concentricTimestamps = metric.concentricTimestamps.toJsonString(),
+        eccentricDurationMs = metric.eccentricDurationMs,
+        eccentricPositions = metric.eccentricPositions.toJsonString(),
+        eccentricLoadsA = metric.eccentricLoadsA.toJsonString(),
+        eccentricLoadsB = metric.eccentricLoadsB.toJsonString(),
+        eccentricVelocities = metric.eccentricVelocities.toJsonString(),
+        eccentricTimestamps = metric.eccentricTimestamps.toJsonString(),
+        peakForceA = metric.peakForceA.toDouble(),
+        peakForceB = metric.peakForceB.toDouble(),
+        avgForceConcentricA = metric.avgForceConcentricA.toDouble(),
+        avgForceConcentricB = metric.avgForceConcentricB.toDouble(),
+        avgForceEccentricA = metric.avgForceEccentricA.toDouble(),
+        avgForceEccentricB = metric.avgForceEccentricB.toDouble(),
+        peakVelocity = metric.peakVelocity.toDouble(),
+        avgVelocityConcentric = metric.avgVelocityConcentric.toDouble(),
+        avgVelocityEccentric = metric.avgVelocityEccentric.toDouble(),
+        rangeOfMotionMm = metric.rangeOfMotionMm.toDouble(),
+        peakPowerWatts = metric.peakPowerWatts.toDouble(),
+        avgPowerWatts = metric.avgPowerWatts.toDouble(),
+        updatedAt = null,
+        serverId = null,
+    )
 }
 
 // ==================== JSON Serialization Helpers ====================

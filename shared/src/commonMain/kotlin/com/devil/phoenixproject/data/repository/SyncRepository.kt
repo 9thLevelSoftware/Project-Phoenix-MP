@@ -260,8 +260,10 @@ interface SyncRepository {
     ): PhasePRBackfillResult = PhasePRBackfillResult(changedRows = 0)
 
     /**
-     * Resolve local workout session IDs for dedicated PR rows whose source
-     * sessions may not be included in the current modified-since push batch.
+     * Resolve the PORTAL workout id (`routineSessionId ?: id`) for dedicated PR rows
+     * whose source sessions may not be included in the current modified-since push
+     * batch. A routine set is published under its parent routineSessionId, so the
+     * component id would reference no pushed workout.
      */
     suspend fun findSessionIdsForPersonalRecords(
         records: List<PersonalRecord>,
@@ -315,12 +317,17 @@ interface SyncRepository {
         getAllSessionIds(profileId)
 
     /**
-     * One-shot (device-wide, ledger-keyed) upgrade seeding: marks legacy workout rows the
-     * old client provably synchronized as acknowledged, so PR 10's all-profile loop does
-     * not re-push them. See `seedLegacySyncedGenerations` in PhoenixDatabase.sq for the
+     * One-shot upgrade seeding, once per portal account ([accountId] namespaces the ledger
+     * key): marks legacy workout rows of [profileIds] (the account's profiles) that the old
+     * client provably synchronized as acknowledged, so PR 10's all-profile loop does not
+     * re-push them. See `seedLegacySyncedGenerations` in PhoenixDatabase.sq for the
      * evidence rule. Returns the number of rows marked, or null when it already ran.
      */
-    suspend fun seedLegacySyncedGenerationsOnce(legacyLastSync: Long): Int? = null
+    suspend fun seedLegacySyncedGenerationsOnce(
+        accountId: String,
+        legacyLastSync: Long,
+        profileIds: Collection<String>,
+    ): Int? = null
 
     /**
      * Portal session ids of [profileId] that still have a live (not soft-deleted) row.
