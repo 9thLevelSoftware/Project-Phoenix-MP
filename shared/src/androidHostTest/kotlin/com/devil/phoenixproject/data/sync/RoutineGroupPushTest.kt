@@ -106,7 +106,7 @@ class RoutineGroupPushTest {
         // the delta window. Set 2 is new.
         insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, stampedAt = baseTime + 1_000)
         insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 60_000)
-        tokenStorage.setLastSyncTimestamp(baseTime + 30_000)
+        tokenStorage.setPushWatermark("user-1", "active-profile", baseTime + 30_000)
 
         manager.sync()
 
@@ -320,7 +320,7 @@ class RoutineGroupPushTest {
         )
 
         tokenStorage.setRoutineGroupRepairCursor(profileId, Long.MAX_VALUE)
-        tokenStorage.setLastSyncTimestamp(baseTime + 100_000_000L)
+        tokenStorage.setPushWatermark("user-1", "active-profile", baseTime + 100_000_000L)
         manager.sync()
 
         val firstBatchIds = apiClient.pushPayloads.flatMap { it.sessions }.map { it.id }.toSet()
@@ -370,7 +370,11 @@ class RoutineGroupPushTest {
         insertRoutineSet("set-1", groupId = null, timestamp = baseTime)
         val editTime = com.devil.phoenixproject.domain.model.currentTimeMillis() + 60_000
         apiClient.onPush = {
+            // A real mid-push edit both re-stamps the row and bumps its sync generation
+            // (every content write calls markWorkoutComponentDirty). The ack then clears
+            // only the generation this push gathered, so the edit stays dirty.
             database.phoenixDatabaseQueries.updateSessionTimestamp(editTime, "set-1")
+            database.phoenixDatabaseQueries.markWorkoutComponentDirty("set-1")
         }
 
         manager.sync()
@@ -379,7 +383,7 @@ class RoutineGroupPushTest {
 
         apiClient.onPush = null
         apiClient.pushPayloads.clear()
-        tokenStorage.setLastSyncTimestamp(editTime - 1)
+        tokenStorage.setPushWatermark("user-1", "active-profile", editTime - 1)
         manager.sync()
         assertTrue(
             apiClient.pushPayloads.flatMap { it.sessions }.any { it.id == "set-1" },
@@ -448,7 +452,7 @@ class RoutineGroupPushTest {
         insertRoutineSet("healthy-2", groupId = healthy, timestamp = healthyTime + 1, stampedAt = healthyTime + 11, withLocalData = true)
 
         tokenStorage.setRoutineGroupRepairCursor(profileId, Long.MAX_VALUE)
-        tokenStorage.setLastSyncTimestamp(baseTime + 100_000_000L)
+        tokenStorage.setPushWatermark("user-1", "active-profile", baseTime + 100_000_000L)
         manager.sync()
 
         val pushed = apiClient.pushPayloads.flatMap { it.sessions }.map { it.id }.toSet()
@@ -565,7 +569,7 @@ class RoutineGroupPushTest {
         insertRoutineSet("stranded-2", groupId = stranded, timestamp = t + 1, stampedAt = t + 11, withLocalData = true)
 
         tokenStorage.setRoutineGroupRepairCursor(profileId, Long.MAX_VALUE)
-        tokenStorage.setLastSyncTimestamp(baseTime + 100_000_000L)
+        tokenStorage.setPushWatermark("user-1", "active-profile", baseTime + 100_000_000L)
         apiClient.stripRejectionTimestamps = true
         manager.sync()
 
@@ -621,6 +625,532 @@ class RoutineGroupPushTest {
 
         assertEquals(0, repMetricRepository.getRepMetricsCalls, "non-INFERNO must not load the curve arrays")
         assertTrue(repMetricRepository.getRepMetricSummariesCalls >= 1, "the scalar summaries must still ship")
+    }
+
+    // ===== Step 11: the LWW content-hash gate =====
+
+    @Test
+    fun `an LWW-rejected session with unchanged content is stamped and not re-sent`() = runTest {
+        // First sync uploads and is accepted, so the content hash of what actually
+        // reached the portal is stored. Then the website edits the row (bumping its
+        // updated_at ahead of us) and the row is dirtied again without any content
+        // change — the exact "rejected forever" loop the gate exists to break.
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        assertStamped("set-1")
+        assertTrue(apiClient.pushPayloads.flatMap { it.sessions }.any { it.id == GROUP })
+        val uploadedHash = tokenStorage.getSessionSentHash("user-1", profileId, GROUP)
+        assertNotNull(uploadedHash, "an accepted push must record the content hash")
+
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        // Dirty again with byte-identical content: the gather re-sends the same DTO.
+        database.phoenixDatabaseQueries.markWorkoutComponentDirty("set-1")
+        apiClient.pushPayloads.clear()
+
+        manager.sync()
+
+        assertEquals(1, apiClient.pushPayloads.size, "unchanged content must not trigger a second (re-push) payload")
+        assertEquals(
+            "typed on the website",
+            server.session(GROUP)?.notes,
+            "the gate must not re-send and erase the website's note",
+        )
+        assertStamped("set-1")
+    }
+
+    @Test
+    fun `an LWW-rejected session with changed content is re-sent`() = runTest {
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        val uploadedHash = tokenStorage.getSessionSentHash("user-1", profileId, GROUP)
+        assertNotNull(uploadedHash)
+
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        // A real local edit: another set lands, so the DTO fingerprint changes.
+        insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 1_000, withLocalData = true)
+        apiClient.pushPayloads.clear()
+
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.size >= 2,
+            "changed content must be re-sent after the LWW rejection (original push + re-push)",
+        )
+        assertTrue(
+            apiClient.pushPayloads.drop(1).flatMap { it.sessions }.any { it.id == GROUP },
+            "the re-push payload must carry the group",
+        )
+        assertStamped("set-2")
+        // The re-push is stamped serverUpdatedAt+1ms, so the portal accepts it and
+        // keeps the note the website wrote (PR 8 sends notes on every push).
+        assertEquals("typed on the website", server.session(GROUP)?.notes)
+    }
+
+    @Test
+    fun `a never-accepted grouped row is not stamped when the portal rejects it`() = runTest {
+        // The portal already holds a newer copy, and this row was never uploaded, so
+        // there is no sent hash. The unchanged-content branch must not claim it —
+        // stamping here would mark a never-uploaded row as synced and drop its data.
+        server.seedSession(
+            id = GROUP,
+            exercises = listOf(
+                FakePortalServer.StoredExercise(
+                    id = "portal-copy",
+                    name = "Squat",
+                    sets = listOf(FakePortalServer.StoredSet("portal-set", 60f, 5)),
+                ),
+            ),
+            updatedAt = baseTime + 60 * 60_000L,
+        )
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        apiClient.stripRejectionTimestamps = true
+
+        manager.sync()
+
+        assertNull(tokenStorage.getSessionSentHash("user-1", profileId, GROUP), "a never-accepted row must have no sent hash")
+        assertNotStamped("set-1")
+    }
+
+    @Test
+    fun `deleting a synced session removes its sent hash on the next sync`() = runTest {
+        // codex #856 P2: fingerprints must not outlive the workout they describe.
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        assertNotNull(tokenStorage.getSessionSentHash("user-1", profileId, GROUP))
+
+        val now = com.devil.phoenixproject.domain.model.currentTimeMillis()
+        database.phoenixDatabaseQueries.softDeleteSession(now, now, "set-1")
+        manager.sync()
+
+        assertNull(
+            tokenStorage.getSessionSentHash("user-1", profileId, GROUP),
+            "a deleted workout's sent hash must be garbage-collected",
+        )
+        assertTrue(GROUP !in tokenStorage.sessionSentHashIds("user-1", profileId))
+    }
+
+    @Test
+    fun `a session the portal neither acknowledged nor rejected gets no sent hash`() = runTest {
+        // codex #856 P1: a successful response that omits a session from
+        // acknowledgedWorkoutSessionIds did NOT apply it. Recording its hash would let a
+        // later LWW rejection with the same content stamp never-accepted data as synced.
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        apiClient.stripAcknowledgements = true
+
+        manager.sync()
+
+        assertTrue(apiClient.pushPayloads.flatMap { it.sessions }.any { it.id == GROUP })
+        assertNull(
+            tokenStorage.getSessionSentHash("user-1", profileId, GROUP),
+            "an unacknowledged session must have no sent hash",
+        )
+    }
+
+    // ===== codex #856 P2: accepted PRs/routines are stamped at the watermark =====
+
+    @Test
+    fun `a pushed PR and a pushed untimestamped routine are not re-sent by the next sync`() = runTest {
+        // The ack stamp must not be newer than the push watermark (gatherStartedAt), or the
+        // next gather's `updatedAt > watermark` re-selects and re-stamps them forever.
+        insertLivePr(PR_UUID)
+        insertUntimestampedRoutine(ACCEPTED_ROUTINE)
+
+        manager.sync()
+        assertTrue(apiClient.pushPayloads.flatMap { it.personalRecords }.any { it.id == PR_UUID })
+        assertTrue(apiClient.pushPayloads.flatMap { it.routines }.any { it.id == ACCEPTED_ROUTINE })
+
+        apiClient.pushPayloads.clear()
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.personalRecords }.none { it.id == PR_UUID },
+            "an already-accepted PR must not be pushed again",
+        )
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.routines }.none { it.id == ACCEPTED_ROUTINE },
+            "an already-accepted routine must not be pushed again",
+        )
+    }
+
+    // ===== codex #856: every follow-up push waits for the shared limiter =====
+
+    @Test
+    fun `an LWW re-push still reaches the portal when ordinary pushes filled the window`() = runTest {
+        var clock = 0L
+        val limiter = ClientRateLimiter(nowMs = { clock }, waitFor = { clock += it })
+        val limited = SyncManager(
+            apiClient = apiClient,
+            tokenStorage = tokenStorage,
+            syncRepository = syncRepository,
+            gamificationRepository = FakeGamificationRepository(),
+            repMetricRepository = repMetricRepository,
+            userProfileRepository = userProfileRepository,
+            profilePreferenceSyncRepository = FakeProfilePreferenceSyncRepository(),
+            externalActivityRepository = FakeExternalActivityRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            isProfilePreferenceMigrationReady = { true },
+            completedSetRepository = FakeCompletedSetRepository(),
+            rateLimiter = limiter,
+        )
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        limited.sync()
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 1_000, withLocalData = true)
+        // Other pushes fill the rest of the window just before it rolls: the ordinary push
+        // waits for only the first sync's slot to expire and takes it, leaving the window full,
+        // so the LWW retry must WAIT for capacity instead of failing with a local 429.
+        clock = 59_000L
+        repeat(SyncConfig.PUSH_RATE_LIMIT_PER_MIN - 1) { limiter.tryAcquire("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN) }
+        apiClient.pushPayloads.clear()
+
+        limited.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.drop(1).flatMap { it.sessions }.any { it.id == GROUP },
+            "the LWW re-push must reach the portal (saw ${apiClient.pushPayloads.size} push(es))",
+        )
+        assertEquals(listOf("set-1", "set-2"), server.exerciseIds(GROUP).sorted())
+    }
+
+    // ===== codex #856 review 5286893178: the LWW retry acknowledges generations =====
+
+    @Test
+    fun `the LWW retry carries a bounded non-empty PR subset when the PR list is large`() = runTest {
+        // Self-review (#856): the retry used to resend the FULL personalRecords list; past
+        // the portal's 10,000-item cap every retry 400s and the group never lands.
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        // New PRs land in the same push as the rejected group, so its retry must carry some.
+        repeat(SyncManager.PR_FULL_LIST_PER_BATCH + 1) { i ->
+            insertLivePr("20000000-0000-4000-8000-" + i.toString().padStart(12, '0'), exerciseId = "bulk-$i")
+        }
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 1_000, withLocalData = true)
+        apiClient.pushPayloads.clear()
+
+        manager.sync()
+
+        val retry = apiClient.pushPayloads.drop(1).firstOrNull { payload -> payload.sessions.any { it.id == GROUP } }
+        assertNotNull(retry, "precondition: the rejected group is retried")
+        assertTrue(retry.personalRecords.isNotEmpty(), "PORTAL ROW-DUPLICATION HAZARD: never empty")
+        assertTrue(
+            retry.personalRecords.size < SyncManager.PR_FULL_LIST_PER_BATCH + 1,
+            "the retry must not resend the full PR list (saw ${retry.personalRecords.size})",
+        )
+    }
+
+    @Test
+    fun `a group accepted by the LWW retry is not pushed again by the next sync`() = runTest {
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 1_000, withLocalData = true)
+        apiClient.pushPayloads.clear()
+        manager.sync()
+        assertTrue(
+            apiClient.pushPayloads.drop(1).flatMap { it.sessions }.any { it.id == GROUP },
+            "precondition: the first push is rejected and the retry carries the group",
+        )
+
+        apiClient.pushPayloads.clear()
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.sessions }.none { it.id == GROUP },
+            "a group the retry landed must be acknowledged, not re-pushed before the next pull",
+        )
+    }
+
+    @Test
+    fun `an edit landing between the gather and the retry ack is still re-sent`() = runTest {
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 1_000, withLocalData = true)
+        apiClient.onPush = {
+            // A local edit after the gather: bumps the row's generation past the snapshot.
+            database.phoenixDatabaseQueries.markWorkoutComponentDirty("set-2")
+        }
+        manager.sync()
+
+        apiClient.pushPayloads.clear()
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.sessions }.any { it.id == GROUP },
+            "an edit made after the gather must stay dirty and be re-sent",
+        )
+    }
+
+    @Test
+    fun `an unchanged LWW-rejected group is acknowledged and not pushed on every later sync`() = runTest {
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        database.phoenixDatabaseQueries.markWorkoutComponentDirty("set-1")
+        manager.sync() // rejected; unchanged content → stamped and acknowledged
+
+        apiClient.pushPayloads.clear()
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.sessions }.none { it.id == GROUP },
+            "an unchanged rejected group must not be re-pushed on every sync",
+        )
+    }
+
+    @Test
+    fun `a PR edited between the gather and the ack keeps its newer stamp and is re-sent`() = runTest {
+        insertLivePr(PR_UUID)
+        val editTime = com.devil.phoenixproject.domain.model.currentTimeMillis() + 60_000
+        val prRowId = database.phoenixDatabaseQueries
+            .selectPRsModifiedSince(0L, profileId).executeAsList().single { it.uuid == PR_UUID }.id
+        apiClient.onPush = {
+            // A local edit that lands while the push is in flight.
+            database.phoenixDatabaseQueries.updatePRTimestamp(editTime, listOf(prRowId), Long.MAX_VALUE)
+        }
+
+        manager.sync()
+
+        val stamp = database.phoenixDatabaseQueries
+            .selectPRsModifiedSince(0L, profileId).executeAsList().single { it.uuid == PR_UUID }.updatedAt
+        assertEquals(editTime, stamp, "the ack stamp must not overwrite an edit the portal never saw")
+
+        apiClient.pushPayloads.clear()
+        manager.sync()
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.personalRecords }.any { it.id == PR_UUID },
+            "the edited PR must come back in the next delta",
+        )
+    }
+
+    private fun insertLivePr(uuid: String, exerciseId: String = "bench") {
+        database.phoenixDatabaseQueries.insertRecord(
+            exerciseId = exerciseId,
+            exerciseName = "Bench Press",
+            weight = 40.0,
+            reps = 8L,
+            oneRepMax = 45.0,
+            achievedAt = baseTime,
+            workoutMode = "OldSchool",
+            prType = "MAX_WEIGHT",
+            volume = 320.0,
+            phase = "COMBINED",
+            profile_id = profileId,
+            cable_count = 2L,
+            uuid = uuid,
+        )
+    }
+
+    /** Backup-restored / legacy shape: `updatedAt` NULL. */
+    private fun insertUntimestampedRoutine(id: String) {
+        database.phoenixDatabaseQueries.insertRoutine(
+            id = id,
+            name = "Split",
+            description = "",
+            createdAt = baseTime,
+            lastUsed = null,
+            useCount = 0L,
+            profile_id = profileId,
+            groupId = null,
+            deletedAt = null,
+        )
+    }
+
+    // ===== Review fix round: G-2 / S-1 / T-3 =====
+
+    @Test
+    fun `an LWW-rejected session whose only edit is in targetReps and rpe is re-sent not stamped as unchanged`() = runTest {
+        // Accepted upload records the fingerprint of every field the push sends.
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        assertStamped("set-1")
+        val uploadedHash = tokenStorage.getSessionSentHash("user-1", profileId, GROUP)
+        assertNotNull(uploadedHash, "an accepted push must record the content hash")
+
+        // The website then holds a newer copy (LWW rejection armed), and the only local
+        // change is in two fields the first fingerprint dropped: targetReps and rpe.
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        database.phoenixDatabaseQueries.updateSessionTargetRepsAndRpe(10L, 9L, "set-1")
+        database.phoenixDatabaseQueries.markWorkoutComponentDirty("set-1")
+        apiClient.pushPayloads.clear()
+
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.size >= 2,
+            "an edit that only touches targetReps/rpe must still change the fingerprint and force a re-push " +
+                "(payloads=${apiClient.pushPayloads.size})",
+        )
+        assertTrue(
+            apiClient.pushPayloads.drop(1).flatMap { it.sessions }.any { it.id == GROUP },
+            "the re-push payload must carry the group",
+        )
+        val resent = apiClient.pushPayloads.drop(1).flatMap { it.sessions }.last { it.id == GROUP }
+        val resentSet = resent.exercises.single { it.id == "set-1" }.sets.single()
+        assertEquals(10, resentSet.targetReps, "the re-sent set must carry the edited targetReps")
+        assertEquals(9, resentSet.rpe, "the re-sent set must carry the edited rpe")
+    }
+
+    @Test
+    fun `a sent-hash written for one account never satisfies another account's lookup`() = runTest {
+        // Account A uploads and is accepted: its content hash is stored under A's key.
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        assertStamped("set-1")
+        assertNotNull(tokenStorage.getSessionSentHash("user-1", profileId, GROUP))
+
+        // A different account on the same device. Same session id, never accepted here.
+        tokenStorage.saveGoTrueAuth(
+            GoTrueAuthResponse(
+                accessToken = "token-b",
+                tokenType = "bearer",
+                expiresIn = 3600,
+                expiresAt = com.devil.phoenixproject.domain.model.currentTimeMillis() / 1000 + 3600,
+                refreshToken = "refresh-b",
+                user = GoTrueUser(id = "user-2", email = "b@b.c"),
+            ),
+        )
+
+        // The first sync bound the profile to user-1 (codex #856). Model the account-switch
+        // choice that moves this profile's data to user-2 (PR 11 relinks it), so user-2 may
+        // sync the same session id it has never had accepted.
+        userProfileRepository.setActiveProfileForTest(id = profileId, supabaseUserId = "user-2")
+
+        // S-1: the hash is namespaced by userId:profileId, so A's accept cannot satisfy B.
+        assertNull(
+            tokenStorage.getSessionSentHash("user-2", profileId, GROUP),
+            "another account's accept must not satisfy this account's sent-hash lookup",
+        )
+
+        // And behaviourally: with no hash to match, the LWW-rejected row is re-sent,
+        // never short-circuit-stamped as "unchanged content" (which would mark a
+        // never-accepted row under this account as synced).
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        database.phoenixDatabaseQueries.markWorkoutComponentDirty("set-1")
+        apiClient.pushPayloads.clear()
+
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.size >= 2,
+            "a row never accepted under this account must be re-sent, not stamped as unchanged " +
+                "(payloads=${apiClient.pushPayloads.size})",
+        )
+    }
+
+    @Test
+    fun `an edit made after the last sync is pushed even when the device clock runs behind the server`() = runTest {
+        // Close the one-time repair so repairFrom = pushWatermark (a device clock).
+        // Left open, repairFrom would be 0 and every row would match regardless of skew.
+        tokenStorage.markRoutineCyclePrRepairPushDone("user-1")
+        // The device clock at the last push. The server runs 10 minutes ahead (A-010).
+        tokenStorage.setPushWatermark("user-1", profileId, baseTime)
+        serverSkewMs = 10 * 60_000L
+
+        // A routine edited AFTER the last sync: device clock +5s (server clock +10min5s).
+        // The gather is `updatedAt > pushWatermark`; pushWatermark stays a device clock,
+        // so the edit is selected even though it lags the server's now.
+        database.phoenixDatabaseQueries.insertRoutineIgnore(
+            id = LATE_ROUTINE,
+            name = "Late",
+            description = "",
+            createdAt = baseTime + 5_000,
+            lastUsed = null,
+            useCount = 0L,
+            updatedAt = baseTime + 5_000,
+            profile_id = profileId,
+            groupId = null,
+        )
+
+        manager.sync()
+
+        val pushedRoutines = apiClient.pushPayloads.flatMap { it.routines }.map { it.id }
+        assertTrue(
+            LATE_ROUTINE in pushedRoutines,
+            "an edit made after the last sync must be pushed even when the device clock is 10 min behind " +
+                "the server (pushWatermark is a device clock; saw $pushedRoutines)",
+        )
+    }
+
+    // ===== Step 12: a pulled row is stamped with the push watermark =====
+
+    @Test
+    fun `a pulled row is stamped with the push watermark and not re-selected by the next push`() = runTest {
+        // A row this device previously pulled (portalOrigin = 1) and already synced clean.
+        insertRoutineSet("pulled-row", groupId = null, timestamp = baseTime, stampedAt = baseTime + 1_000)
+        database.phoenixDatabaseQueries.markSessionPulled("pulled-row")
+        val pushWatermark = baseTime + 50_000
+        tokenStorage.setPushWatermark("user-1", profileId, pushWatermark)
+        // The server clock is 10 minutes ahead; its updated_at must NOT be written
+        // into the local updatedAt column (that is what used to re-select the row).
+        val serverTs = baseTime + 10 * 60_000L
+
+        syncRepository.mergePulledSessions(
+            sessions = listOf(
+                com.devil.phoenixproject.domain.model.WorkoutSession(
+                    id = "pulled-row",
+                    timestamp = serverTs,
+                    mode = "OldSchool",
+                    reps = 8,
+                    weightPerCableKg = 40f,
+                    duration = 45_000L,
+                    totalReps = 8,
+                    exerciseId = "bench",
+                    exerciseName = "Bench Press",
+                    routineSessionId = null,
+                    profileId = profileId,
+                ),
+            ),
+            updatedAtBySessionId = mapOf("pulled-row" to serverTs),
+            pushWatermark = pushWatermark,
+        )
+
+        assertEquals(
+            pushWatermark,
+            stampOf("pulled-row"),
+            "the pull must stamp with the device push watermark, not the server clock",
+        )
+        assertTrue(
+            syncRepository.getDirtyWorkoutSnapshot(profileId).sessions.none { it.id == "pulled-row" },
+            "a pulled row must not come back in the next push",
+        )
+    }
+
+    @Test
+    fun `a pulled projection never overwrites a local edit the portal has not acknowledged`() = runTest {
+        // codex #856: a portal-origin row, synced clean, then edited locally (a tag edit)
+        // while a push is in flight. The next pull returns the older portal copy.
+        insertRoutineSet("pulled-row", groupId = null, timestamp = baseTime, stampedAt = baseTime + 1_000)
+        database.phoenixDatabaseQueries.markSessionPulled("pulled-row")
+        database.phoenixDatabaseQueries.updateSessionExerciseTag("row", "Row", baseTime + 2_000, "pulled-row")
+
+        syncRepository.mergePulledSessions(
+            sessions = listOf(
+                com.devil.phoenixproject.domain.model.WorkoutSession(
+                    id = "pulled-row",
+                    timestamp = baseTime,
+                    mode = "OldSchool",
+                    reps = 8,
+                    weightPerCableKg = 40f,
+                    duration = 45_000L,
+                    totalReps = 8,
+                    exerciseId = "bench",
+                    exerciseName = "Bench Press",
+                    routineSessionId = null,
+                    profileId = profileId,
+                ),
+            ),
+            updatedAtBySessionId = mapOf("pulled-row" to baseTime + 3_000),
+            pushWatermark = baseTime + 1_500,
+        )
+
+        val row = database.phoenixDatabaseQueries.selectSessionById("pulled-row").executeAsOne()
+        assertEquals("row", row.exerciseId, "the unacknowledged local tag edit must survive the pull")
+        assertTrue(
+            syncRepository.getDirtyWorkoutSnapshot(profileId).sessions.any { it.id == "pulled-row" },
+            "the edit stays dirty so the next push sends it",
+        )
     }
 
     // ===== Helpers =====
@@ -740,5 +1270,10 @@ class RoutineGroupPushTest {
 
     private companion object {
         const val GROUP = "routine-session-1"
+        const val PR_UUID = "77777777-7777-4777-8777-777777777777"
+        const val ACCEPTED_ROUTINE = "88888888-8888-4888-8888-888888888888"
+
+        /** Canonical UUID: SyncManager strips non-UUID routine ids from every push. */
+        const val LATE_ROUTINE = "44444444-4444-4444-8444-444444444444"
     }
 }

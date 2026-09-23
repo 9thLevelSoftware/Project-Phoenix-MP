@@ -848,11 +848,11 @@ selectSessionUpdatedAt:
 SELECT updatedAt FROM WorkoutSession WHERE id = ?;
 
 -- Issue #591 follow-up: batch-read the existing updatedAt for a list of
--- session ids. Used by SqlDelightSyncRepository.mergeSessionsLww so the
+-- session ids. Used by SqlDelightSyncRepository.mergePulledSessions so the
 -- LWW gate does not issue one round-trip per incoming pull row. Returns
 -- (id, updatedAt) so the caller can build an in-memory map keyed by id.
 selectSessionsUpdatedAtByIds:
-SELECT id, updatedAt, deletedAt, profile_id, portalOrigin
+SELECT id, updatedAt, deletedAt, profile_id, portalOrigin, local_sync_generation, synced_sync_generation
 FROM WorkoutSession
 WHERE id IN ?;
 
@@ -1084,6 +1084,12 @@ UPDATE WorkoutSession
 SET duration = ?, totalReps = ?, workingReps = ?, formScore = ?,
     local_sync_generation = local_sync_generation + 1
 WHERE id = ?;
+
+-- Target reps and RPE are session-level planning/RPE fields the user can edit after
+-- the fact. Leaves the sync generation untouched: callers that mean "this row is
+-- dirty again" must also markWorkoutComponentDirty.
+updateSessionTargetRepsAndRpe:
+UPDATE WorkoutSession SET targetReps = ?, rpe = ? WHERE id = ?;
 
 updateSessionMode:
 UPDATE WorkoutSession
@@ -3570,6 +3576,39 @@ ORDER BY timestamp ASC;
 -- marking is WorkoutSession.portalOrigin (migration 48 on main); an earlier draft
 -- of this query used a separate PulledWorkoutSession marker table that this
 -- schema does not carry.
+-- One-shot upgrade seeding (PR 10, codex #856): migration 49 gave every existing row
+-- local_sync_generation 1 / synced_sync_generation 0, so the all-profile loop would treat
+-- rows an older client already synchronized as new local captures. Only rows of
+-- :profileIds (the signed-in account's profiles) are touched, and only with real
+-- provenance that the portal already holds them:
+--   * `updatedAt` at or before the legacy cursor: the old client wrote `updatedAt` only
+--     when a row was pushed-and-accepted or pulled, so the row was covered by a
+--     completed sync; OR
+--   * `portalOrigin = 1`: the row was materialized by a pull (pushing it back could let
+--     replace_session_children erase the portal's richer set/rep data).
+-- Everything else stays dirty and is pushed: NULL `updatedAt` (never synced), and any
+-- row edited after the cursor — including a childless manual/zero-rep session whose tag
+-- was edited, which must not be mistaken for a pulled row.
+-- Only rows still at migration 49's initial state (1 / 0) qualify: a child edit after
+-- the migration (saveRepMetrics, saveCompletedSet, ...) bumps local_sync_generation
+-- without touching the parent's updatedAt, so a stale parent timestamp is no proof for
+-- that newer generation.
+seedLegacySyncedGenerations:
+UPDATE WorkoutSession
+SET synced_sync_generation = local_sync_generation
+WHERE deletedAt IS NULL
+  AND profile_id IN :profileIds
+  AND local_sync_generation = 1
+  AND synced_sync_generation = 0
+  AND updatedAt IS NOT NULL
+  AND (
+    -- The old client synced ONLY its active profile against the one global cursor, so
+    -- `updatedAt <= cursor` is proof only for the profile the cursor belongs to (named by
+    -- the legacy delta-pull marker). Every other profile gets the pull-provenance rule.
+    (profile_id = :cursorProfileId AND updatedAt <= :legacyLastSync)
+    OR portalOrigin = 1
+  );
+
 selectBlockedRoutineGroupSiblings:
 SELECT id, routineSessionId FROM WorkoutSession
 WHERE profile_id = :profileId
@@ -3684,10 +3723,23 @@ AND profile_id = :profileId;
 updatePRServerId:
 UPDATE PersonalRecord SET serverId = ? WHERE id = ?;
 
--- Stamp pushed PRs with current updatedAt so they aren't re-sent on next sync
--- (Issue #528). Matches the WorkoutSession.updateSessionTimestamp pattern.
+-- Stamp pushed PRs so they aren't re-sent on next sync (Issue #528). The stamp is the
+-- push's gatherStartedAt, which becomes the profile's push watermark: the next gather
+-- selects `updatedAt > watermark`, so a stamp of `now` would re-select the row forever.
+-- Guarded like updateSessionTimestampsByIds: a row edited after the gather keeps its
+-- newer updatedAt and is re-sent.
 updatePRTimestamp:
-UPDATE PersonalRecord SET updatedAt = ? WHERE id IN ?;
+UPDATE PersonalRecord SET updatedAt = :timestamp
+WHERE id IN :ids
+AND (updatedAt IS NULL OR updatedAt <= :gatherStartedAt);
+
+-- Stamp pushed routines that carry no updatedAt (backup-restored / legacy rows), which
+-- `updatedAt IS NULL` in selectRoutinesModifiedSince would otherwise re-select on every
+-- sync. Rows with a local edit time already fall below the next watermark by themselves.
+stampPushedRoutinesWithoutTimestamp:
+UPDATE Routine SET updatedAt = :timestamp
+WHERE id IN :ids
+AND updatedAt IS NULL;
 
 -- Get routines modified since last sync
 selectRoutinesModifiedSince:
@@ -4508,6 +4560,35 @@ INSERT OR REPLACE INTO IntegrationStatus(provider, status, lastSyncAt, errorMess
 VALUES (?, ?, ?, ?, ?);
 
 -- Parity Sync: Get all entity IDs for comparison with server
+-- PR 10 step 7 (R-19): distinct portal session ids (grouped routineSessionId,
+-- standalone row id) including soft-deleted tombstones, newest-first.
+-- Portal session ids that still have at least one live (not soft-deleted) row.
+-- Used to garbage-collect per-session sync fingerprints of deleted workouts.
+selectLivePortalSessionIdsByProfile:
+SELECT DISTINCT
+    CASE
+        WHEN routineSessionId IS NULL OR TRIM(routineSessionId) = '' THEN id
+        ELSE routineSessionId
+    END AS portal_session_id
+FROM WorkoutSession
+WHERE profile_id = :profileId
+AND deletedAt IS NULL;
+
+selectKnownPortalSessionIdsByProfile:
+SELECT
+    CASE
+        WHEN routineSessionId IS NULL OR TRIM(routineSessionId) = '' THEN id
+        ELSE routineSessionId
+    END AS portal_session_id
+FROM WorkoutSession
+WHERE profile_id = :profileId
+GROUP BY
+    CASE
+        WHEN routineSessionId IS NULL OR TRIM(routineSessionId) = '' THEN id
+        ELSE routineSessionId
+    END
+ORDER BY MAX(timestamp) DESC;
+
 selectAllSessionIdsByProfile:
 SELECT id FROM WorkoutSession WHERE profile_id = :profileId;
 
@@ -4517,8 +4598,11 @@ SELECT id FROM Routine WHERE profile_id = :profileId AND deletedAt IS NULL;
 selectAllCycleIdsByProfile:
 SELECT id FROM TrainingCycle WHERE profile_id = :profileId AND deletedAt IS NULL;
 
+-- The portal's badge parity query keys on `badgeId` (the portal UUID), not the
+-- local integer row id. Returning CAST(id AS TEXT) made filterUuids drop the whole
+-- list and forced the nil-UUID sentinel on every pull (S-5).
 selectAllBadgeIdsByProfile:
-SELECT CAST(id AS TEXT) FROM EarnedBadge WHERE profile_id = :profileId;
+SELECT badgeId FROM EarnedBadge WHERE profile_id = :profileId;
 
 selectAllPersonalRecordUuidsByProfile:
 SELECT uuid FROM PersonalRecord

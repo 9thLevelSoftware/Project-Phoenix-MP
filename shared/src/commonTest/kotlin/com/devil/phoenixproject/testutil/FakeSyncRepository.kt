@@ -173,7 +173,17 @@ class FakeSyncRepository : SyncRepository {
         return sessionNotesByPortalId.filterKeys { it in ids }
     }
 
-    override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> = routinesToReturn
+    /**
+     * Mirrors `selectRoutinesModifiedSince` (`updatedAt > :timestamp OR updatedAt IS NULL`).
+     * The timestamp argument is production's `repairFrom` (the per-profile `pushWatermark`,
+     * or 0 while a legacy repair push is owed). Rows with a NULL `updatedAt` always match,
+     * the same way `insertRoutine` rows do.
+     */
+    override suspend fun getFullRoutinesModifiedSince(timestamp: Long, profileId: String): List<Routine> =
+        routinesToReturn.filter { routine ->
+            val updatedAt = routine.updatedAt
+            updatedAt == null || updatedAt > timestamp
+        }
 
     var deletedRoutineIdsToReturn: List<String> = emptyList()
     var deletedCycleIdsToReturn: List<String> = emptyList()
@@ -265,10 +275,16 @@ class FakeSyncRepository : SyncRepository {
     var updatePersonalRecordTimestampCalls: MutableList<List<Long>> = mutableListOf()
     var lastUpdatePersonalRecordTimestamp: Long? = null
 
-    override suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long) {
+    override suspend fun updatePersonalRecordTimestamp(prIds: List<Long>, timestamp: Long, gatherStartedAt: Long) {
         updatePersonalRecordTimestampCalls += prIds
         lastUpdatePersonalRecordTimestamp = timestamp
         prIds.forEach { id -> updatedPersonalRecordTimestamps[id] = timestamp }
+    }
+
+    val stampedRoutineIdCalls: MutableList<List<String>> = mutableListOf()
+
+    override suspend fun stampPushedRoutinesWithoutTimestamp(routineIds: List<String>, timestamp: Long) {
+        stampedRoutineIdCalls += routineIds
     }
 
     // === Parity Sync: Entity ID lists (simulate local database content) ===
@@ -311,9 +327,16 @@ class FakeSyncRepository : SyncRepository {
         cycleServerVersionUpdates += versions
     }
 
+    /**
+     * Mirrors `selectPRsModifiedSince` (`updatedAt > ? OR updatedAt IS NULL`), same
+     * `repairFrom` contract as [getFullRoutinesModifiedSince].
+     */
     override suspend fun getFullPRsModifiedSince(timestamp: Long, profileId: String): List<PersonalRecord> {
         callLog += "getFullPRsModifiedSince"
-        return fullPRsToReturn
+        return fullPRsToReturn.filter { record ->
+            val updatedAt = record.updatedAt
+            updatedAt == null || updatedAt > timestamp
+        }
     }
 
     override suspend fun backfillPhaseSpecificPRs(
@@ -344,10 +367,12 @@ class FakeSyncRepository : SyncRepository {
 
     var mergedPortalSessions: List<WorkoutSession> = emptyList()
     var mergePortalSessionsCallCount = 0
+    var lastMergePortalSessionsPushWatermark: Long = 0L
 
-    override suspend fun mergePortalSessions(sessions: List<WorkoutSession>) {
+    override suspend fun mergePortalSessions(sessions: List<WorkoutSession>, pushWatermark: Long) {
         mergePortalSessionsCallCount++
         mergedPortalSessions = sessions
+        lastMergePortalSessionsPushWatermark = pushWatermark
     }
 
     var mergedPersonalRecords: List<PersonalRecordSyncDto> = emptyList()
@@ -408,6 +433,7 @@ class FakeSyncRepository : SyncRepository {
     var lastAtomicMergeWorkoutDeletions: List<PulledWorkoutDeletionDto> = emptyList()
     var lastAtomicMergeLastSync: Long = 0L
     var lastAtomicMergeProfileId: String = ""
+    var lastAtomicMergePushWatermark: Long = 0L
     var mergeSessionNotesCallCount = 0
     var lastMergedSessionNotes: Map<String, SessionNotesEntry> = emptyMap()
     var lastAtomicMergeSessionUpdatedAtById: Map<String, Long> = emptyMap()
@@ -431,6 +457,7 @@ class FakeSyncRepository : SyncRepository {
         serverWinsRoutineIds: Set<String>,
         sessionNotes: Map<String, SessionNotesEntry>,
         sessionUpdatedAtById: Map<String, Long>,
+        pushWatermark: Long,
     ) {
         mergeServerWinsRoutineIdsHistory += serverWinsRoutineIds
         if (atomicMergeShouldFail) {
@@ -452,6 +479,7 @@ class FakeSyncRepository : SyncRepository {
         lastAtomicMergeProfileId = profileId
         lastMergedSessionNotes = sessionNotes
         lastAtomicMergeSessionUpdatedAtById = sessionUpdatedAtById
+        lastAtomicMergePushWatermark = pushWatermark
 
         // Also update the individual merge trackers for backward compatibility with existing tests
         // that check the individual merge call counts and captured data.

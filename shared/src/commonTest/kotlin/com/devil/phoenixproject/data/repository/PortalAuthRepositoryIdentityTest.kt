@@ -84,7 +84,7 @@ class PortalAuthRepositoryIdentityTest {
         }
         val storage = PortalTokenStorage(MapSettings()).apply {
             saveGoTrueAuth(authResponse("owner-a", "token-a"))
-            setLastSyncTimestamp(42L)
+            setPullCursor("owner-a", "default", 42L)
         }
         val repository = repository(api, storage, profiles)
 
@@ -96,7 +96,7 @@ class PortalAuthRepositoryIdentityTest {
             assertEquals("owner-a", profiles.activeProfile.value?.supabaseUserId)
             assertEquals("owner-a", storage.currentUser.value?.id)
             assertEquals("token-a", storage.getToken())
-            assertEquals(42L, storage.getLastSyncTimestamp())
+            assertEquals(42L, storage.getPullCursor("owner-a", "default"))
         } finally {
             repository.close()
             Dispatchers.resetMain()

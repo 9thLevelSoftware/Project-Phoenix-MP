@@ -335,13 +335,15 @@ class FakeUserProfileRepository : UserProfileRepository {
 
     override suspend fun ensureDefaultProfile() {
         mutex.withLock {
-            if (!profiles.containsKey(DEFAULT_PROFILE_ID)) {
+            // Matches SqlDelightUserProfileRepository.ensureDefaultProfileSync: only seed
+            // "default" when the profile table is empty, never alongside an existing profile.
+            if (profiles.isEmpty()) {
                 profiles[DEFAULT_PROFILE_ID] = UserProfile(
                     id = DEFAULT_PROFILE_ID,
                     name = "Default",
                     colorIndex = 0,
                     createdAt = currentTimeMillis(),
-                    isActive = profiles.values.none { it.isActive },
+                    isActive = true,
                 )
                 ensurePreferenceFlow(DEFAULT_PROFILE_ID, legacyMigrationVersion = 0)
             }
