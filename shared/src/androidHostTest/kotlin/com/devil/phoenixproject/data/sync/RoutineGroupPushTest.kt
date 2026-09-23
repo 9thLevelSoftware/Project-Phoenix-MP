@@ -772,6 +772,68 @@ class RoutineGroupPushTest {
         )
     }
 
+    // ===== codex #856 review 5286893178: the LWW retry acknowledges generations =====
+
+    @Test
+    fun `a group accepted by the LWW retry is not pushed again by the next sync`() = runTest {
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 1_000, withLocalData = true)
+        apiClient.pushPayloads.clear()
+        manager.sync()
+        assertTrue(
+            apiClient.pushPayloads.drop(1).flatMap { it.sessions }.any { it.id == GROUP },
+            "precondition: the first push is rejected and the retry carries the group",
+        )
+
+        apiClient.pushPayloads.clear()
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.sessions }.none { it.id == GROUP },
+            "a group the retry landed must be acknowledged, not re-pushed before the next pull",
+        )
+    }
+
+    @Test
+    fun `an edit landing between the gather and the retry ack is still re-sent`() = runTest {
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 1_000, withLocalData = true)
+        apiClient.onPush = {
+            // A local edit after the gather: bumps the row's generation past the snapshot.
+            database.phoenixDatabaseQueries.markWorkoutComponentDirty("set-2")
+        }
+        manager.sync()
+
+        apiClient.pushPayloads.clear()
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.sessions }.any { it.id == GROUP },
+            "an edit made after the gather must stay dirty and be re-sent",
+        )
+    }
+
+    @Test
+    fun `an unchanged LWW-rejected group is acknowledged and not pushed on every later sync`() = runTest {
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        manager.sync()
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        database.phoenixDatabaseQueries.markWorkoutComponentDirty("set-1")
+        manager.sync() // rejected; unchanged content → stamped and acknowledged
+
+        apiClient.pushPayloads.clear()
+        manager.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.flatMap { it.sessions }.none { it.id == GROUP },
+            "an unchanged rejected group must not be re-pushed on every sync",
+        )
+    }
+
     @Test
     fun `a PR edited between the gather and the ack keeps its newer stamp and is re-sent`() = runTest {
         insertLivePr(PR_UUID)
