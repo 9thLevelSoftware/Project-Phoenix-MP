@@ -523,15 +523,22 @@ class PortalPushLimitsTest {
         assertTrue(result.isSuccess)
         // Every logical push call (main payload and preference chunks) draws on the one
         // shared window: the first window holds exactly the limit, one ordinary push plus
-        // the preference chunks that fit, and the chunks past capacity fail fast.
+        // the preference chunks that fit.
         val window = assertNotNull(firstWindow, "21 profiles must exhaust one window")
         assertEquals(SyncConfig.PUSH_RATE_LIMIT_PER_MIN, window.size)
         assertEquals(
             SyncConfig.PUSH_RATE_LIMIT_PER_MIN - 1,
             window.count { it.profilePreferenceSections != null },
         )
-        assertEquals(0, firstWindowAppliedPreferenceOutcomes)
         assertEquals(listOf(setOf(ordinary.id)), firstWindowAcks)
+        // codex #856: preference chunks past the first window WAIT for capacity instead of
+        // taking a local 429 — every one of the 20 dirty sections reaches the portal.
+        assertEquals(
+            20,
+            fakeApi.pushPayloads.flatMap { it.profilePreferenceSections.orEmpty() }
+                .map { it.localProfileId }.toSet().size,
+            "every dirty preference chunk must reach the portal, not only those in the first window",
+        )
         // codex #856 P1: profiles past the window's capacity WAIT for it instead of being
         // failed fast. Profiles are walked in the same order every sync, so failing fast
         // would starve the same trailing profiles forever.
