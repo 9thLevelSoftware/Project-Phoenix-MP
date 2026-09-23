@@ -1139,7 +1139,7 @@ class WorkoutExitPersistenceTest {
      * mid-set mutation would not reach the recorder at all.
      */
     @Test
-    fun `a set records the commanded load, not an out-of-range request`() = runTest {
+    fun `a set records the commanded load rather than an out-of-range request`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
             startTrackedCableSet(harness, weightPerCableKg = 500f)
@@ -1174,7 +1174,7 @@ class WorkoutExitPersistenceTest {
      * active-set edit cannot rewrite a frozen completion.
      */
     @Test
-    fun `a non-finite requested load is recorded as-is, not clamped to a band end`() = runTest {
+    fun `a non-finite requested load is recorded as-is rather than clamped to a band end`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
             startTrackedCableSet(harness, weightPerCableKg = Float.POSITIVE_INFINITY)
@@ -1281,7 +1281,7 @@ class WorkoutExitPersistenceTest {
      * must record it verbatim rather than re-clamp it to the 110 kg band.
      */
     @Test
-    fun `a counterweighted set records its frozen programmed load, not a band re-clamp`() = runTest {
+    fun `a counterweighted set records its frozen programmed load rather than a band re-clamp`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
             harness.fakeEquipmentRackRepo.saveItems(
@@ -1329,7 +1329,7 @@ class WorkoutExitPersistenceTest {
      * weight, so the frozen start metadata is recorded as-is.
      */
     @Test
-    fun `an Echo set records its frozen start metadata, not a band re-clamp`() = runTest {
+    fun `an Echo set records its frozen start metadata rather than a band re-clamp`() = runTest {
         val harness = DWSMTestHarness(this)
         try {
             harness.fakeExerciseRepo.addExercise(TestFixtures.benchPress)
@@ -1425,6 +1425,56 @@ class WorkoutExitPersistenceTest {
             assertTrue(
                 harness.activeSessionEngine.hasRetainedWorkoutExitSnapshotForTest(second.sessionId),
                 "The later failed set must still be retained for the automatic retry",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * GitHub #853 (codex 4080104672): a second failure raised while the first offer is
+     * on screen is queued, not dropped. Draining the first (dismiss or retry) publishes
+     * the second, and a saved set withdraws its own queued offer.
+     */
+    @Test
+    fun `draining the first failure offer publishes the next queued failure`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeWorkoutRepo.beforeSaveSession = {
+                throw IllegalStateException("disk full")
+            }
+            startTrackedCableSet(harness)
+            val first = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            startTrackedCableSet(harness)
+            val second = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            assertEquals(first.sessionId, harness.coordinator.workoutSaveFailureSessionId.value)
+
+            // The user dismisses the first offer (MainViewModel.dismissWorkoutSaveFailure).
+            harness.coordinator.withdrawWorkoutSaveFailure(first.sessionId)
+
+            assertEquals(
+                second.sessionId,
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "The second failed set must be offered once the first offer is drained",
+            )
+
+            // Retrying the second with storage healthy saves it and empties the queue.
+            harness.fakeWorkoutRepo.beforeSaveSession = {}
+            harness.coordinator.withdrawWorkoutSaveFailure(second.sessionId)
+            assertTrue(harness.activeSessionEngine.retryWorkoutExitPersistence(second.sessionId))
+            advanceUntilIdle()
+            assertEquals(
+                1,
+                harness.fakeWorkoutRepo.allSessions().count { it.id == second.sessionId },
+                "The retried set must be saved",
+            )
+            assertNull(
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "No offer is left once every failure has been drained",
             )
         } finally {
             harness.cleanup()

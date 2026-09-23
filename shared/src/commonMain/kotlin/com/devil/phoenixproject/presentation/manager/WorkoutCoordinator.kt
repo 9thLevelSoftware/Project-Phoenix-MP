@@ -207,6 +207,28 @@ class WorkoutCoordinator(
     internal val _workoutSaveFailureSessionId = MutableStateFlow<String?>(null)
     val workoutSaveFailureSessionId: StateFlow<String?> = _workoutSaveFailureSessionId.asStateFlow()
 
+    // Every failed commit still waiting for the user, oldest first. Only the head is
+    // published; draining it publishes the next, so a second failure raised while the
+    // first offer is on screen is never lost (codex 4080104672).
+    private val saveFailureLock = Any()
+    private val pendingSaveFailures = LinkedHashSet<String>()
+
+    /** Queue [sessionId]'s failed commit and publish it if no other offer is showing. */
+    internal fun offerWorkoutSaveFailure(sessionId: String) = withPlatformLock(saveFailureLock) {
+        pendingSaveFailures.add(sessionId)
+        _workoutSaveFailureSessionId.compareAndSet(null, pendingSaveFailures.first())
+    }
+
+    /**
+     * Drop [sessionId]'s offer (its save succeeded, was retried, or was dismissed) and,
+     * if it was the one on screen, publish the next queued failure. compareAndSet keeps
+     * a different session's visible offer intact.
+     */
+    internal fun withdrawWorkoutSaveFailure(sessionId: String) = withPlatformLock(saveFailureLock) {
+        pendingSaveFailures.remove(sessionId)
+        _workoutSaveFailureSessionId.compareAndSet(sessionId, pendingSaveFailures.firstOrNull())
+    }
+
     // ===== Workout State =====
 
     internal val _workoutState = MutableStateFlow<WorkoutState>(WorkoutState.Idle)
