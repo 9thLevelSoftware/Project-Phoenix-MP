@@ -665,6 +665,9 @@
     <string name="profile_recovery_message">Phoenix konnte nicht bestätigen, welches Profil aktiv ist. Versuche es erneut, bevor du fortfährst.</string>
     <string name="profile_recovery_retry_failed">Profilwiederherstellung ist weiterhin nicht verfügbar</string>
     <string name="profile_delete_reassign_message">„%1$s“ löschen? Trainings, Routinen, Rekorde, Abzeichen, Tests und Fortschrittsdaten werden zu Default verschoben. Dies kann nicht rückgängig gemacht werden.</string>
+    <string name="profile_delete_merge_action">Mit Standard zusammenführen</string>
+    <string name="profile_delete_permanent_action">Endgültig löschen</string>
+    <string name="profile_delete_permanent_message">Oder &quot;%1$s&quot; endgültig löschen: Trainings, Routinen, Zyklen und Rekorde werden von diesem Gerät und aus deinem Portal-Konto entfernt. Dies kann nicht rückgängig gemacht werden.</string>
     <string name="settings_video_behavior">Übungsdemos</string>
     <string name="settings_show_exercise_videos">Übungsdemos anzeigen</string>
     <string name="settings_show_exercise_videos_description">Übungsdemonstrationen anzeigen; auf langsameren Geräten deaktivieren</string>

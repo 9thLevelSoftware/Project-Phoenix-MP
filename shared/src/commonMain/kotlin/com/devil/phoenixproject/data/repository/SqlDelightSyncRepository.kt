@@ -1821,6 +1821,12 @@ class SqlDelightSyncRepository(
      * because the data is identical. Different PRs from different sessions both get inserted
      * (different compound keys).
      */
+    override suspend fun restampPersonalRecordTombstones(profileId: String, at: Long) {
+        withContext(Dispatchers.IO) {
+            queries.restampPersonalRecordTombstones(at = at, profileId = profileId)
+        }
+    }
+
     override suspend fun mergePersonalRecords(records: List<PersonalRecordSyncDto>, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {
@@ -1973,6 +1979,12 @@ class SqlDelightSyncRepository(
 
     private fun mergePersonalRecordRows(records: List<PersonalRecordSyncDto>, profileId: String) {
         records.forEach { dto ->
+            if (dto.clientId.isNotBlank() &&
+                queries.countDeletedPersonalRecordInOtherProfile(profileId, dto.clientId).executeAsOne() > 0L
+            ) {
+                // PR 20: a permanently deleted profile's record, re-scoped by the portal.
+                return@forEach
+            }
             val prUuid = dto.clientId.ifBlank { generateUUID() }
             // Materialize an unknown remote PR first. The state-only LWW update below
             // immediately turns it into a hidden tombstone when appropriate.

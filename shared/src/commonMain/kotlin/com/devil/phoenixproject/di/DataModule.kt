@@ -17,10 +17,13 @@ import com.devil.phoenixproject.data.integration.SqlDelightIntegrationSyncCursor
 import com.devil.phoenixproject.data.local.DriverFactory
 import com.devil.phoenixproject.data.local.ExerciseImporter
 import com.devil.phoenixproject.data.preferences.LegacyProfilePreferencesReader
+import com.devil.phoenixproject.data.preferences.PendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.ProfileLocalSafetyStore
 import com.devil.phoenixproject.data.preferences.SettingsLegacyProfilePreferencesReader
+import com.devil.phoenixproject.data.preferences.SettingsPendingProfileDeletionStore
 import com.devil.phoenixproject.data.preferences.SettingsProfileLocalSafetyStore
 import com.devil.phoenixproject.data.repository.*
+import com.devil.phoenixproject.data.sync.PortalTokenStorage
 import com.devil.phoenixproject.database.PhoenixDatabase
 import com.devil.phoenixproject.domain.model.currentTimeMillis
 import kotlinx.coroutines.CoroutineScope
@@ -57,7 +60,9 @@ val dataModule = module {
     single<ProfileLocalSafetyStore> { SettingsProfileLocalSafetyStore(get()) }
     single<LegacyProfilePreferencesReader> { SettingsLegacyProfilePreferencesReader(get(), get()) }
     single { ProfileScopedDataMerger(get()) }
+    single<PendingProfileDeletionStore> { SettingsPendingProfileDeletionStore(get()) }
     single<UserProfileRepository> {
+        val scope = this
         SqlDelightUserProfileRepository(
             database = get(),
             profilePreferencesRepository = get(),
@@ -65,6 +70,11 @@ val dataModule = module {
             gamificationRepository = get(),
             profileScopedDataMerger = get(),
             profileMutationBarrier = get(),
+            pendingDeletionStore = get(),
+            // Resolved per call: the token store lives in the sync module and the
+            // signed-in account changes over the app's lifetime.
+            signedInPortalUserId = { scope.getOrNull<PortalTokenStorage>()?.currentUser?.value?.id },
+            lastSyncedPortalUserId = { scope.getOrNull<PortalTokenStorage>()?.getLastSyncedPortalUserId() },
         )
     }
     single { ProfileRecoveryDiscovery(database = get(), driver = get()) }
