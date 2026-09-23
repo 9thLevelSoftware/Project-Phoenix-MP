@@ -239,6 +239,10 @@ class SqlDelightGamificationRepositoryTest {
         val today = Clock.System.now().toLocalDateTime(zone).date
         val weekStart = LocalDate.fromEpochDays(today.toEpochDays() - today.dayOfWeek.ordinal)
             .atStartOfDayIn(zone).toEpochMilliseconds()
+        // The SQL week start (SQLite 'localtime' date, converted back with 'utc') is local Monday
+        // 00:00. SQLite follows the process zone, not the JVM default, so this is only
+        // discriminating on a non-UTC host (the dev machines); under UTC every variant agrees.
+        assertEquals(weekStart, database.phoenixDatabaseQueries.selectLocalWeekStartMs().executeAsOne())
 
         insertWorkoutSession(id = "before-week", totalReps = 5, weightPerCableKg = 20.0, timestamp = weekStart - 1)
         insertWorkoutSession(id = "at-week-start", totalReps = 5, weightPerCableKg = 20.0, timestamp = weekStart)
