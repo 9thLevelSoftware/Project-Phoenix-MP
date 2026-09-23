@@ -646,6 +646,14 @@ class ProfileDeletionPropagationTest {
         assertEquals(0L, rowCount("CycleProgression", "cycle_id", cycleP))
         val routine = q.selectRoutineById(routineP).executeAsOne()
         assertNotNull(routine.deletedAt, "the tombstone itself stays, to block resurrection")
+        assertEquals("", routine.name)
+        val cycle = q.selectTrainingCycleById(cycleP).executeAsOne()
+        assertEquals("", cycle.name)
+        val prTombstone = q.selectPRsModifiedSince(0L, p).executeAsList().single { it.uuid == prUuidP }
+        assertNotNull(prTombstone.deletedAt)
+        assertEquals("", prTombstone.exerciseName, "the PR tombstone keeps no user content")
+        assertEquals(0.0, prTombstone.weight)
+        assertEquals(0L, prTombstone.reps)
 
         val exported = ExportProbe(database, profiles).exportToJson()
         assertFalse("SECRET-" in exported, "the export still carries deleted profile content")
