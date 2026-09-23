@@ -104,9 +104,11 @@ enum class SyncErrorCategory {
  * (`mobile-sync-push/index.ts`: "…belongs to another user" and "Custom exercise id
  * conflicts with an existing catalog exercise").
  */
+internal const val CATALOG_COLLISION_MARKER = "Custom exercise id conflicts with an existing catalog exercise"
+
 internal val OWNERSHIP_REFUSAL_MARKERS = listOf(
     "belongs to another user",
-    "Custom exercise id conflicts with an existing catalog exercise",
+    CATALOG_COLLISION_MARKER,
 )
 
 /** True when [message] is one of the portal's ownership-refusal bodies. */

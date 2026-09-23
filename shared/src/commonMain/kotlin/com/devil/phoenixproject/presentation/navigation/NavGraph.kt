@@ -390,6 +390,7 @@ fun NavGraph(
                     onPlayDiscoUnlockSound = viewModel::emitDiscoSound,
                     onPlayDominatrixUnlockSound = viewModel::emitDominatrixUnlockSound,
                     enableVideoPlayback = userPreferences.enableVideoPlayback,
+                    isInWorkoutSession = viewModel::isInWorkoutSessionNow,
                     themeMode = themeMode,
                 )
             }

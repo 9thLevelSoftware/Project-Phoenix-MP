@@ -110,6 +110,12 @@ interface CompletedSetRepository {
     suspend fun markAsPr(setId: String)
 
     /**
+     * Clear a completed set's personal-record flag (a Just Lift retag to a different
+     * exercise, whose PR was never evaluated for the new exercise).
+     */
+    suspend fun clearPr(setId: String)
+
+    /**
      * Delete a completed set.
      */
     suspend fun deleteCompletedSet(setId: String)

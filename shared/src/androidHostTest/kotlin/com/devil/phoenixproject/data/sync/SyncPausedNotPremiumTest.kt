@@ -71,4 +71,63 @@ class SyncPausedNotPremiumTest {
         assertEquals(0, api.pullCallCount)
         assertEquals(1_000L, manager.lastSyncTime.value) // still available as secondary text
     }
+
+    @Test
+    fun aPersistedAccountSwitchHoldTakesPrecedenceOverThePausedStateAfterARestart() = runTest {
+        val (manager, api, tokenStorage) = freeAccountWithPriorSync()
+        // A different account already received this device's rows; the in-memory state is
+        // back to Idle after a restart, so only durable state records the pending choice.
+        tokenStorage.setLastSyncedPortalUserId("user-previous")
+
+        SyncTriggerManager(manager, ConnectivityChecker(ContextWrapper(null))).onAppForeground()
+
+        assertIs<SyncState.AccountMismatch>(manager.syncState.value)
+        assertEquals(0, api.pushCallCount)
+    }
+
+    @Test
+    fun aPersistedOwnershipConflictTakesPrecedenceOverThePausedStateAfterARestart() = runTest {
+        val (manager, api, tokenStorage) = freeAccountWithPriorSync()
+        tokenStorage.setOwnershipConflict("user-free", "belongs to another user")
+
+        SyncTriggerManager(manager, ConnectivityChecker(ContextWrapper(null))).onAppForeground()
+
+        assertIs<SyncState.OwnershipConflict>(manager.syncState.value)
+        assertEquals(0, api.pushCallCount)
+    }
+
+    private fun freeAccountWithPriorSync(): Triple<SyncManager, FakePortalApiClient, PortalTokenStorage> {
+        val database = createTestDatabase()
+        val profiles = FakeUserProfileRepository().apply {
+            setActiveProfileForTest(id = "default", supabaseUserId = null)
+        }
+        val tokenStorage = PortalTokenStorage(MapSettings())
+        tokenStorage.saveGoTrueAuth(
+            GoTrueAuthResponse(
+                accessToken = "token-free",
+                tokenType = "bearer",
+                expiresIn = 3600,
+                expiresAt = currentTimeMillis() / 1000 + 3600,
+                refreshToken = "refresh-free",
+                user = GoTrueUser(id = "user-free", email = "free@example.com"),
+            ),
+        )
+        tokenStorage.updatePremiumStatus(false)
+        tokenStorage.publishMinPullCursor(1_000L)
+        val api = FakePortalApiClient()
+        val manager = SyncManager(
+            apiClient = api,
+            tokenStorage = tokenStorage,
+            syncRepository = SqlDelightSyncRepository(database, profiles),
+            gamificationRepository = SqlDelightGamificationRepository(database),
+            repMetricRepository = FakeRepMetricRepository(),
+            userProfileRepository = profiles,
+            profilePreferenceSyncRepository = FakeProfilePreferenceSyncRepository(),
+            externalActivityRepository = FakeExternalActivityRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            isProfilePreferenceMigrationReady = { true },
+            completedSetRepository = FakeCompletedSetRepository(),
+        )
+        return Triple(manager, api, tokenStorage)
+    }
 }

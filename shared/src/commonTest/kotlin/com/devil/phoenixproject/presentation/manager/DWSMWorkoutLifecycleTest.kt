@@ -4835,7 +4835,16 @@ class DWSMWorkoutLifecycleTest {
         assertEquals(30f, completedSet.actualWeightKg)
         assertEquals(8, completedSet.loggedRpe)
         assertEquals(SetType.AMRAP, completedSet.setType)
-        assertFalse(completedSet.isPr)
+        // F-058: tagging is the ONLY path that creates a PR for a Just Lift session
+        // (GamificationManager skips Just Lift), and this is the first record for
+        // this exercise, so it breaks a COMBINED weight PR and must mark the set.
+        assertTrue(completedSet.isPr)
+        assertEquals(
+            listOf(session.timestamp),
+            harness.fakePRRepo.updateCalls.map { it.timestamp }.distinct(),
+            "F-021: the PR must carry the session's timestamp, or the portal push " +
+                "key \"\$exerciseId:\$timestamp\" can never match it back to the session",
+        )
 
         val summary = assertIs<WorkoutState.SetSummary>(harness.dwsm.coordinator.workoutState.value)
         assertEquals(TestFixtures.deadlift.id, summary.taggedExerciseId)
@@ -4889,6 +4898,110 @@ class DWSMWorkoutLifecycleTest {
         assertEquals(
             listOf(TestFixtures.squat.id),
             harness.fakePRRepo.updateCalls.map { it.exerciseId },
+        )
+        harness.cleanup()
+    }
+
+    /**
+     * GitHub #853 (codex 4081634368): the PR is stored before the flag write, so if
+     * markAsPr throws, a retried tag sees nothing "broken" and could never repair the
+     * flag. The flag is derived from the stored PR instead, and a failed write must not
+     * skip the tag's own follow-up (summary update, feedback).
+     */
+    @Test
+    fun `a failed Just Lift PR mark is isolated and repaired by retrying the tag`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val session = WorkoutSession(
+            id = "just-lift-mark-failure",
+            timestamp = 3_000L,
+            mode = "OldSchool",
+            reps = 0,
+            weightPerCableKg = 20f,
+            duration = 10_000L,
+            totalReps = 5,
+            workingReps = 5,
+            isJustLift = true,
+        )
+        harness.fakeWorkoutRepo.addSession(session)
+        harness.dwsm.coordinator._workoutState.value = WorkoutState.SetSummary(
+            metrics = emptyList(),
+            peakLoadKgPerCable = 20f,
+            avgLoadKgPerCable = 18f,
+            repCount = 5,
+            sessionId = session.id,
+        )
+        val feedback = mutableListOf<String>()
+        val collector = backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) {
+            harness.dwsm.coordinator._userFeedbackEvents.collect { feedback += it }
+        }
+        var failNext = true
+        harness.fakeCompletedSetRepo.beforeMarkAsPr = {
+            if (failNext) {
+                failNext = false
+                throw IllegalStateException("disk full")
+            }
+        }
+
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.squat, isAmrap = false)
+        advanceUntilIdle()
+
+        assertFalse(harness.fakeCompletedSetRepo.getCompletedSets(session.id).single().isPr)
+        assertEquals(listOf("Tagged ${TestFixtures.squat.name}"), feedback, "A failed mark must not skip feedback")
+        assertEquals(
+            TestFixtures.squat.id,
+            (harness.dwsm.coordinator._workoutState.value as WorkoutState.SetSummary).taggedExerciseId,
+            "A failed mark must not skip the summary update",
+        )
+
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.squat, isAmrap = false)
+        advanceUntilIdle()
+
+        assertTrue(
+            harness.fakeCompletedSetRepo.getCompletedSets(session.id).single().isPr,
+            "Retrying the same tag must repair the flag from the stored PR",
+        )
+        collector.cancel()
+        harness.cleanup()
+    }
+
+    /**
+     * GitHub #853 (codex 4080812739): tagging exercise A breaks a PR and marks the
+     * set; retagging the SAME session to exercise B skips PR evaluation, so the set
+     * must not keep claiming a PR for B with no record behind it.
+     */
+    @Test
+    fun `retagging a Just Lift PR set to another exercise clears its PR flag`() = runTest {
+        val harness = DWSMTestHarness(this)
+        val session = WorkoutSession(
+            id = "just-lift-retag-pr-session",
+            timestamp = 2_000L,
+            mode = "OldSchool",
+            reps = 0,
+            weightPerCableKg = 20f,
+            duration = 10_000L,
+            totalReps = 5,
+            workingReps = 5,
+            isJustLift = true,
+        )
+        harness.fakeWorkoutRepo.addSession(session)
+
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.squat, isAmrap = false)
+        advanceUntilIdle()
+        assertTrue(
+            harness.fakeCompletedSetRepo.getCompletedSets(session.id).single().isPr,
+            "Precondition: the first tag breaks a PR and marks the set",
+        )
+
+        harness.dwsm.tagJustLiftSessionExercise(session.id, TestFixtures.deadlift, isAmrap = false)
+        advanceUntilIdle()
+
+        val retagged = harness.fakeCompletedSetRepo.getCompletedSets(session.id).single()
+        assertEquals(TestFixtures.deadlift.id, harness.fakeWorkoutRepo.getSession(session.id)?.exerciseId)
+        assertFalse(retagged.isPr, "A retag skips PR evaluation, so the set is no longer a PR")
+        assertEquals(
+            listOf(TestFixtures.squat.id),
+            harness.fakePRRepo.updateCalls.map { it.exerciseId },
+            "No PR is evaluated for the new exercise",
         )
         harness.cleanup()
     }
@@ -6334,7 +6447,7 @@ class DWSMWorkoutLifecycleTest {
             isEchoMode = false,
         )
 
-        assertFalse(result)
+        assertFalse(result.celebrate)
         assertEquals(0, harness.fakePRRepo.updateCalls.size, "Invalid completions should not update PRs")
         assertEquals(0, harness.fakeGamificationRepo.updateStatsCallCount, "Invalid completions should not update gamification stats")
         assertEquals(0, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount, "Invalid completions should not award badges")
@@ -6364,7 +6477,7 @@ class DWSMWorkoutLifecycleTest {
             isEchoMode = false,
         )
 
-        assertFalse(result)
+        assertFalse(result.celebrate)
         assertEquals(0, harness.fakePRRepo.updateCalls.size, "Untagged completions should not update PRs")
         assertEquals(1, harness.fakeGamificationRepo.updateStatsCallCount, "Valid untagged completions should update gamification stats")
         assertEquals(1, harness.fakeGamificationRepo.checkAndAwardBadgesCallCount, "Valid untagged completions should award stat badges")

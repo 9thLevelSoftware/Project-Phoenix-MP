@@ -146,7 +146,6 @@ fun RestTimerCard(
     totalExercises: Int? = null,
     weightUnit: WeightUnit = WeightUnit.KG,
     lastUsedWeight: Float? = null,
-    prWeight: Float? = null,
     formatWeight: ((Float) -> String)? = null,
     formatWeightWithUnit: ((Float, WeightUnit) -> String)? = null,
     isSupersetTransition: Boolean = false,
