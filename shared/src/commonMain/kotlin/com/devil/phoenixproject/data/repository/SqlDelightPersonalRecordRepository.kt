@@ -84,8 +84,11 @@ class SqlDelightPersonalRecordRepository(
         .mapToList(Dispatchers.IO)
 
     override suspend fun getBestPR(exerciseId: String, profileId: String): PersonalRecord? = withContext(Dispatchers.IO) {
+        // FP-5: a CONCENTRIC/ECCENTRIC peak-force row is a different metric and
+        // routinely exceeds the commanded load — never the "best PR".
         recordsForExercise(exerciseId, profileId)
-            .maxByOrNull { it.weightPerCableKg } // Sort by weight (parity with parent repo)
+            .filter { it.prType == PRType.MAX_WEIGHT && it.phase == WorkoutPhase.COMBINED }
+            .maxByOrNull { it.weightPerCableKg }
     }
 
     override fun getAllPRs(profileId: String): Flow<List<PersonalRecord>> = queries.selectAllRecords(profileId = profileId, mapper = ::mapToPR)
@@ -93,11 +96,13 @@ class SqlDelightPersonalRecordRepository(
         .mapToList(Dispatchers.IO)
 
     override fun getAllPRsGrouped(profileId: String): Flow<List<PersonalRecord>> = getAllPRs(profileId).map { records ->
-        records.groupBy { it.exerciseId }
-            .mapNotNull { (_, prs) ->
-                // Return the best PR for each exercise (by weight, parity with parent repo)
-                prs.maxByOrNull { it.weightPerCableKg }
-            }
+        // FP-5: one MAX_WEIGHT/COMBINED row per exercise. A heavier MAX_VOLUME
+        // or phase peak-force row is a different metric and must not become the
+        // analytics "PR" (see PersonalRecordRepository.getAllPRsGrouped).
+        records
+            .filter { it.prType == PRType.MAX_WEIGHT && it.phase == WorkoutPhase.COMBINED }
+            .groupBy { it.exerciseId }
+            .mapNotNull { (_, prs) -> prs.maxByOrNull { it.weightPerCableKg } }
     }
 
     override suspend fun deletePR(prId: Long, profileId: String) = withContext(Dispatchers.IO) {

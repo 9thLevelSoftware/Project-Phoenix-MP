@@ -71,6 +71,8 @@
     <string name="workout_teardown_finishing">Finishing previous workout…</string>
     <string name="workout_teardown_failed">Trainer reset didn\'t complete</string>
     <string name="workout_teardown_retry">Retry</string>
+    <string name="workout_save_failed">Workout data couldn't be saved.</string>
+    <string name="workout_save_retry_failed">That set can no longer be retried.</string>
     <string name="save_set">Save Set</string>
     <string name="bodyweight_reps_title">Enter bodyweight reps</string>
     <string name="bodyweight_set_progress">%1$s • Set %2$d of %3$d</string>
@@ -799,6 +801,7 @@
     <string name="profile_update_failed">Could not save this profile preference</string>
     <string name="profile_switch_failed">Could not switch profiles</string>
     <string name="profile_create_failed">Could not create the profile</string>
+    <string name="profile_switch_blocked_during_workout">Finish or end your workout before switching profiles</string>
     <string name="profile_recovery_title">Profile recovery required</string>
     <string name="profile_recovery_message">Phoenix could not confirm which profile is active. Retry before continuing.</string>
     <string name="profile_recovery_retry_failed">Profile recovery is still unavailable</string>

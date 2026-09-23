@@ -7,6 +7,7 @@ import com.devil.phoenixproject.data.repository.ProfileAccountBindingException
 import com.devil.phoenixproject.data.repository.ProfileAccountLinkReceipt
 import com.devil.phoenixproject.data.repository.ProfileAccountLinkRollbackException
 import com.devil.phoenixproject.data.repository.ProfileContextUnavailableException
+import com.devil.phoenixproject.data.repository.ProfileSwitchBlockedDuringWorkoutException
 import com.devil.phoenixproject.data.repository.StaleProfileContextException
 import com.devil.phoenixproject.data.repository.SubscriptionStatus
 import com.devil.phoenixproject.data.repository.UserProfile
@@ -208,12 +209,14 @@ class FakeUserProfileRepository : UserProfileRepository {
     override suspend fun createAndActivateProfile(
         name: String,
         colorIndex: Int,
+        blockedByLiveSession: () -> Boolean,
     ): UserProfile {
         val request = CreateAndActivateRequest(name, colorIndex)
         createAndActivateRequests += request
         beforeCreateAndActivateProfile?.invoke(name, colorIndex)
         createAndActivateProfileFailure?.let { throw it }
         return mutex.withLock {
+            if (blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
             val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
                 ?: throw ProfileContextUnavailableException()
             val trimmedName = name.trim()
@@ -247,7 +250,10 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
     }
 
-    override suspend fun deleteActiveProfile(expectedProfileId: String): Boolean {
+    override suspend fun deleteActiveProfile(
+        expectedProfileId: String,
+        blockedByLiveSession: () -> Boolean,
+    ): Boolean {
         deleteActiveProfileRequests += expectedProfileId
         deleteProfileFailure?.let { throw it }
         beforeDeleteActiveProfileMutation?.invoke(expectedProfileId)
@@ -258,11 +264,14 @@ class FakeUserProfileRepository : UserProfileRepository {
             if (ready.profile.id != expectedProfileId) {
                 throw StaleProfileContextException(expectedProfileId, ready.profile.id)
             }
-            deleteProfileLocked(expectedProfileId, requireActive = true)
+            deleteProfileLocked(expectedProfileId, requireActive = true, blockedByLiveSession)
         }
     }
 
-    override suspend fun deleteActiveProfilePermanently(expectedProfileId: String): Boolean {
+    override suspend fun deleteActiveProfilePermanently(
+        expectedProfileId: String,
+        blockedByLiveSession: () -> Boolean,
+    ): Boolean {
         deleteActiveProfilePermanentlyRequests += expectedProfileId
         deleteProfileFailure?.let { throw it }
         deleteActiveProfileResultOverride?.let { return it }
@@ -272,6 +281,7 @@ class FakeUserProfileRepository : UserProfileRepository {
             if (ready.profile.id != expectedProfileId) {
                 throw StaleProfileContextException(expectedProfileId, ready.profile.id)
             }
+            if (blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
             if (expectedProfileId == DEFAULT_PROFILE_ID || !profiles.containsKey(expectedProfileId)) {
                 return@withLock false
             }
@@ -301,12 +311,15 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
     }
 
-    /** Test-only merge of [id] into the active profile (not on the interface since PR 20). */
-    suspend fun deleteProfile(id: String): Boolean = mutex.withLock {
-        deleteProfileLocked(id, requireActive = false)
+    override suspend fun deleteProfile(id: String, blockedByLiveSession: () -> Boolean): Boolean = mutex.withLock {
+        deleteProfileLocked(id, requireActive = false, blockedByLiveSession)
     }
 
-    private fun deleteProfileLocked(id: String, requireActive: Boolean): Boolean {
+    private fun deleteProfileLocked(
+        id: String,
+        requireActive: Boolean,
+        blockedByLiveSession: () -> Boolean = { false },
+    ): Boolean {
         if (id == DEFAULT_PROFILE_ID) return false
         val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
             ?: throw ProfileContextUnavailableException()
@@ -315,6 +328,7 @@ class FakeUserProfileRepository : UserProfileRepository {
         }
         profiles[id] ?: return false
         val wasActive = previous.profile.id == id
+        if (wasActive && blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
         val targetProfileId = if (requireActive || wasActive) DEFAULT_PROFILE_ID else previous.profile.id
         require(profiles.containsKey(targetProfileId)) { "Profile deletion target missing: $targetProfileId" }
         if (wasActive) {
@@ -352,11 +366,12 @@ class FakeUserProfileRepository : UserProfileRepository {
         return true
     }
 
-    override suspend fun setActiveProfile(id: String) {
+    override suspend fun setActiveProfile(id: String, blockedByLiveSession: () -> Boolean) {
         setActiveProfileRequests += id
         beforeSetActiveProfile?.invoke(id)
         setActiveProfileFailure?.let { throw it }
         mutex.withLock {
+            if (blockedByLiveSession()) throw ProfileSwitchBlockedDuringWorkoutException()
             require(profiles.containsKey(id)) { "Unknown profile: $id" }
             val previous = _activeProfileContext.value as? ActiveProfileContext.Ready
                 ?: throw ProfileContextUnavailableException()

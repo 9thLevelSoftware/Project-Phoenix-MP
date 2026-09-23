@@ -592,6 +592,19 @@ class ProfileDeletionPropagationTest {
     }
 
     @Test
+    fun aPermanentDeleteIsRefusedDuringALiveWorkout() = runTest {
+        val p = createProfileWithData()
+
+        kotlin.test.assertFailsWith<com.devil.phoenixproject.data.repository.ProfileSwitchBlockedDuringWorkoutException> {
+            profiles.deleteActiveProfilePermanently(p, blockedByLiveSession = { true })
+        }
+
+        assertEquals(p, profiles.activeProfile.value?.id, "PR 16 guard: the live profile stays active")
+        assertNotNull(database.phoenixDatabaseQueries.selectSessionById(sessionP).executeAsOneOrNull(), "nothing deleted")
+        assertTrue(profiles.pendingDeletionProfiles.value.isEmpty())
+    }
+
+    @Test
     fun withNoPortalOwnerTheProfileRowIsRemovedImmediately() = runTest {
         tokenStorage.clearAuth()
         val p = createProfileWithData()

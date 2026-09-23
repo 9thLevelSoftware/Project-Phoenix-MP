@@ -263,8 +263,10 @@ interface SyncRepository {
     ): PhasePRBackfillResult = PhasePRBackfillResult(changedRows = 0)
 
     /**
-     * Resolve local workout session IDs for dedicated PR rows whose source
-     * sessions may not be included in the current modified-since push batch.
+     * Resolve the PORTAL workout id (`routineSessionId ?: id`) for dedicated PR rows
+     * whose source sessions may not be included in the current modified-since push
+     * batch. A routine set is published under its parent routineSessionId, so the
+     * component id would reference no pushed workout.
      */
     suspend fun findSessionIdsForPersonalRecords(
         records: List<PersonalRecord>,
@@ -316,6 +318,20 @@ interface SyncRepository {
      */
     suspend fun getKnownPortalSessionIds(profileId: String = "default"): List<String> =
         getAllSessionIds(profileId)
+
+    /**
+     * One-shot upgrade seeding, once per portal account ([accountId] namespaces the ledger
+     * key): marks legacy workout rows of [profileIds] (the account's profiles) that the old
+     * client provably synchronized as acknowledged, so PR 10's all-profile loop does not
+     * re-push them. See `seedLegacySyncedGenerations` in PhoenixDatabase.sq for the
+     * evidence rule. Returns the number of rows marked, or null when it already ran.
+     */
+    suspend fun seedLegacySyncedGenerationsOnce(
+        accountId: String,
+        legacyLastSync: Long,
+        cursorProfileId: String?,
+        profileIds: Collection<String>,
+    ): Int? = null
 
     /**
      * Portal session ids of [profileId] that still have a live (not soft-deleted) row.
@@ -375,6 +391,26 @@ interface SyncRepository {
         profileIds: List<String>,
         excludeAllExisting: Boolean,
         previousPushWatermarks: Map<String, Long>,
+        previousPortalUserId: String? = null,
+        /**
+         * Each profile's own previous owner (its `supabase_user_id` before the switch),
+         * falling back to [previousPortalUserId]. A device can hold profiles synced to
+         * different accounts; each is classified under its own (codex #859).
+         */
+        previousPortalUserIdsByProfile: Map<String, String> = emptyMap(),
+    )
+
+    /**
+     * Ownership-conflict recovery (PR 11): exclude from [portalUserId] only rows of
+     * [entityTypes] created at or before [createdAtOrBefore] (the moment this account was
+     * first seen on the device), never a row known to have reached [portalUserId] itself.
+     * Rows made for this account afterwards keep syncing (codex #859).
+     */
+    suspend fun recordOwnershipRecoveryExclusions(
+        portalUserId: String,
+        profileIds: List<String>,
+        createdAtOrBefore: Long,
+        entityTypes: Set<String>,
     )
 
     // === Post-Push Stamping ===
@@ -560,6 +596,8 @@ interface SyncRepository {
         sessionNotes: Map<String, SessionNotesEntry> = emptyMap(),
         sessionUpdatedAtById: Map<String, Long> = emptyMap(),
         pushWatermark: Long = 0L,
+        /** PR 11: `entity type -> ids` pulled from [ownerUserId], recorded in the same transaction. */
+        pulledProvenance: Map<String, Collection<String>> = emptyMap(),
     )
 
     /**
