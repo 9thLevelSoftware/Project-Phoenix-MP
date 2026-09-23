@@ -3376,4 +3376,75 @@ class SyncManagerTest {
         assertTrue(result.isFailure)
         assertIs<SyncState.Error>(manager.syncState.value)
     }
+
+    @Test
+    fun aWorkoutDeletionRequestNeverCarriesOversizedProfileMetadata() = runTest {
+        // codex #856 P2: every request that carries allProfiles (not only the final one)
+        // must fall back to omitting it when the whole list cannot fit.
+        setupAuthenticated()
+        repeat(20) { i -> fakeUserProfileRepo.seedReadyProfileForTest("profile-$i", name = "N".repeat(5_000) + i) }
+        fakeUserProfileRepo.setActiveProfileForTest()
+        val deletionRepository = object : WorkoutDeletionRepository {
+            override suspend fun pendingForOwner(ownerUserId: String): List<WorkoutDeletionMutation> = listOf(
+                WorkoutDeletionMutation(
+                    mutationId = "delete-a",
+                    ownerUserId = ownerUserId,
+                    profileId = "default",
+                    scope = WorkoutDeletionScope.WORKOUT,
+                    portalSessionId = "00000000-0000-4000-8000-000000000001",
+                    componentSessionId = null,
+                    deletedAt = 1L,
+                    acknowledgedAt = null,
+                    source = WorkoutDeletionSource.LOCAL,
+                ),
+            )
+
+            override suspend fun acknowledge(ownerUserId: String, mutationIds: Set<String>, acknowledgedAt: Long) = Unit
+        }
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z", acknowledgedWorkoutDeletionIds = listOf("delete-a")),
+        )
+        val oneProfile = PushPlanner.byteSize(
+            PortalSyncPayload(
+                deviceId = "d",
+                platform = "p",
+                lastSync = 0L,
+                allProfiles = listOf(LocalProfileDto("profile-0", "N".repeat(MAX_PORTAL_PROFILE_NAME_CHARS), 0)),
+            ),
+        )
+        val saved = PushPlanner.maxBytes
+        val emptyEnvelope = PushPlanner.byteSize(PortalSyncPayload(deviceId = "d", platform = "p", lastSync = 0L))
+        val perProfile = oneProfile - emptyEnvelope
+        // Room for a request envelope plus one deletion, but far below 21 profile entries.
+        PushPlanner.maxBytes = emptyEnvelope + 1_500L
+        assertTrue(21 * perProfile > 1_500L, "precondition: the full profile list cannot fit")
+        try {
+            var clock = 0L
+            val manager = SyncManager(
+                apiClient = fakeApi,
+                tokenStorage = tokenStorage,
+                syncRepository = fakeSyncRepo,
+                gamificationRepository = fakeGamificationRepo,
+                repMetricRepository = fakeRepMetricRepo,
+                userProfileRepository = fakeUserProfileRepo,
+                profilePreferenceSyncRepository = fakeProfilePreferenceSyncRepo,
+                externalActivityRepository = fakeExternalActivityRepo,
+                velocityOneRepMaxRepository = fakeVelocityRepo,
+                isProfilePreferenceMigrationReady = { true },
+                workoutDeletionRepository = deletionRepository,
+                rateLimiter = ClientRateLimiter(nowMs = { clock }, waitFor = { clock += it }),
+            )
+
+            manager.sync()
+
+            val deletionRequests = fakeApi.pushPayloads.filter { it.workoutDeletions.isNotEmpty() }
+            assertTrue(deletionRequests.isNotEmpty(), "precondition: the deletion is routed")
+            deletionRequests.forEach { payload ->
+                assertNull(payload.allProfiles, "oversized profile metadata must be omitted, not sent")
+                assertTrue(PushPlanner.byteSize(payload) <= PushPlanner.maxBytes)
+            }
+        } finally {
+            PushPlanner.maxBytes = saved
+        }
+    }
 }

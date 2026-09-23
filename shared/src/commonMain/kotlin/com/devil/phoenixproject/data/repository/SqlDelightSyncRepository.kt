@@ -2391,6 +2391,17 @@ class SqlDelightSyncRepository(
      * `routineSessionId`s, standalone row ids, and soft-deleted rows' tombstones),
      * newest-first so the parity cap drops the oldest.
      */
+    override suspend fun seedLegacySyncedGenerationsOnce(legacyLastSync: Long): Int? = withContext(Dispatchers.IO) {
+        db.transactionWithResult {
+            if (queries.selectAppliedDataRepair(LEGACY_SYNC_GENERATIONS_REPAIR_KEY).executeAsOneOrNull() != null) {
+                return@transactionWithResult null
+            }
+            val marked = queries.seedLegacySyncedGenerations(legacyLastSync).value.toInt()
+            queries.insertAppliedDataRepair(LEGACY_SYNC_GENERATIONS_REPAIR_KEY, currentTimeMillis())
+            marked
+        }
+    }
+
     override suspend fun getLivePortalSessionIds(profileId: String): Set<String> = withContext(Dispatchers.IO) {
         queries.selectLivePortalSessionIdsByProfile(profileId).executeAsList().toHashSet()
     }
@@ -3563,3 +3574,6 @@ class SqlDelightSyncRepository(
         }
     }
 }
+
+/** Ledger key of the one-shot legacy generation seeding (AppliedDataRepair). */
+internal const val LEGACY_SYNC_GENERATIONS_REPAIR_KEY = "legacy-sync-generations-v1"

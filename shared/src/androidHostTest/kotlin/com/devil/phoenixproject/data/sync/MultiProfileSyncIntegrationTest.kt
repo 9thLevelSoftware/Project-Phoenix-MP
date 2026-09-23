@@ -15,6 +15,7 @@ import com.devil.phoenixproject.testutil.createTestDatabase
 import com.russhwolf.settings.MapSettings
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import kotlinx.coroutines.test.runTest
 import org.junit.Before
@@ -659,6 +660,72 @@ class MultiProfileSyncIntegrationTest {
             q.updateSessionTimestamp(it, id)
             q.markSessionSynced(id)
         }
+    }
+
+    // ===== codex #856 P1: legacy generations are seeded before the all-profile loop =====
+
+    private fun addLocalMeasurement(sessionId: String) {
+        database.phoenixDatabaseQueries.insertCompletedSet(
+            id = "cs-$sessionId",
+            session_id = sessionId,
+            planned_set_id = null,
+            routine_exercise_id = null,
+            set_number = 1L,
+            set_type = "STANDARD",
+            attempt_number = 1L,
+            actual_reps = 8L,
+            actual_weight_kg = 40.0,
+            logged_rpe = null,
+            is_pr = 0L,
+            completed_at = baseTime,
+            set_end_reason = "UNKNOWN",
+        )
+    }
+
+    /** The shape migration 49 leaves every pre-existing row in: generation 1 / 0. */
+    private fun makeLegacyDirty(sessionId: String) {
+        database.phoenixDatabaseQueries.markWorkoutComponentDirty(sessionId)
+    }
+
+    @Test
+    fun legacyRowsProvablySyncedByTheOldClientAreNotPushedFromAnInactiveProfile() = runTest {
+        val legacy = baseTime - 60_000L
+        settings.putLong("portal_last_sync_timestamp", legacy)
+        // Inactive profile B:
+        //  - synced by the old client: stamped at/before the legacy cursor, with local data
+        insertSession("b-synced", groupId = null, timestamp = baseTime - 200_000L, profileId = profileB, stampedAt = legacy - 1_000L)
+        addLocalMeasurement("b-synced")
+        //  - pulled by the old client: stamped (server time, after the cursor), no local data
+        insertSession("b-pulled", groupId = null, timestamp = baseTime - 190_000L, profileId = profileB, stampedAt = legacy + 5_000L)
+        //  - never synced: NULL updatedAt, with local data
+        insertSession("b-local", groupId = null, timestamp = baseTime - 180_000L, profileId = profileB)
+        addLocalMeasurement("b-local")
+        listOf("b-synced", "b-pulled", "b-local").forEach(::makeLegacyDirty)
+
+        assertTrue(manager.sync().isSuccess)
+
+        val pushed = api.pushPayloads.filter { it.profileId == profileB }.flatMap { it.sessions }.map { it.id }.toSet()
+        assertFalse("b-synced" in pushed, "a row the old client synced must not be re-pushed (saw $pushed)")
+        assertFalse("b-pulled" in pushed, "a pulled legacy row must not be pushed over the portal's data (saw $pushed)")
+        assertTrue("b-local" in pushed, "a never-synced legacy row must still be pushed (saw $pushed)")
+    }
+
+    @Test
+    fun legacyGenerationSeedingRunsOnlyOnce() = runTest {
+        settings.putLong("portal_last_sync_timestamp", baseTime - 60_000L)
+        assertTrue(manager.sync().isSuccess)
+
+        assertNull(
+            syncRepository.seedLegacySyncedGenerationsOnce(Long.MAX_VALUE),
+            "the seeding is one-shot: a second run must be refused by the ledger",
+        )
+        // A row that becomes dirty after the upgrade is never swept up by a re-run.
+        insertSession("late", groupId = null, timestamp = baseTime, profileId = profileA, stampedAt = baseTime - 120_000L)
+        addLocalMeasurement("late")
+        makeLegacyDirty("late")
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(api.pushPayloads.flatMap { it.sessions }.any { it.id == "late" })
     }
 }
 

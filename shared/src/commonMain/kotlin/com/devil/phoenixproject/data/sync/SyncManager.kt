@@ -926,6 +926,18 @@ class SyncManager(
 
         // Upgrade seeding (step 8) runs once, before any per-profile work, so the first
         // PR 10 sync sees the seeded cursors rather than inventing fresh ones.
+        //
+        // First (codex #856 P1): migration 49 left every pre-existing workout row dirty
+        // (generation 1/0). Before the all-profile loop can see them, acknowledge the rows
+        // the old client provably synchronized — a non-null updatedAt at or before the
+        // legacy cursor, or a pulled row with no local measurements. The evidence is per
+        // row, not per profile: the old client stamped only rows it pushed or pulled (and
+        // it only ever synced the active profile), so an inactive profile's never-synced
+        // rows still have NULL updatedAt and stay dirty. Runs once per device (ledger key);
+        // must run before migrateLegacyCursors consumes the legacy key.
+        syncRepository.seedLegacySyncedGenerationsOnce(tokenStorage.legacyLastSyncFor(userId))?.let { marked ->
+            Logger.i("SyncManager") { "Upgrade seeding: acknowledged $marked legacy workout row(s) already on the portal" }
+        }
         val profiles = syncProfileOrder(userId)
         val activeProfileId = userProfileRepository.activeProfile.value?.id ?: "default"
         val seeded = tokenStorage.migrateLegacyCursors(
@@ -2061,12 +2073,14 @@ class SyncManager(
             PortalSyncAdapter.toPortalTrainingCycle(it, userId)
         }
         val payloadProfileId = activeProfile?.id ?: "default"
-        val payloadProfileName = activeProfile?.name ?: "Default"
+        // Every profile name on the wire is bounded: an unbounded name in the request
+        // envelope would make even an empty request oversized (codex #856 P2).
+        val payloadProfileName = boundedProfileName(activeProfile?.name ?: "Default")
         val profileDtos = allProfiles
-            .map { LocalProfileDto(it.id, it.name, it.colorIndex) }
+            .map { LocalProfileDto(it.id, boundedProfileName(it.name), it.colorIndex) }
             .let { dtos ->
                 if (activeProfile != null && dtos.none { it.id == activeProfile.id }) {
-                    dtos + LocalProfileDto(activeProfile.id, activeProfile.name, activeProfile.colorIndex)
+                    dtos + LocalProfileDto(activeProfile.id, boundedProfileName(activeProfile.name), activeProfile.colorIndex)
                 } else {
                     dtos
                 }
@@ -2080,6 +2094,28 @@ class SyncManager(
                     ),
                 )
             }
+        // allProfiles is all-or-nothing: the portal deletes every registered profile missing
+        // from it, so it can never be trimmed. When the whole list cannot fit a request it is
+        // omitted everywhere this sync (the portal then upserts each request's profileId and
+        // deletes nothing), instead of wedging every request that carries it.
+        val sendableProfileDtos: List<LocalProfileDto>? = profileDtos.takeIf {
+            PushPlanner.fits(
+                PortalSyncPayload(
+                    deviceId = deviceId,
+                    platform = platform,
+                    lastSync = pushWatermark,
+                    profileId = payloadProfileId,
+                    profileName = payloadProfileName,
+                    allProfiles = it,
+                ),
+            )
+        }
+        if (sendableProfileDtos == null) {
+            Logger.w("SyncManager") {
+                "Push: profile metadata for ${profileDtos.size} profile(s) exceeds the push size cap; " +
+                    "sending without allProfiles this sync"
+            }
+        }
 
         var lastResponse: PortalSyncPushResponse? = null
         val acknowledgedPortalSessionIds = linkedSetOf<String>()
@@ -2091,7 +2127,7 @@ class SyncManager(
                 lastSync = pushWatermark,
                 profileId = payloadProfileId,
                 profileName = payloadProfileName,
-                allProfiles = profileDtos,
+                allProfiles = sendableProfileDtos,
                 ownershipTransfers = transferBatch.map { transfer ->
                     PortalOwnershipTransferDto(
                         mutationId = transfer.mutationId,
@@ -2140,15 +2176,16 @@ class SyncManager(
         // deliberately leaves the local queue pending for retry.
         pendingWorkoutDeletions.groupBy { it.profileId }.forEach { (routingProfileId, routedDeletions) ->
             routedDeletions.chunked(SYNC_BATCH_SIZE).forEach { deletionBatch ->
-            val routingProfileName = allProfiles.firstOrNull { it.id == routingProfileId }?.name
-                ?: "Recovered profile"
+            val routingProfileName = boundedProfileName(
+                allProfiles.firstOrNull { it.id == routingProfileId }?.name ?: "Recovered profile",
+            )
             val payload = PortalSyncPayload(
                 deviceId = deviceId,
                 platform = platform,
                 lastSync = pushWatermark,
                 profileId = routingProfileId,
                 profileName = routingProfileName,
-                allProfiles = profileDtos,
+                allProfiles = sendableProfileDtos,
                 workoutDeletions = deletionBatch.map { deletion ->
                     PortalWorkoutDeletionDto(
                         mutationId = deletion.mutationId,
@@ -2196,7 +2233,7 @@ class SyncManager(
                 lastSync = pushWatermark,
                 profileId = payloadProfileId,
                 profileName = payloadProfileName,
-                allProfiles = profileDtos,
+                allProfiles = sendableProfileDtos,
                 deletedCycles = deletionBatch.map { deletion ->
                     PortalDeletedCycleDto(
                         id = deletion.id,
@@ -2299,7 +2336,7 @@ class SyncManager(
             gamificationStats = if (includeSingletons) gamStatsDto else null,
             assessments = if (includeSingletons) assessmentDtos else emptyList(),
             customExercises = if (includeSingletons) customExerciseDtos else emptyList(),
-            allProfiles = if (includeSingletons) profileDtos else null,
+            allProfiles = if (includeSingletons) sendableProfileDtos else null,
             externalActivities = if (includeSingletons) externalActivityDtos else emptyList(),
         )
         val emptyEnvelope = sessionBatchPayload(emptyList()).copy(personalRecords = emptyList())
@@ -2331,7 +2368,9 @@ class SyncManager(
                 assessments = assessmentDtos,
                 badges = badgeDtos,
                 externalActivities = externalActivityDtos,
-                finalFields = finalFields(emptyEnvelope, emptyList(), emptyList(), emptyList(), emptyList(), true),
+                rpgAttributes = rpgDto,
+                gamificationStats = gamStatsDto,
+                allProfiles = sendableProfileDtos,
                 onSkip = onSkip,
             )
             sessionBatches.map(::sessionBatchPayload) + tails
@@ -2446,7 +2485,9 @@ class SyncManager(
             }
         }
 
-        val sentMetadataProfileIds = profileDtos.mapTo(linkedSetOf()) { it.id }
+        // Without allProfiles only this push's profileId was registered on the portal.
+        val sentMetadataProfileIds = sendableProfileDtos?.mapTo(linkedSetOf()) { it.id }
+            ?: linkedSetOf(payloadProfileId)
         pushDirtyProfilePreferences(
             deviceId = deviceId,
             platform = platform,
@@ -4256,6 +4297,20 @@ internal fun parseIso8601EpochMillis(iso: String?): Long? =
  * session stays dirty and is re-evaluated each sync; a routine/PR is re-selected after
  * its next local edit.
  */
+/** Longest profile name sent to the portal; local names are unbounded. */
+internal const val MAX_PORTAL_PROFILE_NAME_CHARS = 100
+
+/**
+ * Caps a profile name for the wire so profile metadata cannot grow a push request
+ * without bound. Never splits a surrogate pair.
+ */
+internal fun boundedProfileName(name: String): String {
+    if (name.length <= MAX_PORTAL_PROFILE_NAME_CHARS) return name
+    var end = MAX_PORTAL_PROFILE_NAME_CHARS
+    if (name[end - 1].isHighSurrogate()) end--
+    return name.substring(0, end)
+}
+
 internal object PushPlanner {
     /** Portal `MAX_ENTITIES_PER_TYPE`. */
     const val MAX_ITEMS_PER_ARRAY = 10_000
@@ -4321,10 +4376,11 @@ internal object PushPlanner {
      * Packs non-session entities into requests after the session batches, in dependency
      * order: routines, deleted-routine ids, cycles, PRs, then custom exercises (catalog
      * rows first), assessments, badges and external activities. Each is upserted on its
-     * own by mobile-sync-push, so none has to travel with another. [finalFields] carries
-     * the truly singular fields — RPG attributes, gamification stats and `allProfiles` —
-     * which stay together on the last request (merged into the last packed request when
-     * it fits there, else sent on their own).
+     * own by mobile-sync-push, so none has to travel with another. The truly singular
+     * fields — [rpgAttributes], [gamificationStats] and [allProfiles] — stay together on
+     * the last request (merged into the last packed request when it fits there, else sent
+     * on their own). No request is ever enqueued oversized: [allProfiles] is dropped from
+     * the singular request when it alone makes it too large (see below).
      */
     fun planTailRequests(
         envelope: PortalSyncPayload,
@@ -4336,7 +4392,9 @@ internal object PushPlanner {
         assessments: List<PortalAssessmentResultDto>,
         badges: List<PortalEarnedBadgeSyncDto>,
         externalActivities: List<ExternalActivitySyncDto>,
-        finalFields: PortalSyncPayload,
+        rpgAttributes: PortalRpgAttributesSyncDto?,
+        gamificationStats: PortalGamificationStatsSyncDto?,
+        allProfiles: List<LocalProfileDto>?,
         onSkip: SkipListener = SkipListener { _, _ -> },
     ): List<PortalSyncPayload> {
         val requests = mutableListOf<PortalSyncPayload>()
@@ -4397,21 +4455,37 @@ internal object PushPlanner {
         pack(externalActivities, "external activity", curExternal, { it.id }) { envelope.copy(externalActivities = listOf(it)) }
         val current = build()
 
-        val singular = envelope.copy(
-            rpgAttributes = finalFields.rpgAttributes,
-            gamificationStats = finalFields.gamificationStats,
-            allProfiles = finalFields.allProfiles,
+        // The one place the singular fields are attached, so a new one cannot reach only
+        // one of the two requests below.
+        fun withSingular(p: PortalSyncPayload, profiles: List<LocalProfileDto>? = allProfiles) = p.copy(
+            rpgAttributes = rpgAttributes,
+            gamificationStats = gamificationStats,
+            allProfiles = profiles,
         )
-        val merged = current.copy(
-            rpgAttributes = finalFields.rpgAttributes,
-            gamificationStats = finalFields.gamificationStats,
-            allProfiles = finalFields.allProfiles,
-        )
+        val merged = withSingular(current)
         if (fits(merged)) {
             requests += merged
-        } else {
-            close()
+            return requests
+        }
+        close()
+        var singular = withSingular(envelope)
+        // An oversized singular request would 413 forever (codex #856). allProfiles is the
+        // only unbounded field left (names are already capped); it must never be sent
+        // partially, because the portal deletes every registered profile missing from it.
+        // Omitting it is safe: the portal then upserts just this request's profileId and
+        // deletes nothing. Every profile, pending-deletion ones included, still registers
+        // through its own push's profileId.
+        if (!fits(singular) && allProfiles != null) {
+            Logger.w("SyncManager") {
+                "Push: profile metadata for ${allProfiles.size} profile(s) exceeds the push size cap; " +
+                    "sending without allProfiles this sync"
+            }
+            singular = withSingular(envelope, profiles = null)
+        }
+        if (fits(singular)) {
             requests += singular
+        } else {
+            warnSkip(onSkip, "singular sync fields", "rpg/gamification")
         }
         return requests
     }

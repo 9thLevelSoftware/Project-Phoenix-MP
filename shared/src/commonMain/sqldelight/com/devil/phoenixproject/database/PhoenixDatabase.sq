@@ -3609,6 +3609,31 @@ ORDER BY timestamp ASC;
 -- marking is WorkoutSession.portalOrigin (migration 48 on main); an earlier draft
 -- of this query used a separate PulledWorkoutSession marker table that this
 -- schema does not carry.
+-- One-shot upgrade seeding (PR 10, codex #856): migration 49 gave every existing row
+-- local_sync_generation 1 / synced_sync_generation 0, so the all-profile loop would treat
+-- rows an older client already synchronized as new local captures. The pre-49 client
+-- wrote `updatedAt` only when a row was pushed-and-accepted or pulled, so a non-null
+-- `updatedAt` is per-row proof the portal already holds it when EITHER
+--   * it is at or before the legacy global cursor (covered by a completed sync), OR
+--   * the row has no local measurements at all (a pulled row: pushing it would make the
+--     portal's replace_session_children erase the richer set/rep data it holds).
+-- Rows with NULL `updatedAt` (never synced) and rows edited after the legacy cursor that
+-- carry local measurements stay dirty and are pushed.
+seedLegacySyncedGenerations:
+UPDATE WorkoutSession
+SET synced_sync_generation = local_sync_generation
+WHERE deletedAt IS NULL
+  AND synced_sync_generation < local_sync_generation
+  AND updatedAt IS NOT NULL
+  AND (
+    updatedAt <= :legacyLastSync
+    OR (
+      NOT EXISTS (SELECT 1 FROM MetricSample WHERE MetricSample.sessionId = WorkoutSession.id)
+      AND NOT EXISTS (SELECT 1 FROM RepMetric WHERE RepMetric.sessionId = WorkoutSession.id)
+      AND NOT EXISTS (SELECT 1 FROM CompletedSet WHERE CompletedSet.session_id = WorkoutSession.id)
+    )
+  );
+
 selectBlockedRoutineGroupSiblings:
 SELECT id, routineSessionId FROM WorkoutSession
 WHERE profile_id = :profileId

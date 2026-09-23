@@ -315,6 +315,14 @@ interface SyncRepository {
         getAllSessionIds(profileId)
 
     /**
+     * One-shot (device-wide, ledger-keyed) upgrade seeding: marks legacy workout rows the
+     * old client provably synchronized as acknowledged, so PR 10's all-profile loop does
+     * not re-push them. See `seedLegacySyncedGenerations` in PhoenixDatabase.sq for the
+     * evidence rule. Returns the number of rows marked, or null when it already ran.
+     */
+    suspend fun seedLegacySyncedGenerationsOnce(legacyLastSync: Long): Int? = null
+
+    /**
      * Portal session ids of [profileId] that still have a live (not soft-deleted) row.
      * Tombstoned and hard-deleted workouts are absent.
      */
