@@ -1253,7 +1253,9 @@ class PortalPushLimitsTest {
                 assessments = normal + huge,
                 badges = emptyList(),
                 externalActivities = emptyList(),
-                finalFields = envelope.copy(allProfiles = listOf(LocalProfileDto("default", "Default", 0))),
+                rpgAttributes = null,
+                gamificationStats = null,
+                allProfiles = listOf(LocalProfileDto("default", "Default", 0)),
                 onSkip = { type, id -> skipped += type to id },
             )
 
@@ -1262,6 +1264,47 @@ class PortalPushLimitsTest {
             assertEquals(normal.map { it.id }.toSet(), requests.flatMap { it.assessments }.map { it.id }.toSet())
             assertEquals(listOf("assessment" to "assessment-99"), skipped)
             assertEquals(listOf(requests.lastIndex), requests.indices.filter { requests[it].allProfiles != null })
+        }
+    }
+
+    // ==================== codex #856 P2: profile metadata can never wedge the push ====================
+
+    @Test
+    fun anAbsurdProfileNameAndManyProfilesNeverWedgeThePush() = runTest {
+        authenticate()
+        val hugeName = "N".repeat(5_000)
+        repeat(24) { i -> fakeUserProfileRepo.seedReadyProfileForTest("profile-$i", name = "$hugeName-$i") }
+        fakeUserProfileRepo.setActiveProfileForTest()
+        fakeApi.pushResult = Result.success(PortalSyncPushResponse(syncTime = "2026-03-02T12:00:00Z"))
+        // Names are bounded on the wire.
+        assertEquals(MAX_PORTAL_PROFILE_NAME_CHARS, boundedProfileName(hugeName).length)
+
+        // A cap that 25 bounded profiles do not fit in: allProfiles must be dropped, not
+        // partially sent (the portal would delete every omitted profile) and not sent oversized.
+        val oneProfile = PushPlanner.byteSize(
+            PortalSyncPayload(
+                deviceId = "d",
+                platform = "p",
+                lastSync = 0L,
+                allProfiles = listOf(LocalProfileDto("profile-0", boundedProfileName(hugeName), 0)),
+            ),
+        )
+        withByteCap(oneProfile * 10) {
+            // 25 profiles push more than the 10/min client limit; drive the limiter on a
+            // controllable clock (the default reads the real clock while runTest skips delays).
+            var clock = 0L
+            val limiter = ClientRateLimiter(nowMs = { clock }, waitFor = { clock += it })
+            assertTrue(createManager(rateLimiter = limiter).sync().isSuccess, "oversized profile metadata must not fail the push")
+            fakeApi.pushPayloads.forEachIndexed { i, payload ->
+                assertTrue(PushPlanner.byteSize(payload) <= PushPlanner.maxBytes, "request $i is over the cap")
+                payload.allProfiles?.forEach { assertTrue(it.name.length <= MAX_PORTAL_PROFILE_NAME_CHARS) }
+                assertTrue(
+                    payload.allProfiles == null || payload.allProfiles!!.size == 25,
+                    "allProfiles is all-or-nothing (saw ${payload.allProfiles?.size})",
+                )
+            }
+            // Every profile still reaches the portal through its own push's profileId.
+            assertEquals(25, fakeApi.pushPayloads.mapNotNull { it.profileId }.toSet().size)
         }
     }
 }
