@@ -919,14 +919,19 @@ class SqlDelightSyncRepository(
             }
         }
 
-        // Strategy 2: Try exact match on name only
-        val nameMatch = queries.findExerciseByName(name).executeAsOneOrNull()
+        // Strategy 2: Try exact match on name only. A pre-rename catalogue name resolves via
+        // aliases to the renamed active row first (#857) so an archived row still carrying the old
+        // name cannot shadow it and fragment personal-record identity.
+        val nameMatch = queries.findExerciseByAlias(name).executeAsOneOrNull()
+            ?: queries.findExerciseByName(name).executeAsOneOrNull()
         if (nameMatch != null) {
             return@withContext nameMatch.id
         }
 
-        // Strategy 3: Case-insensitive fallback (handles "Bench Press" vs "bench press")
-        val caseInsensitiveMatch = queries.findExerciseByNameCaseInsensitive(name).executeAsOneOrNull()
+        // Strategy 3: Case-insensitive fallback (handles "Bench Press" vs "bench press"); also
+        // resolves a pre-rename catalogue name via aliases (#857).
+        val caseInsensitiveMatch = queries.findExerciseByAlias(name).executeAsOneOrNull()
+            ?: queries.findExerciseByNameCaseInsensitive(name).executeAsOneOrNull()
         return@withContext caseInsensitiveMatch?.id
     }
 

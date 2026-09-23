@@ -300,7 +300,11 @@ class SqlDelightExerciseRepository(
     }
 
     override suspend fun findByName(name: String): Exercise? = withContext(Dispatchers.IO) {
-        queries.findExerciseByName(name, ::mapToExercise).executeAsOneOrNull()
+        // #857: resolve a stored pre-rename catalogue name via the row's aliases first so routine
+        // self-heal targets the renamed active row rather than an archived row still carrying the
+        // old name (which would otherwise hit the auto-create branch and duplicate the exercise).
+        queries.findExerciseByAlias(name, ::mapToExercise).executeAsOneOrNull()
+            ?: queries.findExerciseByName(name, ::mapToExercise).executeAsOneOrNull()
     }
 
     override suspend fun findByIdOrName(id: String?, name: String): Exercise? {

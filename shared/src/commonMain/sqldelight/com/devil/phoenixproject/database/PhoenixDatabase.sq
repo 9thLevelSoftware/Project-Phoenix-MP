@@ -2362,6 +2362,12 @@ SELECT * FROM Exercise WHERE TRIM(name) = TRIM(:name) AND TRIM(muscleGroup) = TR
 findExerciseByNameCaseInsensitive:
 SELECT * FROM Exercise WHERE LOWER(TRIM(name)) = LOWER(TRIM(:name)) ORDER BY archived ASC LIMIT 1;
 
+-- #857: resolve a stored pre-rename catalogue name via the row's aliases so routine self-heal
+-- and sync pull target the renamed active row instead of auto-creating a duplicate custom
+-- exercise or matching an archived row that still carries the old name.
+findExerciseByAlias:
+SELECT * FROM Exercise WHERE LOWER(TRIM(aliases)) = LOWER(TRIM(?)) ORDER BY archived ASC LIMIT 1;
+
 -- ==================== BACKUP SYNC QUERIES ====================
 -- These queries select all data from tables for backup/restore functionality
 
