@@ -84,6 +84,7 @@ class PortalTokenStorage(private val settings: Settings) {
          */
         private const val KEY_DELTA_PULL_KEY = "portal_delta_pull_key"
         private const val KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX = "portal_phase_pr_backfill_checkpoint_"
+        private const val KEY_ROUTINE_GROUP_REPAIR_CURSOR_PREFIX = "portal_routine_group_repair_cursor_"
         private const val KEY_DEVICE_ID = "portal_device_id"
         private const val KEY_STORAGE_VERIFIED = "portal_storage_verified"
     }
@@ -316,6 +317,20 @@ class PortalTokenStorage(private val settings: Settings) {
         settings[phasePRBackfillCheckpointKey(profileId)] = timestamp
     }
 
+    /**
+     * Cursor for the one-time routine-group repair push: each sync re-sends a capped
+     * batch of complete routine workouts older than this timestamp, so the portal
+     * history the pre-fix per-set push truncated is rebuilt a batch at a time.
+     *
+     * `Long.MAX_VALUE` (the default) means "start at the newest workout"; `0` means the
+     * repair has walked the whole history and is done.
+     */
+    fun getRoutineGroupRepairCursor(profileId: String): Long = settings[routineGroupRepairCursorKey(profileId), Long.MAX_VALUE]
+
+    fun setRoutineGroupRepairCursor(profileId: String, cursor: Long) {
+        settings[routineGroupRepairCursorKey(profileId)] = cursor
+    }
+
     fun updatePremiumStatus(isPremium: Boolean) {
         settings[KEY_IS_PREMIUM] = isPremium
         _currentUser.value = _currentUser.value?.copy(isPremium = isPremium)
@@ -424,6 +439,11 @@ class PortalTokenStorage(private val settings: Settings) {
     private fun phasePRBackfillCheckpointKey(profileId: String): String {
         val normalizedProfileId = profileId.trim().ifBlank { "default" }
         return "$KEY_PHASE_PR_BACKFILL_CHECKPOINT_PREFIX$normalizedProfileId"
+    }
+
+    private fun routineGroupRepairCursorKey(profileId: String): String {
+        val normalizedProfileId = profileId.trim().ifBlank { "default" }
+        return "$KEY_ROUTINE_GROUP_REPAIR_CURSOR_PREFIX$normalizedProfileId"
     }
 }
 

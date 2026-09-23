@@ -33,12 +33,12 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 text = workflow(name)
                 self.assertRegex(
                     text,
-                    r"(?ms)^  build:.*?runs-on: macos-26.*?uses: actions/upload-artifact@[0-9a-f]{40} # v4",
+                    r"(?ms)^  build:.*?runs-on: macos-26.*?uses: actions/upload-artifact@[0-9a-f]{40} # v7",
                 )
                 self.assertRegex(
                     text,
                     r"(?ms)^  upload(?:-and-distribute)?:.*?needs: build.*?runs-on: macos-15"
-                    r".*?uses: actions/download-artifact@[0-9a-f]{40} # v4"
+                    r".*?uses: actions/download-artifact@[0-9a-f]{40} # v8"
                     r".*?xcode-select -s /Applications/Xcode_16\.4\.app/Contents/Developer"
                     r".*?xcrun altool",
                 )
@@ -46,7 +46,7 @@ class ReleaseWorkflowContracts(unittest.TestCase):
                 self.assertGreaterEqual(text.count("testflight-ipa-${{ github.run_id }}"), 2)
                 self.assertRegex(
                     text,
-                    r"(?ms)uses: actions/upload-artifact@[0-9a-f]{40} # v4.*?overwrite: true",
+                    r"(?ms)uses: actions/upload-artifact@[0-9a-f]{40} # v7.*?overwrite: true",
                 )
 
     def test_store_jobs_are_not_blocked_by_the_other_platform(self) -> None:

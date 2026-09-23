@@ -110,9 +110,11 @@ class PortalPushLimitsTest {
      * `personalRecords` (`personalRecordRow.ts buildPersonalRecordRowsForPush`).
      * A derived id-less row can never dedupe against the real one, which is keyed
      * on its id, so holding every PR to the final batch duplicated any PR whose
-     * session rode an earlier batch. Two invariants pin the fix:
-     *   1. no payload carries a PR-flagged set without dedicated PR rows, and
-     *   2. no PR is sent twice across the sequence.
+     * session rode an earlier batch. Every batch now carries the full dedicated
+     * list (the portal upserts dedicated rows on id, so a re-send is a no-op):
+     *   1. no payload carries a PR-flagged set without dedicated PR rows,
+     *   2. each batch carries the PRs of the sessions it contains, and
+     *   3. every PR is sent.
      */
     @Test
     fun everyBatchCarryingAPrSetAlsoCarriesItsDedicatedPersonalRecords() = runTest {
@@ -155,25 +157,21 @@ class PortalPushLimitsTest {
                         "personalRecords, so the portal would derive id-less duplicates",
                 )
             }
-            assertEquals(
-                prFlaggedSets,
-                payload.personalRecords.size,
-                "Batch ${index + 1} must carry exactly the PRs of the sessions it contains",
+            val carried = payload.personalRecords.mapNotNull { it.id }.toSet()
+            val ownPrIds = payload.sessions.map { "pr-uuid-${it.id}" }
+            assertTrue(
+                carried.containsAll(ownPrIds),
+                "Batch ${index + 1} must carry the PRs of the sessions it contains",
             )
         }
-        val sentPrIds = payloads.flatMap { it.personalRecords }.mapNotNull { it.id }
+        val sentPrIds = payloads.flatMap { it.personalRecords }.mapNotNull { it.id }.toSet()
         assertEquals(60, sentPrIds.size, "Every PR must be sent")
-        assertEquals(
-            sentPrIds.size,
-            sentPrIds.toSet().size,
-            "No PR may be sent twice across the batch sequence",
-        )
     }
 
     /**
      * A PR that matches no session in this push (a historical PR resolved through
-     * `findSessionIdsForPersonalRecords`) still has to be sent — it rides the
-     * final batch, as before.
+     * `findSessionIdsForPersonalRecords`) still has to be sent — it rides every
+     * batch, including the final one.
      */
     @Test
     fun aPersonalRecordMatchingNoPushedSessionRidesTheFinalBatch() = runTest {
@@ -201,11 +199,13 @@ class PortalPushLimitsTest {
         assertTrue(result.isSuccess)
         val payloads = fakeApi.pushPayloads
         assertEquals(2, payloads.size)
-        assertTrue(payloads.first().personalRecords.isEmpty())
-        assertEquals(
-            listOf("pr-uuid-historical"),
-            payloads.last().personalRecords.mapNotNull { it.id },
-        )
+        payloads.forEachIndexed { index, payload ->
+            assertEquals(
+                listOf("pr-uuid-historical"),
+                payload.personalRecords.mapNotNull { it.id },
+                "Batch ${index + 1} must carry the dedicated list, including the final batch",
+            )
+        }
     }
 
     // ==================== Batch-Size Constant Contract ====================
@@ -360,6 +360,28 @@ class PortalPushLimitsTest {
     fun nonSessionDataAttachedOnlyToLastBatch() = runTest {
         authenticate()
         fakeSyncRepo.workoutSessionsToReturn = buildSessions(120) // 3 batches
+        // One dedicated personal_records row matching sess-0/ex-0 so that session is
+        // also flagged isPr. The portal derives an id-less personal_records row from
+        // every set.isPr whenever a payload's `personalRecords` is empty (PORTAL
+        // ROW-DUPLICATION HAZARD) — so every batch must carry the dedicated rows,
+        // not just the last one.
+        fakeSyncRepo.fullPRsToReturn = listOf(
+            PersonalRecord(
+                id = 1,
+                exerciseId = "ex-0",
+                exerciseName = "Squat",
+                weightPerCableKg = 25f,
+                reps = 10,
+                oneRepMax = 25f,
+                timestamp = 1_740_000_000_000L,
+                workoutMode = "OldSchool",
+                volume = 250f,
+                phase = WorkoutPhase.COMBINED,
+                profileId = "default",
+                cableCount = 2,
+                uuid = "pr-uuid-0",
+            ),
+        )
 
         val capturedPayloads = mutableListOf<PortalSyncPayload>()
         val capturingApi = object : FakePortalApiClient() {
@@ -386,6 +408,23 @@ class PortalPushLimitsTest {
         mgr.sync()
 
         assertEquals(3, capturedPayloads.size)
+
+        // Every batch, not just the last: an empty `personalRecords` re-arms the
+        // portal's id-less derived personal_records rows for that batch's isPr sets.
+        for ((index, payload) in capturedPayloads.withIndex()) {
+            assertTrue(
+                payload.personalRecords.isNotEmpty(),
+                "Batch $index must carry personalRecords (empty arms the portal " +
+                    "row-duplication hazard for this batch's isPr sets)",
+            )
+        }
+        assertTrue(
+            capturedPayloads.first().sessions
+                .flatMap { it.exercises }
+                .flatMap { it.sets }
+                .any { it.isPr },
+            "Precondition: the seeded PR must flag its set isPr (that is the hazard source)",
+        )
 
         // Batches 0 and 1 (non-final) must have empty non-session collections.
         for ((index, payload) in capturedPayloads.withIndex().take(2)) {
@@ -992,6 +1031,27 @@ class PortalPushLimitsTest {
         assertTrue(
             payload.telemetry.isEmpty(),
             "Tier comparison is case-sensitive — server stores uppercase, any drift fails closed",
+        )
+    }
+
+    @Test
+    fun repSummariesStillShipWhenTelemetryIsGatedOff() = runTest {
+        // The gate must skip only the 50 Hz force curves. Rep summaries are part of
+        // every tier's history and analytics, which is why the push still loads rep
+        // metrics for an Ember/Flame user even though it builds no telemetry from them.
+        authenticate()
+        seedSessionWithTelemetry()
+        fakeApi.pushResult = Result.success(
+            PortalSyncPushResponse(syncTime = "2026-04-21T12:00:00Z"),
+        )
+
+        createManager().sync()
+
+        val payload = assertNotNull(fakeApi.lastPushPayload)
+        assertTrue(payload.telemetry.isEmpty(), "Precondition: this user's tier cannot sync telemetry")
+        assertTrue(
+            payload.sessions.flatMap { it.exercises }.flatMap { it.sets }.any { it.repSummaries.isNotEmpty() },
+            "Rep summaries must reach the portal on every tier",
         )
     }
 

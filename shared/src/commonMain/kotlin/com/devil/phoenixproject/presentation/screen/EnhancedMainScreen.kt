@@ -45,6 +45,9 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -115,6 +118,9 @@ import org.jetbrains.compose.resources.stringResource
 import org.koin.compose.koinInject
 import org.koin.compose.viewmodel.koinViewModel
 import projectphoenix.shared.generated.resources.Res
+import projectphoenix.shared.generated.resources.workout_save_retry_failed
+import projectphoenix.shared.generated.resources.workout_save_failed
+import projectphoenix.shared.generated.resources.action_retry
 import projectphoenix.shared.generated.resources.cd_analytics
 import projectphoenix.shared.generated.resources.cd_back
 import projectphoenix.shared.generated.resources.cd_home
@@ -211,6 +217,41 @@ fun EnhancedMainScreen(
                 duration = SnackbarDuration.Long,
             )
             syncManager.clearServerDeletionNotice(notice)
+        }
+    }
+
+    // F-040: a failed set commit offers Retry. Collected HERE, at the app-level
+    // scaffold, because both explicit exits save asynchronously after navigating
+    // away from ActiveWorkoutScreen — a collector there would be disposed before
+    // the failure is raised. This is the only collector, so the offer is shown once;
+    // retry/dismiss drain it with compareAndSet, leaving another session's offer intact.
+    val saveFailureSessionId by viewModel.workoutSaveFailureSessionId.collectAsState()
+    val saveFailedMessage = stringResource(Res.string.workout_save_failed)
+    val saveRetryLabel = stringResource(Res.string.action_retry)
+    val saveRetryUnavailable = stringResource(Res.string.workout_save_retry_failed)
+    val saveFailureScope = rememberCoroutineScope()
+    LaunchedEffect(saveFailureSessionId) {
+        val failedSessionId = saveFailureSessionId ?: return@LaunchedEffect
+        // Indefinite: losing a set is not a message to miss.
+        val action = serverDeletionNoticeSnackbarHostState.showSnackbar(
+            message = saveFailedMessage,
+            actionLabel = saveRetryLabel,
+            withDismissAction = true,
+            duration = SnackbarDuration.Indefinite,
+        )
+        if (action == SnackbarResult.ActionPerformed) {
+            // retryWorkoutSave drains the flow, which cancels this effect, so the
+            // follow-up message runs on a scope that outlives it.
+            if (!viewModel.retryWorkoutSave(failedSessionId)) {
+                saveFailureScope.launch {
+                    serverDeletionNoticeSnackbarHostState.showSnackbar(
+                        message = saveRetryUnavailable,
+                        duration = SnackbarDuration.Short,
+                    )
+                }
+            }
+        } else {
+            viewModel.dismissWorkoutSaveFailure(failedSessionId)
         }
     }
 

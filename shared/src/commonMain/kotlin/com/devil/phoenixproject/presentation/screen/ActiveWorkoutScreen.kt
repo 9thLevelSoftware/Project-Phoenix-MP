@@ -16,7 +16,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -64,7 +63,6 @@ import projectphoenix.shared.generated.resources.Res
 import projectphoenix.shared.generated.resources.action_cancel
 import projectphoenix.shared.generated.resources.action_continue_set
 import projectphoenix.shared.generated.resources.action_exit
-import projectphoenix.shared.generated.resources.action_retry
 import projectphoenix.shared.generated.resources.end_workout
 import projectphoenix.shared.generated.resources.exit_workout_message
 import projectphoenix.shared.generated.resources.exit_workout_title
@@ -81,8 +79,6 @@ import projectphoenix.shared.generated.resources.voice_stop_reason_recognizer_un
 import projectphoenix.shared.generated.resources.voice_stop_reason_start_failed
 import projectphoenix.shared.generated.resources.voice_stop_unavailable_chip
 import projectphoenix.shared.generated.resources.voice_stop_unavailable_snackbar
-import projectphoenix.shared.generated.resources.workout_save_failed
-import projectphoenix.shared.generated.resources.workout_save_retry_failed
 
 /**
  * Active Workout screen - displays workout controls and metrics during an active workout.
@@ -217,40 +213,8 @@ fun ActiveWorkoutScreen(navController: NavController, viewModel: MainViewModel, 
         }
     }
 
-    // F-040: a failed save now offers the retry its message always promised.
-    // The failure is a drainable StateFlow, not an event, because it can be
-    // raised while this screen is not composed; draining it here keeps the
-    // offer to exactly one.
-    val saveFailureSessionId by viewModel.workoutSaveFailureSessionId.collectAsState()
-    val saveFailedMessage = stringResource(Res.string.workout_save_failed)
-    val saveRetryLabel = stringResource(Res.string.action_retry)
-    val saveRetryUnavailable = stringResource(Res.string.workout_save_retry_failed)
-    LaunchedEffect(saveFailureSessionId) {
-        val failedSessionId = saveFailureSessionId ?: return@LaunchedEffect
-        // Indefinite: losing a set is not a message to miss. It stays until the
-        // user retries or dismisses it, and either answer drains the offer.
-        val action = snackbarHostState.showSnackbar(
-            message = saveFailedMessage,
-            actionLabel = saveRetryLabel,
-            withDismissAction = true,
-            duration = SnackbarDuration.Indefinite,
-        )
-        if (action == SnackbarResult.ActionPerformed) {
-            // retryWorkoutSave drains the flow, which changes this effect's key and
-            // cancels it on the next recomposition — so the follow-up message has to
-            // outlive the effect, as the userFeedbackEvents snackbar above does.
-            if (!viewModel.retryWorkoutSave(failedSessionId)) {
-                snackbarScope.launch {
-                    snackbarHostState.showSnackbar(
-                        message = saveRetryUnavailable,
-                        duration = SnackbarDuration.Short,
-                    )
-                }
-            }
-        } else {
-            viewModel.dismissWorkoutSaveFailure(failedSessionId)
-        }
-    }
+    // F-040: the save-failure Retry offer is collected by EnhancedMainScreen, the
+    // app-level scaffold, because the save runs after this route has navigated away.
 
     // Issue #348: Wake lock moved to EnhancedMainScreen (session-scoped) so it
     // stays active across SetReady ↔ ActiveWorkout navigation during routines.

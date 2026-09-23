@@ -130,6 +130,64 @@ interface SyncRepository {
     ) = Unit
 
     /**
+     * Every live WorkoutSession row belonging to the given routine groups, whether or
+     * not it is in the push delta.
+     *
+     * The portal replaces a workout's children wholesale on every accepted push, so a
+     * routine workout may only be sent complete. Whenever one row of a group changes,
+     * the push re-gathers the whole group through this call.
+     */
+    suspend fun getWorkoutSessionsByRoutineSessionIds(
+        routineSessionIds: Collection<String>,
+        profileId: String = "default",
+    ): List<WorkoutSession> = emptyList()
+
+    /**
+     * Routine groups that must NOT be pushed, mapped to the sibling ids that block
+     * them: rows this device only ever pulled and holds no MetricSample / RepMetric /
+     * CompletedSet for. Pushing the group would delete that sibling's portal exercise
+     * and sets, or overwrite them with an empty exercise.
+     */
+    suspend fun getBlockedRoutineGroupSiblings(
+        routineSessionIds: Collection<String>,
+        profileId: String = "default",
+    ): Map<String, List<String>> = emptyMap()
+
+    /**
+     * Repair-path companion to [getBlockedRoutineGroupSiblings]: groups holding ANY
+     * childless row (no MetricSample / RepMetric / CompletedSet), whether or not it
+     * was pulled. The repair re-sends history the portal already holds, so a childless
+     * row would be rebuilt as an empty exercise and destroy the portal's copy of that
+     * set's rep summaries. Never apply this to the ordinary delta push — a manual or
+     * 0-rep set has no children and must still upload.
+     */
+    suspend fun getRoutineGroupsWithChildlessRows(
+        routineSessionIds: Collection<String>,
+        profileId: String = "default",
+    ): Set<String> = emptySet()
+
+    /**
+     * Routine groups whose portal copy the pre-fix per-set push truncated: at least two
+     * live rows and at least one already-stamped row. Newest first, walked backwards
+     * with [beforeTimestamp] (the previous batch's oldest group timestamp).
+     *
+     * @return routineSessionId → newest member timestamp, newest first.
+     */
+    suspend fun getRoutineGroupRepairCandidates(
+        beforeTimestamp: Long,
+        limit: Int,
+        profileId: String = "default",
+    ): List<Pair<String, Long>> = emptyList()
+
+    /**
+     * Locally stored portal session notes for the given portal session ids
+     * (`routineSessionId ?: id`), so an accepted push re-sends the note the portal
+     * already holds instead of nulling it (the portal writes `notes = EXCLUDED.notes`
+     * on every accepted session upsert).
+     */
+    suspend fun getSessionNotesForIds(portalSessionIds: Collection<String>): Map<String, String?> = emptyMap()
+
+    /**
      * Get full Routine domain objects modified since timestamp, scoped to profile.
      * Returns rich objects with exercises, supersets, etc. needed by PortalSyncAdapter.toPortalRoutine().
      */
@@ -261,6 +319,26 @@ interface SyncRepository {
      * Sessions with NULL updatedAt would otherwise match every delta query indefinitely.
      */
     suspend fun updateSessionTimestamp(sessionId: String, timestamp: Long)
+
+    /**
+     * Stamp exactly the session rows the portal accepted, in one transaction.
+     *
+     * A row edited or inserted after [gatherStartedAt] (device time captured just
+     * before the push gathered its payload) keeps its newer `updatedAt` and is left
+     * for the next sync: the portal never saw that edit.
+     *
+     * [clearIds] are rows the portal still rejected and that must re-enter the next
+     * sync's ordinary delta (`updatedAt IS NULL OR updatedAt > lastSync`). Cleared in
+     * the same transaction so a crash cannot leave a repair-group row half re-armed.
+     *
+     * @return the number of rows actually stamped.
+     */
+    suspend fun updateSessionTimestamps(
+        sessionIds: Collection<String>,
+        timestamp: Long,
+        gatherStartedAt: Long,
+        clearIds: Collection<String> = emptyList(),
+    ): Int = 0
 
     /**
      * Stamp pushed personal records with the same timestamp used for
