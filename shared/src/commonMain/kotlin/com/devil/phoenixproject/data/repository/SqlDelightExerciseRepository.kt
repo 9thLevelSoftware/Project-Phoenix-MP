@@ -315,11 +315,17 @@ class SqlDelightExerciseRepository(
                 if (byId != null) return@withContext byId
             }
 
-            // Strategy 2: Exact name match (uses TRIM for trailing space tolerance)
+            // Strategy 2: Pre-rename alias resolution (#857) — a stale id plus the old catalogue
+            // name resolves to the renamed active row here, before the exact-name strategy below
+            // can return an archived row that still carries that name.
+            val byAlias = queries.findExerciseByAlias(name, ::mapToExercise).executeAsOneOrNull()
+            if (byAlias != null) return@withContext byAlias
+
+            // Strategy 3: Exact name match (uses TRIM for trailing space tolerance)
             val byName = queries.findExerciseByName(name, ::mapToExercise).executeAsOneOrNull()
             if (byName != null) return@withContext byName
 
-            // Strategy 3: Fuzzy search - take first result
+            // Strategy 4: Fuzzy search - take first result
             val searchResults = queries.searchExercises(name, ::mapToExercise).executeAsList()
             searchResults.firstOrNull()
         }

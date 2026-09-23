@@ -895,9 +895,12 @@ class SqlDelightSyncRepository(
      *
      * Lookup strategy (in order):
      * 0. Direct ID lookup (unambiguous, O(1)) — added for #404
-     * 1. Exact match on name + muscle group (if muscle group provided)
-     * 2. Exact match on name only (via findExerciseByName)
-     * 3. Case-insensitive match on name (fallback for portal name variations)
+     * 1. Pre-rename alias match (#857) — a stored legacy name resolves to the renamed active row
+     *    before any name strategy, so an archived row still carrying the pre-rename name cannot
+     *    shadow it and fragment personal-record identity
+     * 2. Exact match on name + muscle group (if muscle group provided)
+     * 3. Exact match on name only (via findExerciseByName)
+     * 4. Case-insensitive match on name (fallback for portal name variations)
      *
      * @param name Exercise name from portal
      * @param muscleGroup Optional muscle group for disambiguation
@@ -911,7 +914,17 @@ class SqlDelightSyncRepository(
             if (match != null) return@withContext match.id
         }
 
-        // Strategy 1: Try exact match with muscle group (most specific)
+        // Strategy 1: Pre-rename alias resolution (#857). Resolved exactly once, ahead of the
+        // muscle-specific and exact-name strategies below, so an archived row still carrying the
+        // pre-rename name cannot shadow the renamed active row and fragment personal-record
+        // identity. The query is already case-insensitive (LOWER(TRIM(...))) and prefers
+        // non-archived rows, which is why the case-insensitive fallback does not repeat it.
+        val aliasMatch = queries.findExerciseByAlias(name).executeAsOneOrNull()
+        if (aliasMatch != null) {
+            return@withContext aliasMatch.id
+        }
+
+        // Strategy 2: Try exact match with muscle group (most specific)
         if (muscleGroup != null) {
             val exactMatch = queries.findExerciseByNameAndMuscle(name, muscleGroup).executeAsOneOrNull()
             if (exactMatch != null) {
@@ -919,27 +932,22 @@ class SqlDelightSyncRepository(
             }
         }
 
-        // Strategy 2: Try exact match on name only. A pre-rename catalogue name resolves via
-        // aliases to the renamed active row first (#857) so an archived row still carrying the old
-        // name cannot shadow it and fragment personal-record identity.
-        val nameMatch = queries.findExerciseByAlias(name).executeAsOneOrNull()
-            ?: queries.findExerciseByName(name).executeAsOneOrNull()
+        // Strategy 3: Try exact match on name only (via findExerciseByName)
+        val nameMatch = queries.findExerciseByName(name).executeAsOneOrNull()
         if (nameMatch != null) {
             return@withContext nameMatch.id
         }
 
-        // Strategy 3: Case-insensitive fallback (handles "Bench Press" vs "bench press"); also
-        // resolves a pre-rename catalogue name via aliases (#857).
-        val caseInsensitiveMatch = queries.findExerciseByAlias(name).executeAsOneOrNull()
-            ?: queries.findExerciseByNameCaseInsensitive(name).executeAsOneOrNull()
+        // Strategy 4: Case-insensitive fallback (handles "Bench Press" vs "bench press")
+        val caseInsensitiveMatch = queries.findExerciseByNameCaseInsensitive(name).executeAsOneOrNull()
         return@withContext caseInsensitiveMatch?.id
     }
 
     /**
      * Resolves the catalog muscle group for a performed exercise during push.
-     * Mirrors [findExerciseId]'s lookup order (ID → exact name → case-insensitive
-     * name) but returns the muscle group rather than the ID. Returns null when the
-     * exercise is not in the catalog so the caller can default to "General".
+     * Mirrors [findExerciseId]'s lookup order (ID → pre-rename alias → exact name →
+     * case-insensitive name) but returns the muscle group rather than the ID. Returns null
+     * when the exercise is not in the catalog so the caller can default to "General".
      */
     override suspend fun getExerciseMuscleGroup(exerciseId: String?, name: String?): String? = withContext(Dispatchers.IO) {
         // Strategy 0: Direct ID lookup - O(1), unambiguous. When the catalog row
@@ -952,9 +960,12 @@ class SqlDelightSyncRepository(
         }
 
         if (!name.isNullOrBlank()) {
-            // Strategy 1: Exact name match
+            // Strategy 1: Pre-rename alias match (#857) — a dirty legacy name keeps its catalogue
+            // muscle group after the rename instead of degrading to "General" on push.
+            queries.findExerciseByAlias(name).executeAsOneOrNull()?.muscleGroup?.let { return@withContext it }
+            // Strategy 2: Exact name match
             queries.findExerciseByName(name).executeAsOneOrNull()?.muscleGroup?.let { return@withContext it }
-            // Strategy 2: Case-insensitive name match
+            // Strategy 3: Case-insensitive name match
             queries.findExerciseByNameCaseInsensitive(name).executeAsOneOrNull()?.muscleGroup?.let { return@withContext it }
         }
 

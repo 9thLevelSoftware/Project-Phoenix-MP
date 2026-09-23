@@ -901,6 +901,27 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
+    fun `findByIdOrName resolves the pre-rename name to the renamed row before an archived name match`() = runTest {
+        importer.importFromFreeExerciseJson(
+            """
+            [
+              { "id": "One_Leg_Barbell_Squat", "name": "One Leg Barbell Squat", "equipment": "barbell", "primaryMuscles": ["quadriceps"], "secondaryMuscles": [], "instructions": [], "category": "strength", "images": [] }
+            ]
+            """.trimIndent(),
+        )
+        insertExercise(id = "arch-ols", name = "One Leg Barbell Squat", muscleGroup = "Legs", equipment = "BAR", archived = 1L)
+
+        // The archived row that still carries the pre-rename name must not win the exact-name
+        // strategy over the renamed active row's alias, or template resolution forks exercise
+        // identity (#857).
+        assertEquals("One_Leg_Barbell_Squat", repository.findByIdOrName(null, "One Leg Barbell Squat")?.id)
+        // A stale id plus the stored pre-rename name resolves the same way.
+        assertEquals("One_Leg_Barbell_Squat", repository.findByIdOrName("gone-id", "One Leg Barbell Squat")?.id)
+        // A usable id stays authoritative over any name or alias match.
+        assertEquals("arch-ols", repository.findByIdOrName("arch-ols", "One Leg Barbell Squat")?.id)
+    }
+
+    @Test
     fun `archived rows named bulgarian split squat and one leg barbell squat both remap onto the renamed row`() = runTest {
         importer.importFromFreeExerciseJson(
             """
@@ -924,22 +945,58 @@ class SqlDelightExerciseRepositoryTest {
     }
 
     @Test
-    fun `bundled catalog source token is bumped so old installs reimport exactly once`() = runTest {
-        // Acceptance 5: #857 bumped the token so installs holding the pre-#857 value open the import
-        // gate exactly once and then store the new token. SqlDelightExerciseRepository.importExercises()
-        // runs the importer only when the stored source differs from BUNDLED_CATALOG_SOURCE, then
-        // stores BUNDLED_CATALOG_SOURCE (a second call sees the new token and needs no further bump).
-        val bumped = ExerciseImporter.BUNDLED_CATALOG_SOURCE
-        assertEquals("free-exercise-db@unlicense-1+issue-857", bumped)
-        assertTrue(bumped != "free-exercise-db@unlicense-1")
+    fun `bundled catalog source token is bumped for #857`() = runTest {
+        // Acceptance 5's regression lock: this bump is what makes an install holding the
+        // pre-#857 value run the importer exactly once on its next launch.
+        assertEquals("free-exercise-db@unlicense-1+issue-857", ExerciseImporter.BUNDLED_CATALOG_SOURCE)
+    }
 
-        // A stored pre-#857 token differs from the bumped token, so the gate opens for one run ...
+    @Test
+    fun `import gate skips the importer once the #857 catalog source token is stored`() = runTest {
+        // Acceptance 5, exercised against the real gate in SqlDelightExerciseRepository.importExercises()
+        // rather than a preferences round-trip: with the stored token equal to BUNDLED_CATALOG_SOURCE
+        // the importer is skipped entirely, so the catalogue survives untouched and no further token
+        // bump or re-import is ever needed. (The gate's open side runs ExerciseImporter.importExercises(),
+        // whose bundled-JSON resource read cannot execute in android host tests, and the importer's
+        // re-import behaviour is covered by `reimport keeps overlay name and aliases and preserves
+        // user fields`.)
+        importer.importFromFreeExerciseJson(
+            """
+            [
+              { "id": "One_Leg_Barbell_Squat", "name": "One Leg Barbell Squat", "equipment": "barbell", "primaryMuscles": ["quadriceps"], "secondaryMuscles": [], "instructions": [], "category": "strength", "images": [] }
+            ]
+            """.trimIndent(),
+        )
+        // Locally edit the row a re-import would rewrite, so an unexpected importer run is visible.
+        database.phoenixDatabaseQueries.updateCatalogExercise(
+            name = "Locally Edited Name",
+            displayName = "Locally Edited Name",
+            description = null,
+            muscleGroup = "Legs",
+            muscleGroups = "Legs",
+            muscles = null,
+            equipment = "BARBELL",
+            movement = "strength",
+            sidedness = null,
+            grip = null,
+            gripWidth = null,
+            minRepRange = null,
+            aliases = "One Leg Barbell Squat",
+            defaultCableConfig = "EITHER",
+            isBodyweight = 0L,
+            id = "One_Leg_Barbell_Squat",
+        )
+
         val prefs = com.devil.phoenixproject.testutil.FakePreferencesManager()
-        prefs.setExerciseCatalogSource("free-exercise-db@unlicense-1")
-        assertTrue(prefs.getExerciseCatalogSource() != ExerciseImporter.BUNDLED_CATALOG_SOURCE)
-        // ... and once the run stores the new token, a later call sees it and needs no re-import.
-        prefs.setExerciseCatalogSource(bumped)
+        prefs.setExerciseCatalogSource(ExerciseImporter.BUNDLED_CATALOG_SOURCE)
+        val gated = SqlDelightExerciseRepository(database, ExerciseImporter(database), prefs)
+
+        assertTrue(gated.importExercises().isSuccess)
         assertEquals(ExerciseImporter.BUNDLED_CATALOG_SOURCE, prefs.getExerciseCatalogSource())
+        assertEquals(
+            "Locally Edited Name",
+            database.phoenixDatabaseQueries.selectExerciseById("One_Leg_Barbell_Squat").executeAsOne().name,
+        )
     }
 
     private fun insertPr(

@@ -1144,6 +1144,59 @@ class SqlDelightSyncRepositoryTest {
     }
 
     @Test
+    fun `findExerciseId and getExerciseMuscleGroup resolve a pre-rename name before an archived name match`() = runTest {
+        // The renamed active catalogue row as the #857 importer overlay writes it, plus an
+        // archived legacy row that still carries the pre-rename name under a stale muscle group.
+        listOf(
+            "One_Leg_Barbell_Squat" to ("Bulgarian Split Squat" to "Legs"),
+            "arch-ols" to ("One Leg Barbell Squat" to "General"),
+        ).forEach { (id, nameAndGroup) ->
+            val (rowName, group) = nameAndGroup
+            database.phoenixDatabaseQueries.insertExercise(
+                id,
+                rowName,
+                rowName,
+                null,
+                0L,
+                group,
+                group,
+                null,
+                "BARBELL",
+                null,
+                null,
+                null,
+                null,
+                null,
+                0.0,
+                if (id == "arch-ols") 1L else 0L,
+                0L,
+                0L,
+                0L,
+                null,
+                if (id == "arch-ols") null else "One Leg Barbell Squat",
+                "DOUBLE",
+                null,
+                null,
+                isBodyweight = null,
+            )
+        }
+
+        // The archived exact-name row must not win the muscle-specific match over the renamed
+        // active row's alias, or pulled sessions link to the obsolete identity (#857).
+        assertEquals("One_Leg_Barbell_Squat", repository.findExerciseId("One Leg Barbell Squat", "General", null))
+        assertEquals("One_Leg_Barbell_Squat", repository.findExerciseId("One Leg Barbell Squat", null, null))
+        // Case-insensitive portal name variation resolves through the alias too.
+        assertEquals("One_Leg_Barbell_Squat", repository.findExerciseId("one leg barbell squat", null, null))
+        // Push-side lookup keeps the renamed row's muscle group instead of the archived row's
+        // stale one, so a dirty legacy session does not upload muscle group "General".
+        assertEquals("Legs", repository.getExerciseMuscleGroup(null, "One Leg Barbell Squat"))
+        assertEquals("Legs", repository.getExerciseMuscleGroup(null, "Bulgarian Split Squat"))
+        // A usable id stays authoritative over any name or alias match.
+        assertEquals("arch-ols", repository.findExerciseId("One Leg Barbell Squat", "General", "arch-ols"))
+        assertNull(repository.findExerciseId("Totally Unknown", null, null))
+    }
+
+    @Test
     fun `backfillPhaseSpecificPRs creates phase records and preserves better existing phase PRs`() = runTest {
         insertHistoricalSession(
             id = "historical-bicep-curl",
