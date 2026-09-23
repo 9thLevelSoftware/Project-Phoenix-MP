@@ -744,7 +744,7 @@ class MainViewModel(
 
     /** Drop the save-failure offer for [sessionId] without retrying. */
     fun dismissWorkoutSaveFailure(sessionId: String) {
-        workoutSessionManager.coordinator._workoutSaveFailureSessionId.compareAndSet(sessionId, null)
+        workoutSessionManager.coordinator.withdrawWorkoutSaveFailure(sessionId)
     }
 
     val routines: StateFlow<List<Routine>> get() = workoutSessionManager.coordinator.routines

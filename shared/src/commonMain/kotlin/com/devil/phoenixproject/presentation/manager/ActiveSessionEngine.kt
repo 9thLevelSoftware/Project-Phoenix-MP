@@ -9414,7 +9414,7 @@ class ActiveSessionEngine(
                 // failure raised earlier is usually resolved with no UI involved. Withdraw
                 // the offer here or the screen shows "couldn't be saved" for a set that is.
                 // compareAndSet: a DIFFERENT session's pending failure must survive.
-                coordinator._workoutSaveFailureSessionId.compareAndSet(sessionId, null)
+                coordinator.withdrawWorkoutSaveFailure(sessionId)
             }
             persistenceSucceeded = true
         } catch (error: CancellationException) {
@@ -9427,7 +9427,7 @@ class ActiveSessionEngine(
             // compareAndSet, like the success path: an earlier session's still-pending
             // offer must not be overwritten. This session stays retained, so the next
             // set start auto-retries it even while the screen names the earlier one.
-            coordinator._workoutSaveFailureSessionId.compareAndSet(null, sessionId)
+            coordinator.offerWorkoutSaveFailure(sessionId)
         }
         if (!persistenceSucceeded) return
         try {
