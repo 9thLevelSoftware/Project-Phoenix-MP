@@ -1821,6 +1821,12 @@ class SqlDelightSyncRepository(
      * because the data is identical. Different PRs from different sessions both get inserted
      * (different compound keys).
      */
+    override suspend fun restampPersonalRecordTombstones(profileId: String, at: Long) {
+        withContext(Dispatchers.IO) {
+            queries.restampPersonalRecordTombstones(at = at, profileId = profileId)
+        }
+    }
+
     override suspend fun mergePersonalRecords(records: List<PersonalRecordSyncDto>, profileId: String) {
         withContext(Dispatchers.IO) {
             db.transaction {

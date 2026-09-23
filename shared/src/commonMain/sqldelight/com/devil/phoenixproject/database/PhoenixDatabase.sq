@@ -3782,6 +3782,14 @@ UPDATE PersonalRecord SET serverId = ? WHERE id = ?;
 -- selects `updatedAt > watermark`, so a stamp of `now` would re-select the row forever.
 -- Guarded like updateSessionTimestampsByIds: a row edited after the gather keeps its
 -- newer updatedAt and is re-sent.
+-- PR 20: before each final push of a pending-deletion profile, move its PR tombstones'
+-- clock past anything stored (a newer web edit, or the same tombstone already written on an
+-- earlier attempt, which the portal's equal-time rule would otherwise skip and not count).
+restampPersonalRecordTombstones:
+UPDATE PersonalRecord
+SET updatedAt = CASE WHEN updatedAt IS NULL OR updatedAt < :at THEN :at ELSE updatedAt + 1 END
+WHERE profile_id = :profileId AND deletedAt IS NOT NULL;
+
 updatePRTimestamp:
 UPDATE PersonalRecord SET updatedAt = :timestamp
 WHERE id IN :ids
@@ -4707,6 +4715,11 @@ SELECT * FROM SessionNotes WHERE routineSessionId = ?;
 
 selectSessionNotesForIds:
 SELECT * FROM SessionNotes WHERE routineSessionId IN :ids;
+
+-- PR 20: SessionNotes has no FK to WorkoutSession, so a permanently deleted workout's
+-- note has to be removed explicitly.
+deleteSessionNotes:
+DELETE FROM SessionNotes WHERE routineSessionId = :portalSessionId;
 
 -- Full-table scan for backup export (small table; one row per routine session with notes).
 selectAllSessionNotesSync:

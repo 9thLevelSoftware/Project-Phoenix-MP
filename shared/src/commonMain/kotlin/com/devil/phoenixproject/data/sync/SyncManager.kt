@@ -1125,6 +1125,9 @@ class SyncManager(
         pendingDeletion: Boolean,
     ): ProfileSyncOutcome {
         // Push local changes (no status check -- Railway backend abandoned)
+        if (pendingDeletion) {
+            syncRepository.restampPersonalRecordTombstones(profile.id, currentTimeMillis())
+        }
         val pushResult = pushLocalChanges(
             userId = userId,
             profile = profile,
@@ -1183,6 +1186,19 @@ class SyncManager(
                 ?.getPendingCycleDeletions(userId, profile.id)
                 .orEmpty()
                 .filter { CANONICAL_UUID_REGEX.matches(it.id) }
+            // The portal returns no per-PR ack, only `personalRecordsInserted`: dedicated rows
+            // that passed its LWW gate. Every PR row a pending profile sends is a tombstone
+            // (re-stamped just before this push, so each should pass); fewer written than sent
+            // means the portal kept a live copy, and finalizing would re-scope it to Default.
+            val prTombstonesDropped = pushOutcome.personalRecordTombstoneIdsSent.size >
+                pushOutcome.personalRecordsWritten
+            if (prTombstonesDropped) {
+                Logger.w("SyncManager") {
+                    "Pending-deletion profile ${profile.id}: portal wrote ${pushOutcome.personalRecordsWritten} of " +
+                        "${pushOutcome.personalRecordTombstoneIdsSent.size} PR tombstone(s); kept pending for the next sync"
+                }
+                return ProfileSyncOutcome(profileId = profile.id, pushSucceeded = true, pullSucceeded = true)
+            }
             if (outstandingCycleDeletions.isNotEmpty()) {
                 val restampAt = currentTimeMillis()
                 outstandingCycleDeletions.forEach { deletion ->
@@ -1569,6 +1585,10 @@ class SyncManager(
         /** Rejections from EVERY batch, not just the last response. */
         val rejections: SyncRejectionsDto,
         val rePushContext: RePushContext,
+        /** Ids of dedicated PR tombstones this push carried, across every request (PR 20). */
+        val personalRecordTombstoneIdsSent: Set<String> = emptySet(),
+        /** Sum of the portal's `personalRecordsInserted` across every request. */
+        val personalRecordsWritten: Int = 0,
     )
 
     /** The payload envelope fields a post-rejection re-push has to repeat. */
@@ -2443,6 +2463,8 @@ class SyncManager(
         // Rejections from EVERY request. Reading only the last response's list would
         // silently stamp rows an earlier batch's rejection covered.
         val collectedRejections = mutableListOf<SyncRejectionsDto>()
+        val personalRecordTombstoneIdsSent = linkedSetOf<String>()
+        var personalRecordsWritten = 0
         val skippedDeletedRoutines = linkedSetOf<String>()
         val skippedDeletedCycles = linkedSetOf<String>()
         requests.forEachIndexed { index, payload ->
@@ -2498,6 +2520,9 @@ class SyncManager(
             val response = result.getOrThrow()
             lastResponse = response
             collectedRejections += response.rejections
+            payload.personalRecords.filter { it.deletedAt != null }
+                .mapNotNullTo(personalRecordTombstoneIdsSent) { it.id }
+            personalRecordsWritten += response.personalRecordsInserted
             skippedDeletedRoutines += response.skippedDeleted.routines
             skippedDeletedCycles += response.skippedDeleted.cycles
             acknowledgedPortalSessionIds += acknowledgeAcceptedWorkoutParents(
@@ -2671,6 +2696,8 @@ class SyncManager(
                 acknowledgedPortalSessionIds = acknowledgedPortalSessionIds,
                 workoutSnapshot = workoutSnapshot,
                 rejections = mergeRejections(collectedRejections),
+                personalRecordTombstoneIdsSent = personalRecordTombstoneIdsSent,
+                personalRecordsWritten = personalRecordsWritten,
                 rePushContext = RePushContext(
                     deviceId = deviceId,
                     platform = platform,

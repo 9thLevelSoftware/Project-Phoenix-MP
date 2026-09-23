@@ -365,6 +365,8 @@ class SqlDelightUserProfileRepository(
                 queries.selectDistinctLiveWorkoutPortalParentsForProfile(id)
                     .executeAsList()
                     .forEach { portalSessionId ->
+                        // Session notes are keyed by the portal workout id, with no FK.
+                        queries.deleteSessionNotes(portalSessionId)
                         queries.insertWorkoutDeletion(
                             mutationId = generateUUID(),
                             ownerUserId = ownerUserId,

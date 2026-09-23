@@ -34,6 +34,9 @@ import org.junit.Test
  */
 private val PROFILE_OWNER_COLUMNS = setOf("profile_id", "profileId", "original_profile_id")
 
+/** Columns that key a row to a workout: a mobile session id or the portal workout id. */
+private val SESSION_KEY_COLUMNS = setOf("sessionId", "session_id", "routineSessionId", "assessmentSessionId")
+
 /**
  * Tables that legitimately keep rows under a permanently deleted profile: the pending
  * tombstones (WorkoutDeletion, CycleSyncState), the local-cleanup queue, and the ownership /
@@ -414,9 +417,26 @@ class ProfileDeletionPropagationTest {
             "fixture must cover the tables the review named (seeded=$seeded)",
         )
 
+        // Children keyed by the workout rather than the profile (codex #861 round 4): every
+        // table with a session / portal-workout column, FK or not, gets a row for P's workout.
+        database.phoenixDatabaseQueries.upsertSessionNotes(sessionP, "note from the web", baseTime)
+        val sessionKeyed = sessionKeyedColumns().filterKeys { it != "WorkoutSession" }
+        val seededBySession = sessionKeyed.filter { (table, column) ->
+            table == "SessionNotes" || seedRow(table, p, mapOf(column to sessionP))
+        }.keys
+        assertTrue(
+            seededBySession.containsAll(listOf("SessionNotes", "RepMetric", "CompletedSet")),
+            "fixture must cover session-keyed children (seeded=$seededBySession)",
+        )
+
         assertTrue(profiles.deleteActiveProfilePermanently(p))
         assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
         assertNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull())
+
+        val sessionSurvivors = sessionKeyed
+            .mapValues { (table, column) -> rowCount(table, column, sessionP) }
+            .filterValues { it > 0L }
+        assertTrue(sessionSurvivors.isEmpty(), "rows of the deleted workout survived: $sessionSurvivors")
 
         val survivors = profileOwnedColumns()
             .filterKeys { it !in KEPT_AFTER_PERMANENT_DELETE }
@@ -431,6 +451,24 @@ class ProfileDeletionPropagationTest {
                 .none { it.source_profile_id == p },
             "a permanently deleted profile must not reappear in recovery",
         )
+    }
+
+    @Test
+    fun aPrTombstoneThePortalKeptAgainstKeepsTheProfilePendingUntilItIsWritten() = runTest {
+        val p = createProfileWithData()
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+        // A web edit stored slightly in the future: this sync's tombstone loses the LWW gate.
+        val webEdit = currentTimeMillis() + 150L
+        api.storedPrs[prUuidP] = webEdit to false
+
+        manager.sync()
+        assertNotNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull(), "kept while a PR tombstone was dropped")
+        assertEquals(listOf(p), profiles.pendingDeletionProfiles.value.map { it.id })
+
+        Thread.sleep(300)
+        assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
+        assertEquals(true, api.storedPrs[prUuidP]?.second, "the re-stamped tombstone won on retry")
+        assertNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull(), "finalized once written")
     }
 
     @Test
@@ -603,16 +641,34 @@ class ProfileDeletionPropagationTest {
         return columns
     }
 
-    /** Inserts one minimal row owned by [profileId]; false when the table's constraints refuse it. */
-    private fun seedRow(table: String, profileId: String): Boolean {
+    /** Every table with a column keyed by a workout (session id or portal workout id). */
+    private fun sessionKeyedColumns(): Map<String, String> {
+        val tables = mutableListOf<String>()
+        driver.executeQuery(null, "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'", { c ->
+            while (c.next().value) c.getString(0)?.let(tables::add)
+            app.cash.sqldelight.db.QueryResult.Value(Unit)
+        }, 0)
+        return tables.mapNotNull { table ->
+            columnsOf(table).map { it.name }
+                .firstOrNull { it in SESSION_KEY_COLUMNS }
+                ?.let { table to it }
+        }.toMap()
+    }
+
+    /**
+     * Inserts one minimal row owned by [profileId] (when the table has an owner column),
+     * with [fixed] column values; false when the table's constraints refuse it.
+     */
+    private fun seedRow(table: String, profileId: String, fixed: Map<String, String> = emptyMap()): Boolean {
         val columns = columnsOf(table)
-        val owner = columns.first { it.name in PROFILE_OWNER_COLUMNS }.name
+        val owner = columns.firstOrNull { it.name in PROFILE_OWNER_COLUMNS }?.name
         val fill = columns.filter {
-            it.name == owner || it.name == "exerciseId" || it.name == "exercise_id" ||
+            it.name == owner || it.name in fixed || it.name == "exerciseId" || it.name == "exercise_id" ||
                 (it.notNull && !it.hasDefault && !(it.pk && it.type == "INTEGER"))
         }
         val values = fill.map { column ->
             when {
+                column.name in fixed -> fixed.getValue(column.name)
                 column.name == owner -> profileId
                 column.name == "exerciseId" || column.name == "exercise_id" -> "squat"
                 column.type.contains("INT") -> 1L
@@ -636,6 +692,15 @@ class ProfileDeletionPropagationTest {
                 }
             }
         }.isSuccess
+    }
+
+    private fun rowCount(table: String, column: String, value: String): Long {
+        var count = 0L
+        driver.executeQuery(null, "SELECT COUNT(*) FROM $table WHERE $column = ?", { c ->
+            if (c.next().value) count = c.getLong(0) ?: 0L
+            app.cash.sqldelight.db.QueryResult.Value(Unit)
+        }, 1) { bindString(0, value) }
+        return count
     }
 
     private fun liveRowCount(table: String, column: String, profileId: String): Long {
@@ -779,6 +844,8 @@ class ProfileDeletionPropagationTest {
         var cycleServerClockMs: Long? = null
         val pullProfileIds = mutableListOf<String?>()
         val liveRowsByProfile = mutableMapOf<String, MutableSet<String>>()
+        /** Stored dedicated PR rows: id -> (LWW clock, is tombstone). Models the portal's PR gate. */
+        val storedPrs = mutableMapOf<String, Pair<Long, Boolean>>()
         val reScopedToDefault = mutableListOf<String>()
 
         override suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> {
@@ -806,6 +873,27 @@ class ProfileDeletionPropagationTest {
                     reScopedToDefault += liveRowsByProfile.remove(gone).orEmpty()
                 }
             }
+            // The portal's dedicated-PR LWW gate: a stored tombstone is never resurrected, a
+            // strictly newer row wins, and an equal-time tombstone beats a live row. Only rows
+            // that pass are written and counted in `personalRecordsInserted`.
+            var prsWritten = 0
+            payload.personalRecords.forEach { pr ->
+                val id = pr.id ?: return@forEach
+                val incoming = kotlin.time.Instant.parse(pr.updatedAt ?: pr.deletedAt ?: pr.achievedAt)
+                    .toEpochMilliseconds()
+                val deleted = pr.deletedAt != null
+                val stored = storedPrs[id]
+                val passes = when {
+                    stored == null -> true
+                    stored.second && !deleted -> false
+                    incoming != stored.first -> incoming > stored.first
+                    else -> deleted && !stored.second
+                }
+                if (passes) {
+                    storedPrs[id] = incoming to deleted
+                    prsWritten++
+                }
+            }
             val owner = payload.profileId ?: "default"
             val written = payload.sessions.map { it.id } + payload.routines.map { it.id } +
                 payload.cycles.map { it.id } +
@@ -818,6 +906,7 @@ class ProfileDeletionPropagationTest {
                     acknowledgedOwnershipTransferIds = payload.ownershipTransfers.map { it.mutationId },
                     acknowledgedDeletedCycleIds = acceptedCycleDeletions.map { it.id },
                     acknowledgedWorkoutSessionIds = payload.sessions.map { it.id },
+                    personalRecordsInserted = prsWritten,
                 ),
             )
         }

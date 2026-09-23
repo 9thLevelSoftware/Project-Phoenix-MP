@@ -72,6 +72,9 @@ data class CycleSyncSnapshot(
  */
 interface SyncRepository {
 
+    /** PR 20: moves [profileId]'s PR tombstones' `updatedAt` to [at] or later (see the query). */
+    suspend fun restampPersonalRecordTombstones(profileId: String, at: Long) = Unit
+
     // === Push Operations (get local changes) ===
 
     /**
