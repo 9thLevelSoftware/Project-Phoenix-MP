@@ -326,6 +326,7 @@ interface SyncRepository {
     suspend fun seedLegacySyncedGenerationsOnce(
         accountId: String,
         legacyLastSync: Long,
+        cursorProfileId: String?,
         profileIds: Collection<String>,
     ): Int? = null
 

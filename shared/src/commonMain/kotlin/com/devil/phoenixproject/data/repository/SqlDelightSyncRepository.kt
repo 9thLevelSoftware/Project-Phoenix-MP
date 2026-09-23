@@ -2391,6 +2391,7 @@ class SqlDelightSyncRepository(
     override suspend fun seedLegacySyncedGenerationsOnce(
         accountId: String,
         legacyLastSync: Long,
+        cursorProfileId: String?,
         profileIds: Collection<String>,
     ): Int? = withContext(Dispatchers.IO) {
         val ledgerKey = "$LEGACY_SYNC_GENERATIONS_REPAIR_KEY:$accountId"
@@ -2401,6 +2402,8 @@ class SqlDelightSyncRepository(
             val marked = profileIds.distinct().chunked(BATCH_LOOKUP_CHUNK_SIZE).sumOf { chunk ->
                 queries.seedLegacySyncedGenerations(
                     profileIds = chunk,
+                    // No cursor profile → "" matches no row, so only pull provenance applies.
+                    cursorProfileId = cursorProfileId.orEmpty(),
                     legacyLastSync = legacyLastSync,
                 ).value.toInt()
             }

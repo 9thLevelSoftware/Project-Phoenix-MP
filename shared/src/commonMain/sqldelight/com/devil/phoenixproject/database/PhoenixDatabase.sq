@@ -3601,7 +3601,13 @@ WHERE deletedAt IS NULL
   AND local_sync_generation = 1
   AND synced_sync_generation = 0
   AND updatedAt IS NOT NULL
-  AND (updatedAt <= :legacyLastSync OR portalOrigin = 1);
+  AND (
+    -- The old client synced ONLY its active profile against the one global cursor, so
+    -- `updatedAt <= cursor` is proof only for the profile the cursor belongs to (named by
+    -- the legacy delta-pull marker). Every other profile gets the pull-provenance rule.
+    (profile_id = :cursorProfileId AND updatedAt <= :legacyLastSync)
+    OR portalOrigin = 1
+  );
 
 selectBlockedRoutineGroupSiblings:
 SELECT id, routineSessionId FROM WorkoutSession
