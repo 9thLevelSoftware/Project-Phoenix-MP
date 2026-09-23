@@ -815,6 +815,25 @@ class SyncManager(
      * Refreshes [PortalUser.isPremium] from the server subscription endpoint.
      * Prefer this on app foreground; do not infer entitlement from sync HTTP status alone.
      */
+    /**
+     * Publishes [SyncState.NotPremium] when the trigger skips an automatic sync because
+     * the account is confirmed free (F-074). Without this the state only moved on a
+     * 402/403, so a free account kept showing a stale "Last synced" forever.
+     * An in-flight sync or an open account-switch/ownership decision is left alone.
+     */
+    fun markPausedNotPremium() {
+        _syncState.update { current ->
+            when (current) {
+                is SyncState.Syncing,
+                is SyncState.SyncingWithProgress,
+                is SyncState.AccountMismatch,
+                is SyncState.OwnershipConflict,
+                -> current
+                else -> SyncState.NotPremium
+            }
+        }
+    }
+
     suspend fun refreshPremiumStatusFromServer() {
         syncMutex.withLock {
             withProfileMutationBarrier {
