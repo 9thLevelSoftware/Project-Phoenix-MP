@@ -25,6 +25,7 @@ object SyncExcludedEntityTypes {
     const val ASSESSMENT = "ASSESSMENT"
     const val EXERCISE_SIGNATURE = "EXERCISE_SIGNATURE"
     const val EXTERNAL_ACTIVITY = "EXTERNAL_ACTIVITY"
+    const val EARNED_BADGE = "EARNED_BADGE"
 
     val ALL = listOf(
         WORKOUT,
@@ -35,6 +36,7 @@ object SyncExcludedEntityTypes {
         ASSESSMENT,
         EXERCISE_SIGNATURE,
         EXTERNAL_ACTIVITY,
+        EARNED_BADGE,
     )
 
     /**
@@ -142,6 +144,7 @@ data class SyncExclusionFilter(
     val assessments: Set<String> = emptySet(),
     val exerciseSignatures: Set<String> = emptySet(),
     val externalActivities: Set<String> = emptySet(),
+    val earnedBadges: Set<String> = emptySet(),
 ) {
     fun excludesWorkout(sessionId: String, portalSessionId: String? = null): Boolean =
         sessionId in workouts || (portalSessionId != null && portalSessionId in workouts)
@@ -160,6 +163,8 @@ data class SyncExclusionFilter(
 
     fun excludesExternalActivity(activityId: String): Boolean = activityId in externalActivities
 
+    fun excludesEarnedBadge(badgeId: String): Boolean = badgeId in earnedBadges
+
     companion object {
         val EMPTY = SyncExclusionFilter()
 
@@ -174,6 +179,7 @@ data class SyncExclusionFilter(
                 assessments = syncRepository.getSyncExcludedEntityIds(portalUserId, SyncExcludedEntityTypes.ASSESSMENT),
                 exerciseSignatures = syncRepository.getSyncExcludedEntityIds(portalUserId, SyncExcludedEntityTypes.EXERCISE_SIGNATURE),
                 externalActivities = syncRepository.getSyncExcludedEntityIds(portalUserId, SyncExcludedEntityTypes.EXTERNAL_ACTIVITY),
+                earnedBadges = syncRepository.getSyncExcludedEntityIds(portalUserId, SyncExcludedEntityTypes.EARNED_BADGE),
             )
         }
     }

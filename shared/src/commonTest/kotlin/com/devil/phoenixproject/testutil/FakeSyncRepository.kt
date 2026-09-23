@@ -327,6 +327,7 @@ class FakeSyncRepository : SyncRepository {
         excludeAllExisting: Boolean,
         previousPushWatermarks: Map<String, Long>,
         previousPortalUserId: String?,
+        previousPortalUserIdsByProfile: Map<String, String>,
     ) {
         recordAccountSwitchExclusionsCalls += Triple(portalUserId, excludeAllExisting, previousPushWatermarks)
         val byType = syncExcludedEntities.getOrPut(portalUserId) { mutableMapOf() }

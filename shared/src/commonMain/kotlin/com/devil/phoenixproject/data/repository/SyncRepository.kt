@@ -389,6 +389,12 @@ interface SyncRepository {
         excludeAllExisting: Boolean,
         previousPushWatermarks: Map<String, Long>,
         previousPortalUserId: String? = null,
+        /**
+         * Each profile's own previous owner (its `supabase_user_id` before the switch),
+         * falling back to [previousPortalUserId]. A device can hold profiles synced to
+         * different accounts; each is classified under its own (codex #859).
+         */
+        previousPortalUserIdsByProfile: Map<String, String> = emptyMap(),
     )
 
     /**

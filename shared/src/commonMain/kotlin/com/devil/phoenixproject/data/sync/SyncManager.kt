@@ -742,8 +742,14 @@ class SyncManager(
                 // and the last-synced id still name the old account, so the pause gate
                 // re-detects the mismatch and the (idempotent) choice can be applied again.
                 // The reverse order could leave rows relinked with no exclusions recorded.
+                // Each profile is classified under its OWN previous owner: a device can hold
+                // profiles synced to different accounts (codex #859). Unlinked profiles fall
+                // back to the account the device last synced into.
+                val ownerByProfile = profiles.associate { profile ->
+                    profile.id to (profile.supabaseUserId?.takeIf { it.isNotBlank() && it != newUserId } ?: previousUserId)
+                }
                 val boundaries = profiles.associate { profile ->
-                    profile.id to tokenStorage.getAccountSyncBoundary(previousUserId, profile.id)
+                    profile.id to tokenStorage.getAccountSyncBoundary(ownerByProfile.getValue(profile.id), profile.id)
                 }
                 syncRepository.recordAccountSwitchExclusions(
                     portalUserId = newUserId,
@@ -751,6 +757,7 @@ class SyncManager(
                     excludeAllExisting = choice == AccountSwitchChoice.EXCLUDE_ALL_EXISTING,
                     previousPushWatermarks = boundaries,
                     previousPortalUserId = previousUserId,
+                    previousPortalUserIdsByProfile = ownerByProfile,
                 )
                 for (profile in profiles) {
                     // Force-relink: the normal link path throws ProfileAccountBindingException
@@ -2077,9 +2084,14 @@ class SyncManager(
         // 5. Gather gamification data. PR 10 step 3 (R-14): RPG/gamification/badges are
         // one row per portal user, so they go out only with the active profile's push.
         val userScoped = gatherUserScopedDtos(userId, activeProfileId, includeUserScoped)
-        val rpgDto = userScoped.rpgDto
-        val badgeDtos = userScoped.badgeDtos
-        val gamStatsDto = userScoped.gamStatsDto
+        // PR 11 (codex #859): RPG attributes and gamification stats are aggregates of this
+        // device's workout history. While any workout on the device is excluded from this
+        // account (another account's history), those aggregates are not this account's and
+        // are not pushed. Badges earned under another account are excluded one by one.
+        val aggregatesIncludeForeignHistory = exclusions.workouts.isNotEmpty()
+        val rpgDto = userScoped.rpgDto.takeUnless { aggregatesIncludeForeignHistory }
+        val badgeDtos = userScoped.badgeDtos.filter { !exclusions.excludesEarnedBadge(it.badgeId) }
+        val gamStatsDto = userScoped.gamStatsDto.takeUnless { aggregatesIncludeForeignHistory }
 
         val enrichment = gatherPushEnrichment(activeProfileId, activeProfile, workoutSnapshot)
         // External activities (imported health data) follow the same account-switch
@@ -3879,6 +3891,7 @@ class SyncManager(
             types.ROUTINE to pullResponse.routines.map { it.id },
             types.CYCLE to pullResponse.cycles.map { it.id },
             types.PERSONAL_RECORD to pullResponse.personalRecords.map { it.id },
+            types.EARNED_BADGE to pullResponse.badges.map { it.badgeId },
         ).filterValues { it.isNotEmpty() }
     }
 

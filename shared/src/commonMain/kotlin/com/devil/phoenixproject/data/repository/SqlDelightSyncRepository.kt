@@ -2481,6 +2481,7 @@ class SqlDelightSyncRepository(
         excludeAllExisting: Boolean,
         previousPushWatermarks: Map<String, Long>,
         previousPortalUserId: String?,
+        previousPortalUserIdsByProfile: Map<String, String>,
     ) = withContext(Dispatchers.IO) {
         val types = SyncExcludedEntityTypes
         fun ids(user: String?, type: String): Set<String> =
@@ -2488,8 +2489,10 @@ class SqlDelightSyncRepository(
             else queries.selectSyncExcludedEntityIds(portalUserId = user, entityType = type).executeAsList().toHashSet()
         // Loaded before any write below, so this call's own inserts cannot feed back into it.
         val targetReached = types.ALL.associateWith { ids(portalUserId, types.reached(it)) }
-        val previousReached = types.ALL.associateWith { ids(previousPortalUserId, types.reached(it)) }
-        val previousExcluded = types.ALL.associateWith { ids(previousPortalUserId, it) }
+        val previousOwners = (listOf(previousPortalUserId) + previousPortalUserIdsByProfile.values)
+            .filterNotNull().filter { it.isNotBlank() }.distinct()
+        val reachedByOwner = previousOwners.associateWith { owner -> types.ALL.associateWith { ids(owner, types.reached(it)) } }
+        val excludedByOwner = previousOwners.associateWith { owner -> types.ALL.associateWith { ids(owner, it) } }
 
         /**
          * One local entity (all its ids, e.g. a session and its portal group id).
@@ -2500,11 +2503,13 @@ class SqlDelightSyncRepository(
          *   a row that already belongs to the account being switched back to must keep
          *   syncing there (codex #859).
          */
-        fun decide(type: String, entityIds: List<String>, classifiedReached: Boolean) {
-            val reached = classifiedReached || entityIds.any { it in previousReached.getValue(type) }
-            if (previousPortalUserId != null && reached && entityIds.none { it in previousExcluded.getValue(type) }) {
+        fun decide(type: String, entityIds: List<String>, classifiedReached: Boolean, previousOwner: String?) {
+            val ownerReached = previousOwner?.let { reachedByOwner[it]?.getValue(type) }.orEmpty()
+            val ownerExcluded = previousOwner?.let { excludedByOwner[it]?.getValue(type) }.orEmpty()
+            val reached = classifiedReached || entityIds.any { it in ownerReached }
+            if (previousOwner != null && reached && entityIds.none { it in ownerExcluded }) {
                 entityIds.forEach {
-                    queries.insertSyncExcludedEntity(previousPortalUserId, types.reached(type), it)
+                    queries.insertSyncExcludedEntity(previousOwner, types.reached(type), it)
                 }
             }
             val ownedByTarget = entityIds.any { it in targetReached.getValue(type) }
@@ -2516,6 +2521,9 @@ class SqlDelightSyncRepository(
         db.transaction {
             for (profileId in profileIds) {
                 val watermark = previousPushWatermarks[profileId] ?: 0L
+                val owner = previousPortalUserIdsByProfile[profileId] ?: previousPortalUserId
+                fun decide(type: String, entityIds: List<String>, classifiedReached: Boolean) =
+                    decide(type, entityIds, classifiedReached, owner)
 
                 // Sessions: classified by origin and acknowledged sync generation, not by
                 // updatedAt alone (a Just Lift tag writes it locally; a repair re-arm nulls
@@ -2558,6 +2566,12 @@ class SqlDelightSyncRepository(
                 queries.selectExternalActivitiesForAccountSwitch(profileId).executeAsList().forEach { activity ->
                     decide(types.EXTERNAL_ACTIVITY, listOf(activity.id), activity.needsSync == 0L)
                 }
+
+                // Earned badges are the previous account's history (derived from its workouts),
+                // under either choice; a badge already on the target stays (codex #859).
+                queries.selectAllEarnedBadges(profileId).executeAsList().forEach { badge ->
+                    decide(types.EARNED_BADGE, listOf(badge.badgeId), true)
+                }
             }
 
             // Custom exercises are account-wide. The highest per-profile boundary decides
@@ -2566,7 +2580,7 @@ class SqlDelightSyncRepository(
             queries.selectCustomExerciseIdsForAccountSwitch().executeAsList().forEach { clientId ->
                 val idTime = customExerciseIdTimestamp(clientId)
                 // No parseable id time is treated as already synced (conservative).
-                decide(types.CUSTOM_EXERCISE, listOf(clientId), !(idTime != null && idTime > customBoundary))
+                decide(types.CUSTOM_EXERCISE, listOf(clientId), !(idTime != null && idTime > customBoundary), previousPortalUserId)
             }
 
             // Exercise signatures are not pushed today (PortalSyncPayload.exerciseSignatures

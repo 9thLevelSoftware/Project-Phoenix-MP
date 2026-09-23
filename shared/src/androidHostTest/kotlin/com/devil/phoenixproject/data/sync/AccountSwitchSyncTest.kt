@@ -787,6 +787,55 @@ class AccountSwitchSyncTest {
         assertTrue("synced-activity" in excluded, "an activity that reached A stays out of B: $excluded")
     }
 
+    @Test
+    fun excludeAllExistingSendsNoneOfTheOldAccountsUserScopedValues() = runTest {
+        // A's history: a workout, an earned badge and gamification totals on the device.
+        val q = database.phoenixDatabaseQueries
+        insertSession("a-session", groupId = null, timestamp = baseTime, profileId = profileId)
+        q.insertEarnedBadge("first_workout", baseTime, profileId)
+        q.upsertGamificationStats(1L, 40L, 400L, 3200L, 9L, 4L, 5L, 2L, baseTime, baseTime, baseTime, profileId)
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(api.pushPayloads.any { it.gamificationStats != null }, "A's own sync carries A's totals")
+
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.EXCLUDE_ALL_EXISTING)
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(manager.sync().isSuccess)
+
+        assertTrue(api.pushPayloads.isNotEmpty())
+        assertTrue(api.pushPayloads.all { it.gamificationStats == null }, "A's totals must not reach B")
+        assertTrue(api.pushPayloads.all { it.rpgAttributes == null }, "A-derived RPG must not reach B")
+        assertTrue(
+            api.pushPayloads.flatMap { it.badges }.none { it.badgeId == "first_workout" },
+            "A's badge must not reach B",
+        )
+    }
+
+    @Test
+    fun eachProfileIsClassifiedUnderItsOwnPreviousOwner() = runTest {
+        // P1 is A's, P2 is C's. C synced recently; A long ago. Sign into B.
+        val p2 = userProfileRepository.createProfile("P2", 1)
+        userProfileRepository.linkToSupabase(profileId, userA)
+        userProfileRepository.linkToSupabase(p2.id, "user-c")
+        // A's routine was created after A's (old) boundary but well before C's (recent) one:
+        // under C's boundary it would look already-synced for P2, under A's it looks new.
+        // The inverse is the risk: an A routine created after C's boundary on P1.
+        tokenStorage.setPushWatermark(userA, profileId, baseTime + 100_000)
+        tokenStorage.setPushWatermark("user-c", p2.id, baseTime)
+        insertRoutine(routinePre, profileId = profileId, createdAt = baseTime + 50_000)
+        tokenStorage.setLastSyncedPortalUserId("user-c")
+
+        switchTo(userB, emailB, "token-b", AccountSwitchChoice.UPLOAD_NEVER_SYNCED)
+        val excluded = syncRepository.getSyncExcludedEntityIds(userB, SyncExcludedEntityTypes.ROUTINE)
+        assertTrue(
+            routinePre in excluded,
+            "P1's routine predates A's boundary, so it reached A and must stay out of B: $excluded",
+        )
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(api.pushPayloads.flatMap { it.routines }.none { it.id == routinePre })
+    }
+
     // ===== 4. "Don't upload existing data" =====
 
     @Test
