@@ -421,6 +421,46 @@ class MigrationManagerTest {
     }
 
     @Test
+    fun `repairOrphanedPRRecords leaves a deleted profile's PR tombstones where they are`() = runTest {
+        val driver = createTestDriver()
+        val localDatabase = PhoenixDatabase(driver)
+        val localMigrationManager = createMigrationManager(localDatabase, driver)
+        val queries = localDatabase.phoenixDatabaseQueries
+        queries.insertProfile(
+            id = "target-profile",
+            name = "Target Profile",
+            colorIndex = 0L,
+            createdAt = 1_700_000_000_000,
+            isActive = 1L,
+        )
+        // PR 20: a permanently deleted profile keeps its PR tombstones under its own id.
+        queries.insertRecord(
+            exerciseId = "squat",
+            exerciseName = "Squat",
+            weight = 80.0,
+            reps = 5L,
+            oneRepMax = 90.0,
+            achievedAt = 1_700_000_000_000,
+            workoutMode = "OldSchool",
+            prType = "MAX_WEIGHT",
+            volume = 400.0,
+            phase = "COMBINED",
+            profile_id = "deleted-profile",
+            cable_count = 2L,
+            uuid = "abcdefab-1234-4abc-8def-1234567890ab",
+        )
+        val tombstone = queries.selectAllRecords("deleted-profile").executeAsList().single()
+        queries.softDeletePRById(1_700_000_000_500, 1_700_000_000_500, tombstone.id, "deleted-profile")
+
+        assertEquals(emptyMap(), localMigrationManager.scanForOrphanedPRRecords())
+        assertEquals(0, localMigrationManager.repairOrphanedPRRecords("target-profile"))
+        assertEquals(
+            "deleted-profile",
+            queries.selectPRsModifiedSince(0L, "deleted-profile").executeAsList().single().profile_id,
+        )
+    }
+
+    @Test
     fun `repairOrphanedPRRecords preserves target uuid when better orphan duplicate lacks one`() = runTest {
         val driver = createTestDriver()
         val localDatabase = PhoenixDatabase(driver)

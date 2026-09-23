@@ -74,6 +74,7 @@ val dataModule = module {
             // Resolved per call: the token store lives in the sync module and the
             // signed-in account changes over the app's lifetime.
             signedInPortalUserId = { scope.getOrNull<PortalTokenStorage>()?.currentUser?.value?.id },
+            lastSyncedPortalUserId = { scope.getOrNull<PortalTokenStorage>()?.getLastSyncedPortalUserId() },
         )
     }
     single { ProfileRecoveryDiscovery(database = get(), driver = get()) }

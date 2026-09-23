@@ -66,6 +66,7 @@ class ProfileDeletionPropagationTest {
             gamificationRepository = SqlDelightGamificationRepository(database),
             pendingDeletionStore = SettingsPendingProfileDeletionStore(settings),
             signedInPortalUserId = { tokenStorage.currentUser.value?.id },
+            lastSyncedPortalUserId = { tokenStorage.getLastSyncedPortalUserId() },
         )
         // A fresh install seeds Default's preferences before the context can become Ready.
         database.phoenixDatabaseQueries.insertDefaultProfilePreferences("default", 1L)
@@ -154,6 +155,122 @@ class ProfileDeletionPropagationTest {
     }
 
     @Test
+    fun aFailedPendingPushStillListsTheProfileInTheSameLoopsLaterPushes() = runTest {
+        val p = createProfileWithData()
+        assertTrue(manager.sync().isSuccess, "seed sync failed: ${manager.syncState.value}")
+        assertTrue(p in api.liveRowsByProfile, "P's rows must be on the portal before the delete")
+        assertTrue(tokenStorage.getPullCursor(userId, p) > 0L)
+        assertNotNull(tokenStorage.getSessionSentHash(userId, p, sessionP))
+        Thread.sleep(5) // tombstone stamps must be strictly newer than the seed sync's watermark
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+        // Default has its own change to upload in the same loop (an idle profile sends nothing).
+        database.phoenixDatabaseQueries.insertRoutine(
+            id = "99999999-9999-4999-8999-999999999999",
+            name = "Default split",
+            description = "",
+            createdAt = baseTime,
+            lastUsed = null,
+            useCount = 0L,
+            profile_id = "default",
+            groupId = null,
+            deletedAt = null,
+        )
+
+        api.pushPayloads.clear()
+        // P goes first; its first request fails (transient 500) and the loop moves on to Default.
+        api.failNextPushes = 1
+        manager.sync()
+
+        assertEquals(p, api.pushPayloads.first().profileId)
+        val later = api.pushPayloads.drop(1)
+        assertTrue(
+            later.any { it.profileId == "default" },
+            "Default must still push in the same loop (pushed=${api.pushPayloads.map { it.profileId }})",
+        )
+        assertTrue(
+            later.all { payload -> payload.allProfiles.orEmpty().any { it.id == p } },
+            "R-11: while P's own push has not landed, every push must keep P registered",
+        )
+        assertTrue(api.reScopedToDefault.isEmpty(), "P's live rows were re-scoped to Default: ${api.reScopedToDefault}")
+
+        assertTrue(manager.sync().isSuccess)
+        assertNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull())
+        assertTrue(api.reScopedToDefault.isEmpty(), "nothing may reach Default once P is removed: ${api.reScopedToDefault}")
+        // T-4: the removed profile's sync state goes with it.
+        assertEquals(0L, tokenStorage.getPullCursor(userId, p))
+        assertNull(tokenStorage.getSessionSentHash(userId, p, sessionP))
+    }
+
+    @Test
+    fun aProfileDeletedWhileSignedOutIsTombstonedOnTheNextSignInAsThatAccount() = runTest {
+        val p = createProfileWithData()
+        assertTrue(manager.sync().isSuccess, "seed sync failed: ${manager.syncState.value}")
+        tokenStorage.clearAuth()
+        Thread.sleep(5)
+
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+        assertEquals(listOf(p), profiles.pendingDeletionProfiles.value.map { it.id }, "must wait for the next sign-in")
+
+        signIn()
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
+
+        val fromP = api.pushPayloads.filter { it.profileId == p }
+        assertTrue(fromP.flatMap { it.workoutDeletions }.any { it.portalSessionId == sessionP }, "workout tombstone")
+        assertTrue(fromP.flatMap { it.deletedRoutineIds }.contains(routineP), "routine tombstone")
+        assertTrue(api.reScopedToDefault.isEmpty(), "P's rows were re-scoped to Default: ${api.reScopedToDefault}")
+        assertNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull())
+    }
+
+    @Test
+    fun aRejectedCycleDeletionKeepsTheProfilePendingUntilItIsAccepted() = runTest {
+        val p = createProfileWithData()
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+        Thread.sleep(5)
+        // A web edit newer than the delete: the portal's clocked gate rejects the deletion.
+        api.cycleServerClockMs = currentTimeMillis()
+
+        manager.sync()
+        assertNotNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull(), "kept while a tombstone is outstanding")
+        assertEquals(listOf(p), profiles.pendingDeletionProfiles.value.map { it.id })
+
+        api.pushPayloads.clear()
+        assertTrue(manager.sync().isSuccess)
+        assertTrue(api.pushPayloads.flatMap { it.deletedCycles }.any { it.id == cycleP }, "re-stamped deletion re-sent")
+        assertNull(database.phoenixDatabaseQueries.getProfileById(p).executeAsOneOrNull(), "finalized once accepted")
+    }
+
+    @Test
+    fun aPendingProfilesOwnerStillCountsForAccountSwitchDetection() = runTest {
+        profiles.reconcileActiveProfileContext()
+        val p = profiles.createAndActivateProfile("Guest", 1).id
+        database.phoenixDatabaseQueries.linkProfileToSupabase("owner-a", baseTime, p)
+        profiles.refreshProfiles()
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+        assertNull(tokenStorage.getLastSyncedPortalUserId(), "only the hidden profile records the old owner")
+
+        val result = manager.sync()
+
+        assertTrue(result.isFailure)
+        assertTrue(manager.syncState.value is SyncState.AccountMismatch, "was ${manager.syncState.value}")
+        assertTrue(api.pushPayloads.isEmpty(), "nothing may be pushed before the user chooses")
+    }
+
+    @Test
+    fun retryPullNeverPullsIntoAPendingDeletionProfile() = runTest {
+        val p = createProfileWithData()
+        assertTrue(profiles.deleteActiveProfilePermanently(p))
+        api.failPushesFor = p
+        manager.sync()
+        api.pullProfileIds.clear()
+
+        manager.retryPull()
+
+        assertTrue(api.pullProfileIds.contains("default"), "retryPull must still pull the live profiles")
+        assertFalse(api.pullProfileIds.contains(p), "retryPull pulled into a profile being removed")
+    }
+
+    @Test
     fun withNoPortalOwnerTheProfileRowIsRemovedImmediately() = runTest {
         tokenStorage.clearAuth()
         val p = createProfileWithData()
@@ -174,7 +291,7 @@ class ProfileDeletionPropagationTest {
         assertTrue(manager.sync().isSuccess)
 
         // The portal SET NULL: P's rows come back unscoped, i.e. to a Default pull, still live.
-        api.reScopedToDefault = true
+        api.rescopeServedToDefault = true
         assertTrue(manager.sync().isSuccess, "sync failed: ${manager.syncState.value}")
         assertTrue(api.pullProfileIds.contains("default"))
 
@@ -364,25 +481,59 @@ class ProfileDeletionPropagationTest {
 
     /**
      * Acknowledges every durable operation it receives (as the portal RPCs do after commit)
-     * and, once [reScopedToDefault] is set, serves the deleted profile's workout, routine and
-     * PR — still live — to a Default pull, as the portal's SET NULL would.
+     * and models the portal's profile registration: rows are held per local profile, tombstones
+     * remove them, and a push whose `allProfiles` omits a profile deletes its registration —
+     * `ON DELETE SET NULL` moves its still-live rows to Default ([reScopedToDefault]).
+     * Once [rescopeServedToDefault] is set, a Default pull is served the deleted profile's
+     * workout, routine and PR, still live, as other devices would see them.
      */
     private inner class DeletionAwarePortalApi : FakePortalApiClient() {
         var failPushesFor: String? = null
-        var reScopedToDefault = false
+        /** Fails this many upcoming push requests, whatever they carry (a transient 500). */
+        var failNextPushes = 0
+        var rescopeServedToDefault = false
+        /** Stored LWW clock of every cycle; a clocked deletion older than it is rejected. */
+        var cycleServerClockMs: Long? = null
         val pullProfileIds = mutableListOf<String?>()
+        val liveRowsByProfile = mutableMapOf<String, MutableSet<String>>()
+        val reScopedToDefault = mutableListOf<String>()
 
         override suspend fun pushPortalPayload(payload: PortalSyncPayload): Result<PortalSyncPushResponse> {
             super.pushPortalPayload(payload)
             if (payload.profileId != null && payload.profileId == failPushesFor) {
-                return Result.failure(PortalApiException("portal unavailable", statusCode = 503))
+                return Result.failure(PortalApiException("portal unavailable", statusCode = 500))
             }
+            if (failNextPushes > 0) {
+                failNextPushes--
+                return Result.failure(PortalApiException("portal unavailable", statusCode = 500))
+            }
+            val acceptedCycleDeletions = payload.deletedCycles.filter { deletion ->
+                val clock = cycleServerClockMs ?: return@filter true
+                kotlin.time.Instant.parse(deletion.updatedAt).toEpochMilliseconds() >= clock
+            }
+            // Durable deletions first, then stale-registration cleanup, then entity writes.
+            val tombstoned = payload.workoutDeletions.map { it.portalSessionId } +
+                payload.deletedRoutineIds +
+                acceptedCycleDeletions.map { it.id } +
+                payload.personalRecords.filter { it.deletedAt != null }.mapNotNull { it.id }
+            liveRowsByProfile.values.forEach { it.removeAll(tombstoned.toSet()) }
+            val registered = payload.allProfiles.orEmpty().map { it.id }.toSet()
+            if (registered.isNotEmpty()) {
+                liveRowsByProfile.keys.filter { it !in registered && it != "default" }.forEach { gone ->
+                    reScopedToDefault += liveRowsByProfile.remove(gone).orEmpty()
+                }
+            }
+            val owner = payload.profileId ?: "default"
+            val written = payload.sessions.map { it.id } + payload.routines.map { it.id } +
+                payload.cycles.map { it.id } +
+                payload.personalRecords.filter { it.deletedAt == null }.mapNotNull { it.id }
+            if (written.isNotEmpty()) liveRowsByProfile.getOrPut(owner) { mutableSetOf() } += written
             return Result.success(
                 PortalSyncPushResponse(
                     syncTime = kotlin.time.Instant.fromEpochMilliseconds(currentTimeMillis()).toString(),
                     acknowledgedWorkoutDeletionIds = payload.workoutDeletions.map { it.mutationId },
                     acknowledgedOwnershipTransferIds = payload.ownershipTransfers.map { it.mutationId },
-                    acknowledgedDeletedCycleIds = payload.deletedCycles.map { it.id },
+                    acknowledgedDeletedCycleIds = acceptedCycleDeletions.map { it.id },
                     acknowledgedWorkoutSessionIds = payload.sessions.map { it.id },
                 ),
             )
@@ -398,7 +549,7 @@ class ProfileDeletionPropagationTest {
         ): Result<PortalSyncPullResponse> {
             super.pullPortalPayload(knownEntityIds, deviceId, profileId, cursor, pageSize, lastSync)
             pullProfileIds += profileId
-            val rescoped = reScopedToDefault && profileId == "default"
+            val rescoped = rescopeServedToDefault && profileId == "default"
             val iso = kotlin.time.Instant.fromEpochMilliseconds(currentTimeMillis()).toString()
             return Result.success(
                 PortalSyncPullResponse(

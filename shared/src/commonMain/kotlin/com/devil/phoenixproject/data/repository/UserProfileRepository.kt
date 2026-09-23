@@ -225,6 +225,12 @@ class SqlDelightUserProfileRepository(
     private val pendingDeletionStore: PendingProfileDeletionStore = InMemoryPendingProfileDeletionStore(),
     /** The signed-in portal account, if any (PR 20). Decides whether a permanent delete must propagate. */
     private val signedInPortalUserId: () -> String? = { null },
+    /**
+     * The portal account this device last pushed to (PR 11; survives sign-out). A profile
+     * deleted while signed out may already be on that account's portal (PR 10 syncs unbound
+     * profiles under the signed-in account), so its tombstones are owned by it.
+     */
+    private val lastSyncedPortalUserId: () -> String? = { null },
 ) : UserProfileRepository {
     private val queries = database.phoenixDatabaseQueries
     private val profileContextMutex = Mutex()
@@ -337,9 +343,13 @@ class SqlDelightUserProfileRepository(
         }
         // Whose portal copy the tombstones must reach: the profile's own account when it
         // was ever linked, else the signed-in account (PR 10 syncs unbound profiles under
-        // it). With neither, nothing of this profile can be on a portal.
+        // it), else the account this device last pushed to (deleted while signed out; the
+        // tombstones go out on the next sign-in as that account). With none of the three,
+        // this device has never pushed anything, so nothing of the profile is on a portal
+        // and removing it at once is safe.
         val ownerUserId = sourceProfile.supabase_user_id?.takeIf { it.isNotBlank() }
             ?: signedInPortalUserId()?.takeIf { it.isNotBlank() }
+            ?: lastSyncedPortalUserId()?.takeIf { it.isNotBlank() }
         val propagate = ownerUserId != null
         _activeProfileContext.value = ActiveProfileContext.Switching(DEFAULT_PROFILE_ID)
 

@@ -1170,6 +1170,24 @@ class SyncManager(
         // PR 11 also reads it as the account-switch "already synced" boundary.
         tokenStorage.setPushWatermark(userId, profile.id, pushOutcome.gatherStartedAt)
         if (pendingDeletion) {
+            // Routine and workout tombstones are applied unconditionally or exact-acked; a
+            // cycle deletion can lose the portal's clocked gate to a newer web edit. Finalizing
+            // then would drop this profile from allProfiles and re-scope that cycle to Default.
+            val outstandingCycleDeletions = trainingCycleRepository
+                ?.getPendingCycleDeletions(userId, profile.id)
+                .orEmpty()
+                .filter { CANONICAL_UUID_REGEX.matches(it.id) }
+            if (outstandingCycleDeletions.isNotEmpty()) {
+                val restampAt = currentTimeMillis()
+                outstandingCycleDeletions.forEach { deletion ->
+                    trainingCycleRepository?.restampPendingCycleDeletion(deletion.id, restampAt)
+                }
+                Logger.w("SyncManager") {
+                    "Pending-deletion profile ${profile.id}: ${outstandingCycleDeletions.size} cycle deletion(s) " +
+                        "not accepted yet; re-stamped and kept pending for the next sync"
+                }
+                return ProfileSyncOutcome(profileId = profile.id, pushSucceeded = true, pullSucceeded = true)
+            }
             return finishPendingProfileDeletion(userId, profile, pushOutcome.response.syncTime)
         }
         val pushResponse = pushOutcome.response
