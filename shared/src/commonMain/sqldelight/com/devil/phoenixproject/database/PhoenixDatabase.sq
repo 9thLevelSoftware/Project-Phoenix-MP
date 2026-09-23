@@ -915,13 +915,14 @@ selectBackupSessionsSync:
 SELECT * FROM WorkoutSession
 WHERE deletedAt IS NULL;
 
--- Backup restore (PR 22): carry the session's sync stamp and portal-origin marker.
+-- Backup restore (PR 22): carry the session's sync stamp, portal-origin marker and whether
+-- the exported generation had been acknowledged by the portal.
 -- - Pulled row (portalOrigin = 1): generation-clean 0/0, exactly as a pull inserts it.
--- - Local row with a stamp: the old device's push stamped it, so the portal already holds
---   it with its rep summaries, which a backup does not carry. It restores as synced
---   (synced = local generation); re-pushing it would make replace_session_children
---   delete the portal's rep data.
--- - Local row without a stamp: never uploaded, stays dirty and uploads once.
+-- - Acknowledged local row: the portal already holds exactly this content with its rep
+--   summaries, which a backup does not carry. It restores as synced (synced = local
+--   generation); re-pushing it would make replace_session_children delete that rep data.
+-- - Any other local row (never uploaded, or edited after its last acknowledged push):
+--   stays dirty and uploads. A stamp alone is not proof: a post-sync edit keeps it.
 -- Idempotent: run at insert and again after child sections re-dirty the row.
 restoreSessionSyncMarkers:
 UPDATE WorkoutSession
@@ -930,7 +931,7 @@ SET portalOrigin = :portalOrigin,
     local_sync_generation = CASE WHEN :portalOrigin = 1 THEN 0 ELSE local_sync_generation END,
     synced_sync_generation = CASE
         WHEN :portalOrigin = 1 THEN 0
-        WHEN :updatedAt IS NOT NULL THEN local_sync_generation
+        WHEN :acknowledged = 1 THEN local_sync_generation
         ELSE 0
     END
 WHERE id = :id;

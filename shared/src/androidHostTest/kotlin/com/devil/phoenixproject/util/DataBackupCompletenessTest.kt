@@ -174,10 +174,17 @@ class DataBackupCompletenessTest {
         source.saveSession("pulled-1")
         source.saveSession("synced-1")
         source.saveSession("unsynced-1")
+        source.saveSession("edited-1")
         // Child restores re-dirty their session, so every marked row gets a child.
-        listOf("pulled-1", "synced-1", "unsynced-1").forEach(source::insertMetric)
-        source.queries.restoreSessionSyncMarkers(portalOrigin = 1L, updatedAt = 1_700_000_500_000L, id = "pulled-1")
-        source.queries.restoreSessionSyncMarkers(portalOrigin = 0L, updatedAt = 1_700_000_600_000L, id = "synced-1")
+        listOf("pulled-1", "synced-1", "unsynced-1", "edited-1").forEach(source::insertMetric)
+        source.queries.restoreSessionSyncMarkers(portalOrigin = 1L, updatedAt = 1_700_000_500_000L, acknowledged = 0L, id = "pulled-1")
+        // Pushed and acknowledged, as the old phone's sync leaves it.
+        source.queries.updateSessionTimestamp(1_700_000_600_000L, "synced-1")
+        source.queries.markSessionSynced("synced-1")
+        // Pushed and acknowledged, then re-tagged: the stamp stays but the edit is pending.
+        source.queries.updateSessionTimestamp(1_700_000_600_000L, "edited-1")
+        source.queries.markSessionSynced("edited-1")
+        source.queries.updateSessionExerciseTag(null, "Front Squat", 1_700_000_700_000L, "edited-1")
 
         val target = Fixture()
         target.manager.importFromJson(source.manager.exportToJson()).getOrThrow()
@@ -197,6 +204,12 @@ class DataBackupCompletenessTest {
         val unsynced = target.queries.selectSessionById("unsynced-1").executeAsOne()
         assertEquals(null, unsynced.updatedAt)
         assertTrue(unsynced.local_sync_generation > unsynced.synced_sync_generation, "a never-uploaded row still pushes")
+
+        // A stamp is not proof: an edit still pending at backup time must still upload.
+        val edited = target.queries.selectSessionById("edited-1").executeAsOne()
+        assertEquals(1_700_000_700_000L, edited.updatedAt)
+        assertEquals("Front Squat", edited.exerciseName)
+        assertTrue(edited.local_sync_generation > edited.synced_sync_generation, "a pending edit must not be marked synced")
     }
 
     // ---- stock exercise user fields ----
@@ -298,7 +311,7 @@ class DataBackupCompletenessTest {
         source.saveSession("pulled-1")
         source.insertMetric("pulled-1") // restoring this re-dirties the pulled row
         source.queries.insertStreakHistory(1_700_000_000_000L, 1_700_000_100_000L, 2L, profileId = "default")
-        source.queries.restoreSessionSyncMarkers(portalOrigin = 1L, updatedAt = 1_700_000_500_000L, id = "pulled-1")
+        source.queries.restoreSessionSyncMarkers(portalOrigin = 1L, updatedAt = 1_700_000_500_000L, acknowledged = 0L, id = "pulled-1")
         val storage = PortalTokenStorage(MapSettings())
         storage.saveGoTrueAuth(
             GoTrueAuthResponse(

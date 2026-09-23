@@ -786,6 +786,7 @@ abstract class BaseDataBackupManager(
                     queries.restoreSessionSyncMarkers(
                         portalOrigin = if (session.portalOrigin) 1L else 0L,
                         updatedAt = session.updatedAt,
+                        acknowledged = if (session.syncAcknowledged) 1L else 0L,
                         id = session.id,
                     )
                 }
@@ -1544,12 +1545,13 @@ abstract class BaseDataBackupManager(
                                                 }
                                                 if (inserted != null) {
                                                     sessionsImported++
-                                                    if (session.portalOrigin || session.updatedAt != null) {
+                                                    if (session.portalOrigin || session.updatedAt != null || session.syncAcknowledged) {
                                                         // Same transaction as the insert, so an aborted
                                                         // restore never leaves a half-marked row.
                                                         queries.restoreSessionSyncMarkers(
                                                             portalOrigin = if (session.portalOrigin) 1L else 0L,
                                                             updatedAt = session.updatedAt,
+                                                            acknowledged = if (session.syncAcknowledged) 1L else 0L,
                                                             id = session.id,
                                                         )
                                                         restoredSessionSyncMarkers += session
@@ -1564,6 +1566,7 @@ abstract class BaseDataBackupManager(
                                                 val existingBackup = mapSessionToBackup(existingSession).copy(
                                                     updatedAt = normalizedSession.updatedAt,
                                                     portalOrigin = normalizedSession.portalOrigin,
+                                                    syncAcknowledged = normalizedSession.syncAcknowledged,
                                                 )
                                                 val legacyProfileOnlyAdoption = backupVersion < 6 &&
                                                     existingSession.profile_id != sessionProfileId &&
@@ -3406,6 +3409,9 @@ abstract class BaseDataBackupManager(
             profileId = session.profile_id,
             updatedAt = session.updatedAt,
             portalOrigin = session.portalOrigin == 1L,
+            syncAcknowledged = session.portalOrigin == 0L &&
+                session.synced_sync_generation > 0L &&
+                session.synced_sync_generation >= session.local_sync_generation,
         )
     }
 

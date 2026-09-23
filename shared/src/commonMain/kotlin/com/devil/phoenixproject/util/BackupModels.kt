@@ -88,6 +88,12 @@ data class WorkoutSessionBackup(
     // never re-pushed; a local row keeps its stamp so the portal's LWW sees its real age.
     val updatedAt: Long? = null,
     val portalOrigin: Boolean = false,
+    /**
+     * The exported row's current generation had been acknowledged by the portal (nothing
+     * pending). Only then does a restore mark it synced; [updatedAt] alone is not proof,
+     * because a post-sync edit keeps its stamp while the row is dirty.
+     */
+    val syncAcknowledged: Boolean = false,
 )
 
 /**
