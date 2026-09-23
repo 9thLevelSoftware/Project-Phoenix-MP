@@ -951,7 +951,13 @@ class SyncManager(
                 break
             }
         }
-        if (repairPushActive && outcomes.none { it.repairPushFailed }) {
+        // The repair is account-wide and one-time: complete it only when EVERY profile in
+        // this loop delivered its repair push. An aborted loop (a 401 on any push or pull,
+        // or any early break) leaves later profiles without theirs, so the repair stays
+        // owed (codex #856 P1). Cancellation throws and never reaches this line.
+        val everyProfileDeliveredRepair = outcomes.size == profiles.size &&
+            outcomes.all { it.pushSucceeded && !it.repairPushFailed }
+        if (repairPushActive && everyProfileDeliveredRepair) {
             tokenStorage.markRoutineCyclePrRepairPushDone(userId)
             Logger.i("SyncManager") {
                 "One-time routines/cycles/PRs repair push completed for every profile"
@@ -1373,6 +1379,9 @@ class SyncManager(
                 }
                 outcomes += ProfileSyncOutcome(
                     profileId = profile.id,
+                    // Same classification as the ordinary sync path (codex #856 P2), so
+                    // combineProfileOutcomes publishes NotAuthenticated.
+                    authFailure = isAuthFailure(pullError),
                     pushSucceeded = true,
                     pullSucceeded = false,
                     syncTimeEpoch = lastSync,
@@ -1392,11 +1401,12 @@ class SyncManager(
         // retryPull is pull-only: "pushSucceeded = true" above is a placeholder, so
         // combineProfileOutcomes' PartialSuccess branch would report success even when
         // every pull failed. The caller asked for a pull retry — surface the failure.
-        return if (outcomes.any { it.pullSucceeded }) {
-            combined
-        } else {
-            Result.failure(outcomes.firstOrNull { it.error != null }?.error ?: Exception("Pull retry failed"))
-        }
+        if (combined.isFailure || outcomes.any { it.pullSucceeded }) return combined
+        // Every pull failed without an auth failure: publish an error state that agrees
+        // with the failed Result instead of combine's PartialSuccess.
+        val error = outcomes.firstOrNull { it.error != null }?.error ?: Exception("Pull retry failed")
+        _syncState.value = SyncState.Error(error.message ?: "Pull retry failed")
+        return Result.failure(error)
     }
 
     // === Private Helpers ===

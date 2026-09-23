@@ -900,7 +900,9 @@ class SyncManagerProfilePreferencesTest {
             val manager = harness.manager(migrationReady = { true })
 
             assertTrue(manager.retryPull().isFailure)
-            assertIs<SyncState.PartialSuccess>(manager.syncState.value)
+            // A pull-only retry whose pull failed publishes an Error that agrees with the
+            // failed Result (PartialSuccess would claim a push that retryPull never made).
+            assertIs<SyncState.Error>(manager.syncState.value)
             assertEquals(initialLastSync, harness.tokenStorage.getPullCursor("user", harness.activeProfileId))
             assertEquals(1, harness.preferenceSyncRepository.appliedPulledSections.size)
 
