@@ -175,6 +175,13 @@ class SqlDelightSyncRepositoryTest {
             "Barbell_Bench_Press_-_Medium_Grip",
             repository.findExerciseId(name = "Bench Press", muscleGroup = null, exerciseId = "ZZ92N8QsBdp6HCh3"),
         )
+        // Not in the explicit id map: only the reviewed name fallback (Rack Pull -> Rack Pulls),
+        // the same one the remapper uses, can resolve it.
+        database.seedExercise("Rack_Pulls", name = "Rack Pulls", muscleGroup = "Back")
+        assertEquals(
+            "Rack_Pulls",
+            repository.findExerciseId(name = "Rack Pull", muscleGroup = null, exerciseId = "legacy-rack-pull"),
+        )
         // An id this device still holds (archived legacy row) is kept for the remapper to merge.
         database.seedExercise("b5d0f3d1-994b-4589-9d2b-b3f36f1412c7", name = "Bench Press ", archived = true)
         assertEquals(

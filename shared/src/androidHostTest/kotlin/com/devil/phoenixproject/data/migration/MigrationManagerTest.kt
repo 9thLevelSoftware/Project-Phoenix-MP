@@ -197,10 +197,21 @@ class MigrationManagerTest {
             exerciseId = "ZZ92N8QsBdp6HCh3",
         )
 
+        // A name-only mapping (not in the explicit id map): Rack Pull -> Rack Pulls.
+        database.seedExercise("legacy-rack-pull", name = "Rack Pull", archived = true)
+        database.seedExercise("Rack_Pulls", name = "Rack Pulls")
+        insertMinimalRoutineExercise(
+            id = "re-legacy-rack-pull",
+            routineId = "routine-legacy",
+            exerciseName = "Rack Pull",
+            exerciseId = "legacy-rack-pull",
+        )
+
         migrationManager.runMigrationsNow()
 
         val routineExercise = queries.selectRoutineExerciseById("re-legacy-bench").executeAsOne()
         assertEquals("Barbell_Bench_Press_-_Medium_Grip", routineExercise.exerciseId)
+        assertEquals("Rack_Pulls", queries.selectRoutineExerciseById("re-legacy-rack-pull").executeAsOne().exerciseId)
     }
 
     @Test
