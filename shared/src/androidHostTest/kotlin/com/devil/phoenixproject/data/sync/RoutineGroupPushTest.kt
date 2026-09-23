@@ -772,6 +772,46 @@ class RoutineGroupPushTest {
         )
     }
 
+    // ===== codex #856: every follow-up push waits for the shared limiter =====
+
+    @Test
+    fun `an LWW re-push still reaches the portal when ordinary pushes filled the window`() = runTest {
+        var clock = 0L
+        val limiter = ClientRateLimiter(nowMs = { clock }, waitFor = { clock += it })
+        val limited = SyncManager(
+            apiClient = apiClient,
+            tokenStorage = tokenStorage,
+            syncRepository = syncRepository,
+            gamificationRepository = FakeGamificationRepository(),
+            repMetricRepository = repMetricRepository,
+            userProfileRepository = userProfileRepository,
+            profilePreferenceSyncRepository = FakeProfilePreferenceSyncRepository(),
+            externalActivityRepository = FakeExternalActivityRepository(),
+            velocityOneRepMaxRepository = FakeVelocityOneRepMaxRepository(),
+            isProfilePreferenceMigrationReady = { true },
+            completedSetRepository = FakeCompletedSetRepository(),
+            rateLimiter = limiter,
+        )
+        insertRoutineSet("set-1", groupId = GROUP, timestamp = baseTime, withLocalData = true)
+        limited.sync()
+        server.writeWebNote(GROUP, "typed on the website", updatedAt = baseTime + 60 * 60_000L)
+        insertRoutineSet("set-2", groupId = GROUP, timestamp = baseTime + 1_000, withLocalData = true)
+        // Other pushes fill the rest of the window just before it rolls: the ordinary push
+        // waits for only the first sync's slot to expire and takes it, leaving the window full,
+        // so the LWW retry must WAIT for capacity instead of failing with a local 429.
+        clock = 59_000L
+        repeat(SyncConfig.PUSH_RATE_LIMIT_PER_MIN - 1) { limiter.tryAcquire("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN) }
+        apiClient.pushPayloads.clear()
+
+        limited.sync()
+
+        assertTrue(
+            apiClient.pushPayloads.drop(1).flatMap { it.sessions }.any { it.id == GROUP },
+            "the LWW re-push must reach the portal (saw ${apiClient.pushPayloads.size} push(es))",
+        )
+        assertEquals(listOf("set-1", "set-2"), server.exerciseIds(GROUP).sorted())
+    }
+
     // ===== codex #856 review 5286893178: the LWW retry acknowledges generations =====
 
     @Test

@@ -2145,7 +2145,7 @@ class SyncManager(
                 },
             )
             rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
+            val result = pushPayloadWithRateLimit(payload)
             if (result.isFailure) return Result.failure(result.pushError())
             val response = result.getOrThrow()
             val sentTransferIds = transferBatch.mapTo(linkedSetOf()) { it.mutationId }
@@ -2203,7 +2203,7 @@ class SyncManager(
                 },
             )
             rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
+            val result = pushPayloadWithRateLimit(payload)
             if (result.isFailure) return Result.failure(result.pushError())
             val response = result.getOrThrow()
             val sentDeletionIds = deletionBatch.mapTo(linkedSetOf()) { it.mutationId }
@@ -2246,7 +2246,7 @@ class SyncManager(
                 },
             )
             rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
+            val result = pushPayloadWithRateLimit(payload)
             if (result.isFailure) return Result.failure(result.pushError())
             val response = result.getOrThrow()
             val acknowledged = response.acknowledgedDeletedCycleIds.toSet()
@@ -2406,7 +2406,7 @@ class SyncManager(
                     "${payload.personalRecords.size} personal records"
             }
             rejectDuplicatePushPayloadKeys(payload)?.let { return Result.failure(it) }
-            val result = pushPayloadWithRateLimit(payload, waitForCapacity = true)
+            val result = pushPayloadWithRateLimit(payload)
             if (result.isFailure) {
                 val error = result.exceptionOrNull()
                 val batchSessionIds = payload.sessions.map { it.id }.take(3)
@@ -3139,29 +3139,20 @@ class SyncManager(
     }
 
     /**
-     * [waitForCapacity] = true waits for the client window (the same limit the server
-     * enforces) instead of failing fast. The per-profile push path uses it: profiles are
-     * walked in the same order every sync, so failing fast would starve every profile
-     * past the window's capacity forever (codex #856 P1). Local throttling is not a
-     * profile failure.
+     * Every logical push waits for the shared client window (the same limit the server
+     * enforces) — there is no fail-fast path (codex #856). Failing fast let the next
+     * waiting ordinary request take each freed slot, so LWW re-pushes and dirty
+     * preference chunks could get a local 429 on every sync and never reach the portal,
+     * and profiles walked in a fixed order could starve behind one another.
+     *
+     * [ClientRateLimiter.acquireWithWait] releases its mutex before each (cancellable)
+     * delay and records a slot only when it is granted, so a waiting call holds no slot
+     * and the wait is bounded by the window per slot.
      */
     private suspend fun pushPayloadWithRateLimit(
         payload: PortalSyncPayload,
-        waitForCapacity: Boolean = false,
     ): Result<PortalSyncPushResponse> {
-        if (waitForCapacity) {
-            rateLimiter.acquireWithWait("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN)
-            return apiClient.pushPortalPayload(payload)
-        }
-        if (!rateLimiter.tryAcquire("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN)) {
-            return Result.failure(
-                PortalApiException(
-                    "Client rate limit exceeded for push " +
-                        "(${SyncConfig.PUSH_RATE_LIMIT_PER_MIN}/min). Try again shortly.",
-                    statusCode = 429,
-                ),
-            )
-        }
+        rateLimiter.acquireWithWait("push", SyncConfig.PUSH_RATE_LIMIT_PER_MIN)
         return apiClient.pushPortalPayload(payload)
     }
 
