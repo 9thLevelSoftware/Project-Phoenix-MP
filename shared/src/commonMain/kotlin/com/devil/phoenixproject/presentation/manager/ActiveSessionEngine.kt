@@ -8651,11 +8651,22 @@ class ActiveSessionEngine(
                                 )
                             } else {
                                 // History stores the programmed cable weight together with rack
-                                // metadata. Apply only the command-resolution delta so that an
-                                // ordinary rack adjustment retains that representation while a
-                                // firmware-limit clamp records the equivalent load that ran.
-                                val executedWeight = warmupOverrideParams.weightPerCableKg +
-                                    (commandParams.weightPerCableKg - bleParams.weightPerCableKg)
+                                // metadata. The only rack delta on the machine weight is the
+                                // counterweight, so the programmed figure that actually ran is
+                                // the command plus that counterweight, capped at the request.
+                                // (`programmed + (command - ble)` leaked an out-of-range request
+                                // whenever the rack step had already clamped `ble` to 110 kg:
+                                // a 500 kg request on a 100 kg V-Form recorded 490 kg.)
+                                val counterweightPerCableKg =
+                                    bleParams.counterweightKg / rackPhysicalCableCount.coerceIn(1, 2)
+                                val programmedWeight = warmupOverrideParams.weightPerCableKg
+                                // A non-finite request stays as-is for the validator/recorder
+                                // contract (commandedWeightPerCableKg never invents a number).
+                                val executedWeight = if (programmedWeight.isNaN() || programmedWeight.isInfinite()) {
+                                    programmedWeight
+                                } else {
+                                    minOf(programmedWeight, commandParams.weightPerCableKg + counterweightPerCableKg)
+                                }
                                 context.copy(
                                     completionFacts = context.completionFacts.copy(
                                         executedWeightPerCableKg = executedWeight,
@@ -9046,6 +9057,26 @@ class ActiveSessionEngine(
         return requested.coerceIn(Constants.MIN_WEIGHT_KG, Constants.MAX_WEIGHT_PER_CABLE_KG)
     }
 
+    /**
+     * The per-cable load a completed set records.
+     *
+     * When a frame reached the trainer, the start path froze what it ran as
+     * `executedWeightPerCableKg`, already resolved against the CONNECTED model's
+     * ceiling by `CommandLimits`. That value is recorded verbatim. Re-clamping it
+     * here would corrupt two legitimate cases:
+     * - a counterweight rack, where the programmed figure (machine command plus
+     *   counterweight) can exceed 110 kg while the machine holds far less, and
+     * - Echo, whose packets carry a level rather than a weight, so the frozen
+     *   start metadata is the only honest figure.
+     *
+     * Only when nothing was frozen (no frame ever reached the trainer) does the
+     * requested figure fall back through [commandedWeightPerCableKg]'s band.
+     */
+    private fun recordedWeightPerCableKg(
+        params: WorkoutParameters,
+        executedWeightPerCableKg: Float?,
+    ): Float = executedWeightPerCableKg ?: commandedWeightPerCableKg(params)
+
     private fun buildExitSnapshot(
         completion: SetExecutionCompletion,
         terminalPath: TerminalPath,
@@ -9058,8 +9089,8 @@ class ActiveSessionEngine(
         // row (History, the portal's rep-based `estimatedOneRepMaxKg` and — for
         // a non-Echo set, where `workingAvgWeightKg` is null — the
         // velocity-point load axis), the CompletedSet, and the MAX_VOLUME PR.
-        // Clamp to the per-cable band via commandedWeightPerCableKg.
-        val recordedWeightPerCableKg = commandedWeightPerCableKg(executedParams)
+        // The frozen executed figure when a frame ran; the banded request otherwise.
+        val recordedWeightPerCableKg = recordedWeightPerCableKg(params, completion.executedWeightPerCableKg)
         val repCount = coordinator._repCount.value
         val metrics = coordinator.collectedMetrics.snapshot()
         val exerciseIndex = coordinator._currentExerciseIndex.value
@@ -9385,7 +9416,10 @@ class ActiveSessionEngine(
             executionGuard.markPersistenceFailed(sessionId)
             Logger.e(error) { "Failed to persist workout snapshot for session $sessionId" }
             // F-040: raise a failure the UI can attach a working Retry to.
-            coordinator._workoutSaveFailureSessionId.value = sessionId
+            // compareAndSet, like the success path: an earlier session's still-pending
+            // offer must not be overwritten. This session stays retained, so the next
+            // set start auto-retries it even while the screen names the earlier one.
+            coordinator._workoutSaveFailureSessionId.compareAndSet(null, sessionId)
         }
         if (!persistenceSucceeded) return
         try {
@@ -9452,10 +9486,12 @@ class ActiveSessionEngine(
         // erases History's PR marker. Phase (peak-force) breaks are a different
         // metric and deliberately do not set it.
         if (postSaveResult.brokenCombinedWeightOrVolumePRs.isNotEmpty()) {
-            snapshot.completedSet?.let { completedSetRepository.markAsPr(it.id) }
+            snapshot.completedSet?.let { completedSet ->
+                isolatedPostCommitEffect(sessionId, "mark PR") { completedSetRepository.markAsPr(completedSet.id) }
+            }
         }
         if (snapshot.shouldExportIndividualHealthSession) {
-            enqueueWorkoutHealthPush(snapshot.session)
+            isolatedPostCommitEffect(sessionId, "health export") { enqueueWorkoutHealthPush(snapshot.session) }
         }
         if (snapshot.shouldExportIndividualBackup) {
             scope.launch {
@@ -9463,8 +9499,28 @@ class ActiveSessionEngine(
                     ?.onFailure { error -> Logger.w(error) { "Auto-backup failed for session $sessionId" } }
             }
         }
-        updateCycleProgressFromSnapshot(snapshot)
+        isolatedPostCommitEffect(sessionId, "cycle progress") { updateCycleProgressFromSnapshot(snapshot) }
         scope.launch { syncTriggerManager?.onWorkoutCompleted() }
+    }
+
+    /**
+     * One post-commit effect failing must not abandon the ones after it: a
+     * transient markAsPr error used to skip health export, cycle progress and
+     * the sync trigger for an already-saved set. Cancellation still propagates
+     * so a torn-down scope reopens the claim and retains the snapshot.
+     */
+    private inline fun isolatedPostCommitEffect(
+        sessionId: String,
+        name: String,
+        effect: () -> Unit,
+    ) {
+        try {
+            effect()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Logger.e(error) { "Post-save $name failed for session $sessionId (the workout itself is saved)" }
+        }
     }
 
     private suspend fun updateCycleProgressFromSnapshot(snapshot: WorkoutExitSnapshot) {
@@ -10421,7 +10477,10 @@ class ActiveSessionEngine(
 
                 // Re-read params after stop-time state updates.
                 val params = coordinator._workoutParameters.value
-                val recordedWeightPerCableKg = commandedWeightPerCableKg(params)
+                val recordedWeightPerCableKg = recordedWeightPerCableKg(
+                    params,
+                    legacyContext?.completionFacts?.executedWeightPerCableKg,
+                )
                 val legacyLogicalSetKey = legacyContext?.completionFacts?.routineIdentity?.logicalSetKey
                     ?: coordinator.currentRoutineSessionId?.let { routineSessionId ->
                         currentExercise?.let { exercise ->

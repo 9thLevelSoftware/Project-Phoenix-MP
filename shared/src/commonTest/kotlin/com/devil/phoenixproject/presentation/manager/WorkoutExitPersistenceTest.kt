@@ -6,6 +6,9 @@ import com.devil.phoenixproject.domain.model.JustLiftDefaultsDocument
 import com.devil.phoenixproject.domain.model.LogicalSetKey
 import com.devil.phoenixproject.domain.model.ProgramMode
 import com.devil.phoenixproject.domain.model.QualityTrend
+import com.devil.phoenixproject.domain.model.RackItem
+import com.devil.phoenixproject.domain.model.RackItemBehavior
+import com.devil.phoenixproject.domain.model.RackItemCategory
 import com.devil.phoenixproject.domain.model.RepCount
 import com.devil.phoenixproject.domain.model.RepCountTiming
 import com.devil.phoenixproject.domain.model.RepMetricData
@@ -21,6 +24,7 @@ import com.devil.phoenixproject.testutil.DWSMTestHarness
 import com.devil.phoenixproject.testutil.TestFixtures
 import com.devil.phoenixproject.testutil.WorkoutStateFixtures
 import com.devil.phoenixproject.util.BleConstants
+import com.devil.phoenixproject.util.CommandLimits
 import com.devil.phoenixproject.util.Constants
 import kotlin.test.Test
 import kotlin.test.assertContentEquals
@@ -1144,12 +1148,15 @@ class WorkoutExitPersistenceTest {
             harness.dwsm.stopWorkout(exitingWorkout = true)
             advanceUntilIdle()
 
+            // The CONNECTED model's ceiling is what the machine was commanded with
+            // (100 kg on a V-Form), not the Trainer+ 110 kg band.
+            val commanded = CommandLimits.maxWeightPerCableKg(harness.fakeBleRepo.connectedModel)
             val session = harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId }
             val savedSet = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId).single()
-            assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, session.weightPerCableKg)
-            assertEquals(Constants.MAX_WEIGHT_PER_CABLE_KG, savedSet.actualWeightKg)
+            assertEquals(commanded, session.weightPerCableKg)
+            assertEquals(commanded, savedSet.actualWeightKg)
             assertEquals(
-                Constants.MAX_WEIGHT_PER_CABLE_KG,
+                commanded,
                 harness.fakePRRepo.updateCalls.map { it.volumePRWeightPerCableKg }.distinct().single(),
                 "The volume PR must be computed from the commanded load too",
             )
@@ -1260,6 +1267,164 @@ class WorkoutExitPersistenceTest {
                 "an-earlier-unsaved-session",
                 harness.coordinator.workoutSaveFailureSessionId.value,
                 "Another session's success must not swallow a still-pending offer",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * GitHub #853 (codex 4078351397): with a counterweight the PROGRAMMED figure
+     * is the machine command plus the counterweight, so it can legitimately sit
+     * above 110 kg while the machine holds far less. The start path froze that
+     * figure (already resolved against the connected model), and the completion
+     * must record it verbatim rather than re-clamp it to the 110 kg band.
+     */
+    @Test
+    fun `a counterweighted set records its frozen programmed load, not a band re-clamp`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeEquipmentRackRepo.saveItems(
+                listOf(
+                    RackItem(
+                        id = "assist",
+                        name = "assist",
+                        category = RackItemCategory.OTHER,
+                        weightKg = 40f,
+                        behavior = RackItemBehavior.COUNTERWEIGHT,
+                    ),
+                ),
+            )
+            harness.fakeExerciseRepo.addExercise(TestFixtures.benchPress)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.OldSchool,
+                    reps = 3,
+                    warmupReps = 0,
+                    weightPerCableKg = 115f,
+                    selectedExerciseId = TestFixtures.benchPress.id,
+                ),
+            )
+            harness.dwsm.updateActiveRackSelection(listOf("assist"))
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.coordinator._repCount.value = RepCount(workingReps = 2)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            val session = harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId }
+            val savedSet = harness.fakeCompletedSetRepo.getCompletedSets(lease.sessionId).single()
+            assertEquals(115f, session.weightPerCableKg, "The frozen programmed load must not be re-clamped to 110 kg")
+            assertEquals(115f, savedSet.actualWeightKg)
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * GitHub #853 (codex 4078351397): an Echo packet carries a level, not a
+     * weight, so the frozen start metadata is recorded as-is.
+     */
+    @Test
+    fun `an Echo set records its frozen start metadata, not a band re-clamp`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeExerciseRepo.addExercise(TestFixtures.benchPress)
+            harness.fakeBleRepo.simulateConnect("Vee_Test")
+            harness.dwsm.updateWorkoutParameters(
+                WorkoutParameters(
+                    programMode = ProgramMode.Echo,
+                    reps = 3,
+                    warmupReps = 0,
+                    weightPerCableKg = 120f,
+                    selectedExerciseId = TestFixtures.benchPress.id,
+                ),
+            )
+            harness.dwsm.startWorkout(skipCountdown = true)
+            advanceUntilIdle()
+            harness.coordinator._repCount.value = RepCount(workingReps = 2)
+            val lease = harness.activeSessionEngine.currentExecutionLeaseForTest()
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            val session = harness.fakeWorkoutRepo.allSessions().single { it.id == lease.sessionId }
+            assertEquals(120f, session.weightPerCableKg, "Echo start metadata must be recorded verbatim")
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * GitHub #853 (codex 4078351400): one post-commit effect failing must not
+     * abandon the ones after it. markAsPr throwing used to skip cycle progress,
+     * health export and the sync trigger for an already-saved set.
+     */
+    @Test
+    fun `a failed PR mark does not skip cycle progress for a saved set`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            val cycle = trainingCycle("cycle-isolated")
+            harness.fakeTrainingCycleRepo.addCycle(cycle)
+            harness.fakeTrainingCycleRepo.setActiveCycle(cycle.id, "default")
+            harness.coordinator.activeCycleId = cycle.id
+            harness.coordinator.activeCycleDayNumber = 1
+            var markAttempts = 0
+            harness.fakeCompletedSetRepo.beforeMarkAsPr = {
+                markAttempts++
+                throw IllegalStateException("transient db error")
+            }
+            startTrackedCableSet(harness)
+
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertEquals(1, markAttempts, "The first set is a PR, so markAsPr must have been attempted")
+            assertEquals(
+                setOf(1),
+                harness.fakeTrainingCycleRepo.getCycleProgress(cycle.id)?.completedDays,
+                "Cycle progress must still be recorded after the PR mark failed",
+            )
+        } finally {
+            harness.cleanup()
+        }
+    }
+
+    /**
+     * GitHub #853 (kilo 4078350468): the failure path must not overwrite a
+     * different session's pending offer, just as the success path does not
+     * withdraw one. The later session stays retained, so it is still retried.
+     */
+    @Test
+    fun `a second failed save does not overwrite an earlier session's failure offer`() = runTest {
+        val harness = DWSMTestHarness(this)
+        try {
+            harness.fakeWorkoutRepo.beforeSaveSession = {
+                throw IllegalStateException("disk full")
+            }
+            startTrackedCableSet(harness)
+            val first = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+            assertEquals(first.sessionId, harness.coordinator.workoutSaveFailureSessionId.value)
+
+            startTrackedCableSet(harness)
+            val second = harness.activeSessionEngine.currentExecutionLeaseForTest()
+            assertNotEquals(first.sessionId, second.sessionId)
+            harness.dwsm.stopWorkout(exitingWorkout = true)
+            advanceUntilIdle()
+
+            assertEquals(
+                first.sessionId,
+                harness.coordinator.workoutSaveFailureSessionId.value,
+                "The earlier session's Retry offer must survive a later failure",
+            )
+            assertTrue(
+                harness.activeSessionEngine.hasRetainedWorkoutExitSnapshotForTest(second.sessionId),
+                "The later failed set must still be retained for the automatic retry",
             )
         } finally {
             harness.cleanup()
