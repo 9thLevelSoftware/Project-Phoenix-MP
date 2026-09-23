@@ -728,7 +728,17 @@ class MultiProfileSyncIntegrationTest {
         addLocalMeasurement("a-edit")
         makeLegacyDirty("a-edit")
 
-        assertTrue(manager.sync().isSuccess) // signed in as userId (not account-a)
+        // PR 11: a profile owned by another account while signed in as userId is an
+        // unanswered account switch, so the sync pauses before any seeding or binding.
+        assertTrue(manager.sync().isFailure)
+        assertTrue(manager.syncState.value is SyncState.AccountMismatch)
+        // PR 10's scoping still holds when this account's seeding does run: it covers only
+        // this account's profiles, so A's row stays dirty.
+        syncRepository.seedLegacySyncedGenerationsOnce(
+            accountId = userId,
+            legacyLastSync = legacy,
+            profileIds = listOf(profileA, profileB),
+        )
 
         assertTrue(
             syncRepository.getDirtyWorkoutSnapshot("profile-owned-by-a").sessions.any { it.id == "a-edit" },

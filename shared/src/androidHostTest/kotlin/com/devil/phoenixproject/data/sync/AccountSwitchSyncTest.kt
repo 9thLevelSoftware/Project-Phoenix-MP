@@ -376,8 +376,11 @@ class AccountSwitchSyncTest {
         if (ownerUserId != null) settings.putString("portal_delta_pull_key", "$ownerUserId:$profileId")
     }
 
-    private fun legacySeedingRan(): Boolean =
-        database.phoenixDatabaseQueries.selectAppliedDataRepair("legacy-sync-generations-v1").executeAsOneOrNull() != null
+    /** PR 10 namespaces the one-shot seeding ledger per account. */
+    private fun legacySeedingRan(accountId: String): Boolean =
+        database.phoenixDatabaseQueries
+            .selectAppliedDataRepair("legacy-sync-generations-v1:$accountId")
+            .executeAsOneOrNull() != null
 
     @Test
     fun anUpgradedDeviceSignedInAsTheLegacyOwnerSeedsAndSyncsWithoutPausing() = runTest {
@@ -388,7 +391,7 @@ class AccountSwitchSyncTest {
 
         assertTrue(manager.sync().isSuccess)
         assertFalse(manager.syncState.value is SyncState.AccountMismatch)
-        assertTrue(legacySeedingRan(), "the legacy generation seeding runs for the legacy owner")
+        assertTrue(legacySeedingRan(userA), "the legacy generation seeding runs for the legacy owner")
         assertTrue(tokenStorage.getLastSyncedPortalUserId() == userA)
         assertTrue(
             api.pushPayloads.flatMap { it.sessions }.none { it.id == "legacy-1" },
@@ -455,7 +458,28 @@ class AccountSwitchSyncTest {
         assertTrue(restarted.sync().isFailure)
         val state = assertIs<SyncState.AccountMismatch>(restarted.syncState.value)
         assertTrue(state.previousUserId == userA && state.newUserId == userB)
-        assertFalse(legacySeedingRan(), "the one-shot seeding must not run under a mismatched account")
+        assertFalse(legacySeedingRan(userB), "the one-shot seeding must not run under a mismatched account")
+        assertFalse(legacySeedingRan(userA))
+        assertTrue(api.pushCallCount == 0)
+    }
+
+    @Test
+    fun theMismatchGateRunsBeforeUnboundProfilesAreBoundToTheSigningInAccount() = runTest {
+        // One profile already belongs to A; a second was never linked. Signed in as B, the
+        // pause gate must stop the sync before PR 10's binding step claims the unbound
+        // profile (and its rows) for B, and nothing may overwrite A's owner.
+        val unbound = userProfileRepository.createProfile("Unbound", 1)
+        userProfileRepository.linkToSupabase(profileId, userA)
+        insertSession("pre-1", groupId = null, timestamp = baseTime, profileId = unbound.id)
+        tokenStorage.saveGoTrueAuth(authResponse(userB, emailB, "token-b"))
+        api.currentPushUser = userB
+
+        val restarted = newManager(PendingAccountMismatch())
+        assertTrue(restarted.sync().isFailure)
+        assertIs<SyncState.AccountMismatch>(restarted.syncState.value)
+        val owners = userProfileRepository.allProfiles.value.associate { it.id to it.supabaseUserId }
+        assertTrue(owners[profileId] == userA, "the other account's owner must not be overwritten: $owners")
+        assertTrue(owners[unbound.id] == null, "an unbound profile must not be bound under a mismatch: $owners")
         assertTrue(api.pushCallCount == 0)
     }
 
