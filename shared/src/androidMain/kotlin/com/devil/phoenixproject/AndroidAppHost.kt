@@ -68,7 +68,8 @@ fun AndroidAppHost() {
     }
 
     when (val current = resolution) {
-        null -> Unit
+        // Startup resolves off Main; draw the splash instead of a blank frame meanwhile.
+        null -> StartupPendingSurface()
         is StartupDependencyResolution.Failed -> {
             Logger.e {
                 "Android app dependency resolution blocked: code=${current.diagnosticCode}, " +

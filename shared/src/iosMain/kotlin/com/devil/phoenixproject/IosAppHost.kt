@@ -69,7 +69,8 @@ fun IosAppHost() {
     }
 
     when (val current = resolution) {
-        null -> Unit
+        // Startup resolves off the main thread; draw the splash instead of a blank frame meanwhile.
+        null -> StartupPendingSurface()
         is StartupDependencyResolution.Failed -> {
             Logger.e {
                 "iOS app dependency resolution blocked: code=${current.diagnosticCode}, " +
